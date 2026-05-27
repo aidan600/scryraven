@@ -1,0 +1,239 @@
+{
+  "schema_version": "legal_current_source_quality_l2b_fixture_v1",
+  "diagnostic_only": true,
+  "runtime_behavior_authorized": false,
+  "source_classes": [
+    "official_agency_page",
+    "government_register",
+    "statutory_or_regulatory_text",
+    "court_docket_or_order",
+    "regulator_press_release",
+    "official_guidance_or_faq",
+    "reputable_news",
+    "secondary_legal_analysis",
+    "academic_legal_commentary",
+    "official_eu_legal_text"
+  ],
+  "bottleneck_taxonomy": [
+    "source_class_need_not_detected",
+    "recovery_not_triggered",
+    "no_official_candidates_returned",
+    "official_candidates_rejected_or_misclassified",
+    "accepted_official_sources_not_visible_in_final_evidence",
+    "visible_official_sources_not_cited",
+    "source_unavailable_from_current_provider_stack",
+    "query_domain_strategy_insufficient",
+    "source_specific_official_resolver_api_likely_needed",
+    "final_answer_posture_too_confident"
+  ],
+  "currentness_fields": [
+    "publication_date",
+    "effective_date",
+    "application_date",
+    "amendment_date",
+    "enforcement_date",
+    "compliance_deadline",
+    "stayed_enjoined_suspended_status",
+    "superseded_withdrawn_archived_status",
+    "stale_source_warning",
+    "jurisdiction_uncertainty"
+  ],
+  "question_types": {
+    "current_legal_rule": {
+      "required_source_classes": [
+        "official_agency_page",
+        "government_register",
+        "statutory_or_regulatory_text",
+        "official_guidance_or_faq"
+      ],
+      "secondary_satisfies_current_legal_effect": false
+    },
+    "legal_regulatory_current_event": {
+      "required_source_classes_for_what_happened": [
+        "reputable_news",
+        "regulator_press_release"
+      ],
+      "required_source_classes_for_legal_effect": [
+        "official_agency_page",
+        "government_register",
+        "court_docket_or_order",
+        "statutory_or_regulatory_text"
+      ],
+      "reputable_news_satisfies_what_happened": true,
+      "reputable_news_satisfies_current_legal_effect": false
+    },
+    "court_status": {
+      "required_source_classes": [
+        "court_docket_or_order"
+      ],
+      "reliable_docket_mirror_allowed": true,
+      "reputable_news_satisfies_status": false
+    },
+    "agency_guidance_or_enforcement": {
+      "required_source_classes": [
+        "official_agency_page",
+        "regulator_press_release",
+        "official_guidance_or_faq",
+        "government_register"
+      ],
+      "secondary_satisfies_current_legal_effect": false
+    },
+    "statutes_regulations_legal_text": {
+      "required_source_classes": [
+        "statutory_or_regulatory_text",
+        "government_register",
+        "official_eu_legal_text"
+      ],
+      "secondary_satisfies_text_obligation": false
+    },
+    "secondary_legal_analysis_news": {
+      "allowed_source_classes": [
+        "reputable_news",
+        "secondary_legal_analysis",
+        "academic_legal_commentary"
+      ],
+      "role": "interpretation_context_only",
+      "satisfies_current_law": false
+    }
+  },
+  "reference_cases": [
+    {
+      "case_id": "cta_fincen_boi_current_status",
+      "question_type": "current_legal_rule",
+      "required_source_classes": [
+        "official_agency_page",
+        "government_register",
+        "statutory_or_regulatory_text"
+      ],
+      "required_authority_examples": [
+        "fincen.gov",
+        "boiefiling.fincen.gov",
+        "federalregister.gov",
+        "court_order_or_official_status_source"
+      ],
+      "must_cite_for": [
+        "current_status",
+        "reporting_obligation",
+        "deadline_or_stay"
+      ],
+      "secondary_satisfies_legal_effect": false
+    },
+    {
+      "case_id": "osha_heat_illness_prevention",
+      "question_type": "agency_guidance_or_enforcement",
+      "required_source_classes": [
+        "official_agency_page",
+        "official_guidance_or_faq",
+        "government_register",
+        "statutory_or_regulatory_text",
+        "regulator_press_release"
+      ],
+      "required_authority_examples": [
+        "osha.gov",
+        "federalregister.gov",
+        "ecfr.gov",
+        "regulations.gov",
+        "osh_act_or_general_duty_clause_material"
+      ],
+      "must_cite_for": [
+        "current_requirement",
+        "rulemaking_status",
+        "enforcement_posture",
+        "legal_text"
+      ],
+      "secondary_satisfies_legal_effect": false
+    },
+    {
+      "case_id": "eu_ai_act_dates_obligations",
+      "question_type": "statutes_regulations_legal_text",
+      "required_source_classes": [
+        "official_eu_legal_text",
+        "official_guidance_or_faq",
+        "government_register"
+      ],
+      "required_identifiers": [
+        "CELEX",
+        "ELI",
+        "OJ"
+      ],
+      "required_authority_examples": [
+        "eur-lex.europa.eu",
+        "official-journal",
+        "commission.europa.eu",
+        "digital-strategy.ec.europa.eu"
+      ],
+      "must_cite_for": [
+        "legal_obligation",
+        "application_date",
+        "enforcement_or_compliance_milestone"
+      ],
+      "secondary_satisfies_legal_effect": false,
+      "secondary_can_displace_official_when_official_present": false
+    },
+    {
+      "case_id": "ssdi_eligibility_positive_control",
+      "question_type": "current_legal_rule",
+      "required_source_classes": [
+        "official_agency_page",
+        "statutory_or_regulatory_text",
+        "government_register"
+      ],
+      "satisfying_source_examples": [
+        "ecfr.gov",
+        "federalregister.gov",
+        "ssa.gov",
+        "govinfo.gov"
+      ],
+      "official_federal_legal_sources_satisfy": true
+    },
+    {
+      "case_id": "court_injunction_status",
+      "question_type": "court_status",
+      "required_source_classes": [
+        "court_docket_or_order"
+      ],
+      "allowed_proxy_source_classes": [
+        "reliable_docket_mirror"
+      ],
+      "required_authority_examples": [
+        "court_order",
+        "court_opinion",
+        "official_docket",
+        "recap_or_courtlistener_mirror"
+      ],
+      "reputable_news_satisfies_status": false
+    },
+    {
+      "case_id": "legal_regulatory_current_event",
+      "question_type": "legal_regulatory_current_event",
+      "required_source_classes_for_what_happened": [
+        "reputable_news"
+      ],
+      "required_source_classes_for_legal_effect": [
+        "official_agency_page",
+        "government_register",
+        "court_docket_or_order",
+        "regulator_press_release"
+      ],
+      "reputable_news_satisfies_what_happened": true,
+      "reputable_news_satisfies_current_legal_effect": false
+    },
+    {
+      "case_id": "secondary_legal_analysis_only",
+      "question_type": "secondary_legal_analysis_news",
+      "allowed_source_classes": [
+        "secondary_legal_analysis",
+        "academic_legal_commentary",
+        "reputable_news"
+      ],
+      "role": "interpretation_context_only",
+      "satisfies_current_law": false,
+      "must_not_satisfy": [
+        "current_legal_rule",
+        "legal_effect",
+        "compliance_deadline",
+        "court_status"
+      ]
+    }
+  ]
+}

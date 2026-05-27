@@ -1,0 +1,92 @@
+{
+  "name": "raw_storage_policy_fixture",
+  "query": "What are people saying about the smart thermostat update?",
+  "entity": "smart thermostat update",
+  "topic": "thermostat update perception",
+  "mode": "Balanced",
+  "social_signal_relevance": "central",
+  "explicit_social_signal_requested": true,
+  "reference_time": "2026-05-22T12:00:00+00:00",
+  "raw_storage_allowed": false,
+  "items": [
+    {
+      "platform": "fixture_forum_a",
+      "community": "smart-home-a",
+      "thread_id": "fixture-thread-thermostat-a",
+      "item_id": "fixture-item-thermostat-a",
+      "author_key": "RAW_AUTHOR_THERMOSTAT_A_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_THERMOSTAT_A_SHOULD_NOT_REACH_AUTHOR: the schedule editor is easier to use.",
+      "created_at": "2026-05-18T10:00:00+00:00",
+      "topic": "update_usability",
+      "sentiment": "positive",
+      "stance": "likes_update",
+      "upvotes": 9,
+      "source_reference_url": "https://example.invalid/social/thermostat-a"
+    },
+    {
+      "platform": "fixture_forum_b",
+      "community": "smart-home-b",
+      "thread_id": "fixture-thread-thermostat-b",
+      "item_id": "fixture-item-thermostat-b",
+      "author_key": "RAW_AUTHOR_THERMOSTAT_B_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_THERMOSTAT_B_SHOULD_NOT_REACH_AUTHOR: manual override feels harder after the update.",
+      "created_at": "2026-05-19T10:00:00+00:00",
+      "topic": "update_usability",
+      "sentiment": "negative",
+      "stance": "dislikes_update",
+      "upvotes": 5,
+      "source_reference_url": "https://example.invalid/social/thermostat-b"
+    },
+    {
+      "platform": "fixture_forum_c",
+      "community": "smart-home-c",
+      "thread_id": "fixture-thread-thermostat-c",
+      "item_id": "fixture-item-thermostat-c",
+      "author_key": "RAW_AUTHOR_THERMOSTAT_C_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_THERMOSTAT_C_SHOULD_NOT_REACH_AUTHOR: energy reports get mentioned as a useful addition.",
+      "created_at": "2026-05-20T10:00:00+00:00",
+      "topic": "energy_reports",
+      "sentiment": "positive",
+      "stance": "likes_reports",
+      "upvotes": 4,
+      "source_reference_url": "https://example.invalid/social/thermostat-c"
+    }
+  ],
+  "expected": {
+    "packet_status": "completed",
+    "topics_present": ["update_usability", "energy_reports"],
+    "raw_sentinels": [
+      "RAW_COMMENT_THERMOSTAT",
+      "RAW_AUTHOR_THERMOSTAT",
+      "fixture-thread-thermostat-unsafe",
+      "fixture-item-thermostat-unsafe",
+      "https://example.invalid/social/thermostat",
+      "https://example.invalid/social/raw-storage-policy"
+    ],
+    "unsafe_packet_overrides": {
+      "source_references": ["https://example.invalid/social/raw-storage-policy/raw-thread"],
+      "representative_high_engagement_examples": [
+        {
+          "topic": "update_usability",
+          "text": "RAW_COMMENT_THERMOSTAT_UNSAFE_SHOULD_NOT_REACH_AUTHOR",
+          "author_key": "RAW_AUTHOR_THERMOSTAT_UNSAFE_SHOULD_NOT_REACH_AUTHOR",
+          "thread_id": "fixture-thread-thermostat-unsafe",
+          "item_id": "fixture-item-thermostat-unsafe",
+          "source_reference_url": "https://example.invalid/social/thermostat-unsafe"
+        }
+      ]
+    },
+    "unsafe_validation_reasons": ["raw_storage_not_allowed"],
+    "controller_cases": [
+      {
+        "name": "unsafe_packet_invalid",
+        "packet_source": "unsafe_override",
+        "expected_status": "invalid_packet",
+        "expected_social_signal_status": "invalid_packet",
+        "expected_reason": "packet_validation_failed",
+        "expect_author_digest": false,
+        "packet_valid": false
+      }
+    ]
+  }
+}

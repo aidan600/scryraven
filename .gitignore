@@ -1,0 +1,75 @@
+# Environment / secrets
+.env
+.env.*
+*.env
+*.env.*
+**/.env
+**/.env.*
+**/*.env
+**/*.env.*
+
+# Safe templates
+!.env.example
+!.env.sample
+
+# Local virtual environments
+research_env/
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.pytest-tmp/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Databases / local state
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.sqlite-journal
+
+# Outputs / generated files
+output/
+outputs/
+dist/
+build/
+coverage/
+
+# Logs / dumps
+*.log
+logs/
+*.dump
+*.sql
+
+# Keys / credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+credentials.json
+secrets.json
+service-account*.json
+*-credentials.json
+*secret*
+*secrets*
+*credential*
+*credentials*
+*token*
+*tokens*
+
+# Cursor local state
+.cursor/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/

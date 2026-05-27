@@ -1,0 +1,98 @@
+{
+  "name": "product_recommendation_optional_social",
+  "query": "Which midrange noise-canceling headphones should I buy?",
+  "entity": "midrange noise-canceling headphones",
+  "topic": "product recommendation perception",
+  "mode": "Balanced",
+  "social_signal_relevance": "relevant_optional",
+  "explicit_social_signal_requested": false,
+  "reference_time": "2026-05-22T12:00:00+00:00",
+  "items": [
+    {
+      "platform": "fixture_forum_a",
+      "community": "headphone-buyers-a",
+      "thread_id": "fixture-thread-headphones-comfort-a",
+      "item_id": "fixture-item-headphones-comfort-a",
+      "author_key": "RAW_AUTHOR_HEADPHONES_A_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_HEADPHONES_A_SHOULD_NOT_REACH_AUTHOR: Model A feels comfortable for long work sessions.",
+      "created_at": "2026-05-10T09:00:00+00:00",
+      "topic": "comfort",
+      "sentiment": "positive",
+      "stance": "prefers_model_a",
+      "upvotes": 12,
+      "likes": 2
+    },
+    {
+      "platform": "fixture_forum_b",
+      "community": "headphone-buyers-b",
+      "thread_id": "fixture-thread-headphones-battery-b",
+      "item_id": "fixture-item-headphones-battery-b",
+      "author_key": "RAW_AUTHOR_HEADPHONES_B_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_HEADPHONES_B_SHOULD_NOT_REACH_AUTHOR: Model B battery life is reliable on travel days.",
+      "created_at": "2026-05-11T09:00:00+00:00",
+      "topic": "battery_life",
+      "sentiment": "positive",
+      "stance": "prefers_model_b",
+      "upvotes": 8,
+      "likes": 1
+    },
+    {
+      "platform": "fixture_forum_c",
+      "community": "headphone-buyers-c",
+      "thread_id": "fixture-thread-headphones-reliability-c",
+      "item_id": "fixture-item-headphones-reliability-c",
+      "author_key": "RAW_AUTHOR_HEADPHONES_C_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_HEADPHONES_C_SHOULD_NOT_REACH_AUTHOR: Model A hinges worry me after seeing several complaints.",
+      "created_at": "2026-05-12T09:00:00+00:00",
+      "topic": "reliability",
+      "sentiment": "negative",
+      "stance": "concern_model_a",
+      "upvotes": 5
+    },
+    {
+      "platform": "fixture_forum_d",
+      "community": "headphone-buyers-d",
+      "thread_id": "fixture-thread-headphones-value-d",
+      "item_id": "fixture-item-headphones-value-d",
+      "author_key": "RAW_AUTHOR_HEADPHONES_D_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_HEADPHONES_D_SHOULD_NOT_REACH_AUTHOR: Model B costs more but feels worth it when discounted.",
+      "created_at": "2026-05-13T09:00:00+00:00",
+      "topic": "price_value",
+      "sentiment": "mixed",
+      "stance": "conditional_model_b",
+      "upvotes": 3
+    }
+  ],
+  "expected": {
+    "packet_status": "completed",
+    "topics_present": ["comfort", "battery_life", "reliability", "price_value"],
+    "raw_sentiment_counts": {
+      "comfort": {"positive": 1},
+      "battery_life": {"positive": 1},
+      "reliability": {"negative": 1},
+      "price_value": {"mixed": 1}
+    },
+    "digest_caveats_include": ["not factual evidence"],
+    "raw_sentinels": ["RAW_COMMENT_HEADPHONES", "RAW_AUTHOR_HEADPHONES"],
+    "controller_cases": [
+      {
+        "name": "optional_not_explicit_skip",
+        "packet_source": "none",
+        "explicit_social_signal_requested": false,
+        "expected_status": "not_requested",
+        "expected_social_signal_status": "not_applicable",
+        "expected_reason": "social_signal_not_requested",
+        "expect_author_digest": false
+      },
+      {
+        "name": "optional_explicit_checked",
+        "packet_source": "built",
+        "explicit_social_signal_requested": true,
+        "expected_status": "checked",
+        "expected_social_signal_status": "checked",
+        "expected_reason": "social_signal_checked",
+        "expect_author_digest": true
+      }
+    ]
+  }
+}

@@ -1,0 +1,131 @@
+{
+  "name": "platform_dominated_sample",
+  "query": "What are people saying about the neighborhood battery pilot?",
+  "entity": "neighborhood battery pilot",
+  "topic": "community reaction",
+  "mode": "Balanced",
+  "social_signal_relevance": "central",
+  "explicit_social_signal_requested": true,
+  "reference_time": "2026-05-22T12:00:00+00:00",
+  "items": [
+    {
+      "platform": "dominant_fixture_forum",
+      "community": "single-energy-community",
+      "thread_id": "fixture-thread-battery-pilot-a",
+      "item_id": "fixture-item-battery-pilot-a",
+      "author_key": "RAW_AUTHOR_BATTERY_A_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_BATTERY_A_SHOULD_NOT_REACH_AUTHOR: the pilot seems useful during outages.",
+      "created_at": "2026-05-15T10:00:00+00:00",
+      "topic": "pilot_reaction",
+      "sentiment": "positive",
+      "stance": "supportive",
+      "upvotes": 9
+    },
+    {
+      "platform": "dominant_fixture_forum",
+      "community": "single-energy-community",
+      "thread_id": "fixture-thread-battery-pilot-b",
+      "item_id": "fixture-item-battery-pilot-b",
+      "author_key": "RAW_AUTHOR_BATTERY_B_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_BATTERY_B_SHOULD_NOT_REACH_AUTHOR: installation noise worries nearby residents.",
+      "created_at": "2026-05-16T10:00:00+00:00",
+      "topic": "pilot_reaction",
+      "sentiment": "negative",
+      "stance": "concerned",
+      "upvotes": 7
+    },
+    {
+      "platform": "dominant_fixture_forum",
+      "community": "single-energy-community",
+      "thread_id": "fixture-thread-battery-pilot-c",
+      "item_id": "fixture-item-battery-pilot-c",
+      "author_key": "RAW_AUTHOR_BATTERY_C_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_BATTERY_C_SHOULD_NOT_REACH_AUTHOR: people want clearer information about location.",
+      "created_at": "2026-05-17T10:00:00+00:00",
+      "topic": "pilot_reaction",
+      "sentiment": "neutral",
+      "stance": "wants_details",
+      "upvotes": 5
+    },
+    {
+      "platform": "dominant_fixture_forum",
+      "community": "single-energy-community",
+      "thread_id": "fixture-thread-battery-pilot-d",
+      "item_id": "fixture-item-battery-pilot-d",
+      "author_key": "RAW_AUTHOR_BATTERY_D_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_BATTERY_D_SHOULD_NOT_REACH_AUTHOR: several residents like the resilience angle.",
+      "created_at": "2026-05-18T10:00:00+00:00",
+      "topic": "pilot_reaction",
+      "sentiment": "positive",
+      "stance": "supportive",
+      "upvotes": 4
+    },
+    {
+      "platform": "dominant_fixture_forum",
+      "community": "single-energy-community",
+      "thread_id": "fixture-thread-battery-pilot-e",
+      "item_id": "fixture-item-battery-pilot-e",
+      "author_key": "RAW_AUTHOR_BATTERY_E_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_BATTERY_E_SHOULD_NOT_REACH_AUTHOR: some commenters ask about maintenance costs.",
+      "created_at": "2026-05-19T10:00:00+00:00",
+      "topic": "pilot_reaction",
+      "sentiment": "neutral",
+      "stance": "wants_details",
+      "upvotes": 4
+    },
+    {
+      "platform": "dominant_fixture_forum",
+      "community": "single-energy-community",
+      "thread_id": "fixture-thread-battery-pilot-f",
+      "item_id": "fixture-item-battery-pilot-f",
+      "author_key": "RAW_AUTHOR_BATTERY_F_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_BATTERY_F_SHOULD_NOT_REACH_AUTHOR: the sample discussion mostly comes from one local group.",
+      "created_at": "2026-05-20T10:00:00+00:00",
+      "topic": "pilot_reaction",
+      "sentiment": "mixed",
+      "stance": "sample_caution",
+      "upvotes": 3
+    },
+    {
+      "platform": "secondary_fixture_comments",
+      "community": "city-hall-comments",
+      "thread_id": "fixture-thread-battery-pilot-g",
+      "item_id": "fixture-item-battery-pilot-g",
+      "author_key": "RAW_AUTHOR_BATTERY_G_SHOULD_NOT_REACH_AUTHOR",
+      "text": "RAW_COMMENT_BATTERY_G_SHOULD_NOT_REACH_AUTHOR: a separate comment section is mostly waiting for more details.",
+      "created_at": "2026-05-21T10:00:00+00:00",
+      "topic": "pilot_reaction",
+      "sentiment": "neutral",
+      "stance": "wants_details",
+      "upvotes": 2
+    }
+  ],
+  "expected": {
+    "packet_status": "completed",
+    "topics_present": ["pilot_reaction"],
+    "confidence_reasons_include": ["platform_bias_too_high"],
+    "confidence_level_in": ["medium", "low"],
+    "digest_caveats_include": ["platform_bias_too_high", "One sampled platform dominates the packet.", "One sampled community/channel dominates the packet."],
+    "raw_sentinels": ["RAW_COMMENT_BATTERY", "RAW_AUTHOR_BATTERY"],
+    "controller_cases": [
+      {
+        "name": "central_checked_with_platform_caveat",
+        "packet_source": "built",
+        "expected_status": "checked",
+        "expected_social_signal_status": "checked",
+        "expected_reason": "social_signal_checked",
+        "expect_author_digest": true
+      },
+      {
+        "name": "blocked_by_platform_denylist",
+        "packet_source": "built",
+        "platform_denylist": ["dominant_fixture_forum"],
+        "expected_status": "blocked",
+        "expected_social_signal_status": "blocked",
+        "expected_reason": "platform_not_allowed",
+        "expect_author_digest": false,
+        "packet_valid": true
+      }
+    ]
+  }
+}

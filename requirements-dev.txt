@@ -1,0 +1,4 @@
+pytest
+ruff
+pre-commit
+detect-secrets
