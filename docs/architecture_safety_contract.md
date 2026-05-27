@@ -2,10 +2,11 @@
 
 Status: Phase 1 contract documentation. Classification: no-op/docs-only.
 
-This note documents the safety boundary for the ProPlex/FauxPlex research
-pipeline. It is descriptive only: it does not authorize code, prompt, routing,
-retrieval, provider, source-filtering, telemetry, Analyst, Economist, or Author
-behavior changes.
+This note documents the safety boundary for the ScryRaven research pipeline.
+It was originally written during the ProPlex/FauxPlex private-prototype era,
+and some historical artifact names remain for continuity. It is descriptive
+only: it does not authorize code, prompt, routing, retrieval, provider,
+source-filtering, telemetry, Analyst, Economist, or Author behavior changes.
 
 ## Recommendation Classifications
 
