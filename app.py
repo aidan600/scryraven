@@ -37,7 +37,7 @@ from ui.theme import STREAMLIT_CUSTOM_CSS
 
 load_dotenv()
 
-st.set_page_config(page_title="FauxPlexity", page_icon="🧭", layout="wide")
+st.set_page_config(page_title="ScryRaven", page_icon="🧭", layout="wide")
 
 # --- UI STYLING (see ui/theme.py) ---
 st.markdown(STREAMLIT_CUSTOM_CSS, unsafe_allow_html=True)

@@ -13,7 +13,14 @@ Read:
 docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md
 
 Repository:
-C:\Users\aidan\ProPlex
+C:\Users\aidan\ScryRaven
+
+Naming note:
+- ScryRaven is the public project name for this repository.
+- Historical docs may still mention earlier working names such as ProPlex,
+  FauxPlex, and FauxPlexity.
+- Internal package, CLI, and environment names may remain `proplex` and
+  `PROPLEX_*` until a dedicated rename phase.
 
 Start state:
 - Start from updated main.
@@ -61,7 +68,7 @@ Out of scope:
 
 Live validation, if approved:
 - Live validation is disabled unless this section is explicitly filled in.
-- Max live ProPlex/provider/model/search calls:
+- Max live ScryRaven/proplex provider/model/search calls:
   ...
 - Exact commands/harness:
   ...
@@ -80,9 +87,9 @@ Live validation, if approved:
 
 Independent qualitative source check, if explicitly approved:
 - Purpose:
-  Add a bounded ProPlex-independent review layer for live validation. The goal is to compare ProPlex output against the obvious public source landscape, not to silently change runtime behavior.
+  Add a bounded ScryRaven-independent review layer for live validation. The goal is to compare ScryRaven output against the obvious public source landscape, not to silently change runtime behavior.
 - When to use:
-  Use for source-quality, official/current/canonical, numeric/status/date, legal/current, citation-fit, or source-survival validation where deterministic tests alone cannot tell whether ProPlex found and used the right sources.
+  Use for source-quality, official/current/canonical, numeric/status/date, legal/current, citation-fit, or source-survival validation where deterministic tests alone cannot tell whether ScryRaven found and used the right sources.
 - Approval fields:
   - Enabled:
     yes | no
@@ -98,24 +105,24 @@ Independent qualitative source check, if explicitly approved:
   - Run only the approved number of independent external source checks.
   - Use only available non-secret public web/search/browser tooling.
   - Search for the obvious best available official, primary, canonical, current, or otherwise authoritative public sources for the approved validation query.
-  - Compare those external findings with ProPlex's final answer, cited URLs, visible source sections/snippets, and sanitized telemetry.
+  - Compare those external findings with ScryRaven's final answer, cited URLs, visible source sections/snippets, and sanitized telemetry.
   - Record public URLs/titles/domains when useful for review.
 - Required qualitative judgments:
-  - Did ProPlex acquire the obvious best source or source class?
+  - Did ScryRaven acquire the obvious best source or source class?
   - If acquired, did the source survive into the visible evidence/citation surface?
   - If cited, was it the right source for the specific claim?
   - Were exact numeric values, dates, thresholds, statuses, eligibility rules, or canonical technical details extracted/restated accurately?
-  - Did ProPlex rely on reputable secondary/news sources where an official/current/canonical source was required?
-  - Did ProPlex ignore useful reputable secondary/news context where no official source was required?
+  - Did ScryRaven rely on reputable secondary/news sources where an official/current/canonical source was required?
+  - Did ScryRaven ignore useful reputable secondary/news context where no official source was required?
   - Is the failure layer most likely acquisition, preservation, source classification, citation selection, extraction/restatement, synthesis/answer posture, or unclear?
 - Required packet fields:
   - validation query;
-  - ProPlex final answer identifier/report path;
-  - ProPlex final cited URLs;
+  - ScryRaven final answer identifier/report path;
+  - ScryRaven final cited URLs;
   - independent external search query used;
   - best obvious external source candidates found;
   - source type for each candidate, such as official, primary, canonical, reputable secondary, news/context, or unclear;
-  - whether each candidate was acquired by ProPlex;
+  - whether each candidate was acquired by ScryRaven;
   - whether each acquired candidate survived into visible evidence/citations;
   - numeric/status/date/canonical-claim comparison notes;
   - qualitative source-fit judgment;
@@ -135,7 +142,7 @@ Independent qualitative source check, if explicitly approved:
     official | primary | canonical | current | reputable secondary | news/context | unclear
   - Source class required by the user question?
     yes | no | partial | unclear
-  - ProPlex acquired required source class?
+  - ScryRaven acquired required source class?
     yes | no | partial | unclear
   - Required source survived into visible evidence/citations?
     yes | no | partial | unclear
@@ -154,15 +161,15 @@ Independent qualitative source check, if explicitly approved:
   - Best obvious external source candidates:
     - URL/title/domain/source type:
       ...
-  - Did ProPlex find the best obvious source?
+  - Did ScryRaven find the best obvious source?
     yes | no | partial | unclear
-  - Did ProPlex cite the best obvious source?
+  - Did ScryRaven cite the best obvious source?
     yes | no | partial | unclear
-  - Did ProPlex use the source for the right claim?
+  - Did ScryRaven use the source for the right claim?
     yes | no | partial | unclear
-  - Did ProPlex over-rely on secondary/news when official/current/canonical was required?
+  - Did ScryRaven over-rely on secondary/news when official/current/canonical was required?
     yes | no | unclear | not applicable
-  - Did ProPlex wrongly undervalue useful reputable secondary/news context?
+  - Did ScryRaven wrongly undervalue useful reputable secondary/news context?
     yes | no | unclear | not applicable
 
   3. Final-answer quality
@@ -207,7 +214,7 @@ Bounded live before/after loop, if explicitly approved:
 - Budget:
   - up to 2 exact user queries;
   - each query may be run once before the instrumentation/fix and once after it;
-  - total maximum: 4 live ProPlex runs;
+  - total maximum: 4 live ScryRaven/proplex runs;
   - independent qualitative source checks, if approved, must stay within their separate explicit cap;
   - no exploratory extra runs without explicit user approval.
 - Required workflow:
@@ -258,7 +265,7 @@ If live validation used an independent qualitative source check, include:
 - whether the external-check tool was available;
 - compact findings by validation query;
 - best obvious external source candidates found;
-- whether ProPlex acquired/cited/preserved those candidates;
+- whether ScryRaven acquired/cited/preserved those candidates;
 - numeric/status/date/canonical extraction comparison;
 - likely failure layer;
 - whether any protected-surface change would be needed for repair;

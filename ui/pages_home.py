@@ -81,7 +81,7 @@ def render_home_page(context: UIContext) -> None:
 
     st.markdown(
         "<h1 style='text-align: center; font-size: 3rem; font-weight: 400; margin-bottom: 2rem; "
-        "letter-spacing: -0.03em; color: #111827;'>FauxPlexity <span style='color: #6b7280; font-weight: 300;'>Pro</span></h1>",
+        "letter-spacing: -0.03em; color: #111827;'>ScryRaven</h1>",
         unsafe_allow_html=True,
     )
 

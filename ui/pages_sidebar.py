@@ -51,7 +51,7 @@ def render_main_sidebar(context: UIContext) -> None:
     # Rendered at the end to allow for dynamic disabling during execution.
     with st.sidebar:
         st.markdown(
-            "<h2 style='font-size: 1.4rem; font-weight: 700; margin-bottom: 1rem; color: #111827;'>FauxPlexity</h2>",
+            "<h2 style='font-size: 1.4rem; font-weight: 700; margin-bottom: 1rem; color: #111827;'>ScryRaven</h2>",
             unsafe_allow_html=True,
         )
 
