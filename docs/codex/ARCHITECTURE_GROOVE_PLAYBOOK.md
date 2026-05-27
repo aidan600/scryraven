@@ -9,8 +9,8 @@ This playbook contains repeated workflow rules for ScryRaven Codex architecture 
 
 ScryRaven is the public project name for this repository. Historical docs may
 still mention earlier working names such as ProPlex, FauxPlex, and FauxPlexity;
-internal package, CLI, and environment names may also remain `proplex` and
-`PROPLEX_*` until a dedicated rename phase.
+the `proplex` package, `python -m proplex`, and `PROPLEX_*` environment names
+remain supported compatibility surfaces unless a phase explicitly removes them.
 
 Future phase prompts should be short and should reference this playbook instead of re-stating the whole operating manual.
 

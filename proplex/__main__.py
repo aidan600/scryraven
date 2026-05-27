@@ -1,7 +1,8 @@
-"""Headless CLI for the ProPlex research pipeline.
+"""Headless CLI for the ScryRaven research pipeline.
 
 Usage
 -----
+    python -m scryraven "your query here" [--mode Fast|Balanced|Deep] [options]
     python -m proplex "your query here" [--mode Fast|Balanced|Deep] [options]
 
 The CLI calls run_pipeline() directly — no Streamlit, no browser.
@@ -15,6 +16,9 @@ Environment variables (same as the Streamlit app):
     EXA_API_KEY             required when Exa is an active provider
     BRAVE_API_KEY           required when Brave is an active provider
     OPENROUTER_API_KEY      optional (OpenRouter provider)
+
+ScryRaven model configuration aliases are preferred. Legacy PROPLEX_* aliases
+remain supported as a compatibility layer.
 """
 
 from __future__ import annotations
@@ -63,6 +67,7 @@ from core.retrieval import (  # noqa: E402
 )
 from core.run_config import RunConfig, RunDeps  # noqa: E402
 from core.text_utils import clean_json_response  # noqa: E402
+from proplex.env_aliases import get_env_alias  # noqa: E402
 
 OUTPUT_DIR = _ROOT / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -83,8 +88,12 @@ def _build_logger(verbose: bool) -> logging.Logger:
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        prog="python -m proplex",
-        description="Run the ProPlex research pipeline headlessly.",
+        prog="python -m scryraven",
+        description=(
+            "Run the ScryRaven research pipeline headlessly. "
+            "Legacy entrypoint python -m proplex remains supported."
+        ),
+        epilog="Compatibility: python -m proplex remains supported for existing scripts.",
     )
     p.add_argument("query", help="Research query / topic")
     p.add_argument(
@@ -95,41 +104,49 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument(
         "--fast-provider",
-        default=os.getenv("PROPLEX_FAST_PROVIDER", "OpenAI"),
+        default=get_env_alias("SCRYRAVEN_FAST_PROVIDER", "PROPLEX_FAST_PROVIDER", "OpenAI"),
         metavar="PROVIDER",
         help="Fast-model provider (OpenAI | OpenRouter | Local (LM Studio))",
     )
     p.add_argument(
         "--fast-model",
-        default=os.getenv("PROPLEX_FAST_MODEL", "gpt-5.4-mini"),
+        default=get_env_alias("SCRYRAVEN_FAST_MODEL", "PROPLEX_FAST_MODEL", "gpt-5.4-mini"),
         metavar="MODEL",
         help="Fast model name",
     )
     p.add_argument(
         "--smart-provider",
-        default=os.getenv("PROPLEX_SMART_PROVIDER", "OpenAI"),
+        default=get_env_alias("SCRYRAVEN_SMART_PROVIDER", "PROPLEX_SMART_PROVIDER", "OpenAI"),
         metavar="PROVIDER",
         help="Smart-model provider",
     )
     p.add_argument(
         "--smart-model",
-        default=os.getenv("PROPLEX_SMART_MODEL", "gpt-5.4"),
+        default=get_env_alias("SCRYRAVEN_SMART_MODEL", "PROPLEX_SMART_MODEL", "gpt-5.4"),
         metavar="MODEL",
         help="Smart model name",
     )
     p.add_argument(
         "--embed-provider",
-        default=os.getenv("PROPLEX_EMBED_PROVIDER", "OpenAI"),
+        default=get_env_alias("SCRYRAVEN_EMBED_PROVIDER", "PROPLEX_EMBED_PROVIDER", "OpenAI"),
         metavar="PROVIDER",
     )
     p.add_argument(
         "--embed-model",
-        default=os.getenv("PROPLEX_EMBED_MODEL", "text-embedding-3-small"),
+        default=get_env_alias(
+            "SCRYRAVEN_EMBED_MODEL",
+            "PROPLEX_EMBED_MODEL",
+            "text-embedding-3-small",
+        ),
         metavar="MODEL",
     )
     p.add_argument(
         "--local-url",
-        default=os.getenv("PROPLEX_LOCAL_URL", "http://localhost:1234/v1"),
+        default=get_env_alias(
+            "SCRYRAVEN_LOCAL_URL",
+            "PROPLEX_LOCAL_URL",
+            "http://localhost:1234/v1",
+        ),
         metavar="URL",
         help="Base URL for local LM Studio server",
     )

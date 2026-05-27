@@ -9,10 +9,10 @@ The public project name is **ScryRaven**. The GitHub repository is
 `aidan600/scryraven`, and the preferred local path is `C:\Users\aidan\ScryRaven`.
 
 Earlier private or working names included ProPlex, FauxPlex, and FauxPlexity.
-Historical docs may continue to use those names. Developer-facing package, CLI,
-environment, database, and Streamlit state names may remain `proplex`,
-`python -m proplex`, `PROPLEX_*`, `proplex.db`, and `proplex_*` until a
-dedicated compatibility rename phase.
+Historical docs may continue to use those names. The public CLI module is
+`python -m scryraven`; `proplex`, `python -m proplex`, `PROPLEX_*`,
+`proplex.db`, and `proplex_*` remain compatibility names unless a later hard
+rename phase explicitly changes them.
 
 ## Recent Phase State
 
@@ -37,8 +37,8 @@ AG-70C split the current official/current validation state:
    review.
 3. AG-71B / AG-71C: only open conditional follow-up repair phases if AG-71A
    identifies a separately scoped repair surface.
-4. SCRY-02: continue public-name cleanup when compatibility risk is understood
-   and the active rename surface is explicitly scoped.
+4. SCRY-02: introduce public CLI/env aliases while preserving `proplex`
+   compatibility surfaces.
 
 AG-71A is diagnostic. It should classify where the IRS official/current
 authority acquisition problem lives and should not repair behavior unless a
