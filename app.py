@@ -31,6 +31,7 @@ from core.retrieval import (
 )
 from core.storage import configure_storage, delete_session, rename_session, save_session
 from core.text_utils import clean_json_response
+from proplex.env_aliases import pop_env_alias
 from ui.context import UIContext
 from ui.storage_cache import invalidate_cached_history, load_history
 from ui.theme import STREAMLIT_CUSTOM_CSS
@@ -62,8 +63,8 @@ if "is_running" not in st.session_state:
     st.session_state.is_running = False
 
 # --- Optional env seed for scripted / eval-style runs (headless CLI planned; no subprocess wrapper) ---
-_cli_q = os.environ.pop("PROPLEX_RUN_QUERY", "").strip()
-_cli_mode = os.environ.pop("PROPLEX_RUN_MODE", "").strip() or "Balanced"
+_cli_q = pop_env_alias("SCRYRAVEN_RUN_QUERY", "PROPLEX_RUN_QUERY").strip()
+_cli_mode = pop_env_alias("SCRYRAVEN_RUN_MODE", "PROPLEX_RUN_MODE").strip() or "Balanced"
 if _cli_q:
     st.session_state["research_topic_ta"] = _cli_q
     if _cli_mode in ("Fast", "Balanced", "Deep"):

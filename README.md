@@ -102,11 +102,21 @@ http://localhost:8501
 
 ### Headless CLI
 
-The repository includes a Python CLI entrypoint, but the public command/module naming is pending a follow-up cleanup. Until then, treat the CLI as a developer surface rather than polished public API.
+```powershell
+python -m scryraven "your query" --mode Balanced
+```
+
+The legacy compatibility entrypoint remains available:
+
+```powershell
+python -m proplex "your query" --mode Balanced
+```
+
+Use `python -m scryraven --help` for all CLI options. `python -m proplex --help` is preserved for existing scripts.
 
 ### Scripted Streamlit Launch
 
-The app also supports scripted local launch through environment variables. Public-facing variable names may be cleaned up in a future rename pass.
+The app also supports scripted local launch through environment variables.
 
 ```powershell
 $env:SCRYRAVEN_RUN_QUERY = "your query"
@@ -114,7 +124,23 @@ $env:SCRYRAVEN_RUN_MODE = "Balanced"
 streamlit run app.py
 ```
 
-If these variables are not yet wired in your current snapshot, use the Web UI directly.
+Legacy `PROPLEX_RUN_QUERY` and `PROPLEX_RUN_MODE` aliases remain temporarily supported when the `SCRYRAVEN_*` names are absent.
+
+### CLI Model Environment
+
+The public CLI configuration environment variables are:
+
+```powershell
+$env:SCRYRAVEN_FAST_PROVIDER = "OpenAI"
+$env:SCRYRAVEN_FAST_MODEL = "gpt-5.4-mini"
+$env:SCRYRAVEN_SMART_PROVIDER = "OpenAI"
+$env:SCRYRAVEN_SMART_MODEL = "gpt-5.4"
+$env:SCRYRAVEN_EMBED_PROVIDER = "OpenAI"
+$env:SCRYRAVEN_EMBED_MODEL = "text-embedding-3-small"
+$env:SCRYRAVEN_LOCAL_URL = "http://localhost:1234/v1"
+```
+
+Legacy `PROPLEX_*` aliases for those values remain temporarily supported as fallbacks. If both names are set, `SCRYRAVEN_*` wins.
 
 ## Developer Commands
 
@@ -211,6 +237,6 @@ Streamlit **Settings → Theme** light/dark support is supplemented by styles in
 ## Notes
 
 * `.env`, local output artifacts, cache directories, and Python bytecode are git-ignored.
-* Public-facing naming is still being cleaned up after the ScryRaven snapshot.
+* The `proplex` package and `python -m proplex` remain as compatibility layers while public entrypoints move to ScryRaven naming.
 * Historical architecture and validation notes may mention older internal names.
 * This project is a prototype. Expect rough edges.

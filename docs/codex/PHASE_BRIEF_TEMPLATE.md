@@ -19,8 +19,8 @@ Naming note:
 - ScryRaven is the public project name for this repository.
 - Historical docs may still mention earlier working names such as ProPlex,
   FauxPlex, and FauxPlexity.
-- Internal package, CLI, and environment names may remain `proplex` and
-  `PROPLEX_*` until a dedicated rename phase.
+- The `proplex` package, `python -m proplex`, and `PROPLEX_*` environment names
+  remain compatibility surfaces unless a phase explicitly removes them.
 
 Start state:
 - Start from updated main.

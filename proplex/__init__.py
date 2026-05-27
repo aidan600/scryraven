@@ -1,1 +1,1 @@
-"""proplex — headless CLI package for the ProPlex research pipeline."""
+"""Legacy compatibility package for the ScryRaven research pipeline."""
