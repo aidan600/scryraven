@@ -1,11 +1,16 @@
-# Architecture Groove / Prove Codex Playbook
+# ScryRaven Architecture Groove / Prove Codex Playbook
 
 Status: Recommended repo-tracked playbook
 Suggested repo path: `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md`
 
 ## Purpose
 
-This playbook contains repeated workflow rules for ProPlex/FauxPlex Codex architecture phases.
+This playbook contains repeated workflow rules for ScryRaven Codex architecture phases.
+
+ScryRaven is the public project name for this repository. Historical docs may
+still mention earlier working names such as ProPlex, FauxPlex, and FauxPlexity;
+internal package, CLI, and environment names may also remain `proplex` and
+`PROPLEX_*` until a dedicated rename phase.
 
 Future phase prompts should be short and should reference this playbook instead of re-stating the whole operating manual.
 
@@ -64,7 +69,7 @@ Codex must not:
 - reset,
 - clean destructively,
 - alter `main`,
-- run live ProPlex/provider/model/search calls,
+- run live ScryRaven/proplex provider/model/search calls,
 - access secrets/env/API keys,
 - inspect DBs/private logs/generated outputs/caches/virtualenvs unless explicitly scoped,
 - change protected surfaces outside phase scope.

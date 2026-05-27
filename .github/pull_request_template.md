@@ -114,7 +114,7 @@ Results:
 
 
 
-\- \[ ] No live ProPlex queries
+\- \[ ] No live ScryRaven/proplex queries
 
 \- \[ ] No provider/model/search API calls
 
