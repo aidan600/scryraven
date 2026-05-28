@@ -12,6 +12,9 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from core.allocation_result_candidate_custody import (
+    ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY,
+)
 from core.authority_candidate_passport import (
     AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
 )
@@ -119,6 +122,7 @@ def build_official_canonical_recovery_visibility_export(
     provider_search_allocation_execution = (
         _provider_search_allocation_execution_payload(trace)
     )
+    allocation_result_custody = _allocation_result_candidate_custody_payload(trace)
 
     admission_considered = _bool_or_unknown(admission.get("admission_considered"))
     admission_eligible = _bool_or_unknown(admission.get("admission_eligible"))
@@ -558,6 +562,44 @@ def build_official_canonical_recovery_visibility_export(
         "provider_search_allocation_execution_trace": (
             provider_search_allocation_execution or NOT_OBSERVABLE
         ),
+        "allocation_result_candidate_custody_available": bool(
+            allocation_result_custody
+        ),
+        "allocation_result_admitted_result_count": (
+            _first_known_int(allocation_result_custody.get("admitted_result_count"))
+            if allocation_result_custody
+            else UNKNOWN
+        ),
+        "allocation_result_non_represented_result_count": (
+            _first_known_int(
+                allocation_result_custody.get("non_represented_result_count")
+            )
+            if allocation_result_custody
+            else UNKNOWN
+        ),
+        "allocation_result_non_representation_reasons": (
+            _safe_list(allocation_result_custody.get("non_representation_reasons"))
+            if allocation_result_custody
+            else NOT_OBSERVABLE
+        ),
+        "allocation_result_source_obligation_satisfied": (
+            allocation_result_custody.get("source_obligation_satisfied")
+            if allocation_result_custody
+            else UNKNOWN
+        ),
+        "allocation_result_final_evidence_changed": (
+            allocation_result_custody.get("final_evidence_changed")
+            if allocation_result_custody
+            else UNKNOWN
+        ),
+        "allocation_result_final_citation_changed": (
+            allocation_result_custody.get("final_citation_changed")
+            if allocation_result_custody
+            else UNKNOWN
+        ),
+        "allocation_result_candidate_custody": (
+            allocation_result_custody or NOT_OBSERVABLE
+        ),
         "unknown_fields": [],
         "behavior_changed": False,
     }
@@ -793,6 +835,14 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "controller_recovery_old_path_subordinated",
         "provider_search_allocation_trace",
         "provider_search_allocation_execution_trace",
+        "allocation_result_candidate_custody_available",
+        "allocation_result_admitted_result_count",
+        "allocation_result_non_represented_result_count",
+        "allocation_result_non_representation_reasons",
+        "allocation_result_source_obligation_satisfied",
+        "allocation_result_final_evidence_changed",
+        "allocation_result_final_citation_changed",
+        "allocation_result_candidate_custody",
         "unknown_fields",
         "behavior_changed",
     ):
@@ -925,6 +975,7 @@ def _provider_search_allocation_execution_payload(
         "query_count",
         "result_count",
         "new_url_count",
+        "allocation_result_summary_count",
         "provider_policy_unchanged",
         "provider_selection_unchanged",
         "search_depth_policy_unchanged",
@@ -949,6 +1000,17 @@ def _provider_search_allocation_execution_payload(
         else:
             exported[key] = _optional_text(value)
     return exported
+
+
+def _allocation_result_candidate_custody_payload(
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    packet = trace.get(ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY)
+    if isinstance(packet, Mapping):
+        payload = packet.get("AllocationResultCandidateCustody")
+        if isinstance(payload, Mapping):
+            return _safe_mapping(payload)
+    return {}
 
 
 def _controller_evidence_ledger_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
