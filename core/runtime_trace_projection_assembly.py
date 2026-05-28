@@ -250,6 +250,27 @@ def attach_passive_runtime_projection_traces(
             "Non-fatal controller evidence ledger custody omitted: %s",
             exc,
         )
+    try:
+        if CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY not in execution_trace:
+            return execution_trace
+        visibility_trace = build_official_canonical_recovery_visibility_trace(
+            execution_trace
+        )
+        execution_trace[OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_TRACE_KEY] = (
+            visibility_trace
+        )
+        checkpoint_packet = execution_trace.get(
+            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
+        )
+        if isinstance(checkpoint_packet, dict):
+            checkpoint_packet[OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_TRACE_KEY] = (
+                visibility_trace
+            )
+    except Exception as exc:
+        active_logger.warning(
+            "Non-fatal official/canonical visibility ledger refresh omitted: %s",
+            exc,
+        )
     return execution_trace
 
 
