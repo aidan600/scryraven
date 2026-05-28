@@ -232,4 +232,5 @@ def test_ag52a_does_not_touch_closed_protected_surfaces_or_source_specific_rules
     }
     assert all(term not in visibility_source for term in forbidden_terms)
     assert all(term not in source_class_source for term in forbidden_terms)
-    assert "apply_recovered_evidence_visibility_boundary" in orchestrator_source
+    assert "apply_recovered_evidence_visibility_boundary" not in orchestrator_source
+    assert "apply_controller_recovered_evidence_visibility" in orchestrator_source
