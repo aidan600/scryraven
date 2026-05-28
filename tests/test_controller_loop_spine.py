@@ -22,6 +22,9 @@ from core.controller_loop_spine import (
 _ROOT = Path(__file__).resolve().parents[1]
 _SPINE_PATH = _ROOT / "core" / "controller_loop_spine.py"
 _ORCHESTRATOR_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_SOURCE_CLASS_RECOVERY_RUNNER_PATH = (
+    _ROOT / "core" / "source_class_recovery_runner.py"
+)
 _RETRIEVE_TARGETED = "retrieve_targeted"
 
 
@@ -742,11 +745,23 @@ def test_pipeline_orchestrator_does_not_recompute_spine_promotion_state() -> Non
 
 
 def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> None:
-    tree = ast.parse(_ORCHESTRATOR_PATH.read_text(encoding="utf-8"))
-    parent_by_node: dict[ast.AST, ast.AST] = {}
-    for parent in ast.walk(tree):
-        for child in ast.iter_child_nodes(parent):
-            parent_by_node[child] = parent
+    orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    runner_source = _SOURCE_CLASS_RECOVERY_RUNNER_PATH.read_text(encoding="utf-8")
+    orchestrator_tree = ast.parse(orchestrator_source)
+    runner_tree = ast.parse(runner_source)
+
+    def parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
+        parent_by_node: dict[ast.AST, ast.AST] = {}
+        for parent in ast.walk(tree):
+            for child in ast.iter_child_nodes(parent):
+                parent_by_node[child] = parent
+        return parent_by_node
+
+    orchestrator_parent_by_node = parent_map(orchestrator_tree)
+    runner_parent_by_node = parent_map(runner_tree)
+
+    assert "execute_source_class_recovery_action(" not in orchestrator_source
+    assert orchestrator_source.count("run_source_class_recovery_dispatch(") == 1
 
     def call_name(node: ast.Call) -> str | None:
         if isinstance(node.func, ast.Name):
@@ -755,7 +770,10 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
             return node.func.attr
         return None
 
-    def nearest_enclosing_if(node: ast.AST) -> ast.If | None:
+    def nearest_enclosing_if(
+        node: ast.AST,
+        parent_by_node: dict[ast.AST, ast.AST],
+    ) -> ast.If | None:
         parent = parent_by_node.get(node)
         while parent is not None:
             if isinstance(parent, ast.If):
@@ -770,6 +788,9 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
             left_is_authorization = (
                 isinstance(node.left, ast.Name)
                 and node.left.id == "authorized_spine_action"
+            ) or (
+                isinstance(node.left, ast.Attribute)
+                and node.left.attr == "authorized_spine_action"
             )
             comparator_is_action = any(
                 isinstance(comparator, ast.Name)
@@ -780,31 +801,38 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
                 return True
         return False
 
-    required_guards = {
-        "execute_source_class_recovery_action": "RECOVER_MISSING_SOURCE_CLASS",
-        "execute_conflict_resolution_action": "RESOLVE_CONFLICT",
-    }
-
-    guarded_calls: dict[str, bool] = {}
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        name = call_name(node)
-        if name not in required_guards:
-            continue
-        enclosing_if = nearest_enclosing_if(node)
-        guarded_calls[name] = bool(
-            enclosing_if
-            and is_authorized_dispatch_test(
-                enclosing_if.test,
-                required_guards[name],
+    def guarded_calls_for(
+        tree: ast.AST,
+        parent_by_node: dict[ast.AST, ast.AST],
+        required_guards: dict[str, str],
+    ) -> dict[str, bool]:
+        guarded_calls: dict[str, bool] = {}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = call_name(node)
+            if name not in required_guards:
+                continue
+            enclosing_if = nearest_enclosing_if(node, parent_by_node)
+            guarded_calls[name] = bool(
+                enclosing_if
+                and is_authorized_dispatch_test(
+                    enclosing_if.test,
+                    required_guards[name],
+                )
             )
-        )
+        return guarded_calls
 
-    assert guarded_calls == {
-        "execute_source_class_recovery_action": True,
-        "execute_conflict_resolution_action": True,
-    }
+    assert guarded_calls_for(
+        orchestrator_tree,
+        orchestrator_parent_by_node,
+        {"execute_conflict_resolution_action": "RESOLVE_CONFLICT"},
+    ) == {"execute_conflict_resolution_action": True}
+    assert guarded_calls_for(
+        runner_tree,
+        runner_parent_by_node,
+        {"execute_source_class_recovery_action": "RECOVER_MISSING_SOURCE_CLASS"},
+    ) == {"execute_source_class_recovery_action": True}
 
 
 def test_pipeline_orchestrator_does_not_authorize_retrieve_targeted_dispatch() -> None:
