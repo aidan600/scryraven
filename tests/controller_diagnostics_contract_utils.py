@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 ALLOWED_CONTROLLER_DIAGNOSTICS_TRACE_KEY = "controller_diagnostics"
-ALLOWED_FUTURE_TRACE_KEY_DELTA = {ALLOWED_CONTROLLER_DIAGNOSTICS_TRACE_KEY}
+ALLOWED_CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY = "controller_evidence_ledger"
+ALLOWED_FUTURE_TRACE_KEY_DELTA = {
+    ALLOWED_CONTROLLER_DIAGNOSTICS_TRACE_KEY,
+    ALLOWED_CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
+}
 
 _PAYLOAD_KEY_MARKERS = (
     "controller",
@@ -19,10 +23,7 @@ def disallowed_payload_keys(
 ) -> set[str]:
     disallowed: set[str] = set()
     for key in mapping:
-        if (
-            allow_controller_diagnostics_trace
-            and key == ALLOWED_CONTROLLER_DIAGNOSTICS_TRACE_KEY
-        ):
+        if allow_controller_diagnostics_trace and key in ALLOWED_FUTURE_TRACE_KEY_DELTA:
             continue
         if any(marker in key for marker in _PAYLOAD_KEY_MARKERS):
             disallowed.add(key)

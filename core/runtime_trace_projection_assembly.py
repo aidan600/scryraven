@@ -8,6 +8,10 @@ from core.authority_candidate_passport import (
     AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
     build_authority_candidate_passport_trace,
 )
+from core.controller_evidence_ledger import (
+    CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
+    build_controller_evidence_ledger_trace,
+)
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
 )
@@ -227,6 +231,23 @@ def attach_passive_runtime_projection_traces(
     except Exception as exc:
         active_logger.warning(
             "Non-fatal official/canonical recovery visibility export omitted: %s",
+            exc,
+        )
+    try:
+        ledger_trace = build_controller_evidence_ledger_trace(
+            execution_trace,
+            final_top_evidence=final_top_evidence,
+            surface_visibility=surface_visibility,
+        )
+        execution_trace[CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY] = ledger_trace
+        checkpoint_packet = execution_trace.get(
+            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
+        )
+        if isinstance(checkpoint_packet, dict):
+            checkpoint_packet[CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY] = ledger_trace
+    except Exception as exc:
+        active_logger.warning(
+            "Non-fatal controller evidence ledger custody omitted: %s",
             exc,
         )
     return execution_trace
