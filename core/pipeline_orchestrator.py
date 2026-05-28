@@ -19,6 +19,9 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
+from core.allocation_candidate_selection_activation import (
+    allocation_result_candidates_for_existing_selection_corridor,
+)
 from core.anchor_resolution import (
     build_shadow_anchor_packet,
     format_anchor_context_for_researcher,
@@ -5346,6 +5349,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             for passage in all_passages
             if passage.get("retrieval_stage") == "source_class_recovery"
         ]
+        recovered_passages.extend(
+            allocation_result_candidates_for_existing_selection_corridor(
+                active_source_class_recovery_lifecycle
+            )
+        )
         bounded, decision = apply_recovered_evidence_visibility_boundary(
             final_top_evidence=final_evidence,
             recovered_passages=recovered_passages,
