@@ -15,6 +15,7 @@ from typing import Any
 from core.authority_candidate_passport import (
     AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
 )
+from core.controller_evidence_ledger import CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY
 from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
 )
@@ -36,6 +37,9 @@ OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_SCHEMA_VERSION = (
 )
 OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE = (
     "Official / Canonical Source Recovery Diagnostics"
+)
+LEDGER_GATED_VISIBILITY_CONSUMER_SUBORDINATION_SCHEMA_VERSION = (
+    "ledger_gated_visibility_consumer_subordination_ag74c_v1"
 )
 
 UNKNOWN = "unknown"
@@ -98,6 +102,8 @@ def build_official_canonical_recovery_visibility_export(
     lifecycle_candidate_fit = _authority_lifecycle_candidate_fit(trace)
     authority_candidate_passport = _authority_candidate_passport_payload(trace)
     provider_result_bridge = _provider_result_bridge_payload(trace)
+    controller_evidence_ledger = _controller_evidence_ledger_payload(trace)
+    ledger_custody = _ledger_custody_payload(controller_evidence_ledger)
 
     admission_considered = _bool_or_unknown(admission.get("admission_considered"))
     admission_eligible = _bool_or_unknown(admission.get("admission_eligible"))
@@ -216,6 +222,15 @@ def build_official_canonical_recovery_visibility_export(
         trace.get("source_survival_final_citation_official_or_canonical_count"),
         survival.get("final_citation_official_or_canonical_count"),
     )
+    final_evidence_observed = _count_observed(final_evidence_count)
+    final_citation_observed = _count_observed(final_citation_count)
+    ledger_custody_status = _optional_text(ledger_custody.get("status"))
+    ledger_custody_complete = _bool_or_unknown(ledger_custody.get("custody_complete"))
+    ledger_legacy_gap_types = _safe_list(ledger_custody.get("legacy_gap_types"))
+    legacy_gap_observed = _ledger_legacy_gap_observed(
+        custody_status=ledger_custody_status,
+        legacy_gap_types=ledger_legacy_gap_types,
+    )
 
     recovery_query_previews = _recovery_query_previews(trace, admission)
     recovery_query_count = _first_known_int(
@@ -283,6 +298,50 @@ def build_official_canonical_recovery_visibility_export(
         ),
         "final_evidence_official_or_canonical_count": final_evidence_count,
         "final_citation_official_or_canonical_count": final_citation_count,
+        "final_evidence_observed": final_evidence_observed,
+        "final_citation_observed": final_citation_observed,
+        "ledger_gated_visibility_consumer_subordination_schema_version": (
+            LEDGER_GATED_VISIBILITY_CONSUMER_SUBORDINATION_SCHEMA_VERSION
+        ),
+        "controller_evidence_ledger_available": bool(controller_evidence_ledger),
+        "controller_evidence_ledger_schema_version": (
+            _optional_text(controller_evidence_ledger.get("schema_version"))
+            if controller_evidence_ledger
+            else NOT_OBSERVABLE
+        ),
+        "final_evidence_citation_custody_owner": (
+            _optional_text(ledger_custody.get("owner"))
+            if ledger_custody
+            else NOT_OBSERVABLE
+        ),
+        "final_evidence_citation_custody_status": (
+            ledger_custody_status if ledger_custody else NOT_OBSERVABLE
+        ),
+        "final_evidence_citation_custody_complete": (
+            ledger_custody_complete if ledger_custody else UNKNOWN
+        ),
+        "ledger_final_evidence_observed_count": (
+            _first_known_int(ledger_custody.get("final_evidence_observed_count"))
+            if ledger_custody
+            else UNKNOWN
+        ),
+        "ledger_final_citation_observed_count": (
+            _first_known_int(ledger_custody.get("final_citation_observed_count"))
+            if ledger_custody
+            else UNKNOWN
+        ),
+        "legacy_gap_observed": legacy_gap_observed,
+        "ledger_legacy_gap_types": (
+            ledger_legacy_gap_types if ledger_custody else NOT_OBSERVABLE
+        ),
+        "aggregate_success_counts_are_authoritative_for_custody": False,
+        "aggregate_success_custody_interpretation": (
+            _aggregate_success_custody_interpretation(
+                custody_status=ledger_custody_status,
+                custody_complete=ledger_custody_complete,
+                ledger_available=bool(controller_evidence_ledger),
+            )
+        ),
         "candidate_return_visibility_status": _count_visibility_status(
             recovered_result_count
         ),
@@ -466,6 +525,9 @@ def build_official_canonical_recovery_visibility_export(
             candidate_visibility_export_status=candidate_visibility_export_status,
             zero_candidate_blocker_kind=zero_candidate_blocker_kind,
         ),
+        "next_failure_layer_custody_interpretation": (
+            "recovery_lane_observation_not_controller_custody_status"
+        ),
         "unknown_fields": [],
         "behavior_changed": False,
     }
@@ -631,6 +693,19 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "final_selected_authority_evidence_count",
         "final_evidence_official_or_canonical_count",
         "final_citation_official_or_canonical_count",
+        "final_evidence_observed",
+        "final_citation_observed",
+        "controller_evidence_ledger_available",
+        "controller_evidence_ledger_schema_version",
+        "final_evidence_citation_custody_owner",
+        "final_evidence_citation_custody_status",
+        "final_evidence_citation_custody_complete",
+        "ledger_final_evidence_observed_count",
+        "ledger_final_citation_observed_count",
+        "legacy_gap_observed",
+        "ledger_legacy_gap_types",
+        "aggregate_success_counts_are_authoritative_for_custody",
+        "aggregate_success_custody_interpretation",
         "candidate_return_visibility_status",
         "candidate_return_status",
         "zero_candidate_blocker",
@@ -673,6 +748,7 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "final_citation_survival_status",
         "likely_next_failure_layer",
         "next_failure_layer",
+        "next_failure_layer_custody_interpretation",
         "unknown_fields",
         "behavior_changed",
     ):
@@ -732,6 +808,23 @@ def _provider_result_bridge_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
         payload = packet.get("ProviderResultRepresentedCandidateBridge")
         if isinstance(payload, Mapping):
             return _safe_mapping(payload)
+    return {}
+
+
+def _controller_evidence_ledger_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
+    packet = trace.get(CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY)
+    if isinstance(packet, Mapping):
+        payload = packet.get("ControllerEvidenceLedger")
+        if isinstance(payload, Mapping):
+            return _safe_mapping(payload)
+        return _safe_mapping(packet)
+    return {}
+
+
+def _ledger_custody_payload(ledger: Mapping[str, Any]) -> dict[str, Any]:
+    payload = ledger.get("final_evidence_citation_custody")
+    if isinstance(payload, Mapping):
+        return _safe_mapping(payload)
     return {}
 
 
@@ -1032,6 +1125,56 @@ def _count_visibility_status(value: Any) -> str:
     if _is_zero(value):
         return "not_visible"
     return NOT_OBSERVABLE
+
+
+def _count_observed(value: Any) -> bool | str:
+    if value == UNKNOWN:
+        return UNKNOWN
+    if _positive_int(value):
+        return True
+    if _is_zero(value):
+        return False
+    return UNKNOWN
+
+
+def _ledger_legacy_gap_observed(
+    *,
+    custody_status: Any,
+    legacy_gap_types: Any,
+) -> bool | str:
+    status = _optional_text(custody_status)
+    if status == NOT_OBSERVABLE:
+        return UNKNOWN
+    if status == "legacy_gap_observed":
+        return True
+    if isinstance(legacy_gap_types, list) and legacy_gap_types:
+        return True
+    if status in {
+        "controller_complete",
+        "missing_controller_disposition",
+        "not_observed",
+    }:
+        return False
+    return UNKNOWN
+
+
+def _aggregate_success_custody_interpretation(
+    *,
+    custody_status: Any,
+    custody_complete: Any,
+    ledger_available: bool,
+) -> str:
+    if not ledger_available:
+        return "requires_controller_evidence_ledger"
+    if custody_status == "controller_complete" and custody_complete is True:
+        return "custody_complete_by_controller_evidence_ledger"
+    if custody_status == "legacy_gap_observed":
+        return "legacy_gap_observed_counts_remain_observational"
+    if custody_status == "missing_controller_disposition":
+        return "missing_controller_disposition_counts_remain_observational"
+    if custody_status == "not_observed":
+        return "no_final_custody_surface_observed"
+    return "observational_counts_subordinate_to_controller_evidence_ledger"
 
 
 def _candidate_return_status(
