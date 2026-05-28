@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Mapping
 from typing import Any
 
+from core.authority_candidate_passport import (
+    AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
+    build_authority_candidate_passport_trace,
+)
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
 )
@@ -38,6 +43,9 @@ _LOGGER = logging.getLogger(__name__)
 def attach_passive_runtime_projection_traces(
     execution_trace: dict[str, Any],
     *,
+    recovered_passages: Iterable[Mapping[str, Any]] | None = None,
+    final_top_evidence: Iterable[Mapping[str, Any]] | None = None,
+    surface_visibility: Mapping[str, Any] | None = None,
     logger: logging.Logger | None = None,
 ) -> dict[str, Any]:
     """Attach passive controller projections to an assembled runtime trace."""
@@ -157,6 +165,26 @@ def attach_passive_runtime_projection_traces(
     except Exception as exc:
         active_logger.warning(
             "Non-fatal official/canonical admission trace mirror omitted: %s",
+            exc,
+        )
+    try:
+        passport_trace = build_authority_candidate_passport_trace(
+            lifecycle_trace=execution_trace,
+            recovered_passages=recovered_passages,
+            final_top_evidence=final_top_evidence,
+            surface_visibility=surface_visibility,
+        )
+        execution_trace[AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY] = passport_trace
+        checkpoint_packet = execution_trace.get(
+            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
+        )
+        if isinstance(checkpoint_packet, dict):
+            checkpoint_packet[AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY] = (
+                passport_trace
+            )
+    except Exception as exc:
+        active_logger.warning(
+            "Non-fatal authority-candidate passport projection omitted: %s",
             exc,
         )
     try:

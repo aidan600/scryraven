@@ -17,6 +17,9 @@ AUTHORITY_CANDIDATE_PASSPORT_SCHEMA_VERSION = (
     "authority_candidate_passport_ag73a_v1"
 )
 AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY = "authority_candidate_passport_projection"
+AUTHORITY_CANDIDATE_PASSPORT_TRACE_SCHEMA_VERSION = (
+    "authority_candidate_passport_runtime_visibility_ag73b_v1"
+)
 
 UNKNOWN = "unknown"
 NOT_OBSERVABLE = "not_observable"
@@ -185,6 +188,31 @@ def build_authority_candidate_passport_projection(
             "complete" if not silent_drop_ids else "silent_drop_detected"
         ),
         "behavior_changed": False,
+    }
+
+
+def build_authority_candidate_passport_trace(
+    *,
+    lifecycle_trace: Mapping[str, Any] | None,
+    recovered_passages: Iterable[Mapping[str, Any]] | None = None,
+    final_top_evidence: Iterable[Mapping[str, Any]] | None = None,
+    visibility_export: Mapping[str, Any] | None = None,
+    surface_visibility: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a runtime trace envelope for the passive passport projection."""
+
+    return {
+        "schema_version": AUTHORITY_CANDIDATE_PASSPORT_TRACE_SCHEMA_VERSION,
+        "trace_mode": "passive_runtime_visibility",
+        "AuthorityCandidatePassportProjection": (
+            build_authority_candidate_passport_projection(
+                lifecycle_trace=lifecycle_trace,
+                recovered_passages=recovered_passages,
+                final_top_evidence=final_top_evidence,
+                visibility_export=visibility_export,
+                surface_visibility=surface_visibility,
+            )
+        ),
     }
 
 
@@ -1110,9 +1138,11 @@ def _is_sensitive_key(key: Any) -> bool:
 
 __all__ = [
     "AUTHORITY_CANDIDATE_PASSPORT_SCHEMA_VERSION",
+    "AUTHORITY_CANDIDATE_PASSPORT_TRACE_SCHEMA_VERSION",
     "AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY",
     "NOT_OBSERVABLE",
     "UNKNOWN",
     "assert_authority_candidate_passport_integrity",
     "build_authority_candidate_passport_projection",
+    "build_authority_candidate_passport_trace",
 ]
