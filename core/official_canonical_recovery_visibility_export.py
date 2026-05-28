@@ -17,6 +17,7 @@ from core.authority_candidate_passport import (
 )
 from core.controller_evidence_ledger import CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY
 from core.controller_provider_search_allocation import (
+    PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
 )
 from core.controller_recovery_decision import (
@@ -115,6 +116,9 @@ def build_official_canonical_recovery_visibility_export(
     controller_evidence_ledger = _controller_evidence_ledger_payload(trace)
     ledger_custody = _ledger_custody_payload(controller_evidence_ledger)
     provider_search_allocation = _provider_search_allocation_payload(trace)
+    provider_search_allocation_execution = (
+        _provider_search_allocation_execution_payload(trace)
+    )
 
     admission_considered = _bool_or_unknown(admission.get("admission_considered"))
     admission_eligible = _bool_or_unknown(admission.get("admission_eligible"))
@@ -551,6 +555,9 @@ def build_official_canonical_recovery_visibility_export(
         "provider_search_allocation_trace": (
             provider_search_allocation or NOT_OBSERVABLE
         ),
+        "provider_search_allocation_execution_trace": (
+            provider_search_allocation_execution or NOT_OBSERVABLE
+        ),
         "unknown_fields": [],
         "behavior_changed": False,
     }
@@ -785,6 +792,7 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "controller_recovery_provider_search_review_requested",
         "controller_recovery_old_path_subordinated",
         "provider_search_allocation_trace",
+        "provider_search_allocation_execution_trace",
         "unknown_fields",
         "behavior_changed",
     ):
@@ -869,12 +877,67 @@ def _provider_search_allocation_payload(trace: Mapping[str, Any]) -> dict[str, A
         "provider_selection_unchanged",
         "search_depth_policy_unchanged",
         "query_strategy_unchanged",
+        "source_constraints_unchanged",
         "new_provider_added",
         "provider_swap",
         "unbounded_depth",
+        "linkup_escalation_added",
         "live_validation_used",
         "final_answer_behavior_unchanged",
         "citation_behavior_unchanged",
+    )
+    exported: dict[str, Any] = {}
+    for key in allowed_keys:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            exported[key] = value
+        elif isinstance(value, (int, float)):
+            exported[key] = value
+        else:
+            exported[key] = _optional_text(value)
+    return exported
+
+
+def _provider_search_allocation_execution_payload(
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    packet = trace.get(PROVIDER_SEARCH_ALLOCATION_TRACE_KEY)
+    if not isinstance(packet, Mapping):
+        return {}
+    payload = packet.get(PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY)
+    if not isinstance(payload, Mapping):
+        payload = packet.get("ProviderSearchAllocationExecution")
+    if not isinstance(payload, Mapping):
+        return {}
+    allowed_keys = (
+        "schema_version",
+        "allocation_owner",
+        "mechanical_owner",
+        "authorized_decision",
+        "authorized_executor_action",
+        "bounded_profile",
+        "execution_mode",
+        "executed",
+        "execution_attempted",
+        "unexecutable_reason",
+        "provider_role",
+        "search_depth",
+        "query_count",
+        "result_count",
+        "new_url_count",
+        "provider_policy_unchanged",
+        "provider_selection_unchanged",
+        "search_depth_policy_unchanged",
+        "query_strategy_unchanged",
+        "source_constraints_unchanged",
+        "new_provider_added",
+        "provider_swap",
+        "unbounded_depth",
+        "linkup_escalation_added",
+        "live_validation_used",
+        "final_answer_behavior_unchanged",
+        "citation_behavior_unchanged",
+        "raw_payload_exposed",
     )
     exported: dict[str, Any] = {}
     for key in allowed_keys:

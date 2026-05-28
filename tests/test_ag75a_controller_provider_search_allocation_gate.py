@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Any
 
 from core.controller_provider_search_allocation import (
+    BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE,
     PROVIDER_SEARCH_ALLOCATION_ACTION,
+    PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
     build_provider_search_allocation_record,
 )
@@ -21,7 +23,7 @@ from core.controller_recovery_decision import (
 from core.official_canonical_recovery_visibility_export import (
     build_official_canonical_recovery_visibility_export,
 )
-from core.run_controller import RunController
+from core.run_controller import RetrievalAction, RunController
 from core.source_class_recovery_runner import (
     SourceClassRecoveryRunnerContext,
     run_source_class_recovery_dispatch,
@@ -50,12 +52,13 @@ def _base_trace(**overrides: Any) -> dict[str, Any]:
     return trace
 
 
-def _allocation_trace() -> dict[str, Any]:
+def _allocation_trace(**overrides: Any) -> dict[str, Any]:
     return _base_trace(
         active_source_class_recovery_execution_attempted=True,
         active_source_class_recovery_result_count=0,
         candidate_return_status="zero_candidates",
         recovery_slot_available=False,
+        **overrides,
     )
 
 
@@ -84,6 +87,10 @@ def _context(
     lifecycle: dict[str, Any],
     decision: Any,
     authorized_spine_action: str | None = None,
+    controller: RunController | None = None,
+    process_search_queries: Any | None = None,
+    all_passages: list[dict[str, Any]] | None = None,
+    seen_urls: set[str] | None = None,
     provider_diagnostics: list[dict[str, Any]] | None = None,
     retrieval_pass_records: list[dict[str, Any]] | None = None,
 ) -> SourceClassRecoveryRunnerContext:
@@ -91,19 +98,19 @@ def _context(
         raise AssertionError("provider/search allocation must not execute search")
 
     return SourceClassRecoveryRunnerContext(
-        controller=RunController(),
+        controller=controller or RunController(),
         authorized_spine_action=authorized_spine_action,
         controller_recovery_decision=decision,
         lifecycle_trace=lifecycle,
-        process_search_queries=fail_search,
-        all_passages=[],
+        process_search_queries=process_search_queries or fail_search,
+        all_passages=all_passages if all_passages is not None else [],
         intent="general",
         complexity="medium",
         results_per_query=5,
         include_domains=["agency.gov"],
         exclude_domains=[],
         query_embedding=[],
-        seen_urls=set(),
+        seen_urls=seen_urls if seen_urls is not None else set(),
         collected_images=set(),
         embed_provider="fixture",
         embed_model="fixture",
@@ -123,16 +130,83 @@ def _context(
     )
 
 
-def test_ag75a_controller_decision_records_bounded_provider_search_allocation() -> None:
-    lifecycle = _allocation_trace()
+def _controller_with_existing_recovery_action(
+    *,
+    queries: list[str],
+    search_depth: str | None = "basic",
+    provider_role: str | None = "source_class_recovery",
+) -> RunController:
+    controller = RunController()
+    controller.state.active_source_class_recovery_eligible = True
+    controller.record_retrieval_action(
+        RetrievalAction(
+            name="source_class_recovery",
+            queries=list(queries),
+            provider_role=provider_role,
+            search_depth=search_depth,
+            active=True,
+            shadow=False,
+            metadata={
+                "controller_action_envelope": {
+                    "action_type": "recover_missing_source_class",
+                    "allowed_action": True,
+                    "required_source_class": ["official_current_rules"],
+                }
+            },
+        )
+    )
+    return controller
+
+
+def test_ag75x_controller_decision_executes_bounded_provider_search_allocation() -> None:
+    lifecycle = _allocation_trace(
+        active_source_class_recovery_queries=["official current fixture"],
+        active_source_class_recovery_provider_role="source_class_recovery",
+        active_source_class_recovery_search_depth="basic",
+    )
     decision = build_controller_recovery_decision(lifecycle)
     provider_diagnostics: list[dict[str, Any]] = []
     retrieval_pass_records: list[dict[str, Any]] = []
+    all_passages: list[dict[str, Any]] = []
+    seen_urls = {"https://agency.gov/already-seen"}
+    captured: dict[str, Any] = {}
+
+    def fake_search(
+        queries: list[str],
+        _intent: str,
+        _complexity: str,
+        search_depth: str,
+        *_args: Any,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        captured["queries"] = list(queries)
+        captured["search_depth"] = search_depth
+        captured["search_providers"] = list(kwargs["search_providers"])
+        captured["provider_role"] = kwargs["provider_role"]
+        captured["provider_diagnostics"] = kwargs["provider_diagnostics"]
+        _args[4].add("https://agency.gov/new-current-rule")
+        kwargs["provider_diagnostics"].append(
+            {"provider": "offline-fixture", "raw_provider_payload": "redacted"}
+        )
+        return [
+            {
+                "title": "Official current rule",
+                "url": "https://agency.gov/new-current-rule",
+                "text": "Raw result stays out of allocation trace.",
+            }
+        ]
 
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
             decision=decision,
+            controller=_controller_with_existing_recovery_action(
+                queries=["official current fixture"],
+                search_depth="basic",
+            ),
+            process_search_queries=fake_search,
+            all_passages=all_passages,
+            seen_urls=seen_urls,
             provider_diagnostics=provider_diagnostics,
             retrieval_pass_records=retrieval_pass_records,
         )
@@ -146,9 +220,20 @@ def test_ag75a_controller_decision_records_bounded_provider_search_allocation() 
     }
     assert result.provider_search_allocation is not None
     assert result.provider_search_allocation.allocated is True
+    assert result.provider_search_allocation.executed is True
+    assert result.provider_search_allocation.execution_attempted is True
     assert result.provider_search_allocation.reason == PROVIDER_SEARCH_ALLOCATION_ACTION
+    assert captured["queries"] == ["official current fixture"]
+    assert captured["search_depth"] == "basic"
+    assert captured["search_providers"] == ["offline-fixture"]
+    assert captured["provider_role"] == "source_class_recovery"
+    assert captured["provider_diagnostics"] == [
+        {"provider": "offline-fixture", "raw_provider_payload": "redacted"}
+    ]
     assert provider_diagnostics == []
     assert retrieval_pass_records == []
+    assert all_passages == []
+    assert seen_urls == {"https://agency.gov/already-seen"}
     assert lifecycle["recovery_decision"] == REQUEST_PROVIDER_SEARCH_REVIEW
     assert lifecycle["active_source_class_recovery_skip_reason"] == (
         "controller_recovery_decision_requested_provider_search_review"
@@ -156,7 +241,19 @@ def test_ag75a_controller_decision_records_bounded_provider_search_allocation() 
     packet = lifecycle[PROVIDER_SEARCH_ALLOCATION_TRACE_KEY]
     record = packet["ProviderSearchAllocation"]
     assert record["allocation_action"] == PROVIDER_SEARCH_ALLOCATION_ACTION
-    assert record["execution_mode"] == "record_only_no_provider_call"
+    assert record["execution_mode"] == (
+        "record_plus_optional_bounded_existing_provider_call"
+    )
+    execution = packet[PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY]
+    assert execution["bounded_profile"] == BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE
+    assert execution["executed"] is True
+    assert execution["execution_attempted"] is True
+    assert execution["unexecutable_reason"] is None
+    assert execution["query_count"] == 1
+    assert execution["result_count"] == 1
+    assert execution["new_url_count"] == 1
+    assert execution["provider_role"] == "source_class_recovery"
+    assert execution["search_depth"] == "basic"
     assert record["provider_policy_unchanged"] is True
     assert record["provider_selection_unchanged"] is True
     assert record["search_depth_policy_unchanged"] is True
@@ -164,26 +261,105 @@ def test_ag75a_controller_decision_records_bounded_provider_search_allocation() 
     assert record["new_provider_added"] is False
     assert record["provider_swap"] is False
     assert record["unbounded_depth"] is False
+    assert execution["raw_payload_exposed"] is False
     assert record["final_answer_behavior_unchanged"] is True
     assert record["citation_behavior_unchanged"] is True
     assert_execution_trace_payload_contract(lifecycle)
 
 
 def test_ag75a_absent_controller_recovery_decision_does_not_allocate() -> None:
-    lifecycle = _allocation_trace()
+    lifecycle = _allocation_trace(
+        active_source_class_recovery_queries=["official current fixture"],
+        active_source_class_recovery_provider_role="source_class_recovery",
+        active_source_class_recovery_search_depth="basic",
+    )
+    captured_queries: list[str] = []
+
+    def fake_search(queries: list[str], *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        captured_queries.extend(queries)
+        return []
 
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
             decision=None,
             authorized_spine_action=REQUEST_PROVIDER_SEARCH_REVIEW,
+            controller=_controller_with_existing_recovery_action(
+                queries=["official current fixture"],
+            ),
+            process_search_queries=fake_search,
         )
     )
 
     assert result.provider_search_allocation is not None
     assert result.provider_search_allocation.allocated is False
+    assert result.provider_search_allocation.executed is False
     assert PROVIDER_SEARCH_ALLOCATION_TRACE_KEY not in lifecycle
     assert "recovery_decision" not in lifecycle
+    assert captured_queries == []
+
+
+def test_ag75x_wrong_allowed_executor_action_does_not_execute_allocation() -> None:
+    lifecycle = _allocation_trace(
+        active_source_class_recovery_queries=["official current fixture"],
+        active_source_class_recovery_provider_role="source_class_recovery",
+        active_source_class_recovery_search_depth="basic",
+    )
+    decision = build_controller_recovery_decision(lifecycle)
+    bad_decision = type(decision)(
+        payload={
+            **decision.payload,
+            "allowed_executor_action": "execute_existing_recovery_action",
+        }
+    )
+    captured_queries: list[str] = []
+
+    def fake_search(queries: list[str], *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        captured_queries.extend(queries)
+        return []
+
+    result = run_source_class_recovery_dispatch(
+        _context(
+            lifecycle=lifecycle,
+            decision=bad_decision,
+            controller=_controller_with_existing_recovery_action(
+                queries=["official current fixture"],
+            ),
+            process_search_queries=fake_search,
+        )
+    )
+
+    assert bad_decision.decision == REQUEST_PROVIDER_SEARCH_REVIEW
+    assert bad_decision.provider_search_review_requested is True
+    assert build_provider_search_allocation_record(bad_decision) is None
+    assert result.provider_search_allocation is not None
+    assert result.provider_search_allocation.allocated is False
+    assert PROVIDER_SEARCH_ALLOCATION_TRACE_KEY not in lifecycle
+    assert captured_queries == []
+
+
+def test_ag75x_authorized_allocation_records_unexecutable_existing_profile() -> None:
+    lifecycle = _allocation_trace()
+    decision = build_controller_recovery_decision(lifecycle)
+
+    result = run_source_class_recovery_dispatch(
+        _context(lifecycle=lifecycle, decision=decision)
+    )
+
+    assert result.provider_search_allocation is not None
+    assert result.provider_search_allocation.allocated is True
+    assert result.provider_search_allocation.executed is False
+    assert result.provider_search_allocation.execution_attempted is False
+    packet = lifecycle[PROVIDER_SEARCH_ALLOCATION_TRACE_KEY]
+    execution = packet[PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY]
+    assert execution["bounded_profile"] == BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE
+    assert execution["execution_mode"] == (
+        "bounded_existing_provider_allocation_unexecutable"
+    )
+    assert execution["unexecutable_reason"] == "missing_or_unsupported_provider_role"
+    assert execution["query_count"] == 0
+    assert execution["result_count"] == 0
+    assert execution["new_url_count"] == 0
 
 
 def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
@@ -314,22 +490,47 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
 
 
 def test_ag75a_visibility_export_surfaces_sanitized_record_only_trace() -> None:
-    lifecycle = _allocation_trace()
+    lifecycle = _allocation_trace(
+        active_source_class_recovery_queries=["official current fixture"],
+        active_source_class_recovery_provider_role="source_class_recovery",
+        active_source_class_recovery_search_depth="basic",
+    )
     decision = build_controller_recovery_decision(lifecycle)
 
     run_source_class_recovery_dispatch(
-        _context(lifecycle=lifecycle, decision=decision)
+        _context(
+            lifecycle=lifecycle,
+            decision=decision,
+            controller=_controller_with_existing_recovery_action(
+                queries=["official current fixture"],
+                search_depth="basic",
+            ),
+            process_search_queries=lambda *_args, **_kwargs: [
+                {"url": "https://agency.gov/current-rule"}
+            ],
+        )
     )
     export = build_official_canonical_recovery_visibility_export(lifecycle)
 
     exported = export["provider_search_allocation_trace"]
+    execution = export["provider_search_allocation_execution_trace"]
     assert exported["allocation_owner"] == "ControllerRecoveryDecision"
     assert exported["mechanical_owner"] == "source_class_recovery_runner"
     assert exported["allocation_action"] == PROVIDER_SEARCH_ALLOCATION_ACTION
-    assert exported["execution_mode"] == "record_only_no_provider_call"
+    assert exported["execution_mode"] == (
+        "record_plus_optional_bounded_existing_provider_call"
+    )
+    assert execution["bounded_profile"] == BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE
+    assert execution["execution_mode"] == (
+        "bounded_existing_provider_allocation_executed"
+    )
+    assert execution["executed"] is True
+    assert execution["query_count"] == 1
+    assert execution["result_count"] == 1
     assert exported["new_provider_added"] is False
     assert exported["provider_swap"] is False
     assert exported["unbounded_depth"] is False
+    assert execution["raw_payload_exposed"] is False
     assert export["behavior_changed"] is False
 
 
@@ -340,7 +541,8 @@ def test_ag75a_static_guards_keep_allocation_out_of_orchestrator_and_executor() 
     executor_source = _EXECUTOR_PATH.read_text(encoding="utf-8").casefold()
 
     assert "record_provider_search_allocation_if_controller_authorized(" in runner_source
-    assert "process_search_queries(" not in helper_source
+    assert "process_search_queries(" in helper_source
+    assert "core.search_providers" not in helper_source
     assert "provider_search_allocation_trace" not in orchestrator_source
     assert "record_provider_search_allocation_if_controller_authorized(" not in (
         orchestrator_source
@@ -352,7 +554,6 @@ def test_ag75a_static_guards_keep_allocation_out_of_orchestrator_and_executor() 
             "provider_depth",
             "provider_escalation",
             "provider_routing",
-            "linkup",
             "serper",
             "dataforseo",
             "serpapi",
