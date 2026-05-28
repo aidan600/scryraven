@@ -11,6 +11,9 @@ from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from core.allocation_candidate_selection_activation import (
+    allocation_result_candidates_for_existing_selection_corridor,
+)
 from core.authority_lifecycle_candidate_visibility import (
     project_authority_lifecycle_candidate_fit_visibility,
 )
@@ -124,6 +127,50 @@ def recovered_evidence_visibility_defaults() -> dict[str, Any]:
         reason="not_evaluated",
         blockers=("not_evaluated",),
     ).to_trace_fields()
+
+
+def recovered_evidence_selection_candidates(
+    *,
+    all_passages: Iterable[Mapping[str, Any]],
+    lifecycle_trace: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    """Return Controller-authorized recovered candidates for the selector."""
+
+    recovered_passages = [
+        passage
+        for passage in all_passages or ()
+        if isinstance(passage, Mapping)
+        and passage.get("retrieval_stage") == "source_class_recovery"
+    ]
+    recovered_passages.extend(
+        allocation_result_candidates_for_existing_selection_corridor(lifecycle_trace)
+    )
+    return recovered_passages
+
+
+def apply_controller_recovered_evidence_visibility(
+    *,
+    final_top_evidence: Iterable[Mapping[str, Any]],
+    all_passages: Iterable[Mapping[str, Any]],
+    lifecycle_trace: dict[str, Any],
+    max_final_evidence: int,
+    reserve_limit: int = 1,
+) -> list[dict[str, Any]]:
+    """Apply the Controller-owned recovered-evidence selection boundary."""
+
+    recovered_passages = recovered_evidence_selection_candidates(
+        all_passages=all_passages,
+        lifecycle_trace=lifecycle_trace,
+    )
+    bounded, decision = apply_recovered_evidence_visibility_boundary(
+        final_top_evidence=final_top_evidence,
+        recovered_passages=recovered_passages,
+        lifecycle_trace=lifecycle_trace,
+        max_final_evidence=max_final_evidence,
+        reserve_limit=reserve_limit,
+    )
+    lifecycle_trace.update(decision.to_trace_fields())
+    return [source for source in bounded if isinstance(source, dict)]
 
 
 def _compact_text(value: Any) -> str:
@@ -717,6 +764,8 @@ def apply_recovered_evidence_visibility_boundary(
 __all__ = [
     "ANSWER_CONTRACT_VISIBILITY_REASON_PREFIXES",
     "RecoveredEvidenceVisibilityDecision",
+    "apply_controller_recovered_evidence_visibility",
     "apply_recovered_evidence_visibility_boundary",
     "recovered_evidence_visibility_defaults",
+    "recovered_evidence_selection_candidates",
 ]
