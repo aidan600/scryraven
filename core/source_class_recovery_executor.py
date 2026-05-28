@@ -247,7 +247,7 @@ def execute_source_class_recovery_action(
             ),
         }
     )
-    lifecycle_trace.update(controller_recovery_decision.to_trace_fields())
+    lifecycle_trace.update(controller_recovery_decision.to_executor_trace_fields())
     if not controller_recovery_executor_allows_attempt(
         controller_recovery_decision
     ):

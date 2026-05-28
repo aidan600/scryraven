@@ -95,6 +95,23 @@ class ControllerRecoveryDecision:
             ],
         }
 
+    def to_executor_trace_fields(self) -> dict[str, Any]:
+        return {
+            "recovery_decision_trace": self.to_trace(),
+            "recovery_decision": self.decision,
+            "recovery_decision_reason": self.payload["decision_reason"],
+            "recovery_retry_allowed": self.retry_allowed,
+            "recovery_allowed_executor_action": self.payload[
+                "allowed_executor_action"
+            ],
+            "recovery_provider_search_review_requested": (
+                self.provider_search_review_requested
+            ),
+            "recovery_old_path_subordinated": self.payload[
+                "old_path_subordinated"
+            ],
+        }
+
 
 def build_controller_recovery_decision(
     runtime_trace: Mapping[str, Any] | None,

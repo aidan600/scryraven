@@ -263,7 +263,8 @@ def test_ag74d_executor_gate_is_subordinate_to_controller_decision() -> None:
 
     assert result["attempted"] is False
     assert captured_queries == []
-    assert lifecycle["controller_recovery_decision"] == CONTINUE_DOWNSTREAM
+    assert lifecycle["recovery_decision"] == CONTINUE_DOWNSTREAM
+    assert "controller_recovery_decision" not in lifecycle
     assert lifecycle["active_source_class_recovery_skip_reason"] == (
         "controller_recovery_decision_denied_executor_action"
     )
@@ -277,6 +278,7 @@ def test_ag74d_static_guards_keep_provider_and_final_answer_surfaces_closed() ->
 
     assert "controller_recovery_decision" in visibility_source
     assert "build_controller_recovery_decision" in executor_source
+    assert "to_executor_trace_fields" in executor_source
     assert orchestrator_source.count("execute_source_class_recovery_action(") == 1
     for forbidden in (
         "select_providers",
