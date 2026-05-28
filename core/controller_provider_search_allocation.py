@@ -20,6 +20,7 @@ PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY = (
 PROVIDER_SEARCH_ALLOCATION_EXECUTION_SCHEMA_VERSION = (
     "controller_authorized_existing_provider_allocation_execution_ag75a_x_v1"
 )
+PROVIDER_SEARCH_ALLOCATION_RESULT_SUMMARIES_KEY = "allocation_result_summaries"
 PROVIDER_SEARCH_ALLOCATION_ACTION = "record_provider_search_review_request"
 PROVIDER_SEARCH_ALLOCATION_EXECUTION_ACTION = (
     "execute_bounded_provider_search_review_request"
@@ -129,7 +130,9 @@ def _base_execution_trace(
     query_count: int,
     result_count: int,
     new_url_count: int,
+    allocation_result_summaries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    summaries = list(allocation_result_summaries or [])
     return {
         "schema_version": PROVIDER_SEARCH_ALLOCATION_EXECUTION_SCHEMA_VERSION,
         "allocation_owner": "ControllerRecoveryDecision",
@@ -148,6 +151,8 @@ def _base_execution_trace(
         "query_count": max(0, int(query_count)),
         "result_count": max(0, int(result_count)),
         "new_url_count": max(0, int(new_url_count)),
+        "allocation_result_summary_count": len(summaries),
+        PROVIDER_SEARCH_ALLOCATION_RESULT_SUMMARIES_KEY: summaries,
         "provider_policy_unchanged": True,
         "provider_selection_unchanged": True,
         "search_depth_policy_unchanged": True,
@@ -290,6 +295,11 @@ def execute_provider_search_allocation_if_controller_authorized(
         provider_role=provider_role,
     )
     result_count = sum(1 for result in (results or []) if isinstance(result, dict))
+    allocation_result_summaries = _allocation_result_summaries(
+        results,
+        provider_role=provider_role,
+        query_preview=queries[0] if queries else None,
+    )
     return _base_execution_trace(
         decision=decision,
         execution_mode="bounded_existing_provider_allocation_executed",
@@ -301,7 +311,86 @@ def execute_provider_search_allocation_if_controller_authorized(
         query_count=len(queries),
         result_count=result_count,
         new_url_count=max(0, len(allocation_seen_urls) - seen_before),
+        allocation_result_summaries=allocation_result_summaries,
     )
+
+
+def _allocation_result_summaries(
+    results: Any,
+    *,
+    provider_role: str | None,
+    query_preview: str | None,
+) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for index, result in enumerate(results or (), start=1):
+        if not isinstance(result, dict):
+            continue
+        summary = _allocation_result_summary(
+            result,
+            provider_role=provider_role,
+            query_preview=query_preview,
+            position=index,
+        )
+        if summary:
+            summaries.append(summary)
+    return summaries[:20]
+
+
+def _allocation_result_summary(
+    result: dict[str, Any],
+    *,
+    provider_role: str | None,
+    query_preview: str | None,
+    position: int,
+) -> dict[str, Any]:
+    summary = {
+        "provider_name": _clean_summary_text(
+            result.get("provider_name") or result.get("provider"),
+            limit=80,
+        )
+        or "unknown",
+        "provider_role": _clean_summary_text(provider_role, limit=80)
+        or "source_class_recovery",
+        "retrieval_pass_id": "controller_authorized_allocation_result",
+        "query_preview": _clean_summary_text(
+            result.get("query_preview") or result.get("query") or query_preview,
+            limit=140,
+        )
+        or "unknown",
+        "provider_rank_or_position": _safe_position(result, default=position),
+        "source_url": _clean_summary_text(
+            result.get("source_url") or result.get("url") or result.get("accepted_url"),
+            limit=240,
+        ),
+        "title": _clean_summary_text(result.get("title"), limit=180),
+        "normalized_domain": _clean_summary_text(
+            result.get("normalized_domain") or result.get("domain"),
+            limit=120,
+        ),
+        "source_tier": _clean_summary_text(result.get("source_tier"), limit=80),
+        "source_class": _clean_summary_text(
+            result.get("source_class") or result.get("observed_source_class"),
+            limit=80,
+        ),
+        "provider_returned": True,
+        "sanitized": True,
+        "raw_payload_exposed": False,
+    }
+    return {key: value for key, value in summary.items() if value not in {"", None}}
+
+
+def _clean_summary_text(value: Any, *, limit: int) -> str:
+    text = " ".join(str(value or "").strip().split())
+    return text[:limit]
+
+
+def _safe_position(result: dict[str, Any], *, default: int) -> int:
+    for key in ("provider_rank_or_position", "rank", "position"):
+        try:
+            return max(0, int(result.get(key)))
+        except (TypeError, ValueError):
+            continue
+    return default
 
 
 def record_provider_search_allocation_if_controller_authorized(
@@ -359,6 +448,7 @@ __all__ = [
     "PROVIDER_SEARCH_ALLOCATION_EXECUTION_ACTION",
     "PROVIDER_SEARCH_ALLOCATION_EXECUTION_SCHEMA_VERSION",
     "PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY",
+    "PROVIDER_SEARCH_ALLOCATION_RESULT_SUMMARIES_KEY",
     "PROVIDER_SEARCH_ALLOCATION_SCHEMA_VERSION",
     "PROVIDER_SEARCH_ALLOCATION_TRACE_KEY",
     "ProviderSearchAllocationExecutionContext",

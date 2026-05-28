@@ -14,6 +14,9 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from core.allocation_result_candidate_custody import (
+    allocation_result_provider_result_inputs,
+)
 from core.authority_candidate_passport import AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY
 
 PROVIDER_RESULT_REPRESENTED_VISIBILITY_SCHEMA_VERSION = (
@@ -303,6 +306,8 @@ def _provider_result_records(
                 **item,
             }
             _append_unique(records, _safe_mapping(merged))
+    for item in allocation_result_provider_result_inputs(trace):
+        _append_unique(records, _safe_mapping(item))
     return records[:_MAX_LIST_ITEMS]
 
 

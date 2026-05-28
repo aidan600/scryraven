@@ -13,6 +13,8 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
+from core.allocation_result_candidate_custody import allocation_result_candidate_inputs
+
 AUTHORITY_CANDIDATE_PASSPORT_SCHEMA_VERSION = (
     "authority_candidate_passport_ag73a_v1"
 )
@@ -253,6 +255,8 @@ def _candidate_sources(
         _append_candidate(candidates, _candidate_from_selected(record))
     for record in rejection_records:
         _append_candidate(candidates, _candidate_from_rejection(record))
+    for source in allocation_result_candidate_inputs(trace):
+        _append_candidate(candidates, source)
 
     if not candidates and _positive_int(candidate_fit.get("accepted_url_count")):
         _append_candidate(

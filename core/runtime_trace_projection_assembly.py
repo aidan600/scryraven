@@ -4,6 +4,10 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from core.allocation_result_candidate_custody import (
+    ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY,
+    build_allocation_result_candidate_custody_trace,
+)
 from core.authority_candidate_passport import (
     AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
     build_authority_candidate_passport_trace,
@@ -176,6 +180,25 @@ def attach_passive_runtime_projection_traces(
             exc,
         )
     try:
+        allocation_result_custody_trace = (
+            build_allocation_result_candidate_custody_trace(execution_trace)
+        )
+        execution_trace[ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY] = (
+            allocation_result_custody_trace
+        )
+        checkpoint_packet = execution_trace.get(
+            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
+        )
+        if isinstance(checkpoint_packet, dict):
+            checkpoint_packet[ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY] = (
+                allocation_result_custody_trace
+            )
+    except Exception as exc:
+        active_logger.warning(
+            "Non-fatal allocation-result candidate custody omitted: %s",
+            exc,
+        )
+    try:
         passport_trace = build_authority_candidate_passport_trace(
             lifecycle_trace=execution_trace,
             recovered_passages=recovered_passages,
@@ -248,6 +271,25 @@ def attach_passive_runtime_projection_traces(
     except Exception as exc:
         active_logger.warning(
             "Non-fatal controller evidence ledger custody omitted: %s",
+            exc,
+        )
+    try:
+        allocation_result_custody_trace = (
+            build_allocation_result_candidate_custody_trace(execution_trace)
+        )
+        execution_trace[ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY] = (
+            allocation_result_custody_trace
+        )
+        checkpoint_packet = execution_trace.get(
+            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
+        )
+        if isinstance(checkpoint_packet, dict):
+            checkpoint_packet[ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY] = (
+                allocation_result_custody_trace
+            )
+    except Exception as exc:
+        active_logger.warning(
+            "Non-fatal allocation-result custody visibility refresh omitted: %s",
             exc,
         )
     try:
