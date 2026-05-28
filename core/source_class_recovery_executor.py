@@ -15,6 +15,10 @@ from core.canonical_technical_docs_policy import (
     is_academic_literature_domain_filter,
     is_canonical_technical_documentation_context,
 )
+from core.controller_recovery_decision import (
+    build_controller_recovery_decision,
+    controller_recovery_executor_allows_attempt,
+)
 from core.official_canonical_recovery_candidate_acquisition import (
     build_official_canonical_recovery_candidate_acquisition_trace,
 )
@@ -231,6 +235,32 @@ def execute_source_class_recovery_action(
     if provider_role != "source_class_recovery":
         raise error_type("source_class_recovery action has unexpected provider role")
     if not queries or search_depth is None:
+        return {"attempted": False, "result_count": 0, "new_url_count": 0}
+
+    controller_recovery_decision = build_controller_recovery_decision(
+        {
+            **lifecycle_trace,
+            "required_source_classes": _action_source_classes(action),
+            "recovery_query_count": len(queries),
+            "recovery_slot_available": (
+                controller.state.active_source_class_recovery_used is not True
+            ),
+        }
+    )
+    lifecycle_trace.update(controller_recovery_decision.to_executor_trace_fields())
+    if not controller_recovery_executor_allows_attempt(
+        controller_recovery_decision
+    ):
+        lifecycle_trace["active_source_class_recovery_skip_reason"] = (
+            "controller_recovery_decision_denied_executor_action"
+        )
+        lifecycle_trace.setdefault(
+            "active_source_class_recovery_blockers",
+            [],
+        )
+        lifecycle_trace["active_source_class_recovery_blockers"] = list(
+            lifecycle_trace.get("active_source_class_recovery_blockers") or []
+        ) + [controller_recovery_decision.decision]
         return {"attempted": False, "result_count": 0, "new_url_count": 0}
 
     recovery_include_domains = list(include_domains)

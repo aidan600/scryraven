@@ -16,6 +16,10 @@ from core.authority_candidate_passport import (
     AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
 )
 from core.controller_evidence_ledger import CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY
+from core.controller_recovery_decision import (
+    CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
+    build_controller_recovery_decision,
+)
 from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
 )
@@ -543,6 +547,8 @@ def build_official_canonical_recovery_visibility_export(
         "unknown_fields": [],
         "behavior_changed": False,
     }
+    controller_recovery_decision = build_controller_recovery_decision(export)
+    export.update(controller_recovery_decision.to_trace_fields())
     export["unknown_fields"] = _unknown_fields(export)
     return export
 
@@ -764,6 +770,13 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "likely_next_failure_layer_custody_interpretation",
         "next_failure_layer",
         "next_failure_layer_custody_interpretation",
+        CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
+        "controller_recovery_decision",
+        "controller_recovery_decision_reason",
+        "controller_recovery_retry_allowed",
+        "controller_recovery_allowed_executor_action",
+        "controller_recovery_provider_search_review_requested",
+        "controller_recovery_old_path_subordinated",
         "unknown_fields",
         "behavior_changed",
     ):
