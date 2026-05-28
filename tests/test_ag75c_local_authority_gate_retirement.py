@@ -159,7 +159,10 @@ def test_ag75c_pipeline_orchestrator_no_longer_owns_recovered_pool_gate() -> Non
         orchestrator_source
     )
     assert "apply_recovered_evidence_visibility_boundary(" not in orchestrator_source
-    assert orchestrator_source.count("apply_controller_recovered_evidence_visibility(") == 3
+    assert "recovered_evidence_visibility=apply_controller_recovered_evidence_visibility" in (
+        orchestrator_source
+    )
+    assert "build_final_evidence_bundle(" in orchestrator_source
 
 
 def test_ag75c_visibility_handoff_keeps_protected_surfaces_closed() -> None:
