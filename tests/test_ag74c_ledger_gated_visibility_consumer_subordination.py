@@ -175,7 +175,13 @@ def test_ag74c_admission_not_used_does_not_override_ledger_gap() -> None:
     )
 
     assert packet["final_evidence_survival_status"] == "visible"
+    assert packet["final_evidence_survival_status_custody_interpretation"] == (
+        "recovery_lane_observation_not_controller_custody_status"
+    )
     assert packet["final_citation_survival_status"] == "visible"
+    assert packet["final_citation_survival_status_custody_interpretation"] == (
+        "recovery_lane_observation_not_controller_custody_status"
+    )
     assert packet["next_failure_layer"] == "admission_not_used"
     assert packet["next_failure_layer_custody_interpretation"] == (
         "recovery_lane_observation_not_controller_custody_status"
@@ -243,6 +249,9 @@ def test_ag74c_static_subordinates_aggregate_success_path_without_protected_drif
     assert "core.controller_evidence_ledger" in export_imports
     assert "aggregate_success_counts_are_authoritative_for_custody" in export_source
     assert "next_failure_layer_custody_interpretation" in export_source
+    assert "final_evidence_survival_status_custody_interpretation" in export_source
+    assert "final_citation_survival_status_custody_interpretation" in export_source
+    assert "likely_next_failure_layer_custody_interpretation" in export_source
     assert "build_official_canonical_recovery_visibility_trace" in assembly_source
     assert "build_controller_evidence_ledger_trace" not in orchestrator_source
     for forbidden in (

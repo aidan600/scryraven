@@ -254,7 +254,14 @@ def test_ag50c_report_output_section_contains_visible_fields() -> None:
 
     assert output.startswith("Final answer body.")
     assert f"## {OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE}" in output
-    assert "`likely_next_failure_layer`: source_survived_to_citation" in output
+    assert (
+        "`likely_next_failure_layer`: recovery_lane_source_citation_observed"
+        in output
+    )
+    assert (
+        "`likely_next_failure_layer_custody_interpretation`: "
+        "recovery_lane_observation_not_controller_custody_status"
+    ) in output
 
 
 def test_ag50c_runtime_projection_attaches_export_to_checkpoint() -> None:
