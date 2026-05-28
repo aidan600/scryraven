@@ -88,6 +88,12 @@ from core.failure_card import (
     failure_card_should_show,
     normalize_force_corpus_state,
 )
+from core.final_evidence_bundle_builder import (
+    FinalEvidenceBundleInputs,
+    attach_author_evidence,
+    build_final_evidence_bundle,
+    build_final_source_telemetry_inputs,
+)
 from core.nutrition_author_notes import _format_nutrition_partial_evidence_author_note
 from core.official_source_obligation_bridge import (
     apply_official_source_obligation_bridge,
@@ -5338,37 +5344,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         total_urls_fetched += int(conflict_resolution_execution["new_url_count"])
         total_chunks_embedded += int(conflict_resolution_execution["result_count"])
 
-    all_passages.sort(key=lambda x: x.get("score", 0), reverse=True)
     max_domain_chunks = 4 if complexity == "high" else (3 if complexity == "medium" else 2)
-    final_top_evidence = deps.filter_top_evidence(all_passages, top_chunks, max_domain_chunks)
-    final_top_evidence = apply_controller_recovered_evidence_visibility(
-        final_top_evidence=final_top_evidence,
-        all_passages=all_passages,
-        lifecycle_trace=active_source_class_recovery_lifecycle,
-        max_final_evidence=top_chunks,
-        reserve_limit=1,
-    )
 
-    unique_source_urls: dict[str, int] = {}
-    ordered_sources: list[str] = []
-    next_source_id = 1
-    for p in final_top_evidence:
-        if p["url"] not in unique_source_urls:
-            unique_source_urls[p["url"]] = next_source_id
-            if deps.is_plausible_domain(p["url"]):
-                ordered_sources.append(f"- [{next_source_id}] [{p['title']}]({p['url']})")
-            next_source_id += 1
-        p["source_id"] = unique_source_urls[p["url"]]
+    def _final_evidence_bundle_inputs() -> FinalEvidenceBundleInputs:
+        return FinalEvidenceBundleInputs(
+            all_passages=all_passages,
+            top_chunks=top_chunks,
+            max_domain_chunks=max_domain_chunks,
+            filter_top_evidence=deps.filter_top_evidence,
+            is_plausible_domain=deps.is_plausible_domain,
+            current_date=current_date,
+            query=query,
+            active_source_class_recovery_lifecycle=active_source_class_recovery_lifecycle,
+            recovered_evidence_visibility=apply_controller_recovered_evidence_visibility,
+        )
+
+    final_evidence_bundle = build_final_evidence_bundle(_final_evidence_bundle_inputs())
+    final_top_evidence = final_evidence_bundle.final_top_evidence
+    unique_source_urls = final_evidence_bundle.unique_source_urls
+    ordered_sources = final_evidence_bundle.ordered_sources
 
     status.step("--- **Final Synthesis & Reporting** ---")
-    evidence_block = "\n\n".join(
-        f"[Source {p['source_id']}] {p['title']}\nURL: {p['url']}\nExcerpt: {p['text'][:1200]}"
-        for p in final_top_evidence
-    )
-    cached_prefix = (
-        f"<evidence_block>\n{evidence_block}\n</evidence_block>\n\n"
-        f"Today is {current_date}.\nUser's Original Prompt: {query}\n"
-    )
+    evidence_block = final_evidence_bundle.evidence_block
+    cached_prefix = final_evidence_bundle.cached_prefix
     author_notes = ""
 
     # --- LINKUP (high tier) + QUANTITATIVE COMPONENT ---
@@ -5940,37 +5938,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
                 if supp_passages:
                     all_passages.extend(supp_passages)
-                    all_passages.sort(key=lambda x: x.get("score", 0), reverse=True)
-                    final_top_evidence = deps.filter_top_evidence(all_passages, top_chunks, max_domain_chunks)
-                    final_top_evidence = apply_controller_recovered_evidence_visibility(
-                        final_top_evidence=final_top_evidence,
-                        all_passages=all_passages,
-                        lifecycle_trace=active_source_class_recovery_lifecycle,
-                        max_final_evidence=top_chunks,
-                        reserve_limit=1,
+                    final_evidence_bundle = build_final_evidence_bundle(
+                        _final_evidence_bundle_inputs(),
+                        linkup_block=(
+                            linkup_block
+                            if complexity == "high"
+                            and os.getenv("LINKUP_API_KEY")
+                            and linkup_block
+                            else ""
+                        ),
                     )
-
-                    unique_source_urls = {}
-                    ordered_sources = []
-                    next_source_id = 1
-                    for p in final_top_evidence:
-                        if p["url"] not in unique_source_urls:
-                            unique_source_urls[p["url"]] = next_source_id
-                            if deps.is_plausible_domain(p["url"]):
-                                ordered_sources.append(f"- [{next_source_id}] [{p['title']}]({p['url']})")
-                            next_source_id += 1
-                        p["source_id"] = unique_source_urls[p["url"]]
-
-                    evidence_block = "\n\n".join(
-                        f"[Source {p['source_id']}] {p['title']}\nURL: {p['url']}\nExcerpt: {p['text'][:1200]}"
-                        for p in final_top_evidence
-                    )
-                    cached_prefix = (
-                        f"<evidence_block>\n{evidence_block}\n</evidence_block>\n\n"
-                        f"Today is {current_date}.\nUser's Original Prompt: {query}\n"
-                    )
-                    if complexity == "high" and os.getenv("LINKUP_API_KEY") and linkup_block:
-                        cached_prefix += linkup_block
+                    final_top_evidence = final_evidence_bundle.final_top_evidence
+                    unique_source_urls = final_evidence_bundle.unique_source_urls
+                    ordered_sources = final_evidence_bundle.ordered_sources
+                    evidence_block = final_evidence_bundle.evidence_block
+                    cached_prefix = final_evidence_bundle.cached_prefix
                     status.step("Re-analyzing with supplemental evidence...")
                     analyst_cached_prefix = _build_analyst_cached_prefix()
                     _an_t0 = time.monotonic()
@@ -6137,40 +6119,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 )
                                 if remed_passages:
                                     all_passages.extend(remed_passages)
-                                    all_passages.sort(key=lambda x: x.get("score", 0), reverse=True)
-                                    final_top_evidence = deps.filter_top_evidence(
-                                        all_passages, top_chunks, max_domain_chunks
+                                    final_evidence_bundle = build_final_evidence_bundle(
+                                        _final_evidence_bundle_inputs(),
+                                        linkup_block=(
+                                            linkup_block
+                                            if complexity == "high"
+                                            and os.getenv("LINKUP_API_KEY")
+                                            and linkup_block
+                                            else ""
+                                        ),
                                     )
-                                    final_top_evidence = apply_controller_recovered_evidence_visibility(
-                                        final_top_evidence=final_top_evidence,
-                                        all_passages=all_passages,
-                                        lifecycle_trace=active_source_class_recovery_lifecycle,
-                                        max_final_evidence=top_chunks,
-                                        reserve_limit=1,
-                                    )
-                                    unique_source_urls = {}
-                                    ordered_sources = []
-                                    next_source_id = 1
-                                    for p in final_top_evidence:
-                                        if p["url"] not in unique_source_urls:
-                                            unique_source_urls[p["url"]] = next_source_id
-                                            if deps.is_plausible_domain(p["url"]):
-                                                ordered_sources.append(
-                                                    f"- [{next_source_id}] [{p['title']}]({p['url']})"
-                                                )
-                                            next_source_id += 1
-                                        p["source_id"] = unique_source_urls[p["url"]]
-
-                                    evidence_block = "\n\n".join(
-                                        f"[Source {p['source_id']}] {p['title']}\nURL: {p['url']}\nExcerpt: {p['text'][:1200]}"
-                                        for p in final_top_evidence
-                                    )
-                                    cached_prefix = (
-                                        f"<evidence_block>\n{evidence_block}\n</evidence_block>\n\n"
-                                        f"Today is {current_date}.\nUser's Original Prompt: {query}\n"
-                                    )
-                                    if complexity == "high" and os.getenv("LINKUP_API_KEY") and linkup_block:
-                                        cached_prefix += linkup_block
+                                    final_top_evidence = final_evidence_bundle.final_top_evidence
+                                    unique_source_urls = final_evidence_bundle.unique_source_urls
+                                    ordered_sources = final_evidence_bundle.ordered_sources
+                                    evidence_block = final_evidence_bundle.evidence_block
+                                    cached_prefix = final_evidence_bundle.cached_prefix
                                     status.step("Re-synthesizing with remediation evidence...")
                                     analyst_cached_prefix = _build_analyst_cached_prefix()
                                     _an_t0 = time.monotonic()
@@ -6297,11 +6260,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         tier_instructions = {"low": _thin, "medium": _thin, "high": _thin}
 
     precision_count = 4 if _thin_body else (10 if complexity == "high" else 8)
-    author_evidence = final_top_evidence[:precision_count]
-    author_evidence_block = "\n\n".join(
-        f"[Source {p['source_id']}] {p['title']}\nURL: {p['url']}\nExcerpt: {p['text'][:1200]}"
-        for p in author_evidence
+    final_evidence_bundle = attach_author_evidence(
+        final_evidence_bundle,
+        precision_count=precision_count,
     )
+    author_evidence = final_evidence_bundle.author_evidence
+    author_evidence_block = final_evidence_bundle.author_evidence_block
 
     author_prompt = f"Today is {current_date}.\nUser's Original Prompt: {query}\n\n{tier_instructions[complexity]}\n\n"
     if recency_notes:
@@ -6547,6 +6511,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         run_history_out = run_history_out + [prior_snapshot_for_history]
 
     status.done()
+    final_source_telemetry_inputs = build_final_source_telemetry_inputs(
+        final_top_evidence=final_top_evidence,
+        unique_source_urls=unique_source_urls,
+        ordered_sources=ordered_sources,
+        seen_urls=list(seen_urls),
+        collected_images=list(collected_images),
+        final_answer_source_telemetry=final_answer_source_telemetry,
+    )
 
     record_run_metadata_snapshot(
         _run_controller_mirror,
@@ -6561,9 +6533,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     record_final_evidence_snapshot(
         _run_controller_mirror,
-        final_top_evidence=final_top_evidence,
-        seen_urls=list(seen_urls),
-        collected_images=list(collected_images),
+        **final_source_telemetry_inputs.final_evidence_snapshot_payload,
     )
 
     new_session: dict[str, Any] = {

@@ -127,4 +127,4 @@ def test_ag76b_does_not_wire_registry_into_pipeline_orchestrator_runtime() -> No
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
 
     assert "pipeline_decision_registry" not in orchestrator_source
-    assert "core.final_evidence_bundle_builder" not in orchestrator_source
+    assert "build_final_evidence_bundle" in orchestrator_source
