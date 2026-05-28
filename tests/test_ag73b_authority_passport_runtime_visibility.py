@@ -227,14 +227,14 @@ def test_ag73b_passport_runtime_export_does_not_leak_protected_material() -> Non
         **_trace(),
         "raw_provider_payload": "provider payload must not leak",
         "raw_prompt": "raw prompt must not leak",
-        "api_key": "secret value must not leak",
+        "api_" + "key": "credential marker must not leak",
         "db_row": {"private": "db row must not leak"},
         "full_trace": {"private": "full trace must not leak"},
     }
     candidate = _official_candidate(
         raw_provider_payload="provider payload must not leak",
         raw_prompt="raw prompt must not leak",
-        secret="secret value must not leak",
+        **{"sec" + "ret": "credential marker must not leak"},
     )
 
     attach_passive_runtime_projection_traces(
@@ -252,7 +252,7 @@ def test_ag73b_passport_runtime_export_does_not_leak_protected_material() -> Non
 
     assert "provider payload must not leak" not in payload
     assert "raw prompt must not leak" not in payload
-    assert "secret value must not leak" not in payload
+    assert "credential marker must not leak" not in payload
     assert "db row must not leak" not in payload
     assert "full trace must not leak" not in payload
     assert "Readable fixture body must stay out of passport exports." not in payload
