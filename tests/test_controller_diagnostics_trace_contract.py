@@ -123,6 +123,9 @@ def test_trace_key_delta_allowlist_only_controller_diagnostics() -> None:
     future_trace = {
         **baseline_trace,
         "controller_diagnostics": {"schema_version": "controller_diagnostics_v1"},
+        "controller_evidence_ledger": {
+            "schema_version": "controller_evidence_ledger_runtime_custody_ag74b_v1",
+        },
     }
 
     assert trace_key_delta(future_trace, baseline_trace) == (

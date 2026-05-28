@@ -16,6 +16,10 @@ from urllib.parse import urlparse, urlunparse
 CONTROLLER_EVIDENCE_LEDGER_SCHEMA_VERSION = (
     "controller_evidence_ledger_ag74a_v1"
 )
+CONTROLLER_EVIDENCE_LEDGER_TRACE_SCHEMA_VERSION = (
+    "controller_evidence_ledger_runtime_custody_ag74b_v1"
+)
+CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY = "controller_evidence_ledger"
 
 AUTHORITY_REQUIREMENT_DECLARED = "AuthorityRequirementDeclared"
 RECOVERY_ACTION_AUTHORIZED = "RecoveryActionAuthorized"
@@ -178,6 +182,9 @@ def build_controller_evidence_ledger(
         "selected_evidence": _events_by_type(events, AUTHORITY_EVIDENCE_SELECTED),
         "final_evidence": _events_by_type(events, FINAL_EVIDENCE_OBSERVED),
         "final_citations": _events_by_type(events, FINAL_CITATION_OBSERVED),
+        "final_evidence_citation_custody": _final_evidence_citation_custody(
+            events
+        ),
         "answer_contract": _first_event(events, ANSWER_CONTRACT_UPDATED),
         "context_exposure": {
             "required": _events_by_type(events, CONTEXT_EXPOSURE_REQUIRED),
@@ -200,6 +207,33 @@ def build_controller_evidence_ledger(
         },
     }
     return _safe_value(state)
+
+
+def build_controller_evidence_ledger_trace(
+    runtime_trace: Mapping[str, Any] | None,
+    *,
+    final_top_evidence: Iterable[Mapping[str, Any]] | None = None,
+    final_citations: Iterable[Mapping[str, Any] | str] | None = None,
+    surface_visibility: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the runtime trace wrapper for Controller-owned custody state."""
+
+    ledger = build_controller_evidence_ledger(
+        runtime_trace=runtime_trace,
+        final_top_evidence=final_top_evidence,
+        final_citations=final_citations,
+        surface_visibility=surface_visibility,
+    )
+    return {
+        "schema_version": CONTROLLER_EVIDENCE_LEDGER_TRACE_SCHEMA_VERSION,
+        "trace_key": CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
+        "trace_mode": "controller_owned_authority_custody",
+        "diagnostic_only": False,
+        "sanitized": True,
+        "behavior_changed": False,
+        "runtime_behavior_changed": False,
+        "ControllerEvidenceLedger": ledger,
+    }
 
 
 def assert_controller_evidence_ledger_integrity(ledger: Mapping[str, Any]) -> None:
@@ -715,7 +749,9 @@ def _append_legacy_gap_events(
                 },
             )
         )
-    if (final_evidence_positive or final_citation_positive) and final_selected_count == 0:
+    if (
+        final_evidence_positive or final_citation_positive
+    ) and final_selected_count == 0 and selected_evidence_count == 0:
         gap_events.append(
             _add_event(
                 events,
@@ -765,6 +801,55 @@ def _append_legacy_gap_events(
             )
         )
     return gap_events
+
+
+def _final_evidence_citation_custody(
+    events: Iterable[Mapping[str, Any]],
+) -> dict[str, Any]:
+    event_list = [dict(event) for event in events]
+    final_evidence = _events_by_type(event_list, FINAL_EVIDENCE_OBSERVED)
+    final_citations = _events_by_type(event_list, FINAL_CITATION_OBSERVED)
+    selected = _events_by_type(event_list, AUTHORITY_EVIDENCE_SELECTED)
+    represented = [
+        event
+        for event in _events_by_type(event_list, CANDIDATE_REPRESENTED)
+        if _is_authority_candidate(event)
+    ]
+    dispositions = _events_by_type(event_list, CANDIDATE_DISPOSITIONED)
+    gaps = _events_by_type(event_list, LEGACY_CUSTODY_GAP_OBSERVED)
+    final_gap_types = [
+        gap_type
+        for gap_type in (_clean_text(event.get("gap_type")) for event in gaps)
+        if gap_type.startswith("final_evidence_or_citation_")
+        or gap_type == "provider_result_to_final_evidence_custody_parallel_path"
+    ]
+    has_final_surface = bool(final_evidence or final_citations)
+    integrity = _integrity(event_list)
+    if not has_final_surface:
+        status = "not_observed"
+    elif integrity["represented_candidates_missing_disposition"]:
+        status = "missing_controller_disposition"
+    elif final_gap_types:
+        status = "legacy_gap_observed"
+    elif represented and dispositions and selected:
+        status = "controller_complete"
+    else:
+        status = "legacy_gap_observed"
+    return {
+        "owner": "ControllerEvidenceLedger",
+        "status": status,
+        "custody_complete": status == "controller_complete",
+        "final_evidence_observed_count": len(final_evidence),
+        "final_citation_observed_count": len(final_citations),
+        "represented_authority_candidate_count": len(represented),
+        "candidate_disposition_count": len(dispositions),
+        "selected_authority_evidence_count": len(selected),
+        "legacy_gap_types": final_gap_types,
+        "legacy_success_counts_are_authoritative": False,
+        "old_path_classification": (
+            "final evidence/citation counts are subordinate to ControllerEvidenceLedger custody"
+        ),
+    }
 
 
 def _integrity(events: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
@@ -1157,6 +1242,8 @@ __all__ = [
     "CONTEXT_EXPOSURE_OBSERVED",
     "CONTEXT_EXPOSURE_REQUIRED",
     "CONTROLLER_EVIDENCE_LEDGER_SCHEMA_VERSION",
+    "CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY",
+    "CONTROLLER_EVIDENCE_LEDGER_TRACE_SCHEMA_VERSION",
     "FINAL_CITATION_OBSERVED",
     "FINAL_EVIDENCE_OBSERVED",
     "LEDGER_EVENT_TYPES",
@@ -1165,4 +1252,5 @@ __all__ = [
     "RECOVERY_ACTION_AUTHORIZED",
     "assert_controller_evidence_ledger_integrity",
     "build_controller_evidence_ledger",
+    "build_controller_evidence_ledger_trace",
 ]
