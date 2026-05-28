@@ -234,8 +234,6 @@ def execute_source_class_recovery_action(
     )
     if provider_role != "source_class_recovery":
         raise error_type("source_class_recovery action has unexpected provider role")
-    if not queries or search_depth is None:
-        return {"attempted": False, "result_count": 0, "new_url_count": 0}
 
     controller_recovery_decision = build_controller_recovery_decision(
         {
@@ -261,6 +259,17 @@ def execute_source_class_recovery_action(
         lifecycle_trace["active_source_class_recovery_blockers"] = list(
             lifecycle_trace.get("active_source_class_recovery_blockers") or []
         ) + [controller_recovery_decision.decision]
+        return {"attempted": False, "result_count": 0, "new_url_count": 0}
+    if not queries or search_depth is None:
+        blockers = list(lifecycle_trace.get("active_source_class_recovery_blockers") or [])
+        if not queries:
+            blockers.append("missing_executor_queries")
+        if search_depth is None:
+            blockers.append("missing_executor_search_depth")
+        lifecycle_trace["active_source_class_recovery_blockers"] = blockers
+        lifecycle_trace["active_source_class_recovery_skip_reason"] = (
+            "controller_recovery_decision_allowed_but_executor_action_unexecutable"
+        )
         return {"attempted": False, "result_count": 0, "new_url_count": 0}
 
     recovery_include_domains = list(include_domains)

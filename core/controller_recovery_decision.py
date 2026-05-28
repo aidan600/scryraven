@@ -186,6 +186,7 @@ def build_controller_recovery_decision(
         "legacy_gap_types": legacy_gap_types,
         "old_path_subordinated": [
             "source_class_recovery_executor_action_gate",
+            "source_class_recovery_executor_parameter_gate",
             "official_canonical_recovery_visibility_export",
         ],
         "controller_gate_authoritative": gate_authoritative,
