@@ -448,7 +448,8 @@ def test_ag69d_static_guard_keeps_pipeline_and_protected_surfaces_closed() -> No
         }
     )
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
-    assert pipeline_source.count("apply_recovered_evidence_visibility_boundary(") == 1
+    assert "apply_recovered_evidence_visibility_boundary(" not in pipeline_source
+    assert pipeline_source.count("apply_controller_recovered_evidence_visibility(") == 3
     assert "authority_lifecycle_candidate_visibility" not in pipeline_source
     assert "standard mileage rate" not in pipeline_source.casefold()
     assert "taxable maximum" not in pipeline_source.casefold()

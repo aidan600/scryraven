@@ -19,9 +19,6 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
-from core.allocation_candidate_selection_activation import (
-    allocation_result_candidates_for_existing_selection_corridor,
-)
 from core.anchor_resolution import (
     build_shadow_anchor_packet,
     format_anchor_context_for_researcher,
@@ -147,7 +144,7 @@ from core.quantitative_consistency import (
     is_two_item_calorie_gram_comparison_candidate,
 )
 from core.recovered_evidence_visibility import (
-    apply_recovered_evidence_visibility_boundary,
+    apply_controller_recovered_evidence_visibility,
 )
 from core.retrieval_batch_dispatch import (
     RETRIEVAL_BATCH_DISPATCH_TRACE_KEY,
@@ -5341,33 +5338,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         total_urls_fetched += int(conflict_resolution_execution["new_url_count"])
         total_chunks_embedded += int(conflict_resolution_execution["result_count"])
 
-    def _apply_recovered_evidence_visibility(
-        final_evidence: list[dict[str, Any]],
-    ) -> list[dict[str, Any]]:
-        recovered_passages = [
-            passage
-            for passage in all_passages
-            if passage.get("retrieval_stage") == "source_class_recovery"
-        ]
-        recovered_passages.extend(
-            allocation_result_candidates_for_existing_selection_corridor(
-                active_source_class_recovery_lifecycle
-            )
-        )
-        bounded, decision = apply_recovered_evidence_visibility_boundary(
-            final_top_evidence=final_evidence,
-            recovered_passages=recovered_passages,
-            lifecycle_trace=active_source_class_recovery_lifecycle,
-            max_final_evidence=top_chunks,
-            reserve_limit=1,
-        )
-        active_source_class_recovery_lifecycle.update(decision.to_trace_fields())
-        return [source for source in bounded if isinstance(source, dict)]
-
     all_passages.sort(key=lambda x: x.get("score", 0), reverse=True)
     max_domain_chunks = 4 if complexity == "high" else (3 if complexity == "medium" else 2)
     final_top_evidence = deps.filter_top_evidence(all_passages, top_chunks, max_domain_chunks)
-    final_top_evidence = _apply_recovered_evidence_visibility(final_top_evidence)
+    final_top_evidence = apply_controller_recovered_evidence_visibility(
+        final_top_evidence=final_top_evidence,
+        all_passages=all_passages,
+        lifecycle_trace=active_source_class_recovery_lifecycle,
+        max_final_evidence=top_chunks,
+        reserve_limit=1,
+    )
 
     unique_source_urls: dict[str, int] = {}
     ordered_sources: list[str] = []
@@ -5962,7 +5942,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     all_passages.extend(supp_passages)
                     all_passages.sort(key=lambda x: x.get("score", 0), reverse=True)
                     final_top_evidence = deps.filter_top_evidence(all_passages, top_chunks, max_domain_chunks)
-                    final_top_evidence = _apply_recovered_evidence_visibility(final_top_evidence)
+                    final_top_evidence = apply_controller_recovered_evidence_visibility(
+                        final_top_evidence=final_top_evidence,
+                        all_passages=all_passages,
+                        lifecycle_trace=active_source_class_recovery_lifecycle,
+                        max_final_evidence=top_chunks,
+                        reserve_limit=1,
+                    )
 
                     unique_source_urls = {}
                     ordered_sources = []
@@ -6155,7 +6141,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                     final_top_evidence = deps.filter_top_evidence(
                                         all_passages, top_chunks, max_domain_chunks
                                     )
-                                    final_top_evidence = _apply_recovered_evidence_visibility(final_top_evidence)
+                                    final_top_evidence = apply_controller_recovered_evidence_visibility(
+                                        final_top_evidence=final_top_evidence,
+                                        all_passages=all_passages,
+                                        lifecycle_trace=active_source_class_recovery_lifecycle,
+                                        max_final_evidence=top_chunks,
+                                        reserve_limit=1,
+                                    )
                                     unique_source_urls = {}
                                     ordered_sources = []
                                     next_source_id = 1

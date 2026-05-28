@@ -312,7 +312,8 @@ def test_ag69e_static_guard_keeps_projection_control_out_of_runtime_authority() 
     assert pipeline_source.count("execute_source_class_recovery_action(") == 0
     assert runner_source.count("execute_source_class_recovery_action(") == 1
     assert "run_source_class_recovery_dispatch(" in pipeline_source
-    assert pipeline_source.count("apply_recovered_evidence_visibility_boundary(") == 1
+    assert "apply_recovered_evidence_visibility_boundary(" not in pipeline_source
+    assert pipeline_source.count("apply_controller_recovered_evidence_visibility(") == 3
     assert "authority_lifecycle_compatibility_fields" not in pipeline_source
     assert "standard mileage rate" not in pipeline_source.casefold()
     assert "taxable maximum" not in pipeline_source.casefold()

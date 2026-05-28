@@ -233,10 +233,13 @@ def test_ag75a_z_raw_payloads_and_protected_surfaces_stay_closed() -> None:
 def test_ag75a_z_pipeline_orchestrator_is_tiny_handoff_not_selection_owner() -> None:
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8").casefold()
 
-    assert "allocation_result_candidates_for_existing_selection_corridor" in (
+    assert "apply_controller_recovered_evidence_visibility" in (
+        orchestrator_source
+    )
+    assert "allocation_result_candidates_for_existing_selection_corridor" not in (
         orchestrator_source
     )
     assert "allocationcandidateselectionactivation" not in orchestrator_source
     assert "authorityevidenceselected" not in orchestrator_source
     assert "promoted_final_authority_evidence" not in orchestrator_source
-    assert orchestrator_source.count("apply_recovered_evidence_visibility_boundary(") == 1
+    assert "apply_recovered_evidence_visibility_boundary(" not in orchestrator_source
