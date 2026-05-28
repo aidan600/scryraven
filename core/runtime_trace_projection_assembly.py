@@ -32,6 +32,10 @@ from core.official_source_survival_projection import (
     OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY,
     build_official_source_survival_projection_trace,
 )
+from core.provider_result_represented_visibility import (
+    PROVIDER_RESULT_REPRESENTED_VISIBILITY_TRACE_KEY,
+    build_provider_result_represented_visibility_trace,
+)
 from core.retrieval_batch_projection import (
     RETRIEVAL_BATCH_PROJECTION_TRACE_KEY,
     build_retrieval_batch_projection_trace,
@@ -185,6 +189,25 @@ def attach_passive_runtime_projection_traces(
     except Exception as exc:
         active_logger.warning(
             "Non-fatal authority-candidate passport projection omitted: %s",
+            exc,
+        )
+    try:
+        provider_result_bridge_trace = (
+            build_provider_result_represented_visibility_trace(execution_trace)
+        )
+        execution_trace[PROVIDER_RESULT_REPRESENTED_VISIBILITY_TRACE_KEY] = (
+            provider_result_bridge_trace
+        )
+        checkpoint_packet = execution_trace.get(
+            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
+        )
+        if isinstance(checkpoint_packet, dict):
+            checkpoint_packet[PROVIDER_RESULT_REPRESENTED_VISIBILITY_TRACE_KEY] = (
+                provider_result_bridge_trace
+            )
+    except Exception as exc:
+        active_logger.warning(
+            "Non-fatal provider-result represented bridge omitted: %s",
             exc,
         )
     try:

@@ -2636,6 +2636,43 @@ def _max_query_similarity(query: Any, prior_queries: list[str] | None) -> float 
     return max((jaccard_similarity([str(query or "")], [str(prior)]) for prior in prior_queries), default=0.0)
 
 
+def _provider_result_summary(
+    *,
+    provider: str,
+    provider_role: str,
+    query: Any,
+    iteration: int | None,
+    rank: int,
+    result: dict,
+    accepted: bool,
+    non_representation_reason: str | None,
+) -> dict[str, Any]:
+    url = str(result.get("url") or "")[:240]
+    title = " ".join(str(result.get("title") or "").strip().split())[:180]
+    return {
+        "provider_result_id": (
+            f"{provider_role}:{iteration if iteration is not None else 'unknown'}:"
+            f"{provider}:{rank}"
+        ),
+        "provider_name": provider,
+        "provider_role": provider_role,
+        "retrieval_pass_id": (
+            f"{provider_role}:{iteration if iteration is not None else 'unknown'}"
+        ),
+        "query_preview": str(query or "")[:140],
+        "provider_rank_or_position": rank,
+        "source_url": url,
+        "normalized_domain": normalize_domain(url),
+        "title": title,
+        "provider_returned": True,
+        "accepted_url": url if accepted else "",
+        "non_representation_reason": non_representation_reason,
+        "diagnostic_only": True,
+        "sanitized": True,
+        "behavior_changed": False,
+    }
+
+
 def process_search_queries(
     queries_list,
     intent,
@@ -2765,11 +2802,38 @@ def process_search_queries(
             raw_domains = _diagnostic_domains(raw_unique_urls)
             raw_url_overlap_count = len(raw_unique_urls & pre_pass_seen_urls)
             raw_domain_overlap_count = len(raw_domains & pre_pass_seen_domains)
-            for item in results:
+            provider_result_summaries: list[dict[str, Any]] = []
+            for rank, item in enumerate(results, start=1):
                 url = item.get("url", "")
-                if is_plausible_domain(url) and url not in seen_urls_set:
+                plausible = is_plausible_domain(url)
+                accepted = (
+                    plausible
+                    and url not in seen_urls_set
+                    and url not in provider_seen_urls
+                )
+                non_representation_reason = None
+                if plausible and url in seen_urls_set:
+                    non_representation_reason = "duplicate_seen_url"
+                elif plausible and url in provider_seen_urls:
+                    non_representation_reason = "duplicate_provider_url"
+                elif not plausible and url:
+                    non_representation_reason = "non_plausible_url"
+                if url:
+                    provider_result_summaries.append(
+                        _provider_result_summary(
+                            provider=provider,
+                            provider_role=provider_role,
+                            query=q,
+                            iteration=iteration,
+                            rank=rank,
+                            result=item,
+                            accepted=accepted,
+                            non_representation_reason=non_representation_reason,
+                        )
+                    )
+                if plausible and url not in seen_urls_set:
                     attempt_new_urls.add(url)
-                if is_plausible_domain(url) and url not in seen_urls_set and url not in provider_seen_urls:
+                if accepted:
                     item["_provider"] = provider
                     item["_query"] = q
                     provider_buckets[provider].append(item)
@@ -2819,6 +2883,7 @@ def process_search_queries(
                     query_similarity_max=_max_query_similarity(q, prior_queries_for_similarity),
                     query_similarity_basis=query_similarity_basis,
                     provider_overlap_diagnostics_available=success,
+                    provider_result_summaries=provider_result_summaries,
                 )
                 provider_diagnostics.append(diagnostic)
                 attempt_diagnostics.append((diagnostic, set(accepted_urls)))

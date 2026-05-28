@@ -6,6 +6,27 @@ from typing import Any, Callable
 
 PROVIDER_DIAGNOSTICS_SCHEMA_VERSION = "provider_diagnostics_v1"
 QUERY_PREVIEW_MAX_CHARS = 200
+_MAX_RESULT_SUMMARIES = 20
+_MAX_SUMMARY_TEXT_CHARS = 240
+_SENSITIVE_SUMMARY_KEY_MARKERS = (
+    "api_key",
+    "cache",
+    "credential",
+    "db",
+    "env",
+    "full_trace",
+    "key",
+    "log",
+    "output_packet",
+    "password",
+    "prompt",
+    "provider_payload",
+    "raw_",
+    "secret",
+    "snippet",
+    "text",
+    "token",
+)
 
 
 def _bounded_int(value: Any) -> int | None:
@@ -19,6 +40,26 @@ def _bounded_int(value: Any) -> int | None:
 
 def _query_preview(query: Any) -> str:
     return str(query or "")[:QUERY_PREVIEW_MAX_CHARS]
+
+
+def _clean_summary_text(value: Any) -> str:
+    return " ".join(str(value or "").strip().split())[:_MAX_SUMMARY_TEXT_CHARS]
+
+
+def _safe_provider_result_summary(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    summary: dict[str, Any] = {}
+    for key, item in value.items():
+        key_text = str(key or "")
+        key_lower = key_text.casefold()
+        if any(marker in key_lower for marker in _SENSITIVE_SUMMARY_KEY_MARKERS):
+            continue
+        if item is None or isinstance(item, (bool, int, float)):
+            summary[key_text] = item
+        else:
+            summary[key_text] = _clean_summary_text(item)
+    return summary
 
 
 def build_provider_attempt_diagnostic(
@@ -53,6 +94,7 @@ def build_provider_attempt_diagnostic(
     query_similarity_max: float | None = None,
     query_similarity_basis: str | None = None,
     provider_overlap_diagnostics_available: bool | None = None,
+    provider_result_summaries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build one call-site-level provider diagnostic record.
 
@@ -107,6 +149,14 @@ def build_provider_attempt_diagnostic(
         attempt["provider_overlap_diagnostics_available"] = bool(
             provider_overlap_diagnostics_available
         )
+    summaries = [
+        summary
+        for item in (provider_result_summaries or [])[:_MAX_RESULT_SUMMARIES]
+        if (summary := _safe_provider_result_summary(item)) is not None
+    ]
+    if summaries:
+        attempt["provider_result_summaries"] = summaries
+        attempt["provider_result_summary_count"] = len(summaries)
     return attempt
 
 

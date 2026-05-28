@@ -24,6 +24,9 @@ from core.official_source_obligation_candidate_visibility import (
 from core.official_source_survival_projection import (
     OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY,
 )
+from core.provider_result_represented_visibility import (
+    PROVIDER_RESULT_REPRESENTED_VISIBILITY_TRACE_KEY,
+)
 
 OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_TRACE_KEY = (
     "official_canonical_recovery_visibility_export"
@@ -94,6 +97,7 @@ def build_official_canonical_recovery_visibility_export(
     survival = _survival_payload(trace)
     lifecycle_candidate_fit = _authority_lifecycle_candidate_fit(trace)
     authority_candidate_passport = _authority_candidate_passport_payload(trace)
+    provider_result_bridge = _provider_result_bridge_payload(trace)
 
     admission_considered = _bool_or_unknown(admission.get("admission_considered"))
     admission_eligible = _bool_or_unknown(admission.get("admission_eligible"))
@@ -374,6 +378,39 @@ def build_official_canonical_recovery_visibility_export(
         "authority_candidate_passport_projection": (
             authority_candidate_passport or NOT_OBSERVABLE
         ),
+        "provider_result_bridge_available": bool(provider_result_bridge),
+        "provider_result_bridge_schema_version": (
+            _optional_text(provider_result_bridge.get("schema_version"))
+            if provider_result_bridge
+            else NOT_OBSERVABLE
+        ),
+        "provider_result_bridge_record_count": (
+            _first_known_int(provider_result_bridge.get("bridge_record_count"))
+            if provider_result_bridge
+            else UNKNOWN
+        ),
+        "provider_result_bridge_disposition_counts": (
+            _safe_count_map_unrestricted(
+                provider_result_bridge.get("bridge_disposition_counts")
+            )
+            if provider_result_bridge
+            else NOT_OBSERVABLE
+        ),
+        "provider_result_bridge_aggregate_reconciliation_status": (
+            _optional_text(
+                provider_result_bridge.get("aggregate_reconciliation_status")
+            )
+            if provider_result_bridge
+            else NOT_OBSERVABLE
+        ),
+        "provider_result_bridge_unobservable_boundary": (
+            _optional_text(provider_result_bridge.get("unobservable_boundary"))
+            if provider_result_bridge
+            else NOT_OBSERVABLE
+        ),
+        "provider_result_represented_candidate_bridge": (
+            provider_result_bridge or NOT_OBSERVABLE
+        ),
         "recovered_candidate_source_fit_status": _optional_text(
             trace.get("recovered_visibility_source_fit_status")
             or _legacy_lifecycle_fit_state(lifecycle_candidate_fit)
@@ -620,6 +657,12 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "authority_candidate_passport_integrity_status",
         "authority_candidate_passport_final_dispositions",
         "authority_candidate_passport_first_missing_stages",
+        "provider_result_bridge_available",
+        "provider_result_bridge_schema_version",
+        "provider_result_bridge_record_count",
+        "provider_result_bridge_disposition_counts",
+        "provider_result_bridge_aggregate_reconciliation_status",
+        "provider_result_bridge_unobservable_boundary",
         "recovered_candidate_source_fit_status",
         "recovered_candidate_source_fit_count",
         "recovered_candidate_selected_readable_count",
@@ -678,6 +721,15 @@ def _authority_candidate_passport_payload(trace: Mapping[str, Any]) -> dict[str,
     packet = trace.get(AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY)
     if isinstance(packet, Mapping):
         payload = packet.get("AuthorityCandidatePassportProjection")
+        if isinstance(payload, Mapping):
+            return _safe_mapping(payload)
+    return {}
+
+
+def _provider_result_bridge_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
+    packet = trace.get(PROVIDER_RESULT_REPRESENTED_VISIBILITY_TRACE_KEY)
+    if isinstance(packet, Mapping):
+        payload = packet.get("ProviderResultRepresentedCandidateBridge")
         if isinstance(payload, Mapping):
             return _safe_mapping(payload)
     return {}
@@ -1143,6 +1195,22 @@ def _safe_count_map(
             parsed = _optional_int(raw_count)
             if parsed != UNKNOWN:
                 out[key] = parsed
+    return dict(sorted(out.items()))
+
+
+def _safe_count_map_unrestricted(value: Any) -> dict[str, int] | str:
+    if value is None:
+        return UNKNOWN
+    if not isinstance(value, Mapping):
+        return UNKNOWN
+    out: dict[str, int] = {}
+    for raw_key, raw_count in value.items():
+        if _is_sensitive_key(raw_key):
+            continue
+        key = _clean_token(raw_key)
+        parsed = _optional_int(raw_count)
+        if key and parsed != UNKNOWN:
+            out[key] = parsed
     return dict(sorted(out.items()))
 
 
