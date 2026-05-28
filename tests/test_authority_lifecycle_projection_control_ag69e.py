@@ -29,6 +29,7 @@ from core.recovered_evidence_visibility import (
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 _SPINE_PATH = _ROOT / "core" / "controller_loop_spine.py"
 _VISIBILITY_PATH = _ROOT / "core" / "recovered_evidence_visibility.py"
 _EXECUTION_PATH = _ROOT / "core" / "authority_lifecycle_execution.py"
@@ -307,7 +308,10 @@ def test_ag69e_static_guard_keeps_projection_control_out_of_runtime_authority() 
         )
 
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
-    assert pipeline_source.count("execute_source_class_recovery_action(") == 1
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
+    assert pipeline_source.count("execute_source_class_recovery_action(") == 0
+    assert runner_source.count("execute_source_class_recovery_action(") == 1
+    assert "run_source_class_recovery_dispatch(" in pipeline_source
     assert pipeline_source.count("apply_recovered_evidence_visibility_boundary(") == 1
     assert "authority_lifecycle_compatibility_fields" not in pipeline_source
     assert "standard mileage rate" not in pipeline_source.casefold()

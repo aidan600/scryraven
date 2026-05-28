@@ -488,19 +488,30 @@ def test_ag69c_execution_and_candidate_acquisition_states_remain_distinct() -> N
 
 def test_ag69c_pipeline_change_remains_tiny_plumbing() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    runner_source = (_ROOT / "core" / "source_class_recovery_runner.py").read_text(
+        encoding="utf-8"
+    )
     tree = ast.parse(pipeline_source)
 
-    assert pipeline_source.count("execute_source_class_recovery_action(") == 1
+    assert pipeline_source.count("execute_source_class_recovery_action(") == 0
+    assert runner_source.count("execute_source_class_recovery_action(") == 1
     assert (
         pipeline_source.count(
             "record_source_class_recovery_execution_blocked_if_needed("
         )
+        == 0
+    )
+    assert (
+        runner_source.count(
+            "record_source_class_recovery_execution_blocked_if_needed("
+        )
         == 1
     )
-    call_index = pipeline_source.index(
+    assert "run_source_class_recovery_dispatch(" in pipeline_source
+    call_index = runner_source.index(
         "record_source_class_recovery_execution_blocked_if_needed("
     )
-    helper_region = pipeline_source[call_index - 500 : call_index + 500].casefold()
+    helper_region = runner_source[call_index - 500 : call_index + 500].casefold()
     for forbidden in (
         "select_providers(",
         "choose_supplemental_search_depth(",

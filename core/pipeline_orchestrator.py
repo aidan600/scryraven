@@ -205,12 +205,12 @@ from core.source_class_recovery_diagnostics import (
     SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY,
     build_source_class_recovery_validation_packet,
 )
-from core.source_class_recovery_executor import (
-    execute_source_class_recovery_action,
-    record_source_class_recovery_execution_blocked_if_needed,
-)
 from core.source_class_recovery_lifecycle import (
     source_class_recovery_lifecycle_defaults,
+)
+from core.source_class_recovery_runner import (
+    SourceClassRecoveryRunnerContext,
+    run_source_class_recovery_dispatch,
 )
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
 from core.source_recency import build_recency_author_notes
@@ -5255,10 +5255,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             dict(retrieval_batch_dispatch_trace)
         )
 
-    source_class_recovery_execution: dict[str, int | bool]
-    if authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS:
-        source_class_recovery_execution = execute_source_class_recovery_action(
-            _run_controller_mirror,
+    source_class_recovery_result = run_source_class_recovery_dispatch(
+        SourceClassRecoveryRunnerContext(
+            controller=_run_controller_mirror,
+            authorized_spine_action=authorized_spine_action,
             lifecycle_trace=active_source_class_recovery_lifecycle,
             process_search_queries=process_search_queries,
             all_passages=all_passages,
@@ -5285,20 +5285,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             retrieval_pass_records=retrieval_pass_records,
             error_type=PipelineError,
         )
-    else:
-        record_source_class_recovery_execution_blocked_if_needed(
-            active_source_class_recovery_lifecycle,
-            authorized_for_executor=False,
-            blocker_reason="source_class_recovery_executor_dispatch_not_authorized",
-        )
-        source_class_recovery_execution = {
-            "attempted": False,
-            "result_count": 0,
-            "new_url_count": 0,
-        }
-    if source_class_recovery_execution["attempted"]:
-        total_urls_fetched += int(source_class_recovery_execution["new_url_count"])
-        total_chunks_embedded += int(source_class_recovery_execution["result_count"])
+    )
+    source_class_recovery_execution = (
+        source_class_recovery_result.source_class_recovery_execution
+    )
+    total_urls_fetched += source_class_recovery_result.total_urls_delta
+    total_chunks_embedded += source_class_recovery_result.total_chunks_delta
 
     conflict_resolution_execution: dict[str, int | bool]
     if authorized_spine_action == RESOLVE_CONFLICT:

@@ -18,6 +18,7 @@ from core.run_controller import RunController
 from core.source_class_recovery_diagnostics import (
     SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY,
 )
+from core.source_class_recovery_executor import execute_source_class_recovery_action
 from core.source_class_recovery_lifecycle import record_source_class_recovery_lifecycle
 from tests.controller_diagnostics_contract_utils import (
     assert_execution_trace_payload_contract,
@@ -1014,7 +1015,7 @@ def test_source_class_recovery_adapter_executes_at_most_once() -> None:
             }
         ]
 
-    first = orchestrator.execute_source_class_recovery_action(
+    first = execute_source_class_recovery_action(
         controller,
         lifecycle_trace=lifecycle,
         process_search_queries=fake_process_search_queries,
@@ -1039,7 +1040,7 @@ def test_source_class_recovery_adapter_executes_at_most_once() -> None:
         provider_diagnostics=provider_diagnostics,
         retrieval_pass_records=retrieval_pass_records,
     )
-    second = orchestrator.execute_source_class_recovery_action(
+    second = execute_source_class_recovery_action(
         controller,
         lifecycle_trace=lifecycle,
         process_search_queries=fake_process_search_queries,
