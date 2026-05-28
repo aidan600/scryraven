@@ -4,10 +4,6 @@ import logging
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from core.allocation_candidate_selection_activation import (
-    ALLOCATION_CANDIDATE_SELECTION_ACTIVATION_TRACE_KEY,
-    build_allocation_candidate_selection_activation_trace,
-)
 from core.allocation_result_candidate_custody import (
     ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY,
     build_allocation_result_candidate_custody_trace,
@@ -294,27 +290,6 @@ def attach_passive_runtime_projection_traces(
     except Exception as exc:
         active_logger.warning(
             "Non-fatal allocation-result custody visibility refresh omitted: %s",
-            exc,
-        )
-    try:
-        if CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY not in execution_trace:
-            return execution_trace
-        activation_trace = build_allocation_candidate_selection_activation_trace(
-            execution_trace
-        )
-        execution_trace[ALLOCATION_CANDIDATE_SELECTION_ACTIVATION_TRACE_KEY] = (
-            activation_trace
-        )
-        checkpoint_packet = execution_trace.get(
-            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
-        )
-        if isinstance(checkpoint_packet, dict):
-            checkpoint_packet[ALLOCATION_CANDIDATE_SELECTION_ACTIVATION_TRACE_KEY] = (
-                activation_trace
-            )
-    except Exception as exc:
-        active_logger.warning(
-            "Non-fatal allocation-candidate selection activation omitted: %s",
             exc,
         )
     try:

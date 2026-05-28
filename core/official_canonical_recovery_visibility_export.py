@@ -12,9 +12,6 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
-from core.allocation_candidate_selection_activation import (
-    ALLOCATION_CANDIDATE_SELECTION_ACTIVATION_TRACE_KEY,
-)
 from core.allocation_result_candidate_custody import (
     ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY,
 )
@@ -126,7 +123,6 @@ def build_official_canonical_recovery_visibility_export(
         _provider_search_allocation_execution_payload(trace)
     )
     allocation_result_custody = _allocation_result_candidate_custody_payload(trace)
-    allocation_candidate_activation = _allocation_candidate_activation_payload(trace)
 
     admission_considered = _bool_or_unknown(admission.get("admission_considered"))
     admission_eligible = _bool_or_unknown(admission.get("admission_eligible"))
@@ -604,73 +600,6 @@ def build_official_canonical_recovery_visibility_export(
         "allocation_result_candidate_custody": (
             allocation_result_custody or NOT_OBSERVABLE
         ),
-        "allocation_candidate_selection_activation_available": bool(
-            allocation_candidate_activation
-        ),
-        "allocation_candidate_admitted_candidate_count": (
-            _first_known_int(
-                allocation_candidate_activation.get("admitted_candidate_count")
-            )
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_eligible_for_existing_disposition_count": (
-            _first_known_int(
-                allocation_candidate_activation.get(
-                    "eligible_for_existing_disposition_count"
-                )
-            )
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_activated_disposition_count": (
-            _first_known_int(
-                allocation_candidate_activation.get("activated_disposition_count")
-            )
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_selected_evidence_candidate_count": (
-            _first_known_int(
-                allocation_candidate_activation.get(
-                    "selected_evidence_candidate_count"
-                )
-            )
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_rejected_or_blocked_candidate_count": (
-            _first_known_int(
-                allocation_candidate_activation.get(
-                    "rejected_or_blocked_candidate_count"
-                )
-            )
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_blocked_reasons": (
-            _safe_list(allocation_candidate_activation.get("blocked_reasons"))
-            if allocation_candidate_activation
-            else NOT_OBSERVABLE
-        ),
-        "allocation_candidate_bypass_prevented": (
-            allocation_candidate_activation.get("bypass_prevented")
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_final_answer_behavior_changed": (
-            allocation_candidate_activation.get("final_answer_behavior_changed")
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_citation_behavior_changed": (
-            allocation_candidate_activation.get("citation_behavior_changed")
-            if allocation_candidate_activation
-            else UNKNOWN
-        ),
-        "allocation_candidate_selection_activation": (
-            allocation_candidate_activation or NOT_OBSERVABLE
-        ),
         "unknown_fields": [],
         "behavior_changed": False,
     }
@@ -914,17 +843,6 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "allocation_result_final_evidence_changed",
         "allocation_result_final_citation_changed",
         "allocation_result_candidate_custody",
-        "allocation_candidate_selection_activation_available",
-        "allocation_candidate_admitted_candidate_count",
-        "allocation_candidate_eligible_for_existing_disposition_count",
-        "allocation_candidate_activated_disposition_count",
-        "allocation_candidate_selected_evidence_candidate_count",
-        "allocation_candidate_rejected_or_blocked_candidate_count",
-        "allocation_candidate_blocked_reasons",
-        "allocation_candidate_bypass_prevented",
-        "allocation_candidate_final_answer_behavior_changed",
-        "allocation_candidate_citation_behavior_changed",
-        "allocation_candidate_selection_activation",
         "unknown_fields",
         "behavior_changed",
     ):
@@ -1090,17 +1008,6 @@ def _allocation_result_candidate_custody_payload(
     packet = trace.get(ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY)
     if isinstance(packet, Mapping):
         payload = packet.get("AllocationResultCandidateCustody")
-        if isinstance(payload, Mapping):
-            return _safe_mapping(payload)
-    return {}
-
-
-def _allocation_candidate_activation_payload(
-    trace: Mapping[str, Any],
-) -> dict[str, Any]:
-    packet = trace.get(ALLOCATION_CANDIDATE_SELECTION_ACTIVATION_TRACE_KEY)
-    if isinstance(packet, Mapping):
-        payload = packet.get("AllocationCandidateSelectionActivation")
         if isinstance(payload, Mapping):
             return _safe_mapping(payload)
     return {}

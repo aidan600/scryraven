@@ -4,11 +4,15 @@ Date: 2026-05-28
 
 ## Scope
 
-AG-75A-Z connects admitted AG-75A-Y allocation-result candidates to the
-existing downstream candidate disposition and selected-evidence corridor. It is
-not provider expansion, query repair, source-class/currentness classifier
-repair, candidate-fit repair, final-answer behavior, Author behavior, citation
-formatting, IRS hardcoding, broad orchestrator work, or live validation.
+AG-75A-Z is the final AG-75A suffix. It operationally connects admitted
+AG-75A-Y allocation-result candidates into the existing recovered-evidence
+disposition/selection corridor. It does not add a new passive projection,
+advisory wrapper, or diagnostic-only surface.
+
+Closed surfaces remain closed: provider expansion, provider routing/depth,
+Linkup escalation, query repair, classifier/currentness repair, candidate-fit
+repair, prompt/Author/final prose/citation formatting, IRS hardcoding, live
+validation, raw/private data, and broad orchestrator domain logic.
 
 ## AG-75A-Y Prerequisite Verification
 
@@ -19,7 +23,7 @@ Current `main` contained AG-75A-Y / PR #22 before implementation:
 3b41e07 Add AG-75A-Y allocation result candidate custody
 ```
 
-Required AG-75A-X / AG-75A-Y artifacts were present:
+Required artifacts were present:
 
 - `docs/architecture/AG75A_Y_ALLOCATION_RESULT_CANDIDATE_CUSTODY.md`
 - `docs/architecture/AG75A_X_CONTROLLER_AUTHORIZED_EXISTING_PROVIDER_ALLOCATION_EXECUTION.md`
@@ -30,185 +34,164 @@ Required AG-75A-X / AG-75A-Y artifacts were present:
 - `core/controller_evidence_ledger.py`
 - `tests/test_ag75a_y_allocation_result_candidate_custody.py`
 
-AG-75A-Y allocation-result candidates were already visible through the
-provider-result bridge, Authority Candidate Passport, and
-ControllerEvidenceLedger projections. `core/pipeline_orchestrator.py` remained
-handoff/plumbing only and did not own allocation-result custody or
-candidate-selection logic.
+AG-75A-Y already admitted sanitized allocation-result summaries into provider
+bridge, Authority Candidate Passport, and ControllerEvidenceLedger custody
+surfaces. The remaining gap was operational: admitted allocation candidates were
+not part of the recovered-evidence candidate pool consumed by the existing
+selector.
 
-## Activation Path
+## Old Authority Seam
 
-The new helper lives at:
+The old blocking seam was:
 
 ```text
-core/allocation_candidate_selection_activation.py
+pipeline_orchestrator.py
+  -> _apply_recovered_evidence_visibility(...)
+  -> recovered_passages = all_passages where retrieval_stage == source_class_recovery
+  -> apply_recovered_evidence_visibility_boundary(...)
 ```
 
-It builds:
+AG-75A-X deliberately did not append allocation results to `all_passages`.
+AG-75A-Y admitted those results into custody, but the old local recovered
+evidence pool only read `all_passages`. That made admitted allocation-result
+candidates represented but non-selectable.
+
+AG-75A-Z subordinates that old local pool construction by adding one tiny
+handoff:
 
 ```text
-allocation_candidate_selection_activation.AllocationCandidateSelectionActivation
+allocation_result_candidates_for_existing_selection_corridor(...)
 ```
 
-Allocation-result candidates enter the downstream disposition/selection path as
-follows:
+The helper returns custody-admitted allocation candidates as recovered-evidence
+candidate inputs. It does not select, fit, classify, rank, cite, or write final
+answer content.
+
+## Operational Path
+
+The operational path is now:
 
 ```text
-AG-75A-X sanitized allocation_result_summaries
-  -> AG-75A-Y allocation_result_candidate_custody represented_candidate_inputs
-  -> Authority Candidate Passport candidate disposition
+ControllerRecoveryDecision request_provider_search_review
+  -> AG-75A-X bounded existing-provider allocation execution
+  -> AG-75A-Y allocation_result_candidate_custody
+  -> allocation_result_candidates_for_existing_selection_corridor(...)
+  -> apply_recovered_evidence_visibility_boundary(...)
+  -> authority_lifecycle candidate_fit selected/rejected records
+  -> Authority Candidate Passport final_disposition
   -> ControllerEvidenceLedger CandidateDispositioned / AuthorityEvidenceSelected
-  -> AG-75A-Z activation projection
 ```
 
-The activation projection reads only existing custody facts. It does not
-classify, fit, rank, retrieve, prompt, cite, write final prose, or append final
-evidence.
+This is an operational connection because allocation candidates can now become
+selected final authority evidence through the already-existing recovered
+evidence boundary when current classifier/currentness and fit rules accept
+them.
 
 ## Bypass Prevention
 
-Activation requires all of the following existing facts:
+Allocation candidates cannot enter the selector unless all are true:
 
-- AG-75A-Y candidate custody admitted a candidate from a Controller-authorized
-  AG-75A-X execution.
-- The allocation execution lineage still records
-  `ControllerRecoveryDecision` as allocation owner.
-- Authority Candidate Passport exposes source-class/currentness state.
-- Authority Candidate Passport exposes candidate-fit state.
-- ControllerEvidenceLedger records a candidate disposition.
-- Selection is present only when ControllerEvidenceLedger exposes
-  `AuthorityEvidenceSelected`.
+- AG-75A-X execution lineage is authorized by `ControllerRecoveryDecision`;
+- AG-75A-Y custody admits the allocation result;
+- source-class classification is visible and not unknown;
+- currentness state is visible and not unknown;
+- the candidate is not lower-tier/secondary.
 
-Missing classifier/currentness state blocks activation with
-`missing_classifier_currentness_state`. Missing fit blocks with
-`missing_candidate_fit_state`. Missing ledger disposition blocks with
-`missing_controller_evidence_ledger_disposition`.
+Candidate fit is still performed by
+`apply_recovered_evidence_visibility_boundary(...)`. ControllerEvidenceLedger
+then records selected/rejected custody from the existing passport/lifecycle
+facts. The helper cannot independently create `AuthorityEvidenceSelected`,
+`promoted_final_authority_evidence`, final citations, or final prose.
 
-Lower-tier or secondary allocation results remain blocked with:
+## Lower-Tier Controls
 
-```text
-lower_tier_or_secondary_not_satisfying_official_current_obligation
-```
-
-Allocation results cannot satisfy official/current obligations merely because
-the allocation execution was Controller-authorized.
-
-## Observational Only
-
-The following remain observational only:
-
-- admitted candidate counts;
-- eligibility counts;
-- activated disposition counts;
-- selected evidence candidate counts;
-- blocked reason counts;
-- final-answer and citation parity flags;
-- raw-payload exposure flags;
-- official/canonical visibility export projections.
-
-These fields do not change final evidence, citations, final answer prose,
-Author behavior, provider policy, classifier behavior, or candidate-fit
-behavior.
+Lower-tier or secondary allocation results are excluded before selector entry.
+They cannot satisfy official/current obligations and cannot be promoted by local
+or orchestrator helper state.
 
 ## Preserved Behavior
 
-Existing behavior preserved:
+Preserved behavior:
 
-- ControllerRecoveryDecision remains the only authority that permitted
-  allocation execution.
-- ControllerEvidenceLedger remains the custody/disposition owner.
-- Existing source-class/currentness classifier semantics are consumed, not
-  changed.
-- Existing candidate-fit semantics are consumed, not changed.
-- Existing final answer, Author, and citation behavior remain closed.
-- `pipeline_orchestrator.py` remains handoff/plumbing only.
-- Raw provider payloads, prompts, secrets, DB rows, logs, caches, full traces,
-  and ignored output packets remain unexposed.
+- no provider/search policy changed;
+- no classifier/currentness semantics changed;
+- no candidate-fit semantics changed;
+- no new passive projection or export surface was added;
+- no raw provider payloads, raw prompts, secrets, DB rows, private logs, caches,
+  full traces, or ignored output packets were exposed;
+- `pipeline_orchestrator.py` remains a tiny handoff into an existing selector,
+  not a selection owner.
 
-## Final Answer / Citation Parity Evidence
+## CI Note
 
-AG-75A-Z adds only projection/export fields:
+PR #23 CI failed before dependency install or tests. The failing step was
+`actions/setup-python@v6` on the Windows runner. AG-75A-Z changes the workflow
+back to `actions/setup-python@v5`, preserving the existing offline check intent
+while avoiding the setup action failure.
 
-```text
-final_answer_behavior_changed: false
-citation_behavior_changed: false
-raw_payload_exposed: false
-```
+## Final Answer / Citation Parity
 
-Focused tests assert selected allocation candidates do not create final evidence
-or citations directly, and the official/canonical export continues to report
-unchanged final evidence/citation counts for offline fixtures.
-
-## Protected Surfaces Kept Closed
-
-Closed surfaces kept closed:
-
-- provider routing, selection, depth, and escalation policy;
-- new providers, provider swaps, and Linkup escalation changes;
-- query strategy and source constraints;
-- retrieval ranking/filtering;
-- source-class/currentness classifier behavior;
-- candidate-fit behavior;
-- prompt, Author, citation formatting, final prose, final answer, follow-up,
-  Scrutineer, and Economist behavior;
-- direct IRS hardcoding or source-specific official resolver implementation;
-- live ScryRaven/proplex/scryraven provider/model/search calls;
-- secrets, raw provider payloads, raw prompts, DB rows, private logs, caches,
-  full traces, ignored local output packets, and unrelated generated artifacts.
-
-## AG-75C Audit Readiness
-
-The provider/search allocation corridor is complete enough for an AG-75C audit
-of allocation authorization, bounded execution, candidate custody, downstream
-disposition activation, and protected-surface closure. It is not complete enough
-to delete final-answer/citation legacy paths or change provider/search policy.
+This phase intentionally connects candidates to the existing final authority
+evidence selector. It does not alter final prose, Author behavior, citation
+formatting, or citation generation. A selected allocation candidate can affect
+the evidence set only through the existing recovered-evidence selection
+boundary.
 
 ## Demolition Ledger
 
-1. Old admitted-but-non-selectable allocation candidate path targeted:
-   AG-75A-Y allocation-result candidates could enter custody while remaining
-   non-selectable for downstream disposition review.
-2. New downstream disposition/selection activation path:
-   `core/allocation_candidate_selection_activation.py` reads existing
-   passport and ControllerEvidenceLedger disposition/selection state.
+1. Old admitted-but-non-selectable path targeted:
+   AG-75A-Y custody existed, but `pipeline_orchestrator.py` built
+   `recovered_passages` only from `all_passages`.
+2. New operational activation path:
+   `allocation_result_candidates_for_existing_selection_corridor(...)` feeds
+   admitted allocation candidates into
+   `apply_recovered_evidence_visibility_boundary(...)`.
 3. Controller authorization source:
-   AG-75A-X execution lineage derived from `ControllerRecoveryDecision`.
-4. ControllerEvidenceLedger disposition/selection owner:
-   `CandidateDispositioned` and `AuthorityEvidenceSelected` ledger events.
+   AG-75A-X `ProviderSearchAllocationExecution` derived from
+   `ControllerRecoveryDecision == request_provider_search_review`.
+4. ControllerEvidenceLedger owner:
+   selected/rejected state is recorded through existing lifecycle/passport
+   facts into `CandidateDispositioned` and `AuthorityEvidenceSelected`.
 5. Observer/export surface:
-   `runtime_trace_projection_assembly` attaches the neutral activation trace,
-   and `official_canonical_recovery_visibility_export` exposes sanitized counts
-   and blocked reasons.
-6. Old code upgraded, bypassed, or subordinated:
-   AG-75A-Y admitted custody remains; AG-75A-Z makes the old
-   admitted-but-not-activation-visible path subordinate to ledger disposition.
+   existing passport, bridge, ledger, and official/canonical export only; no new
+   AG-75A-Z passive projection/export surface.
+6. Old code subordinated:
+   `pipeline_orchestrator.py` local recovered candidate pool construction is no
+   longer the sole authority on source-class recovery candidates.
 7. Tests proving Controller authorization is required:
-   `test_ag75a_z_controller_recovery_decision_authorization_required`.
+   `test_ag75a_z_controller_authorization_and_custody_are_required`.
 8. Tests proving classifier/fit/ledger bypass is impossible:
-   `test_ag75a_z_candidate_cannot_bypass_classifier_currentness_fit_or_ledger`.
+   `test_ag75a_z_classifier_currentness_gate_is_required_before_fit`,
+   `test_ag75a_z_existing_fit_rules_reject_non_matching_allocation_candidate`,
+   and the ledger assertion in
+   `test_ag75a_z_allocation_candidate_enters_existing_selection_corridor`.
 9. Tests proving lower-tier allocation results cannot satisfy official/current
    obligations:
-   `test_ag75a_z_lower_tier_and_rejected_fit_cannot_satisfy_obligation`.
+   `test_ag75a_z_lower_tier_candidates_never_satisfy_official_current`.
 10. Tests proving final answer/citation behavior parity:
-    `test_ag75a_z_selected_only_through_existing_ledger_selection_corridor` and
-    `test_ag75a_z_raw_payloads_and_protected_surfaces_stay_closed`.
+    `test_ag75a_z_raw_payloads_and_protected_surfaces_stay_closed` and the
+    absence of final-answer/citation calls in the helper/custody path.
 11. Remaining old path to delete next:
-    `pipeline_orchestrator.py` construction of
-    `SourceClassRecoveryRunnerContext(...)` and local final evidence/citation
-    assembly remain future demolition targets.
-12. Whether provider/search allocation corridor is complete enough for AG-75C
-    audit:
-    yes, for audit of authorization, bounded execution, custody admission,
-    downstream activation, and protected-surface closure.
+    the `pipeline_orchestrator.py` closure
+    `_apply_recovered_evidence_visibility(...)` and local final evidence pool
+    construction around `final_top_evidence`.
+12. Provider/search allocation corridor complete enough for AG-75C audit:
+    yes.
 13. Net complexity impact:
-    one small pure activation helper, one projection assembly hook, one export
-    projection, and focused tests. The new code lowers ambiguity without
-    opening classifier, fit, provider, or final-answer surfaces.
+    one small operational adapter plus a tiny orchestrator handoff. The previous
+    passive activation trace/export was removed.
 
-## Recommended Next Phase
+## AG-75C Opening Target
 
-Run AG-75C as an audit phase over the provider/search allocation corridor from
-ControllerRecoveryDecision through bounded execution, candidate custody,
-activation projection, and protected-surface closure. Keep deletion of
-`pipeline_orchestrator.py` handoff/final evidence legacy paths as a separate
-mechanical phase.
+AG-75C should open with an audit/deletion target:
+
+```text
+pipeline_orchestrator.py::_apply_recovered_evidence_visibility
+```
+
+Move or delete the local recovered candidate pool and final evidence handoff
+into a Controller-owned runner/selection boundary, while preserving
+`apply_recovered_evidence_visibility_boundary(...)` as the existing fit/selection
+rule and `ControllerEvidenceLedger` as the custody/disposition owner.
+
+There is no reason to create another AG-75A suffix.
