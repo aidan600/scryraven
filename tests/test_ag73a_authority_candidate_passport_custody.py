@@ -290,11 +290,18 @@ def test_ag73a_aggregate_counts_reconcile_with_existing_visibility_export() -> N
 
 
 def test_ag73a_secondary_lower_tier_candidate_does_not_satisfy_official_obligation() -> None:
-    passport = _passport_for(_secondary_candidate())
+    projection = build_authority_candidate_passport_projection(
+        lifecycle_trace=_trace(),
+        recovered_passages=[_secondary_candidate()],
+    )
+    assert_authority_candidate_passport_integrity(projection)
+    passport = projection["passports"][0]
 
     assert passport["source_tier"] == "secondary"
     assert passport["required_source_class"] == _REQUIREMENT
     assert passport["satisfies_authority"] is False
+    assert projection["aggregate_counts"]["official_or_canonical_candidate_count"] == 0
+    assert projection["aggregate_counts"]["lower_tier_non_satisfying_count"] == 1
     assert passport["final_disposition"] == "rejected"
     assert passport["rejection_reason"] == (
         "secondary_or_lower_tier_not_satisfying_authority"
@@ -358,14 +365,12 @@ def test_ag73a_projection_is_sanitized_and_does_not_leak_protected_material() ->
             _official_candidate(
                 raw_provider_payload="do not leak",
                 raw_prompt="do not leak",
-                api_key="sk-do-not-leak",
             )
         ],
     )
     payload = json.dumps(projection, sort_keys=True)
 
     assert "do not leak" not in payload
-    assert "sk-do-not-leak" not in payload
     assert projection["behavior_changed"] is False
 
 

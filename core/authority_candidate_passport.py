@@ -613,9 +613,14 @@ def _aggregate_counts(passports: list[Mapping[str, Any]]) -> dict[str, int]:
     official_or_canonical = [
         item
         for item in passports
-        if item.get("source_class") in _OFFICIAL_OR_CANONICAL_CLASSES
-        or item.get("source_tier") in _OFFICIAL_OR_CANONICAL_TIERS
-        or item.get("required_source_class") in _OFFICIAL_OR_CANONICAL_CLASSES
+        if not _lower_tier_context(
+            source_tier=str(item.get("source_tier") or ""),
+            source_class=str(item.get("source_class") or ""),
+        )
+        and (
+            item.get("source_class") in _OFFICIAL_OR_CANONICAL_CLASSES
+            or item.get("source_tier") in _OFFICIAL_OR_CANONICAL_TIERS
+        )
     ]
     lost = [
         item

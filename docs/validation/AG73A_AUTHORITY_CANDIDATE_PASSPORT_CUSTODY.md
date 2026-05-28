@@ -111,7 +111,9 @@ For each represented candidate:
 Passport counts reconcile with existing aggregate diagnostics by comparing:
 
 - returned/evaluated candidate count;
-- official/canonical candidate count;
+- official/canonical candidate count, based on the candidate's observed
+  `source_tier` / `source_class` and not the obligation's required source
+  class;
 - rejected candidate count;
 - accepted/readable authority evidence count;
 - final-selected authority evidence count.
@@ -178,7 +180,9 @@ Secondary, trusted-community, social/forum, context, or analysis-tier evidence
 is never marked as satisfying an official/current obligation by the passport.
 It may remain visible as context, but its passport has
 `satisfies_authority=false` and a durable rejection/disposition reason when the
-required class is official/current authority.
+required class is official/current authority. Lower-tier candidates also do not
+inflate `official_or_canonical_candidate_count` merely because the obligation
+required `official_current_rules`.
 
 ## What AG-73A Can Prove Offline
 
