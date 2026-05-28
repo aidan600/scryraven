@@ -15,6 +15,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _DECISION_PATH = _ROOT / "core" / "controller_recovery_decision.py"
 _EXECUTOR_PATH = _ROOT / "core" / "source_class_recovery_executor.py"
 _ORCHESTRATOR_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 
 
 def _unmet_official_trace(**overrides: Any) -> dict[str, Any]:
@@ -126,12 +127,14 @@ def test_ag74e_provider_search_review_is_decision_only_not_executor_allocation()
     ).payload
     executor_source = _EXECUTOR_PATH.read_text(encoding="utf-8").casefold()
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8").casefold()
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8").casefold()
 
     assert decision["decision"] == REQUEST_PROVIDER_SEARCH_REVIEW
     assert decision["provider_search_review_requested"] is True
     assert decision["allowed_executor_action"] == "record_provider_search_review_request"
     assert "request_provider_search_review" not in executor_source
     assert "request_provider_search_review" not in orchestrator_source
+    assert "request_provider_search_review" not in runner_source
 
 
 def test_ag74e_static_executor_consults_controller_before_parameter_skip() -> None:
@@ -150,6 +153,7 @@ def test_ag74e_static_guard_keeps_closed_surfaces_unchanged() -> None:
     decision_source = _DECISION_PATH.read_text(encoding="utf-8").casefold()
     executor_source = _EXECUTOR_PATH.read_text(encoding="utf-8").casefold()
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8").casefold()
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8").casefold()
 
     decision_forbidden = (
         "select_providers",
@@ -172,5 +176,8 @@ def test_ag74e_static_guard_keeps_closed_surfaces_unchanged() -> None:
     for forbidden in executor_forbidden:
         assert forbidden not in executor_source
 
-    assert orchestrator_source.count("execute_source_class_recovery_action(") == 1
+    assert orchestrator_source.count("execute_source_class_recovery_action(") == 0
+    assert runner_source.count("execute_source_class_recovery_action(") == 1
+    assert "run_source_class_recovery_dispatch(" in orchestrator_source
     assert "request_provider_search_review" not in orchestrator_source
+    assert "request_provider_search_review" not in runner_source

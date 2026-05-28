@@ -32,6 +32,7 @@ from tests.helpers.authoritative_source_forced_corridor import (
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 
 _SSA_QUERY = (
     "What is the current Social Security taxable maximum wage base for 2026, "
@@ -545,6 +546,7 @@ def test_ag68g_query_strings_and_helper_shapes_are_preserved() -> None:
 
 def test_ag68g_pipeline_change_is_tiny_and_protected_surfaces_remain_closed() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
     tree = ast.parse(pipeline_source)
     refresh_calls = [
         node
@@ -555,10 +557,13 @@ def test_ag68g_pipeline_change_is_tiny_and_protected_surfaces_remain_closed() ->
         )
     ]
 
-    assert pipeline_source.count("execute_source_class_recovery_action(") == 1
-    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" in (
+    assert pipeline_source.count("execute_source_class_recovery_action(") == 0
+    assert runner_source.count("execute_source_class_recovery_action(") == 1
+    assert "run_source_class_recovery_dispatch(" in pipeline_source
+    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in (
         pipeline_source
     )
+    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" in runner_source
     assert len(refresh_calls) == 1
     helper_start = pipeline_source.index(
         "def _authoritative_source_checkpoint_refresh_allowed"

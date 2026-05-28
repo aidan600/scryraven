@@ -24,6 +24,7 @@ from tests.helpers.authoritative_source_forced_corridor import (
 _ROOT = Path(__file__).resolve().parents[1]
 _SPINE_PATH = _ROOT / "core" / "controller_loop_spine.py"
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 
 _LIVE_QUERY = (
     "What is the current IRS standard mileage rate for business use of a car "
@@ -438,11 +439,15 @@ def test_ag68e_public_forced_corridor_helper_shapes_are_preserved() -> None:
 
 def test_ag68e_pipeline_call_site_remains_single_tiny_executor_gate() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
 
-    assert pipeline_source.count("execute_source_class_recovery_action(") == 1
-    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" in (
+    assert pipeline_source.count("execute_source_class_recovery_action(") == 0
+    assert runner_source.count("execute_source_class_recovery_action(") == 1
+    assert "run_source_class_recovery_dispatch(" in pipeline_source
+    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in (
         pipeline_source
     )
+    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" in runner_source
     assert (
         "official_canonical_checkpoint_exception_fallback_allowed"
         in pipeline_source

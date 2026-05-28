@@ -23,6 +23,7 @@ from tests.helpers.authoritative_source_forced_corridor import (
 _ROOT = Path(__file__).resolve().parents[1]
 _SPINE_PATH = _ROOT / "core" / "controller_loop_spine.py"
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 
 _OFFICIAL_QUERIES = (
     "IRS 2026 standard mileage rate business official notice revenue procedure",
@@ -369,6 +370,9 @@ def test_ag68c_static_guard_keeps_pipeline_and_protected_surfaces_closed() -> No
     }
 
     assert imports.isdisjoint(forbidden_imports)
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
     assert "official_canonical_acquisition_path_visible" not in pipeline_source
-    assert pipeline_source.count("execute_source_class_recovery_action(") == 1
+    assert pipeline_source.count("execute_source_class_recovery_action(") == 0
+    assert runner_source.count("execute_source_class_recovery_action(") == 1
+    assert "run_source_class_recovery_dispatch(" in pipeline_source
     assert "and checkpoint_available" not in spine_source

@@ -29,6 +29,7 @@ from tests.test_targeted_retrieval_runtime_ag43b import _run_passive_case
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 _SPINE_PATH = _ROOT / "core" / "controller_loop_spine.py"
 
 
@@ -365,9 +366,11 @@ def test_ag44b_static_guards_keep_retrieve_targeted_unpromoted() -> None:
 
 def test_ag44b_static_guard_ordinary_candidate_does_not_relabel_bounded_lanes() -> None:
     source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
 
     assert "weak_corpus_recovery_queries = list(" in source
-    assert "execute_source_class_recovery_action(" in source
+    assert "run_source_class_recovery_dispatch(" in source
+    assert "execute_source_class_recovery_action(" in runner_source
     assert "execute_conflict_resolution_action(" in source
     assert "conflict_resolving_queries=conflict_resolving_queries" in source
     assert "ordinary_next_queries=conflict_resolving_queries" not in source

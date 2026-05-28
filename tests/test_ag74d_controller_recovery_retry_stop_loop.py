@@ -25,6 +25,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _DECISION_PATH = _ROOT / "core" / "controller_recovery_decision.py"
 _EXECUTOR_PATH = _ROOT / "core" / "source_class_recovery_executor.py"
 _ORCHESTRATOR_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 _VISIBILITY_EXPORT_PATH = (
     _ROOT / "core" / "official_canonical_recovery_visibility_export.py"
 )
@@ -274,12 +275,15 @@ def test_ag74d_static_guards_keep_provider_and_final_answer_surfaces_closed() ->
     decision_source = _DECISION_PATH.read_text(encoding="utf-8").casefold()
     executor_source = _EXECUTOR_PATH.read_text(encoding="utf-8")
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
     visibility_source = _VISIBILITY_EXPORT_PATH.read_text(encoding="utf-8")
 
     assert "controller_recovery_decision" in visibility_source
     assert "build_controller_recovery_decision" in executor_source
     assert "to_executor_trace_fields" in executor_source
-    assert orchestrator_source.count("execute_source_class_recovery_action(") == 1
+    assert orchestrator_source.count("execute_source_class_recovery_action(") == 0
+    assert runner_source.count("execute_source_class_recovery_action(") == 1
+    assert "run_source_class_recovery_dispatch(" in orchestrator_source
     for forbidden in (
         "select_providers",
         "provider_depth",

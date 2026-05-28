@@ -105,8 +105,8 @@ ORDINARY_CONTINUATION_OWNERSHIP_MAP = (
     ContinuationOwnershipPath(
         path_name="source_class_recovery_queries",
         classification="bounded_spine_authorized_recovery",
-        code_surface="run_pipeline / source class recovery dispatch",
-        code_marker="execute_source_class_recovery_action(",
+        code_surface="run_pipeline / source class recovery runner handoff",
+        code_marker="run_source_class_recovery_dispatch(",
         query_source_field="active_source_class_recovery_queries",
         can_assign_current_queries_or_reenter_retrieval=True,
         currently_spine_authorized=True,
