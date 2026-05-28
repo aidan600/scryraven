@@ -16,6 +16,9 @@ from core.authority_candidate_passport import (
     AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
 )
 from core.controller_evidence_ledger import CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY
+from core.controller_provider_search_allocation import (
+    PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
+)
 from core.controller_recovery_decision import (
     CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
     build_controller_recovery_decision,
@@ -111,6 +114,7 @@ def build_official_canonical_recovery_visibility_export(
     provider_result_bridge = _provider_result_bridge_payload(trace)
     controller_evidence_ledger = _controller_evidence_ledger_payload(trace)
     ledger_custody = _ledger_custody_payload(controller_evidence_ledger)
+    provider_search_allocation = _provider_search_allocation_payload(trace)
 
     admission_considered = _bool_or_unknown(admission.get("admission_considered"))
     admission_eligible = _bool_or_unknown(admission.get("admission_eligible"))
@@ -544,6 +548,9 @@ def build_official_canonical_recovery_visibility_export(
         "next_failure_layer_custody_interpretation": (
             RECOVERY_LANE_OBSERVATION_CUSTODY_INTERPRETATION
         ),
+        "provider_search_allocation_trace": (
+            provider_search_allocation or NOT_OBSERVABLE
+        ),
         "unknown_fields": [],
         "behavior_changed": False,
     }
@@ -777,6 +784,7 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "controller_recovery_allowed_executor_action",
         "controller_recovery_provider_search_review_requested",
         "controller_recovery_old_path_subordinated",
+        "provider_search_allocation_trace",
         "unknown_fields",
         "behavior_changed",
     ):
@@ -837,6 +845,47 @@ def _provider_result_bridge_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
         if isinstance(payload, Mapping):
             return _safe_mapping(payload)
     return {}
+
+
+def _provider_search_allocation_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
+    packet = trace.get(PROVIDER_SEARCH_ALLOCATION_TRACE_KEY)
+    if not isinstance(packet, Mapping):
+        return {}
+    payload = packet.get("ProviderSearchAllocation")
+    if not isinstance(payload, Mapping):
+        return {}
+    allowed_keys = (
+        "schema_version",
+        "allocation_owner",
+        "mechanical_owner",
+        "decision",
+        "decision_reason",
+        "candidate_state_summary",
+        "allocation_action",
+        "allocation_shape",
+        "execution_mode",
+        "provider_search_review_requested",
+        "provider_policy_unchanged",
+        "provider_selection_unchanged",
+        "search_depth_policy_unchanged",
+        "query_strategy_unchanged",
+        "new_provider_added",
+        "provider_swap",
+        "unbounded_depth",
+        "live_validation_used",
+        "final_answer_behavior_unchanged",
+        "citation_behavior_unchanged",
+    )
+    exported: dict[str, Any] = {}
+    for key in allowed_keys:
+        value = payload.get(key)
+        if isinstance(value, bool):
+            exported[key] = value
+        elif isinstance(value, (int, float)):
+            exported[key] = value
+        else:
+            exported[key] = _optional_text(value)
+    return exported
 
 
 def _controller_evidence_ledger_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
