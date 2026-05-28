@@ -311,6 +311,12 @@ def _represent_result(
         "title": title,
         "source_tier": source_tier,
         "source_class": source_class,
+        "classification_reason": _text(result.get("classification_reason")),
+        "currentness_signal": _text(result.get("currentness_signal")) or UNKNOWN,
+        "temporal_anchor_required": _text(result.get("temporal_anchor_required"))
+        or UNKNOWN,
+        "temporal_anchor_observed": _text(result.get("temporal_anchor_observed"))
+        or UNKNOWN,
         "provider_returned": True,
         "allocation_result_admitted": True,
         "non_representation_reason": reason,
