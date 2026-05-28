@@ -24,6 +24,41 @@ PROTECTED_FINAL_EVIDENCE_SURFACES: tuple[str, ...] = (
     "candidate_fit_semantics",
 )
 
+ORCHESTRATOR_BURN_DOWN_CLASSIFICATIONS: tuple[str, ...] = (
+    "extracted_complete",
+    "pure_plumbing",
+    "mechanical_candidate_for_extraction",
+    "decision_authority_still_local",
+    "protected_behavior_surface",
+    "defer_until_controller_state_ready",
+    "intentionally_remaining_for_now",
+)
+
+AG76C_BD_PHASE_NAME = "AG-76C-BD"
+AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE = "AG-76C-RT"
+AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION = (
+    "AG-76C-RT - Runtime Trace / Export Attachment Compatibility Extraction"
+)
+
+AG76C_BD_PROTECTED_SURFACES: tuple[str, ...] = (
+    "Controller_decision_behavior",
+    "provider_routing_selection_depth_escalation",
+    "query_strategy",
+    "source_class_currentness_classifier",
+    "candidate_fit_semantics",
+    "final_evidence_selection_semantics",
+    "final_answer_prose",
+    "Author_behavior_and_prompt_semantics",
+    "citation_formatting_and_selection",
+    "Scrutineer_behavior",
+    "Economist_behavior",
+    "follow_up_behavior",
+    "trace_export_field_names",
+    "RunOutcome_and_UI_visible_payload_shape",
+    "JSONL_and_SQLite_schema",
+    "raw_private_data_and_secrets",
+)
+
 
 @dataclass(frozen=True)
 class PipelineDecisionRegistryEntry:
@@ -64,6 +99,33 @@ class FinalEvidenceReplacementContract:
     required_parity_tests: tuple[str, ...]
     protected_surfaces: tuple[str, ...]
     deletion_plan: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class OrchestratorBurnDownSeam:
+    seam_name: str
+    current_location: str
+    current_owner: str
+    target_owner: str
+    classification: str
+    protected_surface_risk: tuple[str, ...]
+    current_tests: tuple[str, ...]
+    missing_parity_tests: tuple[str, ...]
+    extraction_difficulty: str
+    recommended_next_action: str
+    priority: str
+
+
+@dataclass(frozen=True)
+class OrchestratorBurnDownNextPhase:
+    phase_name: str
+    old_orchestrator_block: str
+    replacement_owner: str
+    protected_surfaces: tuple[str, ...]
+    required_parity_tests: tuple[str, ...]
+    stop_conditions: tuple[str, ...]
+    why_next: str
+    deferred_candidates: tuple[str, ...]
 
 
 PIPELINE_DECISION_REGISTRY: tuple[PipelineDecisionRegistryEntry, ...] = (
@@ -256,6 +318,392 @@ PIPELINE_DECISION_REGISTRY: tuple[PipelineDecisionRegistryEntry, ...] = (
 )
 
 
+AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
+    OrchestratorBurnDownSeam(
+        seam_name="AG-76C-FE final evidence/source-ID packaging",
+        current_location="core/final_evidence_bundle_builder.py",
+        current_owner="core.final_evidence_bundle_builder",
+        target_owner="core.final_evidence_bundle_builder",
+        classification="extracted_complete",
+        protected_surface_risk=(
+            "final_answer_prose",
+            "Author_behavior",
+            "citation_formatting",
+            "citation_selection",
+        ),
+        current_tests=("tests/test_ag76c_final_evidence_bundle_builder.py",),
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action="Keep as completed AG-76C seam; do not reopen behavior.",
+        priority="P0",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="AG-76C-CS runner-owned recovered/source-class candidate stream",
+        current_location="core/source_class_recovery_candidate_stream.py",
+        current_owner="core.source_class_recovery_candidate_stream",
+        target_owner="core.source_class_recovery_candidate_stream",
+        classification="extracted_complete",
+        protected_surface_risk=("candidate_fit_semantics", "classifier_semantics"),
+        current_tests=("tests/test_ag76c_cs_runner_owned_candidate_stream.py",),
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action="Keep as runner-owned candidate stream input.",
+        priority="P0",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="AG-76C-DP source-class diagnostics/projection handoff",
+        current_location="core/source_class_recovery_projection_handoff.py",
+        current_owner="core.source_class_recovery_projection_handoff",
+        target_owner="core.source_class_recovery_projection_handoff",
+        classification="extracted_complete",
+        protected_surface_risk=("trace_export_field_names", "classifier_semantics"),
+        current_tests=("tests/test_ag76c_dp_diagnostics_projection_handoff.py",),
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action="Keep diagnostics/projection handoff extracted.",
+        priority="P0",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="router/researcher/query preparation handoff",
+        current_location="core/pipeline_orchestrator.py lines 2785-3275 and 4274-4341",
+        current_owner="pipeline_orchestrator.py plus routing/query helpers",
+        target_owner="future Controller-owned retrieval preparation contract",
+        classification="protected_behavior_surface",
+        protected_surface_risk=(
+            "provider_routing_selection_depth_escalation",
+            "query_strategy",
+            "prompt_behavior",
+        ),
+        current_tests=(
+            "tests/test_ag57b_router_researcher_canonical_academic_prompt_contract.py",
+            "tests/test_retrieval_stop_controller.py",
+        ),
+        missing_parity_tests=("full router/query handoff parity before any extraction",),
+        extraction_difficulty="high",
+        recommended_next_action="Keep closed; not an AG-76C-BD extraction target.",
+        priority="P3",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="source obligation / AnswerContract initialization and handoff",
+        current_location="core/pipeline_orchestrator.py lines 3402-4072, 4962-5030, and 6705-6769",
+        current_owner="AnswerContract plus orchestrator fact packaging",
+        target_owner="AnswerContract / Controller state handoff helper",
+        classification="defer_until_controller_state_ready",
+        protected_surface_risk=(
+            "AnswerContract_semantics",
+            "final_answer_posture",
+            "citation_selection",
+        ),
+        current_tests=("tests/test_answer_contract_runtime_handoff.py",),
+        missing_parity_tests=("multi-stage AnswerContract fact-package parity",),
+        extraction_difficulty="medium",
+        recommended_next_action="Defer AG-76C-AC until Controller state packaging is selected.",
+        priority="P2",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="source-class recovery runner dispatch handoff",
+        current_location="core/pipeline_orchestrator.py lines 5159-5279",
+        current_owner="ControllerRecoveryDecision plus source_class_recovery_runner",
+        target_owner="core.source_class_recovery_runner",
+        classification="pure_plumbing",
+        protected_surface_risk=("provider_routing_selection_depth_escalation",),
+        current_tests=("tests/test_ag74f_recovery_runner_extraction.py",),
+        missing_parity_tests=("static proof that orchestrator only passes Controller-approved action",),
+        extraction_difficulty="low",
+        recommended_next_action="Leave as runner dispatch plumbing unless a smaller context helper is needed.",
+        priority="P2",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="provider/retrieval execution loop",
+        current_location="core/pipeline_orchestrator.py lines 4274-4938",
+        current_owner="pipeline_orchestrator.py with Controller allocation gates",
+        target_owner="future runner after provider/search behavior is licensed",
+        classification="protected_behavior_surface",
+        protected_surface_risk=(
+            "provider_routing_selection_depth_escalation",
+            "query_strategy",
+            "retrieval_ranking_filtering",
+        ),
+        current_tests=(
+            "tests/test_ag75a_controller_provider_search_allocation_gate.py",
+            "tests/test_controller_action_loop_parity_ag26.py",
+        ),
+        missing_parity_tests=("provider loop parity with no search policy drift",),
+        extraction_difficulty="high",
+        recommended_next_action="Keep closed; not a mechanical AG-76C seam.",
+        priority="P3",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="source-class recovery lifecycle / projection handoff",
+        current_location="core/source_class_recovery_projection_handoff.py and orchestrator lines 6650-6661",
+        current_owner="core.source_class_recovery_projection_handoff",
+        target_owner="core.source_class_recovery_projection_handoff",
+        classification="extracted_complete",
+        protected_surface_risk=("trace_export_field_names", "classifier_semantics"),
+        current_tests=("tests/test_ag76c_dp_diagnostics_projection_handoff.py",),
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action="No AG-76C-BD action; DP completed this seam.",
+        priority="P0",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="recovered evidence visibility boundary",
+        current_location="core/recovered_evidence_visibility.py",
+        current_owner="ControllerRecoveryDecision plus recovered evidence visibility helper",
+        target_owner="core.recovered_evidence_visibility",
+        classification="extracted_complete",
+        protected_surface_risk=("candidate_fit_semantics", "final_evidence_selection_semantics"),
+        current_tests=(
+            "tests/test_ag75c_local_authority_gate_retirement.py",
+            "tests/test_ag76c_cs_runner_owned_candidate_stream.py",
+        ),
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action="Keep as already subordinated visibility boundary.",
+        priority="P1",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="final evidence bundle builder handoff",
+        current_location="core/final_evidence_bundle_builder.py and orchestrator lines 5364, 5943, 6124, 6265",
+        current_owner="core.final_evidence_bundle_builder",
+        target_owner="core.final_evidence_bundle_builder",
+        classification="extracted_complete",
+        protected_surface_risk=PROTECTED_FINAL_EVIDENCE_SURFACES,
+        current_tests=("tests/test_ag76c_final_evidence_bundle_builder.py",),
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action="Keep extracted; Author/citation behavior remains closed.",
+        priority="P0",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="final evidence/source telemetry and persistence handoff",
+        current_location="core/pipeline_orchestrator.py lines 6438-6561 and 6970-7273",
+        current_owner="pipeline_orchestrator.py plus evidence_registry_mirror/db/logging helpers",
+        target_owner="future core.run_outcome_persistence_handoff",
+        classification="mechanical_candidate_for_extraction",
+        protected_surface_risk=(
+            "trace_export_field_names",
+            "JSONL_and_SQLite_schema",
+            "RunOutcome_and_UI_visible_payload_shape",
+        ),
+        current_tests=(
+            "tests/test_evidence_registry_mirror.py",
+            "tests/test_controller_state_mirror.py",
+        ),
+        missing_parity_tests=("JSONL/SQLite/RunOutcome shape parity",),
+        extraction_difficulty="medium",
+        recommended_next_action="Defer behind AG-76C-RT; packaging is mechanical but side-effect heavy.",
+        priority="P1",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="runtime trace projection/export attachment",
+        current_location="core/pipeline_orchestrator.py lines 6930-6967",
+        current_owner="pipeline_orchestrator.py calls observer helpers after trace assembly",
+        target_owner="future core.runtime_trace_export_attachment_handoff",
+        classification="mechanical_candidate_for_extraction",
+        protected_surface_risk=("trace_export_field_names", "citation_selection"),
+        current_tests=(
+            "tests/test_runtime_trace_projection_assembly_ag46c.py",
+            "tests/test_official_canonical_recovery_visibility_export_ag50c.py",
+            "tests/test_ag76c_dp_diagnostics_projection_handoff.py",
+        ),
+        missing_parity_tests=(
+            "legacy attachment sequence parity",
+            "source_class_recovery_candidate_v2 parity",
+            "controller diagnostics size-guard parity",
+        ),
+        extraction_difficulty="low",
+        recommended_next_action=AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION,
+        priority="P0",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="controller evidence ledger projection/handoff",
+        current_location="core/controller_evidence_ledger.py and runtime trace projection helpers",
+        current_owner="ControllerEvidenceLedger plus observer/export helpers",
+        target_owner="ControllerEvidenceLedger",
+        classification="intentionally_remaining_for_now",
+        protected_surface_risk=("trace_export_field_names", "Controller_decision_behavior"),
+        current_tests=(
+            "tests/test_ag74a_controller_evidence_ledger.py",
+            "tests/test_controller_diagnostics_trace_contract.py",
+        ),
+        missing_parity_tests=("ledger projection packet parity if trace handoff moves",),
+        extraction_difficulty="low",
+        recommended_next_action="Keep ledger interpretation in ControllerEvidenceLedger; RT may move only attachment plumbing.",
+        priority="P1",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="Analyst prompt/context handoff",
+        current_location="core/pipeline_orchestrator.py lines 5658-6159",
+        current_owner="pipeline_orchestrator.py Analyst prompt assembly",
+        target_owner="Author/Analyst prompt contracts only after explicit behavior phase",
+        classification="protected_behavior_surface",
+        protected_surface_risk=("prompt_behavior", "Analyst_behavior", "Author_behavior"),
+        current_tests=("tests/test_ag59ab_controller_owned_insufficiency_analyst_author_obedience.py",),
+        missing_parity_tests=("prompt exact-text and model-call context parity",),
+        extraction_difficulty="high",
+        recommended_next_action="Keep closed; not part of AG-76C-BD or AG-76C-RT.",
+        priority="P3",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="Author prompt/evidence handoff",
+        current_location="core/pipeline_orchestrator.py lines 6167-6419",
+        current_owner="pipeline_orchestrator.py Author prompt assembly",
+        target_owner="Author prompt contract only after explicit behavior phase",
+        classification="protected_behavior_surface",
+        protected_surface_risk=(
+            "Author_behavior_and_prompt_semantics",
+            "final_answer_prose",
+            "citation_formatting_and_selection",
+        ),
+        current_tests=("tests/test_ag76c_final_evidence_bundle_builder.py",),
+        missing_parity_tests=("exact Author prompt and citation input parity",),
+        extraction_difficulty="high",
+        recommended_next_action="Keep closed; final evidence packaging extraction does not license Author behavior.",
+        priority="P3",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="citation/source-list handoff",
+        current_location="core/pipeline_orchestrator.py lines 1913-1945, 6265-6283, and 6438-6445",
+        current_owner="pipeline_orchestrator.py citation telemetry and source-list consumers",
+        target_owner="citation subsystem only after explicit citation phase",
+        classification="protected_behavior_surface",
+        protected_surface_risk=("citation_formatting_and_selection", "final_answer_prose"),
+        current_tests=("tests/test_ag76c_final_evidence_bundle_builder.py",),
+        missing_parity_tests=("final answer citation/source-list parity",),
+        extraction_difficulty="high",
+        recommended_next_action="Keep closed; not the next seam.",
+        priority="P3",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="weak-corpus/off-topic/failure-card gates",
+        current_location="core/pipeline_orchestrator.py lines 1436-1759, 4430-4550, and 6473-6501",
+        current_owner="pipeline_orchestrator.py plus weak_corpus_controller/failure_card",
+        target_owner="Controller state representation after AG-77 or a dedicated blueprint",
+        classification="decision_authority_still_local",
+        protected_surface_risk=("weak_corpus_behavior", "failure_card_behavior", "prompt_behavior"),
+        current_tests=("tests/test_weak_corpus_controller.py",),
+        missing_parity_tests=("weak/off-topic/failure-card gate parity before extraction",),
+        extraction_difficulty="high",
+        recommended_next_action="Run AG-76C-WG as a review/blueprint only if selected later.",
+        priority="P2",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="Scrutineer/remediation handoff",
+        current_location="core/pipeline_orchestrator.py lines 5981-6159 and 6296-6315",
+        current_owner="pipeline_orchestrator.py Scrutineer/remediation path",
+        target_owner="Scrutineer contract after explicit behavior phase",
+        classification="protected_behavior_surface",
+        protected_surface_risk=("Scrutineer_behavior", "provider_routing_selection_depth_escalation", "Author_behavior"),
+        current_tests=("tests/test_controller_diagnostics_trace_contract.py",),
+        missing_parity_tests=("Scrutineer remediation prompt and provider-call parity",),
+        extraction_difficulty="high",
+        recommended_next_action="Keep closed; not a mechanical AG-76C extraction.",
+        priority="P3",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="Economist preflight / Economist handoff",
+        current_location="core/pipeline_orchestrator.py lines 1771-2556 and 5452-5645",
+        current_owner="pipeline_orchestrator.py quantitative/Economist handoff",
+        target_owner="Economist contract after explicit behavior phase",
+        classification="protected_behavior_surface",
+        protected_surface_risk=("Economist_behavior", "Analyst_behavior", "Author_behavior"),
+        current_tests=("tests/test_controller_diagnostics_trace_contract.py",),
+        missing_parity_tests=("Economist preflight and handoff exact payload parity",),
+        extraction_difficulty="high",
+        recommended_next_action="Keep closed.",
+        priority="P3",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="follow-up/session state handoff",
+        current_location="core/pipeline_orchestrator.py lines 2678-2680, 3489-4219, and 7135-7249",
+        current_owner="pipeline_orchestrator.py continuation/session compatibility plumbing",
+        target_owner="AnswerContract / Controller initial state after AG-76A decision",
+        classification="defer_until_controller_state_ready",
+        protected_surface_risk=("follow_up_behavior", "Controller_decision_behavior"),
+        current_tests=("tests/test_controller_state_mirror.py",),
+        missing_parity_tests=("follow-up state initialization parity",),
+        extraction_difficulty="medium",
+        recommended_next_action="AG-76A should wait; do not open follow-up behavior from BD.",
+        priority="P2",
+    ),
+    OrchestratorBurnDownSeam(
+        seam_name="JSONL/SQLite/persistence/outcome packaging",
+        current_location="core/pipeline_orchestrator.py lines 6969-7300",
+        current_owner="pipeline_orchestrator.py plus jsonl/db/run outcome helpers",
+        target_owner="future core.run_outcome_persistence_handoff",
+        classification="mechanical_candidate_for_extraction",
+        protected_surface_risk=(
+            "JSONL_and_SQLite_schema",
+            "RunOutcome_and_UI_visible_payload_shape",
+            "trace_export_field_names",
+        ),
+        current_tests=(
+            "tests/test_controller_state_mirror.py",
+            "tests/test_evidence_registry_mirror.py",
+            "tests/test_stage_ledger_mirror.py",
+        ),
+        missing_parity_tests=("execution_log_entry, DB row, session, and RunOutcome parity",),
+        extraction_difficulty="medium",
+        recommended_next_action="Candidate B, but defer until passive trace/export attachment is isolated.",
+        priority="P1",
+    ),
+)
+
+
+AG76C_BD_SELECTED_NEXT_PHASE = OrchestratorBurnDownNextPhase(
+    phase_name=AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE,
+    old_orchestrator_block=(
+        "core/pipeline_orchestrator.py lines 6930-6967: after execution_trace is "
+        "assembled, the orchestrator calls attach_passive_runtime_projection_traces, "
+        "adds retrieval_budget_pressure_shadow, source_class_recovery_candidate_v2, "
+        "source-class recovery validation, controller diagnostics, and then attaches "
+        "the finalized trace to new_session."
+    ),
+    replacement_owner="core.runtime_trace_export_attachment_handoff",
+    protected_surfaces=(
+        "execution_trace field names and packet shapes",
+        "runtime trace projection/export field names",
+        "official/canonical recovery visibility export shape",
+        "controller_diagnostics payload and size-guard behavior",
+        "source_class_recovery_candidate_v2 shape",
+        "SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY payload shape",
+        "evidence integration checkpoint mirrored fields",
+        "final answer, Author, citation, provider/search/query/classifier/fit behavior",
+    ),
+    required_parity_tests=(
+        "legacy trace attachment sequence parity for a synthetic execution_trace",
+        "runtime trace projection/export key and value parity",
+        "official/canonical visibility export parity",
+        "source_class_recovery_candidate_v2 parity",
+        "source-class recovery validation packet parity including None/no-update case",
+        "controller diagnostics payload parity including size-guard omission",
+        "static guard that pipeline_orchestrator.py no longer owns the attachment tail",
+        "static guard that new helper imports no provider/search/query/Author/citation/final-answer behavior",
+    ),
+    stop_conditions=(
+        "trace/export field rename would be required",
+        "provider/search/query/classifier/fit behavior would change",
+        "Author/citation/final-answer behavior would change",
+        "raw provider payloads, raw prompts, DB rows, private logs, caches, full traces, or secrets are needed",
+        "live validation or provider/model/search calls would be needed",
+        "extraction expands into broad pipeline_orchestrator.py rewrite",
+    ),
+    why_next=(
+        "It is the smallest remaining mechanical seam: observer-only, already "
+        "covered by projection/export tests, and it reduces trace compatibility "
+        "clutter without opening Author, citation, final-answer, provider, search, "
+        "query, classifier, or fit behavior."
+    ),
+    deferred_candidates=(
+        "AG-76C-PH persistence/outcome packaging is mechanical but side-effect heavy and should follow RT.",
+        "AG-76C-AC AnswerContract handoff touches final posture and should wait for Controller state readiness.",
+        "AG-76C-WG weak/off-topic/failure-card gates remain decision-sensitive and need blueprinting first.",
+        "AG-76A follow-up as Controller state should wait; BD found a safe narrower AG-76C seam.",
+    ),
+)
+
+
 FINAL_EVIDENCE_OWNERSHIP_BLUEPRINT: tuple[FinalEvidenceOwnershipResponsibility, ...] = (
     FinalEvidenceOwnershipResponsibility(
         responsibility="Final evidence source collection",
@@ -441,16 +889,25 @@ def registry_entry(decision_name: str) -> PipelineDecisionRegistryEntry:
 
 
 __all__ = [
+    "AG76C_BD_ORCHESTRATOR_SEAM_LEDGER",
+    "AG76C_BD_PHASE_NAME",
+    "AG76C_BD_PROTECTED_SURFACES",
+    "AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE",
+    "AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION",
+    "AG76C_BD_SELECTED_NEXT_PHASE",
     "FINAL_EVIDENCE_BUNDLE_DECISION",
     "FINAL_EVIDENCE_OWNERSHIP_BLUEPRINT",
     "FINAL_EVIDENCE_REPLACEMENT_CONTRACT",
     "NEXT_EXTRACTION_PHASE",
     "NEXT_EXTRACTION_RECOMMENDATION",
+    "ORCHESTRATOR_BURN_DOWN_CLASSIFICATIONS",
     "PIPELINE_DECISION_REGISTRY",
     "PROTECTED_FINAL_EVIDENCE_SURFACES",
     "SOURCE_ID_ASSIGNMENT_DECISION",
     "FinalEvidenceOwnershipResponsibility",
     "FinalEvidenceReplacementContract",
+    "OrchestratorBurnDownNextPhase",
+    "OrchestratorBurnDownSeam",
     "PipelineDecisionRegistryEntry",
     "registry_entry",
 ]
