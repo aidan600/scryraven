@@ -12,6 +12,9 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
+from core.authority_candidate_passport import (
+    AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY,
+)
 from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
 )
@@ -90,6 +93,7 @@ def build_official_canonical_recovery_visibility_export(
     candidate = _candidate_payload(trace)
     survival = _survival_payload(trace)
     lifecycle_candidate_fit = _authority_lifecycle_candidate_fit(trace)
+    authority_candidate_passport = _authority_candidate_passport_payload(trace)
 
     admission_considered = _bool_or_unknown(admission.get("admission_considered"))
     admission_eligible = _bool_or_unknown(admission.get("admission_eligible"))
@@ -331,6 +335,45 @@ def build_official_canonical_recovery_visibility_export(
         "official_canonical_candidate_visible": _bool_or_unknown(
             trace.get("official_canonical_candidate_visible")
         ),
+        "authority_candidate_passport_available": bool(
+            authority_candidate_passport
+        ),
+        "authority_candidate_passport_schema_version": (
+            _optional_text(authority_candidate_passport.get("schema_version"))
+            if authority_candidate_passport
+            else NOT_OBSERVABLE
+        ),
+        "authority_candidate_passport_count": (
+            _first_known_int(authority_candidate_passport.get("passport_count"))
+            if authority_candidate_passport
+            else UNKNOWN
+        ),
+        "authority_candidate_passport_integrity_status": (
+            _optional_text(
+                authority_candidate_passport.get("passport_integrity_status")
+            )
+            if authority_candidate_passport
+            else NOT_OBSERVABLE
+        ),
+        "authority_candidate_passport_final_dispositions": (
+            _passport_field_values(
+                authority_candidate_passport,
+                "final_disposition",
+            )
+            if authority_candidate_passport
+            else NOT_OBSERVABLE
+        ),
+        "authority_candidate_passport_first_missing_stages": (
+            _passport_field_values(
+                authority_candidate_passport,
+                "first_missing_stage",
+            )
+            if authority_candidate_passport
+            else NOT_OBSERVABLE
+        ),
+        "authority_candidate_passport_projection": (
+            authority_candidate_passport or NOT_OBSERVABLE
+        ),
         "recovered_candidate_source_fit_status": _optional_text(
             trace.get("recovered_visibility_source_fit_status")
             or _legacy_lifecycle_fit_state(lifecycle_candidate_fit)
@@ -571,6 +614,12 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "candidate_visibility_export_status",
         "candidate_visibility_blocker_kind",
         "official_canonical_candidate_visible",
+        "authority_candidate_passport_available",
+        "authority_candidate_passport_schema_version",
+        "authority_candidate_passport_count",
+        "authority_candidate_passport_integrity_status",
+        "authority_candidate_passport_final_dispositions",
+        "authority_candidate_passport_first_missing_stages",
         "recovered_candidate_source_fit_status",
         "recovered_candidate_source_fit_count",
         "recovered_candidate_selected_readable_count",
@@ -620,6 +669,15 @@ def _survival_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
     packet = trace.get(OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY)
     if isinstance(packet, Mapping):
         payload = packet.get("OfficialSourceSurvivalProjection")
+        if isinstance(payload, Mapping):
+            return _safe_mapping(payload)
+    return {}
+
+
+def _authority_candidate_passport_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
+    packet = trace.get(AUTHORITY_CANDIDATE_PASSPORT_TRACE_KEY)
+    if isinstance(packet, Mapping):
+        payload = packet.get("AuthorityCandidatePassportProjection")
         if isinstance(payload, Mapping):
             return _safe_mapping(payload)
     return {}
@@ -863,6 +921,23 @@ def _lifecycle_rejection_reasons(candidate_fit: Mapping[str, Any]) -> list[str]:
     legacy = candidate_fit.get("rejection_reasons")
     safe = _safe_list(legacy)
     return safe if isinstance(safe, list) else []
+
+
+def _passport_field_values(
+    authority_candidate_passport: Mapping[str, Any],
+    field_name: str,
+) -> list[str] | str:
+    passports = authority_candidate_passport.get("passports")
+    if not isinstance(passports, list):
+        return UNKNOWN
+    values: list[str] = []
+    for passport in passports:
+        if not isinstance(passport, Mapping):
+            continue
+        value = _optional_text(passport.get(field_name))
+        if value != UNKNOWN:
+            values.append(value)
+    return _dedupe(values)
 
 
 def _recovery_query_previews(

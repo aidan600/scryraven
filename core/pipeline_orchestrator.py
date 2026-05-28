@@ -6963,7 +6963,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "cost": cost_snapshot,
         "failure_card": failure_card_payload,
     }
-    attach_passive_runtime_projection_traces(execution_trace, logger=run_log)
+    attach_passive_runtime_projection_traces(
+        execution_trace,
+        recovered_passages=[
+            passage
+            for passage in all_passages
+            if passage.get("retrieval_stage") == "source_class_recovery"
+        ],
+        final_top_evidence=final_top_evidence,
+        logger=run_log,
+    )
     execution_trace["retrieval_budget_pressure_shadow"] = (
         build_retrieval_budget_pressure_shadow(
             trace=execution_trace,
