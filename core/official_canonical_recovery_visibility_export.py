@@ -41,6 +41,9 @@ OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE = (
 LEDGER_GATED_VISIBILITY_CONSUMER_SUBORDINATION_SCHEMA_VERSION = (
     "ledger_gated_visibility_consumer_subordination_ag74c_v1"
 )
+RECOVERY_LANE_OBSERVATION_CUSTODY_INTERPRETATION = (
+    "recovery_lane_observation_not_controller_custody_status"
+)
 
 UNKNOWN = "unknown"
 NOT_OBSERVABLE = "not_observable"
@@ -493,8 +496,14 @@ def build_official_canonical_recovery_visibility_export(
         "final_evidence_survival_status": _count_visibility_status(
             final_evidence_count
         ),
+        "final_evidence_survival_status_custody_interpretation": (
+            RECOVERY_LANE_OBSERVATION_CUSTODY_INTERPRETATION
+        ),
         "final_citation_survival_status": _count_visibility_status(
             final_citation_count
+        ),
+        "final_citation_survival_status_custody_interpretation": (
+            RECOVERY_LANE_OBSERVATION_CUSTODY_INTERPRETATION
         ),
         "likely_next_failure_layer": classify_likely_next_failure_layer(
             admission_used=admission_used,
@@ -511,6 +520,9 @@ def build_official_canonical_recovery_visibility_export(
             candidate_visibility_export_status=candidate_visibility_export_status,
             zero_candidate_blocker_kind=zero_candidate_blocker_kind,
         ),
+        "likely_next_failure_layer_custody_interpretation": (
+            RECOVERY_LANE_OBSERVATION_CUSTODY_INTERPRETATION
+        ),
         "next_failure_layer": classify_ag50d_next_failure_layer(
             admission_used=admission_used,
             execution_attempted=execution_attempted,
@@ -526,7 +538,7 @@ def build_official_canonical_recovery_visibility_export(
             zero_candidate_blocker_kind=zero_candidate_blocker_kind,
         ),
         "next_failure_layer_custody_interpretation": (
-            "recovery_lane_observation_not_controller_custody_status"
+            RECOVERY_LANE_OBSERVATION_CUSTODY_INTERPRETATION
         ),
         "unknown_fields": [],
         "behavior_changed": False,
@@ -603,7 +615,7 @@ def classify_likely_next_failure_layer(
     if _is_zero(final_citation_official_or_canonical_count):
         return "final_evidence_source_not_cited"
     if _positive_int(final_citation_official_or_canonical_count):
-        return "source_survived_to_citation"
+        return "recovery_lane_source_citation_observed"
     return NOT_OBSERVABLE
 
 
@@ -650,7 +662,7 @@ def classify_ag50d_next_failure_layer(
     if _is_zero(final_citation_official_or_canonical_count):
         return "canonical_candidate_accepted_not_cited"
     if _positive_int(final_citation_official_or_canonical_count):
-        return "canonical_source_cited"
+        return "recovery_lane_canonical_citation_observed"
     return "telemetry_gap"
 
 
@@ -745,8 +757,11 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "citation_eligibility_state",
         "accepted_readable_visibility_status",
         "final_evidence_survival_status",
+        "final_evidence_survival_status_custody_interpretation",
         "final_citation_survival_status",
+        "final_citation_survival_status_custody_interpretation",
         "likely_next_failure_layer",
+        "likely_next_failure_layer_custody_interpretation",
         "next_failure_layer",
         "next_failure_layer_custody_interpretation",
         "unknown_fields",
