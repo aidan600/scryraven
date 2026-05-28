@@ -200,13 +200,9 @@ from core.runtime_trace_projection_assembly import (
 )
 from core.search_providers import brave_reconnaissance
 from core.source_class_recovery import (
-    build_recovery_source_quality_diagnostics,
     build_source_class_observability_telemetry,
     build_source_class_recovery_candidate_v2,
     build_source_class_recovery_recommendation,
-)
-from core.source_class_recovery_candidate_stream import (
-    source_class_recovery_passage_candidates,
 )
 from core.source_class_recovery_controller_mirror import (
     record_source_class_recovery_recommendation,
@@ -217,6 +213,9 @@ from core.source_class_recovery_diagnostics import (
 )
 from core.source_class_recovery_lifecycle import (
     source_class_recovery_lifecycle_defaults,
+)
+from core.source_class_recovery_projection_handoff import (
+    build_source_class_recovery_projection_handoff,
 )
 from core.source_class_recovery_runner import (
     SourceClassRecoveryRunnerContext,
@@ -6648,18 +6647,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "Non-fatal official-source obligation bridge omitted: %s",
             exc,
         )
-    recovered_source_class_passages = source_class_recovery_passage_candidates(
+    source_class_projection_handoff = build_source_class_recovery_projection_handoff(
         all_passages=all_passages,
+        final_top_evidence=final_top_evidence,
+        final_source_class_counts=source_class_observability_telemetry.get(
+            "source_class_strong_satisfaction_counts"
+        ),
     )
-    if recovered_source_class_passages:
+    if source_class_projection_handoff.recovery_source_quality_diagnostics:
         active_source_class_recovery_lifecycle.update(
-            build_recovery_source_quality_diagnostics(
-                recovered_source_class_passages,
-                final_top_evidence=final_top_evidence,
-                final_source_class_counts=source_class_observability_telemetry.get(
-                    "source_class_strong_satisfaction_counts"
-                ),
-            )
+            source_class_projection_handoff.recovery_source_quality_diagnostics
         )
     record_source_class_recovery_recommendation(
         _run_controller_mirror,
@@ -6932,8 +6929,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     }
     attach_passive_runtime_projection_traces(
         execution_trace,
-        recovered_passages=source_class_recovery_passage_candidates(
-            all_passages=all_passages,
+        recovered_passages=(
+            source_class_projection_handoff.recovered_source_class_passages
         ),
         final_top_evidence=final_top_evidence,
         logger=run_log,
