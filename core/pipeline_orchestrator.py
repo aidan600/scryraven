@@ -64,6 +64,7 @@ from core.controller_loop_spine import (
     build_controller_loop_spine_result,
     checkpoint_action_name_from_trace,
 )
+from core.controller_recovery_decision import build_controller_recovery_decision
 from core.controller_state_mirror import record_run_metadata_snapshot
 from core.corpus_state import (
     CorpusState,
@@ -5259,6 +5260,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         SourceClassRecoveryRunnerContext(
             controller=_run_controller_mirror,
             authorized_spine_action=authorized_spine_action,
+            controller_recovery_decision=build_controller_recovery_decision(
+                active_source_class_recovery_lifecycle
+            ),
             lifecycle_trace=active_source_class_recovery_lifecycle,
             process_search_queries=process_search_queries,
             all_passages=all_passages,

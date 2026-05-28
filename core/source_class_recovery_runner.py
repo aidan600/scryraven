@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from core.controller_action_envelope import RECOVER_MISSING_SOURCE_CLASS
+from core.controller_provider_search_allocation import (
+    ProviderSearchAllocationGateResult,
+    record_provider_search_allocation_if_controller_authorized,
+)
+from core.controller_recovery_decision import ControllerRecoveryDecision
 from core.run_controller import RunController
 from core.source_class_recovery_executor import (
     execute_source_class_recovery_action,
@@ -17,6 +22,7 @@ from core.source_class_recovery_executor import (
 class SourceClassRecoveryRunnerContext:
     controller: RunController
     authorized_spine_action: str | None
+    controller_recovery_decision: ControllerRecoveryDecision | None
     lifecycle_trace: dict[str, Any]
     process_search_queries: Any
     all_passages: list[dict[str, Any]]
@@ -47,6 +53,7 @@ class SourceClassRecoveryRunnerResult:
     source_class_recovery_execution: dict[str, int | bool]
     total_urls_delta: int
     total_chunks_delta: int
+    provider_search_allocation: ProviderSearchAllocationGateResult | None = None
 
 
 def run_source_class_recovery_dispatch(
@@ -54,7 +61,19 @@ def run_source_class_recovery_dispatch(
 ) -> SourceClassRecoveryRunnerResult:
     """Dispatch one source-class recovery action without making recovery decisions."""
 
-    if context.authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS:
+    provider_search_allocation = (
+        record_provider_search_allocation_if_controller_authorized(
+            context.lifecycle_trace,
+            context.controller_recovery_decision,
+        )
+    )
+    if provider_search_allocation.allocated:
+        source_class_recovery_execution = {
+            "attempted": False,
+            "result_count": 0,
+            "new_url_count": 0,
+        }
+    elif context.authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS:
         source_class_recovery_execution = execute_source_class_recovery_action(
             context.controller,
             lifecycle_trace=context.lifecycle_trace,
@@ -98,12 +117,14 @@ def run_source_class_recovery_dispatch(
             source_class_recovery_execution=source_class_recovery_execution,
             total_urls_delta=0,
             total_chunks_delta=0,
+            provider_search_allocation=provider_search_allocation,
         )
 
     return SourceClassRecoveryRunnerResult(
         source_class_recovery_execution=source_class_recovery_execution,
         total_urls_delta=int(source_class_recovery_execution["new_url_count"]),
         total_chunks_delta=int(source_class_recovery_execution["result_count"]),
+        provider_search_allocation=provider_search_allocation,
     )
 
 
