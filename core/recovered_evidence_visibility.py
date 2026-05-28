@@ -11,13 +11,13 @@ from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-from core.allocation_candidate_selection_activation import (
-    allocation_result_candidates_for_existing_selection_corridor,
-)
 from core.authority_lifecycle_candidate_visibility import (
     project_authority_lifecycle_candidate_fit_visibility,
 )
 from core.source_class_recovery import _evidence_source_class_strengths
+from core.source_class_recovery_candidate_stream import (
+    runner_owned_recovered_candidate_stream,
+)
 
 ANSWER_CONTRACT_VISIBILITY_REASON_PREFIXES = (
     "answer_contract_official_gap",
@@ -136,16 +136,10 @@ def recovered_evidence_selection_candidates(
 ) -> list[Mapping[str, Any]]:
     """Return Controller-authorized recovered candidates for the selector."""
 
-    recovered_passages = [
-        passage
-        for passage in all_passages or ()
-        if isinstance(passage, Mapping)
-        and passage.get("retrieval_stage") == "source_class_recovery"
-    ]
-    recovered_passages.extend(
-        allocation_result_candidates_for_existing_selection_corridor(lifecycle_trace)
+    return runner_owned_recovered_candidate_stream(
+        all_passages=all_passages,
+        lifecycle_trace=lifecycle_trace,
     )
-    return recovered_passages
 
 
 def apply_controller_recovered_evidence_visibility(
