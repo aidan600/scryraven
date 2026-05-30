@@ -86,7 +86,7 @@ def _kb_context(helper: Any, tmp_path: Path, **overrides: Any) -> Any:
         "weak_corpus_recovery_reason": "healthy",
         "weak_corpus_recovery_blockers": ["budget"],
         "scout_fired": True,
-        "scout_key_used": "scout-key",
+        "scout_key_used": None,
         "scout_queries": ["sq"],
         "synth_was_insufficient": False,
         "synth_sufficient_first_pass_raw": "yes",
@@ -107,7 +107,7 @@ def _kb_context(helper: Any, tmp_path: Path, **overrides: Any) -> Any:
         "clean_json_response": _sentinel,
         "fast_provider": "provider-a",
         "local_url": "http://local.test",
-        "or_api_key": "api-key",
+        "or_api_key": None,
         "kb_review_agent": _sentinel,
     }
     values.update(overrides)
@@ -176,7 +176,7 @@ def test_kb_execution_record_exact_parity_for_legacy_fields_and_copies(tmp_path:
         "weak_corpus_recovery_reason": "healthy",
         "weak_corpus_recovery_blockers": ["budget"],
         "scout_fired": True,
-        "scout_key": "scout-key",
+        "scout_key": None,
         "scout_queries": ["sq"],
         "synth_was_insufficient": False,
         "synth_sufficient_first_pass_raw": "yes",
