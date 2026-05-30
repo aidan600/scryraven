@@ -209,12 +209,28 @@ def test_ag46c_static_pipeline_uses_projection_assembly_boundary() -> None:
                 alias.name for alias in node.names
             )
 
-    assert "attach_passive_runtime_projection_traces" in imported.get(
+    assert "attach_runtime_trace_export_compatibility_payloads" in imported.get(
+        "core.runtime_trace_export_attachment",
+        set(),
+    )
+    assert "attach_passive_runtime_projection_traces(" not in source
+    assert "build_retrieval_batch_projection_trace" not in source
+    assert "RETRIEVAL_BATCH_PROJECTION_TRACE_KEY" not in source
+
+    attachment_source = (
+        _PIPELINE_PATH.parent / "runtime_trace_export_attachment.py"
+    ).read_text(encoding="utf-8")
+    attachment_tree = ast.parse(attachment_source)
+    attachment_imported: dict[str, set[str]] = {}
+    for node in ast.walk(attachment_tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            attachment_imported.setdefault(node.module, set()).update(
+                alias.name for alias in node.names
+            )
+    assert "attach_passive_runtime_projection_traces" in attachment_imported.get(
         "core.runtime_trace_projection_assembly",
         set(),
     )
-    assert "build_retrieval_batch_projection_trace" not in source
-    assert "RETRIEVAL_BATCH_PROJECTION_TRACE_KEY" not in source
 
 
 def test_ag46c_static_projection_assembly_keeps_protected_imports_out() -> None:

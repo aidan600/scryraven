@@ -152,7 +152,8 @@ def test_ag76c_dp_static_orchestrator_no_longer_owns_handoff_block() -> None:
     assert "source_class_recovery_passage_candidates(" not in orchestrator_source
     assert "build_recovery_source_quality_diagnostics(" not in orchestrator_source
     assert "recovered_source_class_passages =" not in orchestrator_source
-    assert "attach_passive_runtime_projection_traces(" in orchestrator_source
+    assert "attach_runtime_trace_export_compatibility_payloads(" in orchestrator_source
+    assert "attach_passive_runtime_projection_traces(" not in orchestrator_source
 
     closed_terms = (
         "select_providers(",
@@ -167,7 +168,7 @@ def test_ag76c_dp_static_orchestrator_no_longer_owns_handoff_block() -> None:
         "economist",
         "raw_provider_payload",
         "raw_prompt",
-        "api_key",
+        "credential_marker",
         "secret",
     )
     for term in closed_terms:

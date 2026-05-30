@@ -121,12 +121,13 @@ def test_ag76c_bd_selected_phase_names_old_block_owner_surfaces_and_parity_tests
     assert "static guard" in tests
 
 
-def test_ag76c_bd_does_not_wire_registry_or_future_rt_helper_into_runtime() -> None:
+def test_ag76c_bd_runtime_wires_selected_rt_helper_not_registry() -> None:
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
 
     assert "pipeline_decision_registry" not in orchestrator_source
     assert "runtime_trace_export_attachment_handoff" not in orchestrator_source
-    assert "attach_passive_runtime_projection_traces(" in orchestrator_source
+    assert "attach_runtime_trace_export_compatibility_payloads(" in orchestrator_source
+    assert "attach_passive_runtime_projection_traces(" not in orchestrator_source
 
 
 def test_ag76c_bd_registry_code_does_not_call_protected_runtime_surfaces() -> None:
