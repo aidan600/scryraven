@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 import core.pipeline_orchestrator as orchestrator
+import core.runtime_trace_export_attachment as runtime_trace_export_attachment
 from core.db import RUN_COLUMNS, execution_jsonl_to_run_row
 from core.planned_observed_diagnostics import (
     PlannedObservedDiagnostics,
@@ -340,12 +341,15 @@ def test_controller_diagnostics_size_guard_falls_back_to_stage_summary(
         }
 
     monkeypatch.setattr(
-        orchestrator,
+        runtime_trace_export_attachment,
         "build_controller_diagnostics_payload",
         fake_build_payload,
     )
 
-    payload = orchestrator._build_controller_diagnostics_payload_with_size_guard({})
+    size_guard = (
+        runtime_trace_export_attachment._build_controller_diagnostics_payload_with_size_guard
+    )
+    payload = size_guard({})
 
     assert calls == [True, False]
     assert payload is not None
@@ -373,12 +377,15 @@ def test_controller_diagnostics_size_guard_omits_oversized_compact_payload(
         }
 
     monkeypatch.setattr(
-        orchestrator,
+        runtime_trace_export_attachment,
         "build_controller_diagnostics_payload",
         fake_build_payload,
     )
 
-    assert orchestrator._build_controller_diagnostics_payload_with_size_guard({}) is None
+    size_guard = (
+        runtime_trace_export_attachment._build_controller_diagnostics_payload_with_size_guard
+    )
+    assert size_guard({}) is None
     assert calls == [True, False]
 
 
@@ -397,12 +404,15 @@ def test_controller_diagnostics_size_guard_omits_builder_exception(
         raise RuntimeError("synthetic controller diagnostics failure")
 
     monkeypatch.setattr(
-        orchestrator,
+        runtime_trace_export_attachment,
         "build_controller_diagnostics_payload",
         fake_build_payload,
     )
 
-    assert orchestrator._build_controller_diagnostics_payload_with_size_guard({}) is None
+    size_guard = (
+        runtime_trace_export_attachment._build_controller_diagnostics_payload_with_size_guard
+    )
+    assert size_guard({}) is None
     assert calls == [True]
 
 
@@ -423,7 +433,7 @@ def test_controller_diagnostics_oversized_payload_is_not_written_to_runtime_trac
         }
 
     monkeypatch.setattr(
-        orchestrator,
+        runtime_trace_export_attachment,
         "build_controller_diagnostics_payload",
         fake_build_payload,
     )
