@@ -31,9 +31,8 @@ facts:
   changing `RUN_COLUMNS`.
 - `build_run_outcome(...)` packages the `RunOutcome` dataclass return value.
 
-`core/pipeline_orchestrator.py` retains the existing write calls and handoffs:
-`append_jsonl(...)`, `log_run_completed(...)`, optional SQLite insert/upsert, and
-returning the packaged `RunOutcome`.
+`core/pipeline_orchestrator.py` now delegates the existing write calls and handoffs
+to `core.persistence_side_effects` before returning the packaged `RunOutcome`.
 
 ## Helper Contract
 
@@ -77,16 +76,13 @@ AG-76C-OP did not change:
 
 ## What Remains In `core/pipeline_orchestrator.py`
 
-The orchestrator still builds the large runtime trace from local run facts and
-still performs the actual side-effect handoffs: JSONL append, policy journal
-append, KB trigger append, telemetry DB insert/upsert, and returning the packaged
-outcome. Runtime trace/export/checkpoint compatibility remains owned by
+The orchestrator still builds the large runtime trace from local run facts, but
+persistence side-effect execution now delegates to `core.persistence_side_effects`.
+Runtime trace/export/checkpoint compatibility remains owned by
 `core.runtime_trace_export_attachment`.
 
 ## Next Deletion Target
 
-The next safe deletion target is to split actual persistence side-effect
-execution (`append_jsonl`, policy journal append, KB trigger logging, and DB
-insert/upsert) from `core/pipeline_orchestrator.py` after a dedicated phase proves
-that write ordering, error handling, and telemetry side effects remain unchanged.
-Protected behavior surfaces should remain closed.
+The next safe deletion target is to reduce the large passive KB persistence
+context handoff after a dedicated phase proves KB execution-record and trigger
+entry parity. Protected behavior surfaces should remain closed.

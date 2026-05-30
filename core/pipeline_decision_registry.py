@@ -631,10 +631,11 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
         seam_name="JSONL/SQLite/persistence/outcome packaging",
         current_location=(
             "core/pipeline_orchestrator.py final tail delegates packaging to "
-            "core.outcome_persistence_packaging; write calls remain in orchestrator"
+            "core.outcome_persistence_packaging and side-effect execution to "
+            "core.persistence_side_effects"
         ),
-        current_owner="core.outcome_persistence_packaging",
-        target_owner="core.outcome_persistence_packaging",
+        current_owner="core.outcome_persistence_packaging; core.persistence_side_effects",
+        target_owner="core.outcome_persistence_packaging; core.persistence_side_effects",
         classification="extracted_complete",
         protected_surface_risk=(
             "JSONL_and_SQLite_schema",
@@ -643,6 +644,7 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
         ),
         current_tests=(
             "tests/test_ag76c_op_outcome_persistence_packaging.py",
+            "tests/test_ag76c_pe_persistence_side_effects.py",
             "tests/test_controller_state_mirror.py",
             "tests/test_evidence_registry_mirror.py",
             "tests/test_stage_ledger_mirror.py",
@@ -650,8 +652,9 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
         missing_parity_tests=(),
         extraction_difficulty="complete",
         recommended_next_action=(
-            "Keep packaging extracted; next candidate is persistence side-effect "
-            "handoff extraction after write-order/error-handling parity."
+            "Keep packaging and side-effect execution extracted; next candidate "
+            "is reducing the passive KB persistence context handoff after exact "
+            "KB payload parity."
         ),
         priority="P1",
     ),

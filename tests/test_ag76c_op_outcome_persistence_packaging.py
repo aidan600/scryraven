@@ -13,6 +13,7 @@ from core.run_config import RunOutcome
 HELPER_PATH = Path("core/outcome_persistence_packaging.py")
 ORCHESTRATOR_PATH = Path("core/pipeline_orchestrator.py")
 RT_HELPER_PATH = Path("core/runtime_trace_export_attachment.py")
+PE_HELPER_PATH = Path("core/persistence_side_effects.py")
 
 
 def _sample_execution_facts() -> dict[str, Any]:
@@ -275,10 +276,12 @@ def test_ag76c_op_orchestrator_delegates_packaging_and_rt_attachment() -> None:
     source = ORCHESTRATOR_PATH.read_text(encoding="utf-8")
     helper_source = HELPER_PATH.read_text(encoding="utf-8")
     rt_helper_source = RT_HELPER_PATH.read_text(encoding="utf-8")
+    pe_helper_source = PE_HELPER_PATH.read_text(encoding="utf-8")
 
     assert "build_session_payload(" in source
     assert "build_execution_log_entry(" in source
-    assert "build_sqlite_row_payload(" in source
+    assert "build_sqlite_row_payload(" not in source
+    assert "build_sqlite_row_payload(" in pe_helper_source
     assert "build_run_outcome(" in source
     assert "return RunOutcome(" not in source
     assert '"event": "execution"' not in source
@@ -289,3 +292,4 @@ def test_ag76c_op_orchestrator_delegates_packaging_and_rt_attachment() -> None:
     assert "build_source_class_recovery_candidate_v2(" not in source
     assert "def attach_runtime_trace_export_compatibility_payloads" in rt_helper_source
     assert "execution_jsonl_to_run_row" in helper_source
+    assert "execute_persistence_side_effects(" in source
