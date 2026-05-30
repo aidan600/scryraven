@@ -72,7 +72,7 @@ from core.corpus_state import (
     is_weak_corpus_state,
 )
 from core.cost_accounting import CostAccumulator
-from core.db import ensure_telemetry_schema, execution_jsonl_to_run_row, insert_run, upsert_session
+from core.db import ensure_telemetry_schema, insert_run, upsert_session
 from core.entity_extraction import fallback_entities_from_query, normalize_entities_list
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
@@ -124,6 +124,14 @@ from core.ordinary_continuation_spine_gate import (
     expander_continuation_spine_gate_exception_trace,
     scout_continuation_spine_gate_defaults,
     scout_continuation_spine_gate_exception_trace,
+)
+from core.outcome_persistence_packaging import (
+    build_execution_log_entry,
+    build_final_output_metadata,
+    build_pipeline_config,
+    build_run_outcome,
+    build_session_payload,
+    build_sqlite_row_payload,
 )
 from core.pipeline import (
     _quant_retrieval_sufficiency_shadow_telemetry,
@@ -6386,7 +6394,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         economist_safety_telemetry,
     )
 
-    output_word_count = len(report.split())
+    final_output_metadata = build_final_output_metadata(
+        report=report,
+        latency_seconds=0.0,
+        cost_snapshot={},
+    )
+    output_word_count = final_output_metadata["output_word_count"]
     useful_content, useful_content_reason = evaluate_useful_content(
         report,
         query_type=query_type,
@@ -6484,28 +6497,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         **final_source_telemetry_inputs.final_evidence_snapshot_payload,
     )
 
-    new_session: dict[str, Any] = {
-        "id": session_id,
-        "run_id": run_id,
-        "title": session_title,
-        "timestamp": current_date,
-        "query": query,
-        "core_topic": core_topic,
-        "report": report,
-        "top_passages": final_top_evidence,
-        "chat_messages": [],
-        "seen_urls": list(seen_urls),
-        "collected_images": list(collected_images),
-        "last_report_mode": strategy,
-        "pipeline_config": {
-            "intent": intent,
-            "complexity": complexity,
-            "search_depth": search_depth,
-            "mode": strategy,
-        },
-        "run_history": run_history_out,
-        "failure_card": failure_card_payload,
-    }
+    pipeline_config_payload = build_pipeline_config(
+        intent=intent,
+        complexity=complexity,
+        search_depth=search_depth,
+        mode=strategy,
+    )
+    new_session: dict[str, Any] = build_session_payload(
+        session_id=session_id,
+        run_id=run_id,
+        session_title=session_title,
+        current_date=current_date,
+        query=query,
+        core_topic=core_topic,
+        report=report,
+        final_top_evidence=final_top_evidence,
+        seen_urls=list(seen_urls),
+        collected_images=list(collected_images),
+        mode=strategy,
+        pipeline_config=pipeline_config_payload,
+        run_history_out=run_history_out,
+        failure_card_payload=failure_card_payload,
+    )
 
     queries_per_iter = {str(k): v for k, v in (queries_by_iteration or {}).items()}
     disambiguation_queries_per_iter = {
@@ -6895,122 +6908,114 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
 
     # --- Execution log ---
-    execution_log_entry: dict[str, Any] = {
-        "event": "execution",
-        "timestamp": current_date,
-        "timestamp_utc": ts_utc,
-        "run_id": run_id,
-        "session_id": session_id,
-        "query": query[:100],
-        "intent": intent,
-        "query_type": query_type,
-        "primary_entity": (primary_entity or "")[:200],
-        "entities": [str(e)[:200] for e in (entities_list or [])],
-        "empty_entity": empty_entity_flag,
-        "router_entity_retry_used": router_entity_retry_used,
-        "utilization_pre_retry": utilization_pre_retry,
-        "utilization_rate": utilization_rate_val,
-        "retrieval_retry_used": retrieval_retry_used,
-        "corpus_state": corpus_state,
-        "corpus_state_forced": corpus_state_forced_flag,
-        "corpus_weak": corpus_weak,
-        "useful_content": useful_content,
-        "response_displayable": response_displayable,
-        "evidence_sufficient": evidence_sufficient,
-        "answer_class": answer_class,
-        "useful_content_reason": useful_content_reason,
-        "waste_flags": list(waste_flags),
-        "query_redundancy_skipped": ("query_redundancy_skipped" in waste_flags),
-        "recon_fired": recon_fired,
-        "recon_confidence": recon_confidence,
-        "canonical_subject_resolved": (canonical_subject_resolved or "")[:200] or None,
-        "timing": dict(_timing_payload),
-        "router_original_report_type": router_original_report_type,
-        "router_original_query_type": router_original_query_type,
-        "routing_override_applied": routing_override_applied,
-        "routing_override_reason": routing_override_reason,
-        "report_type": report_type,
-        **nutrition_lookup_telemetry,
-        "complexity": complexity,
-        "mode": strategy,
-        "fast_model": fast_model,
-        "smart_model": smart_model,
-        "scout_fired": scout_fired,
-        "scout_key": scout_key_used,
-        "scout_queries": list(scout_queries),
-        "scout_skip_reason": scout_skip_reason,
-        "iterations_run": iterations_run,
-        "total_chunks_embedded": total_chunks_embedded,
-        "urls_fetched": total_urls_fetched,
-        "providers_by_iteration": providers_by_iteration,
-        **_provider_diagnostics_payload,
-        "queries_per_iteration": queries_per_iter,
-        "disambiguation_queries_by_iteration": disambiguation_queries_per_iter,
-        "weak_corpus_recovery_considered": weak_corpus_recovery_considered,
-        "weak_corpus_recovery_used": weak_corpus_recovery_used,
-        "weak_corpus_recovery_skip_reason": weak_corpus_recovery_skip_reason,
-        "weak_corpus_recovery_queries": list(weak_corpus_recovery_queries),
-        "weak_corpus_recovery_decision": weak_corpus_recovery_decision,
-        "weak_corpus_recovery_reason": weak_corpus_recovery_reason,
-        "weak_corpus_recovery_blockers": list(weak_corpus_recovery_blockers),
-        "synth_sufficient_first_pass_raw": synth_sufficient_first_pass_raw,
-        "synth_sufficient_first_pass": synth_sufficient_first_pass,
-        "scrutineer_flag_count": scrutineer_flag_count,
-        "estimate_from_priors_requested": estimate_from_priors_requested,
-        "estimate_from_priors_blocked_by_pre_analyst_gate": (
+    final_output_metadata = build_final_output_metadata(
+        report=report,
+        latency_seconds=latency_seconds,
+        cost_snapshot=cost_snapshot,
+    )
+    output_word_count = final_output_metadata["output_word_count"]
+    execution_log_entry = build_execution_log_entry(
+        current_date=current_date,
+        ts_utc=ts_utc,
+        run_id=run_id,
+        session_id=session_id,
+        query=query,
+        intent=intent,
+        query_type=query_type,
+        primary_entity=primary_entity,
+        entities_list=entities_list,
+        empty_entity_flag=empty_entity_flag,
+        router_entity_retry_used=router_entity_retry_used,
+        utilization_pre_retry=utilization_pre_retry,
+        utilization_rate_val=utilization_rate_val,
+        retrieval_retry_used=retrieval_retry_used,
+        corpus_state=corpus_state,
+        corpus_state_forced_flag=corpus_state_forced_flag,
+        corpus_weak=corpus_weak,
+        useful_content=useful_content,
+        response_displayable=response_displayable,
+        evidence_sufficient=evidence_sufficient,
+        answer_class=answer_class,
+        useful_content_reason=useful_content_reason,
+        waste_flags=waste_flags,
+        recon_fired=recon_fired,
+        recon_confidence=recon_confidence,
+        canonical_subject_resolved=canonical_subject_resolved,
+        timing_payload=_timing_payload,
+        router_original_report_type=router_original_report_type,
+        router_original_query_type=router_original_query_type,
+        routing_override_applied=routing_override_applied,
+        routing_override_reason=routing_override_reason,
+        report_type=report_type,
+        nutrition_lookup_telemetry=nutrition_lookup_telemetry,
+        complexity=complexity,
+        mode=strategy,
+        fast_model=fast_model,
+        smart_model=smart_model,
+        scout_fired=scout_fired,
+        scout_key_used=scout_key_used,
+        scout_queries=scout_queries,
+        scout_skip_reason=scout_skip_reason,
+        iterations_run=iterations_run,
+        total_chunks_embedded=total_chunks_embedded,
+        total_urls_fetched=total_urls_fetched,
+        providers_by_iteration=providers_by_iteration,
+        provider_diagnostics_payload=_provider_diagnostics_payload,
+        queries_per_iter=queries_per_iter,
+        disambiguation_queries_per_iter=disambiguation_queries_per_iter,
+        weak_corpus_recovery_considered=weak_corpus_recovery_considered,
+        weak_corpus_recovery_used=weak_corpus_recovery_used,
+        weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
+        weak_corpus_recovery_queries=weak_corpus_recovery_queries,
+        weak_corpus_recovery_decision=weak_corpus_recovery_decision,
+        weak_corpus_recovery_reason=weak_corpus_recovery_reason,
+        weak_corpus_recovery_blockers=weak_corpus_recovery_blockers,
+        synth_sufficient_first_pass_raw=synth_sufficient_first_pass_raw,
+        synth_sufficient_first_pass=synth_sufficient_first_pass,
+        scrutineer_flag_count=scrutineer_flag_count,
+        estimate_from_priors_requested=estimate_from_priors_requested,
+        estimate_from_priors_blocked_by_pre_analyst_gate=(
             estimate_from_priors_blocked_by_pre_analyst_gate
         ),
-        "economist_ran": economist_ran,
-        "economist_preflight_allowed": economist_preflight_allowed,
-        "economist_preflight_block_reason": economist_preflight_block_reason,
-        "economist_preflight_missing_entities": list(
-            economist_preflight_missing_entities
+        economist_ran=economist_ran,
+        economist_preflight_allowed=economist_preflight_allowed,
+        economist_preflight_block_reason=economist_preflight_block_reason,
+        economist_preflight_missing_entities=economist_preflight_missing_entities,
+        economist_safety_telemetry=economist_safety_telemetry,
+        quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
+        missing_target_metric_directive_emitted=missing_target_metric_directive_emitted,
+        economist_pre_analyst_skip_candidate_telemetry=(
+            economist_pre_analyst_skip_candidate_telemetry
         ),
-        **economist_safety_telemetry,
-        **quant_retrieval_sufficiency_telemetry,
-        "missing_target_metric_directive_emitted": (
-            missing_target_metric_directive_emitted
+        analyst_quant_packet_handoff_telemetry=analyst_quant_packet_handoff_telemetry,
+        author_quant_source_telemetry=author_quant_source_telemetry,
+        author_system_prompt_key=author_system_prompt_key,
+        final_answer_source_telemetry=final_answer_source_telemetry,
+        economist_skip_eligibility_shadow_telemetry=(
+            economist_skip_eligibility_shadow_telemetry
         ),
-        **economist_pre_analyst_skip_candidate_telemetry,
-        **analyst_quant_packet_handoff_telemetry,
-        **author_quant_source_telemetry,
-        "author_system_prompt_key": author_system_prompt_key,
-        **final_answer_source_telemetry,
-        **economist_skip_eligibility_shadow_telemetry,
-        "economist_skip_shadow_alignment": economist_skip_shadow_alignment,
-        "analyst_skipped": analyst_skipped,
-        "analyst_skip_reason": analyst_skip_reason,
-        "analyst_skipped_after_economist": analyst_skipped_after_economist,
-        "analyst_after_economist_skip_reason": analyst_after_economist_skip_reason,
-        "economist_output_used_as_analysis": economist_output_used_as_analysis,
-        "post_retrieval_fast_path_used": post_retrieval_fast_path_used,
-        "pre_analyst_gate_signals": list(pre_analyst_gate_signals),
-        "thin_quant_analyst_used": False,
-        "scrutineer_ran": scrutineer_ran,
-        "synth_was_insufficient": synth_was_insufficient,
-        "supplemental_ran": supplemental_ran,
-        "latency_seconds": latency_seconds,
-        "output_word_count": output_word_count,
-        "final_output_preview": (report or "")[:300],
-        "cost": cost_snapshot,
-        SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY: (
+        economist_skip_shadow_alignment=economist_skip_shadow_alignment,
+        analyst_skipped=analyst_skipped,
+        analyst_skip_reason=analyst_skip_reason,
+        analyst_skipped_after_economist=analyst_skipped_after_economist,
+        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
+        economist_output_used_as_analysis=economist_output_used_as_analysis,
+        post_retrieval_fast_path_used=post_retrieval_fast_path_used,
+        pre_analyst_gate_signals=pre_analyst_gate_signals,
+        scrutineer_ran=scrutineer_ran,
+        synth_was_insufficient=synth_was_insufficient,
+        supplemental_ran=supplemental_ran,
+        report=report,
+        latency_seconds=latency_seconds,
+        cost_snapshot=cost_snapshot,
+        source_class_recovery_validation_trace_key=(
+            SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY
+        ),
+        source_class_recovery_validation_packet=(
             source_class_recovery_validation_packet
         ),
-        "execution_trace": execution_trace,
-    }
-    execution_log_entry.update(current_code_version_metadata())
-    execution_log_entry.update(
-        {
-            "analyst_skipped": execution_trace["analyst_skipped"],
-            "analyst_skip_reason": execution_trace["analyst_skip_reason"],
-            "analyst_skipped_after_economist": execution_trace["analyst_skipped_after_economist"],
-            "analyst_after_economist_skip_reason": execution_trace[
-                "analyst_after_economist_skip_reason"
-            ],
-            "economist_output_used_as_analysis": execution_trace["economist_output_used_as_analysis"],
-            "post_retrieval_fast_path_used": execution_trace["post_retrieval_fast_path_used"],
-            "pre_analyst_gate_signals": list(execution_trace["pre_analyst_gate_signals"]),
-        }
+        execution_trace=execution_trace,
+        code_version_metadata=current_code_version_metadata(),
     )
     append_jsonl(
         execution_log_path,
@@ -7182,7 +7187,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         execution_log_entry["kb_instrumentation"] = kb_instrumentation
     if DB_ENABLED:
         try:
-            row = execution_jsonl_to_run_row(execution_log_entry)
+            row = build_sqlite_row_payload(execution_log_entry)
             if row:
                 db_file = ensure_telemetry_schema()
                 conn = sqlite3.connect(db_file)
@@ -7199,30 +7204,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         except Exception as e:
             run_log.error("Failed to write telemetry to DB: %s", e)
 
-    return RunOutcome(
+    return build_run_outcome(
         session_id=session_id,
         run_id=run_id,
         session_title=session_title,
         query=query,
         core_topic=core_topic,
         report=report,
-        top_passages=final_top_evidence,
+        final_top_evidence=final_top_evidence,
         seen_urls=list(seen_urls),
         collected_images=list(collected_images),
         execution_trace=execution_trace,
-        failure_card=failure_card_payload,
-        new_session=new_session,
+        failure_card_payload=failure_card_payload,
+        session_payload=new_session,
         cost_snapshot=cost_snapshot,
         latency_seconds=latency_seconds,
         intent=intent,
         complexity=complexity,
         corpus_state=corpus_state,
-        pipeline_config={
-            "intent": intent,
-            "complexity": complexity,
-            "search_depth": search_depth,
-            "mode": strategy,
-        },
+        pipeline_config=pipeline_config_payload,
         kb_instrumentation=kb_instrumentation,
         kb_warning=kb_warning,
         author_streamed=bool(config.author_stream_display)

@@ -629,23 +629,30 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
     ),
     OrchestratorBurnDownSeam(
         seam_name="JSONL/SQLite/persistence/outcome packaging",
-        current_location="core/pipeline_orchestrator.py lines 6969-7300",
-        current_owner="pipeline_orchestrator.py plus jsonl/db/run outcome helpers",
-        target_owner="future core.run_outcome_persistence_handoff",
-        classification="mechanical_candidate_for_extraction",
+        current_location=(
+            "core/pipeline_orchestrator.py final tail delegates packaging to "
+            "core.outcome_persistence_packaging; write calls remain in orchestrator"
+        ),
+        current_owner="core.outcome_persistence_packaging",
+        target_owner="core.outcome_persistence_packaging",
+        classification="extracted_complete",
         protected_surface_risk=(
             "JSONL_and_SQLite_schema",
             "RunOutcome_and_UI_visible_payload_shape",
             "trace_export_field_names",
         ),
         current_tests=(
+            "tests/test_ag76c_op_outcome_persistence_packaging.py",
             "tests/test_controller_state_mirror.py",
             "tests/test_evidence_registry_mirror.py",
             "tests/test_stage_ledger_mirror.py",
         ),
-        missing_parity_tests=("execution_log_entry, DB row, session, and RunOutcome parity",),
-        extraction_difficulty="medium",
-        recommended_next_action="Candidate B, but defer until passive trace/export attachment is isolated.",
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action=(
+            "Keep packaging extracted; next candidate is persistence side-effect "
+            "handoff extraction after write-order/error-handling parity."
+        ),
         priority="P1",
     ),
 )
