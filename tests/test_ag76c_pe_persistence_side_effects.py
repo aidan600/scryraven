@@ -299,7 +299,8 @@ def test_ag76c_pe_orchestrator_delegates_side_effects_and_packaging_stays_packag
     packaging_source = PACKAGING_PATH.read_text(encoding="utf-8")
 
     assert "execute_persistence_side_effects(" in orchestrator_source
-    assert "KbReviewPersistenceContext(" in orchestrator_source
+    assert "build_kb_review_persistence_context(" in orchestrator_source
+    assert "KbReviewPersistenceContext(" not in orchestrator_source
     assert "append_jsonl(\n        execution_log_path" not in orchestrator_source
     assert "log_run_completed(\n        run_id=run_id" not in orchestrator_source
     assert "insert_run(row" not in orchestrator_source

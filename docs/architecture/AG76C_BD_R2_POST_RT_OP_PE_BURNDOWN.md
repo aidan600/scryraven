@@ -212,3 +212,16 @@ BD-R2 kept closed:
 - live validation; and
 - raw provider payloads, raw prompts, DB rows, private logs, caches, full raw
   traces, local output packets, credentials, and generated private artifacts.
+
+## 10. KB-C Completion Update (2026-05-30)
+
+AG-76C-KB-C is complete. `core.pipeline_orchestrator` no longer inlines the full
+`KbReviewPersistenceContext(...)` field list; passive context, execution-record,
+and trigger-entry construction now live in `core.kb_review_persistence_context`.
+The side-effect owner remains `core.persistence_side_effects`, preserving write
+order, non-fatal warnings, review-agent guard/argument behavior, SQLite handoff,
+and `RunOutcome` handoff.
+
+The registry now records AG-76C-KB-C in the completed post-burn-down phases and
+recommends exactly one next phase: AG-77A — Source Conflict Representation Model.
+LLM workflow caching remains future design-only AG-76C-LC with no implementation.
