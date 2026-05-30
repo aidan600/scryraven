@@ -37,8 +37,8 @@ _ASSEMBLY_PATH = _ROOT / "core" / "runtime_trace_projection_assembly.py"
 _ORCHESTRATOR_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
 
 _REQUIREMENT = "official_current_rules"
-_QUERY = "IRS 2026 standard mileage rate official current source"
-_IRS_URL = "https://www.irs.gov/newsroom/irs-issues-standard-mileage-rates-for-2026"
+_QUERY = "official current source fixture query"
+_FIXTURE_URL = "https://agency.gov/current-rule"
 
 
 def _trace(*, result_count: int = 1) -> dict[str, Any]:
@@ -74,10 +74,10 @@ def _trace(*, result_count: int = 1) -> dict[str, Any]:
 
 def _official_candidate(**overrides: Any) -> dict[str, Any]:
     candidate = {
-        "candidate_id": "irs-2026-official",
-        "title": "IRS issues standard mileage rates for 2026",
-        "url": _IRS_URL,
-        "text": "Official IRS current guidance states the 2026 business rate.",
+        "candidate_id": "official-current-candidate",
+        "title": "Official current rule",
+        "url": _FIXTURE_URL,
+        "text": "Official current guidance states the current rule.",
         "source_tier": "official",
         "source_class": _REQUIREMENT,
         "retrieval_stage": "source_class_recovery",
@@ -85,7 +85,7 @@ def _official_candidate(**overrides: Any) -> dict[str, Any]:
         "provider_name": "offline-fixture",
         "provider_rank_or_position": 1,
         "classification_reason": "declared_source_class",
-        "currentness_signal": "2026 observed",
+        "currentness_signal": "current observed",
         "claim_value_extraction_status": "extracted",
         "fit_state": "matched_selected",
         "source_id": 1,
@@ -109,11 +109,11 @@ def test_ag74b_final_evidence_citation_custody_is_controller_complete_when_dispo
         recovered_passages=[candidate],
         final_top_evidence=[candidate],
         surface_visibility={
-            "answer_contract_visible_candidate_ids": ["irs-2026-official"],
-            "context_packet_visible_candidate_ids": ["irs-2026-official"],
-            "analyst_visible_candidate_ids": ["irs-2026-official"],
-            "author_visible_candidate_ids": ["irs-2026-official"],
-            "cited_in_final_answer_candidate_ids": ["irs-2026-official"],
+            "answer_contract_visible_candidate_ids": ["official-current-candidate"],
+            "context_packet_visible_candidate_ids": ["official-current-candidate"],
+            "analyst_visible_candidate_ids": ["official-current-candidate"],
+            "author_visible_candidate_ids": ["official-current-candidate"],
+            "cited_in_final_answer_candidate_ids": ["official-current-candidate"],
         },
     )
 
@@ -126,7 +126,7 @@ def test_ag74b_final_evidence_citation_custody_is_controller_complete_when_dispo
             "final_citation_official_or_canonical_count": 1,
         },
         final_top_evidence=[candidate],
-        final_citations=[{"citation_id": "source:1", "url": _IRS_URL}],
+        final_citations=[{"citation_id": "source:1", "url": _FIXTURE_URL}],
     )
     custody = ledger["final_evidence_citation_custody"]
 
@@ -240,7 +240,7 @@ def test_ag74b_static_subordinates_old_path_without_protected_surface_drift() ->
     assert "core.controller_evidence_ledger" in assembly_imports
     assert "build_controller_evidence_ledger" not in orchestrator_source
     assert "build_controller_evidence_ledger_trace" not in orchestrator_source
-    assert "attach_passive_runtime_projection_traces" in orchestrator_source
+    assert "attach_runtime_trace_export_compatibility_payloads" in orchestrator_source
     assert "select_providers" not in ledger_source
     assert "search_web_results(" not in ledger_source
     assert "author_prompt" not in ledger_source
