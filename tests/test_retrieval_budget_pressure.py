@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 import core.pipeline_orchestrator as orchestrator
+import core.runtime_trace_export_attachment as runtime_trace_export_attachment
 from core.db import execution_jsonl_to_run_row
 from core.retrieval_budget_pressure import (
     SCHEMA_VERSION,
@@ -181,7 +182,7 @@ def test_pipeline_budget_pressure_payload_is_nested_and_behavior_neutral(
     )
 
     monkeypatch.setattr(
-        orchestrator,
+        runtime_trace_export_attachment,
         "build_retrieval_budget_pressure_shadow",
         lambda **_kwargs: {
             "schema_version": "disabled_for_parity",
