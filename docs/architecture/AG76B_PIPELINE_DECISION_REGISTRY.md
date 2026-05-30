@@ -1,5 +1,12 @@
 # AG-76B Pipeline Decision Registry / Final Evidence Ownership Blueprint
 
+> 2026-05-30 BD-R2 update: AG-76C-RT, AG-76C-RT-C, AG-76C-OP, and AG-76C-PE
+> are complete. The current durable next-phase selection is no longer AG-76C-RT;
+> it is exactly one concrete phase, AG-76C-KB-C — KB Review Persistence Context
+> Construction Extraction / Reduction. LLM workflow caching remains future
+> design-only as AG-76C-LC.
+
+
 Date: 2026-05-28
 
 ## Scope And Non-Goals
