@@ -122,7 +122,7 @@ AG-76C-BD classifies each seam with these exact categories:
 | Scrutineer/remediation handoff | lines 5981-6159, 6296-6315 | orchestrator Scrutineer/remediation path | explicit Scrutineer contract only | protected_behavior_surface | Scrutineer, provider, Author | diagnostics tests | remediation prompt/provider parity | high | keep closed | P3 |
 | Economist preflight / Economist handoff | lines 1771-2556 and 5452-5645 | orchestrator quantitative/Economist handoff | explicit Economist contract only | protected_behavior_surface | Economist, Analyst, Author | diagnostics tests | Economist preflight parity | high | keep closed | P3 |
 | follow-up/session state handoff | lines 2678-2680, 3489-4219, 7135-7249 | orchestrator continuation/session compatibility plumbing | AnswerContract / Controller initial state after AG-76A decision | defer_until_controller_state_ready | follow-up, Controller behavior | controller state tests | follow-up state parity | medium | AG-76A should wait | P2 |
-| JSONL/SQLite/persistence/outcome packaging | formerly lines 6969-7300; AG-76C-OP handoff remains near final write/return tail | `core.outcome_persistence_packaging`; orchestrator retains write calls | `core.outcome_persistence_packaging` | extracted_complete | JSONL/SQLite, RunOutcome, trace fields | `tests/test_ag76c_op_outcome_persistence_packaging.py` plus existing controller/evidence tests | none for extracted packaging seam | complete | Next target: persistence side-effect executor extraction after write-order parity | P1 |
+| JSONL/SQLite/persistence/outcome packaging | final tail delegates packaging to `core.outcome_persistence_packaging` and side-effect execution to `core.persistence_side_effects` | `core.outcome_persistence_packaging`; `core.persistence_side_effects` | `core.outcome_persistence_packaging`; `core.persistence_side_effects` | extracted_complete | JSONL/SQLite, RunOutcome, trace fields | `tests/test_ag76c_op_outcome_persistence_packaging.py`, `tests/test_ag76c_pe_persistence_side_effects.py`, plus existing controller/evidence tests | none for extracted packaging and side-effect seams | complete | Next target: reduce passive KB persistence context handoff after exact KB payload parity | P1 |
 
 The same table is represented in passive registry data as
 `AG76C_BD_ORCHESTRATOR_SEAM_LEDGER`.
@@ -132,7 +132,7 @@ The same table is represented in passive registry data as
 | candidate | decision |
 | --- | --- |
 | AG-76C-RT - Runtime Trace / Export Attachment Compatibility Extraction | selected |
-| AG-76C-PH - Persistence / Outcome Packaging Handoff Extraction | deferred; mechanical but side-effect heavy |
+| AG-76C-PH - Persistence / Outcome Packaging Handoff Extraction | completed by AG-76C-OP packaging and AG-76C-PE side-effect execution handoff |
 | AG-76C-AC - AnswerContract / Controller State Handoff Compatibility Extraction | deferred; touches posture and Controller state readiness |
 | AG-76C-WG - Weak-Corpus / Off-Topic Gate Mapping Review | deferred; decision-sensitive and better as blueprint first |
 | AG-76A - Follow-Up as Initial AnswerContract / Controller State | wait; a safer narrow AG-76C seam remains |

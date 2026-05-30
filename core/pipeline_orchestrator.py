@@ -11,11 +11,9 @@ import json
 import logging
 import os
 import re
-import sqlite3
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -72,7 +70,6 @@ from core.corpus_state import (
     is_weak_corpus_state,
 )
 from core.cost_accounting import CostAccumulator
-from core.db import ensure_telemetry_schema, insert_run, upsert_session
 from core.entity_extraction import fallback_entities_from_query, normalize_entities_list
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
@@ -131,7 +128,10 @@ from core.outcome_persistence_packaging import (
     build_pipeline_config,
     build_run_outcome,
     build_session_payload,
-    build_sqlite_row_payload,
+)
+from core.persistence_side_effects import (
+    KbReviewPersistenceContext,
+    execute_persistence_side_effects,
 )
 from core.pipeline import (
     _quant_retrieval_sufficiency_shadow_telemetry,
@@ -185,19 +185,13 @@ from core.retrieval_stop_controller import (
     decide_retrieval_stop,
 )
 from core.review_flags import (
-    compute_review_flags,
-    load_feedback_for_session,
     recent_recurring_kb_hints,
-    review_score,
-    should_auto_review,
 )
 from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
 from core.run_logging import (
-    append_jsonl,
     current_code_version_metadata,
-    log_run_completed,
     log_run_failed,
     log_run_started,
 )
@@ -1371,20 +1365,6 @@ def choose_supplemental_search_depth(
     if str(complexity or "").strip().lower() == "high":
         return "advanced"
     return base_depth
-
-
-def _flatten_providers_used(providers_by_iteration: list | None) -> list[str]:
-    """Unique search provider names in first-seen order across retrieval iterations."""
-    seen: set[str] = set()
-    out: list[str] = []
-    for group in providers_by_iteration or []:
-        for name in group or []:
-            n = str(name).strip()
-            if not n or n in seen:
-                continue
-            seen.add(n)
-            out.append(n)
-    return out
 
 
 def _weak_corpus_recovery_seed_queries(
@@ -7017,192 +6997,94 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         execution_trace=execution_trace,
         code_version_metadata=current_code_version_metadata(),
     )
-    append_jsonl(
-        execution_log_path,
-        execution_log_entry,
-        logger=run_log,
-    )
-    log_run_completed(
+    persistence_side_effect_result = execute_persistence_side_effects(
+        execution_log_path=execution_log_path,
+        execution_log_entry=execution_log_entry,
         run_id=run_id,
         session_id=session_id,
-        phase="pipeline",
         latency_seconds=latency_seconds,
-        mode=strategy,
-        timing=dict(execution_trace["timing"]),
-        path=execution_log_path,
-        logger=run_log,
+        strategy=strategy,
+        execution_trace=execution_trace,
+        run_log=run_log,
+        policy_journal_path=policy_journal_path,
+        policy_applied=policy_applied,
+        default_utilization_threshold=DEFAULT_UTILIZATION_THRESHOLD,
+        ts_utc=ts_utc,
+        query=query,
+        kb_context=KbReviewPersistenceContext(
+            feedback_log_path=feedback_log_path,
+            kb_triggers_path=kb_triggers_path,
+            session_id=session_id,
+            run_id=run_id,
+            query=query,
+            report_type=report_type,
+            query_type=query_type,
+            primary_entity=primary_entity,
+            entities_list=entities_list,
+            empty_entity_flag=empty_entity_flag,
+            router_entity_retry_used=router_entity_retry_used,
+            utilization_pre_retry=utilization_pre_retry,
+            utilization_rate_val=utilization_rate_val,
+            retrieval_retry_used=retrieval_retry_used,
+            corpus_state=corpus_state,
+            corpus_state_forced_flag=corpus_state_forced_flag,
+            corpus_weak=corpus_weak,
+            useful_content=useful_content,
+            response_displayable=response_displayable,
+            evidence_sufficient=evidence_sufficient,
+            answer_class=answer_class,
+            useful_content_reason=useful_content_reason,
+            waste_flags=waste_flags,
+            recon_fired=recon_fired,
+            recon_confidence=recon_confidence,
+            canonical_subject_resolved=canonical_subject_resolved,
+            timing_payload=_timing_payload,
+            strategy=strategy,
+            fast_model=fast_model,
+            smart_model=smart_model,
+            complexity=complexity,
+            intent=intent,
+            iterations_run=iterations_run,
+            providers_by_iteration=providers_by_iteration,
+            queries_per_iter=queries_per_iter,
+            queries_by_iteration=queries_by_iteration,
+            disambiguation_queries_per_iter=disambiguation_queries_per_iter,
+            weak_corpus_recovery_considered=weak_corpus_recovery_considered,
+            weak_corpus_recovery_used=weak_corpus_recovery_used,
+            weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
+            weak_corpus_recovery_queries=weak_corpus_recovery_queries,
+            weak_corpus_recovery_decision=weak_corpus_recovery_decision,
+            weak_corpus_recovery_reason=weak_corpus_recovery_reason,
+            weak_corpus_recovery_blockers=weak_corpus_recovery_blockers,
+            scout_fired=scout_fired,
+            scout_key_used=scout_key_used,
+            scout_queries=scout_queries,
+            synth_was_insufficient=synth_was_insufficient,
+            synth_sufficient_first_pass_raw=synth_sufficient_first_pass_raw,
+            synth_sufficient_first_pass=synth_sufficient_first_pass,
+            failure_card_payload=failure_card_payload,
+            supplemental_ran=supplemental_ran,
+            delta_urls_supplemental=delta_urls_supplemental,
+            total_chunks_embedded=total_chunks_embedded,
+            seen_urls=list(seen_urls),
+            scrutineer_high_count=scrutineer_high_count,
+            scrutineer_flag_count=scrutineer_flag_count,
+            synth_deficiency=synth_deficiency,
+            latency_seconds=latency_seconds,
+            output_word_count=output_word_count,
+            report=report,
+            cost_snapshot=cost_snapshot,
+            ask_model=ask_model,
+            clean_json_response=deps.clean_json_response,
+            fast_provider=fast_provider,
+            local_url=local_url,
+            or_api_key=or_api_key,
+            kb_review_agent=kb_review_agent,
+        ),
+        db_enabled=DB_ENABLED,
     )
-
-    # --- Policy journal ---
-    try:
-        defaults_for_journal = apply_policy_to_run_config(
-            {
-                "utilization_threshold": DEFAULT_UTILIZATION_THRESHOLD,
-                "synth_skip_utilization_threshold": DEFAULT_UTILIZATION_THRESHOLD,
-            },
-            {},
-        )
-        override_used = any(
-            float(policy_applied.get(k, defaults_for_journal.get(k)))
-            != float(defaults_for_journal.get(k))
-            for k in ("utilization_threshold", "synth_skip_utilization_threshold")
-        )
-        append_jsonl(
-            policy_journal_path,
-            {
-                "event": "policy_applied",
-                "timestamp_utc": ts_utc,
-                "run_id": run_id,
-                "session_id": session_id,
-                "query": query[:200],
-                "mode": strategy,
-                "overrides_used": bool(override_used),
-                "thresholds": policy_applied,
-            },
-            logger=run_log,
-        )
-    except Exception as e:
-        run_log.warning("Non-fatal policy journaling failure: %s", e)
-
-    # --- KB review ---
-    kb_instrumentation: dict[str, Any] | None = None
-    kb_warning: str | None = None
-    try:
-        feedback_fb = load_feedback_for_session(feedback_log_path, session_id)
-        execution_record: dict[str, Any] = {
-            "run_id": run_id,
-            "session_id": session_id,
-            "query": query[:200],
-            "report_type": report_type,
-            "query_type": query_type,
-            "primary_entity": (primary_entity or "")[:200],
-            "entities": [str(e)[:200] for e in (entities_list or [])],
-            "empty_entity": empty_entity_flag,
-            "router_entity_retry_used": router_entity_retry_used,
-            "utilization_pre_retry": utilization_pre_retry,
-            "utilization_rate": utilization_rate_val,
-            "retrieval_retry_used": retrieval_retry_used,
-            "corpus_state": corpus_state,
-            "corpus_state_forced": corpus_state_forced_flag,
-            "corpus_weak": corpus_weak,
-            "useful_content": useful_content,
-            "response_displayable": response_displayable,
-            "evidence_sufficient": evidence_sufficient,
-            "answer_class": answer_class,
-            "useful_content_reason": useful_content_reason,
-            "waste_flags": list(waste_flags),
-            "query_redundancy_skipped": ("query_redundancy_skipped" in waste_flags),
-            "recon_fired": recon_fired,
-            "recon_confidence": recon_confidence,
-            "canonical_subject_resolved": (canonical_subject_resolved or "")[:200] or None,
-            "timing": dict(_timing_payload),
-            "mode": strategy,
-            "fast_model": fast_model,
-            "smart_model": smart_model,
-            "complexity": complexity,
-            "intent": intent,
-            "iterations_run": iterations_run,
-            "pass_providers": providers_by_iteration,
-            "queries_per_iteration": queries_per_iter,
-            "queries_iter1": queries_by_iteration.get(1, []),
-            "queries_iter2": queries_by_iteration.get(2, []),
-            "disambiguation_queries_by_iteration": disambiguation_queries_per_iter,
-            "weak_corpus_recovery_considered": weak_corpus_recovery_considered,
-            "weak_corpus_recovery_used": weak_corpus_recovery_used,
-            "weak_corpus_recovery_skip_reason": weak_corpus_recovery_skip_reason,
-            "weak_corpus_recovery_queries": list(weak_corpus_recovery_queries),
-            "weak_corpus_recovery_decision": weak_corpus_recovery_decision,
-            "weak_corpus_recovery_reason": weak_corpus_recovery_reason,
-            "weak_corpus_recovery_blockers": list(weak_corpus_recovery_blockers),
-            "scout_fired": scout_fired,
-            "scout_key": scout_key_used,
-            "scout_queries": list(scout_queries),
-            "synth_was_insufficient": synth_was_insufficient,
-            "synth_sufficient_first_pass_raw": synth_sufficient_first_pass_raw,
-            "synth_sufficient_first_pass": synth_sufficient_first_pass,
-            "failure_card": failure_card_payload,
-            "supplemental_ran": supplemental_ran,
-            "delta_urls_supplemental": delta_urls_supplemental,
-            "total_chunks_embedded": total_chunks_embedded,
-            "urls_fetched": len(seen_urls),
-            "scrutineer_high_flags": scrutineer_high_count,
-            "scrutineer_flag_count": scrutineer_flag_count,
-            "synth_deficiency": synth_deficiency,
-            "latency_seconds": latency_seconds,
-            "output_word_count": output_word_count,
-            "final_output_preview": (report or "")[:300],
-            "cost": cost_snapshot,
-        }
-        flags_obj = compute_review_flags(execution_record, feedback_fb)
-        score_val = review_score(flags_obj)
-        review_f = should_auto_review(flags_obj)
-        trigger_entry: dict[str, Any] = {
-            **asdict(flags_obj),
-            "event": "kb_trigger",
-            "run_id": run_id,
-            "session_id": session_id,
-            "query": query[:200],
-            "report_type": report_type,
-            "mode": strategy,
-            "synth_deficiency": synth_deficiency,
-            "score": score_val,
-            "fired": review_f,
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-            "retrieval_yield_chunks": int(total_chunks_embedded),
-            "providers_used": _flatten_providers_used(providers_by_iteration),
-            "timing": dict(execution_record["timing"]),
-        }
-        kb_out = None
-        if review_f:
-            kb_out = kb_review_agent(
-                ask_model,
-                deps.clean_json_response,
-                trigger_entry,
-                execution_record,
-                report,
-                fast_provider,
-                fast_model,
-                local_url,
-                or_api_key,
-            )
-        if kb_out:
-            trigger_entry["kb_review"] = kb_out
-            if (
-                kb_out.get("recurrence_risk") == "likely-recurring"
-                and isinstance(kb_out.get("suggested_action"), dict)
-            ):
-                dtl = (kb_out.get("suggested_action") or {}).get("detail", "")
-                if dtl:
-                    kb_warning = dtl[:500]
-        append_jsonl(kb_triggers_path, trigger_entry, logger=run_log)
-        kb_instrumentation = {
-            "score": round(float(score_val), 4),
-            "fired": bool(review_f),
-            "agent_ran": kb_out is not None,
-        }
-    except Exception as e:
-        run_log.warning("Non-fatal KB review logging: %s", e)
-
-    if kb_instrumentation is not None:
-        execution_log_entry["kb_instrumentation"] = kb_instrumentation
-    if DB_ENABLED:
-        try:
-            row = build_sqlite_row_payload(execution_log_entry)
-            if row:
-                db_file = ensure_telemetry_schema()
-                conn = sqlite3.connect(db_file)
-                try:
-                    insert_run(row, conn=conn)
-                    upsert_session(
-                        row.get("session_id"),
-                        row.get("timestamp_utc") or "",
-                        conn=conn,
-                    )
-                    conn.commit()
-                finally:
-                    conn.close()
-        except Exception as e:
-            run_log.error("Failed to write telemetry to DB: %s", e)
+    kb_instrumentation = persistence_side_effect_result.kb_instrumentation
+    kb_warning = persistence_side_effect_result.kb_warning
 
     return build_run_outcome(
         session_id=session_id,
