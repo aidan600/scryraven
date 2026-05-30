@@ -135,7 +135,6 @@ from core.pipeline import (
     thin_quant_preflight_missing_entities,
     validate_high_stakes_quantitative_query_shadow,
 )
-from core.planned_observed_diagnostics import build_controller_diagnostics_payload
 from core.policy import apply_policy_to_run_config, load_policy_state
 from core.prompts import ROUTER_RETRY_USER_APPEND, SCOUT_REGISTRY
 from core.protocols import StatusWriter
@@ -158,7 +157,6 @@ from core.retrieval_batch_dispatch import (
     build_retrieval_batch_dispatch_decision,
     retrieval_batch_dispatch_defaults,
 )
-from core.retrieval_budget_pressure import build_retrieval_budget_pressure_shadow
 from core.retrieval_quality import (
     DEFAULT_UTILIZATION_THRESHOLD,
     VERBOSITY_GATE_UTILIZATION_THRESHOLD,
@@ -195,13 +193,12 @@ from core.run_logging import (
     log_run_failed,
     log_run_started,
 )
-from core.runtime_trace_projection_assembly import (
-    attach_passive_runtime_projection_traces,
+from core.runtime_trace_export_attachment import (
+    attach_runtime_trace_export_compatibility_payloads,
 )
 from core.search_providers import brave_reconnaissance
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
-    build_source_class_recovery_candidate_v2,
     build_source_class_recovery_recommendation,
 )
 from core.source_class_recovery_controller_mirror import (
@@ -209,7 +206,6 @@ from core.source_class_recovery_controller_mirror import (
 )
 from core.source_class_recovery_diagnostics import (
     SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY,
-    build_source_class_recovery_validation_packet,
 )
 from core.source_class_recovery_lifecycle import (
     source_class_recovery_lifecycle_defaults,
@@ -241,8 +237,6 @@ from core.weak_corpus_controller import (
 logger = logging.getLogger(__name__)
 
 DB_ENABLED = True
-_CONTROLLER_DIAGNOSTICS_STAGE_ITEMS_LIMIT_BYTES = 8 * 1024
-_CONTROLLER_DIAGNOSTICS_MAX_SIZE_BYTES = 12 * 1024
 _RETRIEVAL_STOP_SHADOW_MODE = "shadow_only"
 _RETRIEVAL_STOP_ACTIVE_MODE = "active_stop_no_queries"
 _RETRIEVAL_STOP_ACTIVE_BUDGET_EXHAUSTED_MODE = "active_stop_budget_exhausted"
@@ -279,54 +273,6 @@ def _clean_query(q: str) -> str:
     if len(last) < 3 and last.isalpha() and "." not in last:
         words = words[:-1]
     return " ".join(words)[:300]
-
-
-def _json_payload_size_bytes(payload: dict[str, Any]) -> int:
-    encoded = json.dumps(payload, ensure_ascii=True, sort_keys=True).encode("utf-8")
-    return len(encoded)
-
-
-def _build_controller_diagnostics_payload_with_size_guard(
-    execution_trace: dict[str, Any],
-) -> dict[str, Any] | None:
-    try:
-        payload = build_controller_diagnostics_payload(
-            execution_trace,
-            include_stage_items=True,
-        )
-        if (
-            _json_payload_size_bytes(payload)
-            <= _CONTROLLER_DIAGNOSTICS_STAGE_ITEMS_LIMIT_BYTES
-        ):
-            return payload
-
-        payload = build_controller_diagnostics_payload(
-            execution_trace,
-            include_stage_items=False,
-        )
-        if _json_payload_size_bytes(payload) <= _CONTROLLER_DIAGNOSTICS_MAX_SIZE_BYTES:
-            return payload
-    except Exception as exc:
-        logger.warning("Non-fatal controller diagnostics omitted: %s", exc)
-    return None
-
-
-def _build_source_class_recovery_validation_packet_safe(
-    execution_trace: dict[str, Any],
-    *,
-    evidence_bundle_source_class_counts: dict[str, Any] | None,
-) -> dict[str, Any] | None:
-    try:
-        return build_source_class_recovery_validation_packet(
-            execution_trace,
-            evidence_bundle_source_class_counts=evidence_bundle_source_class_counts,
-        )
-    except Exception as exc:
-        logger.warning(
-            "Non-fatal source-class recovery validation packet omitted: %s",
-            exc,
-        )
-    return None
 
 
 def _official_or_canonical_source_class_count(
@@ -6927,44 +6873,26 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "cost": cost_snapshot,
         "failure_card": failure_card_payload,
     }
-    attach_passive_runtime_projection_traces(
-        execution_trace,
-        recovered_passages=(
-            source_class_projection_handoff.recovered_source_class_passages
-        ),
-        final_top_evidence=final_top_evidence,
-        logger=run_log,
-    )
-    execution_trace["retrieval_budget_pressure_shadow"] = (
-        build_retrieval_budget_pressure_shadow(
-            trace=execution_trace,
-            max_iterations=max_iterations,
-            final_top_evidence=final_top_evidence,
-        )
-    )
-    execution_trace["source_class_recovery_candidate_v2"] = (
-        build_source_class_recovery_candidate_v2(execution_trace)
-    )
-    source_class_recovery_validation_packet = (
-        _build_source_class_recovery_validation_packet_safe(
+    runtime_trace_export_attachment = (
+        attach_runtime_trace_export_compatibility_payloads(
             execution_trace,
+            recovered_passages=(
+                source_class_projection_handoff.recovered_source_class_passages
+            ),
+            final_top_evidence=final_top_evidence,
+            max_iterations=max_iterations,
             evidence_bundle_source_class_counts=(
                 source_class_evidence_bundle_observability_telemetry.get(
                     "source_class_strong_satisfaction_counts"
                 )
             ),
+            session_payload=new_session,
+            logger=run_log,
         )
     )
-    if source_class_recovery_validation_packet is not None:
-        execution_trace[SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY] = (
-            source_class_recovery_validation_packet
-        )
-    controller_diagnostics_payload = (
-        _build_controller_diagnostics_payload_with_size_guard(execution_trace)
+    source_class_recovery_validation_packet = (
+        runtime_trace_export_attachment.source_class_recovery_validation_packet
     )
-    if controller_diagnostics_payload is not None:
-        execution_trace["controller_diagnostics"] = controller_diagnostics_payload
-    new_session["execution_trace"] = execution_trace
 
     # --- Execution log ---
     execution_log_entry: dict[str, Any] = {
