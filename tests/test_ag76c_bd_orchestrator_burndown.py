@@ -4,6 +4,7 @@ import ast
 from pathlib import Path
 
 from core.pipeline_decision_registry import (
+    AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES,
     AG76C_BD_ORCHESTRATOR_SEAM_LEDGER,
     AG76C_BD_PHASE_NAME,
     AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE,
@@ -23,11 +24,19 @@ def _seam(name_fragment: str):
     raise AssertionError(f"missing seam containing {name_fragment!r}")
 
 
-def test_ag76c_bd_ledger_marks_fe_cs_and_dp_extracted_complete() -> None:
+def test_ag76c_bd_ledger_marks_completed_ag76c_seams_extracted_complete() -> None:
+    assert AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES == (
+        "AG-76C-RT",
+        "AG-76C-RT-C",
+        "AG-76C-OP",
+        "AG-76C-PE",
+    )
     completed = {
         "AG-76C-FE": _seam("AG-76C-FE"),
         "AG-76C-CS": _seam("AG-76C-CS"),
         "AG-76C-DP": _seam("AG-76C-DP"),
+        "AG-76C-RT": _seam("runtime trace projection/export attachment"),
+        "AG-76C-OP/PE": _seam("JSONL/SQLite/persistence/outcome packaging"),
     }
 
     for seam in completed.values():
@@ -74,6 +83,7 @@ def test_ag76c_bd_ledger_includes_every_required_remaining_seam() -> None:
         "Scrutineer/remediation handoff",
         "Economist preflight / Economist handoff",
         "follow-up/session state handoff",
+        "KB review persistence context handoff",
         "JSONL/SQLite/persistence/outcome packaging",
     )
 
@@ -86,22 +96,23 @@ def test_ag76c_bd_selects_exactly_one_next_extraction_phase_with_required_contra
     selected = AG76C_BD_SELECTED_NEXT_PHASE
 
     assert AG76C_BD_PHASE_NAME == "AG-76C-BD"
-    assert AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE == "AG-76C-RT"
-    assert selected.phase_name == "AG-76C-RT"
-    assert "pipeline_orchestrator.py lines 6930-6967" in selected.old_orchestrator_block
-    assert selected.replacement_owner == "core.runtime_trace_export_attachment_handoff"
+    assert AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE == "AG-76C-KB-C"
+    assert selected.phase_name == "AG-76C-KB-C"
+    assert selected.phase_name not in AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES
+    assert "pipeline_orchestrator.py lines 7014-7083" in selected.old_orchestrator_block
+    assert "core.persistence_side_effects" in selected.replacement_owner
     assert selected.protected_surfaces
     assert selected.required_parity_tests
     assert selected.stop_conditions
-    assert "provider, search, query, classifier, or fit behavior" in selected.why_next
+    assert "provider, retrieval, citation, AnswerContract" in selected.why_next
 
     selected_seams = [
         seam
         for seam in AG76C_BD_ORCHESTRATOR_SEAM_LEDGER
-        if seam.recommended_next_action.startswith("AG-76C-RT")
+        if seam.recommended_next_action.startswith("AG-76C-KB-C")
     ]
     assert [seam.seam_name for seam in selected_seams] == [
-        "runtime trace projection/export attachment"
+        "KB review persistence context handoff"
     ]
 
 
@@ -110,18 +121,19 @@ def test_ag76c_bd_selected_phase_names_old_block_owner_surfaces_and_parity_tests
     protected = " ".join(selected.protected_surfaces)
     tests = " ".join(selected.required_parity_tests)
 
-    assert "attach_passive_runtime_projection_traces" in selected.old_orchestrator_block
-    assert "source_class_recovery_candidate_v2" in selected.old_orchestrator_block
-    assert "controller diagnostics" in selected.old_orchestrator_block
-    assert selected.replacement_owner == "core.runtime_trace_export_attachment_handoff"
-    assert "execution_trace field names" in protected
-    assert "final answer, Author, citation" in protected
-    assert "legacy trace attachment sequence parity" in tests
-    assert "controller diagnostics payload parity" in tests
-    assert "static guard" in tests
+    assert "KbReviewPersistenceContext" in selected.old_orchestrator_block
+    assert "execute_persistence_side_effects" in selected.old_orchestrator_block
+    assert "core.persistence_side_effects" in selected.replacement_owner
+    assert "KB execution-record payload" in protected
+    assert "provider/search/routing/prompt/Author" in protected
+    assert "LLM workflow caching implementation" in protected
+    assert "KB execution-record exact parity" in tests
+    assert "KB trigger-entry exact parity" in tests
+    assert "ordering parity" in tests
+    assert "no schema drift guard" in tests
 
 
-def test_ag76c_bd_runtime_wires_selected_rt_helper_not_registry() -> None:
+def test_ag76c_bd_runtime_wires_completed_rt_helper_not_registry() -> None:
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
 
     assert "pipeline_decision_registry" not in orchestrator_source

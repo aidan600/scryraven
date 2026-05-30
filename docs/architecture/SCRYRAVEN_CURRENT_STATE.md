@@ -29,6 +29,21 @@ AG-70C split the current official/current validation state:
   overclaiming when final official/current IRS authority evidence was not
   visible.
 
+
+## AG-76C-BD-R2 Durable Decision Surface
+
+As of 2026-05-30, the current AG-76C durable decision surface is
+`AG-76C-BD-R2 — Post-RT/OP/PE Burn-Down Refresh`. The completed post-burn-down
+phases are `AG-76C-RT`, `AG-76C-RT-C`, `AG-76C-OP`, and `AG-76C-PE`. The repo no
+longer selects those completed phases as the next extraction target.
+
+Exactly one next concrete phase is selected: `AG-76C-KB-C — KB Review
+Persistence Context Construction Extraction / Reduction`. Its scope is a
+parity-preserving extraction or reduction of the inline
+`KbReviewPersistenceContext(...)` construction at the tail of
+`core/pipeline_orchestrator.py`. LLM workflow caching is recorded only as future
+design work (`AG-76C-LC`) and is not implemented or licensed by BD-R2.
+
 ## Near-Term Roadmap
 
 1. SCRY-01: keep repo-tracked current-state docs compact and aligned after the

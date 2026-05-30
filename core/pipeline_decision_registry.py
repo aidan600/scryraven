@@ -35,9 +35,15 @@ ORCHESTRATOR_BURN_DOWN_CLASSIFICATIONS: tuple[str, ...] = (
 )
 
 AG76C_BD_PHASE_NAME = "AG-76C-BD"
-AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE = "AG-76C-RT"
+AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES: tuple[str, ...] = (
+    "AG-76C-RT",
+    "AG-76C-RT-C",
+    "AG-76C-OP",
+    "AG-76C-PE",
+)
+AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE = "AG-76C-KB-C"
 AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION = (
-    "AG-76C-RT - Runtime Trace / Export Attachment Compatibility Extraction"
+    "AG-76C-KB-C - KB Review Persistence Context Construction Extraction / Reduction"
 )
 
 AG76C_BD_PROTECTED_SURFACES: tuple[str, ...] = (
@@ -477,43 +483,47 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
     ),
     OrchestratorBurnDownSeam(
         seam_name="final evidence/source telemetry and persistence handoff",
-        current_location="core/pipeline_orchestrator.py lines 6438-6561 and 6970-7273",
-        current_owner="pipeline_orchestrator.py plus evidence_registry_mirror/db/logging helpers",
-        target_owner="future core.run_outcome_persistence_handoff",
-        classification="mechanical_candidate_for_extraction",
+        current_location=(
+            "core.outcome_persistence_packaging and core.persistence_side_effects; "
+            "orchestrator still performs final-source telemetry handoff and KB context construction"
+        ),
+        current_owner="core.outcome_persistence_packaging and core.persistence_side_effects for persistence packaging/execution",
+        target_owner="completed AG-76C-OP/AG-76C-PE helpers",
+        classification="extracted_complete",
         protected_surface_risk=(
             "trace_export_field_names",
             "JSONL_and_SQLite_schema",
             "RunOutcome_and_UI_visible_payload_shape",
         ),
         current_tests=(
+            "tests/test_ag76c_op_outcome_persistence_packaging.py",
+            "tests/test_ag76c_pe_persistence_side_effects.py",
             "tests/test_evidence_registry_mirror.py",
             "tests/test_controller_state_mirror.py",
         ),
-        missing_parity_tests=("JSONL/SQLite/RunOutcome shape parity",),
-        extraction_difficulty="medium",
-        recommended_next_action="Defer behind AG-76C-RT; packaging is mechanical but side-effect heavy.",
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action=(
+            "Keep OP/PE extracted; do not reopen JSONL, SQLite, session, or RunOutcome shapes."
+        ),
         priority="P1",
     ),
     OrchestratorBurnDownSeam(
         seam_name="runtime trace projection/export attachment",
-        current_location="core/pipeline_orchestrator.py lines 6930-6967",
-        current_owner="pipeline_orchestrator.py calls observer helpers after trace assembly",
-        target_owner="future core.runtime_trace_export_attachment_handoff",
-        classification="mechanical_candidate_for_extraction",
+        current_location="core/runtime_trace_export_attachment.py",
+        current_owner="core.runtime_trace_export_attachment",
+        target_owner="core.runtime_trace_export_attachment",
+        classification="extracted_complete",
         protected_surface_risk=("trace_export_field_names", "citation_selection"),
         current_tests=(
+            "tests/test_ag76c_rt_runtime_trace_export_attachment.py",
             "tests/test_runtime_trace_projection_assembly_ag46c.py",
             "tests/test_official_canonical_recovery_visibility_export_ag50c.py",
             "tests/test_ag76c_dp_diagnostics_projection_handoff.py",
         ),
-        missing_parity_tests=(
-            "legacy attachment sequence parity",
-            "source_class_recovery_candidate_v2 parity",
-            "controller diagnostics size-guard parity",
-        ),
-        extraction_difficulty="low",
-        recommended_next_action=AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION,
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action="Keep RT extracted; do not reopen trace/export attachment behavior.",
         priority="P0",
     ),
     OrchestratorBurnDownSeam(
@@ -529,7 +539,7 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
         ),
         missing_parity_tests=("ledger projection packet parity if trace handoff moves",),
         extraction_difficulty="low",
-        recommended_next_action="Keep ledger interpretation in ControllerEvidenceLedger; RT may move only attachment plumbing.",
+        recommended_next_action="Keep ledger interpretation in ControllerEvidenceLedger; RT attachment plumbing is complete.",
         priority="P1",
     ),
     OrchestratorBurnDownSeam(
@@ -542,7 +552,7 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
         current_tests=("tests/test_ag59ab_controller_owned_insufficiency_analyst_author_obedience.py",),
         missing_parity_tests=("prompt exact-text and model-call context parity",),
         extraction_difficulty="high",
-        recommended_next_action="Keep closed; not part of AG-76C-BD or AG-76C-RT.",
+        recommended_next_action="Keep closed; not part of AG-76C-BD-R2 or AG-76C-KB-C.",
         priority="P3",
     ),
     OrchestratorBurnDownSeam(
@@ -628,6 +638,31 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
         priority="P2",
     ),
     OrchestratorBurnDownSeam(
+        seam_name="KB review persistence context handoff",
+        current_location="core/pipeline_orchestrator.py lines 7014-7083",
+        current_owner="pipeline_orchestrator.py inline KbReviewPersistenceContext construction",
+        target_owner="future passive KB context/record builder near core.persistence_side_effects",
+        classification="mechanical_candidate_for_extraction",
+        protected_surface_risk=(
+            "KB_trigger_payload_shape",
+            "JSONL_and_SQLite_schema",
+            "RunOutcome_and_UI_visible_payload_shape",
+            "provider_routing_selection_depth_escalation",
+            "prompt_behavior",
+        ),
+        current_tests=("tests/test_ag76c_pe_persistence_side_effects.py",),
+        missing_parity_tests=(
+            "KB execution-record exact payload parity",
+            "KB trigger-entry exact payload parity",
+            "agent-call guard and positional argument parity",
+            "non-fatal warning and write-order parity",
+            "static guard that pipeline_orchestrator.py no longer inlines the full context field list",
+        ),
+        extraction_difficulty="low-medium",
+        recommended_next_action=AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION,
+        priority="P0",
+    ),
+    OrchestratorBurnDownSeam(
         seam_name="JSONL/SQLite/persistence/outcome packaging",
         current_location=(
             "core/pipeline_orchestrator.py final tail delegates packaging to "
@@ -664,52 +699,57 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
 AG76C_BD_SELECTED_NEXT_PHASE = OrchestratorBurnDownNextPhase(
     phase_name=AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE,
     old_orchestrator_block=(
-        "core/pipeline_orchestrator.py lines 6930-6967: after execution_trace is "
-        "assembled, the orchestrator calls attach_passive_runtime_projection_traces, "
-        "adds retrieval_budget_pressure_shadow, source_class_recovery_candidate_v2, "
-        "source-class recovery validation, controller diagnostics, and then attaches "
-        "the finalized trace to new_session."
+        "core/pipeline_orchestrator.py lines 7014-7083: the final persistence "
+        "tail still constructs the full KbReviewPersistenceContext inline before "
+        "calling execute_persistence_side_effects."
     ),
-    replacement_owner="core.runtime_trace_export_attachment_handoff",
+    replacement_owner=(
+        "future passive KB context / KB record builder near core.persistence_side_effects"
+    ),
     protected_surfaces=(
-        "execution_trace field names and packet shapes",
-        "runtime trace projection/export field names",
-        "official/canonical recovery visibility export shape",
-        "controller_diagnostics payload and size-guard behavior",
-        "source_class_recovery_candidate_v2 shape",
-        "SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY payload shape",
-        "evidence integration checkpoint mirrored fields",
-        "final answer, Author, citation, provider/search/query/classifier/fit behavior",
+        "KB execution-record payload keys, values, copies, truncation, preview, cost, and latency",
+        "KB trigger-entry payload fields, timestamp handling, flags, warning truncation, and suggested action details",
+        "kb_review_agent guard, positional argument order, and provider/model/base-url/API-key values",
+        "non-fatal feedback/review/append/agent warning behavior",
+        "write order: execution JSONL append -> completed log -> policy journal -> KB trigger -> SQLite",
+        "JSONL, session, SQLite, RunOutcome, and execution_log_entry shapes",
+        "provider/search/routing/prompt/Author/final-answer/citation/classifier/candidate-fit behavior",
+        "LLM workflow caching implementation or model-call behavior",
     ),
     required_parity_tests=(
-        "legacy trace attachment sequence parity for a synthetic execution_trace",
-        "runtime trace projection/export key and value parity",
-        "official/canonical visibility export parity",
-        "source_class_recovery_candidate_v2 parity",
-        "source-class recovery validation packet parity including None/no-update case",
-        "controller diagnostics payload parity including size-guard omission",
-        "static guard that pipeline_orchestrator.py no longer owns the attachment tail",
-        "static guard that new helper imports no provider/search/query/Author/citation/final-answer behavior",
+        "static delegation guard: pipeline_orchestrator.py no longer inlines the full KbReviewPersistenceContext field list",
+        "KB execution-record exact parity for keys/values, truncation, list/dict copies, query/provider iteration fields, answer flags, cost, latency, and preview",
+        "KB trigger-entry exact parity with frozen timestamp and synthetic flags",
+        "agent-call guard parity for should_auto_review False/True and exactly one preserved positional call when true",
+        "KB warning parity for likely-recurring recurrence risk and suggested_action.detail truncation",
+        "non-fatal error parity for feedback, review, append, and agent exceptions",
+        "ordering parity: execution append -> completed log -> policy journal append -> KB append -> SQLite write",
+        "SQLite/RunOutcome handoff parity for kb_instrumentation mutation before conversion and build_run_outcome handoff",
+        "static protected-import guard for provider/search/routing/prompt/Author/final-answer/citation/classifier/candidate-fit modules",
+        "no schema drift guard for RUN_COLUMNS, DB schema, JSONL fields, session payload, and RunOutcome fields",
     ),
     stop_conditions=(
-        "trace/export field rename would be required",
-        "provider/search/query/classifier/fit behavior would change",
-        "Author/citation/final-answer behavior would change",
+        "KB execution-record or trigger-entry shape would change",
+        "kb_review_agent behavior, guard, positional arguments, or provider/model values would change",
+        "JSONL, session, SQLite, DB schema, or RunOutcome field shapes would change",
+        "provider/search/query/routing/classifier/fit behavior would change",
+        "prompt, Author, citation, or final-answer behavior would change",
+        "LLM caching implementation or model-call behavior would be added or altered",
         "raw provider payloads, raw prompts, DB rows, private logs, caches, full traces, or secrets are needed",
         "live validation or provider/model/search calls would be needed",
-        "extraction expands into broad pipeline_orchestrator.py rewrite",
     ),
     why_next=(
-        "It is the smallest remaining mechanical seam: observer-only, already "
-        "covered by projection/export tests, and it reduces trace compatibility "
-        "clutter without opening Author, citation, final-answer, provider, search, "
-        "query, classifier, or fit behavior."
+        "After RT, RT-C, OP, and PE, the largest remaining low-risk tail is the "
+        "passive KB review persistence context construction. It is smaller and safer "
+        "than prompt, provider, retrieval, citation, AnswerContract, or weak-corpus "
+        "work because KB-C can be proven with exact payload, ordering, and static "
+        "import parity while preserving runtime behavior."
     ),
     deferred_candidates=(
-        "AG-76C-PH persistence/outcome packaging is mechanical but side-effect heavy and should follow RT.",
+        "AG-76C-LC LLM workflow caching is future design-only; no caching implementation is licensed.",
         "AG-76C-AC AnswerContract handoff touches final posture and should wait for Controller state readiness.",
         "AG-76C-WG weak/off-topic/failure-card gates remain decision-sensitive and need blueprinting first.",
-        "AG-76A follow-up as Controller state should wait; BD found a safe narrower AG-76C seam.",
+        "AG-77A/AG-77B conflict representation/arbitration remain future architecture milestones.",
     ),
 )
 
@@ -899,6 +939,7 @@ def registry_entry(decision_name: str) -> PipelineDecisionRegistryEntry:
 
 
 __all__ = [
+    "AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES",
     "AG76C_BD_ORCHESTRATOR_SEAM_LEDGER",
     "AG76C_BD_PHASE_NAME",
     "AG76C_BD_PROTECTED_SURFACES",

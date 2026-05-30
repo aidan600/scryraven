@@ -1,5 +1,13 @@
 # AG-76C-BD Orchestrator Burn-Down Review
 
+> 2026-05-30 BD-R2 update: this document is the historical AG-76C-BD review.
+> Its AG-76C-RT next-phase selection has been completed by AG-76C-RT and
+> AG-76C-RT-C, followed by AG-76C-OP and AG-76C-PE. The current durable
+> next-phase selection is AG-76C-KB-C, recorded in
+> `docs/architecture/AG76C_BD_R2_POST_RT_OP_PE_BURNDOWN.md` and
+> `core/pipeline_decision_registry.py`.
+
+
 Date: 2026-05-28
 
 ## Scope And Non-Goals
