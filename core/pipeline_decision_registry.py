@@ -27,7 +27,6 @@ PROTECTED_FINAL_EVIDENCE_SURFACES: tuple[str, ...] = (
 ORCHESTRATOR_BURN_DOWN_CLASSIFICATIONS: tuple[str, ...] = (
     "extracted_complete",
     "pure_plumbing",
-    "mechanical_candidate_for_extraction",
     "decision_authority_still_local",
     "protected_behavior_surface",
     "defer_until_controller_state_ready",
@@ -40,10 +39,11 @@ AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES: tuple[str, ...] = (
     "AG-76C-RT-C",
     "AG-76C-OP",
     "AG-76C-PE",
+    "AG-76C-KB-C",
 )
-AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE = "AG-76C-KB-C"
+AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE = "AG-77A"
 AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION = (
-    "AG-76C-KB-C - KB Review Persistence Context Construction Extraction / Reduction"
+    "AG-77A - Source Conflict Representation Model"
 )
 
 AG76C_BD_PROTECTED_SURFACES: tuple[str, ...] = (
@@ -639,10 +639,13 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
     ),
     OrchestratorBurnDownSeam(
         seam_name="KB review persistence context handoff",
-        current_location="core/pipeline_orchestrator.py lines 7014-7083",
-        current_owner="pipeline_orchestrator.py inline KbReviewPersistenceContext construction",
-        target_owner="future passive KB context/record builder near core.persistence_side_effects",
-        classification="mechanical_candidate_for_extraction",
+        current_location=(
+            "core/pipeline_orchestrator.py final persistence tail delegates to "
+            "core.kb_review_persistence_context.build_kb_review_persistence_context"
+        ),
+        current_owner="core.kb_review_persistence_context",
+        target_owner="core.kb_review_persistence_context",
+        classification="extracted_complete",
         protected_surface_risk=(
             "KB_trigger_payload_shape",
             "JSONL_and_SQLite_schema",
@@ -650,16 +653,16 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
             "provider_routing_selection_depth_escalation",
             "prompt_behavior",
         ),
-        current_tests=("tests/test_ag76c_pe_persistence_side_effects.py",),
-        missing_parity_tests=(
-            "KB execution-record exact payload parity",
-            "KB trigger-entry exact payload parity",
-            "agent-call guard and positional argument parity",
-            "non-fatal warning and write-order parity",
-            "static guard that pipeline_orchestrator.py no longer inlines the full context field list",
+        current_tests=(
+            "tests/test_ag76c_kb_c_persistence_context.py",
+            "tests/test_ag76c_pe_persistence_side_effects.py",
         ),
-        extraction_difficulty="low-medium",
-        recommended_next_action=AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION,
+        missing_parity_tests=(),
+        extraction_difficulty="complete",
+        recommended_next_action=(
+            "AG-76C-KB-C complete; recommend AG-77A unless a smaller "
+            "mechanical AG-76C seam is separately licensed."
+        ),
         priority="P0",
     ),
     OrchestratorBurnDownSeam(
@@ -687,9 +690,9 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
         missing_parity_tests=(),
         extraction_difficulty="complete",
         recommended_next_action=(
-            "Keep packaging and side-effect execution extracted; next candidate "
-            "is reducing the passive KB persistence context handoff after exact "
-            "KB payload parity."
+            "Keep packaging and side-effect execution extracted; KB-C is also "
+            "complete, so recommend AG-77A unless another small mechanical "
+            "AG-76C seam is separately licensed."
         ),
         priority="P1",
     ),
@@ -699,12 +702,13 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
 AG76C_BD_SELECTED_NEXT_PHASE = OrchestratorBurnDownNextPhase(
     phase_name=AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE,
     old_orchestrator_block=(
-        "core/pipeline_orchestrator.py lines 7014-7083: the final persistence "
-        "tail still constructs the full KbReviewPersistenceContext inline before "
-        "calling execute_persistence_side_effects."
+        "AG-76C-KB-C extracted the final persistence tail inline "
+        "KbReviewPersistenceContext construction; no smaller mechanical "
+        "post-KB-C AG-76C seam is currently selected."
     ),
     replacement_owner=(
-        "future passive KB context / KB record builder near core.persistence_side_effects"
+        "AG-77A source conflict representation model architecture owner; "
+        "KB-C packaging remains in core.kb_review_persistence_context"
     ),
     protected_surfaces=(
         "KB execution-record payload keys, values, copies, truncation, preview, cost, and latency",
@@ -739,14 +743,15 @@ AG76C_BD_SELECTED_NEXT_PHASE = OrchestratorBurnDownNextPhase(
         "live validation or provider/model/search calls would be needed",
     ),
     why_next=(
-        "After RT, RT-C, OP, and PE, the largest remaining low-risk tail is the "
-        "passive KB review persistence context construction. It is smaller and safer "
-        "than prompt, provider, retrieval, citation, AnswerContract, or weak-corpus "
-        "work because KB-C can be proven with exact payload, ordering, and static "
-        "import parity while preserving runtime behavior."
+        "AG-76C-KB-C is complete. No clearly smaller post-KB-C mechanical "
+        "orchestrator-strangling seam is selected, so the recommended next phase "
+        "pivots to AG-77A source conflict representation rather than prompt, "
+        "provider, retrieval, citation, AnswerContract, weak-corpus, or runtime "
+        "cache implementation work."
     ),
     deferred_candidates=(
         "AG-76C-LC LLM workflow caching is future design-only; no caching implementation is licensed.",
+        "Additional AG-76C seams require reassessment and separate licensing before implementation.",
         "AG-76C-AC AnswerContract handoff touches final posture and should wait for Controller state readiness.",
         "AG-76C-WG weak/off-topic/failure-card gates remain decision-sensitive and need blueprinting first.",
         "AG-77A/AG-77B conflict representation/arbitration remain future architecture milestones.",

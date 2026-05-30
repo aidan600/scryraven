@@ -30,6 +30,7 @@ def test_ag76c_bd_ledger_marks_completed_ag76c_seams_extracted_complete() -> Non
         "AG-76C-RT-C",
         "AG-76C-OP",
         "AG-76C-PE",
+        "AG-76C-KB-C",
     )
     completed = {
         "AG-76C-FE": _seam("AG-76C-FE"),
@@ -37,6 +38,7 @@ def test_ag76c_bd_ledger_marks_completed_ag76c_seams_extracted_complete() -> Non
         "AG-76C-DP": _seam("AG-76C-DP"),
         "AG-76C-RT": _seam("runtime trace projection/export attachment"),
         "AG-76C-OP/PE": _seam("JSONL/SQLite/persistence/outcome packaging"),
+        "AG-76C-KB-C": _seam("KB review persistence context handoff"),
     }
 
     for seam in completed.values():
@@ -55,7 +57,6 @@ def test_ag76c_bd_ledger_uses_all_required_classification_categories() -> None:
     assert expected == {
         "extracted_complete",
         "pure_plumbing",
-        "mechanical_candidate_for_extraction",
         "decision_authority_still_local",
         "protected_behavior_surface",
         "defer_until_controller_state_ready",
@@ -96,20 +97,21 @@ def test_ag76c_bd_selects_exactly_one_next_extraction_phase_with_required_contra
     selected = AG76C_BD_SELECTED_NEXT_PHASE
 
     assert AG76C_BD_PHASE_NAME == "AG-76C-BD"
-    assert AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE == "AG-76C-KB-C"
-    assert selected.phase_name == "AG-76C-KB-C"
-    assert selected.phase_name not in AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES
-    assert "pipeline_orchestrator.py lines 7014-7083" in selected.old_orchestrator_block
-    assert "core.persistence_side_effects" in selected.replacement_owner
+    assert AG76C_BD_SELECTED_NEXT_EXTRACTION_PHASE == "AG-77A"
+    assert selected.phase_name == "AG-77A"
+    assert "AG-76C-KB-C" in AG76C_BD_COMPLETED_POST_BURN_DOWN_PHASES
+    assert "KbReviewPersistenceContext construction" in selected.old_orchestrator_block
+    assert "core.kb_review_persistence_context" in selected.replacement_owner
     assert selected.protected_surfaces
     assert selected.required_parity_tests
     assert selected.stop_conditions
     assert "provider, retrieval, citation, AnswerContract" in selected.why_next
+    assert "runtime cache implementation" in selected.why_next
 
     selected_seams = [
         seam
         for seam in AG76C_BD_ORCHESTRATOR_SEAM_LEDGER
-        if seam.recommended_next_action.startswith("AG-76C-KB-C")
+        if seam.recommended_next_action.startswith("AG-76C-KB-C complete")
     ]
     assert [seam.seam_name for seam in selected_seams] == [
         "KB review persistence context handoff"
@@ -122,8 +124,7 @@ def test_ag76c_bd_selected_phase_names_old_block_owner_surfaces_and_parity_tests
     tests = " ".join(selected.required_parity_tests)
 
     assert "KbReviewPersistenceContext" in selected.old_orchestrator_block
-    assert "execute_persistence_side_effects" in selected.old_orchestrator_block
-    assert "core.persistence_side_effects" in selected.replacement_owner
+    assert "core.kb_review_persistence_context" in selected.replacement_owner
     assert "KB execution-record payload" in protected
     assert "provider/search/routing/prompt/Author" in protected
     assert "LLM workflow caching implementation" in protected
