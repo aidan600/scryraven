@@ -17,6 +17,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
+from core.analyst_author_handoff_contract import (
+    build_analyst_author_handoff_state,
+    execute_analyst_author_handoff,
+)
 from core.anchor_resolution import (
     build_shadow_anchor_packet,
     format_anchor_context_for_researcher,
@@ -6484,6 +6488,55 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _author_effort = (
         analyst_effort if ((not corpus_weak or _efp_author) and not _relevance_low) else "low"
     )
+    analyst_author_handoff_state = build_analyst_author_handoff_state(
+        run_id=run_id,
+        analyst_skipped=analyst_skipped,
+        analyst_skip_reason=analyst_skip_reason,
+        post_retrieval_fast_path_used=post_retrieval_fast_path_used,
+        pre_analyst_gate_signals=pre_analyst_gate_signals,
+        analyst_skipped_after_economist=analyst_skipped_after_economist,
+        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
+        economist_output_used_as_analysis=economist_output_used_as_analysis,
+        analyst_evidence=_evidence_slice_for_analyst(),
+        analyst_context_prefix=analyst_cached_prefix,
+        linkup_block_included=bool(linkup_block),
+        quantitative_packet_injected=bool(
+            analyst_quant_packet_handoff_telemetry.get(
+                "analyst_quant_packet_injected"
+            )
+        ),
+        missing_target_metric_directive_emitted=missing_target_metric_directive_emitted,
+        corpus_weak=corpus_weak,
+        failure_card_payload={
+            "show": _pre_gate_failure_card_show,
+            "reason": _pre_gate_failure_card_reason,
+        },
+        author_notes=author_notes,
+        author_evidence=author_evidence,
+        selected_evidence=final_top_evidence,
+        final_evidence=final_top_evidence,
+        ordered_sources=ordered_sources,
+        unique_source_urls=unique_source_urls,
+        author_evidence_block=author_evidence_block,
+        author_prompt=author_prompt,
+        complexity=complexity,
+        author_system_prompt_key=author_system_prompt_key,
+        author_effort=_author_effort,
+        includes_analysis=(
+            complexity != "low" and (not corpus_weak or _efp_author) and not _relevance_low
+        ),
+        includes_recency_notes=bool(recency_notes),
+        includes_author_notes=bool(author_notes),
+        image_context_active=bool(image_context),
+        pre_analyst_gate_ref=pre_analyst_gate_contract,
+        retrieval_loop_state=retrieval_loop_contract_state,
+        router_query_preparation_state=router_query_preparation_contract,
+    )
+    analyst_author_handoff = execute_analyst_author_handoff(
+        analyst_author_handoff_state
+    )
+    author_system_prompt_key = analyst_author_handoff.author_system_prompt_key
+    _author_effort = analyst_author_handoff.author_effort
     _measure_context_stage(
         "author",
         prompt=author_prompt,
@@ -6870,6 +6923,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 ],
             }
     answer_contract_runtime_trace_fragment: dict[str, Any] = {}
+    answer_contract_runtime_result = None
     try:
         (
             _runtime_conflict_state,
@@ -6939,6 +6993,71 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         weak_failure_gate_contract_state.to_trace_fragment()
         if weak_failure_gate_contract_state is not None
         else {WEAK_FAILURE_GATE_TRACE_KEY: {"controller_owned": False, "available": False}}
+    )
+    analyst_author_handoff_state = build_analyst_author_handoff_state(
+        run_id=run_id,
+        analyst_skipped=analyst_skipped,
+        analyst_skip_reason=analyst_skip_reason,
+        post_retrieval_fast_path_used=post_retrieval_fast_path_used,
+        pre_analyst_gate_signals=pre_analyst_gate_signals,
+        analyst_skipped_after_economist=analyst_skipped_after_economist,
+        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
+        economist_output_used_as_analysis=economist_output_used_as_analysis,
+        analyst_evidence=_evidence_slice_for_analyst(),
+        analyst_context_prefix=analyst_cached_prefix,
+        linkup_block_included=bool(linkup_block),
+        quantitative_packet_injected=bool(
+            analyst_quant_packet_handoff_telemetry.get(
+                "analyst_quant_packet_injected"
+            )
+        ),
+        missing_target_metric_directive_emitted=missing_target_metric_directive_emitted,
+        corpus_weak=corpus_weak,
+        failure_card_payload=failure_card_payload,
+        author_notes=author_notes,
+        author_evidence=author_evidence,
+        selected_evidence=final_top_evidence,
+        final_evidence=final_top_evidence,
+        ordered_sources=ordered_sources,
+        unique_source_urls=unique_source_urls,
+        author_evidence_block=author_evidence_block,
+        source_telemetry_ref={
+            "source_ids": list(final_source_telemetry_inputs.source_ids),
+            "unique_source_url_count": (
+                final_source_telemetry_inputs.unique_source_url_count
+            ),
+            "ordered_sources": list(final_source_telemetry_inputs.ordered_sources),
+            "final_evidence_count": (
+                final_source_telemetry_inputs.final_evidence_count
+            ),
+            "final_answer_source_telemetry": dict(
+                final_source_telemetry_inputs.final_answer_source_telemetry
+            ),
+        },
+        author_prompt=author_prompt,
+        complexity=complexity,
+        author_system_prompt_key=author_system_prompt_key,
+        author_effort=_author_effort,
+        includes_analysis=(
+            complexity != "low" and (not corpus_weak or _efp_author) and not _relevance_low
+        ),
+        includes_recency_notes=bool(recency_notes),
+        includes_author_notes=bool(author_notes),
+        image_context_active=bool(image_context),
+        pre_analyst_gate_ref=pre_analyst_gate_contract,
+        weak_failure_gate_state=weak_failure_gate_contract_state,
+        retrieval_loop_state=retrieval_loop_contract_state,
+        router_query_preparation_state=router_query_preparation_contract,
+        answer_contract_ref=answer_contract_runtime_result,
+        final_evidence_ref={
+            "final_evidence_count": len(final_top_evidence),
+            "author_evidence_count": len(author_evidence),
+            "ordered_source_count": len(ordered_sources),
+            "unique_source_url_count": len(unique_source_urls),
+        },
+    )
+    analyst_author_handoff_trace_fragment = (
+        analyst_author_handoff_state.to_trace_fragment()
     )
     execution_trace: dict[str, Any] = {
         "run_id": run_id,
@@ -7032,6 +7151,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             ),
         ),
         **answer_contract_runtime_trace_fragment,
+        **analyst_author_handoff_trace_fragment,
         "urls_fetched": total_urls_fetched,
         "total_chunks": total_chunks_embedded,
         "source_tier_counts": _source_tier_exec["source_tier_counts"],
