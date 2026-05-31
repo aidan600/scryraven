@@ -140,7 +140,27 @@ compatibility names remain protected. Runtime behavior changes are expected to
 be none except authority ownership and additive `analyst_author_handoff_contract`
 trace/controller visibility.
 
-Exactly one next AG-76D phase is recommended: `AG-76D-CIT — Controller-Owned
-Citation / Source-list Handoff Contract`, because citation/source-list handoff
-identity is now the next highest remaining core authority seam after
-Analyst/Author handoff ownership moved into a named Controller contract.
+AG-76D-CIT — Controller-Owned Citation / Source-list Handoff Contract is
+implemented on the phase branch. Citation/source-list handoff posture is now
+represented by `CitationSourceHandoffState`, `SourceIdentityDescriptor`,
+`OrderedSourceListDescriptor`, `CitationEligibilityDescriptor`,
+`CitationObservationDescriptor`, `AuthorSourceInputDescriptor`, and
+`CitationSourceExecutionEnvelope` in `core.citation_source_handoff_contract`.
+The orchestrator builds Controller-owned state from already-computed final
+evidence, source IDs, duplicate URL reuse, ordered source lines, evidence block,
+cached prefix, Author evidence block, final citation observations, final
+evidence bundle refs, ControllerEvidenceLedger-compatible refs, AnswerContract
+runtime refs, and `AnalystAuthorHandoffState` refs, then consumes a mechanical
+handoff for legacy-compatible source/citation values.
+
+Existing source-ID assignment, source-ID reuse/deduping, source ordering,
+citation formatting/selection, Author prompt text, final-answer prose, final
+evidence selection, provider/model/search/query behavior, DB/session/RunOutcome
+shape, cache behavior, and compatibility names remain protected. Runtime
+behavior changes are expected to be none except authority ownership and additive
+`citation_source_handoff_contract` trace/controller visibility.
+
+Exactly one next AG-76D phase is recommended: `AG-76D-ECO — Controller-Owned
+Economist Handoff Contract`, because Economist preflight/output/analysis handoff
+remains the highest-risk core authority seam after citation/source-list handoff
+ownership moved into a named Controller contract.
