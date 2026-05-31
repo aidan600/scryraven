@@ -170,7 +170,6 @@ from core.retrieval_quality import (
     extract_recon_context,
     finalize_retrieval_queries,
     format_quoted_anchor,
-    jaccard_similarity,
     official_bias_phrase,
     should_merge_recency_queries,
     should_retry_retrieval,
