@@ -35,6 +35,7 @@ _CLASSIFICATIONS = {
     "bounded_spine_authorized_recovery",
     "conflict_resolution_separate_lane",
     "terminal_stop_no_continuation",
+    "controller_owned_retrieval_stop",
     "non_continuation",
 }
 
@@ -84,13 +85,13 @@ ORDINARY_CONTINUATION_OWNERSHIP_MAP = (
     ),
     ContinuationOwnershipPath(
         path_name="retrieval_stop_continue",
-        classification="ordinary_continuation_legacy_owner",
+        classification="controller_owned_retrieval_stop",
         code_surface="_record_retrieval_stop_shadow_once",
-        code_marker='actual_decision == "continue_retrieval"',
+        code_marker="RetrievalStopControllerDecision.CONTINUE_RETRIEVAL",
         query_source_field="next_queries",
         can_assign_current_queries_or_reenter_retrieval=True,
         currently_spine_authorized=False,
-        future_retrieve_targeted_candidate=True,
+        future_retrieve_targeted_candidate=False,
     ),
     ContinuationOwnershipPath(
         path_name="weak_corpus_recovery_queries",
@@ -126,7 +127,7 @@ ORDINARY_CONTINUATION_OWNERSHIP_MAP = (
         path_name="evaluator_no_queries_stop",
         classification="terminal_stop_no_continuation",
         code_surface="run_pipeline / GAP EVALUATOR no-query branch",
-        code_marker='actual_decision="stop_no_queries"',
+        code_marker="RetrievalStopControllerDecision.STOP_NO_QUERIES",
         query_source_field=None,
         can_assign_current_queries_or_reenter_retrieval=False,
         currently_spine_authorized=False,
@@ -136,7 +137,7 @@ ORDINARY_CONTINUATION_OWNERSHIP_MAP = (
         path_name="pre_search_redundant_queries_stop",
         classification="terminal_stop_no_continuation",
         code_surface="run_pipeline / pre-search redundant query branch",
-        code_marker='actual_decision="stop_redundant_queries"',
+        code_marker="RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES",
         query_source_field=None,
         can_assign_current_queries_or_reenter_retrieval=False,
         currently_spine_authorized=False,
@@ -146,7 +147,7 @@ ORDINARY_CONTINUATION_OWNERSHIP_MAP = (
         path_name="iteration_budget_exhausted_stop",
         classification="terminal_stop_no_continuation",
         code_surface="run_pipeline / iteration budget branch",
-        code_marker='actual_decision="stop_budget_exhausted"',
+        code_marker="RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED",
         query_source_field=None,
         can_assign_current_queries_or_reenter_retrieval=False,
         currently_spine_authorized=False,
@@ -228,14 +229,28 @@ def test_ag44a_executable_ownership_map_is_complete_and_source_anchored() -> Non
         for entry in ORDINARY_CONTINUATION_OWNERSHIP_MAP
         if entry.classification == "ordinary_continuation_legacy_owner"
     ]
-    assert ordinary_entries
-    assert all(entry.query_source_field for entry in ordinary_entries)
+    assert not ordinary_entries
+
+    controller_owned_entries = [
+        entry
+        for entry in ORDINARY_CONTINUATION_OWNERSHIP_MAP
+        if entry.classification == "controller_owned_retrieval_stop"
+    ]
+    assert {entry.path_name for entry in controller_owned_entries} == {
+        "retrieval_stop_continue"
+    }
+    assert all(entry.query_source_field for entry in controller_owned_entries)
     assert all(
         entry.can_assign_current_queries_or_reenter_retrieval
-        for entry in ordinary_entries
+        for entry in controller_owned_entries
     )
-    assert all(not entry.currently_spine_authorized for entry in ordinary_entries)
-    assert all(entry.future_retrieve_targeted_candidate for entry in ordinary_entries)
+    assert all(
+        not entry.currently_spine_authorized for entry in controller_owned_entries
+    )
+    assert all(
+        not entry.future_retrieve_targeted_candidate
+        for entry in controller_owned_entries
+    )
     evaluator_entry = {
         entry.path_name: entry for entry in ORDINARY_CONTINUATION_OWNERSHIP_MAP
     }["evaluator_new_queries"]
