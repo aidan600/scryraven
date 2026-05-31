@@ -1,7 +1,7 @@
 # AG-76D-ECO — Controller-Owned Economist Handoff Contract
 
-Date: 2026-05-31  
-Phase type: Core authority transfer  
+Date: 2026-05-31
+Phase type: Core authority transfer
 Mode: Architecture Groove / Prove Mode
 
 ## Licensed Protected Surface
