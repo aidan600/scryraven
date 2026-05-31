@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import logging
 from pathlib import Path
@@ -703,11 +704,11 @@ def test_active_stop_budget_exhausted_parity_with_legacy_noop(
     _assert_active_defaults(baseline_outcome.execution_trace)
 
 
-def test_active_stop_no_queries_falls_back_on_unexpected_decision(
+def test_no_query_branch_consumes_controller_decision_without_local_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _unexpected_decision(_snapshot: Any) -> RetrievalStopDecision:
+    def _controller_continue(_snapshot: Any) -> RetrievalStopDecision:
         return RetrievalStopDecision(
             decision=RetrievalStopControllerDecision.CONTINUE_RETRIEVAL,
             reason="candidate_queries_available",
@@ -718,31 +719,25 @@ def test_active_stop_no_queries_falls_back_on_unexpected_decision(
     monkeypatch.setattr(
         orchestrator,
         "_decide_retrieval_stop_for_active",
-        _unexpected_decision,
+        _controller_continue,
     )
     outcome, harness, _log_entry = _run_case(
         tmp_path,
         evaluator_responses=[{"is_sufficient": False, "new_queries": []}],
     )
 
-    _assert_shadow(
-        outcome.execution_trace,
-        decision="stop_no_queries",
-        stage="evaluator_no_queries",
-        next_query_count=0,
+    assert outcome.execution_trace["retrieval_stop_shadow_available"] is True
+    assert outcome.execution_trace["retrieval_stop_shadow_decision"] == (
+        "stop_no_queries"
     )
+    assert outcome.execution_trace["retrieval_stop_shadow_stage"] == "evaluator"
+    assert outcome.execution_trace["retrieval_stop_shadow_alignment"] == "mismatch"
     assert len(harness.search_calls) == 1
     assert outcome.execution_trace["iterations_run"] == 1
     assert outcome.execution_trace["retrieval_stop_active_available"] is False
-    assert outcome.execution_trace["retrieval_stop_active_decision"] == (
-        "continue_retrieval"
-    )
-    assert outcome.execution_trace["retrieval_stop_active_fallback_reason"] == (
-        "unexpected_controller_decision"
-    )
 
 
-def test_active_stop_no_queries_falls_back_on_controller_exception(
+def test_no_query_branch_does_not_hide_controller_exception(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -754,33 +749,19 @@ def test_active_stop_no_queries_falls_back_on_controller_exception(
         "_decide_retrieval_stop_for_active",
         _raise_controller,
     )
-    outcome, harness, _log_entry = _run_case(
-        tmp_path,
-        evaluator_responses=[{"is_sufficient": False, "new_queries": []}],
-    )
 
-    _assert_shadow(
-        outcome.execution_trace,
-        decision="stop_no_queries",
-        stage="evaluator_no_queries",
-        next_query_count=0,
-    )
-    assert len(harness.search_calls) == 1
-    assert outcome.execution_trace["iterations_run"] == 1
-    assert outcome.execution_trace["retrieval_stop_active_available"] is False
-    assert outcome.execution_trace["retrieval_stop_active_reason"] == (
-        "active_controller_unavailable"
-    )
-    assert outcome.execution_trace["retrieval_stop_active_fallback_reason"] == (
-        "controller_exception"
-    )
+    with pytest.raises(RuntimeError, match="synthetic active controller failure"):
+        _run_case(
+            tmp_path,
+            evaluator_responses=[{"is_sufficient": False, "new_queries": []}],
+        )
 
 
-def test_active_stop_budget_exhausted_falls_back_on_unexpected_decision(
+def test_budget_branch_consumes_controller_decision_without_local_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _unexpected_decision(_snapshot: Any) -> RetrievalStopDecision:
+    def _controller_continue(_snapshot: Any) -> RetrievalStopDecision:
         return RetrievalStopDecision(
             decision=RetrievalStopControllerDecision.CONTINUE_RETRIEVAL,
             reason="candidate_queries_available",
@@ -791,28 +772,24 @@ def test_active_stop_budget_exhausted_falls_back_on_unexpected_decision(
     monkeypatch.setattr(
         orchestrator,
         "_decide_retrieval_stop_for_active",
-        _unexpected_decision,
+        _controller_continue,
     )
     outcome, harness, _log_entry = _run_case(tmp_path, mode="Fast")
 
-    _assert_shadow(
-        outcome.execution_trace,
-        decision="stop_budget_exhausted",
-        stage="iteration_budget_exhausted",
-        next_query_count=0,
+    assert outcome.execution_trace["retrieval_stop_shadow_available"] is True
+    assert outcome.execution_trace["retrieval_stop_shadow_decision"] == (
+        "stop_budget_exhausted"
     )
+    assert outcome.execution_trace["retrieval_stop_shadow_stage"] == (
+        "iteration_budget_exhausted"
+    )
+    assert outcome.execution_trace["retrieval_stop_shadow_alignment"] == "mismatch"
     assert len(harness.search_calls) == 1
     assert outcome.execution_trace["iterations_run"] == 1
     assert outcome.execution_trace["retrieval_stop_active_available"] is False
-    assert outcome.execution_trace["retrieval_stop_active_decision"] == (
-        "continue_retrieval"
-    )
-    assert outcome.execution_trace["retrieval_stop_active_fallback_reason"] == (
-        "unexpected_controller_decision"
-    )
 
 
-def test_active_stop_budget_exhausted_falls_back_on_controller_exception(
+def test_budget_branch_does_not_hide_controller_exception(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -824,23 +801,9 @@ def test_active_stop_budget_exhausted_falls_back_on_controller_exception(
         "_decide_retrieval_stop_for_active",
         _raise_controller,
     )
-    outcome, harness, _log_entry = _run_case(tmp_path, mode="Fast")
 
-    _assert_shadow(
-        outcome.execution_trace,
-        decision="stop_budget_exhausted",
-        stage="iteration_budget_exhausted",
-        next_query_count=0,
-    )
-    assert len(harness.search_calls) == 1
-    assert outcome.execution_trace["iterations_run"] == 1
-    assert outcome.execution_trace["retrieval_stop_active_available"] is False
-    assert outcome.execution_trace["retrieval_stop_active_reason"] == (
-        "active_controller_unavailable"
-    )
-    assert outcome.execution_trace["retrieval_stop_active_fallback_reason"] == (
-        "controller_exception"
-    )
+    with pytest.raises(RuntimeError, match="synthetic active controller failure"):
+        _run_case(tmp_path, mode="Fast")
 
 
 def test_shadow_wiring_preserves_runtime_behavior_and_storage_contract(

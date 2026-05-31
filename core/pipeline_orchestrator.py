@@ -179,6 +179,8 @@ from core.retrieval_quality import (
     wants_official_source_bias,
 )
 from core.retrieval_stop_controller import (
+    RetrievalStopControllerDecision,
+    RetrievalStopDecision,
     build_retrieval_stop_controller_input,
     decide_retrieval_stop,
 )
@@ -3219,7 +3221,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     def _record_retrieval_stop_shadow_once(
         *,
-        actual_decision: str,
+        decision: RetrievalStopDecision,
         stage: str,
         evaluator_sufficient: bool | None,
         prior_queries: list[str] | tuple[str, ...] = (),
@@ -3234,8 +3236,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "retrieval_stop_shadow_available"
         ):
             return
+        decision_value = decision.decision.value
         retrieval_stop_shadow_telemetry = _build_retrieval_stop_shadow_telemetry(
-            actual_decision=actual_decision,
+            actual_decision=decision_value,
             stage=stage,
             evaluator_sufficient=evaluator_sufficient,
             iteration=iteration,
@@ -3247,7 +3250,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             weak_corpus_recovery_completed=weak_corpus_recovery_completed,
             blockers=blockers,
         )
-        is_continue_retrieval = actual_decision == "continue_retrieval"
+        is_continue_retrieval = (
+            decision.decision is RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
+        )
         ordinary_continuation_candidate_trace = (
             build_ordinary_continuation_candidate(
                 source_path=source_path_from_runtime_source(query_source),
@@ -3259,16 +3264,52 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 max_iterations=max_iterations,
                 next_queries_redundant=(
                     (not is_continue_retrieval)
-                    and actual_decision == "stop_redundant_queries"
+                    and decision.decision
+                    is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES
                 ),
                 budget_exhausted=(
                     (not is_continue_retrieval)
-                    and actual_decision == "stop_budget_exhausted"
+                    and decision.decision
+                    is RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED
                 ),
                 considered=True,
                 extra_blockers=blockers,
             ).to_dict()
         )
+
+    def _decide_retrieval_loop_stop_continue(
+        *,
+        stage: str,
+        evaluator_sufficient: bool | None,
+        prior_queries: list[str] | tuple[str, ...] = (),
+        next_queries: list[str] | tuple[str, ...] = (),
+        query_source: str | None = None,
+        weak_corpus_recovery_completed: bool = False,
+        blockers: list[str] | tuple[str, ...] = (),
+    ) -> RetrievalStopDecision:
+        snapshot = build_retrieval_stop_controller_input(
+            evaluator_sufficient=evaluator_sufficient,
+            iteration=iteration,
+            max_iterations=max_iterations,
+            prior_queries=prior_queries,
+            next_queries=next_queries,
+            query_source=query_source,
+            weak_corpus_recovery_used=weak_corpus_recovery_used,
+            weak_corpus_recovery_completed=weak_corpus_recovery_completed,
+            blockers=blockers,
+        )
+        decision = _decide_retrieval_stop_for_active(snapshot)
+        _record_retrieval_stop_shadow_once(
+            decision=decision,
+            stage=stage,
+            evaluator_sufficient=evaluator_sufficient,
+            prior_queries=prior_queries,
+            next_queries=next_queries,
+            query_source=query_source,
+            weak_corpus_recovery_completed=weak_corpus_recovery_completed,
+            blockers=blockers,
+        )
+        return decision
 
     def _ensure_checkpoint_decision_for_weak_corpus_timing(
         *,
@@ -4177,15 +4218,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             and (queries_by_iteration.get(1) or [])
             and (current_queries or [])
         ):
-            if jaccard_similarity(queries_by_iteration[1], current_queries) > 0.7:
-                _record_retrieval_stop_shadow_once(
-                    actual_decision="stop_redundant_queries",
-                    stage="pre_search_redundant_queries",
-                    evaluator_sufficient=None,
-                    prior_queries=queries_by_iteration.get(1, []),
-                    next_queries=current_queries,
-                    query_source="pre_search",
-                )
+            pre_search_stop_decision = _decide_retrieval_loop_stop_continue(
+                stage="pre_search_redundant_queries",
+                evaluator_sufficient=None,
+                prior_queries=queries_by_iteration.get(1, []),
+                next_queries=current_queries,
+                query_source="pre_search",
+            )
+            if (
+                pre_search_stop_decision.decision
+                is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES
+            ):
                 waste_flags.append("query_redundancy_skipped")
                 break
         queries_by_iteration[iteration] = list(current_queries)
@@ -4447,8 +4490,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     is_sufficient = True
 
         if weak_corpus_recovery_used and iteration > 1:
-            _record_retrieval_stop_shadow_once(
-                actual_decision="stop_after_recovery",
+            recovery_stop_decision = _decide_retrieval_loop_stop_continue(
                 stage="weak_corpus_recovery_completed",
                 evaluator_sufficient=None,
                 prior_queries=queries_by_iteration.get(iteration - 1, []),
@@ -4456,7 +4498,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 query_source="weak_corpus_recovery",
                 weak_corpus_recovery_completed=True,
             )
-            is_sufficient = True
+            if (
+                recovery_stop_decision.decision
+                is RetrievalStopControllerDecision.STOP_AFTER_RECOVERY
+            ):
+                is_sufficient = True
 
         if iteration < max_iterations and not (corpus_weak and iteration == 1):
             expander_fired = False
@@ -4503,8 +4549,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 include_official_bias=False,
                             )
                             scout_queries = list(finalized_scout_queries)
-                            _record_retrieval_stop_shadow_once(
-                                actual_decision="continue_retrieval",
+                            scout_stop_decision = _decide_retrieval_loop_stop_continue(
                                 stage="scout_directed_continuation",
                                 evaluator_sufficient=None,
                                 prior_queries=queries_by_iteration.get(
@@ -4513,6 +4558,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 next_queries=finalized_scout_queries,
                                 query_source="scout",
                             )
+                            if (
+                                scout_stop_decision.decision
+                                is not RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
+                            ):
+                                is_sufficient = True
+                                continue
                             (
                                 scout_continuation_authorized,
                                 authorized_scout_queries,
@@ -4585,14 +4636,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 len(component_queries), max_queries,
                             )
                         component_queries = component_queries[:max_queries]
-                        _record_retrieval_stop_shadow_once(
-                            actual_decision="continue_retrieval",
+                        expander_stop_decision = _decide_retrieval_loop_stop_continue(
                             stage="expander_component_queries",
                             evaluator_sufficient=None,
                             prior_queries=queries_by_iteration.get(iteration, []),
                             next_queries=component_queries,
                             query_source="expander",
                         )
+                        if (
+                            expander_stop_decision.decision
+                            is not RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
+                        ):
+                            is_sufficient = True
+                            continue
                         (
                             expander_continuation_authorized,
                             authorized_expander_queries,
@@ -4675,78 +4731,82 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         max_len=2,
                         include_official_bias=False,
                     )
-                    if evaluator_sufficient_for_shadow:
-                        _record_retrieval_stop_shadow_once(
-                            actual_decision="proceed_to_synthesis",
-                            stage="evaluator",
-                            evaluator_sufficient=True,
-                            prior_queries=queries_by_iteration.get(iteration, []),
-                            next_queries=evaluator_next_queries,
-                            query_source="evaluator",
-                        )
+                    evaluator_stop_prior_queries = (
+                        queries_by_iteration.get(1, []) if iteration == 1 else []
+                    )
+                    evaluator_stop_snapshot = build_retrieval_stop_controller_input(
+                        evaluator_sufficient=evaluator_sufficient_for_shadow,
+                        iteration=iteration,
+                        max_iterations=max_iterations,
+                        prior_queries=evaluator_stop_prior_queries,
+                        next_queries=evaluator_next_queries,
+                        query_source="evaluator",
+                        weak_corpus_recovery_used=weak_corpus_recovery_used,
+                    )
+                    evaluator_stop_decision = _decide_retrieval_stop_for_active(
+                        evaluator_stop_snapshot
+                    )
+                    evaluator_stop_stage = {
+                        RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS: (
+                            "evaluator"
+                        ),
+                        RetrievalStopControllerDecision.STOP_NO_QUERIES: (
+                            "evaluator_no_queries"
+                        ),
+                        RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES: (
+                            "evaluator_redundant_queries"
+                        ),
+                    }.get(evaluator_stop_decision.decision, "evaluator")
+                    _record_retrieval_stop_shadow_once(
+                        decision=evaluator_stop_decision,
+                        stage=evaluator_stop_stage,
+                        evaluator_sufficient=evaluator_sufficient_for_shadow,
+                        prior_queries=evaluator_stop_prior_queries,
+                        next_queries=evaluator_next_queries,
+                        query_source="evaluator",
+                    )
                     if (
-                        not is_sufficient
-                        and iteration == 1
-                        and evaluator_next_queries
-                        and jaccard_similarity(
-                            queries_by_iteration.get(1, []),
-                            evaluator_next_queries,
-                        ) > 0.7
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS
                     ):
-                        _record_retrieval_stop_shadow_once(
-                            actual_decision="stop_redundant_queries",
-                            stage="evaluator_redundant_queries",
-                            evaluator_sufficient=False,
-                            prior_queries=queries_by_iteration.get(1, []),
-                            next_queries=evaluator_next_queries,
-                            query_source="evaluator",
-                        )
+                        is_sufficient = True
+                    elif (
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES
+                    ):
                         waste_flags.append("query_redundancy_skipped")
                         is_sufficient = True
-                    if not evaluator_next_queries:
-                        if not evaluator_sufficient_for_shadow:
-                            _record_retrieval_stop_shadow_once(
-                                actual_decision="stop_no_queries",
+                    elif (
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.STOP_NO_QUERIES
+                    ):
+                        retrieval_stop_active_telemetry = (
+                            _build_retrieval_stop_active_stop_no_queries_telemetry(
                                 stage="evaluator_no_queries",
                                 evaluator_sufficient=False,
+                                iteration=iteration,
+                                max_iterations=max_iterations,
                                 prior_queries=queries_by_iteration.get(
                                     iteration, []
                                 ),
                                 next_queries=[],
                                 query_source="evaluator",
+                                weak_corpus_recovery_used=(
+                                    weak_corpus_recovery_used
+                                ),
+                                shadow_telemetry=retrieval_stop_shadow_telemetry,
                             )
-                            retrieval_stop_active_telemetry = (
-                                _build_retrieval_stop_active_stop_no_queries_telemetry(
-                                    stage="evaluator_no_queries",
-                                    evaluator_sufficient=False,
-                                    iteration=iteration,
-                                    max_iterations=max_iterations,
-                                    prior_queries=queries_by_iteration.get(
-                                        iteration, []
-                                    ),
-                                    next_queries=[],
-                                    query_source="evaluator",
-                                    weak_corpus_recovery_used=(
-                                        weak_corpus_recovery_used
-                                    ),
-                                    shadow_telemetry=retrieval_stop_shadow_telemetry,
-                                )
-                            )
-                        is_sufficient = True
-                    elif not evaluator_sufficient_for_shadow and not is_sufficient:
-                        _record_retrieval_stop_shadow_once(
-                            actual_decision="continue_retrieval",
-                            stage="evaluator",
-                            evaluator_sufficient=False,
-                            prior_queries=queries_by_iteration.get(iteration, []),
-                            next_queries=evaluator_next_queries,
-                            query_source="evaluator",
                         )
+                        is_sufficient = True
+                    elif (
+                        evaluator_stop_decision.decision
+                        is RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
+                    ):
                         (
                             evaluator_continuation_authorized,
                             authorized_evaluator_queries,
                         ) = _authorize_evaluator_continuation_before_scheduling(
-                            evaluator_queries=evaluator_next_queries,
+                            evaluator_queries=list(evaluator_stop_decision.next_queries),
                         )
                         if evaluator_continuation_authorized:
                             current_queries = list(authorized_evaluator_queries)
@@ -4783,13 +4843,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 )
                             ):
                                 is_sufficient = True
+                    else:
+                        is_sufficient = True
                 except (json.JSONDecodeError, KeyError, TypeError) as e:
                     run_log.warning("Evaluator JSON parse failed: %s", e)
                     is_sufficient = True
 
         if iteration >= max_iterations and not is_sufficient:
-            _record_retrieval_stop_shadow_once(
-                actual_decision="stop_budget_exhausted",
+            budget_stop_decision = _decide_retrieval_loop_stop_continue(
                 stage="iteration_budget_exhausted",
                 evaluator_sufficient=None,
                 prior_queries=queries_by_iteration.get(iteration, []),
@@ -4797,7 +4858,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 query_source="budget",
             )
             if (
-                retrieval_stop_shadow_telemetry.get(
+                budget_stop_decision.decision
+                is RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED
+                and retrieval_stop_shadow_telemetry.get(
                     "retrieval_stop_shadow_decision"
                 )
                 == "stop_budget_exhausted"

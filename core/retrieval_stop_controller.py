@@ -195,7 +195,10 @@ def decide_retrieval_stop(
             blockers=("weak_corpus_recovery_completed",),
         )
 
-    if not snapshot.iteration_budget_available:
+    if (
+        snapshot.query_source == "budget"
+        and not snapshot.iteration_budget_available
+    ):
         return RetrievalStopDecision(
             decision=RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED,
             reason="iteration_budget_exhausted",
@@ -221,6 +224,16 @@ def decide_retrieval_stop(
             decision=RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES,
             reason="redundant_with_prior_queries",
             blockers=("redundant_queries",),
+            next_queries=snapshot.next_queries,
+            query_source=snapshot.query_source,
+            redundancy_score=redundancy_score,
+        )
+
+    if not snapshot.iteration_budget_available:
+        return RetrievalStopDecision(
+            decision=RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED,
+            reason="iteration_budget_exhausted",
+            blockers=("iteration_budget_exhausted",),
             next_queries=snapshot.next_queries,
             query_source=snapshot.query_source,
             redundancy_score=redundancy_score,
