@@ -163,6 +163,14 @@ from core.retrieval_batch_dispatch import (
     build_retrieval_batch_dispatch_decision,
     retrieval_batch_dispatch_defaults,
 )
+from core.retrieval_loop_contract import (
+    RETRIEVAL_LOOP_TRACE_KEY,
+    build_retrieval_execution_envelope,
+    build_retrieval_loop_state,
+    build_retrieval_pass_descriptor,
+    execute_retrieval_pass_handoff,
+    summarize_retrieval_pass_result,
+)
 from core.retrieval_quality import (
     DEFAULT_UTILIZATION_THRESHOLD,
     VERBOSITY_GATE_UTILIZATION_THRESHOLD,
@@ -3207,6 +3215,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     retrieval_batch_dispatch_trace: dict[str, Any] = (
         retrieval_batch_dispatch_defaults()
     )
+    retrieval_loop_contract_state = None
     weak_corpus_decision_for_checkpoint_gate: WeakCorpusRecoveryDecision | None = None
     conflict_resolution_decision_for_checkpoint_gate: (
         ConflictResolutionDecision | None
@@ -4281,21 +4290,86 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             if weak_corpus_recovery_used and iteration > 1
             else "main_retrieval"
         )
-        new_passages = process_search_queries(
-            current_queries, intent, complexity, current_search_depth, results_per_query,
-            include_domains, exclude_domains, query_embedding, seen_urls, collected_images,
-            embed_provider, embed_model, local_url, embed_texts, deps.compute_similarities,
-            status_container=status,
-            search_providers=loop_providers,
+        query_similarity_basis = (
+            "previous_main_retrieval_iteration" if similarity_prior_queries else None
+        )
+        retrieval_pass_descriptor = build_retrieval_pass_descriptor(
+            iteration=iteration,
+            query_source=(
+                router_query_preparation_contract.query_preparation_provenance.get(
+                    "query_source"
+                )
+                or retrieval_provider_role
+            ),
+            current_queries=current_queries,
+            provider_list=loop_providers,
+            search_depth=current_search_depth,
+            results_per_query=results_per_query,
+            top_chunks=top_chunks,
+            max_iterations=max_iterations,
+            intent=intent,
+            complexity=complexity,
+            provider_role=retrieval_provider_role,
+            query_similarity_basis=query_similarity_basis,
+            prior_queries_for_similarity=similarity_prior_queries,
+            retrieval_budget_facts={
+                "iteration": iteration,
+                "max_iterations": max_iterations,
+                "iterations_remaining_after_pass": max(0, max_iterations - iteration),
+                "results_per_query": results_per_query,
+                "top_chunks": top_chunks,
+            },
+            batch_dispatch_authorization_ref=retrieval_batch_dispatch_trace,
+            source_class_recovery_action_ref=active_source_class_recovery_lifecycle,
+            weak_corpus_recovery_ref={
+                "weak_corpus_recovery_used": weak_corpus_recovery_used,
+                "weak_corpus_recovery_attempted": weak_corpus_recovery_attempted,
+                "weak_corpus_recovery_decision": weak_corpus_recovery_decision,
+            },
+        )
+        retrieval_execution_envelope = build_retrieval_execution_envelope(
+            retrieval_pass_descriptor,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
             exa_domain_filter=ACADEMIC_DOMAINS if is_academic else None,
             entity_hint=entity_hint_for_retrieval,
+        )
+        previous_retrieval_loop_contract_state = retrieval_loop_contract_state
+        retrieval_loop_contract_state = build_retrieval_loop_state(
+            router_query_preparation_state=router_query_preparation_contract,
+            pass_descriptor=retrieval_pass_descriptor,
+            execution_envelope=retrieval_execution_envelope,
+            retrieval_stop_decision=retrieval_stop_active_telemetry,
+            run_id=run_id,
+            retrieval_budget_facts=retrieval_pass_descriptor.retrieval_budget_facts,
+            controller_visibility={
+                "production_active": True,
+                "provider_search_executor": "existing_process_search_queries",
+            },
+        )
+        if previous_retrieval_loop_contract_state is not None:
+            for previous_summary in (
+                previous_retrieval_loop_contract_state.pass_result_summaries
+            ):
+                retrieval_loop_contract_state = (
+                    retrieval_loop_contract_state.with_pass_result(previous_summary)
+                )
+        new_passages = execute_retrieval_pass_handoff(
+            retrieval_execution_envelope,
+            process_search_queries=process_search_queries,
+            query_embedding=query_embedding,
+            seen_urls=seen_urls,
+            collected_images=collected_images,
+            embed_provider=embed_provider,
+            embed_model=embed_model,
+            local_url=local_url,
+            embed_texts=embed_texts,
+            compute_similarities=deps.compute_similarities,
+            status_container=status,
             provider_diagnostics=provider_diagnostics,
-            provider_role=retrieval_provider_role,
             iteration=iteration,
             prior_queries_for_similarity=similarity_prior_queries,
-            query_similarity_basis=(
-                "previous_main_retrieval_iteration" if similarity_prior_queries else None
-            ),
+            query_similarity_basis=query_similarity_basis,
         )
         retrieval_pass_records.append(
             {
@@ -4308,8 +4382,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "results_per_query": results_per_query,
             }
         )
-        total_urls_fetched += max(0, len(seen_urls) - seen_before)
+        seen_url_delta = max(0, len(seen_urls) - seen_before)
+        total_urls_fetched += seen_url_delta
         total_chunks_embedded += len(new_passages)
+        retrieval_loop_contract_state = retrieval_loop_contract_state.with_pass_result(
+            summarize_retrieval_pass_result(
+                descriptor=retrieval_pass_descriptor,
+                result_count=len(new_passages),
+                seen_url_delta=seen_url_delta,
+            )
+        )
         to_merge = list(new_passages)
 
         if iteration == 1:
@@ -6554,9 +6636,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _run_controller_mirror.state.route_fields["router_query_preparation_contract"] = (
         router_query_preparation_contract.to_controller_state()
     )
+    if retrieval_loop_contract_state is not None:
+        _run_controller_mirror.state.route_fields[RETRIEVAL_LOOP_TRACE_KEY] = (
+            retrieval_loop_contract_state.to_controller_state()
+        )
     _run_controller_mirror.state.trace_fields.update(
         router_query_preparation_contract.to_trace_fragment()
     )
+    if retrieval_loop_contract_state is not None:
+        _run_controller_mirror.state.trace_fields.update(
+            retrieval_loop_contract_state.to_trace_fragment()
+        )
     record_final_evidence_snapshot(
         _run_controller_mirror,
         **final_source_telemetry_inputs.final_evidence_snapshot_payload,
@@ -6827,6 +6917,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         **anchor_packet_telemetry,
         **nutrition_lookup_telemetry,
         **router_query_preparation_contract.to_trace_fragment(),
+        **(
+            retrieval_loop_contract_state.to_trace_fragment()
+            if retrieval_loop_contract_state is not None
+            else {}
+        ),
         "complexity": complexity,
         "mode": strategy,
         "scout_fired": scout_fired,

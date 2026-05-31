@@ -95,7 +95,21 @@ finalization, provider routing/depth, retrieval ranking/filtering,
 AnswerContract behavior, Author/final-answer/citation behavior, DB/schema,
 JSONL/session/SQLite payloads, and `RunOutcome` shape remain protected.
 
-Exactly one next AG-76D phase is recommended: `AG-76D-RL — Controller-Owned
-Retrieval Loop Contract`, because Router/query-preparation posture is now
-Controller-visible but broader retrieval execution/continuation/provider-loop
-posture still remains the clearest local authority-transfer seam.
+AG-76D-RL — Controller-Owned Retrieval Loop Contract is implemented on the
+phase branch. Broader retrieval-loop pass posture is now represented by
+`RetrievalLoopState`, `RetrievalPassDescriptor`, `RetrievalExecutionEnvelope`,
+and `RetrievalPassResultSummary` in `core.retrieval_loop_contract`. The main
+retrieval pass uses a mechanical handoff adapter that consumes the descriptor and
+passes already-computed queries, provider list, depth, and budget facts to the
+existing search executor without changing provider/search/query behavior.
+
+Existing provider routing/selection/depth, query generation/finalization,
+RetrievalStopDecision stop/continue ownership, RouterQueryPreparationState
+router/query-preparation ownership, retrieval ranking/filtering, source-class
+recovery, weak-corpus/failure-card behavior, Author/final-answer/citation
+behavior, DB/session/RunOutcome shape, and compatibility names remain protected.
+
+Exactly one next AG-76D phase is recommended: `AG-76D-WG — Controller-Owned Weak
+/ Off-topic / Failure-card Gate Contract`, because weak/off-topic/failure-card
+gating remains the next highest orchestrator-local authority risk after the
+retrieval-loop handoff.
