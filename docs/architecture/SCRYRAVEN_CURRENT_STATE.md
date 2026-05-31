@@ -109,7 +109,17 @@ router/query-preparation ownership, retrieval ranking/filtering, source-class
 recovery, weak-corpus/failure-card behavior, Author/final-answer/citation
 behavior, DB/session/RunOutcome shape, and compatibility names remain protected.
 
-Exactly one next AG-76D phase is recommended: `AG-76D-WG — Controller-Owned Weak
-/ Off-topic / Failure-card Gate Contract`, because weak/off-topic/failure-card
-gating remains the next highest orchestrator-local authority risk after the
-retrieval-loop handoff.
+AG-76D-WG — Controller-Owned Weak / Off-topic / Failure-card Gate Contract is
+implemented on the phase branch. Weak/off-topic/failure-card gate facts are now
+represented by `WeakFailureGateState`, `AnalystGateDescriptor`,
+`FailureCardGateDescriptor`, and `WeakFailureGateExecutionEnvelope` in
+`core.weak_failure_gate_contract`. The orchestrator builds the Controller-owned
+state from already-computed gate facts and then consumes a mechanical handoff,
+while existing weak-corpus, off-topic, failure-card, useful-content,
+answer-outcome, Analyst skip, Author/final-answer/citation, trace, DB/session,
+and `RunOutcome` behavior remain protected.
+
+Exactly one next AG-76D phase is recommended: `AG-76D-AA — Controller-Owned
+Analyst / Author Handoff Contract`, because the Analyst/Author admission and
+handoff surface is now the next highest orchestrator-local authority seam after
+weak/failure gate ownership moved into a named Controller contract.

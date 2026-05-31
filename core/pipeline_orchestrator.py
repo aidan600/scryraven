@@ -246,6 +246,12 @@ from core.weak_corpus_controller import (
     record_weak_corpus_recovery_decision,
     weak_corpus_recovery_trace_fields,
 )
+from core.weak_failure_gate_contract import (
+    WEAK_FAILURE_GATE_TRACE_KEY,
+    build_analyst_gate_descriptor,
+    build_weak_failure_gate_state,
+    execute_weak_failure_gate_handoff,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -3216,6 +3222,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         retrieval_batch_dispatch_defaults()
     )
     retrieval_loop_contract_state = None
+    weak_failure_gate_contract_state = None
     weak_corpus_decision_for_checkpoint_gate: WeakCorpusRecoveryDecision | None = None
     conflict_resolution_decision_for_checkpoint_gate: (
         ConflictResolutionDecision | None
@@ -5837,10 +5844,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         official_evidence_found=_source_tier_pre_analyst["official_evidence_found"],
         community_signal_found=_source_tier_pre_analyst["community_signal_found"],
     )
-    analyst_skipped = bool(pre_analyst_gate["analyst_skipped"])
-    analyst_skip_reason = pre_analyst_gate["analyst_skip_reason"]
-    post_retrieval_fast_path_used = bool(pre_analyst_gate["post_retrieval_fast_path_used"])
-    pre_analyst_gate_signals = list(pre_analyst_gate["pre_analyst_gate_signals"])
     post_economist_gate = _post_economist_analyst_gate(
         query=query,
         report_type=report_type,
@@ -5851,7 +5854,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         corpus_state=corpus_state,
         corpus_weak=corpus_weak,
         failure_card_show=_pre_gate_failure_card_show,
-        pre_analyst_gate_skipped=analyst_skipped,
+        pre_analyst_gate_skipped=bool(pre_analyst_gate["analyst_skipped"]),
     )
     analyst_skipped_after_economist = bool(
         post_economist_gate["analyst_skipped_after_economist"]
@@ -5861,6 +5864,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ]
     economist_output_used_as_analysis = bool(
         post_economist_gate["economist_output_used_as_analysis"]
+    )
+    pre_analyst_gate_contract = build_analyst_gate_descriptor(
+        pre_analyst_gate=pre_analyst_gate,
+        post_economist_gate=post_economist_gate,
+    )
+    pre_analyst_gate_handoff = pre_analyst_gate_contract.to_trace()
+    analyst_skipped = bool(pre_analyst_gate_handoff["analyst_skipped"])
+    analyst_skip_reason = pre_analyst_gate_handoff["analyst_skip_reason"]
+    post_retrieval_fast_path_used = bool(
+        pre_analyst_gate_handoff["post_retrieval_fast_path_used"]
+    )
+    pre_analyst_gate_signals = list(
+        pre_analyst_gate_handoff["pre_analyst_gate_signals"]
     )
     estimate_from_priors_blocked_by_pre_analyst_gate = bool(
         estimate_from_priors_requested
@@ -6430,7 +6446,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
             analyst_skipped_after_economist=analyst_skipped_after_economist,
             economist_output_used_as_analysis=economist_output_used_as_analysis,
-            pre_analyst_gate_skipped=analyst_skipped,
+            pre_analyst_gate_skipped=bool(pre_analyst_gate["analyst_skipped"]),
         )
     )
     economist_skip_shadow_alignment = _economist_skip_shadow_alignment(
@@ -6606,6 +6622,43 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         synth_was_insufficient=bool(synth_was_insufficient),
         empty_entity=bool(empty_entity_flag),
     )
+    weak_failure_gate_contract_state = build_weak_failure_gate_state(
+        corpus_state=corpus_state,
+        corpus_weak=corpus_weak,
+        corpus_state_forced=corpus_state_forced_flag,
+        weak_corpus_recovery_considered=weak_corpus_recovery_considered,
+        weak_corpus_recovery_used=weak_corpus_recovery_used,
+        weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
+        weak_corpus_recovery_queries=weak_corpus_recovery_queries,
+        weak_corpus_recovery_decision=weak_corpus_recovery_decision,
+        weak_corpus_recovery_reason=weak_corpus_recovery_reason,
+        weak_corpus_recovery_blockers=weak_corpus_recovery_blockers,
+        useful_content=useful_content,
+        useful_content_reason=useful_content_reason,
+        response_displayable=response_displayable,
+        evidence_sufficient=evidence_sufficient,
+        answer_class=answer_class,
+        failure_card_payload=failure_card_payload,
+        analyst_gate=pre_analyst_gate_contract,
+        run_id=run_id,
+        iteration=iterations_run,
+        retrieval_loop_state=retrieval_loop_contract_state,
+        router_query_preparation_state=router_query_preparation_contract,
+        answer_outcome_ref={
+            "response_displayable": response_displayable,
+            "evidence_sufficient": evidence_sufficient,
+            "answer_class": answer_class,
+        },
+    )
+    weak_failure_gate_handoff = execute_weak_failure_gate_handoff(
+        weak_failure_gate_contract_state
+    )
+    failure_card_payload = weak_failure_gate_handoff.failure_card_payload
+    useful_content = weak_failure_gate_handoff.useful_content
+    useful_content_reason = weak_failure_gate_handoff.useful_content_reason
+    response_displayable = weak_failure_gate_handoff.response_displayable
+    evidence_sufficient = weak_failure_gate_handoff.evidence_sufficient
+    answer_class = weak_failure_gate_handoff.answer_class
     synth_sufficient_first_pass = bool(synth_sufficient_first_pass_raw and evidence_sufficient)
 
     run_history_out = list(prior_run_history)
@@ -6882,6 +6935,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     except Exception as exc:
         logger.warning("Non-fatal answer-contract handoff omitted: %s", exc)
     _provider_diagnostics_payload = provider_diagnostics_payload(provider_diagnostics)
+    weak_failure_gate_trace_fragment = (
+        weak_failure_gate_contract_state.to_trace_fragment()
+        if weak_failure_gate_contract_state is not None
+        else {WEAK_FAILURE_GATE_TRACE_KEY: {"controller_owned": False, "available": False}}
+    )
     execution_trace: dict[str, Any] = {
         "run_id": run_id,
         "timestamp_utc": ts_utc,
@@ -7046,6 +7104,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "final_output_preview": (report or "")[:300],
         "cost": cost_snapshot,
         "failure_card": failure_card_payload,
+        **weak_failure_gate_trace_fragment,
     }
     runtime_trace_export_attachment = (
         attach_runtime_trace_export_compatibility_payloads(
