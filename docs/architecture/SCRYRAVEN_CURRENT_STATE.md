@@ -160,7 +160,31 @@ shape, cache behavior, and compatibility names remain protected. Runtime
 behavior changes are expected to be none except authority ownership and additive
 `citation_source_handoff_contract` trace/controller visibility.
 
-Exactly one next AG-76D phase is recommended: `AG-76D-ECO — Controller-Owned
-Economist Handoff Contract`, because Economist preflight/output/analysis handoff
-remains the highest-risk core authority seam after citation/source-list handoff
-ownership moved into a named Controller contract.
+AG-76D-ECO — Controller-Owned Economist Handoff Contract is implemented on the
+phase branch. Economist handoff posture is now represented by
+`EconomistHandoffState`, `EconomistAdmissionDescriptor`,
+`EconomistPreflightDescriptor`, `SourceBoundQuantitativePacketDescriptor`,
+`UnsupportedQuantitativeValueDescriptor`, `EconomistOutputDescriptor`,
+`EconomistAnalystExposureDescriptor`, `EconomistAuthorExposureDescriptor`,
+`EconomistSafetyDescriptor`, and `EconomistExecutionEnvelope` in
+`core.economist_handoff_contract`. The orchestrator builds Controller-owned
+state from already-computed Economist admission/run/block/unavailable facts,
+preflight posture, source-bound quantitative packet identity, unsupported /
+missing / model-derived value posture, Economist output identity,
+Analyst/Author exposure facts, AnswerContract refs, `AnalystAuthorHandoffState`
+refs, and `CitationSourceHandoffState` refs, then consumes a mechanical handoff
+for legacy-compatible Economist handoff values.
+
+Existing Economist prompt text, Economist behavior, quantitative policy,
+source-bound numeric policy, model-generated code-execution blocking,
+Analyst/Author/final-answer/citation behavior, provider/model/search/query
+behavior, DB/session/RunOutcome shape, cache behavior, and compatibility names
+remain protected. Runtime behavior changes are expected to be none except
+authority ownership and additive `economist_handoff_contract` trace/controller
+visibility.
+
+Exactly one next AG-76D phase is recommended: `AG-76D-FU — Follow-up as
+Controller Initial State`, because follow-up state remains a coherent
+Controller-initial-state seam after the retrieval, Router/query-preparation,
+weak/failure gate, Analyst/Author, citation/source-list, and Economist handoff
+transfers.

@@ -78,6 +78,10 @@ from core.corpus_state import (
     is_weak_corpus_state,
 )
 from core.cost_accounting import CostAccumulator
+from core.economist_handoff_contract import (
+    build_economist_handoff_state,
+    execute_economist_handoff,
+)
 from core.entity_extraction import fallback_entities_from_query
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
@@ -5873,6 +5877,40 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     economist_output_used_as_analysis = bool(
         post_economist_gate["economist_output_used_as_analysis"]
     )
+    economist_handoff_state = build_economist_handoff_state(
+        run_id=run_id,
+        need_economist=need_economist,
+        economist_ran=economist_ran,
+        economist_preflight_allowed=economist_preflight_allowed,
+        economist_preflight_block_reason=economist_preflight_block_reason,
+        economist_preflight_missing_entities=economist_preflight_missing_entities,
+        economist_safety_telemetry=economist_safety_telemetry,
+        economist_pre_analyst_skip_candidate_telemetry=(
+            economist_pre_analyst_skip_candidate_telemetry
+        ),
+        analyst_quant_packet_handoff_telemetry=analyst_quant_packet_handoff_telemetry,
+        author_quant_source_telemetry=author_quant_source_telemetry,
+        analyst_skipped_after_economist=analyst_skipped_after_economist,
+        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
+        economist_output_used_as_analysis=economist_output_used_as_analysis,
+        estimate_from_priors_requested=estimate_from_priors_requested,
+        estimate_from_priors_blocked_by_pre_analyst_gate=(
+            estimate_from_priors_blocked_by_pre_analyst_gate
+        ),
+        answer_contract_ref=None,
+    )
+    economist_handoff = execute_economist_handoff(economist_handoff_state)
+    economist_ran = economist_handoff.economist_ran
+    economist_preflight_allowed = economist_handoff.economist_preflight_allowed
+    economist_preflight_block_reason = economist_handoff.economist_preflight_block_reason
+    economist_preflight_missing_entities = list(
+        economist_handoff.economist_preflight_missing_entities
+    )
+    analyst_skipped_after_economist = economist_handoff.analyst_skipped_after_economist
+    analyst_after_economist_skip_reason = (
+        economist_handoff.analyst_after_economist_skip_reason
+    )
+    economist_output_used_as_analysis = economist_handoff.economist_output_used_as_analysis
     pre_analyst_gate_contract = build_analyst_gate_descriptor(
         pre_analyst_gate=pre_analyst_gate,
         post_economist_gate=post_economist_gate,
@@ -7117,8 +7155,36 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     citation_source_handoff_trace_fragment = (
         citation_source_handoff_state.to_trace_fragment()
     )
+    economist_handoff_state = build_economist_handoff_state(
+        run_id=run_id,
+        need_economist=need_economist,
+        economist_ran=economist_ran,
+        economist_preflight_allowed=economist_preflight_allowed,
+        economist_preflight_block_reason=economist_preflight_block_reason,
+        economist_preflight_missing_entities=economist_preflight_missing_entities,
+        economist_safety_telemetry=economist_safety_telemetry,
+        economist_pre_analyst_skip_candidate_telemetry=(
+            economist_pre_analyst_skip_candidate_telemetry
+        ),
+        analyst_quant_packet_handoff_telemetry=analyst_quant_packet_handoff_telemetry,
+        author_quant_source_telemetry=author_quant_source_telemetry,
+        analyst_skipped_after_economist=analyst_skipped_after_economist,
+        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
+        economist_output_used_as_analysis=economist_output_used_as_analysis,
+        estimate_from_priors_requested=estimate_from_priors_requested,
+        estimate_from_priors_blocked_by_pre_analyst_gate=(
+            estimate_from_priors_blocked_by_pre_analyst_gate
+        ),
+        answer_contract_ref=answer_contract_runtime_result,
+        analyst_author_handoff_state=analyst_author_handoff_state,
+        citation_source_handoff_state=citation_source_handoff_state,
+    )
+    economist_handoff_trace_fragment = economist_handoff_state.to_trace_fragment()
     _run_controller_mirror.state.trace_fields.update(
         citation_source_handoff_trace_fragment
+    )
+    _run_controller_mirror.state.trace_fields.update(
+        economist_handoff_trace_fragment
     )
     execution_trace: dict[str, Any] = {
         "run_id": run_id,
@@ -7214,6 +7280,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         **answer_contract_runtime_trace_fragment,
         **analyst_author_handoff_trace_fragment,
         **citation_source_handoff_trace_fragment,
+        **economist_handoff_trace_fragment,
         "urls_fetched": total_urls_fetched,
         "total_chunks": total_chunks_embedded,
         "source_tier_counts": _source_tier_exec["source_tier_counts"],
