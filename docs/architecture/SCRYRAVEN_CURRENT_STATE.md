@@ -119,7 +119,28 @@ while existing weak-corpus, off-topic, failure-card, useful-content,
 answer-outcome, Analyst skip, Author/final-answer/citation, trace, DB/session,
 and `RunOutcome` behavior remain protected.
 
-Exactly one next AG-76D phase is recommended: `AG-76D-AA — Controller-Owned
-Analyst / Author Handoff Contract`, because the Analyst/Author admission and
-handoff surface is now the next highest orchestrator-local authority seam after
-weak/failure gate ownership moved into a named Controller contract.
+AG-76D-AA — Controller-Owned Analyst / Author Handoff Contract is implemented
+on the phase branch. Analyst/Author handoff posture is now represented by
+`AnalystAuthorHandoffState`, `AnalystAdmissionDescriptor`,
+`AnalystEvidenceContextDescriptor`, `UnsupportedDirectiveDescriptor`,
+`AuthorEvidenceHandoffDescriptor`, `AuthorPromptInputDescriptor`, and
+`AnalystAuthorExecutionEnvelope` in `core.analyst_author_handoff_contract`. The
+orchestrator builds Controller-owned state from already-computed Analyst
+admission, Analyst evidence/context identity, unsupported/weak/failure-card
+directive posture, Author evidence handoff identity, Author prompt input
+metadata, final evidence/source telemetry references, and upstream Controller /
+AnswerContract posture, then consumes a mechanical handoff for already-computed
+Author prompt-key/effort metadata.
+
+Existing Analyst behavior, Author behavior, prompt text, final-answer prose,
+citation/source-list behavior, provider/model/search/query behavior, retrieval
+behavior, source-class/currentness/candidate-fit semantics, Economist,
+Scrutineer, follow-up, DB/session/RunOutcome shape, cache behavior, and
+compatibility names remain protected. Runtime behavior changes are expected to
+be none except authority ownership and additive `analyst_author_handoff_contract`
+trace/controller visibility.
+
+Exactly one next AG-76D phase is recommended: `AG-76D-CIT — Controller-Owned
+Citation / Source-list Handoff Contract`, because citation/source-list handoff
+identity is now the next highest remaining core authority seam after
+Analyst/Author handoff ownership moved into a named Controller contract.
