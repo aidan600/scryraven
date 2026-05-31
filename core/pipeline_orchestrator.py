@@ -70,7 +70,7 @@ from core.corpus_state import (
     is_weak_corpus_state,
 )
 from core.cost_accounting import CostAccumulator
-from core.entity_extraction import fallback_entities_from_query, normalize_entities_list
+from core.entity_extraction import fallback_entities_from_query
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
     EvidenceIntegrationBudgetSnapshot,
@@ -185,6 +185,10 @@ from core.retrieval_stop_controller import (
 )
 from core.review_flags import (
     recent_recurring_kb_hints,
+)
+from core.router_query_preparation_contract import (
+    build_router_query_preparation_state,
+    with_router_query_runtime_posture,
 )
 from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
 from core.run_config import RunConfig, RunDeps, RunOutcome
@@ -2782,37 +2786,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     router_text = deps.clean_json_response(router_text)
 
-    entities_list: list[str] = []
-    router_entity_retry_used = False
+    router_query_preparation_contract = build_router_query_preparation_state(
+        query=query,
+        router_text=router_text,
+        fallback_entities=fallback_entities_from_query(query),
+    )
 
-    try:
-        intent_data = json.loads(router_text)
-        intent = intent_data.get("intent", "general").lower()
-        report_type = intent_data.get("report_type", "general_research").lower()
-        image_mode = intent_data.get("image_mode", "contextual").lower()
-        core_topic = intent_data.get("core_topic", query[:100])
-        is_academic = intent_data.get("is_academic", False)
-        query_type = str(intent_data.get("query_type") or "other").lower().strip() or "other"
-        primary_entity = str(intent_data.get("primary_entity") or "").strip()[:200]
-        entities_list = normalize_entities_list(intent_data.get("entities"))
-        if entities_list:
-            primary_entity = entities_list[0][:200]
-        elif primary_entity:
-            entities_list = [primary_entity]
-    except Exception:
-        intent, report_type, image_mode, core_topic = "general", "general_research", "contextual", query[:100]
-        is_academic = False
-        query_type, primary_entity = "other", ""
-        entities_list = []
-
-    if not entities_list:
-        fb_ent = fallback_entities_from_query(query)
-        if fb_ent:
-            entities_list = list(fb_ent)
-            primary_entity = entities_list[0][:200]
-
-    if not entities_list:
-        router_entity_retry_used = True
+    if not router_query_preparation_contract.entities:
         router_retry_prompt = f"Today is {current_date}.\nUser Topic: {query}\n\n{ROUTER_RETRY_USER_APPEND}"
         _measure_context_stage(
             "router_retry",
@@ -2825,21 +2805,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=use_reasoning,
         )
         retry_router_text = deps.clean_json_response(retry_router_text)
-        try:
-            intent_data_retry = json.loads(retry_router_text)
-            rl = normalize_entities_list(intent_data_retry.get("entities"))
-            pe_retry = str(intent_data_retry.get("primary_entity") or "").strip()
-            if rl:
-                entities_list = rl
-                primary_entity = entities_list[0][:200]
-            elif pe_retry:
-                entities_list = [pe_retry[:200]]
-                primary_entity = pe_retry[:200]
-        except Exception:
-            pass
+        router_query_preparation_contract = build_router_query_preparation_state(
+            query=query,
+            router_text=router_text,
+            fallback_entities=fallback_entities_from_query(query),
+            retry_router_text=retry_router_text,
+            retry_attempted=True,
+        )
 
-    router_original_report_type = report_type
-    router_original_query_type = query_type
+    intent = router_query_preparation_contract.intent
+    report_type = router_query_preparation_contract.report_type
+    image_mode = router_query_preparation_contract.image_mode
+    core_topic = router_query_preparation_contract.core_topic
+    is_academic = router_query_preparation_contract.is_academic
+    query_type = router_query_preparation_contract.query_type
+    primary_entity = router_query_preparation_contract.primary_entity
+    entities_list = router_query_preparation_contract.entities_list
+    router_entity_retry_used = router_query_preparation_contract.router_entity_retry_used
+    router_original_report_type = router_query_preparation_contract.router_original_report_type
+    router_original_query_type = router_query_preparation_contract.router_original_query_type
     routing_override_applied = False
     routing_override_reason: str | None = None
     nutrition_lookup_telemetry = detect_nutrition_lookup_telemetry(query)
@@ -3131,15 +3115,50 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     queries = _finalize_retrieval_queries(queries, include_official_bias=True)
     current_queries = queries[:max_queries]
+    recency_merge_used = False
+    recency_merge_query: str | None = None
     if should_merge_recency_queries(query, intent, query_type) and current_queries is not None:
         y = _extract_year(current_date)
         _anchor = (primary_entity or core_topic or "")[:200]
         if _anchor and max_queries:
             recq = _clean_query(f"{_anchor} {y} news")
+            recency_merge_used = True
+            recency_merge_query = recq
             current_queries = ([recq] + [q for q in current_queries if q and q != recq])[: max_queries or 1]
     current_queries = _finalize_retrieval_queries(
         current_queries, max_len=max_queries, include_official_bias=False
     )
+    router_query_preparation_contract = with_router_query_runtime_posture(
+        router_query_preparation_contract,
+        intent=intent,
+        report_type=report_type,
+        query_type=query_type,
+        primary_entity=primary_entity,
+        entities=entities_list,
+        is_academic=is_academic,
+        routing_override_applied=routing_override_applied,
+        routing_override_reason=routing_override_reason,
+        focus_academic=focus_academic,
+        force_intent_news=force_intent_news,
+        complexity=complexity,
+        max_queries=max_queries,
+        results_per_query=results_per_query,
+        search_depth=search_depth,
+        top_chunks=top_chunks,
+        max_iterations=max_iterations,
+        recency_merge_used=recency_merge_used,
+        recency_query=recency_merge_query,
+        official_bias_requested=wants_official_source_bias(query, intent),
+        official_bias_phrase=(official_bias_phrase(query) if wants_official_source_bias(query, intent) else None),
+        finalized_queries=queries,
+        current_queries=current_queries,
+        query_source="recon" if recon_fired else "researcher",
+    )
+    intent = router_query_preparation_contract.intent
+    report_type = router_query_preparation_contract.report_type
+    query_type = router_query_preparation_contract.query_type
+    primary_entity = router_query_preparation_contract.primary_entity
+    entities_list = router_query_preparation_contract.entities_list
 
     all_passages: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
@@ -6532,6 +6551,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         intent=intent,
         complexity=complexity,
     )
+    _run_controller_mirror.state.route_fields["router_query_preparation_contract"] = (
+        router_query_preparation_contract.to_controller_state()
+    )
+    _run_controller_mirror.state.trace_fields.update(
+        router_query_preparation_contract.to_trace_fragment()
+    )
     record_final_evidence_snapshot(
         _run_controller_mirror,
         **final_source_telemetry_inputs.final_evidence_snapshot_payload,
@@ -6801,6 +6826,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "report_type": report_type,
         **anchor_packet_telemetry,
         **nutrition_lookup_telemetry,
+        **router_query_preparation_contract.to_trace_fragment(),
         "complexity": complexity,
         "mode": strategy,
         "scout_fired": scout_fired,
