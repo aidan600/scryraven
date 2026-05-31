@@ -78,3 +78,24 @@ Unless separately licensed by the phase brief, AG-71A must not change or open:
 Do not open broad citation survival, Author posture repair, provider swap, or
 new provider integration merely because IRS lacked a final official/current
 citation in AG-70C.
+
+## AG-76D-RQ Router / Query-Preparation Authority Transfer
+
+As of 2026-05-31, `AG-76D-RQ — Controller-Owned Router / Query Preparation
+Contract` is complete. Router/query-preparation posture is now represented by
+`RouterQueryPreparationState` in `core.router_query_preparation_contract`, and
+`pipeline_orchestrator.py` consumes normalized Router/query-preparation facts
+from that contract after handoff instead of remaining the sole owner of intent,
+report type, query type, entity fallback/retry, routing override provenance,
+retrieval budget seeds, recency merge posture, official-source bias posture, and
+query text/order visibility.
+
+Existing Router prompts, Researcher prompts, query generation, query
+finalization, provider routing/depth, retrieval ranking/filtering,
+AnswerContract behavior, Author/final-answer/citation behavior, DB/schema,
+JSONL/session/SQLite payloads, and `RunOutcome` shape remain protected.
+
+Exactly one next AG-76D phase is recommended: `AG-76D-RL — Controller-Owned
+Retrieval Loop Contract`, because Router/query-preparation posture is now
+Controller-visible but broader retrieval execution/continuation/provider-loop
+posture still remains the clearest local authority-transfer seam.

@@ -46,6 +46,15 @@ AG76C_BD_SELECTED_NEXT_EXTRACTION_RECOMMENDATION = (
     "AG-77A - Source Conflict Representation Model"
 )
 
+
+AG76D_RQ_PHASE_NAME = "AG-76D-RQ"
+AG76D_RQ_COMPLETION_STATUS = "completed"
+AG76D_RQ_AUTHORITY_TRANSFER = "router_query_preparation_contract"
+AG76D_RQ_RECOMMENDED_NEXT_PHASE = "AG-76D-RL"
+AG76D_RQ_RECOMMENDED_NEXT_PHASE_TITLE = (
+    "AG-76D-RL - Controller-Owned Retrieval Loop Contract"
+)
+
 AG76C_BD_PROTECTED_SURFACES: tuple[str, ...] = (
     "Controller_decision_behavior",
     "provider_routing_selection_depth_escalation",
