@@ -34,6 +34,10 @@ from core.authoritative_source_action_orchestrator_adapter import (
     authoritative_source_action_trace_fragment,
     build_authoritative_source_action_orchestrator_handoff,
 )
+from core.citation_source_handoff_contract import (
+    build_citation_source_handoff_state,
+    execute_citation_source_handoff,
+)
 from core.conflict_resolution_controller import (
     ConflictResolutionControllerDecision,
     ConflictResolutionDecision,
@@ -7059,6 +7063,63 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     analyst_author_handoff_trace_fragment = (
         analyst_author_handoff_state.to_trace_fragment()
     )
+    citation_source_handoff_state = build_citation_source_handoff_state(
+        run_id=run_id,
+        final_evidence=final_top_evidence,
+        selected_evidence=final_top_evidence,
+        author_evidence=author_evidence,
+        unique_source_urls=unique_source_urls,
+        ordered_sources=ordered_sources,
+        evidence_block=evidence_block,
+        cached_prefix=cached_prefix,
+        author_evidence_block=author_evidence_block,
+        final_answer_source_telemetry=final_answer_source_telemetry,
+        final_citation_observation_refs=final_answer_source_telemetry.get(
+            "final_answer_source_ids_used",
+            (),
+        ),
+        final_evidence_bundle_ref={
+            "final_evidence_count": len(final_top_evidence),
+            "author_evidence_count": len(author_evidence),
+            "ordered_source_count": len(ordered_sources),
+            "unique_source_url_count": len(unique_source_urls),
+        },
+        ledger_ref={
+            "final_evidence_snapshot_recorded": bool(
+                final_source_telemetry_inputs.final_evidence_snapshot_payload
+            ),
+            "final_evidence_count": len(final_top_evidence),
+        },
+        answer_contract_ref=answer_contract_runtime_result,
+        analyst_author_handoff_state=analyst_author_handoff_state,
+        source_telemetry_ref={
+            "source_ids": list(final_source_telemetry_inputs.source_ids),
+            "unique_source_url_count": (
+                final_source_telemetry_inputs.unique_source_url_count
+            ),
+            "ordered_sources": list(final_source_telemetry_inputs.ordered_sources),
+            "final_evidence_count": (
+                final_source_telemetry_inputs.final_evidence_count
+            ),
+            "final_answer_source_telemetry": dict(
+                final_source_telemetry_inputs.final_answer_source_telemetry
+            ),
+        },
+    )
+    citation_source_handoff = execute_citation_source_handoff(
+        citation_source_handoff_state
+    )
+    unique_source_urls = citation_source_handoff.unique_source_urls
+    ordered_sources = citation_source_handoff.ordered_sources
+    final_answer_source_telemetry = (
+        citation_source_handoff.final_answer_source_telemetry
+    )
+    citation_source_handoff_trace_fragment = (
+        citation_source_handoff_state.to_trace_fragment()
+    )
+    _run_controller_mirror.state.trace_fields.update(
+        citation_source_handoff_trace_fragment
+    )
     execution_trace: dict[str, Any] = {
         "run_id": run_id,
         "timestamp_utc": ts_utc,
@@ -7152,6 +7213,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         ),
         **answer_contract_runtime_trace_fragment,
         **analyst_author_handoff_trace_fragment,
+        **citation_source_handoff_trace_fragment,
         "urls_fetched": total_urls_fetched,
         "total_chunks": total_chunks_embedded,
         "source_tier_counts": _source_tier_exec["source_tier_counts"],
