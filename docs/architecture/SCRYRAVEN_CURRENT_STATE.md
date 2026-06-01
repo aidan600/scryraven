@@ -304,18 +304,26 @@ weak/failure gate, Analyst/Author, citation/source-list, and Economist handoff
 transfers.
 
 AG-78C — Runtime / AnswerContract Visibility for Indirect Inference is
-implemented and ready for review on the phase branch. AG-78C adds a
-visibility-only `indirect_inference_runtime_handoff` state/trace layer for
-already-built AG-78B `InferencePath` objects, preserving evaluator-authoritative
-posture and recommendation while exposing direct, inferred, speculative,
-AG-77-conflicted, source-bound numeric, and lower-tier non-satisfaction markers
-to Controller / AnswerContract consumers.
+merged. AG-78C adds a visibility-only `indirect_inference_runtime_handoff`
+state/trace layer for already-built AG-78B `InferencePath` objects, preserving
+evaluator-authoritative posture and recommendation while exposing direct,
+inferred, speculative, AG-77-conflicted, source-bound numeric, and lower-tier
+non-satisfaction markers to Controller / AnswerContract consumers.
 
-AG-78C does not change final-answer prose, Author prompt/exposure/evidence
+AG-78D — Indirect Inference Runtime Behavior Activation / Answer Posture Effects
+is implemented and ready for review on the phase branch. AG-78D adds bounded
+`indirect_inference_answer_posture_activation` metadata from already-visible
+AG-78C handoff state for directly sourced, inferred-from-sourced-premises,
+speculative/unsupported, blocked-by-premise-conflict, range/source-bound, and
+lower-tier-non-satisfying inference paths. Inferred conclusions are marked
+`directly_sourced=false` and `requires_inference_label=true` for future
+presentation phases.
+
+AG-78D does not change final-answer prose, Author prompt/exposure/evidence
 handoff, citation behavior, provider/model/search/query behavior, retrieval
-behavior, DB/session/RunOutcome shape, cache behavior, or actual inference
-execution. `core/pipeline_orchestrator.py` remains outside this phase.
-Recommended next phase: `AG-78D — Indirect Inference Runtime Behavior Activation
-/ Answer Posture Effects`; use `AG-78C-R1` only if runtime visibility reveals a
-contract issue, or `AG-77E` if conflict presentation should precede inference
-behavior activation.
+behavior, DB/session/RunOutcome shape, cache behavior, actual inference
+execution, or final inferred-answer presentation. `core/pipeline_orchestrator.py`
+remains outside this phase. Recommended next phase: `AG-78E — Final Inferred
+Answer Presentation Policy` only after product approval for prose labeling; use
+`AG-78D-R1` only if the activation metadata contract needs review adjustment, or
+`AG-77E` if conflict presentation should precede inference presentation.
