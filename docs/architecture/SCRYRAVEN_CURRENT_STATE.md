@@ -16,6 +16,27 @@ rename phase explicitly changes them.
 
 ## Recent Phase State
 
+## AG-76D-FU Follow-up Initial State
+
+AG-76D-FU is implemented as a production-active narrow authority transfer. It
+adds `core.followup_initial_state_contract.FollowUpInitialControllerState` as
+the Controller-owned source of truth for follow-up prior report/session refs,
+prior evidence/source refs, prior ledger and AnswerContract/posture refs when
+available, new follow-up intent, saved-context reuse decisions, refreshed source
+obligations, stronger obligation detection, insufficiency/partiality carryover,
+and additive trace visibility.
+
+The follow-up runtime remains the mechanical executor. Saved report context can
+still be reused for ordinary clarifications, but a new official/current/legal/
+canonical/academic/source-bound quantitative obligation cannot silently inherit
+sufficiency from prior context. The only intentional behavior change is the
+narrow prompt/context initialization repair that carries this Controller-owned
+posture into synthesis.
+
+Recommended next phase: AG-76D-BD — Controller Authority Transfer Burn-Down /
+Adapter Debt Review. Do not advance AG-76C-LC beyond design-only cache work from
+this state note.
+
 SCRY-00 is merged on `main`. It added manual CI `workflow_dispatch`, updated
 first-contact labels, refreshed active Codex docs/templates for the public
 ScryRaven identity, preserved `proplex` compatibility names, and made no

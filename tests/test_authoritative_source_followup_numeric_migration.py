@@ -292,6 +292,8 @@ def test_public_followup_and_numeric_output_shapes_are_preserved() -> None:
         "source_obligation_reason",
         "source_obligation_note",
         "saved_context_source_sufficient",
+        "saved_context_reuse_decision",
+        "followup_initial_state_trace",
     ]
     assert [field.name for field in fields(OfficialNumericGroundingClassification)] == [
         "schema_version",
