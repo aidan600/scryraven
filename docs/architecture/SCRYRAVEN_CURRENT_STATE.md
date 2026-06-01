@@ -2,6 +2,15 @@
 
 
 
+## AG-78B — Minimal Indirect Inference Contract with Fixture Tests (2026-06-01)
+
+Status: implemented/readiness for review. AG-78B adds `core/indirect_inference_contract.py`, a minimal inert Controller-visible contract for representing direct target claims, inferred target claims from sourced premises, caveated/range-bound/blocked inference paths, unsupported claims, and speculative/model-assumed bridges. The contract carries target claim identity, premise/source identity, bridge type and strength, mode/depth policy, AG-77-derived premise conflict impact, source-bound numeric posture, lower-tier non-satisfaction posture, and JSON-safe Controller/trace serialization under `indirect_inference_contract`.
+
+AG-78B is contract/fixture-test only. It does not execute runtime inference, change final-answer prose, alter Author prompts or Author exposure, change citation behavior, change provider/search/query/retrieval behavior, alter source-class/currentness semantics, change AG-77 conflict arbitration, affect Scrutineer/remediation, affect Economist/follow-up behavior, change DB/session/RunOutcome shape, implement cache behavior, or touch `core/pipeline_orchestrator.py`.
+
+Recommended next phase: AG-78C — Runtime / AnswerContract Visibility for Indirect Inference.
+
+
 ## AG-78A — Controller-Owned Indirect Evidence / Inference Posture Design (2026-06-01)
 
 Status: architecture design complete/readiness for review. AG-78A defines the Controller-owned design for indirect evidence / inference posture: direct evidence, conflict-arbitrated evidence, and inferred-from-sourced-premises answer-path families; a target-claim / sourced-premise / inference-bridge model; bridge-type taxonomy; Fast/Balanced/Deep inference-depth policy; confidence and posture inheritance; source-class/source-bound numeric handling; and AG-77 conflict interaction.
