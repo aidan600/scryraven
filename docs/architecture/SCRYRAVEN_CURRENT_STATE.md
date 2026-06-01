@@ -2,6 +2,14 @@
 
 
 
+## AG-78A — Controller-Owned Indirect Evidence / Inference Posture Design (2026-06-01)
+
+Status: architecture design complete/readiness for review. AG-78A defines the Controller-owned design for indirect evidence / inference posture: direct evidence, conflict-arbitrated evidence, and inferred-from-sourced-premises answer-path families; a target-claim / sourced-premise / inference-bridge model; bridge-type taxonomy; Fast/Balanced/Deep inference-depth policy; confidence and posture inheritance; source-class/source-bound numeric handling; and AG-77 conflict interaction.
+
+AG-78A is docs/design-only. It does not change runtime behavior, final-answer prose, Author prompts, Author exposure, citation behavior, prompt semantics, provider/search/query behavior, retrieval ranking/filtering, source-class/currentness detection semantics, conflict arbitration behavior, Scrutineer/remediation, Economist/follow-up, DB/session/RunOutcome shape, cache behavior, or `core/pipeline_orchestrator.py`.
+
+Recommended next phase: AG-78B — Minimal Indirect Inference Contract with Fixture Tests. AG-78B should be an inert Controller-visible contract starting with Balanced one-hop inference from sourced premises through explicit valid bridges, if accepted in review.
+
 ## AG-77D — Conflict Arbitration Answer Posture Activation (2026-06-01)
 
 Status: implemented/readiness for review. AG-77D activates already-visible AG-77C `source_conflict_arbitration` posture inside Controller / AnswerContract posture metadata through the additive `source_conflict_answer_posture_activation` trace fragment. The activation is limited to central unresolved official/current authoritative insufficiency, source-bound numeric unresolved values, and official/current vs secondary lower-tier non-satisfaction. Peripheral/background conflicts remain nonblocking/no-answer-impact posture metadata.
