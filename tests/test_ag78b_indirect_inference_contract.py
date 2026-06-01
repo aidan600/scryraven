@@ -96,6 +96,8 @@ def _path(
     premises: tuple[SourcedPremise, ...] | None = None,
     bridges: tuple[InferenceBridge, ...] | None = None,
     target: TargetClaim | None = None,
+    posture: str | None = None,
+    recommendation: str | None = None,
 ) -> InferencePath:
     return InferencePath(
         path_id="path-1",
@@ -104,6 +106,8 @@ def _path(
         bridges=bridges if bridges is not None else (_bridge(),),
         mode=mode,
         depth=depth,
+        posture=posture,
+        recommendation=recommendation,
     )
 
 
@@ -187,6 +191,63 @@ def test_model_assumed_speculative_bridge_is_not_supported_inference() -> None:
     assert path.posture in {"speculative", "unsupported"}
     assert path.posture != "inferred_from_sourced_premises"
     assert path.recommendation == "unsupported"
+
+
+def test_constructor_override_cannot_promote_speculative_bridge_to_supported_inference() -> None:
+    path = _path(
+        bridges=(
+            _bridge(
+                "speculative-link",
+                InferenceBridgeType.MODEL_ASSUMED_SPECULATIVE,
+                strength=BridgeStrength.SPECULATIVE,
+            ),
+        ),
+        posture=InferencePosture.INFERRED_FROM_SOURCED_PREMISES,
+        recommendation="may_state",
+    )
+
+    assert path.posture == "speculative"
+    assert path.recommendation == "unsupported"
+
+
+def test_constructor_override_cannot_promote_blocked_premise_to_supported_inference() -> None:
+    path = _path(
+        premises=(_premise("blocked-premise", "source-b", conflict_impact=PremiseConflictImpact.BLOCKS),),
+        posture=InferencePosture.INFERRED_FROM_SOURCED_PREMISES,
+        recommendation="may_state",
+    )
+
+    assert path.posture == "blocked_by_premise_conflict"
+    assert path.recommendation == "decline"
+
+
+def test_constructor_override_cannot_promote_fast_multi_premise_inference() -> None:
+    path = _path(
+        mode=InferenceModePolicy.FAST,
+        premises=(_premise("premise-b", "source-b"), _premise("premise-c", "source-c")),
+        bridges=(_bridge(allowed_modes=(InferenceModePolicy.FAST, InferenceModePolicy.BALANCED)),),
+        posture=InferencePosture.INFERRED_FROM_SOURCED_PREMISES,
+        recommendation="may_state",
+    )
+
+    assert path.posture == "declined"
+    assert path.recommendation == "decline"
+
+
+def test_constructor_override_cannot_promote_balanced_multi_hop_inference() -> None:
+    path = _path(
+        mode=InferenceModePolicy.BALANCED,
+        depth=2,
+        bridges=(
+            _bridge("bridge-1", InferenceBridgeType.MATHEMATICAL),
+            _bridge("bridge-2", InferenceBridgeType.DEFINITIONAL),
+        ),
+        posture=InferencePosture.INFERRED_FROM_SOURCED_PREMISES,
+        recommendation="may_state",
+    )
+
+    assert path.posture == "declined"
+    assert path.recommendation == "decline"
 
 
 def test_fast_mode_rejects_non_trivial_multi_premise_inference() -> None:

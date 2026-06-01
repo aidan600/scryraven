@@ -59,6 +59,8 @@ AG-78B represents these bridge types:
 
 Balanced mode may represent one-hop mathematical, definitional, source-stated relationship, simple sourced/canonical domain-standard, and conservative legal/statutory bridge paths when required premises are sourced, compatible, and not blocked by conflict posture. The target is labeled `inferred_from_sourced_premises` only when the bridge is valid and non-speculative and all required premises remain usable.
 
+Evaluator-derived `InferencePath.posture` and `InferencePath.recommendation` are authoritative; constructor values cannot upgrade invalid, blocked, speculative, or mode-disallowed paths.
+
 ## Deep multi-hop representation boundary
 
 Deep mode can represent multi-hop paths by carrying multiple bridges and `depth > 1`. This is only a posture/trace representation in AG-78B. It does not cause runtime inference execution, final-answer prose, Author exposure, citation changes, provider calls, retrieval changes, or orchestrator integration.
