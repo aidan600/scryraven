@@ -302,10 +302,6 @@ class InferencePath:
         object.__setattr__(self, "mode", _enum_value(self.mode, InferenceModePolicy, InferenceModePolicy.BALANCED))
         object.__setattr__(self, "depth", max(0, int(self.depth)))
         posture, recommendation = _evaluate_path(self)
-        if self.posture is not None:
-            posture = _enum_value(self.posture, InferencePosture, posture)
-        if self.recommendation is not None:
-            recommendation = _enum_value(self.recommendation, PathRecommendation, recommendation)
         object.__setattr__(self, "posture", posture)
         object.__setattr__(self, "recommendation", recommendation)
         object.__setattr__(self, "notes", _copy_string_tuple(self.notes, cap=12, limit=220))
