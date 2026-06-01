@@ -27,6 +27,10 @@ from core.answer_contract_pipeline_adapter import (
     PipelineRouterFacts,
     adapt_pipeline_facts_to_answer_contract_controller,
 )
+from core.indirect_inference_answer_posture_activation import (
+    IndirectInferenceAnswerPostureActivation,
+    build_indirect_inference_answer_posture_activation,
+)
 from core.indirect_inference_contract import InferencePath
 from core.indirect_inference_runtime_handoff import (
     IndirectInferenceRuntimeHandoff,
@@ -384,6 +388,9 @@ class RuntimeAnswerContractHandoffResult:
         SourceConflictAnswerPostureActivation | None
     ) = None
     indirect_inference_runtime_handoff: IndirectInferenceRuntimeHandoff | None = None
+    indirect_inference_answer_posture_activation: (
+        IndirectInferenceAnswerPostureActivation | None
+    ) = None
 
     @property
     def state(self) -> AnswerControllerState:
@@ -410,6 +417,10 @@ class RuntimeAnswerContractHandoffResult:
         if self.indirect_inference_runtime_handoff is not None:
             fragment.update(
                 self.indirect_inference_runtime_handoff.to_trace_fragment()
+            )
+        if self.indirect_inference_answer_posture_activation is not None:
+            fragment.update(
+                self.indirect_inference_answer_posture_activation.to_trace_fragment()
             )
         return fragment
 
@@ -574,10 +585,16 @@ def build_runtime_answer_contract_handoff(
     source_conflict_arbitration_handoff = None
     source_conflict_answer_posture_activation = None
     indirect_inference_runtime_handoff = None
+    indirect_inference_answer_posture_activation = None
     if facts.indirect_inference_paths or facts.indirect_inference_controller_state:
         indirect_inference_runtime_handoff = build_indirect_inference_runtime_handoff(
             facts.indirect_inference_paths,
             controller_state=facts.indirect_inference_controller_state,
+        )
+        indirect_inference_answer_posture_activation = (
+            build_indirect_inference_answer_posture_activation(
+                indirect_inference_runtime_handoff
+            )
         )
     if (
         facts.source_conflict_representation is not None
@@ -607,6 +624,9 @@ def build_runtime_answer_contract_handoff(
             source_conflict_answer_posture_activation
         ),
         indirect_inference_runtime_handoff=indirect_inference_runtime_handoff,
+        indirect_inference_answer_posture_activation=(
+            indirect_inference_answer_posture_activation
+        ),
     )
 
 
