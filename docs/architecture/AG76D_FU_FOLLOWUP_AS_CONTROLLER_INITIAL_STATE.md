@@ -1,6 +1,6 @@
 # AG-76D-FU — Follow-up as Controller Initial State
 
-Date: 2026-06-01  
+Date: 2026-06-01
 Status: Production-active narrow authority transfer for follow-up initial state
 
 ## Phase Type
