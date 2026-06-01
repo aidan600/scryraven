@@ -1,5 +1,12 @@
 # ScryRaven Current State
 
+
+## AG-77C — Conflict Arbitration Runtime / AnswerContract Integration (2026-06-01)
+
+Status: implemented/readiness for review. AG-77C is a protected-surface, no-prose-change integration that makes AG-77B source-conflict arbitration posture visible to Controller / AnswerContract runtime state and trace under the stable `source_conflict_arbitration` key. It consumes AG-77A `SourceConflictRepresentation` and AG-77B `SourceConflictArbitrationState` without changing final-answer prose, Author exposure, citation behavior, prompt semantics, provider/search/query behavior, retrieval behavior, Scrutineer/remediation, Economist/follow-up, DB/session/RunOutcome, cache behavior, or AG-78 inference behavior.
+
+Recommended next phase: AG-77D — Conflict Arbitration Runtime Behavior Activation / Answer Posture Effects. Rationale: AG-77A representation, AG-77B arbitration, and AG-77C Controller / AnswerContract runtime visibility are now present, while final-answer behavior remains intentionally inactive.
+
 Status: Active repo-local handoff note for near-term Codex architecture phases.
 Classification: docs-only; not an authorization for runtime behavior changes.
 
@@ -38,9 +45,7 @@ ranking/filtering, source-class recovery, weak-corpus recovery, Scrutineer/
 remediation, Economist/follow-up behavior, DB/session/`RunOutcome` shape, cache
 behavior, AG-78 indirect inference, or `core/pipeline_orchestrator.py`.
 
-Recommended next phase: AG-77C — Conflict Arbitration Runtime / AnswerContract
-Integration. Keep AG-76D-SCR, AG-76D-AD, AG-76C-LC, and AG-78A parked unless a
-later phase's evidence changes that priority.
+AG-77C has completed runtime / AnswerContract visibility integration. Current recommended next phase: AG-77D — Conflict Arbitration Runtime Behavior Activation / Answer Posture Effects.
 
 ## AG-77A Source Conflict Representation Model
 
@@ -59,10 +64,7 @@ query behavior, retrieval ranking/filtering, source-class recovery, weak-corpus
 recovery, Scrutineer/remediation, Economist/follow-up behavior, DB/session/
 `RunOutcome` shape, cache behavior, or `core/pipeline_orchestrator.py`.
 
-AG-77B has now completed the passive arbitration contract. Recommended next
-phase: AG-77C — Conflict Arbitration Runtime / AnswerContract Integration. Keep
-AG-76D-SCR, AG-76D-AD, AG-76C-LC, and AG-78A parked unless later evidence changes
-that priority.
+AG-77B and AG-77C have now completed passive arbitration plus runtime / AnswerContract visibility. Current recommended next phase: AG-77D — Conflict Arbitration Runtime Behavior Activation / Answer Posture Effects.
 
 ## AG-76D-BD Controller Authority Transfer Burn-Down
 

@@ -37,6 +37,12 @@ from core.source_class_recovery_controller import (
     SourceClassRecoveryControllerDecision,
     SourceClassRecoveryDecision,
 )
+from core.source_conflict_arbitration import SourceConflictArbitrationState
+from core.source_conflict_arbitration_runtime_handoff import (
+    SourceConflictArbitrationRuntimeHandoff,
+    build_source_conflict_arbitration_runtime_handoff,
+)
+from core.source_conflict_model import SourceConflictRepresentation
 
 ANSWER_CONTRACT_RUNTIME_HANDOFF_TRACE_KEY = "answer_contract_fulfillment_handoff"
 
@@ -348,6 +354,8 @@ class RuntimeAnswerContractFacts:
     missing_information: Sequence[Any] = ()
     warnings_to_analyst_or_author: Sequence[Any] = ()
     evidence_integration_checkpoint: Mapping[str, Any] = field(default_factory=dict)
+    source_conflict_representation: SourceConflictRepresentation | None = None
+    source_conflict_arbitration_state: SourceConflictArbitrationState | None = None
     iteration: int = 1
     max_iterations: int = 3
     max_recovery_attempts: int = 1
@@ -358,6 +366,9 @@ class RuntimeAnswerContractHandoffResult:
     """Runtime handoff result plus the underlying passive adapter output."""
 
     adapter_result: PipelineAnswerContractAdapterResult
+    source_conflict_arbitration_handoff: (
+        SourceConflictArbitrationRuntimeHandoff | None
+    ) = None
 
     @property
     def state(self) -> AnswerControllerState:
@@ -368,11 +379,16 @@ class RuntimeAnswerContractHandoffResult:
         return self.adapter_result.fulfillment_handoff
 
     def execution_trace_fragment(self) -> dict[str, Any]:
-        return {
+        fragment = {
             ANSWER_CONTRACT_RUNTIME_HANDOFF_TRACE_KEY: (
                 self.fulfillment_handoff.to_dict()
             )
         }
+        if self.source_conflict_arbitration_handoff is not None:
+            fragment.update(
+                self.source_conflict_arbitration_handoff.execution_trace_fragment()
+            )
+        return fragment
 
 
 def _pipeline_facts_from_runtime(
@@ -532,13 +548,27 @@ def build_runtime_answer_contract_handoff(
         )
         adapter_result.state.fulfillment_handoff_draft = fulfillment
         adapter_result = replace(adapter_result, fulfillment_handoff=fulfillment)
+    source_conflict_arbitration_handoff = None
+    if (
+        facts.source_conflict_representation is not None
+        or facts.source_conflict_arbitration_state is not None
+    ):
+        source_conflict_arbitration_handoff = (
+            build_source_conflict_arbitration_runtime_handoff(
+                representation=facts.source_conflict_representation,
+                arbitration_state=facts.source_conflict_arbitration_state,
+            )
+        )
     if controller is not None:
         attach_answer_controller_state(
             controller,
             adapter_result.state,
             fulfillment=adapter_result.fulfillment_handoff,
         )
-    return RuntimeAnswerContractHandoffResult(adapter_result=adapter_result)
+    return RuntimeAnswerContractHandoffResult(
+        adapter_result=adapter_result,
+        source_conflict_arbitration_handoff=source_conflict_arbitration_handoff,
+    )
 
 
 __all__ = [
