@@ -1,7 +1,7 @@
 # AG-77A Source Conflict Representation Model
 
-Date: 2026-06-01  
-Phase type: Architecture design with minimal inert contract implementation  
+Date: 2026-06-01
+Phase type: Architecture design with minimal inert contract implementation
 Mode: Architecture Groove / Prove Mode
 
 ## Purpose
