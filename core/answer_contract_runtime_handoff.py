@@ -27,6 +27,11 @@ from core.answer_contract_pipeline_adapter import (
     PipelineRouterFacts,
     adapt_pipeline_facts_to_answer_contract_controller,
 )
+from core.indirect_inference_contract import InferencePath
+from core.indirect_inference_runtime_handoff import (
+    IndirectInferenceRuntimeHandoff,
+    build_indirect_inference_runtime_handoff,
+)
 from core.retrieval_stop_controller import (
     RetrievalStopControllerDecision,
     RetrievalStopDecision,
@@ -360,6 +365,8 @@ class RuntimeAnswerContractFacts:
     evidence_integration_checkpoint: Mapping[str, Any] = field(default_factory=dict)
     source_conflict_representation: SourceConflictRepresentation | None = None
     source_conflict_arbitration_state: SourceConflictArbitrationState | None = None
+    indirect_inference_paths: Sequence[InferencePath] = ()
+    indirect_inference_controller_state: Mapping[str, Any] = field(default_factory=dict)
     iteration: int = 1
     max_iterations: int = 3
     max_recovery_attempts: int = 1
@@ -376,6 +383,7 @@ class RuntimeAnswerContractHandoffResult:
     source_conflict_answer_posture_activation: (
         SourceConflictAnswerPostureActivation | None
     ) = None
+    indirect_inference_runtime_handoff: IndirectInferenceRuntimeHandoff | None = None
 
     @property
     def state(self) -> AnswerControllerState:
@@ -398,6 +406,10 @@ class RuntimeAnswerContractHandoffResult:
         if self.source_conflict_answer_posture_activation is not None:
             fragment.update(
                 self.source_conflict_answer_posture_activation.to_trace_fragment()
+            )
+        if self.indirect_inference_runtime_handoff is not None:
+            fragment.update(
+                self.indirect_inference_runtime_handoff.to_trace_fragment()
             )
         return fragment
 
@@ -561,6 +573,12 @@ def build_runtime_answer_contract_handoff(
         adapter_result = replace(adapter_result, fulfillment_handoff=fulfillment)
     source_conflict_arbitration_handoff = None
     source_conflict_answer_posture_activation = None
+    indirect_inference_runtime_handoff = None
+    if facts.indirect_inference_paths or facts.indirect_inference_controller_state:
+        indirect_inference_runtime_handoff = build_indirect_inference_runtime_handoff(
+            facts.indirect_inference_paths,
+            controller_state=facts.indirect_inference_controller_state,
+        )
     if (
         facts.source_conflict_representation is not None
         or facts.source_conflict_arbitration_state is not None
@@ -588,6 +606,7 @@ def build_runtime_answer_contract_handoff(
         source_conflict_answer_posture_activation=(
             source_conflict_answer_posture_activation
         ),
+        indirect_inference_runtime_handoff=indirect_inference_runtime_handoff,
     )
 
 
