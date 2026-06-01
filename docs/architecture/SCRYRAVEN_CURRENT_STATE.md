@@ -16,6 +16,27 @@ rename phase explicitly changes them.
 
 ## Recent Phase State
 
+## AG-77A Source Conflict Representation Model
+
+AG-77A is complete as an architecture design with minimal inert contract
+implementation. It adds a passive Controller-visible source-conflict
+representation model in `core/source_conflict_model.py` and fixture/static tests
+covering source identity preservation, source hierarchy preservation,
+stale/current and effective-date tension, jurisdiction/scope mismatch,
+source-bound numeric conflicts, Controller/ledger serialization, protected
+surface import guards, lane distinction, no pipeline rewrite, and no
+winner/arbitration helper exposure.
+
+The model represents conflicts without choosing a winning source and does not
+change final-answer behavior, citation behavior, prompts, provider/model/search/
+query behavior, retrieval ranking/filtering, source-class recovery, weak-corpus
+recovery, Scrutineer/remediation, Economist/follow-up behavior, DB/session/
+`RunOutcome` shape, cache behavior, or `core/pipeline_orchestrator.py`.
+
+Recommended next phase: AG-77B — Controller-Owned Conflict Arbitration. Keep
+AG-76D-SCR, AG-76D-AD, and AG-76C-LC parked unless later evidence changes that
+priority.
+
 ## AG-76D-BD Controller Authority Transfer Burn-Down
 
 AG-76D-BD is complete as a docs-only architecture review / burn-down ledger.
@@ -31,8 +52,7 @@ Adapter debt in `core/pipeline_orchestrator.py` is real maintainability debt,
 but it is behavior-preserving scaffolding rather than the next product-critical
 state-modeling gap.
 
-Recommended next phase: AG-77A — Source Conflict Representation Model. Park
-AG-76D-SCR and AG-76D-AD unless AG-77A planning changes that priority.
+AG-77A has now completed the source-conflict representation pivot. AG-76D-SCR, AG-76D-AD, and AG-76C-LC remain parked unless later evidence changes that priority.
 
 ## AG-76D-FU Follow-up Initial State
 
@@ -51,9 +71,9 @@ sufficiency from prior context. The only intentional behavior change is the
 narrow prompt/context initialization repair that carries this Controller-owned
 posture into synthesis.
 
-Recommended next phase: AG-76D-BD — Controller Authority Transfer Burn-Down /
-Adapter Debt Review. Do not advance AG-76C-LC beyond design-only cache work from
-this state note.
+Historical next phase from AG-76D-FU was AG-76D-BD — Controller Authority
+Transfer Burn-Down / Adapter Debt Review, which is now complete. Do not advance
+AG-76C-LC beyond design-only cache work from this state note.
 
 SCRY-00 is merged on `main`. It added manual CI `workflow_dispatch`, updated
 first-contact labels, refreshed active Codex docs/templates for the public
