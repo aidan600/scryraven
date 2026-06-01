@@ -16,6 +16,24 @@ rename phase explicitly changes them.
 
 ## Recent Phase State
 
+## AG-76D-BD Controller Authority Transfer Burn-Down
+
+AG-76D-BD is complete as a docs-only architecture review / burn-down ledger.
+The main AG-76D normal-flow authority-transfer chain is complete enough to
+pivot: retrieval stop/continue, Router/query-preparation posture, retrieval-loop
+pass posture, weak/off-topic/failure-card gate posture, Analyst/Author handoff
+posture, citation/source-list handoff identity, Economist handoff posture, and
+follow-up initial state are represented by Controller-owned contracts/state.
+
+Remaining hidden authority is concentrated in parked or specialized lanes, most
+notably Scrutineer/remediation and synthesis-evaluator supplemental search.
+Adapter debt in `core/pipeline_orchestrator.py` is real maintainability debt,
+but it is behavior-preserving scaffolding rather than the next product-critical
+state-modeling gap.
+
+Recommended next phase: AG-77A — Source Conflict Representation Model. Park
+AG-76D-SCR and AG-76D-AD unless AG-77A planning changes that priority.
+
 ## AG-76D-FU Follow-up Initial State
 
 AG-76D-FU is implemented as a production-active narrow authority transfer. It
