@@ -1,6 +1,6 @@
 # AG-78C — Indirect Inference Runtime / AnswerContract Visibility
 
-**Phase date:** 2026-06-01  
+**Phase date:** 2026-06-01
 **Phase type:** protected-surface runtime / AnswerContract visibility integration, no final-answer behavior change.
 
 ## Purpose
