@@ -1,6 +1,6 @@
 # AG-78D — Indirect Inference Answer Posture Activation
 
-**Phase date:** 2026-06-01  
+**Phase date:** 2026-06-01
 **Phase type:** narrow protected-surface Controller / AnswerContract posture activation.
 
 ## Purpose
