@@ -37,6 +37,10 @@ from core.source_class_recovery_controller import (
     SourceClassRecoveryControllerDecision,
     SourceClassRecoveryDecision,
 )
+from core.source_conflict_answer_posture_activation import (
+    SourceConflictAnswerPostureActivation,
+    build_source_conflict_answer_posture_activation,
+)
 from core.source_conflict_arbitration import SourceConflictArbitrationState
 from core.source_conflict_arbitration_runtime_handoff import (
     SourceConflictArbitrationRuntimeHandoff,
@@ -369,6 +373,9 @@ class RuntimeAnswerContractHandoffResult:
     source_conflict_arbitration_handoff: (
         SourceConflictArbitrationRuntimeHandoff | None
     ) = None
+    source_conflict_answer_posture_activation: (
+        SourceConflictAnswerPostureActivation | None
+    ) = None
 
     @property
     def state(self) -> AnswerControllerState:
@@ -387,6 +394,10 @@ class RuntimeAnswerContractHandoffResult:
         if self.source_conflict_arbitration_handoff is not None:
             fragment.update(
                 self.source_conflict_arbitration_handoff.execution_trace_fragment()
+            )
+        if self.source_conflict_answer_posture_activation is not None:
+            fragment.update(
+                self.source_conflict_answer_posture_activation.to_trace_fragment()
             )
         return fragment
 
@@ -549,6 +560,7 @@ def build_runtime_answer_contract_handoff(
         adapter_result.state.fulfillment_handoff_draft = fulfillment
         adapter_result = replace(adapter_result, fulfillment_handoff=fulfillment)
     source_conflict_arbitration_handoff = None
+    source_conflict_answer_posture_activation = None
     if (
         facts.source_conflict_representation is not None
         or facts.source_conflict_arbitration_state is not None
@@ -557,6 +569,11 @@ def build_runtime_answer_contract_handoff(
             build_source_conflict_arbitration_runtime_handoff(
                 representation=facts.source_conflict_representation,
                 arbitration_state=facts.source_conflict_arbitration_state,
+            )
+        )
+        source_conflict_answer_posture_activation = (
+            build_source_conflict_answer_posture_activation(
+                source_conflict_arbitration_handoff
             )
         )
     if controller is not None:
@@ -568,6 +585,9 @@ def build_runtime_answer_contract_handoff(
     return RuntimeAnswerContractHandoffResult(
         adapter_result=adapter_result,
         source_conflict_arbitration_handoff=source_conflict_arbitration_handoff,
+        source_conflict_answer_posture_activation=(
+            source_conflict_answer_posture_activation
+        ),
     )
 
 
