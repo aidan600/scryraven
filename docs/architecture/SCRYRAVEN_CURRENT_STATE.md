@@ -16,6 +16,32 @@ rename phase explicitly changes them.
 
 ## Recent Phase State
 
+
+## AG-77B Controller-Owned Conflict Arbitration
+
+AG-77B is complete as an architecture design with minimal pure contract
+implementation. It adds `core/source_conflict_arbitration.py`, a passive
+Controller-owned arbitration contract that consumes AG-77A
+`SourceConflictRepresentation` objects and emits deterministic,
+ledger-compatible arbitration posture without mutating AG-77A state.
+
+The contract implements record/group/top-level arbitration dataclasses and enums
+for dispositions, answer-posture recommendations, and arbitration reasons. It
+handles equal official/current conflicts, official/current versus secondary
+conflicts, current versus stale conflicts, jurisdiction/scope mismatches,
+source-bound numeric conflicts, peripheral/background conflicts, empty/no-conflict
+state, Controller/trace serialization, and static lane/protected-surface guards.
+
+AG-77B remains inert. It does not change final-answer behavior, Author exposure,
+citation behavior, prompt text, provider/model/search/query behavior, retrieval
+ranking/filtering, source-class recovery, weak-corpus recovery, Scrutineer/
+remediation, Economist/follow-up behavior, DB/session/`RunOutcome` shape, cache
+behavior, AG-78 indirect inference, or `core/pipeline_orchestrator.py`.
+
+Recommended next phase: AG-77C — Conflict Arbitration Runtime / AnswerContract
+Integration. Keep AG-76D-SCR, AG-76D-AD, AG-76C-LC, and AG-78A parked unless a
+later phase's evidence changes that priority.
+
 ## AG-77A Source Conflict Representation Model
 
 AG-77A is complete as an architecture design with minimal inert contract
@@ -33,9 +59,10 @@ query behavior, retrieval ranking/filtering, source-class recovery, weak-corpus
 recovery, Scrutineer/remediation, Economist/follow-up behavior, DB/session/
 `RunOutcome` shape, cache behavior, or `core/pipeline_orchestrator.py`.
 
-Recommended next phase: AG-77B — Controller-Owned Conflict Arbitration. Keep
-AG-76D-SCR, AG-76D-AD, and AG-76C-LC parked unless later evidence changes that
-priority.
+AG-77B has now completed the passive arbitration contract. Recommended next
+phase: AG-77C — Conflict Arbitration Runtime / AnswerContract Integration. Keep
+AG-76D-SCR, AG-76D-AD, AG-76C-LC, and AG-78A parked unless later evidence changes
+that priority.
 
 ## AG-76D-BD Controller Authority Transfer Burn-Down
 
