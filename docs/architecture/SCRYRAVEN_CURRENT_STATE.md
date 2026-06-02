@@ -1,6 +1,20 @@
 # ScryRaven Current State
 
 
+## AG-76D-SES — Controller-Owned Synthesis-Evaluator Supplemental-Search Handoff Contract (2026-06-02)
+
+Status: implemented/readiness for review. AG-76D-SES adds `core/synthesis_evaluator_supplemental_search_handoff_contract.py`, `tests/test_ag76d_ses_synthesis_evaluator_supplemental_search_handoff_contract.py`, and `docs/architecture/AG76D_SES_CONTROLLER_OWNED_SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF.md` as a minimal passive contract and fixture/static test phase for the synthesis-evaluator supplemental-search handoff.
+
+The contract records synthesis-evaluator run eligibility and run gate posture, completeness posture (`skipped`, `sufficient`, `insufficient`, `parse_failed`), deficiency identity/text, supplemental query identity and source evaluator decision refs, supplemental-search admission posture, supplemental provider role/list/depth as already-computed protected legacy posture, supplemental evidence identity, final evidence rebuild identity, Analyst re-run admission posture, Author note identity for `hedge_appropriately_where_data_is_missing`, and compact AnswerContract / AnalystAuthorHandoff / CitationSourceHandoff refs. Serialization is JSON-safe under the stable `synthesis_evaluator_supplemental_search_handoff` trace key.
+
+AG-76D-SES is passive and fixture/static only. It does not wire into the supplemental-search block, does not touch `core/pipeline_orchestrator.py`, and does not change evaluator behavior, prompt behavior, supplemental query generation, provider/search/depth behavior, retrieval/ranking/filtering behavior, final evidence selection or rebuild behavior, Analyst re-run behavior, Author note/prose behavior, citation behavior, DB/session/`RunOutcome` shape, cache behavior, live validation, or provider/model/search calls.
+
+AG-76D-SCR-R1 is complete/readiness for review: Scrutineer/remediation has behavior-preserving runtime trace wiring, so this file no longer recommends AG-76D-SCR-R1 as the next phase. Remaining hidden-authority surfaces are residual orchestrator-local query/recon/recency and final-assembly decisions documented in AG-79C plus any future separately licensed runtime consumption of passive handoff contracts. AG-78G remains live-gated.
+
+Recommended next phase: AG-79D targeted orchestrator authority repair or another explicitly licensed passive handoff/runtime-consumption phase. Do not recommend cache implementation.
+
+
+
 ## AG-76D-SCR — Controller-Owned Scrutineer / Remediation Handoff Contract (2026-06-02)
 
 Status: implemented/readiness for review. AG-76D-SCR adds `core/scrutineer_remediation_handoff_contract.py`, `tests/test_ag76d_scr_scrutineer_remediation_handoff_contract.py`, and `docs/architecture/AG76D_SCR_CONTROLLER_OWNED_SCRUTINEER_REMEDIATION_HANDOFF.md` as a minimal passive contract and fixture/static test phase for Scrutineer/remediation handoff representation.
@@ -9,9 +23,9 @@ The contract records Scrutineer run eligibility/admission posture, skipped/runni
 
 AG-76D-SCR is passive and fixture/static only. It does not wire into the runtime Scrutineer block, does not touch `core/pipeline_orchestrator.py`, and does not change Scrutineer behavior, prompt behavior, remediation query generation, provider/search/depth/query behavior, retrieval behavior, Analyst behavior, Author prompt/prose behavior, citation behavior, DB/session/`RunOutcome` shape, cache behavior, live validation, or provider/model/search calls.
 
-Remaining hidden-authority surfaces: Scrutineer/remediation remains runtime-hidden until a separately licensed wiring phase consumes this handoff; synthesis-evaluator supplemental search remains parked; residual orchestrator-local query/recon/recency and final-assembly decisions remain as documented in AG-79C. AG-78G remains live-gated.
+AG-76D-SCR-R1 status: complete/readiness for review. Scrutineer/remediation no longer remains merely parked behind AG-76D-SCR; behavior-preserving runtime trace wiring exists, while prompts, provider/search/depth, retrieval, Analyst, Author, citation, DB/session/RunOutcome, cache, and live validation behavior remain closed. Synthesis-evaluator supplemental search is now covered by AG-76D-SES at passive contract depth. AG-78G remains live-gated.
 
-Recommended next phase: AG-76D-SCR-R1 — Scrutineer/remediation runtime wiring, only if Strategy explicitly licenses behavior after this passive contract is accepted. If runtime wiring is not licensed, consider synthesis-evaluator supplemental-search handoff or AG-79D targeted orchestrator authority repair. Do not recommend cache implementation.
+Recommended next phase: AG-79D targeted orchestrator authority repair or another explicitly licensed passive handoff/runtime-consumption phase. Do not recommend cache implementation.
 
 
 ## AG-79C — Orchestrator Decision Audit (2026-06-02)
@@ -426,4 +440,4 @@ redacted packets under `output/ag78g_bounded_indirect_inference_dogfood/`; and
 it should decide only whether the AG-78 trace/presentation packets preserve
 labels, attribution boundaries, numeric posture, and no-promotion guards.
 
-AG-76D-SCR-R1 status: implemented/readiness for review. Runtime wiring now packages already-computed legacy Scrutineer/remediation facts through `core/scrutineer_remediation_runtime_handoff.py` and attaches JSON-safe trace state under `scrutineer_remediation_handoff` from `core/pipeline_orchestrator.py`. This is behavior-preserving wiring only: Scrutineer prompts, remediation query generation, novelty filtering, provider/depth selection, retrieval, Analyst re-synthesis, Author prose/directives, citation behavior, DB/session/RunOutcome shape, cache behavior, and live validation remain closed. AG-78G remains live-gated and synthesis-evaluator supplemental search remains parked.
+AG-76D-SCR-R1 status: complete/readiness for review. Runtime wiring now packages already-computed legacy Scrutineer/remediation facts through `core/scrutineer_remediation_runtime_handoff.py` and attaches JSON-safe trace state under `scrutineer_remediation_handoff` from `core/pipeline_orchestrator.py`. This is behavior-preserving wiring only: Scrutineer prompts, remediation query generation, novelty filtering, provider/depth selection, retrieval, Analyst re-synthesis, Author prose/directives, citation behavior, DB/session/RunOutcome shape, cache behavior, and live validation remain closed. AG-78G remains live-gated and synthesis-evaluator supplemental search is now covered by AG-76D-SES at passive contract depth.
