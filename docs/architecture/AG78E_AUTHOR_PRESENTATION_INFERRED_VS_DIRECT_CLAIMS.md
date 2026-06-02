@@ -1,6 +1,6 @@
 # AG-78E — Author / Presentation for Inferred-vs-Direct Claims
 
-**Phase date:** 2026-06-02  
+**Phase date:** 2026-06-02
 **Phase type:** narrow Author / final-answer presentation activation.
 
 ## Purpose
