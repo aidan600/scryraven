@@ -1,6 +1,18 @@
 # ScryRaven Current State
 
 
+## AG-76D-SCR — Controller-Owned Scrutineer / Remediation Handoff Contract (2026-06-02)
+
+Status: implemented/readiness for review. AG-76D-SCR adds `core/scrutineer_remediation_handoff_contract.py`, `tests/test_ag76d_scr_scrutineer_remediation_handoff_contract.py`, and `docs/architecture/AG76D_SCR_CONTROLLER_OWNED_SCRUTINEER_REMEDIATION_HANDOFF.md` as a minimal passive contract and fixture/static test phase for Scrutineer/remediation handoff representation.
+
+The contract records Scrutineer run eligibility/admission posture, skipped/running/completed posture, flag count and high-severity threshold posture, searchable/non-searchable category posture, remediation query identity and source flag IDs, novelty/filter results, remediation dispatch authorization with provider-role/depth facts as already-computed protected legacy posture, remediation evidence/final-evidence identity, re-synthesis admission posture, Author directive identity, and compact AnswerContract / AnalystAuthorHandoff / CitationSourceHandoff refs. Serialization is JSON-safe under the stable `scrutineer_remediation_handoff` trace key.
+
+AG-76D-SCR is passive and fixture/static only. It does not wire into the runtime Scrutineer block, does not touch `core/pipeline_orchestrator.py`, and does not change Scrutineer behavior, prompt behavior, remediation query generation, provider/search/depth/query behavior, retrieval behavior, Analyst behavior, Author prompt/prose behavior, citation behavior, DB/session/`RunOutcome` shape, cache behavior, live validation, or provider/model/search calls.
+
+Remaining hidden-authority surfaces: Scrutineer/remediation remains runtime-hidden until a separately licensed wiring phase consumes this handoff; synthesis-evaluator supplemental search remains parked; residual orchestrator-local query/recon/recency and final-assembly decisions remain as documented in AG-79C. AG-78G remains live-gated.
+
+Recommended next phase: AG-76D-SCR-R1 — Scrutineer/remediation runtime wiring, only if Strategy explicitly licenses behavior after this passive contract is accepted. If runtime wiring is not licensed, consider synthesis-evaluator supplemental-search handoff or AG-79D targeted orchestrator authority repair. Do not recommend cache implementation.
+
 
 ## AG-79C — Orchestrator Decision Audit (2026-06-02)
 
