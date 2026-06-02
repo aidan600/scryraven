@@ -2,6 +2,18 @@
 
 
 
+## AG-79A — Passive-to-Active Controller Authority Audit (2026-06-02)
+
+Status: complete/readiness for review. AG-79A adds `docs/architecture/AG79A_PASSIVE_TO_ACTIVE_CONTROLLER_AUTHORITY_AUDIT.md`, a docs/static audit distinguishing Controller-visible state from Controller-governing authority across AnswerContract, RunController, AG-76D handoffs, AG-77 conflict posture, AG-78 indirect inference posture, recovery lanes, Scrutineer/remediation, synthesis-evaluator supplemental search, provider/search/depth/query selection, final evidence/citation/Author assembly, and `core/pipeline_orchestrator.py` domain branches.
+
+Executive verdict: many Controller-owned states are represented, trace-visible, and sometimes AnswerContract-visible, but only a narrower set is proven runtime-governing or final-answer-governing today. Retrieval stop/continue, targeted/source-class/weak-corpus/conflict-retrieval admission, weak/failure-card handoff output, citation/source-list handoff execution, Analyst/Author handoff packaging, and AG-78E presentation labeling have the strongest consumption evidence. Router/query preparation, retrieval loop descriptors, many RunController trace fields, AG-77C/AG-78C runtime handoffs, provider diagnostics, Scrutineer/remediation trace, supplemental search trace, and adapter mirrors remain passive, advisory, or trace-only unless consumed by a runtime gate or final handoff.
+
+Highest hidden-authority risk remains in provider/search/depth/query selection and final evidence/citation/Author assembly, with Scrutineer/remediation and synthesis-evaluator supplemental search also carrying real hidden authority. AG-79A selects exactly one next phase: AG-79B targeted authority repair. AG-78G remains live-gated, and AG-76D-AD adapter cleanup should not preempt targeted repair because adapter debt did not block the review or safe repair planning.
+
+AG-79A is docs/static-audit only. It does not change runtime behavior, prompts, provider/search/retrieval behavior, citation behavior, Author behavior, Scrutineer/remediation behavior, Economist behavior, DB/session/RunOutcome shape, cache behavior, live validation, or `core/pipeline_orchestrator.py`.
+
+Recommended next phase: AG-79B — targeted authority repair for provider/search/depth/query selection and final assembly handoff boundaries.
+
 ## AG-78E — Author / Presentation for Inferred-vs-Direct Claims (2026-06-02)
 
 Status: implemented/readiness for review. AG-78E adds `core/indirect_inference_author_presentation_handoff.py`, a narrow Author/final-answer presentation handoff that consumes already-activated AG-78D posture metadata and labels claim presentation as `directly_sourced`, `inferred_from_sourced_premises`, `speculative_or_unsupported`, `blocked_by_premise_conflict`, or `range_bound_or_source_bound`. The handoff preserves premise source IDs and bridge relationship source IDs while explicitly preventing citation laundering: premise/bridge sources support premises and bridge relationships, not direct source-statement of an inferred conclusion.
