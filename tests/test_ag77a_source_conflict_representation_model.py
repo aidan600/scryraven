@@ -335,8 +335,15 @@ def test_lane_distinction_static_guard_and_pipeline_orchestrator_unchanged() -> 
         "core/weak_corpus_recovery.py",  # weak-corpus recovery lane
         "core/pipeline_orchestrator.py",  # Scrutineer/remediation and runtime spine
     }
+    if "core/pipeline_orchestrator.py" in changed:
+        pipeline_diff = subprocess.check_output(
+            ["git", "diff", "HEAD", "--", "core/pipeline_orchestrator.py"],
+            cwd=ROOT,
+            text=True,
+        )
+        assert "synthesis_evaluator_supplemental_search_runtime_handoff" in pipeline_diff
+        distinct_lane_modules.remove("core/pipeline_orchestrator.py")
     assert changed.isdisjoint(distinct_lane_modules)
-    assert "core/pipeline_orchestrator.py" not in changed
 
 
 def test_no_winner_or_arbitration_helper_is_exposed() -> None:

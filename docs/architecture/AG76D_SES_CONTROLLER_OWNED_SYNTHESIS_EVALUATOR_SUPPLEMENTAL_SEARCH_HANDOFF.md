@@ -1,10 +1,10 @@
-# AG-76D-SES — Controller-Owned Synthesis-Evaluator Supplemental-Search Handoff Contract
+# AG-76D-SES / AG-76D-SES-R1 — Controller-Owned Synthesis-Evaluator Supplemental-Search Handoff
 
-Status: implemented/readiness for review. AG-76D-SES adds a passive Controller-owned handoff contract for the synthesis-evaluator supplemental-search path. The phase is fixture/static-test only: it does not wire the contract into runtime, does not run live validation, and does not call providers, models, or search.
+Status: AG-76D-SES-R1 implemented/readiness for review. AG-76D-SES introduced the passive Controller-owned handoff contract; AG-76D-SES-R1 wires the existing runtime path through that contract using already-computed legacy facts only.
 
 ## Scope
 
-The contract represents facts that the legacy synthesis-evaluator supplemental-search path already computed or exposed downstream:
+The handoff represents facts that the legacy synthesis-evaluator supplemental-search path already computed or exposed downstream:
 
 - synthesis-evaluator run eligibility and run gate posture;
 - completeness posture as `skipped`, `sufficient`, `insufficient`, or `parse_failed`;
@@ -22,12 +22,21 @@ The contract represents facts that the legacy synthesis-evaluator supplemental-s
 ## Files
 
 - `core/synthesis_evaluator_supplemental_search_handoff_contract.py`
+- `core/synthesis_evaluator_supplemental_search_runtime_handoff.py`
+- `core/pipeline_orchestrator.py`
 - `tests/test_ag76d_ses_synthesis_evaluator_supplemental_search_handoff_contract.py`
+- `tests/test_ag76d_ses_r1_synthesis_evaluator_supplemental_search_runtime_handoff.py`
 - `docs/architecture/AG76D_SES_CONTROLLER_OWNED_SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF.md`
+
+## Runtime wiring
+
+AG-76D-SES-R1 adds `RuntimeSupplementalQueryFact`, `RuntimeSynthesisEvaluatorSupplementalSearchFacts`, and `RuntimeSynthesisEvaluatorSupplementalSearchFactCollector` for already-computed runtime posture. The collector owns defaulting and final fact construction so `core/pipeline_orchestrator.py` remains a tiny adapter touch: instantiate the collector, record already-computed branch facts, and attach one trace fragment near the existing handoff trace assembly. `build_runtime_synthesis_evaluator_supplemental_search_handoff(...)` converts those facts into `SynthesisEvaluatorSupplementalSearchHandoffState`, and `runtime_synthesis_evaluator_supplemental_search_trace_fragment(...)` returns the stable JSON-safe trace fragment.
+
+`core/pipeline_orchestrator.py` records legacy facts as they occur and attaches the fragment under `synthesis_evaluator_supplemental_search_handoff`. The adapter does not authorize or perform evaluator calls, supplemental query generation, search, retrieval, final evidence rebuild, Analyst re-run, Author note creation, citation changes, persistence, cache behavior, or live validation.
 
 ## Explicit non-goals and closed behavior
 
-AG-76D-SES is representational only. It does not change:
+AG-76D-SES-R1 is behavior-preserving runtime wiring only. It does not change:
 
 - synthesis-evaluator behavior or evaluator output;
 - prompt behavior;
@@ -38,12 +47,13 @@ AG-76D-SES is representational only. It does not change:
 - Analyst admission, execution, or re-run behavior;
 - Author note wording, Author prompt inputs, or Author prose;
 - citation/source-list behavior;
+- Scrutineer/remediation behavior;
+- source-class/currentness semantics;
 - DB/session/`RunOutcome` shape;
 - cache behavior;
-- `core/pipeline_orchestrator.py` behavior or runtime wiring;
 - live validation posture.
 
-The contract exposes these no-change guarantees through explicit `no_behavior_change_flags` and per-descriptor `changes_*_behavior: False` fields so future runtime wiring can distinguish represented legacy posture from authorized Controller authority.
+The contract exposes these no-change guarantees through explicit `no_behavior_change_flags` and per-descriptor `changes_*_behavior: False` fields so future runtime consumers can distinguish represented legacy posture from authorized Controller authority.
 
 ## Trace shape
 
@@ -55,25 +65,27 @@ The Controller trace fragment is mechanically produced by `SynthesisEvaluatorSup
 }
 ```
 
-The state is JSON-safe by construction and has no protected imports beyond `dataclasses`, `enum`, and `typing`.
+The state is JSON-safe by construction. Runtime wiring sets `execution_envelope.runtime_wiring_active` to `True`, while `behavior_change_authorized` and `live_validation_performed` remain `False`.
 
 ## Validation
 
-The fixture/static tests prove that:
+The AG-76D-SES fixture/static tests prove the passive contract shape. The AG-76D-SES-R1 runtime/adapter tests prove that:
 
-1. skipped/sufficient/insufficient/parse-failed completeness postures serialize stably;
-2. deficiency identity is preserved without changing evaluator output;
-3. supplemental query identity and source evaluator decision are preserved;
-4. provider/depth facts are represented as protected already-computed legacy posture;
-5. supplemental evidence identity is represented;
-6. final evidence rebuild identity is represented;
-7. Analyst re-run admission is represented without re-running Analyst;
-8. Author note identity is represented without changing Author prose;
-9. AnswerContract / AnalystAuthorHandoff / CitationSourceHandoff refs survive;
-10. Controller state and trace fragments are JSON-safe;
-11. the contract does not import protected runtime/provider/prompt/cache/orchestrator surfaces;
-12. `core/pipeline_orchestrator.py` remains unchanged.
+1. evaluator skipped posture for strong retrieval / no supplemental check is represented;
+2. sufficient posture with no supplemental search is represented;
+3. insufficient posture with deficiency and supplemental queries is represented;
+4. parse-failed posture is represented without changing legacy fallback behavior;
+5. supplemental query IDs and source evaluator decision refs survive;
+6. provider role/list/depth/result-count facts are protected legacy posture;
+7. supplemental evidence identity survives;
+8. final evidence rebuild identity survives;
+9. Analyst re-run admission is represented without changing Analyst behavior;
+10. Author note identity is represented without changing Author prompt text or prose;
+11. AnswerContract, AnalystAuthorHandoff, and CitationSourceHandoff refs survive;
+12. JSON-safe trace includes `synthesis_evaluator_supplemental_search_handoff`;
+13. the runtime adapter does not import protected provider/orchestrator/persistence surfaces;
+14. `core/pipeline_orchestrator.py` receives only a tiny adapter/trace touch.
 
 ## Next-phase posture
 
-AG-76D-SCR-R1 is complete/readiness for review, and AG-76D-SES now covers the parked synthesis-evaluator supplemental-search handoff at passive contract depth. AG-78G remains live-gated. Any future phase that consumes this contract at runtime must be separately licensed and behavior-preserving unless Strategy explicitly authorizes a behavior change.
+AG-76D-SCR-R1 and AG-76D-SES-R1 are complete/readiness for review. AG-78G remains live-gated. The recommended next phase is `AG-79D` (or another explicitly licensed passive handoff/runtime-consumption phase) rather than live validation or dogfood.

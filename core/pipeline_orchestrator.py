@@ -250,6 +250,9 @@ from core.source_class_recovery_runner import (
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
 from core.source_recency import build_recency_author_notes
 from core.stage_ledger_mirror import record_stage_ledger_query_provider_facts
+from core.synthesis_evaluator_supplemental_search_runtime_handoff import (
+    RuntimeSynthesisEvaluatorSupplementalSearchFactCollector,
+)
 from core.targeted_retrieval_controller import (
     build_targeted_retrieval_controller_input,
     build_targeted_retrieval_lifecycle,
@@ -3206,6 +3209,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     scrutineer_high_count = 0
     queries_by_iteration: dict[int, list[str]] = {}
     synth_deficiency: str | None = None
+    synthesis_evaluator_supplemental_search_collector = (
+        RuntimeSynthesisEvaluatorSupplementalSearchFactCollector()
+    )
     retrieval_retry_used = False
     disambiguation_queries_by_iteration: dict[int, list[str]] = {}
     weak_corpus_recovery_considered = False
@@ -6028,6 +6034,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         and not post_retrieval_fast_path_used
         and not economist_output_used_as_analysis
     ):
+        synthesis_evaluator_supplemental_search_collector.mark_eligible()
         strong_retrieval = (
             not corpus_weak
             and bool(entity_hint_for_retrieval)
@@ -6039,6 +6046,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "Retrieval already matches the main subject well; "
                 "skipping synthesis completeness re-check and supplemental search."
             )
+            synthesis_evaluator_supplemental_search_collector.mark_strong_retrieval_skipped()
             if complexity in ("medium", "high"):
                 first_synth_sufficient = True
         else:
@@ -6076,7 +6084,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     synth_was_insufficient = True
                     synth_deficiency = str(deficiency) if deficiency is not None else "Missing key specifics."
             except Exception as e:
+                synthesis_evaluator_supplemental_search_collector.mark_parse_failed(e)
                 run_log.warning("Synth Evaluator JSON parse failed: %s", e)
+            else:
+                synthesis_evaluator_supplemental_search_collector.mark_completeness(
+                    sufficient=bool(synth_is_sufficient),
+                    deficiency_text=synth_deficiency,
+                )
             if complexity in ("medium", "high"):
                 first_synth_sufficient = bool(synth_is_sufficient)
 
@@ -6084,16 +6098,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 synth_queries = _finalize_retrieval_queries(
                     synth_queries, max_len=2, include_official_bias=False
                 )
+                synthesis_evaluator_supplemental_search_collector.record_supplemental_queries(
+                    synth_queries
+                )
                 author_notes = (
                     f"\n\n\u26a0\ufe0f NOTE FOR AUTHOR: Synthesis quality check flagged: '{deficiency}'. "
                     "Hedge appropriately where data is missing."
                 )
+                synthesis_evaluator_supplemental_search_collector.record_author_hedge_note()
                 status.step(f"Completeness gap detected: {deficiency}. Running supplemental searches...")
                 supp_search_depth = choose_supplemental_search_depth(complexity, search_depth)
                 supp_providers = select_providers(
                     query_type, intent, complexity, available_keys,
                     report_type=report_type, is_academic=is_academic,
                     suppress_tavily=suppress_tavily, override=None,
+                )
+                synthesis_evaluator_supplemental_search_collector.record_dispatch(
+                    providers=supp_providers,
+                    search_depth=supp_search_depth,
                 )
                 seen_before_supp = len(seen_urls)
                 supplemental_ran = True
@@ -6108,6 +6130,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     provider_role="supplemental_search",
                 )
                 delta_urls_supplemental = max(0, len(seen_urls) - seen_before_supp)
+                synthesis_evaluator_supplemental_search_collector.record_evidence(supp_passages)
 
                 if supp_passages:
                     all_passages.extend(supp_passages)
@@ -6126,6 +6149,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     ordered_sources = final_evidence_bundle.ordered_sources
                     evidence_block = final_evidence_bundle.evidence_block
                     cached_prefix = final_evidence_bundle.cached_prefix
+                    synthesis_evaluator_supplemental_search_collector.record_final_evidence_rebuild()
                     status.step("Re-analyzing with supplemental evidence...")
                     analyst_cached_prefix = _build_analyst_cached_prefix()
                     _an_t0 = time.monotonic()
@@ -6141,6 +6165,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         evidence_passages=_evidence_slice_for_analyst(),
                     )
                     _record_analyst_model_call(_analyst_prompt)
+                    synthesis_evaluator_supplemental_search_collector.record_analyst_rerun()
                     analysis = ask_model(
                         _analyst_prompt,
                         DEFAULT_SYSTEM["analyst"],
@@ -7247,6 +7272,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "active_contract",
         None,
     )
+    synthesis_evaluator_supplemental_search_handoff_trace_fragment = (
+        synthesis_evaluator_supplemental_search_collector.to_trace_fragment(
+            run_id=run_id,
+            synth_was_insufficient=synth_was_insufficient,
+            results_per_query=results_per_query,
+            delta_urls_supplemental=delta_urls_supplemental,
+            supplemental_ran=supplemental_ran,
+            final_evidence=final_top_evidence,
+            ordered_source_count=len(ordered_sources),
+            unique_source_url_count=len(unique_source_urls),
+            answer_contract_available=answer_contract_runtime_result is not None,
+        )
+    )
     scrutineer_remediation_handoff_trace_fragment = (
         runtime_scrutineer_remediation_trace_fragment(
             RuntimeScrutineerRemediationFacts(
@@ -7402,6 +7440,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         **analyst_author_handoff_trace_fragment,
         **citation_source_handoff_trace_fragment,
         **economist_handoff_trace_fragment,
+        **synthesis_evaluator_supplemental_search_handoff_trace_fragment,
         **scrutineer_remediation_handoff_trace_fragment,
         "urls_fetched": total_urls_fetched,
         "total_chunks": total_chunks_embedded,

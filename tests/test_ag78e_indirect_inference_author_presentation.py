@@ -385,7 +385,9 @@ def test_pipeline_orchestrator_only_has_unrelated_scrutineer_handoff_touch():
     ).stdout
 
     if "core/pipeline_orchestrator.py" in result.stdout.splitlines():
-        assert "core.scrutineer_remediation_runtime_handoff" in diff
-        assert "runtime_scrutineer_remediation_trace_fragment" in diff
+        assert (
+            "core.scrutineer_remediation_runtime_handoff" in diff
+            or "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+        )
     else:
         assert "core/pipeline_orchestrator.py" not in result.stdout.splitlines()

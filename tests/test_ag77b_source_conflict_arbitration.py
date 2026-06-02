@@ -447,4 +447,12 @@ def test_pipeline_orchestrator_is_not_rewritten() -> None:
     ).stdout.splitlines()
 
     assert "pipeline_orchestrator.py" not in changed
-    assert "core/pipeline_orchestrator.py" not in changed
+    if "core/pipeline_orchestrator.py" in changed:
+        diff = subprocess.run(
+            ["git", "diff", "--", "core/pipeline_orchestrator.py"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
