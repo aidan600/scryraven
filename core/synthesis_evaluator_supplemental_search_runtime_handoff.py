@@ -212,6 +212,177 @@ def _author_notes(
     )
 
 
+@dataclass
+class RuntimeSynthesisEvaluatorSupplementalSearchFactCollector:
+    """Small mutable collector for already-computed runtime facts.
+
+    The collector keeps synthesis-evaluator supplemental-search defaulting and
+    final fact construction out of the orchestrator while preserving the legacy
+    branch decisions exactly. Its methods only record facts that have already
+    happened in the legacy path.
+    """
+
+    eligible: bool = False
+    skip_reason: str | None = "legacy_complexity_or_fast_path_gate_not_authorized"
+    completeness_posture: CompletenessPosture | str = CompletenessPosture.SKIPPED
+    deficiency_text: str | None = None
+    parse_error_ref: Mapping[str, Any] = field(default_factory=dict)
+    supplemental_queries: list[RuntimeSupplementalQueryFact] = field(default_factory=list)
+    supplemental_search_admission_posture: SupplementalSearchAdmissionPosture | str = (
+        SupplementalSearchAdmissionPosture.SKIPPED
+    )
+    supplemental_search_admitted: bool = False
+    supplemental_search_admission_reason: str | None = None
+    supplemental_provider_role: str | None = None
+    supplemental_providers: Sequence[Any] = field(default_factory=tuple)
+    supplemental_search_depth: str | None = None
+    supplemental_evidence: Sequence[Any] = field(default_factory=tuple)
+    final_evidence_rebuild_reason: str | None = None
+    analyst_rerun_triggered: bool = False
+    author_hedge_note_emitted: bool = False
+
+    def mark_eligible(self) -> None:
+        self.eligible = True
+        self.skip_reason = None
+
+    def mark_strong_retrieval_skipped(self) -> None:
+        self.skip_reason = "strong_retrieval_sufficient_no_supplemental_check"
+
+    def mark_parse_failed(self, error: Exception) -> None:
+        self.completeness_posture = CompletenessPosture.PARSE_FAILED
+        self.parse_error_ref = {
+            "error_type": type(error).__name__,
+            "behavior": "legacy_defaults_to_sufficient",
+        }
+
+    def mark_completeness(self, *, sufficient: bool, deficiency_text: str | None) -> None:
+        self.completeness_posture = (
+            CompletenessPosture.SUFFICIENT if sufficient else CompletenessPosture.INSUFFICIENT
+        )
+        if not sufficient:
+            self.deficiency_text = deficiency_text
+
+    def record_supplemental_queries(self, queries: Sequence[Any]) -> None:
+        self.supplemental_queries = [
+            RuntimeSupplementalQueryFact(
+                query_id=f"synthesis-evaluator-supplemental-query-{index + 1}",
+                query_text=str(query),
+                source_evaluator_decision="insufficient",
+                source_deficiency_id="synthesis-evaluator-deficiency",
+            )
+            for index, query in enumerate(queries)
+        ]
+
+    def record_author_hedge_note(self) -> None:
+        self.author_hedge_note_emitted = True
+
+    def record_dispatch(
+        self,
+        *,
+        providers: Sequence[Any],
+        search_depth: str | None,
+        provider_role: str = "supplemental_search",
+    ) -> None:
+        self.supplemental_provider_role = provider_role
+        self.supplemental_providers = tuple(str(provider) for provider in (providers or ()))
+        self.supplemental_search_depth = search_depth
+        self.supplemental_search_admission_posture = SupplementalSearchAdmissionPosture.ADMITTED
+        self.supplemental_search_admitted = True
+        self.supplemental_search_admission_reason = "insufficient_with_supplemental_queries"
+
+    def record_evidence(self, evidence: Sequence[Any]) -> None:
+        self.supplemental_search_admission_posture = SupplementalSearchAdmissionPosture.COMPLETED
+        self.supplemental_evidence = tuple(evidence or ())
+
+    def record_final_evidence_rebuild(self) -> None:
+        self.final_evidence_rebuild_reason = "supplemental_evidence_added"
+
+    def record_analyst_rerun(self) -> None:
+        self.analyst_rerun_triggered = True
+
+    def build_facts(
+        self,
+        *,
+        run_id: str,
+        synth_was_insufficient: bool,
+        results_per_query: int | None,
+        delta_urls_supplemental: int,
+        supplemental_ran: bool,
+        final_evidence: Sequence[Any],
+        ordered_source_count: int,
+        unique_source_url_count: int,
+        answer_contract_available: bool,
+    ) -> RuntimeSynthesisEvaluatorSupplementalSearchFacts:
+        deficiency_id = (
+            "synthesis-evaluator-deficiency" if self.deficiency_text else None
+        )
+        return RuntimeSynthesisEvaluatorSupplementalSearchFacts(
+            run_id=run_id,
+            eligible=self.eligible,
+            run_gate="legacy_synthesis_evaluator_supplemental_search_gate",
+            completeness_posture=self.completeness_posture,
+            requested=self.eligible,
+            sufficient_evidence_available=not synth_was_insufficient,
+            skip_reason=self.skip_reason,
+            deficiency_id=deficiency_id,
+            deficiency_text=self.deficiency_text,
+            parse_error_ref=self.parse_error_ref,
+            supplemental_queries=tuple(self.supplemental_queries),
+            supplemental_search_admission_posture=self.supplemental_search_admission_posture,
+            supplemental_search_admitted=self.supplemental_search_admitted,
+            supplemental_search_admission_reason=self.supplemental_search_admission_reason,
+            supplemental_provider_role=self.supplemental_provider_role,
+            supplemental_providers=self.supplemental_providers,
+            supplemental_search_depth=self.supplemental_search_depth,
+            supplemental_results_per_query=results_per_query,
+            supplemental_evidence=self.supplemental_evidence,
+            supplemental_evidence_ref={
+                "delta_urls_supplemental": delta_urls_supplemental,
+                "supplemental_ran": supplemental_ran,
+            },
+            final_evidence_bundle_id=f"{run_id}:final_evidence",
+            final_evidence=final_evidence,
+            final_evidence_ref={
+                "final_evidence_count": len(final_evidence),
+                "ordered_source_count": ordered_source_count,
+                "unique_source_url_count": unique_source_url_count,
+            },
+            final_evidence_rebuild_reason=self.final_evidence_rebuild_reason,
+            analyst_rerun_posture=(
+                AnalystRerunAdmissionPosture.TRIGGERED
+                if self.analyst_rerun_triggered
+                else AnalystRerunAdmissionPosture.SKIPPED
+            ),
+            analyst_rerun_admitted=self.analyst_rerun_triggered,
+            analyst_rerun_triggered=self.analyst_rerun_triggered,
+            analyst_rerun_trigger_reason=(
+                "supplemental_evidence_added" if self.analyst_rerun_triggered else None
+            ),
+            analyst_pass_ref=(
+                {"stage": "analyst_supplemental"}
+                if self.analyst_rerun_triggered
+                else {}
+            ),
+            author_hedge_note_emitted=self.author_hedge_note_emitted,
+            author_note_ref={"source": "legacy_synthesis_evaluator_author_note"},
+            answer_contract_ref={
+                "trace_key": "answer_contract_runtime_handoff",
+                "available": answer_contract_available,
+            },
+            analyst_author_handoff_ref={
+                "trace_key": "analyst_author_handoff_contract"
+            },
+            citation_source_handoff_ref={
+                "trace_key": "citation_source_handoff_contract"
+            },
+        )
+
+    def to_trace_fragment(self, **build_fact_kwargs: Any) -> dict[str, Any]:
+        return runtime_synthesis_evaluator_supplemental_search_trace_fragment(
+            self.build_facts(**build_fact_kwargs)
+        )
+
+
 def build_runtime_synthesis_evaluator_supplemental_search_handoff(
     facts: RuntimeSynthesisEvaluatorSupplementalSearchFacts,
 ) -> SynthesisEvaluatorSupplementalSearchHandoffState:
@@ -275,6 +446,7 @@ def runtime_synthesis_evaluator_supplemental_search_trace_fragment(
 
 __all__ = [
     "RuntimeSupplementalQueryFact",
+    "RuntimeSynthesisEvaluatorSupplementalSearchFactCollector",
     "RuntimeSynthesisEvaluatorSupplementalSearchFacts",
     "build_runtime_synthesis_evaluator_supplemental_search_handoff",
     "runtime_synthesis_evaluator_supplemental_search_trace_fragment",

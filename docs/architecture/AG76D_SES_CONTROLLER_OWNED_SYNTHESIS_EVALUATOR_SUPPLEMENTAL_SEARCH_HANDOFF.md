@@ -30,9 +30,9 @@ The handoff represents facts that the legacy synthesis-evaluator supplemental-se
 
 ## Runtime wiring
 
-AG-76D-SES-R1 adds `RuntimeSupplementalQueryFact` and `RuntimeSynthesisEvaluatorSupplementalSearchFacts` as small fact carriers for already-computed runtime posture. `build_runtime_synthesis_evaluator_supplemental_search_handoff(...)` converts those facts into `SynthesisEvaluatorSupplementalSearchHandoffState`, and `runtime_synthesis_evaluator_supplemental_search_trace_fragment(...)` returns the stable JSON-safe trace fragment.
+AG-76D-SES-R1 adds `RuntimeSupplementalQueryFact`, `RuntimeSynthesisEvaluatorSupplementalSearchFacts`, and `RuntimeSynthesisEvaluatorSupplementalSearchFactCollector` for already-computed runtime posture. The collector owns defaulting and final fact construction so `core/pipeline_orchestrator.py` remains a tiny adapter touch: instantiate the collector, record already-computed branch facts, and attach one trace fragment near the existing handoff trace assembly. `build_runtime_synthesis_evaluator_supplemental_search_handoff(...)` converts those facts into `SynthesisEvaluatorSupplementalSearchHandoffState`, and `runtime_synthesis_evaluator_supplemental_search_trace_fragment(...)` returns the stable JSON-safe trace fragment.
 
-`core/pipeline_orchestrator.py` now performs a tiny adapter/trace touch near the existing synthesis-evaluator supplemental-search block and other handoff trace fragments. It records legacy facts as they occur and attaches the fragment under `synthesis_evaluator_supplemental_search_handoff`. The adapter does not authorize or perform evaluator calls, supplemental query generation, search, retrieval, final evidence rebuild, Analyst re-run, Author note creation, citation changes, persistence, cache behavior, or live validation.
+`core/pipeline_orchestrator.py` records legacy facts as they occur and attaches the fragment under `synthesis_evaluator_supplemental_search_handoff`. The adapter does not authorize or perform evaluator calls, supplemental query generation, search, retrieval, final evidence rebuild, Analyst re-run, Author note creation, citation changes, persistence, cache behavior, or live validation.
 
 ## Explicit non-goals and closed behavior
 

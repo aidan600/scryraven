@@ -9,6 +9,7 @@ from core.synthesis_evaluator_supplemental_search_handoff_contract import (
 )
 from core.synthesis_evaluator_supplemental_search_runtime_handoff import (
     RuntimeSupplementalQueryFact,
+    RuntimeSynthesisEvaluatorSupplementalSearchFactCollector,
     RuntimeSynthesisEvaluatorSupplementalSearchFacts,
     build_runtime_synthesis_evaluator_supplemental_search_handoff,
     runtime_synthesis_evaluator_supplemental_search_trace_fragment,
@@ -233,6 +234,41 @@ def test_json_safe_trace_includes_stable_ses_handoff_key() -> None:
     assert json.loads(json.dumps(trace)) == trace
 
 
+
+def test_fact_collector_builds_final_facts_outside_orchestrator() -> None:
+    collector = RuntimeSynthesisEvaluatorSupplementalSearchFactCollector()
+    collector.mark_eligible()
+    collector.mark_completeness(sufficient=False, deficiency_text="missing official current value")
+    collector.record_supplemental_queries(("official current value",))
+    collector.record_dispatch(providers=("brave",), search_depth="deep")
+    collector.record_evidence(({"id": "sev-1", "source_id": "src-1"},))
+    collector.record_final_evidence_rebuild()
+    collector.record_analyst_rerun()
+    collector.record_author_hedge_note()
+
+    payload = build_runtime_synthesis_evaluator_supplemental_search_handoff(
+        collector.build_facts(
+            run_id="run-ag76d-ses-r1",
+            synth_was_insufficient=True,
+            results_per_query=3,
+            delta_urls_supplemental=1,
+            supplemental_ran=True,
+            final_evidence=({"id": "ev-1", "source_id": "src-1"},),
+            ordered_source_count=1,
+            unique_source_url_count=1,
+            answer_contract_available=True,
+        )
+    ).to_controller_state()
+
+    assert payload["eligibility"]["eligible"] is True
+    assert payload["completeness"]["posture"] == "insufficient"
+    assert payload["supplemental_queries"][0]["query_text"] == "official current value"
+    assert payload["supplemental_search"]["admission_posture"] == "completed"
+    assert payload["supplemental_evidence"]["evidence_ids"] == ["sev-1"]
+    assert payload["final_evidence_rebuild"]["rebuild_reason"] == "supplemental_evidence_added"
+    assert payload["analyst_rerun"]["posture"] == "triggered"
+    assert payload["author_notes"][0]["hedge_where_data_missing"] is True
+
 def test_runtime_adapter_static_protected_import_guard() -> None:
     tree = ast.parse(ADAPTER.read_text(encoding="utf-8"))
     imported_modules = {
@@ -262,6 +298,8 @@ def test_pipeline_orchestrator_static_guard_only_tiny_adapter_trace_touch() -> N
             func = node.func
             if isinstance(func, ast.Name):
                 call_names.append(func.id)
+            elif isinstance(func, ast.Attribute):
+                call_names.append(func.attr)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if (
@@ -270,12 +308,21 @@ def test_pipeline_orchestrator_static_guard_only_tiny_adapter_trace_touch() -> N
                 ):
                     assigned_names.add(target.id)
 
-    assert imported_names == {
-        "RuntimeSupplementalQueryFact",
-        "RuntimeSynthesisEvaluatorSupplementalSearchFacts",
-        "runtime_synthesis_evaluator_supplemental_search_trace_fragment",
-    }
-    assert call_names.count("runtime_synthesis_evaluator_supplemental_search_trace_fragment") == 1
-    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFacts") == 1
-    assert call_names.count("RuntimeSupplementalQueryFact") == 1
+    assert imported_names == {"RuntimeSynthesisEvaluatorSupplementalSearchFactCollector"}
+    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFactCollector") == 1
+    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFacts") == 0
+    assert call_names.count("RuntimeSupplementalQueryFact") == 0
+    assert {
+        "mark_eligible",
+        "mark_strong_retrieval_skipped",
+        "mark_parse_failed",
+        "mark_completeness",
+        "record_supplemental_queries",
+        "record_dispatch",
+        "record_evidence",
+        "record_final_evidence_rebuild",
+        "record_analyst_rerun",
+        "record_author_hedge_note",
+        "to_trace_fragment",
+    } <= set(call_names)
     assert "synthesis_evaluator_supplemental_search_handoff_trace_fragment" in assigned_names

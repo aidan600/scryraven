@@ -261,11 +261,7 @@ def test_static_guard_pipeline_orchestrator_only_has_runtime_adapter_touch():
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             call_names.append(node.func.id)
 
-    assert imported_names == {
-        "RuntimeSupplementalQueryFact",
-        "RuntimeSynthesisEvaluatorSupplementalSearchFacts",
-        "runtime_synthesis_evaluator_supplemental_search_trace_fragment",
-    }
-    assert call_names.count("runtime_synthesis_evaluator_supplemental_search_trace_fragment") == 1
-    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFacts") == 1
-    assert call_names.count("RuntimeSupplementalQueryFact") == 1
+    assert imported_names == {"RuntimeSynthesisEvaluatorSupplementalSearchFactCollector"}
+    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFactCollector") == 1
+    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFacts") == 0
+    assert call_names.count("RuntimeSupplementalQueryFact") == 0
