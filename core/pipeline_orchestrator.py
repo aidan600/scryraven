@@ -250,6 +250,11 @@ from core.source_class_recovery_runner import (
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
 from core.source_recency import build_recency_author_notes
 from core.stage_ledger_mirror import record_stage_ledger_query_provider_facts
+from core.synthesis_evaluator_supplemental_search_runtime_handoff import (
+    RuntimeSupplementalQueryFact,
+    RuntimeSynthesisEvaluatorSupplementalSearchFacts,
+    runtime_synthesis_evaluator_supplemental_search_trace_fragment,
+)
 from core.targeted_retrieval_controller import (
     build_targeted_retrieval_controller_input,
     build_targeted_retrieval_lifecycle,
@@ -3206,6 +3211,22 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     scrutineer_high_count = 0
     queries_by_iteration: dict[int, list[str]] = {}
     synth_deficiency: str | None = None
+    synthesis_evaluator_supplemental_search_eligible = False
+    synthesis_evaluator_supplemental_search_skip_reason = "legacy_complexity_or_fast_path_gate_not_authorized"
+    synthesis_evaluator_supplemental_search_completeness_posture = "skipped"
+    synthesis_evaluator_supplemental_search_deficiency: str | None = None
+    synthesis_evaluator_supplemental_search_parse_error_ref: dict[str, Any] = {}
+    synthesis_evaluator_supplemental_search_queries: list[RuntimeSupplementalQueryFact] = []
+    synthesis_evaluator_supplemental_search_admission_posture = "skipped"
+    synthesis_evaluator_supplemental_search_admitted = False
+    synthesis_evaluator_supplemental_search_admission_reason: str | None = None
+    synthesis_evaluator_supplemental_search_provider_role: str | None = None
+    synthesis_evaluator_supplemental_search_providers: list[str] = []
+    synthesis_evaluator_supplemental_search_depth: str | None = None
+    synthesis_evaluator_supplemental_search_evidence: list[Any] = []
+    synthesis_evaluator_supplemental_search_final_rebuild_reason: str | None = None
+    synthesis_evaluator_supplemental_search_analyst_rerun_triggered = False
+    synthesis_evaluator_supplemental_search_author_hedge_note_emitted = False
     retrieval_retry_used = False
     disambiguation_queries_by_iteration: dict[int, list[str]] = {}
     weak_corpus_recovery_considered = False
@@ -6028,6 +6049,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         and not post_retrieval_fast_path_used
         and not economist_output_used_as_analysis
     ):
+        synthesis_evaluator_supplemental_search_eligible = True
+        synthesis_evaluator_supplemental_search_skip_reason = None
         strong_retrieval = (
             not corpus_weak
             and bool(entity_hint_for_retrieval)
@@ -6039,6 +6062,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "Retrieval already matches the main subject well; "
                 "skipping synthesis completeness re-check and supplemental search."
             )
+            synthesis_evaluator_supplemental_search_skip_reason = "strong_retrieval_sufficient_no_supplemental_check"
             if complexity in ("medium", "high"):
                 first_synth_sufficient = True
         else:
@@ -6076,7 +6100,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     synth_was_insufficient = True
                     synth_deficiency = str(deficiency) if deficiency is not None else "Missing key specifics."
             except Exception as e:
+                synthesis_evaluator_supplemental_search_completeness_posture = "parse_failed"
+                synthesis_evaluator_supplemental_search_parse_error_ref = {
+                    "error_type": type(e).__name__,
+                    "behavior": "legacy_defaults_to_sufficient",
+                }
                 run_log.warning("Synth Evaluator JSON parse failed: %s", e)
+            else:
+                synthesis_evaluator_supplemental_search_completeness_posture = (
+                    "sufficient" if synth_is_sufficient else "insufficient"
+                )
+                if not synth_is_sufficient:
+                    synthesis_evaluator_supplemental_search_deficiency = synth_deficiency
             if complexity in ("medium", "high"):
                 first_synth_sufficient = bool(synth_is_sufficient)
 
@@ -6084,17 +6119,34 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 synth_queries = _finalize_retrieval_queries(
                     synth_queries, max_len=2, include_official_bias=False
                 )
+                synthesis_evaluator_supplemental_search_queries = [
+                    RuntimeSupplementalQueryFact(
+                        query_id=f"synthesis-evaluator-supplemental-query-{index + 1}",
+                        query_text=synth_query,
+                        source_evaluator_decision="insufficient",
+                        source_deficiency_id="synthesis-evaluator-deficiency",
+                    )
+                    for index, synth_query in enumerate(synth_queries)
+                ]
                 author_notes = (
                     f"\n\n\u26a0\ufe0f NOTE FOR AUTHOR: Synthesis quality check flagged: '{deficiency}'. "
                     "Hedge appropriately where data is missing."
                 )
                 status.step(f"Completeness gap detected: {deficiency}. Running supplemental searches...")
                 supp_search_depth = choose_supplemental_search_depth(complexity, search_depth)
+                synthesis_evaluator_supplemental_search_depth = supp_search_depth
                 supp_providers = select_providers(
                     query_type, intent, complexity, available_keys,
                     report_type=report_type, is_academic=is_academic,
                     suppress_tavily=suppress_tavily, override=None,
                 )
+                synthesis_evaluator_supplemental_search_providers = [
+                    str(provider) for provider in (supp_providers or [])
+                ]
+                synthesis_evaluator_supplemental_search_provider_role = "supplemental_search"
+                synthesis_evaluator_supplemental_search_admission_posture = "admitted"
+                synthesis_evaluator_supplemental_search_admitted = True
+                synthesis_evaluator_supplemental_search_admission_reason = "insufficient_with_supplemental_queries"
                 seen_before_supp = len(seen_urls)
                 supplemental_ran = True
                 supp_passages = process_search_queries(
@@ -6108,6 +6160,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     provider_role="supplemental_search",
                 )
                 delta_urls_supplemental = max(0, len(seen_urls) - seen_before_supp)
+                synthesis_evaluator_supplemental_search_admission_posture = "completed"
+                synthesis_evaluator_supplemental_search_evidence = list(supp_passages)
 
                 if supp_passages:
                     all_passages.extend(supp_passages)
@@ -6126,6 +6180,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     ordered_sources = final_evidence_bundle.ordered_sources
                     evidence_block = final_evidence_bundle.evidence_block
                     cached_prefix = final_evidence_bundle.cached_prefix
+                    synthesis_evaluator_supplemental_search_final_rebuild_reason = "supplemental_evidence_added"
                     status.step("Re-analyzing with supplemental evidence...")
                     analyst_cached_prefix = _build_analyst_cached_prefix()
                     _an_t0 = time.monotonic()
@@ -6141,6 +6196,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         evidence_passages=_evidence_slice_for_analyst(),
                     )
                     _record_analyst_model_call(_analyst_prompt)
+                    synthesis_evaluator_supplemental_search_analyst_rerun_triggered = True
                     analysis = ask_model(
                         _analyst_prompt,
                         DEFAULT_SYSTEM["analyst"],
@@ -7247,6 +7303,90 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         "active_contract",
         None,
     )
+    synthesis_evaluator_supplemental_search_handoff_trace_fragment = (
+        runtime_synthesis_evaluator_supplemental_search_trace_fragment(
+            RuntimeSynthesisEvaluatorSupplementalSearchFacts(
+                run_id=run_id,
+                eligible=synthesis_evaluator_supplemental_search_eligible,
+                run_gate="legacy_synthesis_evaluator_supplemental_search_gate",
+                completeness_posture=synthesis_evaluator_supplemental_search_completeness_posture,
+                requested=synthesis_evaluator_supplemental_search_eligible,
+                sufficient_evidence_available=not synth_was_insufficient,
+                skip_reason=synthesis_evaluator_supplemental_search_skip_reason,
+                deficiency_id=(
+                    "synthesis-evaluator-deficiency"
+                    if synthesis_evaluator_supplemental_search_deficiency
+                    else None
+                ),
+                deficiency_text=synthesis_evaluator_supplemental_search_deficiency,
+                parse_error_ref=synthesis_evaluator_supplemental_search_parse_error_ref,
+                supplemental_queries=synthesis_evaluator_supplemental_search_queries,
+                supplemental_search_admission_posture=(
+                    synthesis_evaluator_supplemental_search_admission_posture
+                ),
+                supplemental_search_admitted=(
+                    synthesis_evaluator_supplemental_search_admitted
+                ),
+                supplemental_search_admission_reason=(
+                    synthesis_evaluator_supplemental_search_admission_reason
+                ),
+                supplemental_provider_role=synthesis_evaluator_supplemental_search_provider_role,
+                supplemental_providers=synthesis_evaluator_supplemental_search_providers,
+                supplemental_search_depth=synthesis_evaluator_supplemental_search_depth,
+                supplemental_results_per_query=results_per_query,
+                supplemental_evidence=synthesis_evaluator_supplemental_search_evidence,
+                supplemental_evidence_ref={
+                    "delta_urls_supplemental": delta_urls_supplemental,
+                    "supplemental_ran": supplemental_ran,
+                },
+                final_evidence_bundle_id=f"{run_id}:final_evidence",
+                final_evidence=final_top_evidence,
+                final_evidence_ref={
+                    "final_evidence_count": len(final_top_evidence),
+                    "ordered_source_count": len(ordered_sources),
+                    "unique_source_url_count": len(unique_source_urls),
+                },
+                final_evidence_rebuild_reason=(
+                    synthesis_evaluator_supplemental_search_final_rebuild_reason
+                ),
+                analyst_rerun_posture=(
+                    "triggered"
+                    if synthesis_evaluator_supplemental_search_analyst_rerun_triggered
+                    else "skipped"
+                ),
+                analyst_rerun_admitted=(
+                    synthesis_evaluator_supplemental_search_analyst_rerun_triggered
+                ),
+                analyst_rerun_triggered=(
+                    synthesis_evaluator_supplemental_search_analyst_rerun_triggered
+                ),
+                analyst_rerun_trigger_reason=(
+                    "supplemental_evidence_added"
+                    if synthesis_evaluator_supplemental_search_analyst_rerun_triggered
+                    else None
+                ),
+                analyst_pass_ref=(
+                    {"stage": "analyst_supplemental"}
+                    if synthesis_evaluator_supplemental_search_analyst_rerun_triggered
+                    else {}
+                ),
+                author_hedge_note_emitted=(
+                    synthesis_evaluator_supplemental_search_author_hedge_note_emitted
+                ),
+                author_note_ref={"source": "legacy_synthesis_evaluator_author_note"},
+                answer_contract_ref={
+                    "trace_key": "answer_contract_runtime_handoff",
+                    "available": answer_contract_runtime_result is not None,
+                },
+                analyst_author_handoff_ref={
+                    "trace_key": "analyst_author_handoff_contract"
+                },
+                citation_source_handoff_ref={
+                    "trace_key": "citation_source_handoff_contract"
+                },
+            )
+        )
+    )
     scrutineer_remediation_handoff_trace_fragment = (
         runtime_scrutineer_remediation_trace_fragment(
             RuntimeScrutineerRemediationFacts(
@@ -7402,6 +7542,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         **analyst_author_handoff_trace_fragment,
         **citation_source_handoff_trace_fragment,
         **economist_handoff_trace_fragment,
+        **synthesis_evaluator_supplemental_search_handoff_trace_fragment,
         **scrutineer_remediation_handoff_trace_fragment,
         "urls_fetched": total_urls_fetched,
         "total_chunks": total_chunks_embedded,

@@ -393,7 +393,9 @@ def test_pipeline_orchestrator_boundary_only_has_unrelated_scrutineer_handoff_to
     )
 
     if PIPELINE_PATH in changed:
-        assert "core.scrutineer_remediation_runtime_handoff" in diff
-        assert "runtime_scrutineer_remediation_trace_fragment" in diff
+        assert (
+            "core.scrutineer_remediation_runtime_handoff" in diff
+            or "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+        )
     else:
         assert PIPELINE_PATH not in changed

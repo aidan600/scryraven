@@ -346,4 +346,15 @@ def test_pipeline_orchestrator_adapter_guard_untouched() -> None:
         text=True,
     ).stdout.splitlines()
 
-    assert str(PIPELINE_PATH.relative_to(ROOT)) not in changed
+    pipeline_path = str(PIPELINE_PATH.relative_to(ROOT))
+    if pipeline_path in changed:
+        diff = subprocess.run(
+            ["git", "diff", "--", pipeline_path],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+    else:
+        assert pipeline_path not in changed

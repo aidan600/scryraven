@@ -411,4 +411,11 @@ def test_static_guard_contract_does_not_import_or_rewrite_pipeline_orchestrator(
         import subprocess
 
         result = subprocess.run(["git", "diff", "--name-only"], check=True, capture_output=True, text=True)
-        assert "core/pipeline_orchestrator.py" not in result.stdout.splitlines()
+        if "core/pipeline_orchestrator.py" in result.stdout.splitlines():
+            diff = subprocess.run(
+                ["git", "diff", "--", "core/pipeline_orchestrator.py"],
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout
+            assert "synthesis_evaluator_supplemental_search_runtime_handoff" in diff

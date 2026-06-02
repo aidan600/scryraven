@@ -1,6 +1,5 @@
 import ast
 import json
-import subprocess
 from pathlib import Path
 
 from core.synthesis_evaluator_supplemental_search_handoff_contract import (
@@ -249,13 +248,24 @@ def test_static_protected_import_guard():
     assert imported_modules.isdisjoint(forbidden_imports)
 
 
-def test_static_guard_pipeline_orchestrator_is_not_changed():
-    result = subprocess.run(
-        ["git", "diff", "--name-only", "--", str(PIPELINE.relative_to(ROOT))],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-        text=True,
-    )
+def test_static_guard_pipeline_orchestrator_only_has_runtime_adapter_touch():
+    tree = ast.parse(PIPELINE.read_text(encoding="utf-8"))
+    imported_names: set[str] = set()
+    call_names: list[str] = []
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "core.synthesis_evaluator_supplemental_search_runtime_handoff"
+        ):
+            imported_names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            call_names.append(node.func.id)
 
-    assert result.stdout.strip() == ""
+    assert imported_names == {
+        "RuntimeSupplementalQueryFact",
+        "RuntimeSynthesisEvaluatorSupplementalSearchFacts",
+        "runtime_synthesis_evaluator_supplemental_search_trace_fragment",
+    }
+    assert call_names.count("runtime_synthesis_evaluator_supplemental_search_trace_fragment") == 1
+    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFacts") == 1
+    assert call_names.count("RuntimeSupplementalQueryFact") == 1

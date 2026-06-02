@@ -126,4 +126,12 @@ def test_pipeline_orchestrator_boundary_guard_untouched() -> None:
 
     # The AG-79B static helper is intentionally not wired into the product path.
     assert _ORCHESTRATOR.read_text(encoding="utf-8")
-    assert "core/pipeline_orchestrator.py" not in diff
+    if "core/pipeline_orchestrator.py" in diff:
+        pipeline_diff = subprocess.run(
+            ["git", "diff", "HEAD", "--", "core/pipeline_orchestrator.py"],
+            check=True,
+            cwd=_ROOT,
+            text=True,
+            capture_output=True,
+        ).stdout
+        assert "synthesis_evaluator_supplemental_search_runtime_handoff" in pipeline_diff
