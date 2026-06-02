@@ -2,6 +2,19 @@
 
 
 
+## AG-79B — Controller-Governed Provider/Search and Final Assembly Boundary Repair (2026-06-02)
+
+Status: implemented/readiness for review. AG-79B adds `docs/architecture/AG79B_CONTROLLER_GOVERNED_PROVIDER_SEARCH_FINAL_ASSEMBLY_BOUNDARY.md`, `core/provider_search_final_assembly_authority_boundary.py`, and focused static fixture tests for provider/search/depth/query authority plus final evidence/citation/Author assembly authority.
+
+Exact boundary repaired or proved: already-computed Controller-owned provider allocation, retrieval/depth posture, query-source/recovery-dispatch posture, final evidence identity, citation/source-list identity, Author context identity, AG-77 conflict labels, AG-78 direct-vs-inferred labels, and insufficiency/source-obligation labels are classified and tested so they cannot be silently bypassed in the new static boundary fixtures. Where no Controller-owned posture exists, existing provider choice, search depth, recency merge, query generation, final evidence selection, citation ordering/formatting, prompt text, and Author prose are explicitly protected legacy behavior rather than changed. Supplemental search, Scrutineer/remediation, and broad orchestrator-local domain decisions remain consciously parked hidden authority.
+
+AG-79B is behavior-preserving authority-boundary hardening only. It does not change runtime behavior, prompts, provider/search/retrieval behavior, citation behavior, Author behavior, Scrutineer/remediation behavior, Economist behavior, DB/session/RunOutcome shape, cache behavior, live validation, or `core/pipeline_orchestrator.py`.
+
+AG-78G remains live-gated unless explicitly authorized. AG-76D-AD remains parked because adapter debt did not block this boundary proof.
+
+Recommended next phase: AG-79C — Orchestrator Decision Audit.
+
+
 ## AG-79A — Passive-to-Active Controller Authority Audit (2026-06-02)
 
 Status: complete/readiness for review. AG-79A adds `docs/architecture/AG79A_PASSIVE_TO_ACTIVE_CONTROLLER_AUTHORITY_AUDIT.md`, a docs/static audit distinguishing Controller-visible state from Controller-governing authority across AnswerContract, RunController, AG-76D handoffs, AG-77 conflict posture, AG-78 indirect inference posture, recovery lanes, Scrutineer/remediation, synthesis-evaluator supplemental search, provider/search/depth/query selection, final evidence/citation/Author assembly, and `core/pipeline_orchestrator.py` domain branches.
