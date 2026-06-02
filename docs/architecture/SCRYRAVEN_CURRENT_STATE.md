@@ -425,3 +425,5 @@ runs; it must not expand provider/model/search/retrieval budgets; it should emit
 redacted packets under `output/ag78g_bounded_indirect_inference_dogfood/`; and
 it should decide only whether the AG-78 trace/presentation packets preserve
 labels, attribution boundaries, numeric posture, and no-promotion guards.
+
+AG-76D-SCR-R1 status: implemented/readiness for review. Runtime wiring now packages already-computed legacy Scrutineer/remediation facts through `core/scrutineer_remediation_runtime_handoff.py` and attaches JSON-safe trace state under `scrutineer_remediation_handoff` from `core/pipeline_orchestrator.py`. This is behavior-preserving wiring only: Scrutineer prompts, remediation query generation, novelty filtering, provider/depth selection, retrieval, Analyst re-synthesis, Author prose/directives, citation behavior, DB/session/RunOutcome shape, cache behavior, and live validation remain closed. AG-78G remains live-gated and synthesis-evaluator supplemental search remains parked.

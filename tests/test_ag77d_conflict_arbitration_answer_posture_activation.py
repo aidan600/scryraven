@@ -380,11 +380,20 @@ def test_static_protected_import_guard_for_ag77d_helper() -> None:
     )
 
 
-def test_pipeline_orchestrator_boundary_untouched_in_diff() -> None:
+def test_pipeline_orchestrator_boundary_only_has_unrelated_scrutineer_handoff_touch() -> None:
     changed = subprocess.check_output(
         ["git", "diff", "--name-only", "HEAD", "--"],
         cwd=ROOT,
         text=True,
     ).splitlines()
+    diff = subprocess.check_output(
+        ["git", "diff", "HEAD", "--", PIPELINE_PATH],
+        cwd=ROOT,
+        text=True,
+    )
 
-    assert PIPELINE_PATH not in changed
+    if PIPELINE_PATH in changed:
+        assert "core.scrutineer_remediation_runtime_handoff" in diff
+        assert "runtime_scrutineer_remediation_trace_fragment" in diff
+    else:
+        assert PIPELINE_PATH not in changed

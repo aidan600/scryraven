@@ -291,13 +291,22 @@ def test_static_protected_import_guard():
     assert imported_modules.isdisjoint(forbidden_imports)
 
 
-def test_pipeline_orchestrator_is_not_changed_in_git_diff():
+def test_pipeline_orchestrator_change_is_limited_to_runtime_handoff_adapter():
     result = subprocess.run(
-        ["git", "diff", "--name-only"],
+        ["git", "diff", "--", PIPELINE],
         cwd=ROOT,
         check=True,
         text=True,
         capture_output=True,
     )
 
-    assert PIPELINE not in result.stdout.splitlines()
+    diff = result.stdout
+    assert "core.scrutineer_remediation_runtime_handoff" in diff
+    assert "runtime_scrutineer_remediation_trace_fragment" in diff
+    forbidden_terms = (
+        "DEFAULT_SYSTEM[\"scrutineer\"] =",
+        "DEFAULT_SYSTEM['scrutineer'] =",
+        "overlap > 0.6" + " =",
+        "linkup_depth_override=\"standard\"",
+    )
+    assert all(term not in diff for term in forbidden_terms)

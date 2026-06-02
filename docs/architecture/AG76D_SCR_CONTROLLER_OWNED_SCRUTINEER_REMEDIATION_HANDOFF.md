@@ -173,3 +173,26 @@ AG-78G remains live-gated. AG-76D-SCR uses offline source inspection, fixture/st
 Recommended next phase: `AG-76D-SCR-R1 — Scrutineer/remediation runtime wiring`, only if Strategy explicitly licenses behavior after this passive contract is accepted.
 
 If runtime wiring is not licensed, alternate next candidates are synthesis-evaluator supplemental-search handoff, AG-79D targeted orchestrator authority repair, AG-78G bounded dogfood only if explicitly live-licensed, or AG-76D-AD adapter cleanup only if adapter debt blocks safe repair. Do not recommend cache implementation from this phase.
+
+## AG-76D-SCR-R1 runtime wiring
+
+AG-76D-SCR-R1 wires the passive contract into the legacy runtime path with a
+small adapter in `core/scrutineer_remediation_runtime_handoff.py` and a single
+trace attachment point in `core/pipeline_orchestrator.py`. The adapter builds
+`ScrutineerRemediationHandoffState` only from facts the legacy path has already
+computed: the complexity/run gate, skipped or completed Scrutineer posture,
+flag count and high-severity threshold posture, searchable category posture,
+remediation query identities and source flag IDs, novelty/filter outcomes,
+provider role/provider list/search depth/Linkup override facts, remediation
+evidence identity, final evidence bundle identity, re-analysis admission, and
+Author directive identity.
+
+The stable JSON-safe runtime trace key is still
+`scrutineer_remediation_handoff`. Runtime wiring sets the execution envelope's
+`runtime_wiring_active` flag to `true`, while all no-behavior-change flags remain
+false. The adapter does not choose thresholds, categories, prompts, providers,
+queries, novelty filtering, retrieval, re-synthesis, Author wording, citation
+formatting, session/RunOutcome shape, cache behavior, or live validation.
+
+No live dogfood is authorized for this phase. AG-78G remains live-gated, and
+synthesis-evaluator supplemental search remains parked.
