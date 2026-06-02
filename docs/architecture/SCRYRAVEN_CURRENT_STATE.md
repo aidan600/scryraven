@@ -328,19 +328,50 @@ inferred, speculative, AG-77-conflicted, source-bound numeric, and lower-tier
 non-satisfaction markers to Controller / AnswerContract consumers.
 
 AG-78D — Indirect Inference Runtime Behavior Activation / Answer Posture Effects
-is implemented and ready for review on the phase branch. AG-78D adds bounded
+is merged. AG-78D adds bounded
 `indirect_inference_answer_posture_activation` metadata from already-visible
 AG-78C handoff state for directly sourced, inferred-from-sourced-premises,
 speculative/unsupported, blocked-by-premise-conflict, range/source-bound, and
 lower-tier-non-satisfying inference paths. Inferred conclusions are marked
-`directly_sourced=false` and `requires_inference_label=true` for future
-presentation phases.
+`directly_sourced=false` and `requires_inference_label=true` for presentation
+phases.
 
-AG-78D does not change final-answer prose, Author prompt/exposure/evidence
-handoff, citation behavior, provider/model/search/query behavior, retrieval
-behavior, DB/session/RunOutcome shape, cache behavior, actual inference
-execution, or final inferred-answer presentation. `core/pipeline_orchestrator.py`
-remains outside this phase. Recommended next phase: `AG-78E — Final Inferred
-Answer Presentation Policy` only after product approval for prose labeling; use
-`AG-78D-R1` only if the activation metadata contract needs review adjustment, or
-`AG-77E` if conflict presentation should precede inference presentation.
+AG-78E — Author / Presentation for Inferred-vs-Direct Claims is merged. AG-78E
+adds `indirect_inference_author_presentation_handoff` trace/controller visibility
+for direct, inferred, speculative/unsupported, blocked-by-premise-conflict,
+range/source-bound, and lower-tier non-satisfaction presentation labels while
+preserving citation-laundering boundaries. AG-78D and AG-78E do not change final
+answer prose, provider/model/search/query behavior, retrieval behavior,
+DB/session/RunOutcome shape, cache behavior, actual inference execution, or broad
+pipeline orchestration. `core/pipeline_orchestrator.py` remains outside these phases.
+
+## AG-78F Indirect Inference Presentation Burn-Down / Dogfood Prep
+
+AG-78F is complete as a documentation-only burn-down review. It classifies the
+merged AG-78A/B/B-R1/C/D/E indirect-inference stack as ready for later bounded
+dogfood, with no runtime product behavior change and no live validation.
+
+The current direct-vs-inferred presentation contract is considered safe enough
+for dogfood: `directly_sourced` remains separate from
+`inferred_from_sourced_premises`; inferred conclusions require an inference
+label; premise and bridge sources remain auditable without being treated as
+direct conclusion support; range/source-bound numeric cases preserve unresolved
+scalar posture; speculative/unsupported, premise-conflict-blocked, and
+lower-tier non-satisfying paths remain prevented from becoming supported
+inference.
+
+Trace ergonomics debt remains non-blocking. The handoff sequence is still
+understandable as `indirect_inference_contract` →
+`indirect_inference_runtime_handoff` →
+`indirect_inference_answer_posture_activation` →
+`indirect_inference_author_presentation_handoff`. If that layering becomes a
+review blocker after dogfood, route to AG-76D-AD adapter debt rather than an
+inference behavior phase.
+
+Recommended next phase: `AG-78G — Bounded Indirect-Inference Dogfood`. AG-78G
+should run at most six packet-only query classes, with one infrastructure
+replacement allowed for a hard cap of seven total ScryRaven/proplex/scryraven
+runs; it must not expand provider/model/search/retrieval budgets; it should emit
+redacted packets under `output/ag78g_bounded_indirect_inference_dogfood/`; and
+it should decide only whether the AG-78 trace/presentation packets preserve
+labels, attribution boundaries, numeric posture, and no-promotion guards.
