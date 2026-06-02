@@ -2,6 +2,19 @@
 
 
 
+## AG-79C — Orchestrator Decision Audit (2026-06-02)
+
+Status: complete/readiness for review. AG-79C adds `docs/architecture/AG79C_ORCHESTRATOR_DECISION_AUDIT.md`, a docs-only static audit of broad local domain decisions in `core/pipeline_orchestrator.py` and orchestrator-adjacent Controller, recovery, final-assembly, citation, Author, adapter, and trace/projection paths.
+
+Executive verdict: retrieval stop/continue, weak-corpus recovery, source-class recovery, targeted/ordinary continuation spine authorization, conflict-resolution retrieval, citation/source-list identity, and Analyst/Author handoff packaging have meaningful Controller-owned handoff coverage where their decisions are consumed. Provider/search/depth/query behavior that AG-79B classified remains behavior-preserving and not runtime-wired. Final evidence/citation/Author identity has stronger handoff visibility, while prompt text, prompt semantics, citation formatting, source ordering, Author prose, and legacy final evidence selection remain protected legacy behavior.
+
+Highest remaining active hidden-authority cluster: Scrutineer/remediation. Its run gate, flag threshold, searchable category filter, remediation query generation, novelty filtering, provider/depth selection, re-synthesis trigger, and Author directive insertion can search, re-synthesize, caveat, omit, or alter Author context without a dedicated Controller-owned remediation handoff. AG-76D-SCR is elevated as the exactly one recommended next phase.
+
+Synthesis-evaluator supplemental search remains active hidden authority and should eventually receive its own Controller-owned handoff, but it is parked behind AG-76D-SCR because Scrutineer/remediation has the higher concentrated final-answer risk. AG-76D-AD adapter cleanup remains parked because adapter debt does not block safe review or the next handoff design. AG-78G remains live-gated; AG-79C ran no live validation, product-path commands, provider/model calls, or search calls.
+
+Recommended next phase: AG-76D-SCR — Controller-owned Scrutineer/remediation handoff contract.
+
+
 ## AG-79B — Controller-Governed Provider/Search and Final Assembly Boundary Repair (2026-06-02)
 
 Status: implemented/readiness for review. AG-79B adds `docs/architecture/AG79B_CONTROLLER_GOVERNED_PROVIDER_SEARCH_FINAL_ASSEMBLY_BOUNDARY.md`, `core/provider_search_final_assembly_authority_boundary.py`, and focused static fixture tests for provider/search/depth/query authority plus final evidence/citation/Author assembly authority.
