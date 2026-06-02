@@ -31,6 +31,10 @@ from core.indirect_inference_answer_posture_activation import (
     IndirectInferenceAnswerPostureActivation,
     build_indirect_inference_answer_posture_activation,
 )
+from core.indirect_inference_author_presentation_handoff import (
+    IndirectInferenceAuthorPresentationHandoff,
+    build_indirect_inference_author_presentation_handoff,
+)
 from core.indirect_inference_contract import InferencePath
 from core.indirect_inference_runtime_handoff import (
     IndirectInferenceRuntimeHandoff,
@@ -391,6 +395,9 @@ class RuntimeAnswerContractHandoffResult:
     indirect_inference_answer_posture_activation: (
         IndirectInferenceAnswerPostureActivation | None
     ) = None
+    indirect_inference_author_presentation_handoff: (
+        IndirectInferenceAuthorPresentationHandoff | None
+    ) = None
 
     @property
     def state(self) -> AnswerControllerState:
@@ -421,6 +428,10 @@ class RuntimeAnswerContractHandoffResult:
         if self.indirect_inference_answer_posture_activation is not None:
             fragment.update(
                 self.indirect_inference_answer_posture_activation.to_trace_fragment()
+            )
+        if self.indirect_inference_author_presentation_handoff is not None:
+            fragment.update(
+                self.indirect_inference_author_presentation_handoff.to_trace_fragment()
             )
         return fragment
 
@@ -586,6 +597,7 @@ def build_runtime_answer_contract_handoff(
     source_conflict_answer_posture_activation = None
     indirect_inference_runtime_handoff = None
     indirect_inference_answer_posture_activation = None
+    indirect_inference_author_presentation_handoff = None
     if facts.indirect_inference_paths or facts.indirect_inference_controller_state:
         indirect_inference_runtime_handoff = build_indirect_inference_runtime_handoff(
             facts.indirect_inference_paths,
@@ -594,6 +606,11 @@ def build_runtime_answer_contract_handoff(
         indirect_inference_answer_posture_activation = (
             build_indirect_inference_answer_posture_activation(
                 indirect_inference_runtime_handoff
+            )
+        )
+        indirect_inference_author_presentation_handoff = (
+            build_indirect_inference_author_presentation_handoff(
+                indirect_inference_answer_posture_activation
             )
         )
     if (
@@ -626,6 +643,9 @@ def build_runtime_answer_contract_handoff(
         indirect_inference_runtime_handoff=indirect_inference_runtime_handoff,
         indirect_inference_answer_posture_activation=(
             indirect_inference_answer_posture_activation
+        ),
+        indirect_inference_author_presentation_handoff=(
+            indirect_inference_author_presentation_handoff
         ),
     )
 

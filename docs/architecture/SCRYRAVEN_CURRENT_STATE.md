@@ -2,6 +2,23 @@
 
 
 
+## AG-78E — Author / Presentation for Inferred-vs-Direct Claims (2026-06-02)
+
+Status: implemented/readiness for review. AG-78E adds `core/indirect_inference_author_presentation_handoff.py`, a narrow Author/final-answer presentation handoff that consumes already-activated AG-78D posture metadata and labels claim presentation as `directly_sourced`, `inferred_from_sourced_premises`, `speculative_or_unsupported`, `blocked_by_premise_conflict`, or `range_bound_or_source_bound`. The handoff preserves premise source IDs and bridge relationship source IDs while explicitly preventing citation laundering: premise/bridge sources support premises and bridge relationships, not direct source-statement of an inferred conclusion.
+
+AG-78E is additive presentation labeling only. It does not change provider/model/search/query behavior, retrieval ranking/filtering, source-class/currentness semantics, AG-78B evaluator semantics, AG-78D posture activation semantics, AG-77 conflict arbitration behavior, DB/session/RunOutcome shape, cache behavior, Scrutineer/remediation, Economist/follow-up, broad pipeline orchestration, live validation, or inference-opportunity detection. `core/pipeline_orchestrator.py` remains untouched.
+
+Recommended next phase: AG-78F — Indirect Inference Presentation Burn-Down / Dogfood Prep.
+
+
+## AG-78D — Indirect Inference Answer Posture Activation (2026-06-01)
+
+Status: complete/readiness for review. AG-78D activates bounded Controller / AnswerContract posture metadata from the already-visible AG-78C `indirect_inference_runtime_handoff` state. It preserves evaluator-authoritative AG-78B posture and recommendation while making direct, inferred, speculative/unsupported, conflict-blocked, range/source-bound, and lower-tier non-satisfaction effects visible to AnswerContract/controller traces.
+
+AG-78D did not change final-answer prose, Author prompts, citation behavior, provider/search/query/retrieval behavior, source-class/currentness semantics, AG-77 conflict arbitration, Scrutineer/remediation, Economist/follow-up behavior, DB/session/RunOutcome shape, cache behavior, live validation, or inference-opportunity detection.
+
+Recommended next phase: AG-78E — Author / Presentation for Inferred-vs-Direct Claims.
+
 ## AG-78B — Minimal Indirect Inference Contract with Fixture Tests (2026-06-01)
 
 Status: implemented/readiness for review. AG-78B adds `core/indirect_inference_contract.py`, a minimal inert Controller-visible contract for representing direct target claims, inferred target claims from sourced premises, caveated/range-bound/blocked inference paths, unsupported claims, and speculative/model-assumed bridges. The contract carries target claim identity, premise/source identity, bridge type and strength, mode/depth policy, AG-77-derived premise conflict impact, source-bound numeric posture, lower-tier non-satisfaction posture, and JSON-safe Controller/trace serialization under `indirect_inference_contract`.
