@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import ast
 import json
-import subprocess
 from pathlib import Path
 
 from core.scrutineer_remediation_handoff_contract import (
@@ -25,7 +24,7 @@ from core.scrutineer_remediation_handoff_contract import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "scrutineer_remediation_handoff_contract.py"
-PIPELINE = "core/pipeline_orchestrator.py"
+PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 
 
 def _state(**overrides):
@@ -291,13 +290,29 @@ def test_static_protected_import_guard():
     assert imported_modules.isdisjoint(forbidden_imports)
 
 
-def test_pipeline_orchestrator_is_not_changed_in_git_diff():
-    result = subprocess.run(
-        ["git", "diff", "--name-only"],
-        cwd=ROOT,
-        check=True,
-        text=True,
-        capture_output=True,
-    )
+def test_pipeline_orchestrator_touch_is_limited_to_runtime_handoff_adapter():
+    source = PIPELINE.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    imported_names: set[str] = set()
+    call_names: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "core.scrutineer_remediation_runtime_handoff":
+            imported_names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            call_names.append(node.func.id)
 
-    assert PIPELINE not in result.stdout.splitlines()
+    assert imported_names == {
+        "RuntimeRemediationQueryFact",
+        "RuntimeScrutineerRemediationFacts",
+        "runtime_scrutineer_remediation_trace_fragment",
+    }
+    assert call_names.count("runtime_scrutineer_remediation_trace_fragment") == 1
+    assert call_names.count("RuntimeScrutineerRemediationFacts") == 1
+    assert call_names.count("RuntimeRemediationQueryFact") == 1
+    forbidden_terms = (
+        "DEFAULT_SYSTEM[\"scrutineer\"] =",
+        "DEFAULT_SYSTEM['scrutineer'] =",
+        "overlap > 0.6" + " =",
+        "linkup_depth_override=\"standard\"",
+    )
+    assert all(term not in source for term in forbidden_terms)

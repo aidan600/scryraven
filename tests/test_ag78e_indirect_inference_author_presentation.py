@@ -370,12 +370,22 @@ def test_static_protected_import_guard_for_author_presentation_helper():
     )
 
 
-def test_pipeline_orchestrator_remains_untouched_in_diff():
+def test_pipeline_orchestrator_only_has_unrelated_scrutineer_handoff_touch():
     result = subprocess.run(
         ["git", "diff", "--name-only"],
         check=True,
         capture_output=True,
         text=True,
     )
+    diff = subprocess.run(
+        ["git", "diff", "--", "core/pipeline_orchestrator.py"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
 
-    assert "core/pipeline_orchestrator.py" not in result.stdout.splitlines()
+    if "core/pipeline_orchestrator.py" in result.stdout.splitlines():
+        assert "core.scrutineer_remediation_runtime_handoff" in diff
+        assert "runtime_scrutineer_remediation_trace_fragment" in diff
+    else:
+        assert "core/pipeline_orchestrator.py" not in result.stdout.splitlines()

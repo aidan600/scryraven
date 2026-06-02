@@ -221,6 +221,11 @@ from core.run_logging import (
 from core.runtime_trace_export_attachment import (
     attach_runtime_trace_export_compatibility_payloads,
 )
+from core.scrutineer_remediation_runtime_handoff import (
+    RuntimeRemediationQueryFact,
+    RuntimeScrutineerRemediationFacts,
+    runtime_scrutineer_remediation_trace_fragment,
+)
 from core.search_providers import brave_reconnaissance
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
@@ -5809,6 +5814,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     # --- ANALYST ---
     scrutineer_flags: list[dict[str, Any]] = []
+    scrutineer_remediation_queries: list[RuntimeRemediationQueryFact] = []
+    scrutineer_remediation_dispatch_authorized = False
+    scrutineer_remediation_dispatch_posture = "skipped"
+    scrutineer_remediation_provider_role: str | None = None
+    scrutineer_remediation_providers: list[str] = []
+    scrutineer_remediation_linkup_depth_override: str | None = None
+    scrutineer_remediation_evidence: list[Any] = []
+    scrutineer_remediation_resynthesis_triggered = False
+    scrutineer_pass_flags_directly_to_author = False
     _source_tier_pre_analyst = source_tier_telemetry(all_passages)
     _source_domain_pre_analyst = source_domain_telemetry(
         all_passages,
@@ -6176,6 +6190,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
                 HIGH_FLAG_THRESHOLD = 5
                 if scrutineer_flags and len(scrutineer_flags) >= HIGH_FLAG_THRESHOLD:
+                    scrutineer_pass_flags_directly_to_author = True
                     run_log.warning(
                         "Scrutineer returned %d flags — evidence base too thin for remediation. "
                         "Passing flags as author context instead.",
@@ -6187,10 +6202,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     )
                 else:
                     SEARCHABLE = {"SINGLE-SOURCE", "TEMPORAL DRIFT"}
-                    search_flags = [
-                        f for f in scrutineer_flags
+                    search_flag_pairs = [
+                        (i, f) for i, f in enumerate(scrutineer_flags)
                         if f.get("severity", "").lower() == "high" and f.get("category") in SEARCHABLE
                     ]
+                    search_flags = [f for _, f in search_flag_pairs]
+                    search_flag_ids = tuple(
+                        str(f.get("flag_id") or f.get("id") or f"scrutineer-flag-{i + 1}")
+                        for i, f in search_flag_pairs
+                    )
                     if search_flags:
                         status.step(
                             f"Scrutineer raised {len(search_flags)} high-severity issue(s). "
@@ -6235,6 +6255,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
                         if remed_queries:
                             novel_queries = []
+                            raw_query_novelty: dict[str, bool] = {}
                             for rq in remed_queries:
                                 is_novel = True
                                 rq_tokens = set(rq.lower().split())
@@ -6246,12 +6267,34 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                     if overlap > 0.6:
                                         is_novel = False
                                         break
+                                raw_query_novelty[rq] = is_novel
                                 if is_novel:
                                     novel_queries.append(rq)
 
                             novel_queries = _finalize_retrieval_queries(
                                 novel_queries, max_len=2, include_official_bias=False
                             )
+
+                            admitted_query_set = set(novel_queries)
+                            for _rq_index, _rq in enumerate(remed_queries):
+                                _is_novel = raw_query_novelty.get(_rq, False)
+                                scrutineer_remediation_queries.append(
+                                    RuntimeRemediationQueryFact(
+                                        query_id=f"scrutineer-remediation-query-{len(scrutineer_remediation_queries) + 1}",
+                                        query_text=_rq,
+                                        source_flag_ids=search_flag_ids,
+                                        filter_posture=(
+                                            "admitted"
+                                            if _rq in admitted_query_set
+                                            else ("rejected_not_novel" if _is_novel else "rejected_duplicate")
+                                        ),
+                                        rejection_reason=(
+                                            None
+                                            if _rq in admitted_query_set
+                                            else ("final_query_filter" if _is_novel else "overlap_gt_0_6")
+                                        ),
+                                    )
+                                )
 
                             if not novel_queries:
                                 run_log.info(
@@ -6260,6 +6303,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 status.step("Remediation searches skipped (duplicate queries).")
                             else:
                                 status.step(f"Remediation searches: {novel_queries}")
+                                scrutineer_remediation_dispatch_authorized = True
+                                scrutineer_remediation_dispatch_posture = "authorized"
+                                scrutineer_remediation_provider_role = "scrutineer_remediation"
+                                scrutineer_remediation_linkup_depth_override = "deep"
                                 remed_providers = select_providers(
                                     query_type, intent, complexity, available_keys,
                                     report_type=report_type, is_academic=is_academic,
@@ -6277,6 +6324,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                     provider_role="scrutineer_remediation",
                                 )
                                 if remed_passages:
+                                    scrutineer_remediation_dispatch_posture = "completed"
+                                    scrutineer_remediation_evidence = list(remed_passages)
                                     all_passages.extend(remed_passages)
                                     final_evidence_bundle = build_final_evidence_bundle(
                                         _final_evidence_bundle_inputs(),
@@ -6294,6 +6343,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                     evidence_block = final_evidence_bundle.evidence_block
                                     cached_prefix = final_evidence_bundle.cached_prefix
                                     status.step("Re-synthesizing with remediation evidence...")
+                                    scrutineer_remediation_resynthesis_triggered = True
                                     analyst_cached_prefix = _build_analyst_cached_prefix()
                                     _an_t0 = time.monotonic()
                                     _remed_analyst_prompt = (
@@ -7186,6 +7236,77 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _run_controller_mirror.state.trace_fields.update(
         economist_handoff_trace_fragment
     )
+    _scrutineer_answer_state = getattr(answer_contract_runtime_result, "state", None)
+    _scrutineer_evidence_state = getattr(
+        _scrutineer_answer_state,
+        "evidence_state_summary",
+        None,
+    )
+    _scrutineer_active_contract = getattr(
+        _scrutineer_answer_state,
+        "active_contract",
+        None,
+    )
+    scrutineer_remediation_handoff_trace_fragment = (
+        runtime_scrutineer_remediation_trace_fragment(
+            RuntimeScrutineerRemediationFacts(
+                run_id=run_id,
+                eligible=bool(complexity == "high"),
+                run_gate="legacy_complexity_high_gate",
+                run_posture="completed" if scrutineer_ran else "skipped",
+                complexity=complexity,
+                mode_allowed=_scrutineer_allowed_by_mode(strategy),
+                contract_allowed=_scrutineer_allowed_by_contract(_scrutineer_active_contract),
+                requested=getattr(_scrutineer_evidence_state, "scrutineer_requested", None),
+                needed=getattr(_scrutineer_evidence_state, "scrutineer_needed", None),
+                skip_reason=None if scrutineer_ran else "legacy_complexity_gate_not_high",
+                flags=scrutineer_flags,
+                remediation_queries=scrutineer_remediation_queries,
+                dispatch_authorized=scrutineer_remediation_dispatch_authorized,
+                dispatch_posture=scrutineer_remediation_dispatch_posture,
+                provider_role=scrutineer_remediation_provider_role,
+                providers=scrutineer_remediation_providers,
+                search_depth=search_depth,
+                linkup_depth_override=scrutineer_remediation_linkup_depth_override,
+                remediation_evidence=scrutineer_remediation_evidence,
+                final_evidence_bundle_id=f"{run_id}:final_evidence",
+                final_evidence_ref={
+                    "final_evidence_count": len(final_top_evidence),
+                    "ordered_source_count": len(ordered_sources),
+                    "unique_source_url_count": len(unique_source_urls),
+                },
+                resynthesis_posture=(
+                    "triggered"
+                    if scrutineer_remediation_resynthesis_triggered
+                    else "skipped"
+                ),
+                reanalysis_triggered=scrutineer_remediation_resynthesis_triggered,
+                resynthesis_trigger_reason=(
+                    "remediation_passages_added"
+                    if scrutineer_remediation_resynthesis_triggered
+                    else None
+                ),
+                analyst_pass_ref={
+                    "stage": "analyst_scrutineer_remediation"
+                } if scrutineer_remediation_resynthesis_triggered else {},
+                analysis_ref={"analysis_available": bool(analysis)},
+                pass_flags_directly_to_author=scrutineer_pass_flags_directly_to_author,
+                author_directive_metadata={
+                    "source": "legacy_scrutineer_author_context"
+                },
+                answer_contract_ref={
+                    "trace_key": "answer_contract_runtime_handoff",
+                    "available": answer_contract_runtime_result is not None,
+                },
+                analyst_author_handoff_ref={
+                    "trace_key": "analyst_author_handoff_contract"
+                },
+                citation_source_handoff_ref={
+                    "trace_key": "citation_source_handoff_contract"
+                },
+            )
+        )
+    )
     execution_trace: dict[str, Any] = {
         "run_id": run_id,
         "timestamp_utc": ts_utc,
@@ -7281,6 +7402,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         **analyst_author_handoff_trace_fragment,
         **citation_source_handoff_trace_fragment,
         **economist_handoff_trace_fragment,
+        **scrutineer_remediation_handoff_trace_fragment,
         "urls_fetched": total_urls_fetched,
         "total_chunks": total_chunks_embedded,
         "source_tier_counts": _source_tier_exec["source_tier_counts"],
