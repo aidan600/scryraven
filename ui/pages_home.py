@@ -18,6 +18,7 @@ from core.run_dedup import (
     routing_key_from_full_dedup_key,
 )
 from ui.context import UIContext
+from ui.pages_demo import render_demo_home_notice
 from ui.status import StreamlitStatusWriter
 
 
@@ -88,6 +89,8 @@ def render_home_page(context: UIContext) -> None:
     _seed_q = st.session_state.pop("proplex_seed_query", None)
     if _seed_q is not None:
         st.session_state["research_topic_ta"] = _seed_q
+
+    render_demo_home_notice(context)
 
     query = st.text_area("Research topic", placeholder="Ask anything...", height=120, label_visibility="collapsed", key="research_topic_ta")
 

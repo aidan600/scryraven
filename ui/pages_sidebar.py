@@ -7,6 +7,8 @@ from core.review_flags import (
     performance_insights,
 )
 from ui.context import UIContext
+from ui.demo_fixtures import is_demo_session
+from ui.pages_demo import render_demo_sidebar
 from ui.shared import read_jsonl_records
 
 RECENT_THREAD_LIMIT = 7
@@ -65,6 +67,8 @@ def render_main_sidebar(context: UIContext) -> None:
             st.session_state.current_page = "history"
             st.rerun()
 
+        render_demo_sidebar(context)
+
         st.caption("RECENT THREADS")
         history_list = load_history()
 
@@ -74,7 +78,12 @@ def render_main_sidebar(context: UIContext) -> None:
             for s in history_list[:RECENT_THREAD_LIMIT]:
                 raw_title = " ".join(str(s.get("title", s.get("query", "Untitled"))).split())
                 compact_title = _compact_sidebar_title(raw_title)
-                is_active = st.session_state.get("current_session") and st.session_state.current_session["id"] == s["id"]
+                current_session = st.session_state.get("current_session")
+                is_active = bool(
+                    current_session
+                    and not is_demo_session(current_session)
+                    and current_session["id"] == s["id"]
+                )
                 btn_type = "primary" if is_active else "secondary"
 
                 col1, col2 = st.columns([6, 1])
