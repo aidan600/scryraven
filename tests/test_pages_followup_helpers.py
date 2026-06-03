@@ -8,7 +8,7 @@ from ui.pages_followup import (
     followup_progress_label,
     render_followup_source_cards,
 )
-from ui.pages_thread import _source_chip_groups
+from ui.source_display import _source_chip_groups
 
 
 class _Context:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from ui.pages_thread import (
+from ui.source_display import (
     _evidence_provenance_rows,
     _render_source_chip_details,
     _source_chip_groups,

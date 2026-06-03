@@ -6,7 +6,7 @@ from typing import Any
 
 from ui.context import UIContext
 from ui.demo_fixtures import build_demo_session, is_demo_session, list_demo_scenarios
-from ui.pages_thread import _evidence_provenance_rows, _render_source_chip_strip
+from ui.source_display import _evidence_provenance_rows, _render_source_chip_strip
 
 _POSTURE_LABELS = {
     "direct": "Directly sourced",

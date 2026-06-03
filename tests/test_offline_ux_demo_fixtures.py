@@ -18,6 +18,7 @@ FIXTURE_PATH = ROOT / "demo" / "fixtures" / "offline_ux_scenarios.json"
 DEMO_HELPER_PATHS = [
     ROOT / "ui" / "demo_fixtures.py",
     ROOT / "ui" / "pages_demo.py",
+    ROOT / "ui" / "source_display.py",
 ]
 FORBIDDEN_IMPORTS = {
     "core.llm",
@@ -32,6 +33,10 @@ FORBIDDEN_IMPORTS = {
     "core.cache",
     "core.storage",
 }
+FORBIDDEN_UI_IMPORTS = {
+    "ui.pages_thread",
+}
+
 FORBIDDEN_CALL_NAMES = {
     "ask_model",
     "compute_similarities",
@@ -101,6 +106,18 @@ def test_demo_helpers_do_not_import_live_runtime_paths() -> None:
                 imported_modules.add(node.module)
 
         assert imported_modules.isdisjoint(FORBIDDEN_IMPORTS), path
+
+
+def test_demo_page_does_not_import_live_thread_module() -> None:
+    tree = ast.parse((ROOT / "ui" / "pages_demo.py").read_text(encoding="utf-8"))
+    imported_modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_modules.add(node.module)
+
+    assert imported_modules.isdisjoint(FORBIDDEN_UI_IMPORTS)
 
 
 def test_demo_helpers_do_not_call_live_provider_model_search_functions() -> None:
