@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
+import pytest
+
 
 def load_app_functions(*function_names: str) -> Dict[str, Any]:
     app_path = Path(__file__).resolve().parents[1] / "app.py"
@@ -34,6 +36,28 @@ def load_app_functions(*function_names: str) -> Dict[str, Any]:
     }
     exec(compile(mini_module, str(app_path), "exec"), namespace)
     return {name: namespace[name] for name in function_names}
+
+
+def test_static_import_guard_allows_exact_core_modules_only(tmp_path: Path) -> None:
+    from tests.static_import_guard_utils import assert_controller_contract_imports_closed
+
+    allowed_contract = tmp_path / "allowed_contract.py"
+    allowed_contract.write_text(
+        "from core.controller_handoff_serialization import json_safe\n",
+        encoding="utf-8",
+    )
+    assert_controller_contract_imports_closed(
+        allowed_contract,
+        allowed_core_modules={"core.controller_handoff_serialization"},
+    )
+
+    bare_core_import = tmp_path / "bare_core_import.py"
+    bare_core_import.write_text("from core import prompts\n", encoding="utf-8")
+    with pytest.raises(AssertionError):
+        assert_controller_contract_imports_closed(
+            bare_core_import,
+            allowed_core_modules={"core.controller_handoff_serialization"},
+        )
 
 
 def test_parse_domain_list_trims_and_normalizes() -> None:
