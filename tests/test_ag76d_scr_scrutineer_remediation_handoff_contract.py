@@ -124,7 +124,9 @@ def _state(**overrides):
         ),
         "answer_contract_ref": {"trace_key": "answer_contract_fulfillment_handoff"},
         "analyst_author_handoff_ref": {"trace_key": "analyst_author_handoff_contract"},
-        "citation_source_handoff_ref": {"trace_key": "citation_source_handoff_contract"},
+        "citation_source_handoff_ref": {
+            "trace_key": "citation_source_handoff_contract"
+        },
     }
     params.update(overrides)
     return ScrutineerRemediationHandoffState(**params)
@@ -208,7 +210,10 @@ def test_remediation_evidence_identity_and_final_bundle_identity_survive():
 
     assert evidence["evidence_ids"] == ["ev-1", "ev-2"]
     assert evidence["source_ids"] == ["s3", "s4"]
-    assert evidence["urls"] == ["https://official.example/rule", "https://news.example/context"]
+    assert evidence["urls"] == [
+        "https://official.example/rule",
+        "https://news.example/context",
+    ]
     assert evidence["final_evidence_bundle_id"] == "bundle-after-remediation"
     assert evidence["final_evidence_ref"] == {"final_evidence_count": 4}
 
@@ -220,7 +225,9 @@ def test_resynthesis_admission_is_represented_without_rerunning_analyst():
     assert resynthesis["posture"] == "triggered"
     assert resynthesis["reanalysis_triggered"] is True
     assert resynthesis["trigger_reason"] == "remediation_passages_added"
-    assert resynthesis["analyst_pass_ref"] == {"stage": "analyst_scrutineer_remediation"}
+    assert resynthesis["analyst_pass_ref"] == {
+        "stage": "analyst_scrutineer_remediation"
+    }
     assert resynthesis["changes_analyst_behavior"] is False
     assert controller["no_behavior_change_flags"]["analyst_behavior_changed"] is False
 
@@ -235,14 +242,18 @@ def test_author_directive_identity_serializes_without_author_prompt_or_prose_cha
     assert directives[1]["caveat"] is True
     assert directives[2]["omit"] is True
     assert all(item["prompt_text_included"] is False for item in directives)
-    assert all(item["changes_author_prompt_or_prose_behavior"] is False for item in directives)
+    assert all(
+        item["changes_author_prompt_or_prose_behavior"] is False for item in directives
+    )
     assert controller["no_behavior_change_flags"]["author_behavior_changed"] is False
 
 
 def test_answer_contract_analyst_author_and_citation_source_refs_are_preserved():
     refs = _state().to_controller_state()["handoff_refs"]
 
-    assert refs["answer_contract_ref"] == {"trace_key": "answer_contract_fulfillment_handoff"}
+    assert refs["answer_contract_ref"] == {
+        "trace_key": "answer_contract_fulfillment_handoff"
+    }
     assert refs["analyst_author_handoff_ref"] == {
         "trace_key": "analyst_author_handoff_contract"
     }
@@ -271,7 +282,7 @@ def test_static_protected_import_guard():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module.split(".")[0])
 
-    assert imports <= {"__future__", "dataclasses", "enum", "typing"}
+    assert imports <= {"__future__", "core", "dataclasses", "enum", "typing"}
     forbidden_imports = {
         "core.pipeline_orchestrator",
         "core.prompts",
@@ -287,6 +298,13 @@ def test_static_protected_import_guard():
         for node in ast.walk(tree)
         if isinstance(node, ast.ImportFrom) and node.module
     }
+    assert imported_modules <= {
+        "__future__",
+        "dataclasses",
+        "enum",
+        "typing",
+        "core.controller_handoff_serialization",
+    }
     assert imported_modules.isdisjoint(forbidden_imports)
 
 
@@ -296,7 +314,10 @@ def test_pipeline_orchestrator_touch_is_limited_to_runtime_handoff_adapter():
     imported_names: set[str] = set()
     call_names: list[str] = []
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module == "core.scrutineer_remediation_runtime_handoff":
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "core.scrutineer_remediation_runtime_handoff"
+        ):
             imported_names.update(alias.name for alias in node.names)
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             call_names.append(node.func.id)
@@ -310,9 +331,9 @@ def test_pipeline_orchestrator_touch_is_limited_to_runtime_handoff_adapter():
     assert call_names.count("RuntimeScrutineerRemediationFacts") == 1
     assert call_names.count("RuntimeRemediationQueryFact") == 1
     forbidden_terms = (
-        "DEFAULT_SYSTEM[\"scrutineer\"] =",
+        'DEFAULT_SYSTEM["scrutineer"] =',
         "DEFAULT_SYSTEM['scrutineer'] =",
         "overlap > 0.6" + " =",
-        "linkup_depth_override=\"standard\"",
+        'linkup_depth_override="standard"',
     )
     assert all(term not in source for term in forbidden_terms)

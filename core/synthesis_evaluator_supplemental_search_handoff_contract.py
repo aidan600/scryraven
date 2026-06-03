@@ -14,6 +14,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
+from core.controller_handoff_serialization import (
+    compact_text as _text,
+    deduped_text_tuple as _text_tuple,
+    enum_value as _enum_value,
+    json_safe as _json_safe,
+    json_safe_mapping as _mapping,
+)
+
 SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_SCHEMA_VERSION = "AG76D-SES.v1"
 SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_TRACE_KEY = (
     "synthesis_evaluator_supplemental_search_handoff"
@@ -71,49 +79,6 @@ class AuthorNoteIdentity(str, Enum):
     """Stable identities for synthesis-evaluator-originating Author notes."""
 
     HEDGE_WHERE_DATA_MISSING = "hedge_appropriately_where_data_is_missing"
-
-
-def _enum_value(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    return value
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if hasattr(value, "to_dict"):
-        return _json_safe(value.to_dict())
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, str | int | float | bool) or value is None:
-        return value
-    return str(value)
-
-
-def _text(value: Any, *, limit: int = 500) -> str | None:
-    text = " ".join(str(value or "").strip().split())
-    if not text:
-        return None
-    return text[:limit]
-
-
-def _text_tuple(value: Sequence[Any] | None, *, limit: int = 240) -> tuple[str, ...]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in value or ():
-        text = _text(item, limit=limit)
-        key = str(text or "").casefold()
-        if text and key not in seen:
-            out.append(text)
-            seen.add(key)
-    return tuple(out)
-
-
-def _mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
-    return _json_safe(dict(value or {}))
 
 
 @dataclass(frozen=True)
@@ -241,7 +206,9 @@ class SupplementalEvidenceDescriptor:
     evidence_ref: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "evidence_ids", _text_tuple(self.evidence_ids, limit=120))
+        object.__setattr__(
+            self, "evidence_ids", _text_tuple(self.evidence_ids, limit=120)
+        )
         object.__setattr__(self, "source_ids", _text_tuple(self.source_ids, limit=120))
         object.__setattr__(self, "urls", _text_tuple(self.urls, limit=500))
 
@@ -272,7 +239,9 @@ class FinalEvidenceRebuildDescriptor:
         object.__setattr__(
             self, "final_evidence_ids", _text_tuple(self.final_evidence_ids, limit=120)
         )
-        object.__setattr__(self, "final_source_ids", _text_tuple(self.final_source_ids, limit=120))
+        object.__setattr__(
+            self, "final_source_ids", _text_tuple(self.final_source_ids, limit=120)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return _json_safe(
@@ -409,13 +378,19 @@ class SynthesisEvaluatorSupplementalSearchHandoffState:
                     else None
                 ),
                 "analyst_rerun": (
-                    self.analyst_rerun.to_dict() if self.analyst_rerun is not None else None
+                    self.analyst_rerun.to_dict()
+                    if self.analyst_rerun is not None
+                    else None
                 ),
                 "author_notes": [note.to_dict() for note in self.author_notes],
                 "handoff_refs": {
                     "answer_contract_ref": _mapping(self.answer_contract_ref),
-                    "analyst_author_handoff_ref": _mapping(self.analyst_author_handoff_ref),
-                    "citation_source_handoff_ref": _mapping(self.citation_source_handoff_ref),
+                    "analyst_author_handoff_ref": _mapping(
+                        self.analyst_author_handoff_ref
+                    ),
+                    "citation_source_handoff_ref": _mapping(
+                        self.citation_source_handoff_ref
+                    ),
                 },
                 "execution_envelope": self.execution_envelope.to_dict(),
                 "no_behavior_change_flags": dict(NO_BEHAVIOR_CHANGE_FLAGS),

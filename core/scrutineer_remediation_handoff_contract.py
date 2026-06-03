@@ -12,6 +12,14 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
+from core.controller_handoff_serialization import (
+    compact_text as _text,
+    deduped_text_tuple as _text_tuple,
+    enum_value as _enum_value,
+    json_safe as _json_safe,
+    json_safe_mapping as _mapping,
+)
+
 SCRUTINEER_REMEDIATION_HANDOFF_SCHEMA_VERSION = "AG76D-SCR.v1"
 SCRUTINEER_REMEDIATION_HANDOFF_TRACE_KEY = "scrutineer_remediation_handoff"
 SCRUTINEER_REMEDIATION_HANDOFF_CONSUMER = (
@@ -83,49 +91,6 @@ class AuthorDirectiveKind(str, Enum):
     PASS_FLAGS_DIRECTLY = "pass_flags_directly"
 
 
-def _enum_value(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    return value
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if hasattr(value, "to_dict"):
-        return _json_safe(value.to_dict())
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, str | int | float | bool) or value is None:
-        return value
-    return str(value)
-
-
-def _text(value: Any, *, limit: int = 500) -> str | None:
-    text = " ".join(str(value or "").strip().split())
-    if not text:
-        return None
-    return text[:limit]
-
-
-def _text_tuple(value: Sequence[Any] | None, *, limit: int = 240) -> tuple[str, ...]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in value or ():
-        text = _text(item, limit=limit)
-        key = str(text or "").casefold()
-        if text and key not in seen:
-            out.append(text)
-            seen.add(key)
-    return tuple(out)
-
-
-def _mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
-    return _json_safe(dict(value or {}))
-
-
 @dataclass(frozen=True)
 class ScrutineerAdmissionDescriptor:
     """Run eligibility and legacy gate facts for Scrutineer admission."""
@@ -193,13 +158,17 @@ class RemediationQueryDescriptor:
     query_id: str
     query_text: str
     source_flag_ids: tuple[str, ...]
-    filter_posture: RemediationFilterPosture | str = RemediationFilterPosture.NOT_EVALUATED
+    filter_posture: RemediationFilterPosture | str = (
+        RemediationFilterPosture.NOT_EVALUATED
+    )
     novelty_score: float | None = None
     rejection_reason: str | None = None
     already_computed: bool = True
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "source_flag_ids", _text_tuple(self.source_flag_ids, limit=120))
+        object.__setattr__(
+            self, "source_flag_ids", _text_tuple(self.source_flag_ids, limit=120)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return _json_safe(
@@ -264,7 +233,9 @@ class RemediationEvidenceDescriptor:
     evidence_count: int | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "evidence_ids", _text_tuple(self.evidence_ids, limit=120))
+        object.__setattr__(
+            self, "evidence_ids", _text_tuple(self.evidence_ids, limit=120)
+        )
         object.__setattr__(self, "source_ids", _text_tuple(self.source_ids, limit=120))
         object.__setattr__(self, "urls", _text_tuple(self.urls, limit=500))
 
@@ -274,7 +245,9 @@ class RemediationEvidenceDescriptor:
                 "evidence_ids": list(self.evidence_ids),
                 "source_ids": list(self.source_ids),
                 "urls": list(self.urls),
-                "final_evidence_bundle_id": _text(self.final_evidence_bundle_id, limit=160),
+                "final_evidence_bundle_id": _text(
+                    self.final_evidence_bundle_id, limit=160
+                ),
                 "final_evidence_ref": _mapping(self.final_evidence_ref),
                 "evidence_count": self.evidence_count,
                 "changes_retrieval_or_evidence_behavior": False,
@@ -318,7 +291,9 @@ class ScrutineerAuthorDirectiveDescriptor:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "source_flag_ids", _text_tuple(self.source_flag_ids, limit=120))
+        object.__setattr__(
+            self, "source_flag_ids", _text_tuple(self.source_flag_ids, limit=120)
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return _json_safe(
@@ -386,14 +361,22 @@ class ScrutineerRemediationHandoffState:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "flags", tuple(self.flags or ()))
-        object.__setattr__(self, "searchable_categories", _text_tuple(self.searchable_categories, limit=120))
+        object.__setattr__(
+            self,
+            "searchable_categories",
+            _text_tuple(self.searchable_categories, limit=120),
+        )
         object.__setattr__(
             self,
             "non_searchable_categories",
             _text_tuple(self.non_searchable_categories, limit=120),
         )
-        object.__setattr__(self, "remediation_queries", tuple(self.remediation_queries or ()))
-        object.__setattr__(self, "author_directives", tuple(self.author_directives or ()))
+        object.__setattr__(
+            self, "remediation_queries", tuple(self.remediation_queries or ())
+        )
+        object.__setattr__(
+            self, "author_directives", tuple(self.author_directives or ())
+        )
 
     def to_controller_state(self) -> dict[str, Any]:
         flag_dicts = [flag.to_dict() for flag in self.flags]
@@ -421,7 +404,9 @@ class ScrutineerRemediationHandoffState:
                     "threshold_represents_posture_only": True,
                     "category_filter_represents_posture_only": True,
                 },
-                "remediation_queries": [query.to_dict() for query in self.remediation_queries],
+                "remediation_queries": [
+                    query.to_dict() for query in self.remediation_queries
+                ],
                 "remediation_dispatch": (
                     self.dispatch.to_dict() if self.dispatch is not None else None
                 ),
@@ -430,12 +415,20 @@ class ScrutineerRemediationHandoffState:
                     if self.remediation_evidence is not None
                     else None
                 ),
-                "resynthesis": self.resynthesis.to_dict() if self.resynthesis is not None else None,
-                "author_directives": [directive.to_dict() for directive in self.author_directives],
+                "resynthesis": (
+                    self.resynthesis.to_dict() if self.resynthesis is not None else None
+                ),
+                "author_directives": [
+                    directive.to_dict() for directive in self.author_directives
+                ],
                 "handoff_refs": {
                     "answer_contract_ref": _mapping(self.answer_contract_ref),
-                    "analyst_author_handoff_ref": _mapping(self.analyst_author_handoff_ref),
-                    "citation_source_handoff_ref": _mapping(self.citation_source_handoff_ref),
+                    "analyst_author_handoff_ref": _mapping(
+                        self.analyst_author_handoff_ref
+                    ),
+                    "citation_source_handoff_ref": _mapping(
+                        self.citation_source_handoff_ref
+                    ),
                 },
                 "execution_envelope": self.execution_envelope.to_dict(),
                 "no_behavior_change_flags": dict(NO_BEHAVIOR_CHANGE_FLAGS),
