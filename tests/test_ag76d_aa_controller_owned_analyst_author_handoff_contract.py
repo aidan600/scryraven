@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 from core.analyst_author_handoff_contract import (
@@ -19,6 +18,7 @@ from core.weak_failure_gate_contract import (
     build_analyst_gate_descriptor,
     build_weak_failure_gate_state,
 )
+from tests.static_import_guard_utils import assert_controller_contract_imports_closed
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
@@ -285,35 +285,25 @@ def test_trace_compatibility_flags_are_additive_and_legacy_fields_remain_in_orch
 
 
 def test_static_protected_import_guard_for_contract_module():
-    tree = ast.parse(CONTRACT.read_text())
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-
-    forbidden_fragments = (
-        "ask_model",
-        "provider",
-        "search",
-        "prompts",
-        "citation",
-        "final_answer",
-        "economist",
-        "scrutineer",
-        "follow_up",
-        "session",
-        "run_outcome",
-        "cache",
-        "pipeline_orchestrator",
+    assert_controller_contract_imports_closed(
+        CONTRACT,
+        allowed_import_roots={"copy", "dataclasses", "hashlib", "typing"},
+        forbidden_module_fragments=(
+            "ask_model",
+            "provider",
+            "search",
+            "prompts",
+            "citation",
+            "final_answer",
+            "economist",
+            "scrutineer",
+            "follow_up",
+            "session",
+            "run_outcome",
+            "cache",
+            "pipeline_orchestrator",
+        ),
     )
-    offenders = [
-        module
-        for module in imported
-        if any(fragment in module.lower() for fragment in forbidden_fragments)
-    ]
-    assert offenders == []
 
 
 def test_orchestrator_authority_guard_wires_contract_and_keeps_prompt_strings_local():

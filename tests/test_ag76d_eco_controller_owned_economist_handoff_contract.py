@@ -11,6 +11,7 @@ from core.economist_handoff_contract import (
     build_economist_handoff_state,
     execute_economist_handoff,
 )
+from tests.static_import_guard_utils import assert_controller_contract_imports_closed
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "economist_handoff_contract.py"
@@ -293,26 +294,18 @@ def test_trace_is_additive_and_behavior_change_flags_remain_false():
 
 
 def test_static_protected_import_guard_for_contract():
-    tree = ast.parse(CONTRACT.read_text())
-    imports = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imports.add(node.module)
-
-    forbidden = {
-        "core.pipeline",
-        "core.pipeline_orchestrator",
-        "core.prompts",
-        "core.scrutineer",
-        "core.followup",
-        "core.outcome_persistence_packaging",
-        "core.persistence_side_effects",
-        "subprocess",
-        "shell",
-    }
-    assert not (imports & forbidden)
+    assert_controller_contract_imports_closed(
+        CONTRACT,
+        allowed_import_roots={"copy", "dataclasses", "hashlib", "typing"},
+        forbidden_modules={
+            "core.pipeline",
+            "core.scrutineer",
+            "core.followup",
+            "core.outcome_persistence_packaging",
+            "core.persistence_side_effects",
+            "subprocess",
+        },
+    )
 
 
 def test_static_no_code_execution_affordance_added_to_contract_or_orchestrator():

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 from core.analyst_author_handoff_contract import build_analyst_author_handoff_state
@@ -16,6 +15,7 @@ from core.final_evidence_bundle_builder import (
     build_final_evidence_bundle,
     build_final_source_telemetry_inputs,
 )
+from tests.static_import_guard_utils import assert_controller_contract_imports_closed
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "citation_source_handoff_contract.py"
@@ -272,37 +272,27 @@ def test_controller_owned_visibility_ledger_answer_contract_and_aa_integration()
 
 
 def test_static_protected_import_guard_for_citation_source_contract():
-    tree = ast.parse(CONTRACT.read_text())
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-
-    forbidden_fragments = (
-        "ask_model",
-        "provider",
-        "search",
-        "prompts",
-        "author",
-        "final_answer",
-        "economist",
-        "scrutineer",
-        "follow_up",
-        "session",
-        "run_outcome",
-        "cache",
-        "pipeline_orchestrator",
-        "database",
-        "sqlite",
+    assert_controller_contract_imports_closed(
+        CONTRACT,
+        allowed_import_roots={"copy", "dataclasses", "hashlib", "typing"},
+        forbidden_module_fragments=(
+            "ask_model",
+            "provider",
+            "search",
+            "prompts",
+            "author",
+            "final_answer",
+            "economist",
+            "scrutineer",
+            "follow_up",
+            "session",
+            "run_outcome",
+            "cache",
+            "pipeline_orchestrator",
+            "database",
+            "sqlite",
+        ),
     )
-    offenders = [
-        module
-        for module in imported
-        if any(fragment in module.lower() for fragment in forbidden_fragments)
-    ]
-    assert offenders == []
 
 
 def test_orchestrator_authority_guard_wires_citation_contract_additively():
