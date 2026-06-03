@@ -12,15 +12,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from core.controller_handoff_serialization import (
-    compact_text as _text,
-    deduped_text_tuple as _text_tuple,
-    enum_value as _enum_value,
-    json_safe as _json_safe,
-    json_safe_mapping as _mapping,
+    compact_text,
+    deduped_text_tuple,
+    enum_value,
+    json_safe,
+    json_safe_mapping,
 )
+
+_enum_value = enum_value
+_json_safe = json_safe
+_text = compact_text
+_text_tuple = deduped_text_tuple
+_mapping = json_safe_mapping
 
 SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_SCHEMA_VERSION = "AG76D-SES.v1"
 SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_TRACE_KEY = (

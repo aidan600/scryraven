@@ -2,8 +2,6 @@ import ast
 import json
 from pathlib import Path
 
-from tests.static_import_guard_utils import assert_controller_contract_imports_closed
-
 from core.synthesis_evaluator_supplemental_search_handoff_contract import (
     SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_SCHEMA_VERSION,
     SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_TRACE_KEY,
@@ -21,6 +19,7 @@ from core.synthesis_evaluator_supplemental_search_handoff_contract import (
     SynthesisEvaluatorRunEligibilityDescriptor,
     SynthesisEvaluatorSupplementalSearchHandoffState,
 )
+from tests.static_import_guard_utils import assert_controller_contract_imports_closed
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "synthesis_evaluator_supplemental_search_handoff_contract.py"

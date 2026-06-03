@@ -4,8 +4,6 @@ import ast
 import json
 from pathlib import Path
 
-from tests.static_import_guard_utils import assert_controller_contract_imports_closed
-
 from core.scrutineer_remediation_handoff_contract import (
     SCRUTINEER_REMEDIATION_HANDOFF_SCHEMA_VERSION,
     SCRUTINEER_REMEDIATION_HANDOFF_TRACE_KEY,
@@ -23,6 +21,7 @@ from core.scrutineer_remediation_handoff_contract import (
     ScrutineerRemediationHandoffState,
     ScrutineerRunPosture,
 )
+from tests.static_import_guard_utils import assert_controller_contract_imports_closed
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "scrutineer_remediation_handoff_contract.py"
