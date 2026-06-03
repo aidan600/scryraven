@@ -12,7 +12,21 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
+
+from core.controller_handoff_serialization import (
+    compact_text,
+    deduped_text_tuple,
+    enum_value,
+    json_safe,
+    json_safe_mapping,
+)
+
+_enum_value = enum_value
+_json_safe = json_safe
+_text = compact_text
+_text_tuple = deduped_text_tuple
+_mapping = json_safe_mapping
 
 SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_SCHEMA_VERSION = "AG76D-SES.v1"
 SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_TRACE_KEY = (
@@ -72,48 +86,6 @@ class AuthorNoteIdentity(str, Enum):
 
     HEDGE_WHERE_DATA_MISSING = "hedge_appropriately_where_data_is_missing"
 
-
-def _enum_value(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    return value
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Enum):
-        return value.value
-    if hasattr(value, "to_dict"):
-        return _json_safe(value.to_dict())
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, tuple | list):
-        return [_json_safe(item) for item in value]
-    if isinstance(value, str | int | float | bool) or value is None:
-        return value
-    return str(value)
-
-
-def _text(value: Any, *, limit: int = 500) -> str | None:
-    text = " ".join(str(value or "").strip().split())
-    if not text:
-        return None
-    return text[:limit]
-
-
-def _text_tuple(value: Sequence[Any] | None, *, limit: int = 240) -> tuple[str, ...]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for item in value or ():
-        text = _text(item, limit=limit)
-        key = str(text or "").casefold()
-        if text and key not in seen:
-            out.append(text)
-            seen.add(key)
-    return tuple(out)
-
-
-def _mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
-    return _json_safe(dict(value or {}))
 
 
 @dataclass(frozen=True)

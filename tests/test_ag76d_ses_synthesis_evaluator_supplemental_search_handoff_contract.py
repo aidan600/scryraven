@@ -19,6 +19,7 @@ from core.synthesis_evaluator_supplemental_search_handoff_contract import (
     SynthesisEvaluatorRunEligibilityDescriptor,
     SynthesisEvaluatorSupplementalSearchHandoffState,
 )
+from tests.static_import_guard_utils import assert_controller_contract_imports_closed
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "synthesis_evaluator_supplemental_search_handoff_contract.py"
@@ -223,29 +224,9 @@ def test_json_safe_controller_and_trace_serialization_round_trip():
 
 
 def test_static_protected_import_guard():
-    tree = ast.parse(CONTRACT.read_text(encoding="utf-8"))
-    imports: set[str] = set()
-    imported_modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            root = node.module.split(".")[0]
-            imports.add(root)
-            imported_modules.add(node.module)
-
-    assert imports <= {"__future__", "dataclasses", "enum", "typing"}
-    forbidden_imports = {
-        "core.pipeline_orchestrator",
-        "core.prompts",
-        "core.search",
-        "core.providers",
-        "core.models",
-        "core.author",
-        "core.session",
-        "core.cache",
-    }
-    assert imported_modules.isdisjoint(forbidden_imports)
+    assert_controller_contract_imports_closed(
+        CONTRACT, allowed_core_modules={"core.controller_handoff_serialization"}
+    )
 
 
 def test_static_guard_pipeline_orchestrator_only_has_runtime_adapter_touch():
