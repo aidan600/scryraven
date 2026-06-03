@@ -1,5 +1,15 @@
 # ScryRaven Current State
 
+## AG-80A — Implementation Playbook / Controller Authority Docs (2026-06-03)
+
+Status: complete/readiness for review. AG-80A adds `docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md` as a documentation-only implementation guide for future Codex phases after the Controller-authority closure line. No runtime code, prompt, provider/search/retrieval, citation, Author, DB/session/RunOutcome, cache, or live-validation behavior changes are authorized or made by this phase.
+
+The playbook records the closed authority model: Controller decides, orchestrator executes, and trace/projection/export layers observe. It defines the expected phase pattern of passive contract first, behavior-preserving runtime wiring second, and optional behavior activation only when a future phase explicitly licenses the behavior change. It also gives checklists for stable JSON-safe handoff schemas, trace fragments, no-change flags, fixture/static tests, safe `core/pipeline_orchestrator.py` touches, protected-surface guards, full-suite/CI expectations, and live-validation stop rules.
+
+Current classifications from AG-79D remain in force: Controller-owned/controlled surfaces are listed for already-closed gates and handoffs; Brave recon rewrite, disambiguation retry, residual query/finalization behavior, retrieval ranking/filtering, final evidence selection, citation formatting, prompt text, Author prose, and SCR/SES runtime behavior beyond approved handoff trace identity remain protected legacy behavior; trace/projection/export surfaces remain observer-only; AG-76D-AD adapter cleanup remains parked; and AG-78G remains live-gated.
+
+Recommended next phase: Roadmap v4 / Project Source refresh. No roadmap v4 work is included in AG-80A.
+
 
 ## AG-79D — Targeted Orchestrator Authority Closure (2026-06-03)
 
