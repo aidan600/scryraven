@@ -24,6 +24,9 @@ def assert_controller_contract_imports_closed(
     contract_path: Path,
     *,
     allowed_core_modules: set[str] | frozenset[str] = frozenset(),
+    allowed_import_roots: set[str] | frozenset[str] = frozenset(),
+    forbidden_modules: set[str] | frozenset[str] = frozenset(),
+    forbidden_module_fragments: tuple[str, ...] = (),
 ) -> None:
     """Assert passive Controller handoff contracts only import safe helpers.
 
@@ -43,12 +46,19 @@ def assert_controller_contract_imports_closed(
             import_roots.add(node.module.split(".")[0])
             imported_modules.add(node.module)
 
-    allowed_roots = set(_CONTROLLER_CONTRACT_IMPORT_ROOTS)
+    allowed_roots = set(_CONTROLLER_CONTRACT_IMPORT_ROOTS) | set(allowed_import_roots)
     if allowed_core_modules:
         allowed_roots.add("core")
 
-    allowed_modules = set(_CONTROLLER_CONTRACT_IMPORT_ROOTS) | set(allowed_core_modules)
+    allowed_modules = allowed_roots | set(allowed_core_modules)
+    protected_modules = _PROTECTED_IMPORT_MODULES | frozenset(forbidden_modules)
+    fragment_offenders = [
+        module
+        for module in imported_modules
+        if any(fragment in module.lower() for fragment in forbidden_module_fragments)
+    ]
 
     assert import_roots <= allowed_roots
     assert imported_modules <= allowed_modules
-    assert imported_modules.isdisjoint(_PROTECTED_IMPORT_MODULES)
+    assert imported_modules.isdisjoint(protected_modules)
+    assert fragment_offenders == []
