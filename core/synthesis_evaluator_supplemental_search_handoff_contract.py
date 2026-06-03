@@ -81,6 +81,7 @@ class AuthorNoteIdentity(str, Enum):
     HEDGE_WHERE_DATA_MISSING = "hedge_appropriately_where_data_is_missing"
 
 
+
 @dataclass(frozen=True)
 class SynthesisEvaluatorRunEligibilityDescriptor:
     """Run eligibility and gate facts for the legacy synthesis evaluator."""
@@ -206,9 +207,7 @@ class SupplementalEvidenceDescriptor:
     evidence_ref: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "evidence_ids", _text_tuple(self.evidence_ids, limit=120)
-        )
+        object.__setattr__(self, "evidence_ids", _text_tuple(self.evidence_ids, limit=120))
         object.__setattr__(self, "source_ids", _text_tuple(self.source_ids, limit=120))
         object.__setattr__(self, "urls", _text_tuple(self.urls, limit=500))
 
@@ -239,9 +238,7 @@ class FinalEvidenceRebuildDescriptor:
         object.__setattr__(
             self, "final_evidence_ids", _text_tuple(self.final_evidence_ids, limit=120)
         )
-        object.__setattr__(
-            self, "final_source_ids", _text_tuple(self.final_source_ids, limit=120)
-        )
+        object.__setattr__(self, "final_source_ids", _text_tuple(self.final_source_ids, limit=120))
 
     def to_dict(self) -> dict[str, Any]:
         return _json_safe(
@@ -378,19 +375,13 @@ class SynthesisEvaluatorSupplementalSearchHandoffState:
                     else None
                 ),
                 "analyst_rerun": (
-                    self.analyst_rerun.to_dict()
-                    if self.analyst_rerun is not None
-                    else None
+                    self.analyst_rerun.to_dict() if self.analyst_rerun is not None else None
                 ),
                 "author_notes": [note.to_dict() for note in self.author_notes],
                 "handoff_refs": {
                     "answer_contract_ref": _mapping(self.answer_contract_ref),
-                    "analyst_author_handoff_ref": _mapping(
-                        self.analyst_author_handoff_ref
-                    ),
-                    "citation_source_handoff_ref": _mapping(
-                        self.citation_source_handoff_ref
-                    ),
+                    "analyst_author_handoff_ref": _mapping(self.analyst_author_handoff_ref),
+                    "citation_source_handoff_ref": _mapping(self.citation_source_handoff_ref),
                 },
                 "execution_envelope": self.execution_envelope.to_dict(),
                 "no_behavior_change_flags": dict(NO_BEHAVIOR_CHANGE_FLAGS),

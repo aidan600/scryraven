@@ -2,6 +2,8 @@ import ast
 import json
 from pathlib import Path
 
+from tests.static_import_guard_utils import assert_controller_contract_imports_closed
+
 from core.synthesis_evaluator_supplemental_search_handoff_contract import (
     SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_SCHEMA_VERSION,
     SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF_TRACE_KEY,
@@ -97,9 +99,7 @@ def _state(**overrides):
         ),
         "answer_contract_ref": {"trace_key": "answer_contract_fulfillment_handoff"},
         "analyst_author_handoff_ref": {"trace_key": "analyst_author_handoff_contract"},
-        "citation_source_handoff_ref": {
-            "trace_key": "citation_source_handoff_contract"
-        },
+        "citation_source_handoff_ref": {"trace_key": "citation_source_handoff_contract"},
     }
     params.update(overrides)
     return SynthesisEvaluatorSupplementalSearchHandoffState(**params)
@@ -122,10 +122,7 @@ def test_run_gate_and_deficiency_identity_are_represented_without_evaluator_outp
     assert controller["eligibility"]["run_gate"] == "legacy_synthesis_evaluator_gate"
     assert controller["eligibility"]["changes_evaluator_behavior"] is False
     assert controller["completeness"]["deficiency_id"] == "def-1"
-    assert (
-        controller["completeness"]["deficiency_text"]
-        == "missing official current rate data"
-    )
+    assert controller["completeness"]["deficiency_text"] == "missing official current rate data"
     assert controller["completeness"]["evaluator_decision_ref"] == {
         "decision_id": "eval-decision-1"
     }
@@ -163,10 +160,7 @@ def test_supplemental_evidence_identity_is_represented():
 
     assert evidence["evidence_ids"] == ["sev-1", "sev-2"]
     assert evidence["source_ids"] == ["s1", "s2"]
-    assert evidence["urls"] == [
-        "https://official.example/rate",
-        "https://agency.example/data",
-    ]
+    assert evidence["urls"] == ["https://official.example/rate", "https://agency.example/data"]
     assert evidence["evidence_ref"] == {"supplemental_evidence_count": 2}
     assert evidence["changes_retrieval_behavior"] is False
 
@@ -202,23 +196,17 @@ def test_author_note_identity_is_represented_without_changing_author_prose():
     assert notes[0]["hedge_where_data_missing"] is True
     assert notes[0]["prompt_text_included"] is False
     assert notes[0]["changes_author_prompt_or_prose_behavior"] is False
-    assert (
-        controller["no_behavior_change_flags"]["author_prose_behavior_changed"] is False
-    )
+    assert controller["no_behavior_change_flags"]["author_prose_behavior_changed"] is False
 
 
 def test_handoff_refs_are_preserved_where_available():
     refs = _state().to_controller_state()["handoff_refs"]
 
-    assert refs["answer_contract_ref"] == {
-        "trace_key": "answer_contract_fulfillment_handoff"
-    }
+    assert refs["answer_contract_ref"] == {"trace_key": "answer_contract_fulfillment_handoff"}
     assert refs["analyst_author_handoff_ref"] == {
         "trace_key": "analyst_author_handoff_contract"
     }
-    assert refs["citation_source_handoff_ref"] == {
-        "trace_key": "citation_source_handoff_contract"
-    }
+    assert refs["citation_source_handoff_ref"] == {"trace_key": "citation_source_handoff_contract"}
 
 
 def test_json_safe_controller_and_trace_serialization_round_trip():
@@ -237,36 +225,9 @@ def test_json_safe_controller_and_trace_serialization_round_trip():
 
 
 def test_static_protected_import_guard():
-    tree = ast.parse(CONTRACT.read_text(encoding="utf-8"))
-    imports: set[str] = set()
-    imported_modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imports.update(alias.name.split(".")[0] for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            root = node.module.split(".")[0]
-            imports.add(root)
-            imported_modules.add(node.module)
-
-    assert imports <= {"__future__", "core", "dataclasses", "enum", "typing"}
-    forbidden_imports = {
-        "core.pipeline_orchestrator",
-        "core.prompts",
-        "core.search",
-        "core.providers",
-        "core.models",
-        "core.author",
-        "core.session",
-        "core.cache",
-    }
-    assert imported_modules <= {
-        "__future__",
-        "dataclasses",
-        "enum",
-        "typing",
-        "core.controller_handoff_serialization",
-    }
-    assert imported_modules.isdisjoint(forbidden_imports)
+    assert_controller_contract_imports_closed(
+        CONTRACT, allowed_core_modules={"core.controller_handoff_serialization"}
+    )
 
 
 def test_static_guard_pipeline_orchestrator_only_has_runtime_adapter_touch():
@@ -276,19 +237,13 @@ def test_static_guard_pipeline_orchestrator_only_has_runtime_adapter_touch():
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.ImportFrom)
-            and node.module
-            == "core.synthesis_evaluator_supplemental_search_runtime_handoff"
+            and node.module == "core.synthesis_evaluator_supplemental_search_runtime_handoff"
         ):
             imported_names.update(alias.name for alias in node.names)
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             call_names.append(node.func.id)
 
-    assert imported_names == {
-        "RuntimeSynthesisEvaluatorSupplementalSearchFactCollector"
-    }
-    assert (
-        call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFactCollector")
-        == 1
-    )
+    assert imported_names == {"RuntimeSynthesisEvaluatorSupplementalSearchFactCollector"}
+    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFactCollector") == 1
     assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFacts") == 0
     assert call_names.count("RuntimeSupplementalQueryFact") == 0
