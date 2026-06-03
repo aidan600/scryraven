@@ -1,0 +1,181 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "scryraven_offline_ux_demo",
+  "offline_notice": "Offline demo fixture: canned UX-review data only. No provider, model, search, retrieval, cache, DB, or live telemetry calls were used to create or display this scenario.",
+  "default_scenario": "ordinary_success",
+  "scenarios": [
+    {
+      "id": "ordinary_success",
+      "title": "Ordinary success — cited research brief",
+      "query": "What should a city consider before piloting curbside EV charging?",
+      "mode": "Balanced",
+      "state_label": "Successful answer",
+      "confidence_label": "Moderate confidence from multiple public planning sources",
+      "timestamp": "Offline fixture — 2026-06-03",
+      "report": "## Short answer\nA city should pilot curbside EV charging only where overnight parking demand, utility capacity, disability access, and maintenance ownership are clear enough to evaluate safely [1][2]. The strongest design is a limited corridor pilot with published success metrics, a public right-of-way accessibility review, and an explicit plan for who pays for charger repair and power upgrades [2][3].\n\n## Why this is the right pilot shape\n- **Demand fit:** prioritize blocks with high multifamily housing and low off-street parking access [1].\n- **Public-realm fit:** keep sidewalk clear zones, curb ramps, and loading needs visible in the design review [2].\n- **Operational fit:** assign uptime, payment support, snow/trash conflicts, and vandalism response before installation [3].\n\n## Limits\nThis fixture demonstrates how ScryRaven can present cited reasoning. It is not a live retrieval-quality claim.",
+      "progress_steps": [
+        {"label": "Classified request", "state": "complete", "detail": "Urban infrastructure planning question; demo uses canned planning sources."},
+        {"label": "Collected evidence", "state": "complete", "detail": "3 fixture source cards selected for UX review."},
+        {"label": "Checked limitations", "state": "complete", "detail": "Accessibility, maintenance, and utility-capacity caveats surfaced."},
+        {"label": "Drafted answer", "state": "complete", "detail": "Citations are fixture markers, not proof of live retrieval."}
+      ],
+      "claim_cards": [
+        {"claim": "Multifamily areas with limited off-street parking are plausible first pilot candidates.", "evidence_posture": "direct", "source_ids": [1]},
+        {"claim": "The pilot should publish success metrics before installation.", "evidence_posture": "inferred", "source_ids": [1, 3], "note": "Inferred from planning and operations premises in the fixture sources."}
+      ],
+      "top_passages": [
+        {"source_id": 1, "title": "Municipal EV Curbside Pilot Planning Guide", "domain": "transport.example", "url": "https://transport.example/demo/curbside-ev-planning", "text": "Demo source metadata: guidance emphasizes matching charging pilots to neighborhoods where residents lack private driveways or garages."},
+        {"source_id": 2, "title": "Public Right-of-Way Accessibility Checklist", "domain": "access.example", "url": "https://access.example/demo/row-checklist", "text": "Demo source metadata: checklist highlights clear sidewalk widths, curb-ramp access, and avoiding hazards for pedestrians."},
+        {"source_id": 3, "title": "Charging Operations Service-Level Template", "domain": "utilities.example", "url": "https://utilities.example/demo/charger-operations", "text": "Demo source metadata: template asks pilot owners to define uptime, support, maintenance response, and utility-upgrade responsibility."}
+      ],
+      "export_preview": "Markdown export includes the fixture query, answer, limitations, and source list."
+    },
+    {
+      "id": "insufficient_evidence",
+      "title": "Insufficient evidence — weak corpus",
+      "query": "Did the small vendor pilot measurably reduce permit delays in all districts?",
+      "mode": "Balanced",
+      "state_label": "Insufficient evidence",
+      "confidence_label": "Low confidence; fixture corpus is too thin",
+      "timestamp": "Offline fixture — 2026-06-03",
+      "report": "## Evidence status\nScryRaven would not present a confident conclusion from this corpus. The available fixture sources show that a pilot existed [1], but they do not provide district-level before/after delay measurements [2].\n\n## Safe answer\nThe available demo evidence is insufficient to say the pilot reduced permit delays in all districts. A reviewer should expect the UI to explain the missing measurement rather than overstate the result.\n\n## What would be needed\n- A district-level baseline and post-pilot table.\n- Method notes explaining whether delays were measured consistently.\n- A source that covers all districts, not only a launch announcement.",
+      "progress_steps": [
+        {"label": "Classified request", "state": "complete", "detail": "Program-effectiveness question requiring measured outcomes."},
+        {"label": "Collected evidence", "state": "warning", "detail": "Fixture source set lacks district-level measurements."},
+        {"label": "Sufficiency check", "state": "warning", "detail": "Weak corpus: announcement and partial memo are not enough."},
+        {"label": "Drafted answer", "state": "complete", "detail": "Answer is intentionally limited."}
+      ],
+      "claim_cards": [
+        {"claim": "A pilot existed.", "evidence_posture": "direct", "source_ids": [1]},
+        {"claim": "The pilot reduced delays in all districts.", "evidence_posture": "unsupported", "source_ids": [], "note": "Fixture corpus does not contain the needed district-wide outcome data."}
+      ],
+      "top_passages": [
+        {"source_id": 1, "title": "Vendor Permit Pilot Launch Notice", "domain": "city.example", "url": "https://city.example/demo/permit-pilot-launch", "text": "Demo source metadata: launch notice announces a limited pilot but does not report outcome measurements."},
+        {"source_id": 2, "title": "Partial Operations Memo", "domain": "city.example", "url": "https://city.example/demo/partial-ops-memo", "text": "Demo source metadata: memo mentions two districts and does not include a complete before/after table."}
+      ]
+    },
+    {
+      "id": "source_conflict",
+      "title": "Source conflict — disagreement surfaced",
+      "query": "How many shelters participated in the winter overflow program?",
+      "mode": "Deep",
+      "state_label": "Conflicting sources",
+      "confidence_label": "Mixed confidence; conflict needs resolution",
+      "timestamp": "Offline fixture — 2026-06-03",
+      "report": "## Conflict-aware answer\nThe fixture sources disagree: the program dashboard lists **18 participating shelters** [1], while a later council packet says **21 shelters were contracted** [2]. A safe product answer should show both numbers and explain the likely distinction instead of hiding the conflict.\n\n## Likely interpretation\nThe dashboard appears to count shelters that actually opened beds during the reporting window. The council packet appears to count contracted shelters, including sites not yet active [1][2].\n\n## What to verify next\nUse the official final season report or a dated dashboard export before stating one number as final.",
+      "progress_steps": [
+        {"label": "Classified request", "state": "complete", "detail": "Numeric current-status question."},
+        {"label": "Collected evidence", "state": "complete", "detail": "Two plausible official fixture sources found."},
+        {"label": "Conflict check", "state": "warning", "detail": "18 active shelters vs 21 contracted shelters."},
+        {"label": "Drafted answer", "state": "complete", "detail": "Conflict is preserved in the answer."}
+      ],
+      "claim_cards": [
+        {"claim": "18 shelters participated during the dashboard reporting window.", "evidence_posture": "direct", "source_ids": [1]},
+        {"claim": "21 shelters were contracted for the program.", "evidence_posture": "direct", "source_ids": [2]},
+        {"claim": "The difference may be active vs contracted shelter counts.", "evidence_posture": "inferred", "source_ids": [1, 2], "note": "Inferred from source labels and timing in the fixture."}
+      ],
+      "top_passages": [
+        {"source_id": 1, "title": "Winter Overflow Dashboard", "domain": "housing.example", "url": "https://housing.example/demo/winter-overflow-dashboard", "text": "Demo source metadata: dashboard card says 18 shelters opened overflow beds during the reporting window."},
+        {"source_id": 2, "title": "Council Packet: Winter Overflow Contracts", "domain": "council.example", "url": "https://council.example/demo/winter-overflow-contracts", "text": "Demo source metadata: council packet says 21 shelters were contracted for the winter overflow program."}
+      ]
+    },
+    {
+      "id": "inferred_claim",
+      "title": "Direct vs inferred claim labeling",
+      "query": "Should the nonprofit treat the grant deadline as risky?",
+      "mode": "Fast",
+      "state_label": "Inference labeled",
+      "confidence_label": "Moderate confidence; key conclusion is inferred",
+      "timestamp": "Offline fixture — 2026-06-03",
+      "report": "## Answer\nYes, the deadline should be treated as risky, but that conclusion is an inference from two sourced premises rather than a directly stated warning. The funder page states that applications close at 5:00 p.m. local time on Friday [1]. The operations calendar shows the nonprofit's finance review is scheduled for the same afternoon [2].\n\n## Why the label matters\nThe fixture demonstrates that the UI can distinguish directly sourced facts from a reasonable operational inference.",
+      "progress_steps": [
+        {"label": "Classified request", "state": "complete", "detail": "Decision-support question with sourced premises."},
+        {"label": "Collected evidence", "state": "complete", "detail": "Deadline and internal calendar fixtures loaded."},
+        {"label": "Inference check", "state": "complete", "detail": "Final risk conclusion marked inferred."},
+        {"label": "Drafted answer", "state": "complete", "detail": "Direct and inferred claim cards displayed."}
+      ],
+      "claim_cards": [
+        {"claim": "Applications close Friday at 5:00 p.m. local time.", "evidence_posture": "direct", "source_ids": [1]},
+        {"claim": "The nonprofit's finance review is scheduled for the same afternoon.", "evidence_posture": "direct", "source_ids": [2]},
+        {"claim": "The deadline is operationally risky for this team.", "evidence_posture": "inferred", "source_ids": [1, 2], "note": "Not directly stated by either source; inferred from timing overlap."}
+      ],
+      "top_passages": [
+        {"source_id": 1, "title": "Grant Program Deadline Page", "domain": "funder.example", "url": "https://funder.example/demo/grant-deadline", "text": "Demo source metadata: program page lists a Friday 5:00 p.m. local-time submission deadline."},
+        {"source_id": 2, "title": "Finance Review Calendar Extract", "domain": "internal-demo.example", "url": "https://internal-demo.example/demo/calendar-extract", "text": "Demo source metadata: sanitized mock calendar entry showing finance review on the same afternoon."}
+      ]
+    },
+    {
+      "id": "document_review_preview",
+      "title": "Document review preview — mock upload",
+      "query": "Preview review of an uploaded board memo",
+      "mode": "Balanced",
+      "state_label": "Document-review preview",
+      "confidence_label": "Preview only; AG-83A ingestion is not implemented here",
+      "timestamp": "Offline fixture — 2026-06-03",
+      "report": "## Document review preview\nThis fixture previews how a future document-review flow might summarize an uploaded memo without performing real ingestion.\n\n### Mock findings\n- The memo's recommendation is clear, but the budget assumption is not tied to a cited appendix [1].\n- The risk section mentions vendor lock-in but does not list an owner for mitigation [2].\n- The decision log preview would ask reviewers whether the missing appendix citation should block approval.\n\n## Boundary\nThis is not AG-83A document ingestion. It is a product-shell mockup for UX review only.",
+      "progress_steps": [
+        {"label": "Loaded mock document summary", "state": "complete", "detail": "No file was uploaded or parsed."},
+        {"label": "Mapped review questions", "state": "complete", "detail": "Budget support and risk ownership highlighted."},
+        {"label": "Prepared preview", "state": "complete", "detail": "Future document-review affordance only."}
+      ],
+      "document_preview": {
+        "document_name": "Board memo — vendor renewal (mock)",
+        "sections": [
+          {"heading": "Recommendation", "status": "clear", "note": "Decision request is visible in the first page preview."},
+          {"heading": "Budget support", "status": "needs citation", "note": "Mock appendix reference is missing from the fixture."},
+          {"heading": "Risk owner", "status": "needs owner", "note": "Vendor lock-in risk has no named mitigation owner."}
+        ]
+      },
+      "claim_cards": [
+        {"claim": "Budget assumption lacks a linked appendix in the mock memo.", "evidence_posture": "direct", "source_ids": [1]},
+        {"claim": "Vendor lock-in mitigation ownership is unclear.", "evidence_posture": "direct", "source_ids": [2]}
+      ],
+      "top_passages": [
+        {"source_id": 1, "title": "Mock memo excerpt: budget table", "domain": "offline-document-fixture", "url": "offline-demo://document/board-memo#budget", "text": "Demo document excerpt: budget table cites Appendix B, but Appendix B is absent from this mock preview."},
+        {"source_id": 2, "title": "Mock memo excerpt: risks", "domain": "offline-document-fixture", "url": "offline-demo://document/board-memo#risks", "text": "Demo document excerpt: vendor lock-in risk is named without an accountable mitigation owner."}
+      ]
+    },
+    {
+      "id": "error_or_no_result",
+      "title": "Error/no-result — calm recovery path",
+      "query": "Find the private benchmark packet for an unnamed vendor",
+      "mode": "Fast",
+      "state_label": "No usable result",
+      "confidence_label": "No answer produced from fixture evidence",
+      "timestamp": "Offline fixture — 2026-06-03",
+      "report": "## No usable result\nThe offline fixture has no public or review-safe evidence for this request. A product-safe response should avoid inventing details, explain that no result is available, and offer a next step.\n\n## Recovery options\n- Rephrase with a public document title or organization name.\n- Upload a document in a future document-review flow.\n- Use live search only outside demo mode with appropriate credentials and approval.",
+      "progress_steps": [
+        {"label": "Classified request", "state": "complete", "detail": "Request appears to need private or unavailable material."},
+        {"label": "Collected evidence", "state": "error", "detail": "Fixture corpus contains no usable public source cards."},
+        {"label": "Drafted recovery message", "state": "complete", "detail": "No live search was attempted."}
+      ],
+      "claim_cards": [
+        {"claim": "No review-safe fixture evidence is available.", "evidence_posture": "direct", "source_ids": []}
+      ],
+      "top_passages": []
+    },
+    {
+      "id": "mode_comparison",
+      "title": "Fast / Balanced / Deep mode illustration",
+      "query": "Compare fixture-mode answer depth across modes",
+      "mode": "Fixture comparison",
+      "state_label": "Mode illustration",
+      "confidence_label": "Illustrative only; not an AG-81B quality rubric",
+      "timestamp": "Offline fixture — 2026-06-03",
+      "report": "## Fixture mode comparison\nThis scenario shows how the product shell can explain Fast, Balanced, and Deep as user-facing depth choices without changing provider behavior or defining an answer-quality rubric.\n\n| Mode | Fixture UI promise | What the reviewer should inspect |\n| --- | --- | --- |\n| Fast | Shorter answer with a small source set | Is speed vs depth communicated clearly? |\n| Balanced | Structured brief with limitations | Are citations and caveats easy to scan? |\n| Deep | More explicit conflict/gap handling | Does extra detail feel useful rather than noisy? |\n\nThis is a UX label comparison only.",
+      "progress_steps": [
+        {"label": "Loaded fixture labels", "state": "complete", "detail": "No runtime mode policy changed."},
+        {"label": "Rendered comparison", "state": "complete", "detail": "Mode differences are UX copy only."}
+      ],
+      "mode_comparison": [
+        {"mode": "Fast", "summary": "Concise product answer with essential citations."},
+        {"mode": "Balanced", "summary": "Structured brief, limitations, and source cards."},
+        {"mode": "Deep", "summary": "More visible gaps, conflicts, and review notes."}
+      ],
+      "claim_cards": [],
+      "top_passages": [
+        {"source_id": 1, "title": "Fixture mode labels", "domain": "offline-demo", "url": "offline-demo://mode-comparison", "text": "Demo metadata: mode labels are presented for UX review and do not define provider depth or retrieval behavior."}
+      ]
+    }
+  ]
+}

@@ -100,6 +100,10 @@ Open the local URL shown in your terminal, usually:
 http://localhost:8501
 ```
 
+### Offline UX Demo / Fixture Mode
+
+The Streamlit app includes fixture-backed offline demo scenarios for product-shell UX review. No API keys are required for this mode. Start the app, use **OFFLINE UX DEMO** in the sidebar, choose a scenario, and click **Open offline demo**. Demo sessions are labeled as offline fixtures, are not saved to history, and do not call providers, model APIs, search, retrieval, or live validation. See [`docs/product/offline_ux_demo.md`](docs/product/offline_ux_demo.md).
+
 ### Headless CLI
 
 ```powershell
