@@ -1,6 +1,17 @@
 # ScryRaven Current State
 
 
+## AG-79D — Targeted Orchestrator Authority Closure (2026-06-03)
+
+Status: complete/readiness for review. AG-79D adds `docs/architecture/AG79D_TARGETED_ORCHESTRATOR_AUTHORITY_CLOSURE.md` as a docs-only targeted audit of the remaining orchestrator and orchestrator-adjacent decision surfaces after AG-76D-SCR-R1 and AG-76D-SES-R1 runtime trace wiring.
+
+Executive verdict: the current Controller-authority transfer audit line is closed at classification depth. Retrieval stop/continue, weak-corpus recovery, source-class/authoritative-source recovery, conflict-resolution retrieval, scout/expander/evaluator/ordinary continuation gates, final evidence identity handoff, citation/source-list identity, Analyst/Author handoff packaging, weak/failure-card posture, conflict labels, indirect-inference labels, and SCR/SES runtime handoff trace identity are controlled or trace-classified.
+
+Protected legacy behavior intentionally left alone includes Brave recon rewrite, low entity-utilization disambiguation retry, query replacement/entity correction, `_finalize_retrieval_queries`, recency merge, official-bias insertion, query ordering, provider/search/depth behavior where no Controller-owned handoff already supplies it, retrieval ranking/filtering, final evidence selection, citation formatting, prompt text, Author notes/prose, Scrutineer/remediation behavior, and synthesis-evaluator supplemental-search behavior. AG-79D found no active hidden-authority surface requiring an immediate future repair; remaining local runtime authorities are classified as protected legacy behavior or trace/projection-only identity rather than changed in this phase.
+
+AG-76D-AD adapter cleanup is now appropriate as later behavior-preserving maintainability cleanup, but it should not run before the implementation-doc refresh unless AG-80A schedules it. AG-80A implementation playbook/docs is recommended next. Roadmap v4 should wait until AG-80A. AG-78G remains live-gated; no live validation is authorized by this state.
+
+
 ## AG-76D-SES — Controller-Owned Synthesis-Evaluator Supplemental-Search Handoff Contract (2026-06-02)
 
 Status: implemented/readiness for review. AG-76D-SES adds `core/synthesis_evaluator_supplemental_search_handoff_contract.py`, `tests/test_ag76d_ses_synthesis_evaluator_supplemental_search_handoff_contract.py`, and `docs/architecture/AG76D_SES_CONTROLLER_OWNED_SYNTHESIS_EVALUATOR_SUPPLEMENTAL_SEARCH_HANDOFF.md` as a minimal passive contract and fixture/static test phase for the synthesis-evaluator supplemental-search handoff.
