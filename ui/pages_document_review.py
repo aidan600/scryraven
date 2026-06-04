@@ -104,6 +104,7 @@ def render_document_review_page(context: UIContext) -> None:
         st.dataframe(chunk_rows, use_container_width=True, hide_index=True)
 
     st.subheader("Claim candidates / review labels")
+    st.caption("Deterministic document-local labels only; these do not validate outside-world truth.")
     if not context_obj.findings:
         st.caption("No deterministic claim candidates were detected.")
     for finding in context_obj.findings:
@@ -111,6 +112,15 @@ def render_document_review_page(context: UIContext) -> None:
             f"**{finding.finding_id}** — `{', '.join(finding.labels)}` anchors: `{', '.join(finding.anchor_ids)}`"
         )
         st.write(finding.text)
+        st.write(
+            {
+                "claim_type": finding.claim_type,
+                "source_obligation": finding.source_obligation,
+                "evidence_role": finding.evidence_role,
+                "validation_need": finding.validation_need,
+                "risk_level": finding.risk_level,
+            }
+        )
         st.caption(finding.note)
 
     st.subheader("Follow-up retrieval (deterministic retained chunks)")

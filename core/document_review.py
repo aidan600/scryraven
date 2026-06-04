@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Iterable, Literal
 
-DOCUMENT_REVIEW_VERSION = "ag83b-v1"
+DOCUMENT_REVIEW_VERSION = "ag83d-v1"
 DOCUMENT_LOCAL_EVIDENCE_LABEL = "document-local-evidence"
 DOCUMENT_LOCAL_ONLY_LABEL = "document-local-only"
 DOCUMENT_SOURCE_SCOPE = "private-session-document"
@@ -46,22 +46,114 @@ _EXTERNAL_CUE_RE = re.compile(
 _CLAIM_CUE_RE = re.compile(
     r"\b(?:will|would|must|should|shall|can|could|because|therefore|conclude|"
     r"shows|proves|indicates|requires|expects|forecast|target|deadline|risk|"
-    r"increase|decrease|growth|decline|saves|costs)\b",
+    r"increase|decrease|growth|decline|saves|costs|owner|action|recommend|"
+    r"required|requirement|optional|not required|improved|efficacy|is|are)\b",
     re.IGNORECASE,
 )
-_INFERENCE_CUE_RE = re.compile(r"\b(?:because|therefore|implies|suggests|indicates|likely)\b", re.IGNORECASE)
+_INFERENCE_CUE_RE = re.compile(r"\b(?:because|therefore|implies|suggests|indicates|likely|may|could)\b", re.IGNORECASE)
 _SUPPORT_CUE_RE = re.compile(
-    r"\b(?:according to|cites|citation|source|appendix|exhibit|table|figure|data)\b", re.IGNORECASE
+    r"\b(?:according to|cites|citation|source|appendix|exhibit|table|figure|data|survey|report|study)\b",
+    re.IGNORECASE,
 )
+_OFFICIAL_CURRENT_CUE_RE = re.compile(
+    r"\b(?:current|currently|latest|today|now|official|policy|price|pricing|status|release|announcement)\b",
+    re.IGNORECASE,
+)
+_LEGAL_CUE_RE = re.compile(
+    r"\b(?:legal|law|statute|regulation|regulatory|compliance|court|jurisdiction|contract|tax|effective date)\b",
+    re.IGNORECASE,
+)
+_FINANCIAL_CUE_RE = re.compile(
+    r"\b(?:price|pricing|revenue|cost|costs|budget|market|rate|rates|fee|fees|forecast|estimate|saves|savings)\b",
+    re.IGNORECASE,
+)
+_MEDICAL_SCIENTIFIC_CUE_RE = re.compile(
+    r"\b(?:medical|clinical|health|safety|efficacy|treatment|trial|patient|scientific|causes|study)\b",
+    re.IGNORECASE,
+)
+_ACADEMIC_CUE_RE = re.compile(
+    r"\b(?:paper|literature|citation|doi|arxiv|benchmark|methodology|peer-reviewed|study)\b",
+    re.IGNORECASE,
+)
+_TECHNICAL_CURRENT_CUE_RE = re.compile(
+    r"\b(?:api|sdk|package|library|browser|model|compatibility|version|changelog|release notes|endpoint)\b",
+    re.IGNORECASE,
+)
+_CORPUS_CUE_RE = re.compile(
+    r"\b(?:our files|internal records|customer records|private corpus|personal corpus|uploaded documents|document library)\b",
+    re.IGNORECASE,
+)
+_ACTION_CUE_RE = re.compile(
+    r"\b(?:must|shall|required|requires|should|recommend|action item|owner|task|prepare|request|submit)\b",
+    re.IGNORECASE,
+)
+_DEADLINE_CUE_RE = re.compile(
+    r"\b(?:by|before|after|due|deadline|effective date|renewal)\s+(?:[A-Z][a-z]+\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2}|Q[1-4]\s+\d{4}|\d{1,2}/\d{1,2}/\d{2,4})\b",
+    re.IGNORECASE,
+)
+_RISK_CUE_RE = re.compile(
+    r"\b(?:risk|red flag|concern|may increase|could increase|exposure|gap|blocked|failure)\b", re.IGNORECASE
+)
+_OPINION_CUE_RE = re.compile(r"\b(?:should|recommend|recommendation|best|prefer|opinion|consider)\b", re.IGNORECASE)
+_NEGATED_MODAL_RE = re.compile(r"\b(?:will not|must not|shall not|not required|optional)\b", re.IGNORECASE)
+_POSITIVE_MODAL_RE = re.compile(r"\b(?:will|must|shall|required)\b", re.IGNORECASE)
+
 
 BlockKind = Literal["paragraph", "list", "table"]
 FindingLabel = Literal[
+    "direct-document-statement",
     "document-supported",
     "document-supported-inference",
     "unsupported-by-document",
+    "document-internal-possible-tension",
     "external-validation-required",
+    "official-current-source-needed",
+    "legal-current-official-source-needed",
+    "financial-numeric-source-needed",
+    "medical-scientific-validation-required",
+    "academic-source-needed",
+    "product-api-current-technical-source-needed",
+    "corpus-validation-required",
     "source-bound-numeric",
+    "opinion-recommendation",
+    "action-item-obligation",
+    "date-deadline-claim",
+    "risk-red-flag",
 ]
+ClaimType = Literal[
+    "direct-document-statement",
+    "document-supported-inference",
+    "unsupported-by-document",
+    "document-internal-possible-tension",
+    "opinion-recommendation",
+    "action-item-obligation",
+    "date-deadline-claim",
+    "risk-red-flag",
+]
+SourceObligation = Literal[
+    "document-local-only",
+    "external-validation-required",
+    "official-current-source-needed",
+    "legal-current-official-source-needed",
+    "financial-numeric-source-needed",
+    "medical-scientific-validation-required",
+    "academic-source-needed",
+    "product-api-current-technical-source-needed",
+    "corpus-validation-required",
+]
+EvidenceRole = Literal["document-local", "document-inferred", "unsupported-by-document", "possible-tension"]
+ValidationNeed = Literal[
+    "none-document-local",
+    "external-validation-if-user-needs-truth",
+    "official-current-if-validated",
+    "legal-current-official-if-validated",
+    "financial-numeric-source-if-validated",
+    "medical-scientific-validation-if-validated",
+    "academic-source-if-validated",
+    "product-api-current-technical-source-if-validated",
+    "corpus-validation-if-validated",
+]
+RiskLevel = Literal["low", "medium"]
 
 
 @dataclass(frozen=True)
@@ -140,7 +232,12 @@ class DocumentChunk:
 
 @dataclass(frozen=True)
 class ReviewFinding:
-    """Deterministic claim/review finding tied to document anchors."""
+    """Deterministic claim/review finding tied to document anchors.
+
+    The added AG-83D fields are local classifications only. They describe how the
+    document appears to state a claim and what source class would be needed if a
+    user later wanted truth validation; they do not validate outside-world truth.
+    """
 
     finding_id: str
     text: str
@@ -148,6 +245,11 @@ class ReviewFinding:
     anchor_ids: tuple[str, ...]
     extraction_confidence: float
     note: str
+    claim_type: ClaimType = "direct-document-statement"
+    source_obligation: SourceObligation = "document-local-only"
+    evidence_role: EvidenceRole = "document-local"
+    validation_need: ValidationNeed = "none-document-local"
+    risk_level: RiskLevel = "low"
 
 
 @dataclass(frozen=True)
@@ -377,9 +479,10 @@ def build_document_chunks(
 def extract_review_findings(anchors: Iterable[DocumentAnchor], *, limit: int = 12) -> tuple[ReviewFinding, ...]:
     """Extract modest deterministic claim candidates and labels."""
 
+    anchor_list = tuple(anchors)
     findings: list[ReviewFinding] = []
     seen: set[str] = set()
-    for anchor in anchors:
+    for anchor in anchor_list:
         for sentence in _candidate_sentences(anchor.text):
             if len(findings) >= limit:
                 return tuple(findings)
@@ -387,17 +490,12 @@ def extract_review_findings(anchors: Iterable[DocumentAnchor], *, limit: int = 1
             if key in seen or not _looks_like_claim(sentence):
                 continue
             seen.add(key)
-            labels = _labels_for_claim(sentence)
-            findings.append(
-                ReviewFinding(
-                    finding_id=f"f{len(findings) + 1:03d}",
-                    text=sentence,
-                    labels=labels,
-                    anchor_ids=(anchor.anchor_id,),
-                    extraction_confidence=0.72 if anchor.kind == "paragraph" else 0.66,
-                    note=_note_for_labels(labels),
-                )
-            )
+            finding = _finding_for_sentence(sentence, anchor, f"f{len(findings) + 1:03d}")
+            findings.append(finding)
+    for finding in _possible_tension_findings(anchor_list, findings, limit=limit):
+        if len(findings) >= limit:
+            break
+        findings.append(finding)
     return tuple(findings)
 
 
@@ -503,6 +601,11 @@ def export_review_markdown(
             [
                 f"- **{finding.finding_id}** [{labels}] anchors: `{anchors}`",
                 f"  - Claim candidate: {finding.text}",
+                f"  - Claim type: `{finding.claim_type}`",
+                f"  - Source obligation: `{finding.source_obligation}`",
+                f"  - Evidence role: `{finding.evidence_role}`",
+                f"  - Validation need: `{finding.validation_need}`",
+                f"  - Risk level: `{finding.risk_level}`",
                 f"  - Note: {finding.note}",
             ]
         )
@@ -549,40 +652,231 @@ def _candidate_sentences(text: str) -> list[str]:
     for line in text.split("\n"):
         clean = _LIST_RE.sub(r"\1", line).strip()
         pieces.extend(_SENTENCE_RE.split(clean))
-    return [piece.strip(" -•\t") for piece in pieces if len(piece.strip()) >= 32]
+    return [piece.strip(" -•\t") for piece in pieces if len(piece.strip()) >= 24]
 
 
 def _looks_like_claim(sentence: str) -> bool:
-    return bool(_CLAIM_CUE_RE.search(sentence) or _NUMERIC_RE.search(sentence))
+    return bool(_CLAIM_CUE_RE.search(sentence) or _NUMERIC_RE.search(sentence) or _ACTION_CUE_RE.search(sentence))
+
+
+def _finding_for_sentence(sentence: str, anchor: DocumentAnchor, finding_id: str) -> ReviewFinding:
+    labels = _labels_for_claim(sentence)
+    claim_type = _claim_type_for_labels(labels)
+    source_obligation = _source_obligation_for_labels(labels)
+    evidence_role = _evidence_role_for_labels(labels)
+    validation_need = _validation_need_for_obligation(source_obligation)
+    return ReviewFinding(
+        finding_id=finding_id,
+        text=sentence,
+        labels=labels,
+        anchor_ids=(anchor.anchor_id,),
+        extraction_confidence=0.72 if anchor.kind == "paragraph" else 0.66,
+        note=_note_for_finding(labels, source_obligation, evidence_role),
+        claim_type=claim_type,
+        source_obligation=source_obligation,
+        evidence_role=evidence_role,
+        validation_need=validation_need,
+        risk_level="medium" if "risk-red-flag" in labels or source_obligation != "document-local-only" else "low",
+    )
 
 
 def _labels_for_claim(sentence: str) -> tuple[FindingLabel, ...]:
-    labels: list[FindingLabel] = []
+    labels: list[FindingLabel] = ["direct-document-statement"]
+    support_detected = bool(_SUPPORT_CUE_RE.search(sentence))
+    external_required = False
     if _NUMERIC_RE.search(sentence):
-        labels.append("source-bound-numeric")
-    if _EXTERNAL_CUE_RE.search(sentence):
+        labels.extend(["source-bound-numeric", "financial-numeric-source-needed"])
+        external_required = True
+    if _OFFICIAL_CURRENT_CUE_RE.search(sentence):
+        labels.append("official-current-source-needed")
+        external_required = True
+    if _LEGAL_CUE_RE.search(sentence):
+        labels.append("legal-current-official-source-needed")
+        external_required = True
+    if _FINANCIAL_CUE_RE.search(sentence):
+        labels.append("financial-numeric-source-needed")
+        external_required = True
+    if _MEDICAL_SCIENTIFIC_CUE_RE.search(sentence):
+        labels.append("medical-scientific-validation-required")
+        external_required = True
+    if _ACADEMIC_CUE_RE.search(sentence):
+        labels.append("academic-source-needed")
+        external_required = True
+    if _TECHNICAL_CURRENT_CUE_RE.search(sentence):
+        labels.append("product-api-current-technical-source-needed")
+        external_required = True
+    if _CORPUS_CUE_RE.search(sentence):
+        labels.append("corpus-validation-required")
+    if external_required:
         labels.append("external-validation-required")
     if _INFERENCE_CUE_RE.search(sentence):
         labels.append("document-supported-inference")
-    if not _SUPPORT_CUE_RE.search(sentence) and (
-        "external-validation-required" in labels or "source-bound-numeric" in labels
-    ):
+    if _OPINION_CUE_RE.search(sentence):
+        labels.append("opinion-recommendation")
+    if _ACTION_CUE_RE.search(sentence):
+        labels.append("action-item-obligation")
+    if _DEADLINE_CUE_RE.search(sentence):
+        labels.append("date-deadline-claim")
+    if _RISK_CUE_RE.search(sentence):
+        labels.append("risk-red-flag")
+    if not support_detected and external_required:
         labels.append("unsupported-by-document")
-    if not labels:
+    if len(labels) == 1:
         labels.append("document-supported")
     return tuple(dict.fromkeys(labels))
 
 
-def _note_for_labels(labels: tuple[FindingLabel, ...]) -> str:
-    if "external-validation-required" in labels:
-        return "Document-local extraction only; outside-world/current/legal/numeric truth was not validated."
+def _claim_type_for_labels(labels: tuple[FindingLabel, ...]) -> ClaimType:
+    ordered: tuple[ClaimType, ...] = (
+        "document-internal-possible-tension",
+        "risk-red-flag",
+        "action-item-obligation",
+        "date-deadline-claim",
+        "opinion-recommendation",
+        "unsupported-by-document",
+        "document-supported-inference",
+    )
+    label_set = set(labels)
+    for claim_type in ordered:
+        if claim_type in label_set:
+            return claim_type
+    return "direct-document-statement"
+
+
+def _source_obligation_for_labels(labels: tuple[FindingLabel, ...]) -> SourceObligation:
+    priorities: tuple[SourceObligation, ...] = (
+        "legal-current-official-source-needed",
+        "medical-scientific-validation-required",
+        "product-api-current-technical-source-needed",
+        "official-current-source-needed",
+        "academic-source-needed",
+        "corpus-validation-required",
+        "financial-numeric-source-needed",
+        "external-validation-required",
+    )
+    label_set = set(labels)
+    for obligation in priorities:
+        if obligation in label_set:
+            return obligation
+    return "document-local-only"
+
+
+def _evidence_role_for_labels(labels: tuple[FindingLabel, ...]) -> EvidenceRole:
+    if "document-internal-possible-tension" in labels:
+        return "possible-tension"
     if "unsupported-by-document" in labels:
-        return "The document states this candidate, but AG-83B found no explicit local support cue nearby."
+        return "unsupported-by-document"
     if "document-supported-inference" in labels:
+        return "document-inferred"
+    return "document-local"
+
+
+def _validation_need_for_obligation(source_obligation: SourceObligation) -> ValidationNeed:
+    return {
+        "document-local-only": "none-document-local",
+        "external-validation-required": "external-validation-if-user-needs-truth",
+        "official-current-source-needed": "official-current-if-validated",
+        "legal-current-official-source-needed": "legal-current-official-if-validated",
+        "financial-numeric-source-needed": "financial-numeric-source-if-validated",
+        "medical-scientific-validation-required": "medical-scientific-validation-if-validated",
+        "academic-source-needed": "academic-source-if-validated",
+        "product-api-current-technical-source-needed": "product-api-current-technical-source-if-validated",
+        "corpus-validation-required": "corpus-validation-if-validated",
+    }[source_obligation]
+
+
+def _note_for_finding(
+    labels: tuple[FindingLabel, ...], source_obligation: SourceObligation, evidence_role: EvidenceRole
+) -> str:
+    if evidence_role == "possible-tension":
+        return (
+            "Possible document-internal tension detected deterministically; no winner or truth resolution was chosen."
+        )
+    if source_obligation != "document-local-only":
+        support_phrase = (
+            "The document contains a local support cue, but that cue was not externally checked."
+            if "unsupported-by-document" not in labels
+            else "No explicit local support cue was detected near this claim."
+        )
+        return f"Document-local extraction only; {source_obligation} would be needed if validating outside-world truth. {support_phrase}"
+    if evidence_role == "document-inferred":
         return "Inference cue detected; preserve the document-local inference boundary."
-    if "source-bound-numeric" in labels:
-        return "Numeric statement should remain tied to its document anchor."
+    if "action-item-obligation" in labels:
+        return "Document-local action or obligation cue detected; no task-management workflow was created."
     return "Direct deterministic claim candidate from the provided document."
+
+
+def _possible_tension_findings(
+    anchors: tuple[DocumentAnchor, ...], findings: list[ReviewFinding], *, limit: int
+) -> tuple[ReviewFinding, ...]:
+    candidates: list[tuple[str, str, str, tuple[str, ...]]] = []
+    for anchor in anchors:
+        for sentence in _candidate_sentences(anchor.text):
+            numbers = tuple(_NUMERIC_RE.findall(sentence))
+            topic = _tension_topic(sentence)
+            if numbers and topic:
+                candidates.append((topic, sentence, "|".join(numbers), (anchor.anchor_id,)))
+    tensions: list[ReviewFinding] = []
+    for idx, left in enumerate(candidates):
+        for right in candidates[idx + 1 :]:
+            if left[0] == right[0] and left[2] != right[2]:
+                anchor_ids = tuple(dict.fromkeys(left[3] + right[3]))
+                tensions.append(
+                    _tension_finding(
+                        finding_id=f"f{len(findings) + len(tensions) + 1:03d}",
+                        text=f"Possible tension: {left[1]} / {right[1]}",
+                        anchor_ids=anchor_ids,
+                    )
+                )
+                return tuple(tensions[: max(0, limit - len(findings))])
+    modal_sentences = [
+        (sentence, anchor.anchor_id)
+        for anchor in anchors
+        for sentence in _candidate_sentences(anchor.text)
+        if _POSITIVE_MODAL_RE.search(sentence) or _NEGATED_MODAL_RE.search(sentence)
+    ]
+    for idx, (left_sentence, left_anchor) in enumerate(modal_sentences):
+        left_topic = _tension_topic(left_sentence)
+        if not left_topic:
+            continue
+        for right_sentence, right_anchor in modal_sentences[idx + 1 :]:
+            if left_topic != _tension_topic(right_sentence):
+                continue
+            if (_POSITIVE_MODAL_RE.search(left_sentence) and _NEGATED_MODAL_RE.search(right_sentence)) or (
+                _NEGATED_MODAL_RE.search(left_sentence) and _POSITIVE_MODAL_RE.search(right_sentence)
+            ):
+                return (
+                    _tension_finding(
+                        finding_id=f"f{len(findings) + 1:03d}",
+                        text=f"Possible tension: {left_sentence} / {right_sentence}",
+                        anchor_ids=tuple(dict.fromkeys((left_anchor, right_anchor))),
+                    ),
+                )
+    return tuple(tensions)
+
+
+def _tension_finding(finding_id: str, text: str, anchor_ids: tuple[str, ...]) -> ReviewFinding:
+    labels: tuple[FindingLabel, ...] = ("document-internal-possible-tension", "source-bound-numeric")
+    return ReviewFinding(
+        finding_id=finding_id,
+        text=text,
+        labels=labels,
+        anchor_ids=anchor_ids,
+        extraction_confidence=0.58,
+        note=_note_for_finding(labels, "document-local-only", "possible-tension"),
+        claim_type="document-internal-possible-tension",
+        source_obligation="document-local-only",
+        evidence_role="possible-tension",
+        validation_need="none-document-local",
+        risk_level="medium",
+    )
+
+
+def _tension_topic(sentence: str) -> str:
+    tokens = [token.casefold() for token in _WORD_RE.findall(_NUMERIC_RE.sub("", sentence))]
+    stop = {"the", "and", "for", "with", "from", "that", "this", "will", "must", "shall", "not", "required"}
+    useful = [token for token in tokens if len(token) > 3 and token not in stop]
+    return " ".join(useful[:3])
 
 
 def _summary_from_chunks(chunks: tuple[DocumentChunk, ...]) -> str:
