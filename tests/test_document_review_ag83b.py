@@ -9,6 +9,9 @@ import pytest
 from core.document_review import (
     BOUNDARY_NOTICE,
     DOCUMENT_LOCAL_EVIDENCE_LABEL,
+    DOCUMENT_LOCAL_ONLY_LABEL,
+    DOCUMENT_SOURCE_SCOPE,
+    FOLLOWUP_RETRIEVAL_MODE,
     PRIVACY_MARKER,
     build_document_review_context,
     normalize_document_text,
@@ -107,9 +110,13 @@ def test_chunks_are_document_local_evidence_packets_with_anchors() -> None:
     assert context.chunks
     for chunk in context.chunks:
         assert chunk.document_id == context.metadata.document_id
+        assert chunk.document_hash == context.metadata.document_hash
         assert chunk.chunk_id.startswith(f"{context.metadata.document_id}-c")
         assert chunk.anchor_ids
         assert chunk.evidence_label == DOCUMENT_LOCAL_EVIDENCE_LABEL
+        assert chunk.locality_label == DOCUMENT_LOCAL_ONLY_LABEL
+        assert chunk.source_scope == DOCUMENT_SOURCE_SCOPE
+        assert chunk.retrieval_mode == FOLLOWUP_RETRIEVAL_MODE
         assert chunk.preview
         assert 0 < chunk.extraction_confidence <= 1
 
@@ -145,7 +152,29 @@ def test_followup_retrieval_returns_relevant_retained_chunks_only() -> None:
     assert hits
     assert hits[0].score > 0
     assert any("s03" in anchor for hit in hits for anchor in hit.anchor_ids)
-    assert all("document-local-only" in hit.labels for hit in hits)
+    assert all(DOCUMENT_LOCAL_EVIDENCE_LABEL in hit.labels for hit in hits)
+    assert all(DOCUMENT_LOCAL_ONLY_LABEL in hit.labels for hit in hits)
+    assert all(DOCUMENT_SOURCE_SCOPE in hit.labels for hit in hits)
+    assert all(hit.retrieval_mode == FOLLOWUP_RETRIEVAL_MODE for hit in hits)
+
+
+def test_followup_retrieval_handles_multiple_queries_no_hits_and_stable_ordering() -> None:
+    context = build_document_review_context(SAMPLE_MARKDOWN)
+
+    heading_hits = retrieve_document_followup(context, "Risks")
+    keyword_hits = retrieve_document_followup(context, "rollout checklist")
+    repeated_hits = retrieve_document_followup(context, "rollout checklist")
+    no_hits = retrieve_document_followup(context, "astronomy nebula telescope")
+
+    assert heading_hits
+    assert heading_hits[0].section_heading == "Risks"
+    assert keyword_hits
+    assert keyword_hits == repeated_hits
+    assert [hit.chunk_id for hit in keyword_hits] == sorted(
+        [hit.chunk_id for hit in keyword_hits],
+        key=lambda chunk_id: (-next(hit.score for hit in keyword_hits if hit.chunk_id == chunk_id), chunk_id),
+    )
+    assert no_hits == ()
 
 
 def test_markdown_export_preserves_privacy_boundary_labels_and_anchors() -> None:
@@ -154,11 +183,45 @@ def test_markdown_export_preserves_privacy_boundary_labels_and_anchors() -> None
 
     assert "Based only on the provided document" in export
     assert "Private/session-local" in export
+    assert "Follow-up boundary" in export
+    assert "not model-mediated natural-language Q&A" in export
+    assert "no persistent document-library state" in export
+    assert DOCUMENT_LOCAL_EVIDENCE_LABEL in export
+    assert DOCUMENT_SOURCE_SCOPE in export
     assert context.metadata.document_id in export
     assert "external-validation-required" in export
     assert "source-bound-numeric" in export
     assert "unsupported-by-document" in export
     assert "`s03-p001`" in export or "`s03-p002`" in export
+
+
+def test_anchor_line_references_are_normalized_lines_not_page_precision() -> None:
+    context = build_document_review_context(SAMPLE_MARKDOWN)
+
+    first_paragraph = next(anchor for anchor in context.anchors if anchor.anchor_id == "s02-p001")
+    risk_list = next(anchor for anchor in context.anchors if anchor.anchor_id == "s03-p001")
+    risk_table = next(anchor for anchor in context.anchors if anchor.kind == "table")
+
+    assert first_paragraph.line_reference == "line 3"
+    assert risk_list.line_reference == "lines 7-8"
+    assert risk_table.line_reference == "lines 10-12"
+    assert first_paragraph.extraction_confidence == 0.82
+    assert risk_list.extraction_confidence == 0.74
+    assert risk_table.extraction_confidence == 0.62
+    assert all("page" not in anchor.line_reference for anchor in context.anchors)
+
+
+def test_anchor_ids_remain_deterministic_under_harmless_blank_line_normalization() -> None:
+    compact = "# Memo\n\nA deadline is 2026.\n\n## Next\n\n- Owner prepares checklist.\n"
+    padded = "\n\n# Memo\n\n\nA deadline is 2026.\n\n\n## Next\n\n- Owner prepares checklist.\n\n"
+
+    compact_context = build_document_review_context(compact)
+    padded_context = build_document_review_context(padded)
+
+    assert [anchor.anchor_id for anchor in compact_context.anchors] == [
+        anchor.anchor_id for anchor in padded_context.anchors
+    ]
+    assert [anchor.kind for anchor in compact_context.anchors] == [anchor.kind for anchor in padded_context.anchors]
 
 
 def test_document_review_helpers_do_not_import_live_runtime_or_persistence_paths() -> None:

@@ -17,6 +17,9 @@ from typing import Iterable, Literal
 
 DOCUMENT_REVIEW_VERSION = "ag83b-v1"
 DOCUMENT_LOCAL_EVIDENCE_LABEL = "document-local-evidence"
+DOCUMENT_LOCAL_ONLY_LABEL = "document-local-only"
+DOCUMENT_SOURCE_SCOPE = "private-session-document"
+FOLLOWUP_RETRIEVAL_MODE = "deterministic-retained-chunk-retrieval"
 PRIVACY_MARKER = "session-local-private-document"
 BOUNDARY_NOTICE = (
     "Based only on the provided document. No public web validation, provider/model "
@@ -47,7 +50,9 @@ _CLAIM_CUE_RE = re.compile(
     re.IGNORECASE,
 )
 _INFERENCE_CUE_RE = re.compile(r"\b(?:because|therefore|implies|suggests|indicates|likely)\b", re.IGNORECASE)
-_SUPPORT_CUE_RE = re.compile(r"\b(?:according to|cites|citation|source|appendix|exhibit|table|figure|data)\b", re.IGNORECASE)
+_SUPPORT_CUE_RE = re.compile(
+    r"\b(?:according to|cites|citation|source|appendix|exhibit|table|figure|data)\b", re.IGNORECASE
+)
 
 BlockKind = Literal["paragraph", "list", "table"]
 FindingLabel = Literal[
@@ -85,7 +90,11 @@ class DocumentSection:
 
 @dataclass(frozen=True)
 class DocumentAnchor:
-    """Paragraph/excerpt anchor for document-local citations."""
+    """Paragraph/excerpt anchor for document-local citations.
+
+    Line references are normalized pasted-text/Markdown lines only; they are not
+    page, PDF, DOCX, OCR, or layout coordinates.
+    """
 
     anchor_id: str
     section_id: str
@@ -96,12 +105,26 @@ class DocumentAnchor:
     text: str
     extraction_confidence: float
 
+    @property
+    def line_reference(self) -> str:
+        """Return an honest normalized-line reference, never page/layout precision."""
+
+        if self.start_line == self.end_line:
+            return f"line {self.start_line}"
+        return f"lines {self.start_line}-{self.end_line}"
+
 
 @dataclass(frozen=True)
 class DocumentChunk:
-    """Controller/model-usable document-local evidence packet shape."""
+    """Controller/model-usable document-local evidence packet shape.
+
+    This is retained document context, not live web evidence and not public truth.
+    Future Controller/model seams may consume it as private document-local context
+    only while preserving the source_scope/evidence labels.
+    """
 
     document_id: str
+    document_hash: str
     chunk_id: str
     section_id: str
     section_heading: str
@@ -110,6 +133,9 @@ class DocumentChunk:
     preview: str
     extraction_confidence: float
     evidence_label: str = DOCUMENT_LOCAL_EVIDENCE_LABEL
+    locality_label: str = DOCUMENT_LOCAL_ONLY_LABEL
+    source_scope: str = DOCUMENT_SOURCE_SCOPE
+    retrieval_mode: str = FOLLOWUP_RETRIEVAL_MODE
 
 
 @dataclass(frozen=True)
@@ -133,7 +159,8 @@ class FollowupHit:
     anchor_ids: tuple[str, ...]
     snippet: str
     score: float
-    labels: tuple[str, ...] = (DOCUMENT_LOCAL_EVIDENCE_LABEL, "document-local-only")
+    labels: tuple[str, ...] = (DOCUMENT_LOCAL_EVIDENCE_LABEL, DOCUMENT_LOCAL_ONLY_LABEL, DOCUMENT_SOURCE_SCOPE)
+    retrieval_mode: str = FOLLOWUP_RETRIEVAL_MODE
 
 
 @dataclass(frozen=True)
@@ -202,7 +229,7 @@ def build_document_review_context(
         created_at=timestamp,
     )
     sections, anchors = parse_document_blocks(normalized)
-    chunks = build_document_chunks(metadata.document_id, anchors)
+    chunks = build_document_chunks(metadata.document_id, metadata.document_hash, anchors)
     findings = extract_review_findings(anchors)
     artifact = build_review_artifact(metadata, chunks, findings)
     return DocumentReviewContext(
@@ -241,9 +268,7 @@ def parse_document_blocks(normalized_text: str) -> tuple[tuple[DocumentSection, 
     """Parse headings, paragraphs, lists, and simple Markdown tables into stable anchors."""
 
     lines = normalized_text.split("\n")
-    sections: list[DocumentSection] = [
-        DocumentSection("s01", "Document", 0, 1, "s01")
-    ]
+    sections: list[DocumentSection] = [DocumentSection("s01", "Document", 0, 1, "s01")]
     current_section = sections[0]
     anchors: list[DocumentAnchor] = []
     block_lines: list[tuple[int, str]] = []
@@ -303,6 +328,7 @@ def parse_document_blocks(normalized_text: str) -> tuple[tuple[DocumentSection, 
 
 def build_document_chunks(
     document_id: str,
+    document_hash: str,
     anchors: Iterable[DocumentAnchor],
     *,
     max_chars: int = 900,
@@ -323,15 +349,14 @@ def build_document_chunks(
         chunks.append(
             DocumentChunk(
                 document_id=document_id,
+                document_hash=document_hash,
                 chunk_id=f"{document_id}-c{len(chunks) + 1:03d}",
                 section_id=first.section_id,
                 section_heading=first.section_heading,
                 anchor_ids=tuple(anchor.anchor_id for anchor in pending),
                 text=text,
                 preview=_preview(text),
-                extraction_confidence=round(
-                    sum(anchor.extraction_confidence for anchor in pending) / len(pending), 3
-                ),
+                extraction_confidence=round(sum(anchor.extraction_confidence for anchor in pending) / len(pending), 3),
             )
         )
         pending = []
@@ -382,7 +407,12 @@ def retrieve_document_followup(
     *,
     limit: int = 5,
 ) -> tuple[FollowupHit, ...]:
-    """Return deterministic document-local chunks relevant to a follow-up query."""
+    """Return deterministic retained-chunk hits for a same-session follow-up query.
+
+    The search surface is strictly ``context.chunks``. This helper does not answer
+    natural-language questions, validate claims externally, or consult persisted
+    document libraries/corpora.
+    """
 
     query_terms = _keywords(query)
     if not query_terms:
@@ -419,8 +449,9 @@ def build_review_artifact(
     finding_list = tuple(findings)
     summary = _summary_from_chunks(chunk_list)
     followup_hint = (
-        "Follow-up in AG-83B is deterministic retrieval: ask for a heading, keyword, "
-        "or concept to retrieve retained document-local chunks and anchors."
+        "Follow-up is deterministic same-session retrieval: ask for retained headings "
+        "or keyword tokens to retrieve document-local chunks, labels, and anchors. "
+        "It is not model-mediated natural-language Q&A or public validation."
     )
     markdown = export_review_markdown(metadata, summary, finding_list, followup_hint)
     return DocumentReviewArtifact(
@@ -448,6 +479,8 @@ def export_review_markdown(
         f"- Version: `{metadata.version}`",
         f"- Input format: `{metadata.input_format}`",
         f"- Privacy marker: `{metadata.privacy_marker}`",
+        f"- Evidence label: `{DOCUMENT_LOCAL_EVIDENCE_LABEL}`",
+        f"- Source scope: `{DOCUMENT_SOURCE_SCOPE}`",
         "",
         "## Boundary",
         BOUNDARY_NOTICE,
@@ -473,7 +506,16 @@ def export_review_markdown(
                 f"  - Note: {finding.note}",
             ]
         )
-    lines.extend(["", "## Follow-up", followup_hint, ""])
+    lines.extend(
+        [
+            "",
+            "## Follow-up boundary",
+            followup_hint,
+            "",
+            "This export contains no PDF/page precision, no public validation, and no persistent document-library state.",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -522,7 +564,9 @@ def _labels_for_claim(sentence: str) -> tuple[FindingLabel, ...]:
         labels.append("external-validation-required")
     if _INFERENCE_CUE_RE.search(sentence):
         labels.append("document-supported-inference")
-    if not _SUPPORT_CUE_RE.search(sentence) and ("external-validation-required" in labels or "source-bound-numeric" in labels):
+    if not _SUPPORT_CUE_RE.search(sentence) and (
+        "external-validation-required" in labels or "source-bound-numeric" in labels
+    ):
         labels.append("unsupported-by-document")
     if not labels:
         labels.append("document-supported")
@@ -565,9 +609,29 @@ def _clean_title(title: str | None) -> str:
 
 
 def _looks_like_markdown(normalized_text: str) -> bool:
-    return any(_SECTION_HEADING_RE.match(line) or _TABLE_RE.match(line) for line in normalized_text.split("\n")) or "```" in normalized_text
+    return (
+        any(_SECTION_HEADING_RE.match(line) or _TABLE_RE.match(line) for line in normalized_text.split("\n"))
+        or "```" in normalized_text
+    )
 
 
 def _keywords(text: str) -> set[str]:
-    stop = {"the", "and", "for", "with", "from", "that", "this", "into", "only", "about", "what", "where", "when", "does"}
-    return {token.casefold() for token in _WORD_RE.findall(text or "") if len(token) > 2 and token.casefold() not in stop}
+    stop = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "that",
+        "this",
+        "into",
+        "only",
+        "about",
+        "what",
+        "where",
+        "when",
+        "does",
+    }
+    return {
+        token.casefold() for token in _WORD_RE.findall(text or "") if len(token) > 2 and token.casefold() not in stop
+    }
