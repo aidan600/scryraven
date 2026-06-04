@@ -67,6 +67,11 @@ def render_main_sidebar(context: UIContext) -> None:
             st.session_state.current_page = "history"
             st.rerun()
 
+        if st.button("Document Review", use_container_width=True, disabled=st.session_state.is_running):
+            st.session_state.current_session = None
+            st.session_state.current_page = "document_review"
+            st.rerun()
+
         render_demo_sidebar(context)
 
         st.caption("RECENT THREADS")
