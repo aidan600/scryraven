@@ -1,11 +1,13 @@
-"""Streamlit page for AG-83B pasted text / Markdown document-local review."""
+"""Streamlit page for local document review with bounded PDF/DOCX parsing."""
 
 from __future__ import annotations
 
 from core.document_review import (
     BOUNDARY_NOTICE,
     PRIVACY_WARNING,
+    DocumentInput,
     build_document_review_context,
+    build_document_review_context_from_input,
     retrieve_document_followup,
 )
 from ui.context import UIContext
@@ -28,11 +30,21 @@ def render_document_review_page(context: UIContext) -> None:
     st.header("Document Review (local MVP)")
     st.info(BOUNDARY_NOTICE)
     st.caption(
-        "Pasted text / Markdown only. No PDF, DOCX, OCR, public web validation, "
-        "provider/model/search calls, persistent corpus, or document library storage."
+        "Pasted text / Markdown remains supported. Optional PDF/DOCX upload uses local text extraction only. "
+        "No OCR, public web validation, provider/model/search calls, persistent corpus, or document library storage."
     )
 
     title = st.text_input("Document title (optional)", key=_TITLE_KEY)
+    uploaded_file = st.file_uploader(
+        "Optional PDF/DOCX upload (local text extraction only; no OCR)",
+        type=["pdf", "docx"],
+        accept_multiple_files=False,
+    )
+    if uploaded_file is not None:
+        st.caption(
+            "Uploaded files are parsed locally into session-local retained context. PDF anchors are page-only when text is extractable; "
+            "DOCX anchors are structural block order only, not rendered page numbers."
+        )
     raw_text = st.text_area(
         "Paste text or Markdown",
         height=260,
@@ -54,8 +66,25 @@ def render_document_review_page(context: UIContext) -> None:
         st.rerun()
 
     if build:
-        if not str(raw_text or "").strip():
-            st.warning("Paste text or Markdown before building a local review.")
+        if uploaded_file is not None:
+            suffix = uploaded_file.name.rsplit(".", 1)[-1].casefold()
+            input_format = "pdf" if suffix == "pdf" else "docx"
+            try:
+                context_obj = build_document_review_context_from_input(
+                    DocumentInput(
+                        content=uploaded_file.getvalue(),
+                        input_format=input_format,
+                        title=str(title or "") or uploaded_file.name,
+                        filename=uploaded_file.name,
+                    )
+                )
+            except (RuntimeError, ValueError) as exc:
+                st.warning(f"Could not parse uploaded document locally: {exc}")
+            else:
+                st.session_state[_SESSION_KEY] = context_obj.snapshot()
+                st.success("Built a session-local document review context from a locally parsed file.")
+        elif not str(raw_text or "").strip():
+            st.warning("Paste text/Markdown or upload a text-based PDF/DOCX before building a local review.")
         else:
             context_obj = build_document_review_context(str(raw_text), title=str(title or "") or None)
             st.session_state[_SESSION_KEY] = context_obj.snapshot()
@@ -74,6 +103,10 @@ def render_document_review_page(context: UIContext) -> None:
             "document_id": meta.document_id,
             "version": meta.version,
             "input_format": meta.input_format,
+            "parser": meta.parser_name,
+            "parser_version": meta.parser_version,
+            "parser_confidence": meta.parser_confidence,
+            "parser_notes": "; ".join(meta.parser_notes),
             "privacy_marker": meta.privacy_marker,
             "sections": len(context_obj.sections),
             "anchors": len(context_obj.anchors),
