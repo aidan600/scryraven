@@ -93,6 +93,8 @@ def render_document_review_page(context: UIContext) -> None:
             "Section": chunk.section_heading,
             "Anchors": ", ".join(chunk.anchor_ids),
             "Label": chunk.evidence_label,
+            "Scope": chunk.source_scope,
+            "Mode": chunk.retrieval_mode,
             "Confidence": chunk.extraction_confidence,
             "Preview": chunk.preview,
         }
@@ -106,29 +108,28 @@ def render_document_review_page(context: UIContext) -> None:
         st.caption("No deterministic claim candidates were detected.")
     for finding in context_obj.findings:
         st.markdown(
-            f"**{finding.finding_id}** — `{', '.join(finding.labels)}` "
-            f"anchors: `{', '.join(finding.anchor_ids)}`"
+            f"**{finding.finding_id}** — `{', '.join(finding.labels)}` anchors: `{', '.join(finding.anchor_ids)}`"
         )
         st.write(finding.text)
         st.caption(finding.note)
 
-    st.subheader("Follow-up retrieval")
+    st.subheader("Follow-up retrieval (deterministic retained chunks)")
     followup = st.text_input(
-        "Ask for retained document-local chunks by heading, keyword, or concept",
+        "Retrieve retained document-local chunks by heading or keyword tokens",
         key=_FOLLOWUP_KEY,
-        placeholder="e.g., What deadlines are mentioned?",
+        placeholder="e.g., deadline renewal legal",
     )
     if followup.strip():
         hits = retrieve_document_followup(context_obj, followup)
         if not hits:
-            st.caption("No retained document-local chunks matched deterministically.")
+            st.caption("No retained document-local chunks matched deterministically; this is not model answering.")
         for hit in hits:
             st.markdown(
                 f"**{hit.chunk_id}** score `{hit.score}` — {hit.section_heading} — "
                 f"anchors: `{', '.join(hit.anchor_ids)}`"
             )
             st.write(hit.snippet)
-            st.caption(", ".join(hit.labels))
+            st.caption(f"{', '.join(hit.labels)} · mode: {hit.retrieval_mode}")
 
     st.subheader("Markdown export")
     st.download_button(
