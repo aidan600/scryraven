@@ -8,6 +8,8 @@ AG-81B defines ScryRaven's user-facing answer-quality rubric and the stable Fast
 
 AG-81B governs presentation quality only. It is not a new runtime authority source, not a retrieval policy, not a prompt change, and not a validation result.
 
+AG-81B-R1 adds the companion answer-worthiness and golden-example layer for judging whether a searched answer is meaningfully better than raw search results; see `docs/product/AG81B_R1_ANSWER_WORTHINESS_AND_GOLDEN_EXAMPLES.md`.
+
 AG-81B is distinct from:
 
 - **Runtime correctness:** whether the pipeline, adapters, handoffs, and persistence execute correctly.
