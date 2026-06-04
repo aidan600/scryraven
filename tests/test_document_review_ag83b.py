@@ -100,7 +100,7 @@ def test_document_id_and_hash_are_stable_for_normalized_text() -> None:
     assert normalize_document_text("\n\r\n# Memo\r\n\r\nA deadline is 2026.\r\n") == "# Memo\n\nA deadline is 2026."
     assert a.metadata.document_id == b.metadata.document_id
     assert a.metadata.document_hash == b.metadata.document_hash
-    assert a.metadata.version == "ag83b-v1"
+    assert a.metadata.version == "ag83d-v1"
     assert a.metadata.privacy_marker == PRIVACY_MARKER
 
 
@@ -131,6 +131,102 @@ def test_review_findings_preserve_boundary_labels_and_numeric_source_labels() ->
     assert "unsupported-by-document" in labels
     assert context.boundary_notice == BOUNDARY_NOTICE
     assert all(finding.anchor_ids for finding in context.findings)
+
+
+def test_ag83d_rich_claim_fields_and_source_obligations_are_deterministic() -> None:
+    sample = """
+# Evidence memo
+
+The program reduces review time because the appendix compares baseline data.
+The current API pricing is $20 per seat.
+Legal compliance requires filing by June 30, 2026.
+Clinical efficacy improved according to the study.
+The benchmark paper reports 91% accuracy.
+Internal records show 14 affected customers.
+"""
+    context = build_document_review_context(sample)
+    labels = {label for finding in context.findings for label in finding.labels}
+    obligations = {finding.source_obligation for finding in context.findings}
+    claim_types = {finding.claim_type for finding in context.findings}
+
+    assert "direct-document-statement" in labels
+    assert "document-supported-inference" in labels
+    assert "official-current-source-needed" in labels
+    assert "legal-current-official-source-needed" in labels
+    assert "financial-numeric-source-needed" in labels
+    assert "medical-scientific-validation-required" in labels
+    assert "academic-source-needed" in labels
+    assert "product-api-current-technical-source-needed" in labels
+    assert "corpus-validation-required" in labels
+    assert "external-validation-required" in labels
+    assert "source-bound-numeric" in labels
+    assert "product-api-current-technical-source-needed" in obligations
+    assert "legal-current-official-source-needed" in obligations
+    assert "medical-scientific-validation-required" in obligations
+    assert "academic-source-needed" in obligations
+    assert "corpus-validation-required" in obligations
+    assert "document-supported-inference" in claim_types
+    assert all(finding.validation_need for finding in context.findings)
+    assert all(finding.evidence_role for finding in context.findings)
+
+
+def test_ag83d_support_cues_do_not_become_external_validation() -> None:
+    context = build_document_review_context(
+        "# Memo\n\nCurrent vendor pricing is $12 according to Table 1.\n\nCurrent vendor pricing is $15."
+    )
+    supported = next(finding for finding in context.findings if "$12" in finding.text)
+    unsupported = next(finding for finding in context.findings if "$15" in finding.text)
+
+    assert "unsupported-by-document" not in supported.labels
+    assert supported.source_obligation == "official-current-source-needed"
+    assert supported.validation_need == "official-current-if-validated"
+    assert "external-validation-required" in supported.labels
+    assert "unsupported-by-document" in unsupported.labels
+    assert unsupported.evidence_role == "unsupported-by-document"
+    assert "outside-world truth" in supported.note
+
+
+def test_ag83d_action_obligation_deadline_opinion_and_risk_labels() -> None:
+    context = build_document_review_context(
+        "# Plan\n\nMina should request legal review by June 30, 2026 because vendor renewal may increase exposure."
+    )
+    finding = context.findings[0]
+
+    assert "action-item-obligation" in finding.labels
+    assert "date-deadline-claim" in finding.labels
+    assert "opinion-recommendation" in finding.labels
+    assert "risk-red-flag" in finding.labels
+    assert finding.claim_type == "risk-red-flag"
+    assert finding.risk_level == "medium"
+
+
+def test_ag83d_possible_internal_tension_is_conservative_and_unresolved() -> None:
+    context = build_document_review_context(
+        "# Plan\n\nThe renewal fee is 10% for the pilot.\n\nThe renewal fee is 12% for the pilot."
+    )
+    tension = next(
+        finding for finding in context.findings if finding.claim_type == "document-internal-possible-tension"
+    )
+
+    assert "document-internal-possible-tension" in tension.labels
+    assert tension.evidence_role == "possible-tension"
+    assert tension.risk_level == "medium"
+    assert "no winner" in tension.note
+    assert len(tension.anchor_ids) == 2
+
+
+def test_ag83d_export_includes_rich_classification_fields_and_boundary() -> None:
+    context = build_document_review_context("# Memo\n\nCurrent API pricing is $20 per seat.")
+    export = context.export_markdown
+
+    assert "Claim type:" in export
+    assert "Source obligation:" in export
+    assert "Evidence role:" in export
+    assert "Validation need:" in export
+    assert "Risk level:" in export
+    assert "product-api-current-technical-source-needed" in export
+    assert "official-current-source-needed" in export
+    assert "No public web validation" in export
 
 
 def test_context_snapshot_is_immutable_and_mutation_safe() -> None:

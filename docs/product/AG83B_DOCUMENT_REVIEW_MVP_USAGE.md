@@ -48,3 +48,24 @@ Anchors are honest for pasted text and Markdown only. They use normalized line r
 Follow-up retrieval searches only the retained `context.chunks`, returns snippets, anchors, labels, scores, and the deterministic retrieval mode, and returns no hits when no keyword/heading overlap is found. It does not call providers, models, public search, storage, caches, or a personal corpus. Full natural-language document Q&A remains a future model-mediated seam and must preserve the document-local/private-source boundary.
 
 Markdown export includes the document ID/hash/version, privacy marker, document-local evidence/source-scope labels, boundary notice, privacy warning, review labels, anchors, unsupported/external-validation-required states, and the follow-up boundary. It does not contain public validation or persistent document-library state.
+
+## AG-83D claim extraction and source-obligation classification
+
+AG-83D keeps the same pasted text / Markdown-only, deterministic, session-local boundary and hardens the claim layer. `ReviewFinding` now preserves the original stable label tuple while adding explicit local classification fields: `claim_type`, `source_obligation`, `evidence_role`, `validation_need`, and a modest deterministic `risk_level`. These fields are helper/output metadata for document review only; they do not alter Controller, AnswerContract, provider, search, cache, persistence, or orchestrator behavior.
+
+The deterministic source-obligation classifier can label claims that would need stronger evidence if the user later wanted truth validation:
+
+- `document-local-only` for claims that are only being treated as statements in the pasted document;
+- `official-current-source-needed` for current/official/status/price/policy-like claims;
+- `legal-current-official-source-needed` for legal, regulatory, compliance, jurisdiction, contract, tax, or effective-date claims;
+- `financial-numeric-source-needed` and `source-bound-numeric` for numbers, prices, costs, rates, forecasts, estimates, budgets, and similar scoped values;
+- `medical-scientific-validation-required` for medical, clinical, health, safety, efficacy, treatment, trial, patient, scientific, causal, or study claims;
+- `academic-source-needed` for paper, literature, benchmark, methodology, DOI/arXiv, citation, or study claims;
+- `product-api-current-technical-source-needed` for API, SDK, package, browser, model, compatibility, release-note, changelog, endpoint, or version claims;
+- `corpus-validation-required` for claims that depend on internal records, customer records, uploaded documents, a private corpus, or a future document library.
+
+These labels are not public validation. A document anchor proves only what the provided document says. Even when a local support cue such as “according to,” “table,” “appendix,” “figure,” “report,” “survey,” “study,” or “source” is present, AG-83D does not check that cited material. It only avoids the narrower `unsupported-by-document` label when a local support cue is nearby. Current, legal, numeric, scientific, academic, technical, and corpus-bound claims can still carry external/corpus validation obligations.
+
+AG-83D also adds conservative deterministic cues for inference boundaries, recommendations/opinions, action items/obligations, date/deadline claims, risk/red-flag claims, and possible internal document tensions. Possible tensions are intentionally unresolved: the export labels them as possible document-internal tension and does not choose a winner or state that either claim is true or false.
+
+The Markdown export and Streamlit claim-candidate display include the richer classification fields, anchors, notes, and the same document-local boundary. No PDF/HTML export, PDF/DOCX/OCR parsing, model-mediated Q&A, public-web validation, persistent document library, personal corpus, or cache reuse was added.
