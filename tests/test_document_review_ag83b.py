@@ -100,7 +100,7 @@ def test_document_id_and_hash_are_stable_for_normalized_text() -> None:
     assert normalize_document_text("\n\r\n# Memo\r\n\r\nA deadline is 2026.\r\n") == "# Memo\n\nA deadline is 2026."
     assert a.metadata.document_id == b.metadata.document_id
     assert a.metadata.document_hash == b.metadata.document_hash
-    assert a.metadata.version == "ag83d-v1"
+    assert a.metadata.version == "ag83d-ag83c-v1"
     assert a.metadata.privacy_marker == PRIVACY_MARKER
 
 
@@ -363,3 +363,115 @@ def test_pipeline_orchestrator_remains_unchanged() -> None:
         text=True,
     )
     assert orchestrator_status.stdout.strip() == ""
+
+
+def test_ag83c_parser_abstraction_preserves_pasted_text_regression() -> None:
+    from core.document_review import DocumentInput, build_document_review_context_from_input, parse_document_input
+
+    parsed = parse_document_input(
+        DocumentInput(content=SAMPLE_MARKDOWN, input_format="markdown", title="Launch review")
+    )
+    context = build_document_review_context_from_input(
+        DocumentInput(content=SAMPLE_MARKDOWN, input_format="markdown", title="Launch review")
+    )
+
+    assert parsed.input_format == "markdown"
+    assert parsed.parser_name == "text-normalizer"
+    assert context.metadata.input_format == "markdown"
+    assert context.metadata.parser_name == "text-normalizer"
+    assert [anchor.anchor_id for anchor in context.anchors] == [
+        anchor.anchor_id for anchor in build_document_review_context(SAMPLE_MARKDOWN, title="Launch review").anchors
+    ]
+    assert all(anchor.source_reference == anchor.line_reference for anchor in context.anchors)
+
+
+def test_ag83c_pdf_parsing_uses_page_anchors_without_ocr_or_layout_claims(monkeypatch: pytest.MonkeyPatch) -> None:
+    import sys
+    import types
+
+    from core.document_review import DocumentInput, build_document_review_context_from_input, parse_document_input
+
+    class FakePage:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def extract_text(self) -> str:
+            return self._text
+
+    class FakeReader:
+        def __init__(self, _stream: object) -> None:
+            self.pages = [
+                FakePage("PDF memo\nThe current API pricing is $20 according to Table 1."),
+                FakePage("The team should request legal review by June 30, 2026."),
+            ]
+
+    monkeypatch.setitem(sys.modules, "pypdf", types.SimpleNamespace(PdfReader=FakeReader))
+    monkeypatch.setattr(
+        "core.document_review.importlib.util.find_spec", lambda name: object() if name == "pypdf" else None
+    )
+    parsed = parse_document_input(DocumentInput(content=b"%PDF synthetic", input_format="pdf", title="PDF memo"))
+    context = build_document_review_context_from_input(DocumentInput(content=b"%PDF synthetic", input_format="pdf"))
+
+    assert parsed.input_format == "pdf"
+    assert parsed.parser_name == "pypdf"
+    assert "no OCR" in " ".join(parsed.notes)
+    assert context.metadata.input_format == "pdf"
+    assert context.metadata.parser_confidence <= 0.76
+    assert {anchor.source_page_start for anchor in context.anchors} == {1, 2}
+    assert all(anchor.source_reference.startswith("PDF page ") for anchor in context.anchors)
+    assert all("layout coordinates" in anchor.anchor_note for anchor in context.anchors)
+    assert "official-current-source-needed" in {label for finding in context.findings for label in finding.labels}
+    assert "No public web validation" in context.export_markdown
+
+
+def test_ag83c_docx_parsing_uses_structural_anchors_and_flattened_tables() -> None:
+    import io
+    import zipfile
+
+    from core.document_review import DocumentInput, build_document_review_context_from_input, parse_document_input
+
+    document_xml = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>DOCX memo</w:t></w:r></w:p>
+    <w:p><w:r><w:t>The current vendor pricing is $15 according to Table 1.</w:t></w:r></w:p>
+    <w:tbl>
+      <w:tr><w:tc><w:p><w:r><w:t>Owner</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Task</w:t></w:r></w:p></w:tc></w:tr>
+      <w:tr><w:tc><w:p><w:r><w:t>Mina</w:t></w:r></w:p></w:tc><w:tc><w:p><w:r><w:t>Prepare review checklist</w:t></w:r></w:p></w:tc></w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>"""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", document_xml)
+
+    content = buffer.getvalue()
+    parsed = parse_document_input(DocumentInput(content=content, input_format="docx", title="DOCX memo"))
+    context = build_document_review_context_from_input(DocumentInput(content=content, input_format="docx"))
+
+    assert parsed.input_format == "docx"
+    assert parsed.parser_name == "stdlib-docx-xml"
+    assert "# DOCX memo" in parsed.text
+    assert "| Owner | Task |" in parsed.text
+    assert context.metadata.input_format == "docx"
+    assert [section.heading for section in context.sections] == ["Document", "DOCX memo"]
+    assert any(anchor.kind == "table" for anchor in context.anchors)
+    assert all(anchor.source_format == "docx" for anchor in context.anchors)
+    assert all(anchor.source_reference.startswith("DOCX block ") for anchor in context.anchors)
+    assert all(anchor.source_page_start is None for anchor in context.anchors)
+    assert "rendered page" in " ".join(context.metadata.parser_notes)
+    assert "no provider/model/search calls" in context.export_markdown
+
+
+def test_ag83c_parsed_document_hash_is_stable_for_parsed_content() -> None:
+    from core.document_review import DocumentInput, build_document_review_context_from_input
+
+    first = build_document_review_context_from_input(
+        DocumentInput(content="\n# Memo\n\nThe current API pricing is $20.\n", input_format="markdown")
+    )
+    second = build_document_review_context_from_input(
+        DocumentInput(content="# Memo\n\nThe current API pricing is $20.", input_format="markdown")
+    )
+
+    assert first.metadata.document_hash == second.metadata.document_hash
+    assert first.metadata.document_id == second.metadata.document_id

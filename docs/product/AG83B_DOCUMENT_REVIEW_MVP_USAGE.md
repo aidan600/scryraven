@@ -69,3 +69,39 @@ These labels are not public validation. A document anchor proves only what the p
 AG-83D also adds conservative deterministic cues for inference boundaries, recommendations/opinions, action items/obligations, date/deadline claims, risk/red-flag claims, and possible internal document tensions. Possible tensions are intentionally unresolved: the export labels them as possible document-internal tension and does not choose a winner or state that either claim is true or false.
 
 The Markdown export and Streamlit claim-candidate display include the richer classification fields, anchors, notes, and the same document-local boundary. No PDF/HTML export, PDF/DOCX/OCR parsing, model-mediated Q&A, public-web validation, persistent document library, personal corpus, or cache reuse was added.
+
+## AG-83C PDF/DOCX local parser note
+
+AG-83C extends the document-review MVP with a narrow local parser seam while keeping
+`DocumentReviewContext` as the canonical retained context. Pasted text and Markdown
+remain supported exactly as the primary path.
+
+Supported parser inputs:
+
+- **Pasted text / Markdown:** normalized into deterministic lines and anchors.
+- **PDF:** text-based PDF extraction only through the local `pypdf` dependency when
+  installed from project requirements. PDF anchors are page-level only when the
+  parser returns page-separated text.
+- **DOCX:** local `.docx` package XML extraction for headings, paragraphs,
+  lists-as-paragraphs, and simple flattened tables. DOCX anchors use structural
+  block order only; DOCX rendered page numbers are not claimed.
+
+Boundaries and limits:
+
+- No OCR, scanned-PDF recovery, image extraction, rendering stack, layout
+  coordinates, or table-layout fidelity is provided.
+- No provider/model/search calls, prompt tuning, public web validation, live
+  validation, persistent corpus/library behavior, raw document persistence, or
+  runtime cache reuse is added.
+- Parsed documents remain private/session-local document-review context. They are
+  not public evidence and do not validate outside-world truth.
+- Parser confidence is extraction confidence only. It says how cautiously to treat
+  the extracted text and anchors; it is not truth confidence for document claims.
+- Anchors are only as precise as parser support allows: normalized lines for
+  pasted text/Markdown, PDF page anchors for text-based PDFs, and DOCX structural
+  block order for DOCX.
+
+The Streamlit page may accept an optional PDF/DOCX upload when parser support is
+available. The upload path feeds the same deterministic document-local review,
+claim classification, follow-up retrieval, and Markdown export as pasted text;
+it does not create a document library or personal corpus.
