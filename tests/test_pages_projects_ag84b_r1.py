@@ -151,7 +151,8 @@ def test_boundary_caption_names_closed_surfaces() -> None:
     assert "No connectors" in caption
     assert "Project Instructions" in caption
     assert "snapshots" in caption
-    assert "thread report generator" in caption
+    assert "generated artifacts" in caption
+    assert "not Project Sources or primary evidence" in caption
 
 
 def test_pages_projects_has_no_closed_surface_imports() -> None:

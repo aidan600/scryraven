@@ -25,6 +25,15 @@ from core.project_sources import (
     load_project,
     remove_project_source,
 )
+from core.thread_reports import (
+    ThreadReportSaveResult,
+    build_report_input_packet,
+    format_thread_report_row,
+    generate_and_save_thread_report,
+    list_thread_reports,
+    load_thread_report_body,
+    thread_report_boundary_caption,
+)
 from ui.context import UIContext
 
 _PROJECTS_SELECTED_KEY = "projects_selected_project_id"
@@ -32,13 +41,15 @@ _DOC_REVIEW_TARGET_KEY = "document_review_save_project_id"
 _DOC_REVIEW_INLINE_NAME_KEY = "document_review_save_new_project_name"
 _DOC_REVIEW_INLINE_DESCRIPTION_KEY = "document_review_save_new_project_description"
 _DOC_REVIEW_TITLE_KEY = "document_review_project_source_title"
+_THREAD_REPORT_TARGET_KEY = "thread_report_save_project_id"
 _BOUNDARY_ITEMS = (
     "Local/private manifests under output/project_sources/.",
     "Raw source files are not copied by default.",
     "Raw normalized document text is not persisted by default.",
     "Saved Project Sources are not public validation.",
     "No retrieval integration yet; Project Sources are not automatically injected into answers.",
-    "No connectors, Project Instructions, snapshots, saved reports, or thread report generator yet.",
+    "No connectors, Project Instructions, or snapshots.",
+    "Saved reports are generated artifacts, not Project Sources or primary evidence.",
 )
 
 
@@ -144,6 +155,170 @@ def save_document_review_to_project(
     )
 
 
+def save_thread_report_to_project(
+    session: dict[str, Any],
+    project: Project | str,
+    model_fn: Any,
+    *,
+    storage_root: str | Path | None = None,
+    title: str | None = None,
+    extra_thread_references: tuple[dict[str, object], ...] | list[dict[str, object]] = (),
+) -> ThreadReportSaveResult:
+    """Generate and save a thread report using the injected model seam only."""
+
+    return generate_and_save_thread_report(
+        session,
+        project,
+        model_fn,
+        storage_root=storage_root,
+        title=title,
+        extra_thread_references=extra_thread_references,
+    )
+
+
+def thread_attachment_refs_from_document_review_context(
+    context_obj: DocumentReviewContext | None,
+) -> tuple[dict[str, object], ...]:
+    """Return compact thread-attachment references without raw document text."""
+
+    if context_obj is None or not hasattr(context_obj, "metadata") or not hasattr(context_obj, "anchors"):
+        return ()
+    refs: list[dict[str, object]] = [
+        {
+            "reference_id": f"thread_document_review_{context_obj.metadata.document_id}",
+            "reference_type": "thread_document_review_attachment",
+            "title": context_obj.metadata.title,
+            "anchor_ref": f"document_review/{context_obj.metadata.document_id}#anchors",
+            "posture_label": "document-local-thread-attachment-reference; not-public-validation",
+            "preview": (
+                f"input_format={context_obj.metadata.input_format}; "
+                f"document_hash={context_obj.metadata.document_hash}; anchors={len(context_obj.anchors)}"
+            ),
+        }
+    ]
+    for anchor in context_obj.anchors[:20]:
+        refs.append(
+            {
+                "reference_id": f"thread_document_anchor_{anchor.anchor_id}",
+                "reference_type": "thread_document_anchor_reference",
+                "title": anchor.section_heading,
+                "anchor_ref": anchor.source_reference or anchor.line_reference or anchor.anchor_id,
+                "posture_label": "document-local-anchor-reference; not-public-truth",
+                "preview": anchor.anchor_note or anchor.line_reference or anchor.kind,
+            }
+        )
+    return tuple(refs)
+
+
+def format_thread_report_download_name(report_id: str, title: str) -> str:
+    """Return a safe Markdown filename for a saved report."""
+
+    clean_title = "-".join(str(title or "thread-report").lower().split())
+    clean_title = "".join(ch for ch in clean_title if ch.isalnum() or ch in "-_")[:80] or "thread-report"
+    return f"{clean_title}-{report_id}.md"
+
+
+def render_thread_report_project_save_section(st: Any, context: UIContext, session: dict[str, Any]) -> None:
+    """Render a narrow current-thread generated-report save surface."""
+
+    st.subheader("Generate thread report")
+    st.caption(thread_report_boundary_caption())
+    projects = list_projects()
+    if not projects:
+        st.caption("Create a local Project before saving a generated thread report.")
+        return
+
+    options = project_select_options(projects)
+    labels = list(options)
+    selected_label = st.selectbox("Save report to Project", labels, key="thread_report_project_label")
+    selected_project = load_project(options[selected_label])
+    extra_refs = thread_attachment_refs_from_document_review_context(st.session_state.get("document_review_context"))
+    packet_preview = build_report_input_packet(session, selected_project, extra_thread_references=extra_refs)
+    st.caption(
+        f"Packet preview: {len(packet_preview.messages)} message(s), "
+        f"{len(packet_preview.provenance_references)} provenance reference(s), "
+        f"{len(packet_preview.missing)} missing/unavailable field(s)."
+    )
+    report_title = st.text_input(
+        "Report title",
+        value=f"Thread report — {session.get('title') or session.get('query') or selected_project.name}",
+        key="thread_report_title",
+    )
+    if st.button("Generate and save thread report", key="thread_report_generate_save", type="primary"):
+        provider = st.session_state.get("sp", "OpenAI")
+        if provider == "OpenAI":
+            model = st.session_state.get("sm_oa", "gpt-5.4")
+        elif provider == "OpenRouter":
+            model = st.session_state.get("sm_or", "anthropic/claude-sonnet-4.6")
+        else:
+            model = st.session_state.get("sm_ls", "local-model")
+        local_url = st.session_state.get("local_url", "http://localhost:1234/v1")
+        api_key = st.session_state.get("or_key", context.os.getenv("OPENROUTER_API_KEY", ""))
+        use_reasoning = bool(st.session_state.get("use_reasoning", True))
+
+        def model_fn(prompt: str, system_prompt: str) -> str:
+            return str(
+                context.ask_model(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    provider=provider,
+                    model=model,
+                    effort="low",
+                    base_url=local_url,
+                    api_key=api_key,
+                    stream=False,
+                    use_reasoning=use_reasoning,
+                    cost_phase="thread_report_generation",
+                )
+            )
+
+        result = save_thread_report_to_project(
+            session,
+            selected_project,
+            model_fn,
+            title=report_title,
+            extra_thread_references=extra_refs,
+        )
+        st.session_state[_THREAD_REPORT_TARGET_KEY] = selected_project.project_id
+        st.success(
+            f"Saved generated report {result.artifact.report_id} to Project '{selected_project.name}'. "
+            "This report is not primary evidence and was not saved as a Project Source."
+        )
+        st.download_button(
+            "Download saved Markdown report",
+            data=result.body,
+            file_name=format_thread_report_download_name(result.artifact.report_id, result.artifact.title),
+            mime="text/markdown",
+            key=f"thread_report_download_{result.artifact.report_id}",
+        )
+        with st.expander("Saved report preview", expanded=True):
+            st.markdown(result.body.replace("$", "\\$"))
+
+
+def render_saved_thread_reports_section(st: Any, project: Project) -> None:
+    """Render saved generated thread reports for a Project."""
+
+    st.markdown("### Generated Project Artifacts / Thread Reports")
+    st.caption(thread_report_boundary_caption())
+    reports = list_thread_reports(project)
+    if not reports:
+        st.caption("No generated thread reports saved to this Project yet.")
+        return
+    st.dataframe([format_thread_report_row(report) for report in reports], use_container_width=True, hide_index=True)
+    for report in reports:
+        with st.expander(f"{report.title} — {report.report_id}", expanded=False):
+            body = load_thread_report_body(report)
+            st.write(format_thread_report_row(report))
+            st.download_button(
+                "Download Markdown",
+                data=body,
+                file_name=format_thread_report_download_name(report.report_id, report.title),
+                mime="text/markdown",
+                key=f"project_report_download_{report.report_id}",
+            )
+            st.markdown(body.replace("$", "\\$"))
+
+
 def render_projects_page(context: UIContext) -> None:
     """Render the minimal local Projects / Project Sources page."""
 
@@ -174,6 +349,11 @@ def render_projects_page(context: UIContext) -> None:
         return
 
     st.dataframe([format_project_row(project) for project in projects], use_container_width=True, hide_index=True)
+    current_session = st.session_state.get("current_session")
+    if isinstance(current_session, dict):
+        with st.expander("🧾 Generate current-thread report", expanded=False):
+            render_thread_report_project_save_section(st, context, current_session)
+
     selected_project = _render_project_selector(st, projects, key="projects_selected_project_label")
     if selected_project is None:
         return
@@ -256,6 +436,8 @@ def _render_selected_project(st: Any, project: Project) -> None:
     st.subheader(f"Project: {project.name}")
     st.write(format_project_row(project))
     st.caption(project_source_boundary_caption())
+
+    render_saved_thread_reports_section(st, project)
 
     sources = list_project_sources(project)
     st.markdown("### Project Sources")
