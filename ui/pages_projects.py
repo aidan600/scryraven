@@ -349,11 +349,6 @@ def render_projects_page(context: UIContext) -> None:
         return
 
     st.dataframe([format_project_row(project) for project in projects], use_container_width=True, hide_index=True)
-    current_session = st.session_state.get("current_session")
-    if isinstance(current_session, dict):
-        with st.expander("🧾 Generate current-thread report", expanded=False):
-            render_thread_report_project_save_section(st, context, current_session)
-
     selected_project = _render_project_selector(st, projects, key="projects_selected_project_label")
     if selected_project is None:
         return

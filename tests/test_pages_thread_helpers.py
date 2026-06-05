@@ -316,3 +316,42 @@ def test_evidence_provenance_rows_handle_empty_and_malformed_inputs() -> None:
     assert len(rows[0]["Preview"]) <= 220
     assert rows[0]["Preview"].endswith("...")
     assert malformed == before
+
+
+class _FakeExpander:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _FakeThreadReportSt:
+    def __init__(self) -> None:
+        self.expanders: list[tuple[str, bool]] = []
+
+    def expander(self, label: str, expanded: bool = False):
+        self.expanders.append((label, expanded))
+        return _FakeExpander()
+
+
+def test_active_thread_report_section_passes_live_session(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    import ui.pages_thread as pages_thread
+
+    fake_st = _FakeThreadReportSt()
+    context = SimpleNamespace(st=fake_st)
+    live_session = {"id": "sess_live", "query": "Active thread", "report": "Answer"}
+    calls: list[tuple[object, object, object]] = []
+
+    def fake_report_section(st, context_obj, session_obj) -> None:
+        calls.append((st, context_obj, session_obj))
+
+    monkeypatch.setattr(pages_thread, "render_thread_report_project_save_section", fake_report_section)
+
+    pages_thread.render_active_thread_report_section(context, live_session)
+
+    assert fake_st.expanders == [("🧾 Generate / Save Thread Report to Project", False)]
+    assert calls == [(fake_st, context, live_session)]
+    assert calls[0][2] is live_session

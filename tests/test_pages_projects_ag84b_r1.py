@@ -178,3 +178,15 @@ def test_pages_projects_has_no_closed_surface_imports() -> None:
         "core.connectors",
     }
     assert imported_modules.isdisjoint(forbidden)
+
+
+def test_projects_page_no_longer_depends_on_current_session_for_report_generation() -> None:
+    source = Path("ui/pages_projects.py").read_text(encoding="utf-8")
+    assert 'st.session_state.get("current_session")' not in source
+    assert "Generate current-thread report" not in source
+
+
+def test_active_thread_page_owns_report_generation_entrypoint() -> None:
+    source = Path("ui/pages_thread.py").read_text(encoding="utf-8")
+    assert "render_active_thread_report_section(context, session)" in source
+    assert "Generate / Save Thread Report to Project" in source
