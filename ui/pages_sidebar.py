@@ -72,6 +72,11 @@ def render_main_sidebar(context: UIContext) -> None:
             st.session_state.current_page = "document_review"
             st.rerun()
 
+        if st.button("Projects / Project Sources", use_container_width=True, disabled=st.session_state.is_running):
+            st.session_state.current_session = None
+            st.session_state.current_page = "projects"
+            st.rerun()
+
         render_demo_sidebar(context)
 
         st.caption("RECENT THREADS")
@@ -85,9 +90,7 @@ def render_main_sidebar(context: UIContext) -> None:
                 compact_title = _compact_sidebar_title(raw_title)
                 current_session = st.session_state.get("current_session")
                 is_active = bool(
-                    current_session
-                    and not is_demo_session(current_session)
-                    and current_session["id"] == s["id"]
+                    current_session and not is_demo_session(current_session) and current_session["id"] == s["id"]
                 )
                 btn_type = "primary" if is_active else "secondary"
 
@@ -252,11 +255,7 @@ def render_main_sidebar(context: UIContext) -> None:
             with st.expander("Feedback Summary", expanded=False):
                 exec_logs = _read_jsonl(execution_log_path)
                 feedback_logs = _read_jsonl(feedback_log_path)
-                feedback_by_run = {
-                    f.get("run_id"): f
-                    for f in feedback_logs
-                    if f.get("run_id")
-                }
+                feedback_by_run = {f.get("run_id"): f for f in feedback_logs if f.get("run_id")}
                 total_queries = len([e for e in exec_logs if e.get("event") == "execution"])
                 rated = [
                     f
@@ -264,7 +263,9 @@ def render_main_sidebar(context: UIContext) -> None:
                     if f.get("event") == "feedback"
                     and (feedback_overall_numeric(f) is not None or f.get("user_rating"))
                 ]
-                st.write(f"Total runs in execution log: **{total_queries}** | Feedback forms submitted: **{len(rated)}**")
+                st.write(
+                    f"Total runs in execution log: **{total_queries}** | Feedback forms submitted: **{len(rated)}**"
+                )
                 last_five = []
                 for e in [x for x in exec_logs if x.get("event") == "execution"][-5:]:
                     fb = feedback_by_run.get(e.get("run_id"), {})
@@ -321,9 +322,7 @@ def render_main_sidebar(context: UIContext) -> None:
                 tf = kbd.get("total_flagged", 0)
                 tp = kbd.get("total_positive_review", 0)
                 ratio = round(100.0 * tf / tr, 1) if tr else 0.0
-                st.write(
-                    f"**Auto-review flagged** {tf} / {tr} runs ({ratio}%). **Positive-capture** lines: **{tp}**"
-                )
+                st.write(f"**Auto-review flagged** {tf} / {tr} runs ({ratio}%). **Positive-capture** lines: **{tp}**")
                 fcc = kbd.get("failure_class_counts")
                 sacc = kbd.get("suggested_action_type_counts")
                 st.caption("Top failure classes (from KB reviews)")

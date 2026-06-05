@@ -11,6 +11,7 @@ from core.document_review import (
     retrieve_document_followup,
 )
 from ui.context import UIContext
+from ui.pages_projects import render_document_review_project_save_section
 
 _SESSION_KEY = "document_review_context"
 _INPUT_KEY = "document_review_input"
@@ -115,6 +116,7 @@ def render_document_review_page(context: UIContext) -> None:
         }
     )
     st.caption(PRIVACY_WARNING)
+    render_document_review_project_save_section(st, context_obj)
 
     st.subheader("Document-local summary")
     st.markdown(context_obj.export_markdown.split("## Document-local summary\n", 1)[-1].split("\n\n##", 1)[0])
