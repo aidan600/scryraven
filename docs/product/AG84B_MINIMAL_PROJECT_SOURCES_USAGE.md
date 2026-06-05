@@ -119,7 +119,7 @@ sources = list_project_sources(project)
 project = remove_project_source(project, sources[0].project_source_id)
 ```
 
-Removal is membership-only in AG-84B. It updates the Project's `project_source_ids` and leaves SourceRecord/SourceRevision manifests in place. Full deletion, tombstoning, secure erase, managed-copy deletion, and retention UX are intentionally deferred.
+Removal is membership-edge-only in AG-84B. It updates the Project's `project_source_ids`, marks the ProjectSource edge `retention_state` as `removed-from-project`, and leaves SourceRecord/SourceRevision manifests active and in place. Source record/revision deletion, tombstoning, secure erase, managed-copy deletion, and retention UX are intentionally deferred.
 
 ## Boundaries and deferred work
 

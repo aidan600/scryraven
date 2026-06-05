@@ -413,11 +413,39 @@ def remove_project_source(
     storage_root: str | Path | None = None,
     clock: Clock = utc_now,
 ) -> Project:
-    """Remove a ProjectSource membership edge without deleting source manifests."""
+    """Mark a ProjectSource membership edge removed without deleting source manifests."""
 
     root = _prepare_storage_root(storage_root)
     loaded_project = load_project(project, storage_root=root) if isinstance(project, str) else project
     updated_at = _timestamp(clock)
+    project_source_path = _project_source_path(root, project_source_id)
+    if project_source_path.exists():
+        project_source = _project_source_from_payload(_read_json(project_source_path))
+        removed_project_source = ProjectSource(
+            project_source_id=project_source.project_source_id,
+            project_id=project_source.project_id,
+            source_record_id=project_source.source_record_id,
+            source_revision_id=project_source.source_revision_id,
+            title=project_source.title,
+            source_kind=project_source.source_kind,
+            scope=project_source.scope,
+            privacy_class=project_source.privacy_class,
+            evidence_role=project_source.evidence_role,
+            source_obligation_summary=project_source.source_obligation_summary,
+            validation_posture=project_source.validation_posture,
+            source_identity=project_source.source_identity,
+            parser_metadata=project_source.parser_metadata,
+            anchor_manifest_ref=project_source.anchor_manifest_ref,
+            chunk_manifest_ref=project_source.chunk_manifest_ref,
+            retention_state="removed-from-project",
+            added_at=project_source.added_at,
+            updated_at=updated_at,
+            schema_version=project_source.schema_version,
+            local_private_boundary=project_source.local_private_boundary,
+            raw_text_persisted=project_source.raw_text_persisted,
+            manifest_metadata=_manifest_metadata(project_source.added_at, updated_at),
+        )
+        _write_json(project_source_path, _project_source_payload(removed_project_source))
     updated = Project(
         project_id=loaded_project.project_id,
         name=loaded_project.name,

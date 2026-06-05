@@ -159,7 +159,11 @@ def test_remove_project_source_removes_membership_only(tmp_path: Path) -> None:
     assert updated.project_source_ids == ()
     assert updated.updated_at == "2026-06-05T12:05:00+00:00"
     assert load_project(updated.project_id, storage_root=tmp_path).project_source_ids == ()
-    assert load_project_source("psrc_fixed_01", storage_root=tmp_path).retention_state == "active"
+    assert list_project_sources(updated, storage_root=tmp_path) == ()
+    removed_project_source = load_project_source("psrc_fixed_01", storage_root=tmp_path)
+    assert removed_project_source.retention_state == "removed-from-project"
+    assert removed_project_source.updated_at == "2026-06-05T12:05:00+00:00"
+    assert load_source_record("src_fixed_01", storage_root=tmp_path).retention_state == "active"
     assert load_source_revision("rev_fixed_01", storage_root=tmp_path).retention_state == "active"
 
 
