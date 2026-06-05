@@ -137,3 +137,24 @@ AG-84B keeps these surfaces closed:
 - broad orchestrator work.
 
 Future phases may harden storage location policy, add deletion/tombstone UX, add report saving, add source picking/retrieval integration, instrument cache readiness, implement Project Instructions, implement connectors, or add snapshots. Those are not part of AG-84B.
+
+## AG-84B-R1 Streamlit UI seam
+
+AG-84B-R1 adds a minimal Streamlit surface for the existing manifest helpers. The sidebar entry **Projects / Project Sources** opens a local page where users can create Projects, list existing Projects, select a Project, and view its Project Sources. This UI is a thin wrapper over `core.project_sources`; it does not add retrieval, prompt, model, provider, search, connector, cache, Project Instructions, snapshot, saved-report, or thread-report behavior.
+
+The Projects page displays the local/private boundary and the default manifest root (`output/project_sources/`). Project rows show name, ID, description, source count, privacy class, retention state, and created/updated timestamps.
+
+For a selected Project, the page lists active Project Sources with title, ProjectSource ID, source kind, evidence role, validation posture, source-obligation summary, parser name/version/confidence/notes, input format, retention state, raw-text-persisted marker, privacy class, and added/updated timestamps.
+
+The Document Review page now includes a **Save to Project** section whenever a session-local `DocumentReviewContext` exists. Users can select an existing Project or create a new Project inline, optionally adjust the Project Source title, and save the current review context as a Project Source. The save action calls `add_project_source_from_document_review` through the UI helper and preserves the AG-84B storage boundary: raw normalized document text is not persisted by default; compact manifests and bounded previews are saved locally only.
+
+The Projects page also exposes a membership-edge-only **Remove from this Project** action. Removal updates the Project's source pointer and marks the ProjectSource edge `removed-from-project`; SourceRecord and SourceRevision manifests remain active. This is not deletion, tombstoning, secure erase, snapshot removal, or managed-copy deletion.
+
+The UI labels these boundaries explicitly:
+
+- storage is local/private manifest storage under `output/project_sources/`;
+- raw source files are not copied by default;
+- raw normalized document text is not persisted by default;
+- saved Project Sources are not public validation;
+- there is no retrieval integration yet and Project Sources are not automatically injected into answers;
+- there are no connectors, Project Instructions, snapshots, saved reports, or thread report generator in this phase.
