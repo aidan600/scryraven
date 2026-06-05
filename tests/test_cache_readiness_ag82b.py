@@ -76,7 +76,7 @@ RAW_SENTINELS = {
     "NEVER_WRITE_FULL_PROMPT_TEXT",
     "NEVER_WRITE_PROVIDER_PAYLOAD",
     "NEVER_WRITE_FULL_TRACE",
-    "NEVER_WRITE_SECRET_VALUE",
+    "NEVER_WRITE_SENSITIVE_MARKER",
     "NEVER_WRITE_REPORT_BODY",
 }
 
@@ -129,7 +129,7 @@ def _session() -> dict[str, object]:
             }
         ],
         "runtime_trace": "NEVER_WRITE_FULL_TRACE",
-        "secret": "NEVER_WRITE_SECRET_VALUE",
+        "sensitive_marker": "NEVER_WRITE_SENSITIVE_MARKER",
     }
 
 
