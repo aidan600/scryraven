@@ -16,6 +16,7 @@ from core.review_flags import (
 )
 from ui.context import UIContext
 from ui.pages_followup import render_followup_chat
+from ui.pages_projects import render_thread_report_project_save_section
 from ui.shared import (
     append_jsonl_record,
     flatten_providers_used,
@@ -30,6 +31,14 @@ from ui.source_display import (
 )
 
 
+def render_active_thread_report_section(context: UIContext, session: dict) -> None:
+    """Render the active-thread report save entrypoint with the live session."""
+
+    st = context.st
+    with st.expander("🧾 Generate / Save Thread Report to Project", expanded=False):
+        render_thread_report_project_save_section(st, context, session)
+
+
 def render_thread_page(context: UIContext) -> None:
     st = context.st
     os = context.os
@@ -37,9 +46,9 @@ def render_thread_page(context: UIContext) -> None:
     current_date = context.current_date
     logger = context.logger
     OUTPUT_DIR = context.OUTPUT_DIR
-    execution_log_path = OUTPUT_DIR / 'execution_log.jsonl'
-    feedback_log_path = OUTPUT_DIR / 'feedback_log.jsonl'
-    kb_triggers_path = OUTPUT_DIR / 'kb_triggers.jsonl'
+    execution_log_path = OUTPUT_DIR / "execution_log.jsonl"
+    feedback_log_path = OUTPUT_DIR / "feedback_log.jsonl"
+    kb_triggers_path = OUTPUT_DIR / "kb_triggers.jsonl"
     ask_model = context.ask_model
     clean_json_response = context.clean_json_response
 
@@ -52,7 +61,11 @@ def render_thread_page(context: UIContext) -> None:
     # --- RENDER EXISTING SESSION ---
     lkb = st.session_state.pop("last_kb_instrumentation", None)
     if lkb is not None:
-        agent_note = "quality review agent finished a KB entry" if lkb.get("agent_ran") else "quality review agent not invoked (auto-review not triggered or failed)"
+        agent_note = (
+            "quality review agent finished a KB entry"
+            if lkb.get("agent_ran")
+            else "quality review agent not invoked (auto-review not triggered or failed)"
+        )
         st.info(
             f"**Run instrumentation (KB line always logged):** score **{lkb.get('score')}** — "
             f"auto-review **{'yes' if lkb.get('fired') else 'no'}** — {agent_note}."
@@ -111,7 +124,9 @@ def render_thread_page(context: UIContext) -> None:
             dims = [1, 2, 3, 4, 5]
             ac = st.select_slider("Did it answer what was asked?", options=dims, value=4, key=f"fb_ac_{_rkey}")
             evq = st.select_slider("Were sources good and specific?", options=dims, value=4, key=f"fb_evq_{_rkey}")
-            op_ = st.select_slider("Specific numbers and facts vs vague summary?", options=dims, value=4, key=f"fb_op_{_rkey}")
+            op_ = st.select_slider(
+                "Specific numbers and facts vs vague summary?", options=dims, value=4, key=f"fb_op_{_rkey}"
+            )
             sc_val = 4
             latest_exec: dict | None = None
             if session.get("run_id"):
@@ -120,9 +135,13 @@ def render_thread_page(context: UIContext) -> None:
                         latest_exec = item
                         break
             if latest_exec and latest_exec.get("scout_fired"):
-                sc_val = st.select_slider("Did scout queries add real value?", options=dims, value=4, key=f"fb_scout_{_rkey}")
+                sc_val = st.select_slider(
+                    "Did scout queries add real value?", options=dims, value=4, key=f"fb_scout_{_rkey}"
+                )
             overall = st.select_slider("Overall", options=dims, value=4, key=f"fb_overall_{_rkey}")
-            notes = st.text_input("Notes (optional)", placeholder="What worked or what to improve?", key=f"fb_notes_{_rkey}")
+            notes = st.text_input(
+                "Notes (optional)", placeholder="What worked or what to improve?", key=f"fb_notes_{_rkey}"
+            )
             submitted = st.form_submit_button("Log Feedback")
             if submitted:
                 parts = [ac, evq, op_]
@@ -135,7 +154,15 @@ def render_thread_page(context: UIContext) -> None:
                 # Legacy label for any code still expecting user_rating
                 o = overall
                 u_rating = (
-                    "Excellent" if o == 5 else "Good" if o >= 4 else "Fair" if o in (2, 3) else "Poor" if o == 1 else "Good"
+                    "Excellent"
+                    if o == 5
+                    else "Good"
+                    if o >= 4
+                    else "Fair"
+                    if o in (2, 3)
+                    else "Poor"
+                    if o == 1
+                    else "Good"
                 )
                 fb_time = datetime.now(timezone.utc).isoformat()
                 _append_jsonl(
@@ -168,8 +195,7 @@ def render_thread_page(context: UIContext) -> None:
                 except (TypeError, ValueError):
                     o_int = 0
                 positive_eligible = o_int >= 4 and (
-                    not exec_for_run.get("scout_fired")
-                    or (exec_for_run.get("scout_fired") and int(sc_val) >= 4)
+                    not exec_for_run.get("scout_fired") or (exec_for_run.get("scout_fired") and int(sc_val) >= 4)
                 )
                 low_feedback_eligible = o_int <= 2
                 if positive_eligible and exec_for_run:
@@ -217,7 +243,9 @@ def render_thread_page(context: UIContext) -> None:
                                     "mode": exec_for_run.get("mode", ""),
                                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
                                     "retrieval_yield_chunks": int(exec_for_run.get("total_chunks_embedded") or 0),
-                                    "providers_used": flatten_providers_used(exec_for_run.get("providers_by_iteration")),
+                                    "providers_used": flatten_providers_used(
+                                        exec_for_run.get("providers_by_iteration")
+                                    ),
                                     "timing": dict(exec_for_run.get("timing") or {}),
                                     "kb_review": kb_p,
                                 },
@@ -270,7 +298,9 @@ def render_thread_page(context: UIContext) -> None:
                                     "mode": exec_for_run.get("mode", ""),
                                     "timestamp_utc": datetime.now(timezone.utc).isoformat(),
                                     "retrieval_yield_chunks": int(exec_for_run.get("total_chunks_embedded") or 0),
-                                    "providers_used": flatten_providers_used(exec_for_run.get("providers_by_iteration")),
+                                    "providers_used": flatten_providers_used(
+                                        exec_for_run.get("providers_by_iteration")
+                                    ),
                                     "timing": dict(exec_for_run.get("timing") or {}),
                                     "kb_review": kb_n,
                                 },
@@ -338,12 +368,13 @@ def render_thread_page(context: UIContext) -> None:
                 st.session_state.pop("next_run_force_state", None)
                 st.session_state.pop("proplex_append_meta", None)
                 st.session_state.pop("proplex_auto_run", None)
-                st.session_state["proplex_seed_query"] = ((session.get("query") or "").strip() + "\n\n")
+                st.session_state["proplex_seed_query"] = (session.get("query") or "").strip() + "\n\n"
                 st.session_state.current_session = None
                 st.session_state.current_page = "home"
                 st.rerun()
     st.markdown(session["report"].replace("$", "\\$"))
     _render_source_chip_strip(st, session.get("top_passages", []))
+    render_active_thread_report_section(context, session)
 
     with st.expander(f"🔍 View Retrieved Evidence ({len(session.get('top_passages', []))} chunks)"):
         top_list = session.get("top_passages", [])
@@ -357,11 +388,7 @@ def render_thread_page(context: UIContext) -> None:
         for _, p in sorted(enumerate(top_list if isinstance(top_list, list) else []), key=_evidence_sort_key):
             if not isinstance(p, dict):
                 continue
-            sid = (
-                _safe_display_value(p.get("source_id"))
-                or _safe_display_value(p.get("url"))
-                or "?"
-            )
+            sid = _safe_display_value(p.get("source_id")) or _safe_display_value(p.get("url")) or "?"
             title = _safe_display_value(p.get("title")) or "Untitled"
             domain = _safe_display_value(p.get("domain"))
             text = _short_preview(p, max_chars=600)
