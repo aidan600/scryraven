@@ -83,6 +83,33 @@ def test_ag89c_deterministic_finalization_parity_with_legacy_facade() -> None:
     assert "official_bias_applied" in statuses
 
 
+def test_ag89c_max_len_cap_is_owned_by_query_plan() -> None:
+    plan, authorized = authorize_retrieval_queries(
+        ["launch details", "pricing update", "support policy"],
+        primary_entity="Acme Widget",
+        entities_list=["Acme Widget"],
+        core_topic="Acme Widget",
+        user_query="Acme Widget overview",
+        intent="general",
+        clean=_clean,
+        include_official_bias=False,
+        max_len=2,
+    )
+
+    assert authorized == ['"Acme Widget" launch details', '"Acme Widget" pricing update']
+    trace = plan.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    items = trace["items"]
+    finalized = [item for item in items if item["status"] == "finalized"]
+    over_budget = [item for item in items if item["status"] == "rejected_over_budget"]
+    assert [item["authorized_query"] for item in finalized] == authorized
+    assert '"Acme Widget" support policy' not in [
+        item["authorized_query"] for item in finalized
+    ]
+    assert len(over_budget) == 1
+    assert over_budget[0]["authorized_query"] == '"Acme Widget" support policy'
+    assert over_budget[0]["admission_reason"] == "rejected_over_budget"
+    assert over_budget[0]["metadata"]["would_have_status"] == "finalized"
+
 def test_ag89c_recency_merge_preserves_existing_order() -> None:
     plan = QueryPlan(plan_id="qp-recency")
     current = ["Acme Widget pricing", "Acme Widget deployment"]

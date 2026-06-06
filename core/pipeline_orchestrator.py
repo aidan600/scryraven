@@ -3107,12 +3107,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             intent=intent,
             clean=_clean_query,
             include_official_bias=include_official_bias,
+            max_len=max_len,
             origin=origin,
             role=role,
             plan=query_plan,
             phase=phase,
         )
-        return out[:max_len] if max_len is not None else out
+        return out
 
     if not queries:
         status.step("Generating initial search plan...")

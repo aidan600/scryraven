@@ -261,6 +261,7 @@ def authorize_retrieval_queries(
     intent: str,
     clean: Callable[[str], str] | None = None,
     include_official_bias: bool = True,
+    max_len: int | None = None,
     origin: str = "model_query_output",
     role: QueryPlanRole | str = QueryPlanRole.INITIAL,
     plan: QueryPlan | None = None,
@@ -270,39 +271,147 @@ def authorize_retrieval_queries(
     aliases = approved_entity_aliases(primary_entity, list(entities_list or []), core_topic)
     primary_display = primary_anchor(primary_entity, list(entities_list or []), core_topic)
     active = plan or QueryPlan()
-    out: list[str] = []
+    candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
     for query in queries:
         observed = _clean(str(query))
-        active = active.append(origin=origin, role=role, status=QueryPlanStatus.OBSERVED_MODEL_QUERY, original_query=observed or None, phase=phase)
+        active = active.append(
+            origin=origin,
+            role=role,
+            status=QueryPlanStatus.OBSERVED_MODEL_QUERY,
+            original_query=observed or None,
+            phase=phase,
+        )
         if not observed:
-            active = active.append(origin=origin, role=role, status=QueryPlanStatus.REJECTED_EMPTY, original_query=str(query), phase=phase)
+            active = active.append(
+                origin=origin,
+                role=role,
+                status=QueryPlanStatus.REJECTED_EMPTY,
+                original_query=str(query),
+                phase=phase,
+            )
             continue
-        authorized = _clean(apply_domain_anchor_to_query(observed, aliases=aliases, primary_display=primary_display))[:300]
+        authorized = _clean(
+            apply_domain_anchor_to_query(
+                observed,
+                aliases=aliases,
+                primary_display=primary_display,
+            )
+        )[:300]
         key = authorized.casefold()
         if key in seen:
-            active = active.append(origin=origin, role=role, status=QueryPlanStatus.REJECTED_DUPLICATE, original_query=observed, authorized_query=authorized, phase=phase, mutation_reason="deduplicated")
+            active = active.append(
+                origin=origin,
+                role=role,
+                status=QueryPlanStatus.REJECTED_DUPLICATE,
+                original_query=observed,
+                authorized_query=authorized,
+                phase=phase,
+                mutation_reason="deduplicated",
+            )
             continue
         seen.add(key)
-        out.append(authorized)
-        active = active.append(origin=origin, role=QueryPlanRole.FINALIZED, status=QueryPlanStatus.FINALIZED, original_query=observed, authorized_query=authorized, mutation_reason="finalized", admission_reason="admitted", phase=phase, order=len(out))
+        candidates.append(
+            {
+                "origin": origin,
+                "role": QueryPlanRole.FINALIZED,
+                "status": QueryPlanStatus.FINALIZED,
+                "original_query": observed,
+                "authorized_query": authorized,
+                "mutation_reason": "finalized",
+                "admission_reason": "admitted",
+                "phase": phase,
+            }
+        )
     if include_official_bias and wants_official_source_bias(user_query, intent) and (primary_display or "").strip():
         phrase = official_bias_phrase(user_query)
-        has_existing = any("official" in q.lower() and query_has_domain_anchor(q, aliases) for q in out)
+        candidate_queries = [str(item["authorized_query"]) for item in candidates]
+        has_existing = any(
+            "official" in query.lower() and query_has_domain_anchor(query, aliases)
+            for query in candidate_queries
+        )
         if has_existing:
-            active = active.append(origin="official_bias", role=QueryPlanRole.OFFICIAL_BIAS, status=QueryPlanStatus.OFFICIAL_BIAS_APPLIED, mutation_reason="official_bias_already_present", admission_reason="admitted", phase=phase, metadata={"custody_satisfied": False, "custody_owner": "official_current_source_custody"})
+            active = active.append(
+                origin="official_bias",
+                role=QueryPlanRole.OFFICIAL_BIAS,
+                status=QueryPlanStatus.OFFICIAL_BIAS_APPLIED,
+                mutation_reason="official_bias_already_present",
+                admission_reason="admitted",
+                phase=phase,
+                metadata={
+                    "custody_satisfied": False,
+                    "custody_owner": "official_current_source_custody",
+                },
+            )
         else:
             bias_q = _clean(f"{format_quoted_anchor(primary_display)} {phrase}")[:300]
             low = bias_q.casefold()
-            duplicate = any(low == x.casefold() for x in out) or any(low in x.casefold() for x in out)
+            duplicate = any(low == query.casefold() for query in candidate_queries) or any(
+                low in query.casefold() for query in candidate_queries
+            )
             if not bias_q:
-                active = active.append(origin="official_bias", role=QueryPlanRole.OFFICIAL_BIAS, status=QueryPlanStatus.REJECTED_EMPTY, mutation_reason="official_bias_applied", phase=phase, metadata={"custody_satisfied": False})
+                active = active.append(
+                    origin="official_bias",
+                    role=QueryPlanRole.OFFICIAL_BIAS,
+                    status=QueryPlanStatus.REJECTED_EMPTY,
+                    mutation_reason="official_bias_applied",
+                    phase=phase,
+                    metadata={"custody_satisfied": False},
+                )
             elif duplicate:
-                active = active.append(origin="official_bias", role=QueryPlanRole.OFFICIAL_BIAS, status=QueryPlanStatus.REJECTED_DUPLICATE, authorized_query=bias_q, mutation_reason="official_bias_applied", phase=phase, metadata={"custody_satisfied": False})
+                active = active.append(
+                    origin="official_bias",
+                    role=QueryPlanRole.OFFICIAL_BIAS,
+                    status=QueryPlanStatus.REJECTED_DUPLICATE,
+                    authorized_query=bias_q,
+                    mutation_reason="official_bias_applied",
+                    phase=phase,
+                    metadata={"custody_satisfied": False},
+                )
             else:
-                out = [bias_q] + out
-                active = active.append(origin="official_bias", role=QueryPlanRole.OFFICIAL_BIAS, status=QueryPlanStatus.OFFICIAL_BIAS_APPLIED, authorized_query=bias_q, mutation_reason="official_bias_applied", admission_reason="admitted", phase=phase, order=1, metadata={"custody_satisfied": False, "custody_owner": "official_current_source_custody"})
-    return active, out
+                candidates = [
+                    {
+                        "origin": "official_bias",
+                        "role": QueryPlanRole.OFFICIAL_BIAS,
+                        "status": QueryPlanStatus.OFFICIAL_BIAS_APPLIED,
+                        "authorized_query": bias_q,
+                        "mutation_reason": "official_bias_applied",
+                        "admission_reason": "admitted",
+                        "phase": phase,
+                        "metadata": {
+                            "custody_satisfied": False,
+                            "custody_owner": "official_current_source_custody",
+                        },
+                    }
+                ] + candidates
+
+    limit = max_len if max_len is not None else len(candidates)
+    consumed: list[str] = []
+    for order, candidate in enumerate(candidates, start=1):
+        if order <= max(0, limit):
+            consumed.append(str(candidate["authorized_query"]))
+            active = active.append(order=order, **candidate)
+            continue
+        active = active.append(
+            origin=str(candidate["origin"]),
+            role=candidate["role"],
+            status=QueryPlanStatus.REJECTED_OVER_BUDGET,
+            original_query=candidate.get("original_query"),
+            authorized_query=str(candidate["authorized_query"]),
+            mutation_reason="max_len_cap_applied",
+            admission_reason="rejected_over_budget",
+            phase=phase,
+            order=order,
+            metadata={
+                "max_len": max_len,
+                "would_have_status": (
+                    candidate["status"].value
+                    if isinstance(candidate["status"], QueryPlanStatus)
+                    else str(candidate["status"])
+                ),
+            },
+        )
+    return active, consumed
 
 
 def authorize_recency_merge(

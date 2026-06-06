@@ -438,6 +438,7 @@ def finalize_retrieval_queries(
     intent: str,
     clean: Any | None = None,
     include_official_bias: bool = True,
+    max_len: int | None = None,
 ) -> list[str]:
     """
     Compatibility facade for AG-89C QueryPlan authority.
@@ -457,5 +458,6 @@ def finalize_retrieval_queries(
         intent=intent,
         clean=clean,
         include_official_bias=include_official_bias,
+        max_len=max_len,
     )
     return authorized

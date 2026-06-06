@@ -16,7 +16,7 @@ behavior remain unchanged.
 
 - candidate observations from existing model/recon/retry query surfaces;
 - empty and duplicate query rejections;
-- deterministic finalization/admission;
+- deterministic finalization/admission, including query-cap rejection records;
 - official/canonical bias as query-plan mutation metadata only;
 - recency merge ordering;
 - retrieval-loop ordered queries by iteration;
