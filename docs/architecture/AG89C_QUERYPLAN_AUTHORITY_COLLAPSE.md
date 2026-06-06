@@ -25,7 +25,9 @@ behavior remain unchanged.
 
 The legacy `finalize_retrieval_queries(...)` API remains for compatibility, but
 it is now a facade over `authorize_retrieval_queries(...)`. It no longer owns
-query identity independently.
+query identity independently. Runtime orchestration uses
+`QueryPlanRuntimeAdapter` as the bounded compatibility helper so QueryPlan
+admission/finalization/trace glue stays outside `pipeline_orchestrator.py`.
 
 ## Trace ownership
 
