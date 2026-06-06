@@ -298,12 +298,13 @@ def test_static_protected_import_guard_for_citation_source_contract():
 
 def test_orchestrator_authority_guard_wires_citation_contract_additively():
     pipeline = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
+    helper = (ROOT / "core" / "final_answer_runtime_assembly.py").read_text()
     contract = CONTRACT.read_text()
 
-    assert "build_citation_source_handoff_state" in pipeline
-    assert "execute_citation_source_handoff" in pipeline
+    assert "assemble_final_answer_citation_runtime_from_scope" in pipeline
+    assert "build_packet_derived_citation_source_handoff_state" in helper
+    assert "execute_citation_source_handoff" in helper
     assert "citation_source_handoff_trace_fragment" in pipeline
-    assert "citation_source_handoff_state = build_citation_source_handoff_state" in pipeline
     assert "build_evidence_block(" not in pipeline
     assert "next_source_id" not in pipeline
     assert "final_answer_source_ids_used" in pipeline
@@ -327,8 +328,10 @@ def test_protected_surface_guard_and_no_live_product_path_guard():
         "stream=True",
     )
     assert [call for call in forbidden_contract_calls if call in contract] == []
+    helper = (ROOT / "core" / "final_answer_runtime_assembly.py").read_text()
     assert "_final_answer_source_citation_telemetry" in pipeline
-    assert "build_citation_source_handoff_state" in pipeline
+    assert "build_packet_derived_citation_source_handoff_state" in helper
+    assert "build_citation_source_handoff_state" not in pipeline
 
 
 def test_final_answer_fixture_parity_by_stable_handoff_inputs_when_text_is_not_fixture_stable():
