@@ -27,6 +27,10 @@ from core.authoritative_source_obligations import (
 from core.canonical_technical_docs_policy import (
     is_canonical_technical_documentation_context,
 )
+from core.official_current_source_custody import (
+    OfficialCurrentCustodyStatus,
+    OfficialCurrentSourceCustodyState,
+)
 
 SOURCE_CLASS_BUCKETS = (
     "official_current_rules",
@@ -1381,6 +1385,10 @@ def build_source_class_observability_telemetry(
             secondary_only_counts=secondary_only_counts,
         )
     )
+    custody_state = _official_current_custody_from_final_sources(
+        expected_without_none,
+        sources,
+    )
 
     strength_counts = {status: 0 for status in SOURCE_CLASS_SATISFACTION_STATUSES}
     for status in satisfaction_status.values():
@@ -1420,7 +1428,43 @@ def build_source_class_observability_telemetry(
         "source_class_strong_satisfaction_counts": strong_counts,
         "source_class_weak_satisfaction_counts": weak_counts,
         "source_class_secondary_only_counts": secondary_only_counts,
+        "official_current_source_custody": custody_state.to_dict(),
     }
+
+
+def _official_current_custody_from_final_sources(
+    expected_source_classes: Iterable[str],
+    sources: Iterable[Mapping[str, Any]],
+) -> OfficialCurrentSourceCustodyState:
+    state = OfficialCurrentSourceCustodyState.for_required_source_classes(
+        expected_source_classes
+    )
+    for source in sources:
+        candidate_id = _source_identity(source)
+        signals = _evidence_source_class_strengths(source)
+        for source_class in expected_source_classes:
+            if not signals.get(source_class, {}).get("strong"):
+                continue
+            requirement_id = f"official_current_source:{source_class}"
+            if candidate_id:
+                state = state.record_candidate_returned(
+                    requirement_id,
+                    candidate_id=candidate_id,
+                    attempt_id="final_evidence_source_class_observability",
+                ).record_candidate_disposition(
+                    requirement_id,
+                    status=OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED,
+                    candidate_id=candidate_id,
+                    reason="final_evidence_strong_source_class_identity",
+                    attempt_id="final_evidence_source_class_observability",
+                )
+            else:
+                state = state.record_candidate_identity_missing(
+                    requirement_id,
+                    reason="final_evidence_strong_source_class_without_identity",
+                    attempt_id="final_evidence_source_class_observability",
+                )
+    return state.finalize_requirements()
 
 
 def recovery_source_quality_defaults() -> dict[str, Any]:
