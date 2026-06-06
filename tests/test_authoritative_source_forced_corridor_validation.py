@@ -12,6 +12,7 @@ from tests.helpers.authoritative_source_forced_corridor import (
 _ROOT = Path(__file__).resolve().parents[1]
 _HARNESS_PATH = _ROOT / "tests" / "helpers" / "authoritative_source_forced_corridor.py"
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_SESSION_OUTPUT_PROJECTION_PATH = _ROOT / "core" / "session_output_projection.py"
 
 
 def test_forced_official_current_corridor_distinguishes_secondary_ordinary_evidence() -> None:
@@ -204,9 +205,10 @@ def test_forced_corridor_static_guard_keeps_protected_surfaces_closed() -> None:
 
 def test_pipeline_orchestrator_stays_unchanged_by_ag67a() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    projection_source = _SESSION_OUTPUT_PROJECTION_PATH.read_text(encoding="utf-8")
 
     assert "authoritative_source_forced_corridor" not in pipeline_source
     assert pipeline_source.count(
         "build_authoritative_source_action_orchestrator_handoff("
     ) == 1
-    assert pipeline_source.count("authoritative_source_action_trace_fragment(") == 1
+    assert projection_source.count("authoritative_source_action_trace_fragment(") == 1

@@ -423,4 +423,5 @@ def test_static_guard_contract_does_not_import_or_rewrite_pipeline_orchestrator(
             or "final_answer_runtime_adapter" in diff
             or "FinalAnswerPacket" in diff
             or "pre_author_source_obligation_projection" in diff
+            or "session_output_projection" in diff
         )

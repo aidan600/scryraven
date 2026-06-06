@@ -22,6 +22,7 @@ from tests.static_import_guard_utils import assert_controller_contract_imports_c
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+SESSION_OUTPUT_PROJECTION = ROOT / "core" / "session_output_projection.py"
 CONTRACT = ROOT / "core" / "analyst_author_handoff_contract.py"
 
 
@@ -267,7 +268,7 @@ def test_author_prompt_input_metadata_parity_without_prompt_text():
 
 
 def test_trace_compatibility_flags_are_additive_and_legacy_fields_remain_in_orchestrator():
-    pipeline = PIPELINE.read_text()
+    pipeline = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
     trace = _state().to_controller_state()
 
     for legacy_field in (
@@ -307,12 +308,12 @@ def test_static_protected_import_guard_for_contract_module():
 
 
 def test_orchestrator_authority_guard_wires_contract_and_keeps_prompt_strings_local():
-    pipeline = PIPELINE.read_text()
+    pipeline = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
     contract = CONTRACT.read_text()
 
     assert "build_analyst_author_handoff_state" in pipeline
     assert "execute_analyst_author_handoff" in pipeline
-    assert "**analyst_author_handoff_trace_fragment" in pipeline
+    assert "analyst_author_handoff_trace_fragment" in pipeline
     assert "author_prompt += f\"Write the final markdown report" in pipeline
     assert "UNSUPPORTED_RETRIEVAL_DIRECTIVE" in pipeline
     assert "Write the final markdown report" not in contract
@@ -344,7 +345,7 @@ def test_upstream_contract_integration_references_without_behavior_changes():
 
 
 def test_no_live_product_path_guard_uses_only_pure_contract_builders():
-    pipeline = PIPELINE.read_text()
+    pipeline = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
     contract = CONTRACT.read_text()
 
     assert "SCRYRAVEN_" not in contract

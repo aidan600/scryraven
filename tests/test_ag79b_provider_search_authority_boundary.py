@@ -139,4 +139,5 @@ def test_pipeline_orchestrator_boundary_guard_untouched() -> None:
             or "final_answer_runtime_adapter" in pipeline_diff
             or "FinalAnswerPacket" in pipeline_diff
             or "pre_author_source_obligation_projection" in pipeline_diff
+            or "session_output_projection" in pipeline_diff
         )

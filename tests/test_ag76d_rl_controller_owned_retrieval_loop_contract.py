@@ -24,6 +24,7 @@ from core.router_query_preparation_contract import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+SESSION_OUTPUT_PROJECTION = ROOT / "core" / "session_output_projection.py"
 CONTRACT = ROOT / "core" / "retrieval_loop_contract.py"
 
 
@@ -274,7 +275,7 @@ def test_protected_surface_guard_no_live_or_prompt_surfaces_opened():
 
 
 def test_trace_compatibility_adds_contract_without_removing_existing_fields():
-    text = PIPELINE.read_text()
+    text = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
 
     for existing in [
         '"pass_providers"',

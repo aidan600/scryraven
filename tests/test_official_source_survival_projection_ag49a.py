@@ -36,6 +36,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _MODULE_PATH = _ROOT / "core" / "official_source_survival_projection.py"
 _ASSEMBLY_PATH = _ROOT / "core" / "runtime_trace_projection_assembly.py"
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_SESSION_OUTPUT_PROJECTION_PATH = _ROOT / "core" / "session_output_projection.py"
 
 
 def _projection(trace: dict[str, Any]) -> dict[str, Any]:
@@ -243,5 +244,5 @@ def test_ag49a_static_guards_keep_protected_surfaces_out() -> None:
         )
         assert imported.isdisjoint(forbidden_modules)
 
-    pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
-    assert "source_survival_final_evidence_official_or_canonical_count" in pipeline_source
+    projection_source = _SESSION_OUTPUT_PROJECTION_PATH.read_text(encoding="utf-8")
+    assert "source_survival_final_evidence_official_or_canonical_count" in projection_source

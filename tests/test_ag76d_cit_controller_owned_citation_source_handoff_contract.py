@@ -20,6 +20,7 @@ from tests.static_import_guard_utils import assert_controller_contract_imports_c
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "citation_source_handoff_contract.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+SESSION_OUTPUT_PROJECTION = ROOT / "core" / "session_output_projection.py"
 
 
 def _passages() -> list[dict[str, object]]:
@@ -296,12 +297,12 @@ def test_static_protected_import_guard_for_citation_source_contract():
 
 
 def test_orchestrator_authority_guard_wires_citation_contract_additively():
-    pipeline = PIPELINE.read_text()
+    pipeline = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
     contract = CONTRACT.read_text()
 
     assert "build_citation_source_handoff_state" in pipeline
     assert "execute_citation_source_handoff" in pipeline
-    assert "**citation_source_handoff_trace_fragment" in pipeline
+    assert "citation_source_handoff_trace_fragment" in pipeline
     assert "citation_source_handoff_state = build_citation_source_handoff_state" in pipeline
     assert "build_evidence_block(" not in pipeline
     assert "next_source_id" not in pipeline

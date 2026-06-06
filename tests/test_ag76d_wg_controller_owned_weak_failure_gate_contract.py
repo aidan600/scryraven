@@ -24,6 +24,7 @@ from core.weak_failure_gate_contract import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+SESSION_OUTPUT_PROJECTION = ROOT / "core" / "session_output_projection.py"
 CONTRACT = ROOT / "core" / "weak_failure_gate_contract.py"
 
 
@@ -245,17 +246,17 @@ def test_mechanical_executor_handoff_returns_legacy_outputs_without_deciding():
 
 
 def test_orchestrator_consumes_contract_and_static_guard_blocks_silent_gate_decision():
-    source = PIPELINE.read_text(encoding="utf-8")
+    source = PIPELINE.read_text(encoding="utf-8") + SESSION_OUTPUT_PROJECTION.read_text(encoding="utf-8")
 
     assert "build_weak_failure_gate_state(" in source
     assert "execute_weak_failure_gate_handoff(" in source
     assert "weak_failure_gate_handoff.failure_card_payload" in source
     assert "pre_analyst_gate_contract = build_analyst_gate_descriptor" in source
     assert "analyst_skipped = bool(pre_analyst_gate_handoff" in source
-    assert "**weak_failure_gate_trace_fragment" in source
+    assert "weak_failure_gate_trace_fragment" in source
 
     final_handoff_idx = source.index("weak_failure_gate_handoff = execute_weak_failure_gate_handoff")
-    final_trace_idx = source.index("execution_trace: dict[str, Any]")
+    final_trace_idx = source.index("execution_trace = build_execution_trace_projection")
     final_region = source[final_handoff_idx:final_trace_idx]
     forbidden_redecision_fragments = (
         "failure_card_should_show(",
