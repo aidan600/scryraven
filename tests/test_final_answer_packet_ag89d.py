@@ -276,6 +276,149 @@ def test_ag89e_packet_derived_citation_handoff_uses_packet_refs_by_default() -> 
     assert trace["source_telemetry_ref"]["authority"] == "final_answer_packet"
     assert trace["source_telemetry_ref"]["source_ids"] == [44]
 
+def test_ag90b_author_runtime_assembly_scope_matches_bounded_builder() -> None:
+    from core.final_answer_runtime_assembly import (
+        assemble_final_answer_author_runtime,
+        assemble_final_answer_author_runtime_from_scope,
+    )
+
+    class QueryAuthority:
+        def to_trace_fragment(self):
+            return {"query_plan": {"plan_id": "qp-ag90b"}}
+
+    passage = _passage(source_id=61)
+    direct = assemble_final_answer_author_runtime(
+        run_id="ag90b-author",
+        query="What is the current IRS notice?",
+        intent="research",
+        report_type="general",
+        query_type="general",
+        core_topic="IRS notice",
+        primary_entity="IRS",
+        anchor_packet_telemetry={},
+        final_top_evidence=[passage],
+        author_evidence=[passage],
+        ordered_sources=["- [61] [IRS notice](https://irs.gov/pub/notice)"],
+        unique_source_urls={"https://irs.gov/pub/notice": 61},
+        query_lineage_refs={"query_plan": {"plan_id": "qp-ag90b"}},
+        corpus_weak=False,
+        failure_card_payload={"show": False, "reason": None},
+        conflicts_present=False,
+        synth_was_insufficient=False,
+        author_notes="",
+        author_prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+    scoped = assemble_final_answer_author_runtime_from_scope(
+        {
+            "run_id": "ag90b-author",
+            "query": "What is the current IRS notice?",
+            "intent": "research",
+            "report_type": "general",
+            "query_type": "general",
+            "core_topic": "IRS notice",
+            "primary_entity": "IRS",
+            "anchor_packet_telemetry": {},
+            "final_top_evidence": [passage],
+            "author_evidence": [passage],
+            "ordered_sources": ["- [61] [IRS notice](https://irs.gov/pub/notice)"],
+            "unique_source_urls": {"https://irs.gov/pub/notice": 61},
+            "query_authority": QueryAuthority(),
+            "corpus_weak": False,
+            "_pre_gate_failure_card_show": False,
+            "_pre_gate_failure_card_reason": None,
+            "scrutineer_flags": [],
+            "synth_was_insufficient": False,
+            "author_notes": "",
+            "author_prompt": "base prompt",
+            "author_system_prompt_key": "author",
+            "_author_effort": "low",
+        }
+    )
+
+    assert scoped.packet.to_dict() == direct.packet.to_dict()
+    assert scoped.author_payload.prompt == direct.author_payload.prompt
+    assert scoped.author_system_prompt_key == "author"
+    assert scoped.author_effort == "low"
+
+
+def test_ag90b_citation_runtime_assembly_is_packet_derived_and_legacy_compatible() -> None:
+    from types import SimpleNamespace
+
+    from core.final_answer_runtime_assembly import assemble_final_answer_citation_runtime
+
+    passage = _passage(source_id=71)
+    packet = build_final_answer_packet(
+        run_id="ag90b-citation",
+        final_evidence=[passage],
+        author_evidence=[passage],
+        ordered_sources=["- [71] [IRS notice](https://irs.gov/pub/notice)"],
+        unique_source_urls={"https://irs.gov/pub/notice": 71},
+    )
+    final_source_telemetry_inputs = SimpleNamespace(
+        source_ids=[71],
+        unique_source_url_count=1,
+        ordered_sources=["- [71] [IRS notice](https://irs.gov/pub/notice)"],
+        final_evidence_count=1,
+        final_answer_source_telemetry={},
+        final_evidence_snapshot_payload={"final_top_evidence": [passage]},
+    )
+
+    assembled = assemble_final_answer_citation_runtime(
+        packet=packet,
+        run_id="ag90b-citation",
+        final_answer_source_telemetry={"final_answer_source_ids_used": [71]},
+        final_source_telemetry_inputs=final_source_telemetry_inputs,
+        answer_contract_ref={"answer_contract": {"available": True}},
+        analyst_skipped=False,
+        analyst_skip_reason=None,
+        post_retrieval_fast_path_used=False,
+        pre_analyst_gate_signals={"analyst_should_run": True},
+        analyst_skipped_after_economist=False,
+        analyst_after_economist_skip_reason=None,
+        economist_output_used_as_analysis=False,
+        analyst_evidence=[passage],
+        analyst_context_prefix="ctx",
+        linkup_block_included=False,
+        quantitative_packet_injected=False,
+        missing_target_metric_directive_emitted=False,
+        corpus_weak=False,
+        failure_card_payload={"show": False, "reason": None},
+        author_notes="",
+        author_evidence=[passage],
+        selected_evidence=[passage],
+        final_evidence=[passage],
+        ordered_sources=["- [71] [IRS notice](https://irs.gov/pub/notice)"],
+        unique_source_urls={"https://irs.gov/pub/notice": 71},
+        author_evidence_block="[Source 71] IRS notice",
+        author_prompt="base prompt",
+        complexity="low",
+        author_system_prompt_key="author",
+        author_effort="low",
+        includes_analysis=False,
+        includes_recency_notes=False,
+        includes_author_notes=False,
+        image_context_active=False,
+        pre_analyst_gate_ref={},
+        weak_failure_gate_state=None,
+        retrieval_loop_state={},
+        router_query_preparation_state={},
+    )
+
+    citation_trace = assembled.citation_source_handoff_trace_fragment[
+        "citation_source_handoff_contract"
+    ]
+    assert assembled.packet.author_input_refs["final_answer_source_telemetry"] == {
+        "final_answer_source_ids_used": [71]
+    }
+    assert citation_trace["ledger_ref"]["authority"] == "final_answer_packet"
+    assert citation_trace["ledger_ref"]["final_evidence_snapshot_recorded"] is True
+    assert citation_trace["source_telemetry_ref"]["source_ids"] == [71]
+    assert assembled.unique_source_urls == {"https://irs.gov/pub/notice": 71}
+    assert assembled.packet_trace_fragment["final_answer_packet"] == assembled.packet.to_dict()
+
+
 def test_ag89d_trace_projection_is_derived_from_packet() -> None:
     packet = build_final_answer_packet(
         run_id="r8",
@@ -290,14 +433,15 @@ def test_ag89d_trace_projection_is_derived_from_packet() -> None:
 
 def test_ag89d_static_orchestrator_wiring_does_not_change_protected_surfaces() -> None:
     text = (ROOT / "core" / "pipeline_orchestrator.py").read_text()
-    assert "build_final_answer_packet(" in text
-    assert "derive_author_input_payload(" in text
-    assert "build_packet_derived_citation_source_handoff_state(" in text
-    assert "final_answer_packet_compatibility_refs(" in text
-    assert "author_prompt = final_author_payload.prompt" in text
-    assert "source_obligation_projection=pre_author_source_obligation_projection" in text
+    helper_text = (ROOT / "core" / "final_answer_runtime_assembly.py").read_text()
+    assert "assemble_final_answer_author_runtime_from_scope(" in text
+    assert "assemble_final_answer_citation_runtime_from_scope(" in text
     assert "process_search_queries(" in text
     assert "ask_model(\n        author_prompt, _author_system," in text
-    assert "citation_source_handoff_state = build_packet_derived_citation_source_handoff_state" in text
-    assert "final_source_telemetry_inputs.final_evidence_snapshot_payload" in text
+    assert "build_final_answer_packet(" in helper_text
+    assert "derive_author_input_payload(" in helper_text
+    assert "build_packet_derived_citation_source_handoff_state(" in helper_text
+    assert "final_answer_packet_compatibility_refs(" in helper_text
+    assert "source_obligation_projection = build_source_class_observability_telemetry" in helper_text
+    assert "final_source_telemetry_inputs.final_evidence_snapshot_payload" in helper_text
     assert '"authority": "final_answer_packet"' not in text

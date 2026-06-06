@@ -33,11 +33,6 @@ from core.answer_outcome import classify_answer_outcome
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
-from core.citation_source_handoff_contract import execute_citation_source_handoff
-
-# AG-89D: legacy `citation_source_handoff_state = build_citation_source_handoff_state` is no longer called here;
-# build_packet_derived_citation_source_handoff_state demotes that legacy handoff
-# behind FinalAnswerPacket authority.
 from core.conflict_resolution_controller import (
     ConflictResolutionControllerDecision,
     ConflictResolutionDecision,
@@ -96,12 +91,9 @@ from core.failure_card import (
     failure_card_should_show,
     normalize_force_corpus_state,
 )
-from core.final_answer_runtime_adapter import (
-    build_final_answer_packet,
-    build_packet_derived_citation_source_handoff_state,
-    derive_author_input_payload,
-    final_answer_packet_compatibility_refs,
-    final_answer_packet_trace_fragment,
+from core.final_answer_runtime_assembly import (
+    assemble_final_answer_author_runtime_from_scope,
+    assemble_final_answer_citation_runtime_from_scope,
 )
 from core.final_evidence_bundle_builder import (
     FinalEvidenceBundleInputs,
@@ -6593,45 +6585,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _author_effort = (
         analyst_effort if ((not corpus_weak or _efp_author) and not _relevance_low) else "low"
     )
-    pre_author_source_obligation_projection = build_source_class_observability_telemetry(
-        query=query,
-        intent=intent,
-        report_type=report_type,
-        query_type=query_type,
-        core_topic=core_topic,
-        primary_entity=primary_entity,
-        anchor_packet=anchor_packet_telemetry,
-        final_top_evidence=final_top_evidence,
-        final_answer_source_ids=None,
-    ).get("official_current_source_custody")
-    final_answer_packet = build_final_answer_packet(
-        run_id=run_id,
-        final_evidence=final_top_evidence,
-        author_evidence=author_evidence,
-        ordered_sources=ordered_sources,
-        unique_source_urls=unique_source_urls,
-        final_answer_source_telemetry=None,
-        source_obligation_projection=pre_author_source_obligation_projection,
-        query_lineage_refs=query_authority.to_trace_fragment(),
-        evidence_sufficient=None,
-        corpus_weak=corpus_weak,
-        failure_card_payload={
-            "show": _pre_gate_failure_card_show,
-            "reason": _pre_gate_failure_card_reason,
-        },
-        conflicts_present=bool(scrutineer_flags),
-        synth_was_insufficient=synth_was_insufficient,
-        author_notes=author_notes,
+    final_answer_author_runtime = assemble_final_answer_author_runtime_from_scope(
+        locals()
     )
-    final_answer_packet, final_author_payload = derive_author_input_payload(
-        final_answer_packet,
-        prompt=author_prompt,
-        author_system_prompt_key=author_system_prompt_key,
-        author_effort=_author_effort,
-    )
-    author_prompt = final_author_payload.prompt
-    author_system_prompt_key = final_author_payload.author_system_prompt_key
-    _author_effort = final_author_payload.author_effort
+    final_answer_packet = final_answer_author_runtime.packet
+    author_prompt = final_answer_author_runtime.author_prompt
+    author_system_prompt_key = final_answer_author_runtime.author_system_prompt_key
+    _author_effort = final_answer_author_runtime.author_effort
 
     analyst_author_handoff_state = build_analyst_author_handoff_state(
         run_id=run_id,
@@ -7141,95 +7101,27 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if weak_failure_gate_contract_state is not None
         else {WEAK_FAILURE_GATE_TRACE_KEY: {"controller_owned": False, "available": False}}
     )
-    analyst_author_handoff_state = build_analyst_author_handoff_state(
-        run_id=run_id,
-        analyst_skipped=analyst_skipped,
-        analyst_skip_reason=analyst_skip_reason,
-        post_retrieval_fast_path_used=post_retrieval_fast_path_used,
-        pre_analyst_gate_signals=pre_analyst_gate_signals,
-        analyst_skipped_after_economist=analyst_skipped_after_economist,
-        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
-        economist_output_used_as_analysis=economist_output_used_as_analysis,
+    final_answer_citation_runtime = assemble_final_answer_citation_runtime_from_scope(
+        locals(),
         analyst_evidence=_evidence_slice_for_analyst(),
-        analyst_context_prefix=analyst_cached_prefix,
-        linkup_block_included=bool(linkup_block),
-        quantitative_packet_injected=bool(
-            analyst_quant_packet_handoff_telemetry.get(
-                "analyst_quant_packet_injected"
-            )
-        ),
-        missing_target_metric_directive_emitted=missing_target_metric_directive_emitted,
-        corpus_weak=corpus_weak,
-        failure_card_payload=failure_card_payload,
-        author_notes=author_notes,
-        author_evidence=author_evidence,
-        selected_evidence=final_top_evidence,
-        final_evidence=final_top_evidence,
-        ordered_sources=ordered_sources,
-        unique_source_urls=unique_source_urls,
-        author_evidence_block=author_evidence_block,
-        source_telemetry_ref={
-            "source_ids": list(final_source_telemetry_inputs.source_ids),
-            "unique_source_url_count": (
-                final_source_telemetry_inputs.unique_source_url_count
-            ),
-            "ordered_sources": list(final_source_telemetry_inputs.ordered_sources),
-            "final_evidence_count": (
-                final_source_telemetry_inputs.final_evidence_count
-            ),
-            "final_answer_source_telemetry": dict(
-                final_source_telemetry_inputs.final_answer_source_telemetry
-            ),
-        },
-        author_prompt=author_prompt,
-        complexity=complexity,
-        author_system_prompt_key=author_system_prompt_key,
-        author_effort=_author_effort,
-        includes_analysis=(
-            complexity != "low" and (not corpus_weak or _efp_author) and not _relevance_low
-        ),
-        includes_recency_notes=bool(recency_notes),
-        includes_author_notes=bool(author_notes),
-        image_context_active=bool(image_context),
-        pre_analyst_gate_ref=pre_analyst_gate_contract,
-        weak_failure_gate_state=weak_failure_gate_contract_state,
-        retrieval_loop_state=retrieval_loop_contract_state,
-        router_query_preparation_state=router_query_preparation_contract,
-        answer_contract_ref=answer_contract_runtime_result,
-        final_evidence_ref=final_answer_packet_compatibility_refs(final_answer_packet)[
-            "final_evidence_ref"
-        ],
+    )
+    final_answer_packet = final_answer_citation_runtime.packet
+    analyst_author_handoff_state = (
+        final_answer_citation_runtime.analyst_author_handoff_state
     )
     analyst_author_handoff_trace_fragment = (
-        analyst_author_handoff_state.to_trace_fragment()
+        final_answer_citation_runtime.analyst_author_handoff_trace_fragment
     )
-    final_answer_packet = final_answer_packet.with_citation_observations(
-        final_answer_source_telemetry
+    citation_source_handoff_state = (
+        final_answer_citation_runtime.citation_source_handoff_state
     )
-    final_answer_compatibility_refs = final_answer_packet_compatibility_refs(
-        final_answer_packet,
-        final_evidence_snapshot_recorded=bool(
-            final_source_telemetry_inputs.final_evidence_snapshot_payload
-        ),
-    )
-    citation_source_handoff_state = build_packet_derived_citation_source_handoff_state(
-        final_answer_packet,
-        run_id=run_id,
-        ledger_ref=final_answer_compatibility_refs["ledger_ref"],
-        answer_contract_ref=answer_contract_runtime_result,
-        analyst_author_handoff_state=analyst_author_handoff_state,
-        source_telemetry_ref=final_answer_compatibility_refs["source_telemetry_ref"],
-    )
-    citation_source_handoff = execute_citation_source_handoff(
-        citation_source_handoff_state
-    )
-    unique_source_urls = citation_source_handoff.unique_source_urls
-    ordered_sources = citation_source_handoff.ordered_sources
+    unique_source_urls = final_answer_citation_runtime.unique_source_urls
+    ordered_sources = final_answer_citation_runtime.ordered_sources
     final_answer_source_telemetry = (
-        citation_source_handoff.final_answer_source_telemetry
+        final_answer_citation_runtime.final_answer_source_telemetry
     )
     citation_source_handoff_trace_fragment = (
-        citation_source_handoff_state.to_trace_fragment()
+        final_answer_citation_runtime.citation_source_handoff_trace_fragment
     )
     economist_handoff_state = build_economist_handoff_state(
         run_id=run_id,
@@ -7257,7 +7149,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     economist_handoff_trace_fragment = economist_handoff_state.to_trace_fragment()
     _run_controller_mirror.state.trace_fields.update(
-        final_answer_packet_trace_fragment(final_answer_packet)
+        final_answer_citation_runtime.packet_trace_fragment
     )
     _run_controller_mirror.state.trace_fields.update(
         citation_source_handoff_trace_fragment
