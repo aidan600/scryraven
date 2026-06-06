@@ -38,7 +38,7 @@ def test_forced_official_current_corridor_distinguishes_secondary_ordinary_evide
     assert classification["ordinary_acquisition_counted_as_recovery_success"] is False
 
 
-def test_ordinary_official_current_acquisition_success_is_not_recovery_success() -> None:
+def test_aggregate_only_ordinary_official_current_status_still_forces_custody() -> None:
     result = run_forced_corridor_validation(
         official_current_forced_corridor_fixture(
             ordinary_evidence_status="satisfied_strong",
@@ -48,16 +48,14 @@ def test_ordinary_official_current_acquisition_success_is_not_recovery_success()
     classification = result.classification
 
     assert classification["ordinary_authoritative_source_already_present"] is True
-    assert classification["missing_authoritative_source_state_forced"] is False
-    assert classification["authoritative_recovery_bridge_visible"] is False
+    assert classification["missing_authoritative_source_state_forced"] is True
+    assert classification["authoritative_recovery_bridge_visible"] is True
     assert classification["authoritative_recovery_query_created"] is False
     assert classification["recovery_execution_admitted"] is False
     assert classification["recovery_dispatch_authorized"] is False
     assert classification["source_class_recovery_execution_attempted"] is False
     assert classification["recovered_evidence_visible"] == "not_applicable_offline"
-    assert classification["next_failure_layer"] == (
-        "ordinary_authoritative_source_already_present"
-    )
+    assert classification["next_failure_layer"] == "recovery_query_not_created"
     assert classification["ordinary_acquisition_counted_as_recovery_success"] is False
 
 
