@@ -102,6 +102,7 @@ from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     build_packet_derived_citation_source_handoff_state,
     derive_author_input_payload,
+    final_answer_packet_compatibility_refs,
     final_answer_packet_trace_fragment,
 )
 from core.final_evidence_bundle_builder import (
@@ -7219,12 +7220,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         retrieval_loop_state=retrieval_loop_contract_state,
         router_query_preparation_state=router_query_preparation_contract,
         answer_contract_ref=answer_contract_runtime_result,
-        final_evidence_ref={
-            "final_evidence_count": len(final_top_evidence),
-            "author_evidence_count": len(author_evidence),
-            "ordered_source_count": len(ordered_sources),
-            "unique_source_url_count": len(unique_source_urls),
-        },
+        final_evidence_ref=final_answer_packet_compatibility_refs(final_answer_packet)[
+            "final_evidence_ref"
+        ],
     )
     analyst_author_handoff_trace_fragment = (
         analyst_author_handoff_state.to_trace_fragment()
@@ -7232,40 +7230,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     final_answer_packet = final_answer_packet.with_citation_observations(
         final_answer_source_telemetry
     )
+    final_answer_compatibility_refs = final_answer_packet_compatibility_refs(
+        final_answer_packet,
+        final_evidence_snapshot_recorded=bool(
+            final_source_telemetry_inputs.final_evidence_snapshot_payload
+        ),
+    )
     citation_source_handoff_state = build_packet_derived_citation_source_handoff_state(
         final_answer_packet,
         run_id=run_id,
-        ledger_ref={
-            "packet_id": final_answer_packet.packet_id,
-            "final_evidence_snapshot_recorded": bool(
-                final_source_telemetry_inputs.final_evidence_snapshot_payload
-            ),
-            "final_evidence_count": len(final_answer_packet.evidence_allowed),
-            "authority": "final_answer_packet",
-        },
+        ledger_ref=final_answer_compatibility_refs["ledger_ref"],
         answer_contract_ref=answer_contract_runtime_result,
         analyst_author_handoff_state=analyst_author_handoff_state,
-        source_telemetry_ref={
-            "packet_id": final_answer_packet.packet_id,
-            "source_ids": [
-                record.source_id
-                for record in final_answer_packet.evidence_allowed
-                if record.source_id is not None
-            ],
-            "unique_source_url_count": len(
-                {record.url for record in final_answer_packet.evidence_allowed if record.url}
-            ),
-            "ordered_sources": list(
-                final_answer_packet.author_input_refs.get("ordered_sources", ())
-            ),
-            "final_evidence_count": len(final_answer_packet.evidence_allowed),
-            "final_answer_source_telemetry": dict(
-                final_answer_packet.author_input_refs.get(
-                    "final_answer_source_telemetry", {}
-                )
-            ),
-            "authority": "final_answer_packet",
-        },
+        source_telemetry_ref=final_answer_compatibility_refs["source_telemetry_ref"],
     )
     citation_source_handoff = execute_citation_source_handoff(
         citation_source_handoff_state

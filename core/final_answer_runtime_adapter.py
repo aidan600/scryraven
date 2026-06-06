@@ -221,6 +221,7 @@ def build_final_answer_packet(
     author_refs = {
         "status": "author_input_ready",
         "author_evidence_ids": author_evidence_ids,
+        "author_evidence_count": len(author_evidence or ()),
         "ordered_sources": list(ordered_sources or ()),
         "unique_source_urls": dict(unique_source_urls or {}),
         "final_answer_source_telemetry": dict(final_answer_source_telemetry or {}),
@@ -279,6 +280,63 @@ def final_answer_packet_trace_fragment(packet: FinalAnswerPacket) -> dict[str, A
     return packet.to_trace_fragment()
 
 
+def final_answer_packet_compatibility_refs(
+    packet: FinalAnswerPacket,
+    *,
+    final_evidence_snapshot_recorded: bool | None = None,
+) -> dict[str, Any]:
+    """Return legacy final-evidence/citation refs derived from FinalAnswerPacket.
+
+    AG-89E keeps the old handoff reference shapes only as compatibility
+    projections.  Counts, source IDs, ordered sources, and source telemetry are
+    read from the packet rather than reconstructed by the orchestrator.
+    """
+
+    projection = packet.to_legacy_citation_handoff_inputs()
+    final_evidence_count = len(packet.evidence_allowed)
+    unique_source_url_count = len(projection["unique_source_urls"])
+    base_ref: dict[str, Any] = {
+        "packet_id": packet.packet_id,
+        "final_evidence_count": final_evidence_count,
+        "authority": FINAL_ANSWER_PACKET_TRACE_KEY,
+    }
+    ledger_ref = dict(base_ref)
+    if final_evidence_snapshot_recorded is not None:
+        ledger_ref["final_evidence_snapshot_recorded"] = bool(
+            final_evidence_snapshot_recorded
+        )
+    author_evidence_count = packet.author_input_refs.get("author_evidence_count")
+    if author_evidence_count is None:
+        author_evidence_count = len(packet.author_input_refs.get("author_evidence_ids", ()))
+    return {
+        "final_evidence_ref": {
+            **base_ref,
+            "author_evidence_count": int(author_evidence_count),
+            "ordered_source_count": len(projection["ordered_sources"]),
+            "unique_source_url_count": unique_source_url_count,
+            "trace_mode": "final_answer_packet_compatibility_projection",
+        },
+        "ledger_ref": ledger_ref,
+        "source_telemetry_ref": {
+            **base_ref,
+            "source_ids": [
+                record.source_id
+                for record in packet.evidence_allowed
+                if record.source_id is not None
+            ],
+            "unique_source_url_count": unique_source_url_count,
+            "ordered_sources": projection["ordered_sources"],
+            "final_answer_source_telemetry": projection[
+                "final_answer_source_telemetry"
+            ],
+        },
+        "final_evidence_bundle_ref": {
+            **base_ref,
+            "citation_eligible_count": len(packet.citation_eligible),
+        },
+    }
+
+
 def build_packet_derived_citation_source_handoff_state(
     packet: FinalAnswerPacket,
     *,
@@ -291,6 +349,7 @@ def build_packet_derived_citation_source_handoff_state(
     """Demote legacy citation/source handoff inputs behind FinalAnswerPacket."""
 
     projection = packet.to_legacy_citation_handoff_inputs()
+    compatibility_refs = final_answer_packet_compatibility_refs(packet)
     return build_citation_source_handoff_state(
         run_id=run_id,
         final_evidence=projection["final_evidence"],
@@ -300,22 +359,18 @@ def build_packet_derived_citation_source_handoff_state(
         ordered_sources=projection["ordered_sources"],
         final_answer_source_telemetry=projection["final_answer_source_telemetry"],
         final_citation_observation_refs=projection["final_citation_observation_refs"],
-        final_evidence_bundle_ref={
-            "packet_id": packet.packet_id,
-            "final_evidence_count": len(packet.evidence_allowed),
-            "citation_eligible_count": len(packet.citation_eligible),
-            "authority": FINAL_ANSWER_PACKET_TRACE_KEY,
-        },
-        ledger_ref=ledger_ref,
+        final_evidence_bundle_ref=compatibility_refs["final_evidence_bundle_ref"],
+        ledger_ref=ledger_ref or compatibility_refs["ledger_ref"],
         answer_contract_ref=answer_contract_ref,
         analyst_author_handoff_state=analyst_author_handoff_state,
-        source_telemetry_ref=source_telemetry_ref,
+        source_telemetry_ref=source_telemetry_ref or compatibility_refs["source_telemetry_ref"],
     )
 
 
 __all__ = [
     "build_final_answer_packet",
     "build_packet_derived_citation_source_handoff_state",
+    "final_answer_packet_compatibility_refs",
     "derive_author_input_payload",
     "final_answer_packet_trace_fragment",
 ]

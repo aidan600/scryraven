@@ -16,6 +16,7 @@ from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     build_packet_derived_citation_source_handoff_state,
     derive_author_input_payload,
+    final_answer_packet_compatibility_refs,
     final_answer_packet_trace_fragment,
 )
 from core.official_current_source_custody import OfficialCurrentSourceCustodyState
@@ -199,6 +200,82 @@ def test_ag89d_legacy_citation_handoff_is_demoted_behind_packet() -> None:
     assert trace["citation_observations"]["final_answer_source_telemetry"]["final_answer_source_ids_used"] == [12]
 
 
+def test_ag89e_legacy_final_evidence_refs_are_packet_derived() -> None:
+    packet = build_final_answer_packet(
+        run_id="r7b",
+        final_evidence=[_passage(source_id=42)],
+        author_evidence=[_passage(source_id=42)],
+        ordered_sources=["- [42] [IRS notice](https://irs.gov/pub/notice)"],
+        unique_source_urls={"https://irs.gov/pub/notice": 42},
+    ).with_citation_observations({"final_answer_source_ids_used": [42]})
+
+    refs = final_answer_packet_compatibility_refs(
+        packet, final_evidence_snapshot_recorded=True
+    )
+
+    assert refs["final_evidence_ref"] == {
+        "packet_id": packet.packet_id,
+        "final_evidence_count": 1,
+        "authority": "final_answer_packet",
+        "author_evidence_count": 1,
+        "ordered_source_count": 1,
+        "unique_source_url_count": 1,
+        "trace_mode": "final_answer_packet_compatibility_projection",
+    }
+    assert refs["ledger_ref"] == {
+        "packet_id": packet.packet_id,
+        "final_evidence_count": 1,
+        "authority": "final_answer_packet",
+        "final_evidence_snapshot_recorded": True,
+    }
+    assert refs["source_telemetry_ref"]["source_ids"] == [42]
+    assert refs["source_telemetry_ref"]["ordered_sources"] == [
+        "- [42] [IRS notice](https://irs.gov/pub/notice)"
+    ]
+    assert refs["source_telemetry_ref"]["final_answer_source_telemetry"] == {
+        "final_answer_source_ids_used": [42]
+    }
+    assert refs["final_evidence_bundle_ref"] == {
+        "packet_id": packet.packet_id,
+        "final_evidence_count": 1,
+        "authority": "final_answer_packet",
+        "citation_eligible_count": 1,
+    }
+
+
+def test_ag89e_author_evidence_count_preserves_packet_recorded_zero() -> None:
+    packet = build_final_answer_packet(
+        run_id="r7d",
+        final_evidence=[_passage(source_id=45)],
+        author_evidence=[],
+    )
+
+    refs = final_answer_packet_compatibility_refs(packet)
+
+    assert packet.author_input_refs["author_evidence_ids"] == [
+        packet.evidence_allowed[0].evidence_id
+    ]
+    assert packet.author_input_refs["author_evidence_count"] == 0
+    assert refs["final_evidence_ref"]["author_evidence_count"] == 0
+
+
+def test_ag89e_packet_derived_citation_handoff_uses_packet_refs_by_default() -> None:
+    packet = build_final_answer_packet(
+        run_id="r7c",
+        final_evidence=[_passage(source_id=44)],
+        ordered_sources=["- [44] [IRS notice](https://irs.gov/pub/notice)"],
+        unique_source_urls={"https://irs.gov/pub/notice": 44},
+    ).with_citation_observations({"final_answer_source_ids_used": [44]})
+
+    state = build_packet_derived_citation_source_handoff_state(packet, run_id="r7c")
+    trace = state.to_trace_fragment()["citation_source_handoff_contract"]
+
+    assert trace["final_evidence_bundle_ref"]["authority"] == "final_answer_packet"
+    assert trace["final_evidence_bundle_ref"]["packet_id"] == packet.packet_id
+    assert trace["ledger_ref"]["authority"] == "final_answer_packet"
+    assert trace["source_telemetry_ref"]["authority"] == "final_answer_packet"
+    assert trace["source_telemetry_ref"]["source_ids"] == [44]
+
 def test_ag89d_trace_projection_is_derived_from_packet() -> None:
     packet = build_final_answer_packet(
         run_id="r8",
@@ -216,8 +293,11 @@ def test_ag89d_static_orchestrator_wiring_does_not_change_protected_surfaces() -
     assert "build_final_answer_packet(" in text
     assert "derive_author_input_payload(" in text
     assert "build_packet_derived_citation_source_handoff_state(" in text
+    assert "final_answer_packet_compatibility_refs(" in text
     assert "author_prompt = final_author_payload.prompt" in text
     assert "source_obligation_projection=pre_author_source_obligation_projection" in text
     assert "process_search_queries(" in text
     assert "ask_model(\n        author_prompt, _author_system," in text
     assert "citation_source_handoff_state = build_packet_derived_citation_source_handoff_state" in text
+    assert "final_source_telemetry_inputs.final_evidence_snapshot_payload" in text
+    assert '"authority": "final_answer_packet"' not in text
