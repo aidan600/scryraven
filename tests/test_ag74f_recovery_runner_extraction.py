@@ -99,7 +99,9 @@ def test_ag74f_pipeline_delegates_source_class_recovery_dispatch_to_runner() -> 
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
 
     assert orchestrator_source.count("run_source_class_recovery_dispatch(") == 1
-    assert "SourceClassRecoveryRunnerContext(" in orchestrator_source
+    helper_source = (Path(__file__).resolve().parents[1] / "core" / "retrieval_dispatch_runtime.py").read_text(encoding="utf-8")
+    assert "source_class_recovery_context_from_scope(" in orchestrator_source
+    assert "SourceClassRecoveryRunnerContext(" in helper_source
     assert "execute_source_class_recovery_action(" not in orchestrator_source
     assert (
         "record_source_class_recovery_execution_blocked_if_needed("

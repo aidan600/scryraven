@@ -245,9 +245,11 @@ def test_orchestrator_handoff_static_guard():
     text = PIPELINE.read_text()
     loop_section = text[text.index("# Main retrieval loop") : text.index("if iteration == 1:", text.index("# Main retrieval loop"))]
 
-    assert "build_retrieval_pass_descriptor" in loop_section
-    assert "build_retrieval_loop_state" in loop_section
-    assert "execute_retrieval_pass_handoff" in loop_section
+    helper_text = (ROOT / "core" / "retrieval_dispatch_runtime.py").read_text()
+    assert "execute_main_retrieval_pass_from_scope" in loop_section
+    assert "build_retrieval_pass_descriptor" in helper_text
+    assert "build_retrieval_loop_state" in helper_text
+    assert "execute_retrieval_pass_handoff" in helper_text
     assert "select_providers(" in loop_section  # still precomputed legacy policy
     assert "process_search_queries(" not in loop_section
     assert "retrieval_loop_contract_state.to_trace_fragment()" in text

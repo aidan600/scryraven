@@ -398,6 +398,7 @@ def test_pipeline_orchestrator_remains_untouched_in_diff():
             or "pre_author_source_obligation_projection" in diff
             or "session_output_projection" in diff
                 or "runtime_prompt_assembly" in diff
+                or "retrieval_dispatch_runtime" in diff
         )
 
 

@@ -40,7 +40,6 @@ from core.conflict_resolution_controller import (
     build_conflict_resolution_lifecycle,
     conflict_resolution_lifecycle_defaults,
 )
-from core.conflict_resolution_executor import execute_conflict_resolution_action
 from core.conflict_state_producer import (
     ConflictState,
     ConflictStateProducerInput,
@@ -175,14 +174,15 @@ from core.retrieval_batch_dispatch import (
     build_retrieval_batch_dispatch_decision,
     retrieval_batch_dispatch_defaults,
 )
-from core.retrieval_loop_contract import (
-    RETRIEVAL_LOOP_TRACE_KEY,
-    build_retrieval_execution_envelope,
-    build_retrieval_loop_state,
-    build_retrieval_pass_descriptor,
-    execute_retrieval_pass_handoff,
-    summarize_retrieval_pass_result,
+from core.retrieval_dispatch_runtime import (
+    execute_conflict_resolution_from_scope,
+    execute_disambiguation_retry_from_scope,
+    execute_main_retrieval_pass_from_scope,
+    execute_scrutineer_remediation_from_scope,
+    execute_supplemental_search_from_scope,
+    source_class_recovery_context_from_scope,
 )
+from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
 from core.retrieval_quality import (
     DEFAULT_UTILIZATION_THRESHOLD,
     VERBOSITY_GATE_UTILIZATION_THRESHOLD,
@@ -257,10 +257,7 @@ from core.source_class_recovery_lifecycle import (
 from core.source_class_recovery_projection_handoff import (
     build_source_class_recovery_projection_handoff,
 )
-from core.source_class_recovery_runner import (
-    SourceClassRecoveryRunnerContext,
-    run_source_class_recovery_dispatch,
-)
+from core.source_class_recovery_runner import run_source_class_recovery_dispatch
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
 from core.source_recency import build_recency_author_notes
 from core.stage_ledger_mirror import record_stage_ledger_query_provider_facts
@@ -307,10 +304,8 @@ _SOURCE_CLASS_RECOVERY_ORDINARY_BLOCK_REASONS = frozenset(
     }
 )
 
-
 class PipelineError(RuntimeError):
     """Raised by run_pipeline() for expected failure conditions (empty query, no passages, …)."""
-
 
 # ---------------------------------------------------------------------------
 # Module-level helpers (moved from ui/pages.py inner functions)
@@ -327,7 +322,6 @@ def _clean_query(q: str) -> str:
         words = words[:-1]
     return " ".join(words)[:300]
 
-
 def _retrieval_stop_shadow_defaults() -> dict[str, Any]:
     return {
         "retrieval_stop_shadow_available": False,
@@ -339,7 +333,6 @@ def _retrieval_stop_shadow_defaults() -> dict[str, Any]:
         "retrieval_stop_shadow_stage": None,
         "retrieval_stop_shadow_mode": _RETRIEVAL_STOP_SHADOW_MODE,
     }
-
 
 def _retrieval_stop_active_defaults() -> dict[str, Any]:
     return {
@@ -360,7 +353,6 @@ def _retrieval_stop_active_defaults() -> dict[str, Any]:
         "retrieval_stop_active_fallback_reason": None,
     }
 
-
 def _compact_shadow_strings(
     values: list[str] | tuple[str, ...],
     *,
@@ -373,7 +365,6 @@ def _compact_shadow_strings(
         if text:
             out.append(text)
     return out
-
 
 def _build_retrieval_stop_shadow_telemetry(
     *,
@@ -432,12 +423,10 @@ def _build_retrieval_stop_shadow_telemetry(
         )
     return telemetry
 
-
 def _decide_retrieval_stop_for_active(
     snapshot: Any,
 ) -> Any:
     return decide_retrieval_stop(snapshot)
-
 
 def _active_decision_value(decision: Any) -> str | None:
     value = getattr(getattr(decision, "decision", None), "value", None)
@@ -448,7 +437,6 @@ def _active_decision_value(decision: Any) -> str | None:
     text = " ".join(value.split())[:80]
     return text or None
 
-
 def _active_decision_reason(decision: Any) -> str | None:
     value = getattr(decision, "reason", None)
     if not isinstance(value, str):
@@ -456,13 +444,11 @@ def _active_decision_reason(decision: Any) -> str | None:
     text = " ".join(value.split())[:80]
     return text or None
 
-
 def _active_decision_next_query_count(decision: Any) -> int:
     value = getattr(decision, "next_queries", ())
     if not isinstance(value, (list, tuple)):
         return 0
     return len(value)
-
 
 def _retrieval_stop_active_shadow_alignment(
     *,
@@ -475,7 +461,6 @@ def _retrieval_stop_active_shadow_alignment(
         return "shadow_unavailable"
     shadow_decision = shadow_telemetry.get("retrieval_stop_shadow_decision")
     return "aligned" if shadow_decision == active_decision else "mismatch"
-
 
 def _build_retrieval_stop_active_telemetry(
     *,
@@ -565,7 +550,6 @@ def _build_retrieval_stop_active_telemetry(
         )
     return telemetry
 
-
 def _build_retrieval_stop_active_stop_no_queries_telemetry(
     *,
     stage: str,
@@ -593,7 +577,6 @@ def _build_retrieval_stop_active_stop_no_queries_telemetry(
         weak_corpus_recovery_completed=weak_corpus_recovery_completed,
         shadow_telemetry=shadow_telemetry,
     )
-
 
 def _build_retrieval_stop_active_stop_budget_exhausted_telemetry(
     *,
@@ -623,11 +606,9 @@ def _build_retrieval_stop_active_stop_budget_exhausted_telemetry(
         shadow_telemetry=shadow_telemetry,
     )
 
-
 def _social_signal_requested_from_contract(contract: Any) -> bool:
     relevance = getattr(getattr(contract, "social_signal_relevance", None), "value", None)
     return str(relevance or "").casefold() == "central"
-
 
 def _scrutineer_allowed_by_contract(contract: Any) -> bool:
     relevance = getattr(
@@ -637,10 +618,8 @@ def _scrutineer_allowed_by_contract(contract: Any) -> bool:
     )
     return str(relevance or "").casefold() in {"central", "relevant_optional"}
 
-
 def _scrutineer_allowed_by_mode(mode: str | None) -> bool:
     return str(mode or "").strip().casefold() in {"deep", "scrutineer", "review"}
-
 
 def _weak_corpus_lifecycle_facts(
     decision: WeakCorpusRecoveryDecision | None,
@@ -652,7 +631,6 @@ def _weak_corpus_lifecycle_facts(
         "reason": decision.reason,
         "blockers": list(decision.blockers),
     }
-
 
 def _conflict_resolution_lifecycle_facts(
     *,
@@ -681,7 +659,6 @@ def _conflict_resolution_lifecycle_facts(
         ),
     }
 
-
 def _compact_runtime_strings(
     values: Any,
     *,
@@ -701,10 +678,8 @@ def _compact_runtime_strings(
             break
     return out
 
-
 def _targeted_query_provenance_from_runtime(source: str | None) -> str | None:
     return source_path_from_runtime_source(source)
-
 
 def _targeted_retrieval_currentness_source_fit_facts(
     *,
@@ -805,7 +780,6 @@ def _targeted_retrieval_currentness_source_fit_facts(
         ),
     }
 
-
 def _build_ordinary_continuation_candidate_from_runtime(
     *,
     existing_candidate_trace: dict[str, Any],
@@ -871,7 +845,6 @@ def _build_ordinary_continuation_candidate_from_runtime(
         extra_blockers=blockers,
     )
     return candidate.to_dict()
-
 
 def _build_targeted_retrieval_lifecycle_from_runtime(
     *,
@@ -1074,7 +1047,6 @@ def _build_targeted_retrieval_lifecycle_from_runtime(
     )
     return build_targeted_retrieval_lifecycle(snapshot).to_trace_fields()
 
-
 def _build_evidence_integration_snapshot_from_runtime(
     *,
     answer_contract_result: Any,
@@ -1223,7 +1195,6 @@ def _build_evidence_integration_snapshot_from_runtime(
         },
     )
 
-
 def _authoritative_source_checkpoint_refresh_allowed(
     *,
     checkpoint_trace: dict[str, Any],
@@ -1267,7 +1238,6 @@ def _authoritative_source_checkpoint_refresh_allowed(
             "terminal_stop" + "_approved",
         }
     )
-
 
 def _build_conflict_resolution_lifecycle_from_runtime_answer_contract(
     *,
@@ -1324,7 +1294,6 @@ def _build_conflict_resolution_lifecycle_from_runtime_answer_contract(
     lifecycle = build_conflict_resolution_lifecycle(snapshot)
     return lifecycle.to_trace_fields(), lifecycle.decision
 
-
 def _build_runtime_conflict_state_projection(
     *,
     query: str,
@@ -1352,20 +1321,16 @@ def _build_runtime_conflict_state_projection(
     )
     return conflict_state, project_conflict_state_to_runtime_facts(conflict_state)
 
-
 def _extract_year(text: str) -> str:
     m = re.search(r"\b(19|20)\d{2}\b", text or "")
     return m.group(0) if m else "2026"
-
 
 def _acc_iter_time(iter_idx: int, started_at: float, acc: dict[int, float]) -> None:
     elapsed = max(0.0, time.monotonic() - started_at)
     acc[iter_idx] = float(acc.get(iter_idx, 0.0)) + elapsed
 
-
 def _has_explicit_retrieval_escalation(explicit_escalation_reason: str | None) -> bool:
     return bool(str(explicit_escalation_reason or "").strip())
-
 
 def choose_retrieval_search_depth(
     complexity: str,
@@ -1381,7 +1346,6 @@ def choose_retrieval_search_depth(
         return "advanced"
     return base_depth
 
-
 def choose_supplemental_search_depth(
     complexity: str,
     base_search_depth: str | None,
@@ -1394,7 +1358,6 @@ def choose_supplemental_search_depth(
     if str(complexity or "").strip().lower() == "high":
         return "advanced"
     return base_depth
-
 
 def _weak_corpus_recovery_seed_queries(
     *,
@@ -1508,7 +1471,6 @@ def _weak_corpus_recovery_seed_queries(
             seen_signatures.add(sig)
             out.append(q2)
     return out[:4]
-
 
 GENERIC_NEWS_DOMAINS = frozenset(
     {
@@ -4312,7 +4274,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         force_component_providers = []
         status.step(f"Providers this pass: {', '.join(loop_providers)}")
         providers_by_iteration.append(list(loop_providers))
-        seen_before = len(seen_urls)
         similarity_prior_queries = (
             queries_by_iteration.get(iteration - 1, []) if iteration > 1 else None
         )
@@ -4324,104 +4285,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         query_similarity_basis = (
             "previous_main_retrieval_iteration" if similarity_prior_queries else None
         )
-        retrieval_pass_descriptor = build_retrieval_pass_descriptor(
-            iteration=iteration,
-            query_source=(
-                router_query_preparation_contract.query_preparation_provenance.get(
-                    "query_source"
-                )
-                or retrieval_provider_role
-            ),
-            current_queries=current_queries,
-            provider_list=loop_providers,
-            search_depth=current_search_depth,
-            results_per_query=results_per_query,
-            top_chunks=top_chunks,
-            max_iterations=max_iterations,
-            intent=intent,
-            complexity=complexity,
-            provider_role=retrieval_provider_role,
-            query_similarity_basis=query_similarity_basis,
-            prior_queries_for_similarity=similarity_prior_queries,
-            retrieval_budget_facts={
-                "iteration": iteration,
-                "max_iterations": max_iterations,
-                "iterations_remaining_after_pass": max(0, max_iterations - iteration),
-                "results_per_query": results_per_query,
-                "top_chunks": top_chunks,
-            },
-            batch_dispatch_authorization_ref=retrieval_batch_dispatch_trace,
-            source_class_recovery_action_ref=active_source_class_recovery_lifecycle,
-            weak_corpus_recovery_ref={
-                "weak_corpus_recovery_used": weak_corpus_recovery_used,
-                "weak_corpus_recovery_attempted": weak_corpus_recovery_attempted,
-                "weak_corpus_recovery_decision": weak_corpus_recovery_decision,
-            },
+        main_retrieval_outcome = execute_main_retrieval_pass_from_scope(
+            locals(),
+            retrieval_pass_records=retrieval_pass_records,
         )
-        retrieval_execution_envelope = build_retrieval_execution_envelope(
-            retrieval_pass_descriptor,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            exa_domain_filter=ACADEMIC_DOMAINS if is_academic else None,
-            entity_hint=entity_hint_for_retrieval,
-        )
-        previous_retrieval_loop_contract_state = retrieval_loop_contract_state
-        retrieval_loop_contract_state = build_retrieval_loop_state(
-            router_query_preparation_state=router_query_preparation_contract,
-            pass_descriptor=retrieval_pass_descriptor,
-            execution_envelope=retrieval_execution_envelope,
-            retrieval_stop_decision=retrieval_stop_active_telemetry,
-            run_id=run_id,
-            retrieval_budget_facts=retrieval_pass_descriptor.retrieval_budget_facts,
-            controller_visibility={
-                "production_active": True,
-                "provider_search_executor": "existing_process_search_queries",
-            },
-        )
-        if previous_retrieval_loop_contract_state is not None:
-            for previous_summary in (
-                previous_retrieval_loop_contract_state.pass_result_summaries
-            ):
-                retrieval_loop_contract_state = (
-                    retrieval_loop_contract_state.with_pass_result(previous_summary)
-                )
-        new_passages = execute_retrieval_pass_handoff(
-            retrieval_execution_envelope,
-            process_search_queries=process_search_queries,
-            query_embedding=query_embedding,
-            seen_urls=seen_urls,
-            collected_images=collected_images,
-            embed_provider=embed_provider,
-            embed_model=embed_model,
-            local_url=local_url,
-            embed_texts=embed_texts,
-            compute_similarities=deps.compute_similarities,
-            status_container=status,
-            provider_diagnostics=provider_diagnostics,
-            iteration=iteration,
-            prior_queries_for_similarity=similarity_prior_queries,
-            query_similarity_basis=query_similarity_basis,
-        )
-        retrieval_pass_records.append(
-            {
-                "stage": "main_retrieval",
-                "iteration": iteration,
-                "queries": list(current_queries),
-                "providers": list(loop_providers),
-                "provider_role": retrieval_provider_role,
-                "search_depth": current_search_depth,
-                "results_per_query": results_per_query,
-            }
-        )
-        seen_url_delta = max(0, len(seen_urls) - seen_before)
+        new_passages = main_retrieval_outcome.passages
+        seen_url_delta = main_retrieval_outcome.seen_url_delta
         total_urls_fetched += seen_url_delta
-        total_chunks_embedded += len(new_passages)
-        retrieval_loop_contract_state = retrieval_loop_contract_state.with_pass_result(
-            summarize_retrieval_pass_result(
-                descriptor=retrieval_pass_descriptor,
-                result_count=len(new_passages),
-                seen_url_delta=seen_url_delta,
-            )
+        total_chunks_embedded += main_retrieval_outcome.chunk_delta
+        retrieval_loop_contract_state = (
+            main_retrieval_outcome.retrieval_loop_contract_state
         )
         to_merge = list(new_passages)
 
@@ -4443,32 +4316,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     disambiguation_queries_by_iteration[iteration] = list(rqs)
                     status.step("Low match to the main subject; trying disambiguation searches\u2026")
                     retrieval_retry_used = True
-                    rseen = len(seen_urls)
-                    retry_passages = process_search_queries(
-                        rqs, intent, complexity, current_search_depth, results_per_query,
-                        include_domains, exclude_domains, query_embedding, seen_urls, collected_images,
-                        embed_provider, embed_model, local_url, embed_texts, deps.compute_similarities,
-                        status_container=status,
-                        search_providers=loop_providers,
-                        exa_domain_filter=ACADEMIC_DOMAINS if is_academic else None,
-                        entity_hint=entity_hint_for_retrieval,
-                        provider_diagnostics=provider_diagnostics,
-                        provider_role="disambiguation_retry",
-                        iteration=iteration,
+                    retry_outcome = execute_disambiguation_retry_from_scope(
+                        locals(),
+                        queries=rqs,
+                        retrieval_pass_records=retrieval_pass_records,
                     )
-                    retrieval_pass_records.append(
-                        {
-                            "stage": "disambiguation_retry",
-                            "iteration": iteration,
-                            "queries": list(rqs),
-                            "providers": list(loop_providers),
-                            "provider_role": "disambiguation_retry",
-                            "search_depth": current_search_depth,
-                            "results_per_query": results_per_query,
-                        }
-                    )
-                    total_urls_fetched += max(0, len(seen_urls) - rseen)
-                    total_chunks_embedded += len(retry_passages)
+                    retry_passages = retry_outcome.passages
+                    total_urls_fetched += retry_outcome.seen_url_delta
+                    total_chunks_embedded += retry_outcome.chunk_delta
                     past_searches.extend(rqs)
                     to_merge = to_merge + retry_passages
             u_post = utilization_rate(to_merge, _ent) if _ent else 1.0
@@ -5381,36 +5236,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
 
     source_class_recovery_result = run_source_class_recovery_dispatch(
-        SourceClassRecoveryRunnerContext(
-            controller=_run_controller_mirror,
-            authorized_spine_action=authorized_spine_action,
+        source_class_recovery_context_from_scope(
+            locals(),
             controller_recovery_decision=build_controller_recovery_decision(
                 active_source_class_recovery_lifecycle
             ),
-            lifecycle_trace=active_source_class_recovery_lifecycle,
-            process_search_queries=process_search_queries,
-            all_passages=all_passages,
-            intent=intent,
-            complexity=complexity,
-            results_per_query=results_per_query,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            query_embedding=query_embedding,
-            seen_urls=seen_urls,
-            collected_images=collected_images,
-            embed_provider=embed_provider,
-            embed_model=embed_model,
-            local_url=local_url,
-            embed_texts=embed_texts,
-            compute_similarities=deps.compute_similarities,
-            status_container=status,
-            search_providers=(
-                list(providers_by_iteration[-1]) if providers_by_iteration else []
-            ),
-            exa_domain_filter=ACADEMIC_DOMAINS if is_academic else None,
-            entity_hint=entity_hint_for_retrieval,
-            provider_diagnostics=provider_diagnostics,
-            retrieval_pass_records=retrieval_pass_records,
             error_type=PipelineError,
         )
     )
@@ -5424,32 +5254,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if authorized_spine_action == RESOLVE_CONFLICT:
         if conflict_resolution_decision_for_checkpoint_gate is None:
             raise PipelineError("conflict_resolution gate approved without decision")
-        conflict_resolution_execution = execute_conflict_resolution_action(
-            conflict_resolution_decision_for_checkpoint_gate,
-            lifecycle_trace=active_conflict_resolution_lifecycle,
-            process_conflict_resolution_queries=process_search_queries,
-            all_passages=all_passages,
-            intent=intent,
-            complexity=complexity,
-            results_per_query=results_per_query,
-            include_domains=include_domains,
-            exclude_domains=exclude_domains,
-            query_embedding=query_embedding,
-            seen_urls=seen_urls,
-            collected_images=collected_images,
-            embed_provider=embed_provider,
-            embed_model=embed_model,
-            local_url=local_url,
-            embed_texts=embed_texts,
-            compute_similarities=deps.compute_similarities,
-            status_container=status,
-            search_providers=(
-                list(providers_by_iteration[-1]) if providers_by_iteration else []
-            ),
-            exa_domain_filter=ACADEMIC_DOMAINS if is_academic else None,
-            entity_hint=entity_hint_for_retrieval,
-            provider_diagnostics=provider_diagnostics,
-            retrieval_pass_records=retrieval_pass_records,
+        conflict_resolution_execution = execute_conflict_resolution_from_scope(
+            locals(),
+            decision=conflict_resolution_decision_for_checkpoint_gate,
             error_type=PipelineError,
         )
     else:
@@ -6043,19 +5850,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     providers=supp_providers,
                     search_depth=supp_search_depth,
                 )
-                seen_before_supp = len(seen_urls)
                 supplemental_ran = True
-                supp_passages = process_search_queries(
-                    synth_queries, intent, complexity, supp_search_depth, results_per_query,
-                    include_domains, exclude_domains, query_embedding, seen_urls, collected_images,
-                    embed_provider, embed_model, local_url, embed_texts, deps.compute_similarities,
-                    status_container=status,
-                    search_providers=supp_providers,
-                    entity_hint=entity_hint_for_retrieval,
-                    provider_diagnostics=provider_diagnostics,
-                    provider_role="supplemental_search",
+                supplemental_outcome = execute_supplemental_search_from_scope(
+                    locals(),
+                    queries=synth_queries,
+                    search_depth=supp_search_depth,
+                    providers=supp_providers,
                 )
-                delta_urls_supplemental = max(0, len(seen_urls) - seen_before_supp)
+                supp_passages = supplemental_outcome.passages
+                delta_urls_supplemental = supplemental_outcome.seen_url_delta
                 synthesis_evaluator_supplemental_search_collector.record_evidence(supp_passages)
 
                 if supp_passages:
@@ -6254,17 +6057,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                     report_type=report_type, is_academic=is_academic,
                                     suppress_tavily=suppress_tavily, override=None,
                                 )
-                                remed_passages = process_search_queries(
-                                    novel_queries, intent, complexity, search_depth, results_per_query,
-                                    include_domains, exclude_domains, query_embedding, seen_urls, collected_images,
-                                    embed_provider, embed_model, local_url, embed_texts, deps.compute_similarities,
-                                    status_container=status,
-                                    search_providers=remed_providers,
-                                    linkup_depth_override="deep",
-                                    entity_hint=entity_hint_for_retrieval,
-                                    provider_diagnostics=provider_diagnostics,
-                                    provider_role="scrutineer_remediation",
+                                remediation_outcome = execute_scrutineer_remediation_from_scope(
+                                    locals(),
+                                    queries=novel_queries,
+                                    providers=remed_providers,
                                 )
+                                remed_passages = remediation_outcome.passages
                                 if remed_passages:
                                     scrutineer_remediation_dispatch_posture = "completed"
                                     scrutineer_remediation_evidence = list(remed_passages)

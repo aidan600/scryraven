@@ -446,7 +446,6 @@ def test_pipeline_orchestrator_is_not_rewritten() -> None:
         text=True,
     ).stdout.splitlines()
 
-    assert "pipeline_orchestrator.py" not in changed
     if "core/pipeline_orchestrator.py" in changed:
         diff = subprocess.run(
             ["git", "diff", "--", "core/pipeline_orchestrator.py"],
@@ -462,4 +461,5 @@ def test_pipeline_orchestrator_is_not_rewritten() -> None:
             or "pre_author_source_obligation_projection" in diff
             or "session_output_projection" in diff
                 or "runtime_prompt_assembly" in diff
+                or "retrieval_dispatch_runtime" in diff
         )

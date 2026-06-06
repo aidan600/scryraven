@@ -371,7 +371,9 @@ def test_ag44b_static_guard_ordinary_candidate_does_not_relabel_bounded_lanes() 
     assert "weak_corpus_recovery_queries = list(" in source
     assert "run_source_class_recovery_dispatch(" in source
     assert "execute_source_class_recovery_action(" in runner_source
-    assert "execute_conflict_resolution_action(" in source
+    helper_source = (Path(__file__).resolve().parents[1] / "core" / "retrieval_dispatch_runtime.py").read_text(encoding="utf-8")
+    assert "execute_conflict_resolution_from_scope(" in source
+    assert "execute_conflict_resolution_action(" in helper_source
     assert "conflict_resolving_queries=conflict_resolving_queries" in source
     assert "ordinary_next_queries=conflict_resolving_queries" not in source
     assert "approved_ordinary_next_queries=conflict_resolving_queries" not in source

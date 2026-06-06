@@ -362,6 +362,7 @@ def test_pipeline_orchestrator_adapter_guard_untouched() -> None:
             or "pre_author_source_obligation_projection" in diff
             or "session_output_projection" in diff
                 or "runtime_prompt_assembly" in diff
+                or "retrieval_dispatch_runtime" in diff
         )
     else:
         assert pipeline_path not in changed

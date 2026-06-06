@@ -272,9 +272,11 @@ def test_conflict_resolution_executor_rejects_wrong_provider_role() -> None:
 
 def test_resolve_conflict_runtime_dispatch_uses_bounded_executor_import() -> None:
     source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    helper_source = (_ROOT / "core" / "retrieval_dispatch_runtime.py").read_text(encoding="utf-8")
 
-    assert "execute_conflict_resolution_action" in source
-    assert "process_conflict_resolution_queries=process_search_queries" in source
+    assert "execute_conflict_resolution_from_scope" in source
+    assert "execute_conflict_resolution_action" in helper_source
+    assert 'process_conflict_resolution_queries=values["process_search_queries"]' in helper_source
     assert "active_conflict_resolution_used = True" not in source
 
 
