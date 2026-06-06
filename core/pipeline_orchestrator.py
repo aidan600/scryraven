@@ -34,10 +34,11 @@ from core.authoritative_source_action_orchestrator_adapter import (
     authoritative_source_action_trace_fragment,
     build_authoritative_source_action_orchestrator_handoff,
 )
-from core.citation_source_handoff_contract import (
-    build_citation_source_handoff_state,
-    execute_citation_source_handoff,
-)
+from core.citation_source_handoff_contract import execute_citation_source_handoff
+
+# AG-89D: legacy `citation_source_handoff_state = build_citation_source_handoff_state` is no longer called here;
+# build_packet_derived_citation_source_handoff_state demotes that legacy handoff
+# behind FinalAnswerPacket authority.
 from core.conflict_resolution_controller import (
     ConflictResolutionControllerDecision,
     ConflictResolutionDecision,
@@ -96,6 +97,12 @@ from core.failure_card import (
     failure_card_reason,
     failure_card_should_show,
     normalize_force_corpus_state,
+)
+from core.final_answer_runtime_adapter import (
+    build_final_answer_packet,
+    build_packet_derived_citation_source_handoff_state,
+    derive_author_input_payload,
+    final_answer_packet_trace_fragment,
 )
 from core.final_evidence_bundle_builder import (
     FinalEvidenceBundleInputs,
@@ -6609,6 +6616,35 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _author_effort = (
         analyst_effort if ((not corpus_weak or _efp_author) and not _relevance_low) else "low"
     )
+    final_answer_packet = build_final_answer_packet(
+        run_id=run_id,
+        final_evidence=final_top_evidence,
+        author_evidence=author_evidence,
+        ordered_sources=ordered_sources,
+        unique_source_urls=unique_source_urls,
+        final_answer_source_telemetry=None,
+        source_obligation_projection=None,
+        query_lineage_refs=query_authority.to_trace_fragment(),
+        evidence_sufficient=None,
+        corpus_weak=corpus_weak,
+        failure_card_payload={
+            "show": _pre_gate_failure_card_show,
+            "reason": _pre_gate_failure_card_reason,
+        },
+        conflicts_present=bool(scrutineer_flags),
+        synth_was_insufficient=synth_was_insufficient,
+        author_notes=author_notes,
+    )
+    final_answer_packet, final_author_payload = derive_author_input_payload(
+        final_answer_packet,
+        prompt=author_prompt,
+        author_system_prompt_key=author_system_prompt_key,
+        author_effort=_author_effort,
+    )
+    author_prompt = final_author_payload.prompt
+    author_system_prompt_key = final_author_payload.author_system_prompt_key
+    _author_effort = final_author_payload.author_effort
+
     analyst_author_handoff_state = build_analyst_author_handoff_state(
         run_id=run_id,
         analyst_skipped=analyst_skipped,
@@ -7182,47 +7218,42 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     analyst_author_handoff_trace_fragment = (
         analyst_author_handoff_state.to_trace_fragment()
     )
-    citation_source_handoff_state = build_citation_source_handoff_state(
+    final_answer_packet = final_answer_packet.with_citation_observations(
+        final_answer_source_telemetry
+    )
+    citation_source_handoff_state = build_packet_derived_citation_source_handoff_state(
+        final_answer_packet,
         run_id=run_id,
-        final_evidence=final_top_evidence,
-        selected_evidence=final_top_evidence,
-        author_evidence=author_evidence,
-        unique_source_urls=unique_source_urls,
-        ordered_sources=ordered_sources,
-        evidence_block=evidence_block,
-        cached_prefix=cached_prefix,
-        author_evidence_block=author_evidence_block,
-        final_answer_source_telemetry=final_answer_source_telemetry,
-        final_citation_observation_refs=final_answer_source_telemetry.get(
-            "final_answer_source_ids_used",
-            (),
-        ),
-        final_evidence_bundle_ref={
-            "final_evidence_count": len(final_top_evidence),
-            "author_evidence_count": len(author_evidence),
-            "ordered_source_count": len(ordered_sources),
-            "unique_source_url_count": len(unique_source_urls),
-        },
         ledger_ref={
+            "packet_id": final_answer_packet.packet_id,
             "final_evidence_snapshot_recorded": bool(
                 final_source_telemetry_inputs.final_evidence_snapshot_payload
             ),
-            "final_evidence_count": len(final_top_evidence),
+            "final_evidence_count": len(final_answer_packet.evidence_allowed),
+            "authority": "final_answer_packet",
         },
         answer_contract_ref=answer_contract_runtime_result,
         analyst_author_handoff_state=analyst_author_handoff_state,
         source_telemetry_ref={
-            "source_ids": list(final_source_telemetry_inputs.source_ids),
-            "unique_source_url_count": (
-                final_source_telemetry_inputs.unique_source_url_count
+            "packet_id": final_answer_packet.packet_id,
+            "source_ids": [
+                record.source_id
+                for record in final_answer_packet.evidence_allowed
+                if record.source_id is not None
+            ],
+            "unique_source_url_count": len(
+                {record.url for record in final_answer_packet.evidence_allowed if record.url}
             ),
-            "ordered_sources": list(final_source_telemetry_inputs.ordered_sources),
-            "final_evidence_count": (
-                final_source_telemetry_inputs.final_evidence_count
+            "ordered_sources": list(
+                final_answer_packet.author_input_refs.get("ordered_sources", ())
             ),
+            "final_evidence_count": len(final_answer_packet.evidence_allowed),
             "final_answer_source_telemetry": dict(
-                final_source_telemetry_inputs.final_answer_source_telemetry
+                final_answer_packet.author_input_refs.get(
+                    "final_answer_source_telemetry", {}
+                )
             ),
+            "authority": "final_answer_packet",
         },
     )
     citation_source_handoff = execute_citation_source_handoff(
@@ -7261,6 +7292,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         citation_source_handoff_state=citation_source_handoff_state,
     )
     economist_handoff_trace_fragment = economist_handoff_state.to_trace_fragment()
+    _run_controller_mirror.state.trace_fields.update(
+        final_answer_packet_trace_fragment(final_answer_packet)
+    )
     _run_controller_mirror.state.trace_fields.update(
         citation_source_handoff_trace_fragment
     )
@@ -7445,6 +7479,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         ),
         **answer_contract_runtime_trace_fragment,
         **analyst_author_handoff_trace_fragment,
+        **final_answer_packet_trace_fragment(final_answer_packet),
         **citation_source_handoff_trace_fragment,
         **economist_handoff_trace_fragment,
         **synthesis_evaluator_supplemental_search_handoff_trace_fragment,
