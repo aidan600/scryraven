@@ -14,8 +14,16 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
-from core.retrieval_dispatch_runtime import execute_scrutineer_remediation_from_scope, execute_supplemental_search_from_scope
-from core.runtime_prompt_assembly import build_analyst_prompt, build_scrutineer_prompt, build_scrutineer_remediation_prompt, build_synthesis_evaluator_prompt
+from core.retrieval_dispatch_runtime import (
+    execute_scrutineer_remediation_from_scope,
+    execute_supplemental_search_from_scope,
+)
+from core.runtime_prompt_assembly import (
+    build_analyst_prompt,
+    build_scrutineer_prompt,
+    build_scrutineer_remediation_prompt,
+    build_synthesis_evaluator_prompt,
+)
 from core.scrutineer_remediation_runtime_handoff import RuntimeRemediationQueryFact
 
 
@@ -39,63 +47,23 @@ class LegacyReviewRuntimeDeps:
 
 @dataclass(frozen=True)
 class LegacyReviewRuntimeRequest:
-    scope: Mapping[str, Any]
-    query: str
-    analysis: str
-    complexity: str
-    corpus_weak: bool
-    entity_hint_for_retrieval: str | None
-    utilization_rate_val: float | None
-    synth_skip_utilization_threshold: float
-    post_retrieval_fast_path_used: bool
-    economist_output_used_as_analysis: bool
-    status: Any
-    collector: Any
-    default_system: Mapping[str, str]
-    query_authority: Any
-    search_depth: str
-    query_type: str | None
-    intent: str
-    available_keys: Mapping[str, Any]
-    report_type: str | None
-    is_academic: bool
-    suppress_tavily: bool
-    local_url: str | None
-    or_api_key: str | None
-    use_reasoning: bool
-    fast_provider: str
-    fast_model: str
-    smart_provider: str
-    smart_model: str
-    analyst_effort: str
-    all_passages: MutableSequence[dict[str, Any]]
-    linkup_block: str
-    current_date: str
-    core_topic: str
-    past_searches: Sequence[str]
-    final_top_evidence: Sequence[Any]
-    unique_source_urls: Sequence[str]
-    run_log: logging.Logger
-    author_notes: str
-    first_synth_sufficient: bool
-    synth_was_insufficient: bool
-    synth_deficiency: str | None
-    supplemental_ran: bool
-    delta_urls_supplemental: int
-    synth_evaluator_seconds: float
-    analyst_seconds: float
-    scrutineer_ran: bool
-    scrutineer_seconds: float
-    scrutineer_flags: list[dict[str, Any]] = field(default_factory=list)
+    scope: Mapping[str, Any]; query: str; analysis: str; complexity: str; corpus_weak: bool
+    entity_hint_for_retrieval: str | None; utilization_rate_val: float | None; synth_skip_utilization_threshold: float
+    post_retrieval_fast_path_used: bool; economist_output_used_as_analysis: bool; status: Any; collector: Any
+    default_system: Mapping[str, str]; query_authority: Any; search_depth: str; query_type: str | None; intent: str
+    available_keys: Mapping[str, Any]; report_type: str | None; is_academic: bool; suppress_tavily: bool
+    local_url: str | None; or_api_key: str | None; use_reasoning: bool; fast_provider: str; fast_model: str
+    smart_provider: str; smart_model: str; analyst_effort: str; all_passages: MutableSequence[dict[str, Any]]
+    linkup_block: str; current_date: str; core_topic: str; past_searches: Sequence[str]
+    final_top_evidence: Sequence[Any]; unique_source_urls: Sequence[str]; run_log: logging.Logger; author_notes: str
+    first_synth_sufficient: bool; synth_was_insufficient: bool; synth_deficiency: str | None; supplemental_ran: bool
+    delta_urls_supplemental: int; synth_evaluator_seconds: float; analyst_seconds: float; scrutineer_ran: bool
+    scrutineer_seconds: float; scrutineer_flags: list[dict[str, Any]] = field(default_factory=list)
     scrutineer_remediation_queries: list[RuntimeRemediationQueryFact] = field(default_factory=list)
-    scrutineer_remediation_dispatch_authorized: bool = False
-    scrutineer_remediation_dispatch_posture: str = "skipped"
-    scrutineer_remediation_provider_role: str | None = None
-    scrutineer_remediation_providers: list[str] = field(default_factory=list)
-    scrutineer_remediation_linkup_depth_override: str | None = None
-    scrutineer_remediation_evidence: list[Any] = field(default_factory=list)
-    scrutineer_remediation_resynthesis_triggered: bool = False
-    scrutineer_pass_flags_directly_to_author: bool = False
+    scrutineer_remediation_dispatch_authorized: bool = False; scrutineer_remediation_dispatch_posture: str = "skipped"
+    scrutineer_remediation_provider_role: str | None = None; scrutineer_remediation_providers: list[str] = field(default_factory=list)
+    scrutineer_remediation_linkup_depth_override: str | None = None; scrutineer_remediation_evidence: list[Any] = field(default_factory=list)
+    scrutineer_remediation_resynthesis_triggered: bool = False; scrutineer_pass_flags_directly_to_author: bool = False
 
 
 @dataclass(frozen=True)
@@ -519,4 +487,12 @@ def execute_legacy_review_runtime_stage(
                 request.run_log.warning("Scrutineer JSON parse failed: %s", e)
                 scrutineer_flags = []
 
-    return LegacyReviewRuntimeOutcome(**{name: locals()[name] for name in _OUTCOME_LOCAL_NAMES})
+    return LegacyReviewRuntimeOutcome(
+        analysis=analysis, author_notes=author_notes, first_synth_sufficient=first_synth_sufficient, synth_was_insufficient=synth_was_insufficient,
+        synth_deficiency=synth_deficiency, supplemental_ran=supplemental_ran, delta_urls_supplemental=delta_urls_supplemental, synth_evaluator_seconds=synth_evaluator_seconds, analyst_seconds=analyst_seconds,
+        scrutineer_ran=scrutineer_ran, scrutineer_seconds=scrutineer_seconds, scrutineer_flags=scrutineer_flags, scrutineer_high_count=scrutineer_high_count,
+        scrutineer_remediation_queries=scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized=scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture=scrutineer_remediation_dispatch_posture,
+        scrutineer_remediation_provider_role=scrutineer_remediation_provider_role, scrutineer_remediation_providers=scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override=scrutineer_remediation_linkup_depth_override,
+        scrutineer_remediation_evidence=scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered=scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author=scrutineer_pass_flags_directly_to_author,
+        final_top_evidence=final_top_evidence, unique_source_urls=unique_source_urls, ordered_sources=ordered_sources, evidence_block=evidence_block, cached_prefix=cached_prefix,
+    )

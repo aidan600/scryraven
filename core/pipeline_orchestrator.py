@@ -101,6 +101,7 @@ from core.final_evidence_bundle_builder import (
     build_final_source_telemetry_inputs,
 )
 from core.kb_review_persistence_context import build_kb_review_persistence_context
+from core.legacy_review_runtime_stage import execute_legacy_review_runtime_stage_from_scope
 from core.nutrition_author_notes import (
     _format_nutrition_partial_evidence_author_note as _format_nutrition_partial_evidence_author_note,  # noqa: F401
 )
@@ -201,7 +202,6 @@ from core.retrieval_stop_controller import (
     decide_retrieval_stop,
 )
 from core.review_flags import recent_recurring_kb_hints
-from core.legacy_review_runtime_stage import execute_legacy_review_runtime_stage_from_scope
 from core.router_query_preparation_contract import (
     build_router_query_preparation_state,
     with_router_query_runtime_posture,
@@ -228,7 +228,10 @@ from core.runtime_prompt_assembly import (
 from core.runtime_trace_export_attachment import (
     attach_runtime_trace_export_compatibility_payloads,
 )
-from core.scrutineer_remediation_runtime_handoff import RuntimeScrutineerRemediationFacts, runtime_scrutineer_remediation_trace_fragment
+from core.scrutineer_remediation_runtime_handoff import (
+    RuntimeScrutineerRemediationFacts,
+    runtime_scrutineer_remediation_trace_fragment,
+)
 from core.search_providers import brave_reconnaissance
 from core.session_output_projection import (
     build_execution_log_entry_projection,
@@ -251,7 +254,9 @@ from core.source_class_recovery_runner import run_source_class_recovery_dispatch
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
 from core.source_recency import build_recency_author_notes
 from core.stage_ledger_mirror import record_stage_ledger_query_provider_facts
-from core.synthesis_evaluator_supplemental_search_runtime_handoff import RuntimeSynthesisEvaluatorSupplementalSearchFactCollector
+from core.synthesis_evaluator_supplemental_search_runtime_handoff import (
+    RuntimeSynthesisEvaluatorSupplementalSearchFactCollector,
+)
 from core.targeted_retrieval_controller import (
     build_targeted_retrieval_controller_input,
     build_targeted_retrieval_lifecycle,
@@ -5739,16 +5744,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     # --- SYNTHESIZER EVALUATOR & SCRUTINEER ---
     legacy_review_outcome = execute_legacy_review_runtime_stage_from_scope({**globals(), **locals()})
-    (
-        analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency,
-        supplemental_ran, delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds,
-        scrutineer_ran, scrutineer_seconds, scrutineer_flags, scrutineer_high_count,
-        scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized,
-        scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role,
-        scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override,
-        scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered,
-        scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls,
-    ) = legacy_review_outcome.orchestrator_values()
+    analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency, supplemental_ran, delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds, scrutineer_ran, scrutineer_seconds, scrutineer_flags, scrutineer_high_count, scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role, scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override, scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls = legacy_review_outcome.orchestrator_values()
     if legacy_review_outcome.ordered_sources is not None:
         ordered_sources = legacy_review_outcome.ordered_sources
     if legacy_review_outcome.evidence_block is not None:

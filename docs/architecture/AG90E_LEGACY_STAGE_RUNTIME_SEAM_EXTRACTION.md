@@ -42,8 +42,8 @@ Selected extraction: the adjacent legacy review runtime stage covering:
 ## Before / after line counts
 
 - Before: `core/pipeline_orchestrator.py` had **6,920** lines on the AG-90D-R1 baseline.
-- After: `core/pipeline_orchestrator.py` has **6,569** lines.
-- Net orchestrator delta: **-351 lines**.
+- After: `core/pipeline_orchestrator.py` has **6,565** lines.
+- Net orchestrator delta: **-355 lines**.
 
 This meets the AG-90E minimum target of at least `-350` net orchestrator lines.
 
@@ -51,19 +51,19 @@ This meets the AG-90E minimum target of at least `-350` net orchestrator lines.
 
 Production code:
 
-- `core/pipeline_orchestrator.py`: 21 additions / 372 deletions, **-351 net lines**.
-- `core/legacy_review_runtime_stage.py`: new bounded helper, **+522 lines**.
-- Production-code net delta: **+171 lines**.
+- `core/pipeline_orchestrator.py`: 10 additions / 365 deletions, **-355 net lines**.
+- `core/legacy_review_runtime_stage.py`: new bounded helper, **+498 lines**.
+- Production-code net delta: **+143 lines**.
 
 Helper-growth discipline:
 
-- Removed orchestrator production lines: **372**.
-- New helper production lines: **522**.
-- Helper over removed lines: **+150**, within the phase's `~150` helper-growth budget.
+- Removed orchestrator production lines: **365**.
+- New helper production lines: **498**.
+- Helper over removed lines: **+133**, within the phase's `~150` helper-growth budget.
 
 Total repo delta after tests and this architecture note:
 
-- Production code net: **+171**.
+- Production code net: **+143**.
 - Test code net before this note: `tests/test_ag90e_legacy_review_runtime_stage.py` adds 401 lines; static-guard updates add 18 net lines.
 - Documentation net: this file.
 
