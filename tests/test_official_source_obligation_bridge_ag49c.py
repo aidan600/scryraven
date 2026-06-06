@@ -133,7 +133,7 @@ def test_ag49c_unknown_obligation_leaves_inputs_unchanged() -> None:
     assert recommendation == {"source_class_recovery_recommended": False}
 
 
-def test_ag49c_existing_required_source_class_satisfied_blocks_bridge() -> None:
+def test_ag49c_legacy_aggregate_satisfied_status_does_not_satisfy_custody() -> None:
     recommendation, bridge = _bridge(
         {
             "query_preview": (
@@ -150,11 +150,17 @@ def test_ag49c_existing_required_source_class_satisfied_blocks_bridge() -> None:
         {"source_class_recovery_recommended": False},
     )
 
-    assert bridge["bridge_eligible"] is False
-    assert bridge["bridge_used"] is False
-    assert bridge["bridge_skip_reason"] == "existing_source_class_satisfied"
-    assert bridge["bridge_satisfied_source_classes"] == ["primary_source_documents"]
-    assert "missing_expected_source_classes" not in recommendation
+    assert bridge["bridge_eligible"] is True
+    assert bridge["bridge_used"] is True
+    assert bridge["bridge_skip_reason"] is None
+    assert bridge["bridge_satisfied_source_classes"] == []
+    assert recommendation["missing_expected_source_classes"] == ["primary_source_documents"]
+    statuses = {
+        record["status"]
+        for record in bridge["official_current_source_custody"]["records"]
+    }
+    assert "candidate_aggregate_only" in statuses
+    assert "requirement_unsatisfied" in statuses
 
 
 def test_ag49c_budget_and_terminal_blockers_remain_authoritative() -> None:

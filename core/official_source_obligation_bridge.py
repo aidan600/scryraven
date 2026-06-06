@@ -13,15 +13,10 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from core.authoritative_source_obligations import (
-    LEGAL_OR_REGULATORY_TEXT,
-    OFFICIAL_CURRENT_RULES,
-    PRIMARY_SOURCE_DOCUMENTS,
-    REPUTABLE_SECONDARY,
-    AuthoritativeSourceObligationState,
-    AuthorityEvidenceFit,
-    AuthorityRequirement,
-    AuthorityStatus,
+from core.authoritative_source_obligations import OFFICIAL_CURRENT_RULES
+from core.official_current_source_custody import (
+    OfficialCurrentCustodyStatus,
+    OfficialCurrentSourceCustodyState,
 )
 from core.official_source_obligation_candidate_visibility import (
     NOT_REQUIRED,
@@ -40,20 +35,13 @@ OFFICIAL_SOURCE_OBLIGATION_BRIDGE_SCHEMA_VERSION = (
 
 _ALLOWED_REQUIRED_SOURCE_CLASSES = frozenset(
     {
-        "official_current_rules",
+        OFFICIAL_CURRENT_RULES,
         "legal_or_regulatory_text",
         "current_primary_or_official",
         "primary_source_documents",
         "archival_primary_text",
     }
 )
-_KERNEL_AUTHORITY_CLASS_BY_LEGACY_CLASS = {
-    "official_current_rules": OFFICIAL_CURRENT_RULES,
-    "legal_or_regulatory_text": LEGAL_OR_REGULATORY_TEXT,
-    "current_primary_or_official": OFFICIAL_CURRENT_RULES,
-    "primary_source_documents": PRIMARY_SOURCE_DOCUMENTS,
-    "archival_primary_text": PRIMARY_SOURCE_DOCUMENTS,
-}
 _BLOCKERS_THAT_PRESERVE_EXISTING_OWNERSHIP = frozenset(
     {
         "active_recovery_already_used",
@@ -129,11 +117,12 @@ def apply_official_source_obligation_bridge(
     allowed_required = [
         item for item in required_classes if item in _ALLOWED_REQUIRED_SOURCE_CLASSES
     ]
-    satisfied, unsatisfied_required = _kernel_satisfaction_for_required_classes(
+    custody_state = _custody_state_for_required_classes(
         allowed_required,
         recommendation=base,
         runtime_trace=runtime_trace,
     )
+    satisfied, unsatisfied_required = custody_state.satisfaction_by_source_class()
     blockers = _bridge_blockers(existing_blockers, base, runtime_trace)
 
     considered = facts.obligation_status != UNKNOWN
@@ -204,6 +193,8 @@ def apply_official_source_obligation_bridge(
         "bridge_added_missing_source_classes": added_classes,
         "bridge_existing_missing_source_classes": existing_missing,
         "bridge_satisfied_source_classes": satisfied,
+        "official_current_source_custody": custody_state.to_dict(),
+        "custody_authority": "OfficialCurrentSourceCustodyState",
         "behavior_changed": used,
         "protected_surface": {
             "provider_policy_unchanged": True,
@@ -327,102 +318,68 @@ def _status_by_class(
     return out
 
 
-def _kernel_satisfaction_for_required_classes(
+def _custody_state_for_required_classes(
     source_classes: Iterable[str],
     *,
     recommendation: Mapping[str, Any],
     runtime_trace: Mapping[str, Any] | None,
-) -> tuple[list[str], list[str]]:
-    requirements: list[tuple[str, AuthorityRequirement]] = []
-    evidence_fits: list[AuthorityEvidenceFit] = []
+) -> OfficialCurrentSourceCustodyState:
+    """Build authoritative custody state for bridge satisfaction decisions.
+
+    Existing aggregate status/count diagnostics are demoted to
+    candidate_aggregate_only records. They remain visible in custody trace, but
+    they cannot satisfy a required official/current source class.
+    """
+    projection = _existing_custody_projection(recommendation, runtime_trace)
+    state = OfficialCurrentSourceCustodyState.from_projection(projection)
+    for source_class in source_classes:
+        state = state.require(source_class)
     status_by_class = _status_by_class(recommendation, runtime_trace)
     for source_class in source_classes:
-        requirement = _authority_requirement_for_source_class(source_class)
-        authority_class = _KERNEL_AUTHORITY_CLASS_BY_LEGACY_CLASS.get(source_class)
-        if requirement is None or authority_class is None:
-            continue
-        requirements.append((source_class, requirement))
-        evidence_fits.extend(
-            _authority_evidence_fits_for_source_class(
-                source_class,
-                requirement=requirement,
-                authority_class=authority_class,
-                legacy_status=status_by_class.get(source_class),
-                strong_count_positive=_strong_count_positive(
-                    recommendation,
-                    runtime_trace,
-                    source_class,
-                ),
+        requirement_id = f"official_current_source:{source_class}"
+        if _strong_count_positive(recommendation, runtime_trace, source_class):
+            state = state.record_candidate_aggregate_only(
+                requirement_id,
+                reason="legacy_strong_satisfaction_count_has_no_candidate_identity",
+                attempt_id="legacy_source_class_satisfaction_summary",
+                metadata={"source_class": source_class},
             )
-        )
-    state = AuthoritativeSourceObligationState.evaluate(
-        [requirement for _source_class, requirement in requirements],
-        evidence_fits,
-    )
-    satisfied: list[str] = []
-    unsatisfied: list[str] = []
-    for source_class, requirement in requirements:
-        target = (
-            satisfied
-            if state.satisfaction_for(requirement.requirement_id).status
-            is AuthorityStatus.FULFILLED
-            else unsatisfied
-        )
-        _append_one(target, source_class)
-    return satisfied, unsatisfied
+        legacy_status = status_by_class.get(source_class)
+        if legacy_status == "satisfied_strong":
+            state = state.record_candidate_aggregate_only(
+                requirement_id,
+                reason="legacy_satisfied_strong_status_has_no_candidate_identity",
+                attempt_id="legacy_source_class_satisfaction_status",
+                metadata={"source_class": source_class, "legacy_status": legacy_status},
+            )
+        elif legacy_status == "satisfied_weak":
+            state = state.record_candidate_disposition(
+                requirement_id,
+                status=OfficialCurrentCustodyStatus.CANDIDATE_REJECTED,
+                reason="legacy_weak_satisfaction_is_not_official_current_custody",
+                attempt_id="legacy_source_class_satisfaction_status",
+            )
+        elif legacy_status == "expected_but_only_secondary":
+            state = state.record_candidate_disposition(
+                requirement_id,
+                status=OfficialCurrentCustodyStatus.CANDIDATE_REJECTED,
+                reason="legacy_secondary_only_status_is_not_official_current_custody",
+                attempt_id="legacy_source_class_satisfaction_status",
+            )
+    return state.finalize_requirements()
 
 
-def _authority_requirement_for_source_class(
-    source_class: str,
-) -> AuthorityRequirement | None:
-    if source_class == "official_current_rules":
-        return AuthorityRequirement.official_current(source_class)
-    if source_class in {"legal_or_regulatory_text", "current_primary_or_official"}:
-        return AuthorityRequirement.legal_current_primary(source_class)
-    if source_class in {"primary_source_documents", "archival_primary_text"}:
-        return AuthorityRequirement.canonical_project_doc(source_class)
+def _existing_custody_projection(
+    recommendation: Mapping[str, Any],
+    runtime_trace: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    for source in (runtime_trace, recommendation):
+        if not isinstance(source, Mapping):
+            continue
+        projection = source.get("official_current_source_custody")
+        if isinstance(projection, Mapping):
+            return projection
     return None
-
-
-def _authority_evidence_fits_for_source_class(
-    source_class: str,
-    *,
-    requirement: AuthorityRequirement,
-    authority_class: str,
-    legacy_status: str | None,
-    strong_count_positive: bool,
-) -> tuple[AuthorityEvidenceFit, ...]:
-    if strong_count_positive or legacy_status == "satisfied_strong":
-        return (
-            AuthorityEvidenceFit.authoritative(
-                requirement.requirement_id,
-                f"{source_class}:satisfied_strong",
-                authority_class,
-            ),
-        )
-    if legacy_status == "satisfied_weak":
-        return (
-            AuthorityEvidenceFit(
-                requirement_id=requirement.requirement_id,
-                evidence_id=f"{source_class}:satisfied_weak",
-                candidate_exists=True,
-                observed_source_class=authority_class,
-                context_allowed=True,
-                satisfies_authority=False,
-                mismatch_reason="expected_source_class_weakly_satisfied",
-            ),
-        )
-    if legacy_status == "expected_but_only_secondary":
-        return (
-            AuthorityEvidenceFit.lower_tier_context(
-                requirement.requirement_id,
-                f"{source_class}:secondary_only",
-                REPUTABLE_SECONDARY,
-                mismatch_reason="expected_source_class_secondary_only",
-            ),
-        )
-    return ()
-
 
 def _strong_count_positive(
     recommendation: Mapping[str, Any],
