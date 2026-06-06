@@ -16,6 +16,7 @@ from core.scrutineer_remediation_runtime_handoff import (
 
 ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+LEGACY_REVIEW_STAGE = ROOT / "core" / "legacy_review_runtime_stage.py"
 
 
 def _payload(**overrides):
@@ -261,12 +262,13 @@ def test_pipeline_orchestrator_static_guard_only_tiny_runtime_handoff_touch() ->
                 if isinstance(target, ast.Name) and target.id.startswith("scrutineer_remediation"):
                     assigned_names.add(target.id)
 
+    helper_tree = ast.parse(LEGACY_REVIEW_STAGE.read_text(encoding="utf-8"))
+    helper_call_names = [node.func.id for node in ast.walk(helper_tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)]
     assert imported_names == {
-        "RuntimeRemediationQueryFact",
         "RuntimeScrutineerRemediationFacts",
         "runtime_scrutineer_remediation_trace_fragment",
     }
     assert call_names.count("runtime_scrutineer_remediation_trace_fragment") == 1
     assert call_names.count("RuntimeScrutineerRemediationFacts") == 1
-    assert call_names.count("RuntimeRemediationQueryFact") == 1
+    assert helper_call_names.count("RuntimeRemediationQueryFact") == 1
     assert "scrutineer_remediation_handoff_trace_fragment" in assigned_names

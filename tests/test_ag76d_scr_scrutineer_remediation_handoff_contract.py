@@ -26,6 +26,7 @@ from tests.static_import_guard_utils import assert_controller_contract_imports_c
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "scrutineer_remediation_handoff_contract.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+LEGACY_REVIEW_STAGE = ROOT / "core" / "legacy_review_runtime_stage.py"
 
 
 def _state(**overrides):
@@ -280,14 +281,15 @@ def test_pipeline_orchestrator_touch_is_limited_to_runtime_handoff_adapter():
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
             call_names.append(node.func.id)
 
+    helper_tree = ast.parse(LEGACY_REVIEW_STAGE.read_text(encoding="utf-8"))
+    helper_call_names = [node.func.id for node in ast.walk(helper_tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)]
     assert imported_names == {
-        "RuntimeRemediationQueryFact",
         "RuntimeScrutineerRemediationFacts",
         "runtime_scrutineer_remediation_trace_fragment",
     }
     assert call_names.count("runtime_scrutineer_remediation_trace_fragment") == 1
     assert call_names.count("RuntimeScrutineerRemediationFacts") == 1
-    assert call_names.count("RuntimeRemediationQueryFact") == 1
+    assert helper_call_names.count("RuntimeRemediationQueryFact") == 1
     forbidden_terms = (
         "DEFAULT_SYSTEM[\"scrutineer\"] =",
         "DEFAULT_SYSTEM['scrutineer'] =",

@@ -18,6 +18,7 @@ from core.synthesis_evaluator_supplemental_search_runtime_handoff import (
 ROOT = Path(__file__).resolve().parents[1]
 ADAPTER = ROOT / "core" / "synthesis_evaluator_supplemental_search_runtime_handoff.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+LEGACY_REVIEW_STAGE = ROOT / "core" / "legacy_review_runtime_stage.py"
 
 
 def _payload(**overrides):
@@ -285,8 +286,10 @@ def test_runtime_adapter_static_protected_import_guard() -> None:
 
 def test_pipeline_orchestrator_static_guard_only_tiny_adapter_trace_touch() -> None:
     tree = ast.parse(PIPELINE.read_text(encoding="utf-8"))
+    helper_tree = ast.parse(LEGACY_REVIEW_STAGE.read_text(encoding="utf-8"))
     imported_names: set[str] = set()
-    call_names: list[str] = []
+    pipeline_call_names: list[str] = []
+    helper_call_names: list[str] = []
     assigned_names: set[str] = set()
     for node in ast.walk(tree):
         if (
@@ -297,9 +300,9 @@ def test_pipeline_orchestrator_static_guard_only_tiny_adapter_trace_touch() -> N
         elif isinstance(node, ast.Call):
             func = node.func
             if isinstance(func, ast.Name):
-                call_names.append(func.id)
+                pipeline_call_names.append(func.id)
             elif isinstance(func, ast.Attribute):
-                call_names.append(func.attr)
+                pipeline_call_names.append(func.attr)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if (
@@ -307,9 +310,17 @@ def test_pipeline_orchestrator_static_guard_only_tiny_adapter_trace_touch() -> N
                     and target.id.startswith("synthesis_evaluator_supplemental_search")
                 ):
                     assigned_names.add(target.id)
+    for node in ast.walk(helper_tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                helper_call_names.append(func.id)
+            elif isinstance(func, ast.Attribute):
+                helper_call_names.append(func.attr)
 
+    call_names = pipeline_call_names + helper_call_names
     assert imported_names == {"RuntimeSynthesisEvaluatorSupplementalSearchFactCollector"}
-    assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFactCollector") == 1
+    assert pipeline_call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFactCollector") == 1
     assert call_names.count("RuntimeSynthesisEvaluatorSupplementalSearchFacts") == 0
     assert call_names.count("RuntimeSupplementalQueryFact") == 0
     assert {
