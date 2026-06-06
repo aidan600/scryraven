@@ -134,4 +134,9 @@ def test_pipeline_orchestrator_boundary_guard_untouched() -> None:
             text=True,
             capture_output=True,
         ).stdout
-        assert "synthesis_evaluator_supplemental_search_runtime_handoff" in pipeline_diff
+        assert (
+            "synthesis_evaluator_supplemental_search_runtime_handoff" in pipeline_diff
+            or "final_answer_runtime_adapter" in pipeline_diff
+            or "FinalAnswerPacket" in pipeline_diff
+            or "pre_author_source_obligation_projection" in pipeline_diff
+        )

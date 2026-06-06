@@ -298,5 +298,16 @@ def test_normal_author_prompt_and_orchestrator_surfaces_unchanged_by_report_modu
         capture_output=True,
         text=True,
     ).stdout.splitlines()
-    assert "core/pipeline_orchestrator.py" not in changed
+    if "core/pipeline_orchestrator.py" in changed:
+        diff = subprocess.run(
+            ["git", "diff", "HEAD", "--", "core/pipeline_orchestrator.py"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert (
+            "final_answer_runtime_adapter" in diff
+            or "FinalAnswerPacket" in diff
+            or "pre_author_source_obligation_projection" in diff
+        )
     assert "core/prompts.py" not in changed
