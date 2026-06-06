@@ -438,32 +438,26 @@ def finalize_retrieval_queries(
     intent: str,
     clean: Any | None = None,
     include_official_bias: bool = True,
+    max_len: int | None = None,
 ) -> list[str]:
     """
-    Anchor standalone secondary queries to the primary domain entity (and aliases),
-    then optionally prepend an official-source-biased query.
+    Compatibility facade for AG-89C QueryPlan authority.
+
+    The legacy local finalizer no longer owns query identity independently; it
+    delegates deterministic finalization to ``core.query_plan`` and returns the
+    authorized query text for existing callers.
     """
-    _clean = clean or (lambda s: re.sub(r"\s+", " ", (s or "").strip()))
-    aliases = approved_entity_aliases(primary_entity, entities_list, core_topic)
-    pd = primary_anchor(primary_entity, entities_list, core_topic)
-    out: list[str] = []
-    seen: set[str] = set()
-    for q in queries:
-        q2 = _clean(q)
-        if not q2:
-            continue
-        aq = _clean(apply_domain_anchor_to_query(q2, aliases=aliases, primary_display=pd))[:300]
-        k = aq.casefold()
-        if k not in seen:
-            seen.add(k)
-            out.append(aq)
-    if not include_official_bias:
-        return out
-    return inject_official_source_query(
-        out,
-        aliases=aliases,
-        primary_display=pd,
+    from core.query_plan import authorize_retrieval_queries
+
+    _plan, authorized = authorize_retrieval_queries(
+        queries,
+        primary_entity=primary_entity,
+        entities_list=entities_list,
+        core_topic=core_topic,
         user_query=user_query,
         intent=intent,
-        clean=_clean,
+        clean=clean,
+        include_official_bias=include_official_bias,
+        max_len=max_len,
     )
+    return authorized

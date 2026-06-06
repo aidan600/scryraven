@@ -166,6 +166,7 @@ from core.quantitative_consistency import (
     build_two_item_normalized_consistency_diagnostic,
     is_two_item_calorie_gram_comparison_candidate,
 )
+from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.recovered_evidence_visibility import (
     apply_controller_recovered_evidence_visibility,
 )
@@ -188,7 +189,6 @@ from core.retrieval_quality import (
     VERBOSITY_GATE_UTILIZATION_THRESHOLD,
     build_disambiguation_queries,
     extract_recon_context,
-    finalize_retrieval_queries,
     format_quoted_anchor,
     official_bias_phrase,
     should_merge_recency_queries,
@@ -3081,23 +3081,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     empty_entity_flag = len(entities_list) == 0
 
+    query_authority = build_query_plan_runtime_adapter(
+        run_id=run_id,
+        primary_entity=primary_entity,
+        entities_list=entities_list,
+        core_topic=core_topic,
+        user_query=query,
+        intent=intent,
+        clean=_clean_query,
+    )
+
     def _finalize_retrieval_queries(
         qs: list[str],
         *,
         max_len: int | None = None,
         include_official_bias: bool = True,
     ) -> list[str]:
-        out = finalize_retrieval_queries(
-            qs,
-            primary_entity=primary_entity,
-            entities_list=entities_list,
-            core_topic=core_topic,
-            user_query=query,
-            intent=intent,
-            clean=_clean_query,
-            include_official_bias=include_official_bias,
+        return query_authority.finalize(
+            qs, max_len=max_len, include_official_bias=include_official_bias
         )
-        return out[:max_len] if max_len is not None else out
 
     if not queries:
         status.step("Generating initial search plan...")
@@ -3158,7 +3160,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             recq = _clean_query(f"{_anchor} {y} news")
             recency_merge_used = True
             recency_merge_query = recq
-            current_queries = ([recq] + [q for q in current_queries if q and q != recq])[: max_queries or 1]
+            current_queries = query_authority.merge_recency(
+                current_queries, recency_query=recq, max_queries=max_queries
+            )
     current_queries = _finalize_retrieval_queries(
         current_queries, max_len=max_queries, include_official_bias=False
     )
@@ -4288,7 +4292,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             ):
                 waste_flags.append("query_redundancy_skipped")
                 break
-        queries_by_iteration[iteration] = list(current_queries)
+        query_authority.admit_execution_queries(
+            current_queries,
+            iteration=iteration,
+            recovery_active=weak_corpus_recovery_used and iteration > 1,
+        )
+        queries_by_iteration = query_authority.queries_by_iteration()
         current_search_depth = choose_retrieval_search_depth(
             complexity,
             search_depth,
@@ -4437,7 +4446,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 rqs = build_disambiguation_queries(
                     query, core_topic, primary_entity, query_type, current_date
                 )
-                rqs = _finalize_retrieval_queries(rqs, include_official_bias=False)
+                rqs = query_authority.finalize_disambiguation(rqs)
                 if rqs:
                     disambiguation_queries_by_iteration[iteration] = list(rqs)
                     status.step("Low match to the main subject; trying disambiguation searches\u2026")
@@ -4526,7 +4535,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     previous_queries=queries_by_iteration.get(1, []) + disambiguation_queries_by_iteration.get(1, []),
                 )
                 recovery_cap = min(4, max(2, max_queries or 2))
-                recovery_queries = _finalize_retrieval_queries(
+                recovery_queries = query_authority.finalize_recovery(
                     recovery_seed_queries,
                     max_len=recovery_cap,
                     include_official_bias=True,
@@ -4669,14 +4678,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         if directed:
                             status.step(f"Scout identified {len(directed)} targeted queries: {directed}")
                             scout_query_cap = 4
-                            finalized_scout_queries = _finalize_retrieval_queries(
+                            finalized_scout_queries = query_authority.finalize_scout_continuation(
                                 [
                                     str(q)[:300]
                                     for q in directed[:scout_query_cap]
                                     if str(q).strip()
                                 ],
                                 max_len=scout_query_cap,
-                                include_official_bias=False,
                             )
                             scout_queries = list(finalized_scout_queries)
                             scout_stop_decision = _decide_retrieval_loop_stop_continue(
@@ -4753,10 +4761,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     raw_component_queries = [
                         str(q)[:300] for q in expander_data.get("component_queries", [])
                     ]
-                    component_queries = _finalize_retrieval_queries(
-                        raw_component_queries,
-                        max_len=max_queries,
-                        include_official_bias=False,
+                    component_queries = query_authority.finalize_expander_continuation(
+                        raw_component_queries, max_len=max_queries
                     )
                     expander_reasoning = expander_data.get("reasoning", "")
                     if component_queries:
@@ -4856,10 +4862,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             else _clean_query(f"{q} {_extract_year(current_date)}")
                             for q in evaluator_next_queries
                         ]
-                    evaluator_next_queries = _finalize_retrieval_queries(
-                        evaluator_next_queries,
-                        max_len=2,
-                        include_official_bias=False,
+                    evaluator_next_queries = query_authority.finalize_evaluator_continuation(
+                        evaluator_next_queries, max_len=2
                     )
                     evaluator_stop_prior_queries = (
                         queries_by_iteration.get(1, []) if iteration == 1 else []
@@ -6095,8 +6099,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 first_synth_sufficient = bool(synth_is_sufficient)
 
             if not synth_is_sufficient and synth_queries:
-                synth_queries = _finalize_retrieval_queries(
-                    synth_queries, max_len=2, include_official_bias=False
+                synth_queries = query_authority.finalize_supplemental(
+                    synth_queries, max_len=2
                 )
                 synthesis_evaluator_supplemental_search_collector.record_supplemental_queries(
                     synth_queries
@@ -6296,8 +6300,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 if is_novel:
                                     novel_queries.append(rq)
 
-                            novel_queries = _finalize_retrieval_queries(
-                                novel_queries, max_len=2, include_official_bias=False
+                            novel_queries = query_authority.finalize_remediation(
+                                novel_queries, max_len=2
                             )
 
                             admitted_query_set = set(novel_queries)
@@ -6866,6 +6870,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _run_controller_mirror.state.trace_fields.update(
         router_query_preparation_contract.to_trace_fragment()
     )
+    _run_controller_mirror.state.trace_fields.update(query_authority.to_trace_fragment())
     if retrieval_loop_contract_state is not None:
         _run_controller_mirror.state.trace_fields.update(
             retrieval_loop_contract_state.to_trace_fragment()
@@ -6898,6 +6903,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         failure_card_payload=failure_card_payload,
     )
 
+    queries_by_iteration = query_authority.queries_by_iteration()
     queries_per_iter = {str(k): v for k, v in (queries_by_iteration or {}).items()}
     disambiguation_queries_per_iter = {
         str(k): v for k, v in (disambiguation_queries_by_iteration or {}).items()
@@ -7380,6 +7386,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         **anchor_packet_telemetry,
         **nutrition_lookup_telemetry,
         **router_query_preparation_contract.to_trace_fragment(),
+        **query_authority.to_trace_fragment(),
         **(
             retrieval_loop_contract_state.to_trace_fragment()
             if retrieval_loop_contract_state is not None

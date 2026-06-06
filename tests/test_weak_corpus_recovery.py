@@ -193,7 +193,15 @@ def test_weak_first_pass_runs_bounded_recovery_second_iteration(tmp_path: Path) 
     assert trace["weak_corpus_recovery_blockers"] == []
     assert trace["iterations_run"] == 2
     assert "2" in trace["queries_per_iteration"]
+    query_plan = trace["query_plan"]
+    assert query_plan["authorized_queries_by_iteration"] == trace["queries_per_iteration"]
+    assert harness.search_calls[0] == query_plan["authorized_queries_by_iteration"]["1"]
+    assert harness.search_calls[-1] == query_plan["authorized_queries_by_iteration"]["2"]
     assert harness.search_calls[-1] == trace["weak_corpus_recovery_queries"]
+    assert any(
+        item["role"] == "recovery" and item["status"] == "ordered"
+        for item in query_plan["items"]
+    )
     assert harness.search_call_details[-1]["provider_role"] == "weak_corpus_recovery"
 
 
