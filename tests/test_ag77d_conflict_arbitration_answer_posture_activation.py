@@ -400,6 +400,7 @@ def test_pipeline_orchestrator_boundary_only_has_unrelated_scrutineer_handoff_to
             or "FinalAnswerPacket" in diff
             or "pre_author_source_obligation_projection" in diff
             or "session_output_projection" in diff
+                or "runtime_prompt_assembly" in diff
         )
     else:
         assert PIPELINE_PATH not in changed
