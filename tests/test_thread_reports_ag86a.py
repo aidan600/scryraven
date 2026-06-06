@@ -311,5 +311,6 @@ def test_normal_author_prompt_and_orchestrator_surfaces_unchanged_by_report_modu
             or "pre_author_source_obligation_projection" in diff
             or "session_output_projection" in diff
                 or "runtime_prompt_assembly" in diff
+                or "retrieval_dispatch_runtime" in diff
         )
     assert "core/prompts.py" not in changed

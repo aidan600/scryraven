@@ -826,8 +826,8 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
     assert guarded_calls_for(
         orchestrator_tree,
         orchestrator_parent_by_node,
-        {"execute_conflict_resolution_action": "RESOLVE_CONFLICT"},
-    ) == {"execute_conflict_resolution_action": True}
+        {"execute_conflict_resolution_from_scope": "RESOLVE_CONFLICT"},
+    ) == {"execute_conflict_resolution_from_scope": True}
     assert guarded_calls_for(
         runner_tree,
         runner_parent_by_node,

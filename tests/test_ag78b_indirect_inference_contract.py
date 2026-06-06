@@ -425,4 +425,5 @@ def test_static_guard_contract_does_not_import_or_rewrite_pipeline_orchestrator(
             or "pre_author_source_obligation_projection" in diff
             or "session_output_projection" in diff
                 or "runtime_prompt_assembly" in diff
+                or "retrieval_dispatch_runtime" in diff
         )
