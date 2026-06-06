@@ -375,6 +375,7 @@ def test_pipeline_orchestrator_remains_unchanged() -> None:
             or "FinalAnswerPacket" in diff
             or "pre_author_source_obligation_projection" in diff
             or "session_output_projection" in diff
+                or "runtime_prompt_assembly" in diff
         )
 
 

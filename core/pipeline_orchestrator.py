@@ -102,7 +102,9 @@ from core.final_evidence_bundle_builder import (
     build_final_source_telemetry_inputs,
 )
 from core.kb_review_persistence_context import build_kb_review_persistence_context
-from core.nutrition_author_notes import _format_nutrition_partial_evidence_author_note
+from core.nutrition_author_notes import (
+    _format_nutrition_partial_evidence_author_note as _format_nutrition_partial_evidence_author_note,  # noqa: F401
+)
 from core.official_source_obligation_bridge import (
     apply_official_source_obligation_bridge,
 )
@@ -214,6 +216,20 @@ from core.run_logging import (
     current_code_version_metadata,
     log_run_failed,
     log_run_started,
+)
+from core.runtime_prompt_assembly import (
+    build_analyst_cached_prefix_from_scope,
+    build_analyst_prompt,
+    build_author_prompt_from_scope,
+    build_economist_preflight_prompt,
+    build_expander_prompt,
+    build_image_context,
+    build_scrutineer_prompt,
+    build_scrutineer_remediation_prompt,
+    build_synthesis_evaluator_prompt,
+    build_unsupported_retrieval_prompt_fragments,
+    evidence_slice_for_analyst,
+    select_author_system_prompt,
 )
 from core.runtime_trace_export_attachment import (
     attach_runtime_trace_export_compatibility_payloads,
@@ -4703,15 +4719,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             # --- QUERY EXPANDER ---
             if iteration == 1 and complexity in ("medium", "high") and intent != "news":
                 status.step("Analyzing evidence gaps for component data...")
-                chunk_summaries = "\n".join(
-                    f"- [{p['title']}]: {p['text'][:200]}"
-                    for p in diverse_top_evidence[:12]
-                )
-                expander_prompt = (
-                    f"User query: {query}\n"
-                    f"Core topic: {core_topic}\n\n"
-                    f"Initial evidence chunks (summaries):\n{chunk_summaries}\n\n"
-                    "Identify the most critical component data that is missing."
+                expander_prompt = build_expander_prompt(
+                    query=query,
+                    core_topic=core_topic,
+                    diverse_top_evidence=diverse_top_evidence,
                 )
                 expander_sys = DEFAULT_SYSTEM["expander"].replace("{expander_max}", str(max_queries))
                 _measure_context_stage(
@@ -5509,44 +5520,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     def _economist_preflight_gate() -> tuple[bool, list[str], str | None]:
         """Return (allow_economist, missing_entities, block_reason). Fail-open when the gate cannot evaluate."""
-        _pf_entities = [str(e).strip() for e in (entities_list or []) if str(e).strip()]
-        if not _pf_entities and primary_entity:
-            _pf_entities = [primary_entity.strip()]
-        if not _pf_entities and core_topic:
-            _pf_entities = [str(core_topic).strip()[:200]]
-        if not _pf_entities:
+        _pf_prompt = build_economist_preflight_prompt(
+            entities_list=entities_list,
+            primary_entity=primary_entity,
+            core_topic=core_topic,
+            final_top_evidence=final_top_evidence,
+        )
+        if _pf_prompt is None:
             return (True, [], None)
-        _pf_evidence_corpus = "\n\n".join(
-            f"[Source {p.get('source_id', '?')}] {p.get('title', '')}\n"
-            f"URL: {p.get('url', '')}\n"
-            f"Excerpt: {(p.get('text', '') or '')[:1200]}"
-            for p in final_top_evidence
-        )
-        _pf_system = (
-            "You classify evidence only. Respond with one JSON object only, no markdown or prose. "
-            "Keys must match the entity names provided by the user. "
-            "Decisions must be based only on the evidence text in the user message — never on recalled facts."
-        )
-        _pf_user = (
-            "For each entity listed, decide whether a numerical anchor exists for that entity "
-            "in the evidence below.\n\n"
-            "A numerical anchor does NOT need to come from a formal dataset or financial filing. "
-            "Any specific figure (e.g., '$4,500/hour', '10 cents per seat mile', '207 MWh per day') "
-            "appearing explicitly in the evidence text qualifies as true. "
-            "Do not recall figures from your training data — only evaluate what is present in the provided evidence.\n\n"
-            "Examples of qualifying anchors when explicitly in the text: dollar amounts, cents per unit, percentages, "
-            "hourly rates, energy per day, seat-mile costs, and similar concrete numbers tied to the entity or its context.\n"
-            "Map to `true` only if such a figure appears verbatim in the excerpts below for that entity (or clear same-sentence "
-            "attribution). Map to `false` if no specific number appears in the evidence for that entity, or if you would be "
-            "relying on memory rather than the text.\n\n"
-            "CRITICAL: You must evaluate cross-entity anchor coverage strictly. Map an entity to `true` ONLY if the evidence contains an independent, explicitly stated numerical anchor that applies SPECIFICALLY to that asset at its declared capacity. Do NOT map an entity to `true` if the only available numbers belong to a different capacity tier or a different model within the same family.\n\n"
-            'Answer with a JSON object (one key per entity, boolean values only):\n{"<entity_name>": true/false, ...}\n'
-            "Return JSON only, no prose.\n\n"
-            "Entities:\n"
-            + "\n".join(f"- {e}" for e in _pf_entities)
-            + "\n\nEvidence:\n"
-            + (_pf_evidence_corpus if _pf_evidence_corpus.strip() else "(none)")
-        )
+        _pf_entities = _pf_prompt.entities
+        _pf_system = _pf_prompt.system_prompt
+        _pf_user = _pf_prompt.user_prompt
         _measure_context_stage(
             "economist_preflight",
             prompt=_pf_user,
@@ -5750,41 +5734,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         author_notes += missing_target_metric_fallback_directive
 
     def _evidence_slice_for_analyst() -> list[Any]:
-        # Bug: report_type is a plain lowercase string (from router JSON + .lower()), but
-        # QUANT_REPORT_TYPES may contain Enum members in some invocation paths (e.g. via
-        # proplex/__main__.py). A direct `in` check silently returns False on an Enum set,
-        # so the 40-chunk cap never triggers. Normalize both sides to str.lower() to fix.
-        if not economist_ran and str(report_type).lower() in {
-            str(rt).lower() for rt in QUANT_REPORT_TYPES
-        }:
-            return final_top_evidence[:40]
-        return final_top_evidence
+        return evidence_slice_for_analyst(
+            final_top_evidence=final_top_evidence,
+            economist_ran=economist_ran,
+            report_type=report_type,
+            quant_report_types=QUANT_REPORT_TYPES,
+        )
 
     def _build_analyst_cached_prefix() -> str:
-        # Rebuild the analyst context prefix from scratch rather than splicing the full
-        # cached string by character length (which is fragile against unicode and any
-        # whitespace drift in the reconstructed base_head).
-        sliced = _evidence_slice_for_analyst()
-        run_log.info("Analyst corpus capped to %d chunks", len(sliced))
-        slim_block = "\n\n".join(
-            f"[Source {p['source_id']}] {p['title']}\nURL: {p['url']}\nExcerpt: {p['text'][:1200]}"
-            for p in sliced
-        )
-        prefix = (
-            f"<evidence_block>\n{slim_block}\n</evidence_block>\n\n"
-            f"Today is {current_date}.\nUser's Original Prompt: {query}\n"
-        )
-        if linkup_block:
-            prefix += linkup_block
-        analyst_quant_packet_section, analyst_quant_packet_handoff = (
-            _format_analyst_quant_packet_section(economist_safety_telemetry)
-        )
-        analyst_quant_packet_handoff_telemetry.update(analyst_quant_packet_handoff)
-        if analyst_quant_packet_section:
-            prefix += analyst_quant_packet_section
-        if missing_target_metric_fallback_directive:
-            prefix += missing_target_metric_fallback_directive
-        return prefix
+        assembly = build_analyst_cached_prefix_from_scope({
+            "final_top_evidence": final_top_evidence,
+            "economist_ran": economist_ran,
+            "report_type": report_type,
+            "QUANT_REPORT_TYPES": QUANT_REPORT_TYPES,
+            "current_date": current_date,
+            "query": query,
+            "linkup_block": linkup_block,
+            "economist_safety_telemetry": economist_safety_telemetry,
+            "_format_analyst_quant_packet_section": _format_analyst_quant_packet_section,
+            "missing_target_metric_fallback_directive": missing_target_metric_fallback_directive,
+        })
+        run_log.info("Analyst corpus capped to %d chunks", len(assembly.evidence_slice))
+        analyst_quant_packet_handoff_telemetry.update(assembly.quant_packet_handoff)
+        return assembly.prefix
 
     analyst_cached_prefix = _build_analyst_cached_prefix()
 
@@ -5935,26 +5907,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     if analyst_skipped:
         status.step("Retrieval quality gate skipped Analyst; sending unsupported-evidence directive to Author.")
-        analysis = (
-            "UNSUPPORTED_RETRIEVAL_DIRECTIVE:\n"
-            f"- Skip reason: {analyst_skip_reason}.\n"
-            "- The retrieved corpus does not plausibly support the requested claim.\n"
-            "- Do not infer, estimate, or invent missing facts, numeric changes, patch notes, "
-            "pricing details, policy details, or release details.\n"
-            "- Author should give a concise no-evidence or unsupported-evidence answer using only "
-            "the precision evidence and should explicitly name the retrieval limitation."
-        )
-        _signal_text = ", ".join(pre_analyst_gate_signals) if pre_analyst_gate_signals else "none"
-        author_notes += (
-            "\n\nNOTE FOR AUTHOR - UNSUPPORTED RETRIEVAL FAST PATH:\n"
-            f"Analyst was skipped before expensive analysis because: {analyst_skip_reason}. "
-            f"Gate signals: {_signal_text}. "
-            "Write a concise no-evidence / unsupported-evidence answer. Use the retrieved "
-            "precision evidence only to explain the limit; do not invent missing facts, numeric "
-            "changes, patch notes, pricing details, or policy details.\n"
-        )
-        if _pre_gate_failure_card_reason:
-            author_notes += f"Failure-card context: {_pre_gate_failure_card_reason}\n"
+        unsupported_retrieval_prompt = build_unsupported_retrieval_prompt_fragments(analyst_skip_reason=analyst_skip_reason, pre_analyst_gate_signals=pre_analyst_gate_signals, pre_gate_failure_card_reason=_pre_gate_failure_card_reason)
+        analysis = unsupported_retrieval_prompt.analysis
+        author_notes += unsupported_retrieval_prompt.author_note_append
     elif complexity == "low":
         status.step("Skipping deep analysis (Fast mode)...")
         analysis = "DIRECT_TO_AUTHOR"
@@ -5962,10 +5917,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if corpus_state == CorpusState.ESTIMATE_FROM_PRIORS.value:
             status.step("Thin corpus vs anchors \u2014 running analyst pass with estimation framing\u2026")
             _an_t0 = time.monotonic()
-            _analyst_prompt = (
-                analyst_cached_prefix + f"Context: '{intent}' search requiring '{analyst_effort}' depth.\n"
-                "Produce structured bullets per system prompt."
-            )
+            _analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort, estimate_from_priors=True)
             _measure_context_stage(
                 "analyst_estimate_from_priors",
                 prompt=_analyst_prompt,
@@ -5987,10 +5939,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     else:
         status.step(f"Analyzing and compressing evidence (Effort: {analyst_effort})...")
         _an_t0 = time.monotonic()
-        _analyst_prompt = (
-            analyst_cached_prefix
-            + f"Context: '{intent}' search requiring '{analyst_effort}' depth.\nExecute the Evaluation Process."
-        )
+        _analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort)
         _measure_context_stage(
             "analyst",
             prompt=_analyst_prompt,
@@ -6031,10 +5980,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 first_synth_sufficient = True
         else:
             status.step("Checking synthesis completeness...")
-            synth_eval_prompt = (
-                f"Original query: {query}\n\nAnalyst synthesis:\n{analysis}\n\n"
-                "Execute the synthesis evaluation."
-            )
+            synth_eval_prompt = build_synthesis_evaluator_prompt(query=query, analysis=analysis)
             _measure_context_stage(
                 "synth_evaluator",
                 prompt=synth_eval_prompt,
@@ -6133,10 +6079,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     status.step("Re-analyzing with supplemental evidence...")
                     analyst_cached_prefix = _build_analyst_cached_prefix()
                     _an_t0 = time.monotonic()
-                    _analyst_prompt = (
-                        analyst_cached_prefix
-                        + f"Context: '{intent}' search requiring '{analyst_effort}' depth.\nExecute the Evaluation Process."
-                    )
+                    _analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort)
                     _measure_context_stage(
                         "analyst_supplemental",
                         prompt=_analyst_prompt,
@@ -6160,14 +6103,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if complexity == "high":
             scrutineer_ran = True
             status.step("Running adversarial review (Scrutineer)...")
-            flag_limit = 8 if intent == "news" else 6
-            scrutineer_sys_prompt = DEFAULT_SYSTEM["scrutineer"].replace("{flag_limit}", str(flag_limit))
-            scrutineer_input = (
-                f"This synthesis was produced from a corpus of {len(final_top_evidence)} source chunks "
-                f"drawn from {len(unique_source_urls)} unique URLs. Attribution in the synthesis reflects "
-                f"editorial choices about what to cite, not the total available evidence.\n\n"
-                f"Analyst synthesis to audit:\n\n{analysis}"
+            scrutineer_prompt = build_scrutineer_prompt(
+                intent=intent,
+                default_scrutineer_system=DEFAULT_SYSTEM["scrutineer"],
+                final_top_evidence=final_top_evidence,
+                unique_source_urls=unique_source_urls,
+                analysis=analysis,
             )
+            flag_limit = scrutineer_prompt.flag_limit
+            scrutineer_sys_prompt = scrutineer_prompt.system_prompt
+            scrutineer_input = scrutineer_prompt.user_prompt
             _measure_context_stage(
                 "scrutineer",
                 prompt=scrutineer_input,
@@ -6221,19 +6166,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             f"Scrutineer raised {len(search_flags)} high-severity issue(s). "
                             "Generating remediation queries..."
                         )
-                        flag_lines = "\n".join(
-                            f"- [{f.get('category')}] {f.get('challenge')}" for f in search_flags
-                        )
-                        remed_prompt = (
-                            f"Today is {current_date}.\nCore topic: {core_topic}\n\n"
-                            "ALREADY SEARCHED (do not repeat or paraphrase these):\n"
-                            + "\n".join(f"- {q}" for q in past_searches)
-                            + f"\n\nAn auditor flagged these specific concerns in a research synthesis:\n{flag_lines}\n\n"
-                            "Generate 1-2 targeted search queries to find evidence that would resolve these concerns.\n"
-                            "These queries MUST be meaningfully different from the already-searched list above.\n"
-                            "If the flagged concern cannot be resolved with a novel query, return an empty array.\n"
-                            "Queries must be under 10 words. Terse keywords only. No natural language.\n"
-                            'Return JSON: {"queries": ["query1"]}'
+                        remed_prompt = build_scrutineer_remediation_prompt(
+                            current_date=current_date,
+                            core_topic=core_topic,
+                            past_searches=past_searches,
+                            search_flags=search_flags,
                         )
                         _measure_context_stage(
                             "scrutineer_remediation_researcher",
@@ -6351,10 +6288,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                     scrutineer_remediation_resynthesis_triggered = True
                                     analyst_cached_prefix = _build_analyst_cached_prefix()
                                     _an_t0 = time.monotonic()
-                                    _remed_analyst_prompt = (
-                                        analyst_cached_prefix
-                                        + f"Context: '{intent}' search requiring '{analyst_effort}' depth.\nExecute the Evaluation Process."
-                                    )
+                                    _remed_analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort)
                                     _measure_context_stage(
                                         "analyst_scrutineer_remediation",
                                         prompt=_remed_analyst_prompt,
@@ -6378,42 +6312,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     # ------------------------------------------------------------------
     # Build author prompt and generate final report
     # ------------------------------------------------------------------
-    image_context = ""
-    if image_mode in ("required", "contextual") and collected_images:
-        valid_images = [
-            url for url in collected_images
-            if url.startswith("http")
-            and any(
-                ext in url.lower()
-                for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif",
-                            "images?", "format=jpg", "format=png")
-            )
-            and len(url) < 600
-        ]
-        if valid_images:
-            image_list = list(valid_images)[:5]
-            image_block = "\n".join(f"- {url}" for url in image_list)
-            if image_mode == "required":
-                image_context = (
-                    f"\n\nAVAILABLE IMAGES:\n{image_block}\n\n"
-                    "IMAGE RULES: The user explicitly requested visual content. Embed 2-3 of the best "
-                    "images prominently near the beginning of your report using markdown: "
-                    "![description](url). Ensure they are central to the answer. "
-                    "Only embed an image if the URL or source indicates it is highly relevant to the "
-                    "specific subject. Do not use generic or unrelated images."
-                )
-            else:
-                image_context = (
-                    f"\n\nAVAILABLE IMAGES:\n{image_block}\n\n"
-                    "IMAGE RULES: Embed 1-2 contextually relevant images using markdown: "
-                    "![description](url). Place images near the content they illustrate. "
-                    "Only embed an image if the URL or source indicates it is highly relevant to "
-                    "the specific subject. Do not use generic or unrelated images."
-                )
-    if corpus_weak and corpus_state != CorpusState.ESTIMATE_FROM_PRIORS.value:
-        image_context = ""
-
     _efp_author = corpus_state == CorpusState.ESTIMATE_FROM_PRIORS.value
+
+    image_context = build_image_context(image_mode=image_mode, collected_images=collected_images, corpus_weak=corpus_weak, estimate_from_priors_author=_efp_author)
 
     recency_notes, _recency_stale = build_recency_author_notes(
         final_top_evidence,
@@ -6435,44 +6336,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     _thin_body = (corpus_weak and not _efp_author) or _relevance_low
 
-    tier_instructions = {
-        "low": (
-            "TIER: FAST. You are working from unanalyzed search snippets. Do not synthesize competing "
-            "claims into a single assertion \u2014 present them as reported. Cap confidence language. "
-            "Prefer \u2018reportedly,\u2019 \u2018according to,\u2019 \u2018as of [date]\u2019 over "
-            "declarative present-tense claims. The absence of an analyst pass means unresolved "
-            "conflicts in the evidence should remain visible rather than being collapsed into a single "
-            "verdict. Provide a direct opening answer followed by no more than 3-4 short supporting "
-            "sentences. No headers. No sources section at the end (use inline citations only). "
-            "Tone: direct answer, not a report."
-        ),
-        "medium": (
-            "TIER: BALANCED. Write a structured brief. Use H3 headers for sections, narrative "
-            "paragraphs, and a Sources list at the end. For queries that compare two or more entities "
-            "across measurable dimensions, include a markdown table summarizing the key metrics before "
-            "the narrative sections."
-        ),
-        "high": (
-            "TIER: DEEP. Write a dense, detailed intelligence report. Match the density of the "
-            "analysis. Use H3 headers for multiple subsections, detailed cross-source synthesis, and "
-            "a Sources list at the end. Use markdown tables to effectively structure comparative data "
-            "or dense metrics."
-        ),
-    }
-    if _thin_body:
-        _thin = (
-            "TIER: THIN \u2014 Retrieved pages are a poor match to the user\u2019s main subject. "
-            "Entire output under ~200 words, at most 2-3 short paragraphs, no H3, no table, "
-            "no long digests of off-topic material."
-        )
-        if _relevance_low and not (corpus_weak and not _efp_author):
-            _thin = (
-                "TIER: THIN \u2014 Source–topic match is weak (low utilization). Use Fast-style brevity even though "
-                "the run is Balanced/Deep: at most 2-3 short paragraphs, no H3, no table, no long structured report. "
-                "State limits clearly; do not pad with generic sections."
-            )
-        tier_instructions = {"low": _thin, "medium": _thin, "high": _thin}
-
     precision_count = 4 if _thin_body else (10 if complexity == "high" else 8)
     final_evidence_bundle = attach_author_evidence(
         final_evidence_bundle,
@@ -6481,52 +6344,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_evidence = final_evidence_bundle.author_evidence
     author_evidence_block = final_evidence_bundle.author_evidence_block
 
-    author_prompt = f"Today is {current_date}.\nUser's Original Prompt: {query}\n\n{tier_instructions[complexity]}\n\n"
-    if recency_notes:
-        author_prompt += recency_notes + "\n\n"
-    if complexity != "low" and (not corpus_weak or _efp_author) and not _relevance_low:
-        author_prompt += f"Analysis:\n{analysis}\n\n"
-    if (corpus_weak and not _efp_author) or _relevance_low:
-        author_prompt += f"Main subject (target): {primary_entity or core_topic}\n"
-
-    author_prompt += f"Precision Evidence (for accurate citations):\n{author_evidence_block}\n\n"
-
-    if complexity != "low" and (not corpus_weak or _efp_author) and not _relevance_low:
-        author_prompt += f"Sources:\n{chr(10).join(ordered_sources)}\n\n"
-
-    nutrition_partial_note = _format_nutrition_partial_evidence_author_note(
-        nutrition_lookup_telemetry=nutrition_lookup_telemetry,
-        quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
-        final_top_evidence=author_evidence,
-    )
-    if nutrition_partial_note:
-        author_notes += nutrition_partial_note
-
-    if author_notes:
-        author_prompt += f"{author_notes}\n\n"
-
-    if complexity == "high" and scrutineer_flags and (not corpus_weak or _efp_author) and not _relevance_low:
-        high_ct = len([f for f in scrutineer_flags if f.get("severity", "").lower() == "high"])
-        med_ct = len([f for f in scrutineer_flags if f.get("severity", "").lower() == "medium"])
-        scrutineer_block = (
-            f"SCRUTINEER AUDIT \u2014 {len(scrutineer_flags)} flag(s) "
-            f"({high_ct} high, {med_ct} medium):\n"
-        )
-        for i, flag in enumerate(scrutineer_flags, 1):
-            scrutineer_block += (
-                f"\n[{i}] {flag.get('severity', '').upper()} | {flag.get('category', '')}\n"
-                f"  Passage: \"{flag.get('passage', '')}\"\n"
-                f"  Challenge: {flag.get('challenge', '')}\n"
-            )
-        scrutineer_block += (
-            "\n\nAUTHOR DIRECTIVE: For HIGH flags \u2014 hedge, omit, or explicitly note uncertainty. "
-            "For MEDIUM flags \u2014 add a caveat. LOW flags are advisory. "
-            "Do not reference an 'audit', 'scrutineer', or 'reviewer' in your output. "
-            "Resolve the flag in the prose silently.\n\n"
-        )
-        author_prompt += scrutineer_block
-
-    author_prompt += f"Write the final markdown report based on the adaptive guidelines.{image_context}"
+    author_prompt_assembly = build_author_prompt_from_scope(locals())
+    author_prompt = author_prompt_assembly.prompt
+    author_notes = author_prompt_assembly.author_notes
     author_quant_source_telemetry = _scan_author_quant_source_telemetry(
         author_prompt,
         analyst_quant_packet_reviewed_by_model=bool(
@@ -6557,31 +6377,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     status.update("Writing final report...")
 
-    _author_system = DEFAULT_SYSTEM["author"]
-    author_system_prompt_key = "author"
-    if corpus_weak:
-        if _efp_author:
-            _candidate_author_key = "author_estimate_from_priors"
-            _author_system = DEFAULT_SYSTEM.get(
-                _candidate_author_key,
-                DEFAULT_SYSTEM["author"],
-            )
-            author_system_prompt_key = (
-                _candidate_author_key
-                if _candidate_author_key in DEFAULT_SYSTEM
-                else "author"
-            )
-        else:
-            _candidate_author_key = "author_corpus_weak"
-            _author_system = DEFAULT_SYSTEM.get(
-                _candidate_author_key,
-                DEFAULT_SYSTEM["author"],
-            )
-            author_system_prompt_key = (
-                _candidate_author_key
-                if _candidate_author_key in DEFAULT_SYSTEM
-                else "author"
-            )
+    _author_system, author_system_prompt_key = select_author_system_prompt(default_system=DEFAULT_SYSTEM, corpus_weak=corpus_weak, estimate_from_priors_author=_efp_author)
     _author_effort = (
         analyst_effort if ((not corpus_weak or _efp_author) and not _relevance_low) else "low"
     )

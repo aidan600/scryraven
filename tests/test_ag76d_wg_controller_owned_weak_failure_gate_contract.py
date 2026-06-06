@@ -339,10 +339,13 @@ def test_trace_compatibility_existing_fields_and_additive_contract():
 
 def test_analyst_author_final_answer_citation_non_change_static_guard():
     diff = PIPELINE.read_text(encoding="utf-8")
-    assert "UNSUPPORTED_RETRIEVAL_DIRECTIVE" in diff
-    assert "NOTE FOR AUTHOR - UNSUPPORTED RETRIEVAL FAST PATH" in diff
+    prompt_helper = (ROOT / "core" / "runtime_prompt_assembly.py").read_text(encoding="utf-8")
+    assert "UNSUPPORTED_RETRIEVAL_DIRECTIVE" in prompt_helper
+    assert "NOTE FOR AUTHOR - UNSUPPORTED RETRIEVAL FAST PATH" in prompt_helper
+    assert "build_unsupported_retrieval_prompt_fragments" in diff
     assert "author_system_prompt_key" in diff
     assert "final_answer_source_telemetry" in diff
+    assert "ask_model(" not in prompt_helper
 
     contract_source = CONTRACT.read_text(encoding="utf-8")
     assert "did_change_analyst_behavior\": False" in contract_source

@@ -347,6 +347,7 @@ def test_lane_distinction_static_guard_and_pipeline_orchestrator_unchanged() -> 
             or "FinalAnswerPacket" in pipeline_diff
             or "pre_author_source_obligation_projection" in pipeline_diff
             or "session_output_projection" in pipeline_diff
+                or "runtime_prompt_assembly" in pipeline_diff
         )
         distinct_lane_modules.remove("core/pipeline_orchestrator.py")
     assert changed.isdisjoint(distinct_lane_modules)

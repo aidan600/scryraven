@@ -309,15 +309,18 @@ def test_static_protected_import_guard_for_contract_module():
 
 def test_orchestrator_authority_guard_wires_contract_and_keeps_prompt_strings_local():
     pipeline = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
+    prompt_helper = (ROOT / "core" / "runtime_prompt_assembly.py").read_text(encoding="utf-8")
     contract = CONTRACT.read_text()
 
     assert "build_analyst_author_handoff_state" in pipeline
     assert "execute_analyst_author_handoff" in pipeline
     assert "analyst_author_handoff_trace_fragment" in pipeline
-    assert "author_prompt += f\"Write the final markdown report" in pipeline
-    assert "UNSUPPORTED_RETRIEVAL_DIRECTIVE" in pipeline
+    assert "build_author_prompt_from_scope" in pipeline
+    assert "Write the final markdown report" in prompt_helper
+    assert "UNSUPPORTED_RETRIEVAL_DIRECTIVE" in prompt_helper
     assert "Write the final markdown report" not in contract
     assert "DEFAULT_SYSTEM" not in contract
+    assert "ask_model(" not in prompt_helper
 
 
 def test_protected_surface_guard_keeps_live_and_behavior_modules_out_of_contract():
