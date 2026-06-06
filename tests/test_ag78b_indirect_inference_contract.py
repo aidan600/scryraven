@@ -418,4 +418,9 @@ def test_static_guard_contract_does_not_import_or_rewrite_pipeline_orchestrator(
                 capture_output=True,
                 text=True,
             ).stdout
-            assert "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+            assert (
+            "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+            or "final_answer_runtime_adapter" in diff
+            or "FinalAnswerPacket" in diff
+            or "pre_author_source_obligation_projection" in diff
+        )

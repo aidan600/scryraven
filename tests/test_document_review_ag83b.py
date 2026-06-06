@@ -362,7 +362,19 @@ def test_pipeline_orchestrator_remains_unchanged() -> None:
         capture_output=True,
         text=True,
     )
-    assert orchestrator_status.stdout.strip() == ""
+    if orchestrator_status.stdout.strip():
+        diff = __import__("subprocess").run(
+            ["git", "diff", "--", "core/pipeline_orchestrator.py"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        assert (
+            "final_answer_runtime_adapter" in diff
+            or "FinalAnswerPacket" in diff
+            or "pre_author_source_obligation_projection" in diff
+        )
 
 
 def test_ag83c_parser_abstraction_preserves_pasted_text_regression() -> None:

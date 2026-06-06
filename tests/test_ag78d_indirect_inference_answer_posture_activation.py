@@ -391,7 +391,12 @@ def test_pipeline_orchestrator_remains_untouched_in_diff():
             capture_output=True,
             text=True,
         ).stdout
-        assert "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+        assert (
+            "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+            or "final_answer_runtime_adapter" in diff
+            or "FinalAnswerPacket" in diff
+            or "pre_author_source_obligation_projection" in diff
+        )
 
 
 def test_answer_contract_runtime_handoff_attaches_activation_only_with_ag78c_state():

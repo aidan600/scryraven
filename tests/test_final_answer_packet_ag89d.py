@@ -137,10 +137,51 @@ def test_ag89d_author_input_payload_is_derived_from_packet() -> None:
         author_system_prompt_key="author",
         author_effort="low",
     )
-    assert payload.prompt == "unchanged author prompt"
+    assert payload.prompt.startswith("unchanged author prompt")
+    assert "FINAL ANSWER PACKET AUTHORITY" in payload.prompt
+    assert "Use only these citation-eligible Source IDs for citations: 11" in payload.prompt
+    assert "do_not_upgrade_citation_ineligible_evidence" in payload.prompt
     assert payload.citation_source_ids == (11,)
     assert packet.author_input_refs["status"] == "author_input_ready"
     assert packet.author_input_refs["prompt_text_included"] is False
+    assert packet.author_input_refs["authority_block_length"] > 0
+
+
+def test_ag89d_unsatisfied_custody_reaches_author_facing_payload() -> None:
+    custody = OfficialCurrentSourceCustodyState.for_required_source_classes(
+        ["official_current_rules"]
+    )
+    packet = build_final_answer_packet(
+        run_id="r6b",
+        final_evidence=[_passage(source_id=21, source_class="secondary_analysis")],
+        source_obligation_projection=custody.to_dict(),
+    )
+    packet, payload = derive_author_input_payload(
+        packet,
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+    assert payload.missing_source_obligations[0]["status"] == "official_current_unsatisfied"
+    assert "official_current_unsatisfied" in payload.prompt
+    assert "official_current_unsatisfied:official_current_rules" in payload.prompt
+
+
+def test_ag89d_citation_ineligible_evidence_is_not_author_citable() -> None:
+    packet = build_final_answer_packet(
+        run_id="r6c",
+        final_evidence=[_passage(source_id=31), _passage(source_id=None)],
+    )
+    _packet, payload = derive_author_input_payload(
+        packet,
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+    assert payload.citation_source_ids == (31,)
+    assert payload.citation_ineligible_refs[0]["reason"] == "source_id_missing"
+    assert "Do not cite citation-ineligible evidence" in payload.prompt
+    assert "source_id_missing" in payload.prompt
 
 
 def test_ag89d_legacy_citation_handoff_is_demoted_behind_packet() -> None:
@@ -176,7 +217,7 @@ def test_ag89d_static_orchestrator_wiring_does_not_change_protected_surfaces() -
     assert "derive_author_input_payload(" in text
     assert "build_packet_derived_citation_source_handoff_state(" in text
     assert "author_prompt = final_author_payload.prompt" in text
-    assert "source_obligation_projection=None" in text
+    assert "source_obligation_projection=pre_author_source_obligation_projection" in text
     assert "process_search_queries(" in text
     assert "ask_model(\n        author_prompt, _author_system," in text
     assert "citation_source_handoff_state = build_packet_derived_citation_source_handoff_state" in text

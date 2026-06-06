@@ -269,8 +269,11 @@ class FinalAnswerAuthorInputPayload:
     status: AuthorInputStatus | str = AuthorInputStatus.AUTHOR_INPUT_READY
     author_evidence_ids: tuple[str, ...] = ()
     citation_source_ids: tuple[Any, ...] = ()
+    citation_ineligible_refs: tuple[Mapping[str, Any], ...] = ()
+    missing_source_obligations: tuple[Mapping[str, Any], ...] = ()
     mandatory_caveats: tuple[str, ...] = ()
     prohibited_upgrades: tuple[str, ...] = ()
+    authority_block: str = ""
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, AuthorInputStatus) else str(self.status)
@@ -289,8 +292,12 @@ class FinalAnswerAuthorInputPayload:
             "author_effort": self.author_effort,
             "author_evidence_ids": list(self.author_evidence_ids),
             "citation_source_ids": list(self.citation_source_ids),
+            "citation_ineligible_refs": _safe_json(self.citation_ineligible_refs),
+            "missing_source_obligations": _safe_json(self.missing_source_obligations),
             "mandatory_caveat_count": len(self.mandatory_caveats),
             "prohibited_upgrade_count": len(self.prohibited_upgrades),
+            "authority_block_hash": _hash_text(self.authority_block) if self.authority_block else None,
+            "authority_block_length": len(self.authority_block),
         }
 
 
@@ -353,17 +360,84 @@ class FinalAnswerPacket:
     ) -> FinalAnswerAuthorInputPayload:
         allowed_ids = tuple(record.evidence_id for record in self.evidence_allowed)
         citation_source_ids = tuple(record.source_id for record in self.citation_eligible if record.source_id is not None)
+        citation_ineligible_refs = tuple(
+            {
+                "evidence_id": record.evidence_id,
+                "source_id": record.source_id,
+                "reason": record.reason,
+            }
+            for record in self.citation_ineligible
+        )
+        missing_source_obligations = tuple(
+            record.to_dict()
+            for record in self.source_obligations
+            if record.status is not SourceObligationStatus.SATISFIED
+        )
+        authority_block = self.to_author_authority_block(
+            citation_source_ids=citation_source_ids,
+            citation_ineligible_refs=citation_ineligible_refs,
+            missing_source_obligations=missing_source_obligations,
+        )
         payload = FinalAnswerAuthorInputPayload(
             packet_id=self.packet_id,
-            prompt=prompt,
+            prompt=(prompt + authority_block if authority_block else prompt),
             author_system_prompt_key=author_system_prompt_key,
             author_effort=author_effort,
             author_evidence_ids=tuple(author_evidence_ids or allowed_ids),
             citation_source_ids=citation_source_ids,
+            citation_ineligible_refs=citation_ineligible_refs,
+            missing_source_obligations=missing_source_obligations,
             mandatory_caveats=self.mandatory_caveats,
             prohibited_upgrades=self.prohibited_upgrades,
+            authority_block=authority_block,
         )
         return payload
+
+
+    def to_author_authority_block(
+        self,
+        *,
+        citation_source_ids: Sequence[Any],
+        citation_ineligible_refs: Sequence[Mapping[str, Any]],
+        missing_source_obligations: Sequence[Mapping[str, Any]],
+    ) -> str:
+        lines: list[str] = [
+            "",
+            "",
+            "FINAL ANSWER PACKET AUTHORITY (mandatory; do not mention this block):",
+            "- Use only these citation-eligible Source IDs for citations: "
+            + (", ".join(str(item) for item in citation_source_ids) if citation_source_ids else "none"),
+        ]
+        if citation_ineligible_refs:
+            rendered = []
+            for ref in citation_ineligible_refs:
+                rendered.append(
+                    f"{ref.get('evidence_id')}"
+                    f"(source_id={ref.get('source_id')}, reason={ref.get('reason')})"
+                )
+            lines.append(
+                "- Do not cite citation-ineligible evidence: " + "; ".join(rendered)
+            )
+        if missing_source_obligations:
+            rendered = [
+                f"{item.get('source_class')}={item.get('status')}"
+                for item in missing_source_obligations
+            ]
+            lines.append(
+                "- Missing or unsatisfied source obligations to caveat: "
+                + "; ".join(rendered)
+            )
+        if self.mandatory_caveats:
+            lines.append(
+                "- Mandatory caveats to reflect: "
+                + "; ".join(str(item) for item in self.mandatory_caveats)
+            )
+        if self.prohibited_upgrades:
+            lines.append(
+                "- Prohibited upgrades: "
+                + "; ".join(str(item) for item in self.prohibited_upgrades)
+            )
+        return "\n".join(lines) + "\n"
 
     def to_legacy_citation_handoff_inputs(self) -> dict[str, Any]:
         allowed = [record.to_legacy_passage_ref() for record in self.evidence_allowed]

@@ -6616,6 +6616,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _author_effort = (
         analyst_effort if ((not corpus_weak or _efp_author) and not _relevance_low) else "low"
     )
+    pre_author_source_obligation_projection = build_source_class_observability_telemetry(
+        query=query,
+        intent=intent,
+        report_type=report_type,
+        query_type=query_type,
+        core_topic=core_topic,
+        primary_entity=primary_entity,
+        anchor_packet=anchor_packet_telemetry,
+        final_top_evidence=final_top_evidence,
+        final_answer_source_ids=None,
+    ).get("official_current_source_custody")
     final_answer_packet = build_final_answer_packet(
         run_id=run_id,
         final_evidence=final_top_evidence,
@@ -6623,7 +6634,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         ordered_sources=ordered_sources,
         unique_source_urls=unique_source_urls,
         final_answer_source_telemetry=None,
-        source_obligation_projection=None,
+        source_obligation_projection=pre_author_source_obligation_projection,
         query_lineage_refs=query_authority.to_trace_fragment(),
         evidence_sufficient=None,
         corpus_weak=corpus_weak,

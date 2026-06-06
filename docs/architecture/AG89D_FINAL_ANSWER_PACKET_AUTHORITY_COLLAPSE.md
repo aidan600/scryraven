@@ -70,15 +70,16 @@ pretending satisfaction.
 may include QueryPlan trace references as lineage/provenance; it does not mutate
 queries, order retrieval, or decide retrieval continuation.
 
-## Known limitations
+## Current limitations
 
-- Initial orchestrator wiring passes no official/current custody projection into the
-  pre-Author packet because the current compatible custody bridge is assembled later
-  in the runtime trace path. The packet and adapter consume AG-89B custody when it is
-  supplied, and focused tests prove unsatisfied custody becomes packet posture rather
-  than citation satisfaction.
-- Existing Author prompt prose remains unchanged. Packet caveat fields are authority
-  state for Author input packaging and trace visibility, not a prompt prose rewrite.
+- The pre-Author packet consumes the sanitized `official_current_source_custody`
+  projection emitted by existing source-class observability over final evidence. It
+  does not consume the later official-source obligation bridge trace because that
+  bridge is assembled in the runtime trace path after Author execution.
+- Existing Author product style remains unchanged. The only Author-facing prompt
+  change is a bounded packet-authority block appended by the packet payload so the
+  Author can obey citation eligibility, missing-obligation posture, mandatory
+  caveats, and prohibited upgrades.
 
 ## Next action
 

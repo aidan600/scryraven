@@ -396,6 +396,9 @@ def test_pipeline_orchestrator_boundary_only_has_unrelated_scrutineer_handoff_to
         assert (
             "core.scrutineer_remediation_runtime_handoff" in diff
             or "synthesis_evaluator_supplemental_search_runtime_handoff" in diff
+            or "final_answer_runtime_adapter" in diff
+            or "FinalAnswerPacket" in diff
+            or "pre_author_source_obligation_projection" in diff
         )
     else:
         assert PIPELINE_PATH not in changed
