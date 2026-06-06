@@ -309,5 +309,6 @@ def test_normal_author_prompt_and_orchestrator_surfaces_unchanged_by_report_modu
             "final_answer_runtime_adapter" in diff
             or "FinalAnswerPacket" in diff
             or "pre_author_source_obligation_projection" in diff
+            or "session_output_projection" in diff
         )
     assert "core/prompts.py" not in changed

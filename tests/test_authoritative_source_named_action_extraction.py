@@ -37,6 +37,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _HELPER_PATH = _ROOT / "core" / "authoritative_source_action.py"
 _ADAPTER_PATH = _ROOT / "core" / "authoritative_source_action_orchestrator_adapter.py"
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_SESSION_OUTPUT_PROJECTION_PATH = _ROOT / "core" / "session_output_projection.py"
 
 
 def _evidence_signals() -> dict[str, Any]:
@@ -570,11 +571,12 @@ def test_orchestrator_adapter_trace_fragment_attaches_trace_safe_outputs_only() 
 
 def test_pipeline_uses_tiny_named_action_adapter_handoff() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    projection_source = _SESSION_OUTPUT_PROJECTION_PATH.read_text(encoding="utf-8")
 
     assert pipeline_source.count(
         "build_authoritative_source_action_orchestrator_handoff("
     ) == 1
-    assert pipeline_source.count("authoritative_source_action_trace_fragment(") == 1
+    assert projection_source.count("authoritative_source_action_trace_fragment(") == 1
     assert "AuthoritativeSourceActionFacts(" not in pipeline_source
     assert pipeline_source.count(
         "build_authoritative_source_obligation_state_and_action("

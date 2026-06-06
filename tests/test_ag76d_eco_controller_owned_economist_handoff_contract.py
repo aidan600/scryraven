@@ -16,6 +16,7 @@ from tests.static_import_guard_utils import assert_controller_contract_imports_c
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "core" / "economist_handoff_contract.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
+SESSION_OUTPUT_PROJECTION = ROOT / "core" / "session_output_projection.py"
 PIPELINE_CORE = ROOT / "core" / "pipeline.py"
 PROMPTS = ROOT / "core" / "prompts.py"
 
@@ -338,12 +339,12 @@ def test_static_no_code_execution_affordance_added_to_contract_or_orchestrator()
 
 
 def test_orchestrator_authority_guard_builds_and_consumes_contract_at_handoff_seam():
-    text = PIPELINE.read_text()
+    text = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
 
     assert "build_economist_handoff_state" in text
     assert "execute_economist_handoff" in text
     assert "economist_handoff_trace_fragment" in text
-    assert "**economist_handoff_trace_fragment" in text
+    assert "economist_handoff_trace_fragment" in text
     assert text.index("post_economist_gate = _post_economist_analyst_gate") < text.index(
         "economist_handoff_state = build_economist_handoff_state"
     )

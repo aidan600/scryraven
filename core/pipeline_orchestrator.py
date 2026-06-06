@@ -31,7 +31,6 @@ from core.answer_contract_runtime_handoff import (
 )
 from core.answer_outcome import classify_answer_outcome
 from core.authoritative_source_action_orchestrator_adapter import (
-    authoritative_source_action_trace_fragment,
     build_authoritative_source_action_orchestrator_handoff,
 )
 from core.citation_source_handoff_contract import execute_citation_source_handoff
@@ -85,7 +84,6 @@ from core.economist_handoff_contract import (
 )
 from core.entity_extraction import fallback_entities_from_query
 from core.evidence_integration_checkpoint import (
-    EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
     EvidenceIntegrationBudgetSnapshot,
     EvidenceIntegrationSnapshot,
     build_evidence_integration_checkpoint_trace,
@@ -144,7 +142,6 @@ from core.ordinary_continuation_spine_gate import (
     scout_continuation_spine_gate_exception_trace,
 )
 from core.outcome_persistence_packaging import (
-    build_execution_log_entry,
     build_final_output_metadata,
     build_pipeline_config,
     build_run_outcome,
@@ -235,15 +232,16 @@ from core.scrutineer_remediation_runtime_handoff import (
     runtime_scrutineer_remediation_trace_fragment,
 )
 from core.search_providers import brave_reconnaissance
+from core.session_output_projection import (
+    build_execution_log_entry_projection,
+    build_execution_trace_projection,
+)
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
     build_source_class_recovery_recommendation,
 )
 from core.source_class_recovery_controller_mirror import (
     record_source_class_recovery_recommendation,
-)
-from core.source_class_recovery_diagnostics import (
-    SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY,
 )
 from core.source_class_recovery_lifecycle import (
     source_class_recovery_lifecycle_defaults,
@@ -320,28 +318,6 @@ def _clean_query(q: str) -> str:
     if len(last) < 3 and last.isalpha() and "." not in last:
         words = words[:-1]
     return " ".join(words)[:300]
-
-
-def _official_or_canonical_source_class_count(
-    source_class_counts: dict[str, Any] | None,
-) -> int | None:
-    if not isinstance(source_class_counts, dict):
-        return None
-    counts: list[int] = []
-    for key in (
-        "official_current_rules",
-        "legal_or_regulatory_text",
-        "current_primary_or_official",
-        "primary_source_documents",
-        "archival_primary_text",
-    ):
-        if key not in source_class_counts:
-            continue
-        try:
-            counts.append(max(0, int(source_class_counts.get(key) or 0)))
-        except (TypeError, ValueError):
-            continue
-    return max(counts) if counts else None
 
 
 def _retrieval_stop_shadow_defaults() -> dict[str, Any]:
@@ -7373,179 +7349,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             )
         )
     )
-    execution_trace: dict[str, Any] = {
-        "run_id": run_id,
-        "timestamp_utc": ts_utc,
-        "query_preview": (query or "")[:200],
-        "intent": intent,
-        "query_type": query_type,
-        "primary_entity": (primary_entity or "")[:200],
-        "entities": [str(e)[:200] for e in (entities_list or [])],
-        "empty_entity": empty_entity_flag,
-        "router_entity_retry_used": router_entity_retry_used,
-        "utilization_pre_retry": utilization_pre_retry,
-        "utilization_rate": utilization_rate_val,
-        "retrieval_retry_used": retrieval_retry_used,
-        "corpus_state": corpus_state,
-        "corpus_state_forced": corpus_state_forced_flag,
-        "corpus_weak": corpus_weak,
-        "useful_content": useful_content,
-        "response_displayable": response_displayable,
-        "evidence_sufficient": evidence_sufficient,
-        "answer_class": answer_class,
-        "useful_content_reason": useful_content_reason,
-        "waste_flags": list(waste_flags),
-        "query_redundancy_skipped": ("query_redundancy_skipped" in waste_flags),
-        "recon_fired": recon_fired,
-        "recon_confidence": recon_confidence,
-        "canonical_subject_resolved": (canonical_subject_resolved or "")[:200] or None,
-        "timing": dict(_timing_payload),
-        "router_original_report_type": router_original_report_type,
-        "router_original_query_type": router_original_query_type,
-        "routing_override_applied": routing_override_applied,
-        "routing_override_reason": routing_override_reason,
-        "report_type": report_type,
-        **anchor_packet_telemetry,
-        **nutrition_lookup_telemetry,
-        **router_query_preparation_contract.to_trace_fragment(),
-        **query_authority.to_trace_fragment(),
-        **(
-            retrieval_loop_contract_state.to_trace_fragment()
-            if retrieval_loop_contract_state is not None
-            else {}
-        ),
-        "complexity": complexity,
-        "mode": strategy,
-        "scout_fired": scout_fired,
-        "scout_key": scout_key_used,
-        "scout_queries": list(scout_queries),
-        "scout_skip_reason": scout_skip_reason,
-        "iterations_run": iterations_run,
-        "pass_providers": list(providers_by_iteration),
-        **_provider_diagnostics_payload,
-        "queries_per_iteration": queries_per_iter,
-        "disambiguation_queries_by_iteration": disambiguation_queries_per_iter,
-        "weak_corpus_recovery_considered": weak_corpus_recovery_considered,
-        "weak_corpus_recovery_used": weak_corpus_recovery_used,
-        "weak_corpus_recovery_skip_reason": weak_corpus_recovery_skip_reason,
-        "weak_corpus_recovery_queries": list(weak_corpus_recovery_queries),
-        "weak_corpus_recovery_decision": weak_corpus_recovery_decision,
-        "weak_corpus_recovery_reason": weak_corpus_recovery_reason,
-        "weak_corpus_recovery_blockers": list(weak_corpus_recovery_blockers),
-        **retrieval_stop_shadow_telemetry,
-        **retrieval_stop_active_telemetry,
-        **active_source_class_recovery_lifecycle,
-        **active_conflict_resolution_lifecycle,
-        ORDINARY_CONTINUATION_TRACE_KEY: dict(
-            ordinary_continuation_candidate_trace
-        ),
-        **targeted_retrieval_lifecycle_trace,
-        "evaluator_continuation_spine_gate_trace": dict(
-            evaluator_continuation_spine_gate_trace
-        ),
-        "expander_continuation_spine_gate_trace": dict(
-            expander_continuation_spine_gate_trace
-        ),
-        "scout_continuation_spine_gate_trace": dict(
-            scout_continuation_spine_gate_trace
-        ),
-        RETRIEVAL_BATCH_DISPATCH_TRACE_KEY: dict(retrieval_batch_dispatch_trace),
-        EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY: (
-            evidence_integration_checkpoint_trace
-        ),
-        **authoritative_source_action_trace_fragment(
-            authoritative_source_action_trace=authoritative_source_action_trace,
-            official_source_obligation_bridge_trace=(
-                official_source_obligation_bridge_trace
-            ),
-            official_canonical_recovery_query_acquisition_trace=(
-                official_canonical_recovery_query_acquisition_trace
-            ),
-            official_canonical_recovery_execution_admission_trace=(
-                official_canonical_recovery_execution_admission_trace
-            ),
-        ),
-        **answer_contract_runtime_trace_fragment,
-        **analyst_author_handoff_trace_fragment,
-        **final_answer_packet_trace_fragment(final_answer_packet),
-        **citation_source_handoff_trace_fragment,
-        **economist_handoff_trace_fragment,
-        **synthesis_evaluator_supplemental_search_handoff_trace_fragment,
-        **scrutineer_remediation_handoff_trace_fragment,
-        "urls_fetched": total_urls_fetched,
-        "total_chunks": total_chunks_embedded,
-        "source_tier_counts": _source_tier_exec["source_tier_counts"],
-        "source_domain_counts": _source_domain_exec["source_domain_counts"],
-        "top_source_domains": _source_domain_exec["top_source_domains"],
-        "unique_source_domain_count": _source_domain_exec["unique_source_domain_count"],
-        "on_domain_source_count": _source_domain_exec["on_domain_source_count"],
-        "off_domain_source_count": _source_domain_exec["off_domain_source_count"],
-        "official_evidence_found": _source_tier_exec["official_evidence_found"],
-        "community_signal_found": _source_tier_exec["community_signal_found"],
-        "low_trust_sources_found": _source_tier_exec["low_trust_sources_found"],
-        "pollution_detected": _source_tier_exec["pollution_detected"],
-        **source_class_recovery_telemetry,
-        **source_class_observability_telemetry,
-        "source_survival_final_evidence_official_or_canonical_count": (
-            _official_or_canonical_source_class_count(
-                source_class_evidence_bundle_observability_telemetry.get(
-                    "source_class_strong_satisfaction_counts"
-                )
-            )
-        ),
-        "source_survival_final_citation_official_or_canonical_count": (
-            _official_or_canonical_source_class_count(
-                source_class_observability_telemetry.get(
-                    "source_class_strong_satisfaction_counts"
-                )
-            )
-        ),
-        "estimate_from_priors_requested": estimate_from_priors_requested,
-        "estimate_from_priors_blocked_by_pre_analyst_gate": (
-            estimate_from_priors_blocked_by_pre_analyst_gate
-        ),
-        "economist_ran": economist_ran,
-        "economist_preflight_allowed": economist_preflight_allowed,
-        "economist_preflight_block_reason": economist_preflight_block_reason,
-        "economist_preflight_missing_entities": list(
-            economist_preflight_missing_entities
-        ),
-        **economist_safety_telemetry,
-        **quant_retrieval_sufficiency_telemetry,
-        **quantitative_consistency_telemetry,
-        **quantitative_consistency_guard_telemetry,
-        "missing_target_metric_directive_emitted": (
-            missing_target_metric_directive_emitted
-        ),
-        **economist_pre_analyst_skip_candidate_telemetry,
-        **analyst_quant_packet_handoff_telemetry,
-        **author_quant_source_telemetry,
-        "author_system_prompt_key": author_system_prompt_key,
-        **final_answer_source_telemetry,
-        **economist_skip_eligibility_shadow_telemetry,
-        "economist_skip_shadow_alignment": economist_skip_shadow_alignment,
-        "analyst_skipped": analyst_skipped,
-        "analyst_skip_reason": analyst_skip_reason,
-        "analyst_skipped_after_economist": analyst_skipped_after_economist,
-        "analyst_after_economist_skip_reason": analyst_after_economist_skip_reason,
-        "economist_output_used_as_analysis": economist_output_used_as_analysis,
-        "post_retrieval_fast_path_used": post_retrieval_fast_path_used,
-        "pre_analyst_gate_signals": list(pre_analyst_gate_signals),
-        "thin_quant_analyst_used": False,
-        "scrutineer_ran": scrutineer_ran,
-        "scrutineer_flag_count": scrutineer_flag_count,
-        "synth_was_insufficient": synth_was_insufficient,
-        "synth_sufficient_first_pass_raw": synth_sufficient_first_pass_raw,
-        "synth_sufficient_first_pass": synth_sufficient_first_pass,
-        "supplemental_ran": supplemental_ran,
-        "context_measurement": context_measurement.payload(),
-        "latency_seconds": latency_seconds,
-        "output_word_count": output_word_count,
-        "final_output_preview": (report or "")[:300],
-        "cost": cost_snapshot,
-        "failure_card": failure_card_payload,
-        **weak_failure_gate_trace_fragment,
-    }
+    execution_trace = build_execution_trace_projection(locals())
     runtime_trace_export_attachment = (
         attach_runtime_trace_export_compatibility_payloads(
             execution_trace,
@@ -7574,107 +7378,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         cost_snapshot=cost_snapshot,
     )
     output_word_count = final_output_metadata["output_word_count"]
-    execution_log_entry = build_execution_log_entry(
-        current_date=current_date,
-        ts_utc=ts_utc,
-        run_id=run_id,
-        session_id=session_id,
-        query=query,
-        intent=intent,
-        query_type=query_type,
-        primary_entity=primary_entity,
-        entities_list=entities_list,
-        empty_entity_flag=empty_entity_flag,
-        router_entity_retry_used=router_entity_retry_used,
-        utilization_pre_retry=utilization_pre_retry,
-        utilization_rate_val=utilization_rate_val,
-        retrieval_retry_used=retrieval_retry_used,
-        corpus_state=corpus_state,
-        corpus_state_forced_flag=corpus_state_forced_flag,
-        corpus_weak=corpus_weak,
-        useful_content=useful_content,
-        response_displayable=response_displayable,
-        evidence_sufficient=evidence_sufficient,
-        answer_class=answer_class,
-        useful_content_reason=useful_content_reason,
-        waste_flags=waste_flags,
-        recon_fired=recon_fired,
-        recon_confidence=recon_confidence,
-        canonical_subject_resolved=canonical_subject_resolved,
-        timing_payload=_timing_payload,
-        router_original_report_type=router_original_report_type,
-        router_original_query_type=router_original_query_type,
-        routing_override_applied=routing_override_applied,
-        routing_override_reason=routing_override_reason,
-        report_type=report_type,
-        nutrition_lookup_telemetry=nutrition_lookup_telemetry,
-        complexity=complexity,
-        mode=strategy,
-        fast_model=fast_model,
-        smart_model=smart_model,
-        scout_fired=scout_fired,
-        scout_key_used=scout_key_used,
-        scout_queries=scout_queries,
-        scout_skip_reason=scout_skip_reason,
-        iterations_run=iterations_run,
-        total_chunks_embedded=total_chunks_embedded,
-        total_urls_fetched=total_urls_fetched,
-        providers_by_iteration=providers_by_iteration,
-        provider_diagnostics_payload=_provider_diagnostics_payload,
-        queries_per_iter=queries_per_iter,
-        disambiguation_queries_per_iter=disambiguation_queries_per_iter,
-        weak_corpus_recovery_considered=weak_corpus_recovery_considered,
-        weak_corpus_recovery_used=weak_corpus_recovery_used,
-        weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-        weak_corpus_recovery_queries=weak_corpus_recovery_queries,
-        weak_corpus_recovery_decision=weak_corpus_recovery_decision,
-        weak_corpus_recovery_reason=weak_corpus_recovery_reason,
-        weak_corpus_recovery_blockers=weak_corpus_recovery_blockers,
-        synth_sufficient_first_pass_raw=synth_sufficient_first_pass_raw,
-        synth_sufficient_first_pass=synth_sufficient_first_pass,
-        scrutineer_flag_count=scrutineer_flag_count,
-        estimate_from_priors_requested=estimate_from_priors_requested,
-        estimate_from_priors_blocked_by_pre_analyst_gate=(
-            estimate_from_priors_blocked_by_pre_analyst_gate
-        ),
-        economist_ran=economist_ran,
-        economist_preflight_allowed=economist_preflight_allowed,
-        economist_preflight_block_reason=economist_preflight_block_reason,
-        economist_preflight_missing_entities=economist_preflight_missing_entities,
-        economist_safety_telemetry=economist_safety_telemetry,
-        quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
-        missing_target_metric_directive_emitted=missing_target_metric_directive_emitted,
-        economist_pre_analyst_skip_candidate_telemetry=(
-            economist_pre_analyst_skip_candidate_telemetry
-        ),
-        analyst_quant_packet_handoff_telemetry=analyst_quant_packet_handoff_telemetry,
-        author_quant_source_telemetry=author_quant_source_telemetry,
-        author_system_prompt_key=author_system_prompt_key,
-        final_answer_source_telemetry=final_answer_source_telemetry,
-        economist_skip_eligibility_shadow_telemetry=(
-            economist_skip_eligibility_shadow_telemetry
-        ),
-        economist_skip_shadow_alignment=economist_skip_shadow_alignment,
-        analyst_skipped=analyst_skipped,
-        analyst_skip_reason=analyst_skip_reason,
-        analyst_skipped_after_economist=analyst_skipped_after_economist,
-        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
-        economist_output_used_as_analysis=economist_output_used_as_analysis,
-        post_retrieval_fast_path_used=post_retrieval_fast_path_used,
-        pre_analyst_gate_signals=pre_analyst_gate_signals,
-        scrutineer_ran=scrutineer_ran,
-        synth_was_insufficient=synth_was_insufficient,
-        supplemental_ran=supplemental_ran,
-        report=report,
-        latency_seconds=latency_seconds,
-        cost_snapshot=cost_snapshot,
-        source_class_recovery_validation_trace_key=(
-            SOURCE_CLASS_RECOVERY_VALIDATION_TRACE_KEY
-        ),
-        source_class_recovery_validation_packet=(
-            source_class_recovery_validation_packet
-        ),
+    execution_log_entry = build_execution_log_entry_projection(
+        locals(),
         execution_trace=execution_trace,
+        source_class_recovery_validation_packet=source_class_recovery_validation_packet,
         code_version_metadata=current_code_version_metadata(),
     )
     persistence_side_effect_result = execute_persistence_side_effects(
