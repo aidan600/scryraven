@@ -17,6 +17,7 @@ from core.runtime_prompt_assembly import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+FAKE_API_KEY = object()
 HELPER = ROOT / "core" / "analyst_runtime_stage.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 
@@ -119,7 +120,7 @@ def _request(**overrides: Any) -> AnalystRuntimeRequest:
         "smart_provider": "openrouter",
         "smart_model": "smart-model",
         "local_url": "http://localhost:11434/v1",
-        "or_api_key": "test-key",
+        "or_api_key": FAKE_API_KEY,
         "use_reasoning": True,
         "analyst_seconds": 3.0,
     }
@@ -217,7 +218,7 @@ def test_estimate_from_priors_prompt_system_kwargs_and_timing_are_exact() -> Non
                 "model": "smart-model",
                 "effort": "medium",
                 "base_url": "http://localhost:11434/v1",
-                "api_key": "test-key",
+                "api_key": FAKE_API_KEY,
                 "use_reasoning": True,
             },
         }
@@ -253,7 +254,7 @@ def test_normal_analyst_prompt_system_kwargs_and_timing_are_exact() -> None:
         "model": "smart-model",
         "effort": "medium",
         "base_url": "http://localhost:11434/v1",
-        "api_key": "test-key",
+        "api_key": FAKE_API_KEY,
         "use_reasoning": True,
     }
 
