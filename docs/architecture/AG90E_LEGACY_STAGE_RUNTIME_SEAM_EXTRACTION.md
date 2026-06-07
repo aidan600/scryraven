@@ -52,19 +52,19 @@ This meets the AG-90E minimum target of at least `-350` net orchestrator lines.
 Production code:
 
 - `core/pipeline_orchestrator.py`: 10 additions / 365 deletions, **-355 net lines**.
-- `core/legacy_review_runtime_stage.py`: new bounded helper, **+498 lines**.
-- Production-code net delta: **+143 lines**.
+- `core/legacy_review_runtime_stage.py`: new bounded helper, **+491 lines**.
+- Production-code net delta: **+136 lines**.
 
 Helper-growth discipline:
 
 - Removed orchestrator production lines: **365**.
-- New helper production lines: **498**.
-- Helper over removed lines: **+133**, within the phase's `~150` helper-growth budget.
+- New helper production lines: **491**.
+- Helper over removed lines: **+126**, within the phase's `~150` helper-growth budget.
 
 Total repo delta after tests and this architecture note:
 
-- Production code net: **+143**.
-- Test code net before this note: `tests/test_ag90e_legacy_review_runtime_stage.py` adds 401 lines; static-guard updates add 18 net lines.
+- Production code net: **+136**.
+- Test code net before this note: `tests/test_ag90e_legacy_review_runtime_stage.py` adds 408 lines; static-guard updates add 18 net lines.
 - Documentation net: this file.
 
 ## Helper responsibilities

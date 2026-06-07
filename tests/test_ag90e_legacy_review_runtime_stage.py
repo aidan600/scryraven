@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 HELPER = ROOT / "core" / "legacy_review_runtime_stage.py"
 
+FAKE_API_KEY = object()
+
 DEFAULT_SYSTEM = {
     "synth_evaluator": "SYNTH_SYS",
     "scrutineer": "SCRUT_SYS",
@@ -170,7 +172,7 @@ def _request(**overrides: Any) -> LegacyReviewRuntimeRequest:
         is_academic=False,
         suppress_tavily=True,
         local_url="http://local",
-        or_api_key="key",
+        or_api_key=FAKE_API_KEY,
         use_reasoning=True,
         fast_provider="fast-provider",
         fast_model="fast-model",
@@ -221,7 +223,7 @@ def _deps(harness: Harness, *, supp=None, remed=None) -> LegacyReviewRuntimeDeps
         execute_supplemental_search=supp or harness.supplemental,
         execute_scrutineer_remediation=remed or harness.remediation,
         monotonic=harness.monotonic,
-        environ_get=lambda key: "linkup-key" if key == "LINKUP_API_KEY" else None,
+        environ_get=lambda key: "enabled" if key == "LINKUP_API_KEY" else None,
     )
 
 
@@ -241,7 +243,7 @@ def test_synthesis_evaluator_model_call_shape_and_prompt_when_sufficient() -> No
                 "model": "fast-model",
                 "effort": "low",
                 "base_url": "http://local",
-                "api_key": "key",
+                "api_key": FAKE_API_KEY,
                 "require_json": True,
                 "use_reasoning": True,
             },
@@ -278,7 +280,7 @@ def test_supplemental_search_dispatch_shape_and_analyst_rerun_shape() -> None:
             "model": "smart-model",
             "effort": "medium",
             "base_url": "http://local",
-            "api_key": "key",
+            "api_key": FAKE_API_KEY,
             "use_reasoning": True,
         },
     )
@@ -312,7 +314,7 @@ def test_scrutineer_high_flag_threshold_passes_flags_without_remediation() -> No
             "model": "smart-model",
             "effort": "medium",
             "base_url": "http://local",
-            "api_key": "key",
+            "api_key": FAKE_API_KEY,
             "require_json": True,
             "use_reasoning": False,
         },
@@ -347,7 +349,7 @@ def test_scrutineer_duplicate_remediation_query_records_rejection_without_dispat
             "model": "fast-model",
             "effort": "low",
             "base_url": "http://local",
-            "api_key": "key",
+            "api_key": FAKE_API_KEY,
             "require_json": True,
             "use_reasoning": True,
         },
@@ -385,7 +387,7 @@ def test_scrutineer_remediation_dispatch_shape_and_resynthesis() -> None:
         "model": "smart-model",
         "effort": "medium",
         "base_url": "http://local",
-        "api_key": "key",
+        "api_key": FAKE_API_KEY,
         "use_reasoning": True,
     }
 
@@ -396,6 +398,13 @@ def test_ag90e_static_guards_for_bounded_extraction() -> None:
     assert pipeline_lines <= 6570
     assert "from core.routing import" not in helper_source
     assert "from core.search_providers" not in helper_source
+    pipeline_source = PIPELINE.read_text(encoding="utf-8")
     assert "process_search_queries(" not in helper_source
     assert "from core.prompts" not in helper_source
-    assert "execute_legacy_review_runtime_stage_from_scope({**globals(), **locals()})" in PIPELINE.read_text(encoding="utf-8")
+    assert "{**globals(), **locals()}" not in pipeline_source
+    assert "globals()" not in pipeline_source.split("execute_legacy_review_runtime_stage_from_scope", 1)[1]
+    assert "execute_legacy_review_runtime_stage_from_scope(locals(), deps=" in pipeline_source
+    assert "stage_scope = {key: scope[key] for key in _SCOPE_KEYS if key in scope}" in helper_source
+    assert "_RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES" in helper_source
+    assert "json.dumps(scope" not in helper_source
+    assert "json.dumps(stage_scope" not in helper_source

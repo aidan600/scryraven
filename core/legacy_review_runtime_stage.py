@@ -114,11 +114,12 @@ _DEFAULTED_SCOPE_FIELDS = {
     "scrutineer_remediation_linkup_depth_override": None, "scrutineer_remediation_evidence": [],
     "scrutineer_remediation_resynthesis_triggered": False, "scrutineer_pass_flags_directly_to_author": False,
 }
-_SCOPE_KEYS = frozenset(_DIRECT_SCOPE_FIELD_NAMES + (
-    "status", "synthesis_evaluator_supplemental_search_collector", "DEFAULT_SYSTEM", "build_final_evidence_bundle",
-    "_final_evidence_bundle_inputs", "_build_analyst_cached_prefix", "_evidence_slice_for_analyst",
-    "_measure_context_stage", "_record_analyst_model_call", "select_providers",
-    "choose_supplemental_search_depth", "ask_model", "deps",
+_RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES = (
+    "process_search_queries", "query_embedding", "seen_urls", "collected_images", "embed_provider", "embed_model",
+    "embed_texts", "deps", "provider_diagnostics", "results_per_query", "include_domains", "exclude_domains",
+)
+_SCOPE_KEYS = frozenset(_DIRECT_SCOPE_FIELD_NAMES + _RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES + (
+    "status", "synthesis_evaluator_supplemental_search_collector", "ordered_sources", "evidence_block", "cached_prefix",
 ))
 _OUTCOME_LOCAL_NAMES = (
     "analysis", "author_notes", "first_synth_sufficient", "synth_was_insufficient", "synth_deficiency",
@@ -133,28 +134,20 @@ _OUTCOME_LOCAL_NAMES = (
 )
 
 
-def execute_legacy_review_runtime_stage_from_scope(scope: Mapping[str, Any]) -> LegacyReviewRuntimeOutcome:
+def execute_legacy_review_runtime_stage_from_scope(
+    scope: Mapping[str, Any],
+    *,
+    deps: LegacyReviewRuntimeDeps,
+    default_system: Mapping[str, str],
+) -> LegacyReviewRuntimeOutcome:
     stage_scope = {key: scope[key] for key in _SCOPE_KEYS if key in scope}
-    deps_obj = stage_scope["deps"]
-    deps = LegacyReviewRuntimeDeps(
-        ask_model=stage_scope["ask_model"],
-        clean_json_response=deps_obj.clean_json_response,
-        measure_context_stage=stage_scope["_measure_context_stage"],
-        record_analyst_model_call=stage_scope["_record_analyst_model_call"],
-        build_final_evidence_bundle=stage_scope["build_final_evidence_bundle"],
-        final_evidence_bundle_inputs=stage_scope["_final_evidence_bundle_inputs"],
-        build_analyst_cached_prefix=stage_scope["_build_analyst_cached_prefix"],
-        evidence_slice_for_analyst=stage_scope["_evidence_slice_for_analyst"],
-        select_providers=stage_scope["select_providers"],
-        choose_supplemental_search_depth=stage_scope["choose_supplemental_search_depth"],
-    )
     request_kwargs = {
         name: (stage_scope[name] if name in stage_scope else _DEFAULTED_SCOPE_FIELDS[name])
         for name in _DIRECT_SCOPE_FIELD_NAMES if name in stage_scope or name in _DEFAULTED_SCOPE_FIELDS
     }
     request = LegacyReviewRuntimeRequest(
         **request_kwargs, scope=stage_scope, status=stage_scope["status"],
-        collector=stage_scope["synthesis_evaluator_supplemental_search_collector"], default_system=stage_scope["DEFAULT_SYSTEM"],
+        collector=stage_scope["synthesis_evaluator_supplemental_search_collector"], default_system=default_system,
     )
     return execute_legacy_review_runtime_stage(request, deps)
 
