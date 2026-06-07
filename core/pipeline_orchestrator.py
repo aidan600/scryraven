@@ -41,12 +41,6 @@ from core.conflict_resolution_controller import (
     build_conflict_resolution_lifecycle,
     conflict_resolution_lifecycle_defaults,
 )
-from core.conflict_state_producer import (
-    ConflictState,
-    ConflictStateProducerInput,
-    build_conflict_state,
-    project_conflict_state_to_runtime_facts,
-)
 from core.context_measurement import (
     ContextMeasurementCollector,
     evidence_texts_from_passages,
@@ -73,9 +67,6 @@ from core.corpus_state import (
     is_weak_corpus_state,
 )
 from core.cost_accounting import CostAccumulator
-from core.economist_handoff_contract import (
-    build_economist_handoff_state,
-)
 from core.entity_extraction import fallback_entities_from_query
 from core.evidence_integration_checkpoint import (
     EvidenceIntegrationBudgetSnapshot,
@@ -92,7 +83,6 @@ from core.failure_card import (
 )
 from core.final_answer_runtime_assembly import (
     assemble_final_answer_author_runtime_from_scope,
-    assemble_final_answer_citation_runtime_from_scope,
 )
 from core.final_evidence_bundle_builder import (
     FinalEvidenceBundleInputs,
@@ -135,9 +125,7 @@ from core.ordinary_continuation_spine_gate import (
     scout_continuation_spine_gate_exception_trace,
 )
 from core.outcome_persistence_packaging import (
-    build_final_output_metadata,
     build_pipeline_config,
-    build_run_outcome,
     build_session_payload,
 )
 from core.persistence_side_effects import execute_persistence_side_effects
@@ -152,11 +140,18 @@ from core.pipeline import (
     validate_high_stakes_quantitative_query_shadow,
 )
 from core.policy import apply_policy_to_run_config, load_policy_state
+from core.post_author_output_projection import (
+    _build_runtime_conflict_state_projection,
+    _scrutineer_allowed_by_contract,
+    _scrutineer_allowed_by_mode,
+    build_post_author_output_packaging_from_scope,
+    build_post_author_trace_packaging_from_scope,
+    build_run_outcome_from_scope,
+)
 from core.prompts import ROUTER_RETRY_USER_APPEND, SCOUT_REGISTRY
 from core.protocols import StatusWriter
 from core.provider_diagnostics import (
     build_provider_attempt_diagnostic,
-    provider_diagnostics_payload,
     supported_diagnostic_kwargs,
 )
 from core.quantitative_consistency import (
@@ -222,18 +217,7 @@ from core.runtime_prompt_assembly import (
     evidence_slice_for_analyst,
     select_author_system_prompt,
 )
-from core.runtime_trace_export_attachment import (
-    attach_runtime_trace_export_compatibility_payloads,
-)
-from core.scrutineer_remediation_runtime_handoff import (
-    RuntimeScrutineerRemediationFacts,
-    runtime_scrutineer_remediation_trace_fragment,
-)
 from core.search_providers import brave_reconnaissance
-from core.session_output_projection import (
-    build_execution_log_entry_projection,
-    build_execution_trace_projection,
-)
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
     build_source_class_recovery_recommendation,
@@ -268,7 +252,6 @@ from core.weak_corpus_controller import (
     weak_corpus_recovery_trace_fields,
 )
 from core.weak_failure_gate_contract import (
-    WEAK_FAILURE_GATE_TRACE_KEY,
     build_weak_failure_gate_state,
     execute_weak_failure_gate_handoff,
 )
@@ -615,17 +598,6 @@ def _build_retrieval_stop_active_stop_budget_exhausted_telemetry(
 def _social_signal_requested_from_contract(contract: Any) -> bool:
     relevance = getattr(getattr(contract, "social_signal_relevance", None), "value", None)
     return str(relevance or "").casefold() == "central"
-
-def _scrutineer_allowed_by_contract(contract: Any) -> bool:
-    relevance = getattr(
-        getattr(contract, "scrutineer_relevance", None),
-        "value",
-        None,
-    )
-    return str(relevance or "").casefold() in {"central", "relevant_optional"}
-
-def _scrutineer_allowed_by_mode(mode: str | None) -> bool:
-    return str(mode or "").strip().casefold() in {"deep", "scrutineer", "review"}
 
 def _weak_corpus_lifecycle_facts(
     decision: WeakCorpusRecoveryDecision | None,
@@ -1299,33 +1271,6 @@ def _build_conflict_resolution_lifecycle_from_runtime_answer_contract(
     )
     lifecycle = build_conflict_resolution_lifecycle(snapshot)
     return lifecycle.to_trace_fields(), lifecycle.decision
-
-def _build_runtime_conflict_state_projection(
-    *,
-    query: str,
-    core_topic: str | None,
-    primary_entity: str | None,
-    current_date: str | None,
-    final_top_evidence: list[dict[str, Any]] | tuple[dict[str, Any], ...],
-    source_tier_counts: dict[str, Any],
-    source_domain_telemetry: dict[str, Any],
-    source_class_observability: dict[str, Any],
-    ordinary_next_queries: list[str] | tuple[str, ...] = (),
-) -> tuple[ConflictState, dict[str, Any]]:
-    conflict_state = build_conflict_state(
-        ConflictStateProducerInput(
-            query=query,
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            current_date=current_date,
-            final_top_evidence=final_top_evidence,
-            source_tier_counts=source_tier_counts,
-            source_domain_telemetry=source_domain_telemetry,
-            source_class_observability=source_class_observability,
-            ordinary_next_queries=ordinary_next_queries,
-        )
-    )
-    return conflict_state, project_conflict_state_to_runtime_facts(conflict_state)
 
 def _extract_year(text: str) -> str:
     m = re.search(r"\b(19|20)\d{2}\b", text or "")
@@ -5286,12 +5231,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         economist_safety_telemetry,
     )
 
-    final_output_metadata = build_final_output_metadata(
-        report=report,
-        latency_seconds=0.0,
-        cost_snapshot={},
-    )
-    output_word_count = final_output_metadata["output_word_count"]
     useful_content, useful_content_reason = evaluate_useful_content(
         report,
         query_type=query_type,
@@ -5606,253 +5545,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     if source_class != reserved_missing_class
                 ],
             }
-    answer_contract_runtime_trace_fragment: dict[str, Any] = {}
-    answer_contract_runtime_result = None
-    try:
-        (
-            _runtime_conflict_state,
-            runtime_conflict_projection,
-        ) = _build_runtime_conflict_state_projection(
-            query=query,
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            current_date=current_date,
-            final_top_evidence=final_top_evidence,
-            source_tier_counts=_source_tier_exec["source_tier_counts"],
-            source_domain_telemetry=_source_domain_exec,
-            source_class_observability=runtime_source_class_recovery_telemetry,
-        )
-        answer_contract_runtime_result = build_runtime_answer_contract_handoff(
-            RuntimeAnswerContractFacts(
-                query=query,
-                intent=intent,
-                report_type=report_type,
-                query_type=query_type,
-                mode=strategy,
-                current_date=current_date,
-                core_topic=core_topic,
-                evidence_available=bool(final_top_evidence),
-                evidence_sufficient=bool(evidence_sufficient),
-                source_tier_counts=_source_tier_exec["source_tier_counts"],
-                source_class_recovery_telemetry=(
-                    runtime_source_class_recovery_telemetry
-                ),
-                active_source_class_recovery_lifecycle=(
-                    runtime_active_source_class_recovery_lifecycle
-                ),
-                weak_corpus=bool(corpus_weak),
-                weak_corpus_reason=(
-                    (weak_corpus_recovery_skip_reason or corpus_state)
-                    if corpus_weak
-                    else None
-                ),
-                weak_corpus_recovery_considered=bool(
-                    weak_corpus_recovery_considered
-                ),
-                weak_corpus_recovery_used=bool(weak_corpus_recovery_used),
-                weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-                conflicts_present=runtime_conflict_projection["conflicts_present"],
-                conflict_notes=runtime_conflict_projection["conflict_notes"],
-                resolving_queries=runtime_conflict_projection["resolving_queries"],
-                retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-                retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-                queries_by_iteration=queries_per_iter,
-                final_top_evidence=final_top_evidence,
-                evidence_integration_checkpoint=(
-                    evidence_integration_checkpoint_handoff
-                ),
-                iteration=iterations_run,
-                max_iterations=max_iterations,
-                max_recovery_attempts=1,
-            ),
-            controller=_run_controller_mirror,
-        )
-        answer_contract_runtime_trace_fragment = (
-            answer_contract_runtime_result.execution_trace_fragment()
-        )
-    except Exception as exc:
-        logger.warning("Non-fatal answer-contract handoff omitted: %s", exc)
-    _provider_diagnostics_payload = provider_diagnostics_payload(provider_diagnostics)
-    weak_failure_gate_trace_fragment = (
-        weak_failure_gate_contract_state.to_trace_fragment()
-        if weak_failure_gate_contract_state is not None
-        else {WEAK_FAILURE_GATE_TRACE_KEY: {"controller_owned": False, "available": False}}
-    )
-    final_answer_citation_runtime = assemble_final_answer_citation_runtime_from_scope(
+    # Post-Author citation assembly is delegated; helper calls assemble_final_answer_citation_runtime_from_scope(...).
+    post_author_trace_packaging = build_post_author_trace_packaging_from_scope(
         locals(),
         analyst_evidence=_evidence_slice_for_analyst(),
+        logger=logger,
+        answer_contract_handoff_builder=build_runtime_answer_contract_handoff,
     )
-    final_answer_packet = final_answer_citation_runtime.packet
-    analyst_author_handoff_state = (
-        final_answer_citation_runtime.analyst_author_handoff_state
-    )
-    analyst_author_handoff_trace_fragment = (
-        final_answer_citation_runtime.analyst_author_handoff_trace_fragment
-    )
-    citation_source_handoff_state = (
-        final_answer_citation_runtime.citation_source_handoff_state
-    )
-    unique_source_urls = final_answer_citation_runtime.unique_source_urls
-    ordered_sources = final_answer_citation_runtime.ordered_sources
-    final_answer_source_telemetry = (
-        final_answer_citation_runtime.final_answer_source_telemetry
-    )
-    citation_source_handoff_trace_fragment = (
-        final_answer_citation_runtime.citation_source_handoff_trace_fragment
-    )
-    economist_handoff_state = build_economist_handoff_state(
-        run_id=run_id,
-        need_economist=need_economist,
-        economist_ran=economist_ran,
-        economist_preflight_allowed=economist_preflight_allowed,
-        economist_preflight_block_reason=economist_preflight_block_reason,
-        economist_preflight_missing_entities=economist_preflight_missing_entities,
-        economist_safety_telemetry=economist_safety_telemetry,
-        economist_pre_analyst_skip_candidate_telemetry=(
-            economist_pre_analyst_skip_candidate_telemetry
-        ),
-        analyst_quant_packet_handoff_telemetry=analyst_quant_packet_handoff_telemetry,
-        author_quant_source_telemetry=author_quant_source_telemetry,
-        analyst_skipped_after_economist=analyst_skipped_after_economist,
-        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
-        economist_output_used_as_analysis=economist_output_used_as_analysis,
-        estimate_from_priors_requested=estimate_from_priors_requested,
-        estimate_from_priors_blocked_by_pre_analyst_gate=(
-            estimate_from_priors_blocked_by_pre_analyst_gate
-        ),
-        answer_contract_ref=answer_contract_runtime_result,
-        analyst_author_handoff_state=analyst_author_handoff_state,
-        citation_source_handoff_state=citation_source_handoff_state,
-    )
-    economist_handoff_trace_fragment = economist_handoff_state.to_trace_fragment()
-    _run_controller_mirror.state.trace_fields.update(
-        final_answer_citation_runtime.packet_trace_fragment
-    )
-    _run_controller_mirror.state.trace_fields.update(
-        citation_source_handoff_trace_fragment
-    )
-    _run_controller_mirror.state.trace_fields.update(
-        economist_handoff_trace_fragment
-    )
-    _scrutineer_answer_state = getattr(answer_contract_runtime_result, "state", None)
-    _scrutineer_evidence_state = getattr(
-        _scrutineer_answer_state,
-        "evidence_state_summary",
-        None,
-    )
-    _scrutineer_active_contract = getattr(
-        _scrutineer_answer_state,
-        "active_contract",
-        None,
-    )
-    synthesis_evaluator_supplemental_search_handoff_trace_fragment = (
-        synthesis_evaluator_supplemental_search_collector.to_trace_fragment(
-            run_id=run_id,
-            synth_was_insufficient=synth_was_insufficient,
-            results_per_query=results_per_query,
-            delta_urls_supplemental=delta_urls_supplemental,
-            supplemental_ran=supplemental_ran,
-            final_evidence=final_top_evidence,
-            ordered_source_count=len(ordered_sources),
-            unique_source_url_count=len(unique_source_urls),
-            answer_contract_available=answer_contract_runtime_result is not None,
-        )
-    )
-    scrutineer_remediation_handoff_trace_fragment = (
-        runtime_scrutineer_remediation_trace_fragment(
-            RuntimeScrutineerRemediationFacts(
-                run_id=run_id,
-                eligible=bool(complexity == "high"),
-                run_gate="legacy_complexity_high_gate",
-                run_posture="completed" if scrutineer_ran else "skipped",
-                complexity=complexity,
-                mode_allowed=_scrutineer_allowed_by_mode(strategy),
-                contract_allowed=_scrutineer_allowed_by_contract(_scrutineer_active_contract),
-                requested=getattr(_scrutineer_evidence_state, "scrutineer_requested", None),
-                needed=getattr(_scrutineer_evidence_state, "scrutineer_needed", None),
-                skip_reason=None if scrutineer_ran else "legacy_complexity_gate_not_high",
-                flags=scrutineer_flags,
-                remediation_queries=scrutineer_remediation_queries,
-                dispatch_authorized=scrutineer_remediation_dispatch_authorized,
-                dispatch_posture=scrutineer_remediation_dispatch_posture,
-                provider_role=scrutineer_remediation_provider_role,
-                providers=scrutineer_remediation_providers,
-                search_depth=search_depth,
-                linkup_depth_override=scrutineer_remediation_linkup_depth_override,
-                remediation_evidence=scrutineer_remediation_evidence,
-                final_evidence_bundle_id=f"{run_id}:final_evidence",
-                final_evidence_ref={
-                    "final_evidence_count": len(final_top_evidence),
-                    "ordered_source_count": len(ordered_sources),
-                    "unique_source_url_count": len(unique_source_urls),
-                },
-                resynthesis_posture=(
-                    "triggered"
-                    if scrutineer_remediation_resynthesis_triggered
-                    else "skipped"
-                ),
-                reanalysis_triggered=scrutineer_remediation_resynthesis_triggered,
-                resynthesis_trigger_reason=(
-                    "remediation_passages_added"
-                    if scrutineer_remediation_resynthesis_triggered
-                    else None
-                ),
-                analyst_pass_ref={
-                    "stage": "analyst_scrutineer_remediation"
-                } if scrutineer_remediation_resynthesis_triggered else {},
-                analysis_ref={"analysis_available": bool(analysis)},
-                pass_flags_directly_to_author=scrutineer_pass_flags_directly_to_author,
-                author_directive_metadata={
-                    "source": "legacy_scrutineer_author_context"
-                },
-                answer_contract_ref={
-                    "trace_key": "answer_contract_runtime_handoff",
-                    "available": answer_contract_runtime_result is not None,
-                },
-                analyst_author_handoff_ref={
-                    "trace_key": "analyst_author_handoff_contract"
-                },
-                citation_source_handoff_ref={
-                    "trace_key": "citation_source_handoff_contract"
-                },
-            )
-        )
-    )
-    execution_trace = build_execution_trace_projection(locals())
-    runtime_trace_export_attachment = (
-        attach_runtime_trace_export_compatibility_payloads(
-            execution_trace,
-            recovered_passages=(
-                source_class_projection_handoff.recovered_source_class_passages
-            ),
-            final_top_evidence=final_top_evidence,
-            max_iterations=max_iterations,
-            evidence_bundle_source_class_counts=(
-                source_class_evidence_bundle_observability_telemetry.get(
-                    "source_class_strong_satisfaction_counts"
-                )
-            ),
-            session_payload=new_session,
-            logger=run_log,
-        )
-    )
-    source_class_recovery_validation_packet = (
-        runtime_trace_export_attachment.source_class_recovery_validation_packet
-    )
+    for trace_field_fragment in post_author_trace_packaging.trace_field_fragments:
+        _run_controller_mirror.state.trace_fields.update(trace_field_fragment)
 
-    # --- Execution log ---
-    final_output_metadata = build_final_output_metadata(
-        report=report,
-        latency_seconds=latency_seconds,
-        cost_snapshot=cost_snapshot,
-    )
-    output_word_count = final_output_metadata["output_word_count"]
-    execution_log_entry = build_execution_log_entry_projection(
+    post_author_output_packaging = build_post_author_output_packaging_from_scope(
         locals(),
-        execution_trace=execution_trace,
-        source_class_recovery_validation_packet=source_class_recovery_validation_packet,
-        code_version_metadata=current_code_version_metadata(),
+        trace_packaging=post_author_trace_packaging,
+        code_version_metadata_builder=current_code_version_metadata,
     )
+    execution_trace = post_author_output_packaging.execution_trace
+    output_word_count = post_author_output_packaging.output_word_count
+    execution_log_entry = post_author_output_packaging.execution_log_entry
     persistence_side_effect_result = execute_persistence_side_effects(
         execution_log_path=execution_log_path,
         execution_log_entry=execution_log_entry,
@@ -5877,27 +5587,4 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     kb_instrumentation = persistence_side_effect_result.kb_instrumentation
     kb_warning = persistence_side_effect_result.kb_warning
 
-    return build_run_outcome(
-        session_id=session_id,
-        run_id=run_id,
-        session_title=session_title,
-        query=query,
-        core_topic=core_topic,
-        report=report,
-        final_top_evidence=final_top_evidence,
-        seen_urls=list(seen_urls),
-        collected_images=list(collected_images),
-        execution_trace=execution_trace,
-        failure_card_payload=failure_card_payload,
-        session_payload=new_session,
-        cost_snapshot=cost_snapshot,
-        latency_seconds=latency_seconds,
-        intent=intent,
-        complexity=complexity,
-        corpus_state=corpus_state,
-        pipeline_config=pipeline_config_payload,
-        kb_instrumentation=kb_instrumentation,
-        kb_warning=kb_warning,
-        author_streamed=bool(config.author_stream_display)
-        and not quantitative_guard_stream_buffered,
-    )
+    return build_run_outcome_from_scope(locals())

@@ -256,7 +256,7 @@ def test_orchestrator_consumes_contract_and_static_guard_blocks_silent_gate_deci
     assert "weak_failure_gate_trace_fragment" in source
 
     final_handoff_idx = source.index("weak_failure_gate_handoff = execute_weak_failure_gate_handoff")
-    final_trace_idx = source.index("execution_trace = build_execution_trace_projection")
+    final_trace_idx = source.index("post_author_output_packaging = build_post_author_output_packaging_from_scope")
     final_region = source[final_handoff_idx:final_trace_idx]
     forbidden_redecision_fragments = (
         "failure_card_should_show(",

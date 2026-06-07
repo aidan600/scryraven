@@ -230,6 +230,7 @@ def test_ag74b_runtime_aggregate_success_has_explicit_ledger_gap() -> None:
 def test_ag74b_static_subordinates_old_path_without_protected_surface_drift() -> None:
     assembly_source = _ASSEMBLY_PATH.read_text(encoding="utf-8")
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    post_author_source = (_ORCHESTRATOR_PATH.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
     ledger_source = _LEDGER_PATH.read_text(encoding="utf-8")
     assembly_imports = {
         node.module
@@ -240,7 +241,7 @@ def test_ag74b_static_subordinates_old_path_without_protected_surface_drift() ->
     assert "core.controller_evidence_ledger" in assembly_imports
     assert "build_controller_evidence_ledger" not in orchestrator_source
     assert "build_controller_evidence_ledger_trace" not in orchestrator_source
-    assert "attach_runtime_trace_export_compatibility_payloads" in orchestrator_source
+    assert "attach_runtime_trace_export_compatibility_payloads" in post_author_source
     assert "select_providers" not in ledger_source
     assert "search_web_results(" not in ledger_source
     assert "author_prompt" not in ledger_source

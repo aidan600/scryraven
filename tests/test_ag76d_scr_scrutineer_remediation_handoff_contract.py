@@ -271,7 +271,7 @@ def test_static_protected_import_guard():
 
 
 def test_pipeline_orchestrator_touch_is_limited_to_runtime_handoff_adapter():
-    source = PIPELINE.read_text(encoding="utf-8")
+    source = PIPELINE.read_text(encoding="utf-8") + (PIPELINE.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     imported_names: set[str] = set()
     call_names: list[str] = []

@@ -211,8 +211,9 @@ def test_ag76c_rt_helper_has_no_protected_behavior_imports() -> None:
 
 def test_ag76c_rt_orchestrator_delegates_attachment_tail() -> None:
     source = ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    post_author_source = (ORCHESTRATOR_PATH.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
 
-    assert "attach_runtime_trace_export_compatibility_payloads(" in source
+    assert "attach_runtime_trace_export_compatibility_payloads(" in post_author_source
     assert "attach_passive_runtime_projection_traces(" not in source
     assert "build_retrieval_budget_pressure_shadow(" not in source
     assert "build_source_class_recovery_candidate_v2(" not in source

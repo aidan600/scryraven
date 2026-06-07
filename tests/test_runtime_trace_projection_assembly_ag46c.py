@@ -201,6 +201,7 @@ def test_ag46c_runtime_dispatch_surfaces_remain_unchanged(
 
 def test_ag46c_static_pipeline_uses_projection_assembly_boundary() -> None:
     source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    post_author_source = (_PIPELINE_PATH.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     imported: dict[str, set[str]] = {}
     for node in ast.walk(tree):
@@ -209,7 +210,11 @@ def test_ag46c_static_pipeline_uses_projection_assembly_boundary() -> None:
                 alias.name for alias in node.names
             )
 
-    assert "attach_runtime_trace_export_compatibility_payloads" in imported.get(
+    helper_imported: dict[str, set[str]] = {}
+    for node in ast.walk(ast.parse(post_author_source)):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            helper_imported.setdefault(node.module, set()).update(alias.name for alias in node.names)
+    assert "attach_runtime_trace_export_compatibility_payloads" in helper_imported.get(
         "core.runtime_trace_export_attachment",
         set(),
     )

@@ -285,7 +285,7 @@ def test_runtime_adapter_static_protected_import_guard() -> None:
 
 
 def test_pipeline_orchestrator_static_guard_only_tiny_adapter_trace_touch() -> None:
-    tree = ast.parse(PIPELINE.read_text(encoding="utf-8"))
+    tree = ast.parse(PIPELINE.read_text(encoding="utf-8") + (PIPELINE.parent / "post_author_output_projection.py").read_text(encoding="utf-8"))
     helper_tree = ast.parse(LEGACY_REVIEW_STAGE.read_text(encoding="utf-8"))
     imported_names: set[str] = set()
     pipeline_call_names: list[str] = []
