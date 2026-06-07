@@ -142,4 +142,5 @@ def test_pipeline_orchestrator_boundary_guard_untouched() -> None:
             or "session_output_projection" in pipeline_diff
             or "runtime_prompt_assembly" in pipeline_diff
             or "retrieval_dispatch_runtime" in pipeline_diff
+                or "retrieval_stop_trace_projection" in pipeline_diff
         )

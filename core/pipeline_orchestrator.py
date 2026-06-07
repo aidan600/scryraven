@@ -52,7 +52,6 @@ from core.controller_action_envelope import (
     RESOLVE_CONFLICT,
     STOP_INSUFFICIENT_WITH_CAVEAT,
     STOP_SUFFICIENT,
-    ControllerActionAuthority,
 )
 from core.controller_loop_spine import (
     ControllerLoopSpineInput,
@@ -99,7 +98,6 @@ from core.official_source_obligation_bridge import (
 )
 from core.ordinary_continuation_candidate import (
     ORDINARY_CONTINUATION_TRACE_KEY,
-    build_ordinary_continuation_candidate,
     mark_ordinary_continuation_candidate_spine_authorized,
     ordinary_continuation_candidate_defaults,
     source_path_from_runtime_source,
@@ -195,6 +193,15 @@ from core.retrieval_stop_controller import (
     build_retrieval_stop_controller_input,
     decide_retrieval_stop,
 )
+from core.retrieval_stop_trace_projection import (
+    build_ordinary_continuation_trace_projection,
+    build_retrieval_stop_active_stop_budget_exhausted_telemetry,
+    build_retrieval_stop_active_stop_no_queries_telemetry,
+    build_retrieval_stop_shadow_telemetry,
+    build_retrieval_stop_trace_projection,
+    retrieval_stop_active_defaults,
+    retrieval_stop_shadow_defaults,
+)
 from core.review_flags import recent_recurring_kb_hints
 from core.router_query_preparation_contract import (
     build_router_query_preparation_state,
@@ -276,13 +283,6 @@ _scan_author_quant_source_telemetry = (
 
 
 DB_ENABLED = True
-_RETRIEVAL_STOP_SHADOW_MODE = "shadow_only"
-_RETRIEVAL_STOP_ACTIVE_MODE = "active_stop_no_queries"
-_RETRIEVAL_STOP_ACTIVE_BUDGET_EXHAUSTED_MODE = "active_stop_budget_exhausted"
-_RETRIEVAL_STOP_ACTIVE_FINAL_ANSWER_POSTURE = "answer with caveats"
-_RETRIEVAL_STOP_ACTIVE_AG28_CANDIDATE = (
-    "ag28:stop_insufficient_with_caveat:terminal_no_query_or_budget_exhausted"
-)
 _SOURCE_CLASS_RECOVERY_ORDINARY_BLOCK_REASONS = frozenset(
     {
         "blocked_by_currentness_gap",
@@ -311,289 +311,20 @@ def _clean_query(q: str) -> str:
         words = words[:-1]
     return " ".join(words)[:300]
 
-def _retrieval_stop_shadow_defaults() -> dict[str, Any]:
-    return {
-        "retrieval_stop_shadow_available": False,
-        "retrieval_stop_shadow_decision": None,
-        "retrieval_stop_shadow_reason": None,
-        "retrieval_stop_shadow_blockers": [],
-        "retrieval_stop_shadow_next_query_count": 0,
-        "retrieval_stop_shadow_alignment": None,
-        "retrieval_stop_shadow_stage": None,
-        "retrieval_stop_shadow_mode": _RETRIEVAL_STOP_SHADOW_MODE,
-    }
-
-def _retrieval_stop_active_defaults() -> dict[str, Any]:
-    return {
-        "retrieval_stop_active_available": False,
-        "retrieval_stop_active_action_name": None,
-        "retrieval_stop_active_authority": None,
-        "retrieval_stop_active_decision": None,
-        "retrieval_stop_active_reason": None,
-        "retrieval_stop_active_terminal_branch_reason": None,
-        "retrieval_stop_active_blockers": [],
-        "retrieval_stop_active_next_query_count": 0,
-        "retrieval_stop_active_approved_query_count": 0,
-        "retrieval_stop_active_stage": None,
-        "retrieval_stop_active_mode": _RETRIEVAL_STOP_ACTIVE_MODE,
-        "retrieval_stop_active_final_answer_posture": None,
-        "retrieval_stop_active_ag28_candidate": None,
-        "retrieval_stop_active_shadow_alignment": None,
-        "retrieval_stop_active_fallback_reason": None,
-    }
-
-def _compact_shadow_strings(
-    values: list[str] | tuple[str, ...],
-    *,
-    max_items: int = 4,
-    max_len: int = 80,
-) -> list[str]:
-    out: list[str] = []
-    for value in values[:max_items]:
-        text = " ".join(str(value or "").split())[:max_len]
-        if text:
-            out.append(text)
-    return out
-
-def _build_retrieval_stop_shadow_telemetry(
-    *,
-    actual_decision: str,
-    stage: str,
-    evaluator_sufficient: bool | None,
-    iteration: int,
-    max_iterations: int,
-    prior_queries: list[str] | tuple[str, ...] = (),
-    next_queries: list[str] | tuple[str, ...] = (),
-    query_source: str | None = None,
-    weak_corpus_recovery_used: bool = False,
-    weak_corpus_recovery_completed: bool = False,
-    blockers: list[str] | tuple[str, ...] = (),
-) -> dict[str, Any]:
-    telemetry = _retrieval_stop_shadow_defaults()
-    telemetry["retrieval_stop_shadow_stage"] = str(stage or "")[:80] or None
-    try:
-        snapshot = build_retrieval_stop_controller_input(
-            evaluator_sufficient=evaluator_sufficient,
-            iteration=iteration,
-            max_iterations=max_iterations,
-            prior_queries=prior_queries,
-            next_queries=next_queries,
-            query_source=query_source,
-            weak_corpus_recovery_used=weak_corpus_recovery_used,
-            weak_corpus_recovery_completed=weak_corpus_recovery_completed,
-            blockers=blockers,
-        )
-        decision = decide_retrieval_stop(snapshot)
-        decision_value = decision.decision.value
-        telemetry.update(
-            {
-                "retrieval_stop_shadow_available": True,
-                "retrieval_stop_shadow_decision": decision_value,
-                "retrieval_stop_shadow_reason": decision.reason,
-                "retrieval_stop_shadow_blockers": _compact_shadow_strings(
-                    decision.blockers
-                ),
-                "retrieval_stop_shadow_next_query_count": len(
-                    decision.next_queries
-                ),
-                "retrieval_stop_shadow_alignment": (
-                    "aligned" if decision_value == actual_decision else "mismatch"
-                ),
-            }
-        )
-    except Exception:
-        logger.warning("Non-fatal retrieval-stop shadow telemetry omitted.")
-        telemetry.update(
-            {
-                "retrieval_stop_shadow_reason": "shadow_unavailable",
-                "retrieval_stop_shadow_blockers": ["shadow_exception"],
-                "retrieval_stop_shadow_alignment": "unavailable",
-            }
-        )
-    return telemetry
+_retrieval_stop_shadow_defaults = retrieval_stop_shadow_defaults
+_retrieval_stop_active_defaults = retrieval_stop_active_defaults
+_build_retrieval_stop_shadow_telemetry = build_retrieval_stop_shadow_telemetry
+_build_retrieval_stop_active_stop_no_queries_telemetry = (
+    build_retrieval_stop_active_stop_no_queries_telemetry
+)
+_build_retrieval_stop_active_stop_budget_exhausted_telemetry = (
+    build_retrieval_stop_active_stop_budget_exhausted_telemetry
+)
 
 def _decide_retrieval_stop_for_active(
     snapshot: Any,
 ) -> Any:
     return decide_retrieval_stop(snapshot)
-
-def _active_decision_value(decision: Any) -> str | None:
-    value = getattr(getattr(decision, "decision", None), "value", None)
-    if value is None:
-        value = getattr(decision, "decision", None)
-    if not isinstance(value, str):
-        return None
-    text = " ".join(value.split())[:80]
-    return text or None
-
-def _active_decision_reason(decision: Any) -> str | None:
-    value = getattr(decision, "reason", None)
-    if not isinstance(value, str):
-        return None
-    text = " ".join(value.split())[:80]
-    return text or None
-
-def _active_decision_next_query_count(decision: Any) -> int:
-    value = getattr(decision, "next_queries", ())
-    if not isinstance(value, (list, tuple)):
-        return 0
-    return len(value)
-
-def _retrieval_stop_active_shadow_alignment(
-    *,
-    active_decision: str | None,
-    shadow_telemetry: dict[str, Any],
-) -> str:
-    if not active_decision:
-        return "not_evaluated"
-    if shadow_telemetry.get("retrieval_stop_shadow_available") is not True:
-        return "shadow_unavailable"
-    shadow_decision = shadow_telemetry.get("retrieval_stop_shadow_decision")
-    return "aligned" if shadow_decision == active_decision else "mismatch"
-
-def _build_retrieval_stop_active_telemetry(
-    *,
-    stage: str,
-    evaluator_sufficient: bool | None,
-    iteration: int,
-    max_iterations: int,
-    expected_decision: str,
-    active_mode: str,
-    prior_queries: list[str] | tuple[str, ...] = (),
-    next_queries: list[str] | tuple[str, ...] = (),
-    query_source: str | None = None,
-    weak_corpus_recovery_used: bool = False,
-    weak_corpus_recovery_completed: bool = False,
-    shadow_telemetry: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    telemetry = _retrieval_stop_active_defaults()
-    telemetry["retrieval_stop_active_stage"] = str(stage or "")[:80] or None
-    telemetry["retrieval_stop_active_mode"] = str(active_mode or "")[:80] or None
-    shadow = shadow_telemetry if isinstance(shadow_telemetry, dict) else {}
-    try:
-        snapshot = build_retrieval_stop_controller_input(
-            evaluator_sufficient=evaluator_sufficient,
-            iteration=iteration,
-            max_iterations=max_iterations,
-            prior_queries=prior_queries,
-            next_queries=next_queries,
-            query_source=query_source,
-            weak_corpus_recovery_used=weak_corpus_recovery_used,
-            weak_corpus_recovery_completed=weak_corpus_recovery_completed,
-        )
-        decision = _decide_retrieval_stop_for_active(snapshot)
-        decision_value = _active_decision_value(decision)
-        telemetry.update(
-            {
-                "retrieval_stop_active_decision": decision_value,
-                "retrieval_stop_active_reason": _active_decision_reason(decision),
-                "retrieval_stop_active_blockers": _compact_shadow_strings(
-                    getattr(decision, "blockers", ())
-                ),
-                "retrieval_stop_active_next_query_count": (
-                    _active_decision_next_query_count(decision)
-                ),
-                "retrieval_stop_active_shadow_alignment": (
-                    _retrieval_stop_active_shadow_alignment(
-                        active_decision=decision_value,
-                        shadow_telemetry=shadow,
-                    )
-                ),
-            }
-        )
-        if decision_value == expected_decision:
-            telemetry.update(
-                {
-                    "retrieval_stop_active_available": True,
-                    "retrieval_stop_active_action_name": (
-                        STOP_INSUFFICIENT_WITH_CAVEAT
-                    ),
-                    "retrieval_stop_active_authority": (
-                        ControllerActionAuthority.ACTIVE.value
-                    ),
-                    "retrieval_stop_active_terminal_branch_reason": (
-                        _active_decision_reason(decision)
-                    ),
-                    "retrieval_stop_active_final_answer_posture": (
-                        _RETRIEVAL_STOP_ACTIVE_FINAL_ANSWER_POSTURE
-                    ),
-                    "retrieval_stop_active_approved_query_count": 0,
-                    "retrieval_stop_active_ag28_candidate": (
-                        _RETRIEVAL_STOP_ACTIVE_AG28_CANDIDATE
-                    ),
-                }
-            )
-        else:
-            telemetry["retrieval_stop_active_fallback_reason"] = (
-                "unexpected_controller_decision"
-            )
-    except Exception:
-        logger.warning("Non-fatal active retrieval-stop handoff fell back.")
-        telemetry.update(
-            {
-                "retrieval_stop_active_reason": "active_controller_unavailable",
-                "retrieval_stop_active_blockers": ["active_controller_exception"],
-                "retrieval_stop_active_shadow_alignment": "not_evaluated",
-                "retrieval_stop_active_fallback_reason": "controller_exception",
-            }
-        )
-    return telemetry
-
-def _build_retrieval_stop_active_stop_no_queries_telemetry(
-    *,
-    stage: str,
-    evaluator_sufficient: bool | None,
-    iteration: int,
-    max_iterations: int,
-    prior_queries: list[str] | tuple[str, ...] = (),
-    next_queries: list[str] | tuple[str, ...] = (),
-    query_source: str | None = None,
-    weak_corpus_recovery_used: bool = False,
-    weak_corpus_recovery_completed: bool = False,
-    shadow_telemetry: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    return _build_retrieval_stop_active_telemetry(
-        stage=stage,
-        evaluator_sufficient=evaluator_sufficient,
-        iteration=iteration,
-        max_iterations=max_iterations,
-        expected_decision="stop_no_queries",
-        active_mode=_RETRIEVAL_STOP_ACTIVE_MODE,
-        prior_queries=prior_queries,
-        next_queries=next_queries,
-        query_source=query_source,
-        weak_corpus_recovery_used=weak_corpus_recovery_used,
-        weak_corpus_recovery_completed=weak_corpus_recovery_completed,
-        shadow_telemetry=shadow_telemetry,
-    )
-
-def _build_retrieval_stop_active_stop_budget_exhausted_telemetry(
-    *,
-    stage: str,
-    evaluator_sufficient: bool | None,
-    iteration: int,
-    max_iterations: int,
-    prior_queries: list[str] | tuple[str, ...] = (),
-    next_queries: list[str] | tuple[str, ...] = (),
-    query_source: str | None = None,
-    weak_corpus_recovery_used: bool = False,
-    weak_corpus_recovery_completed: bool = False,
-    shadow_telemetry: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    return _build_retrieval_stop_active_telemetry(
-        stage=stage,
-        evaluator_sufficient=evaluator_sufficient,
-        iteration=iteration,
-        max_iterations=max_iterations,
-        expected_decision="stop_budget_exhausted",
-        active_mode=_RETRIEVAL_STOP_ACTIVE_BUDGET_EXHAUSTED_MODE,
-        prior_queries=prior_queries,
-        next_queries=next_queries,
-        query_source=query_source,
-        weak_corpus_recovery_used=weak_corpus_recovery_used,
-        weak_corpus_recovery_completed=weak_corpus_recovery_completed,
-        shadow_telemetry=shadow_telemetry,
-    )
 
 def _social_signal_requested_from_contract(contract: Any) -> bool:
     relevance = getattr(getattr(contract, "social_signal_relevance", None), "value", None)
@@ -766,63 +497,14 @@ def _build_ordinary_continuation_candidate_from_runtime(
     current_iteration: int = 0,
     max_iterations: int = 0,
 ) -> dict[str, Any]:
-    """Attach post-retrieval answer-contract facts to the passive seam."""
-    existing = dict(existing_candidate_trace or {})
-    ordinary_queries = _compact_runtime_strings(
-        existing.get("ordinary_next_queries")
+    return build_ordinary_continuation_trace_projection(
+        existing_candidate_trace=existing_candidate_trace,
+        evidence_state=evidence_state,
+        compact_runtime_strings_fn=_compact_runtime_strings,
+        conflict_resolving_queries=conflict_resolving_queries,
+        current_iteration=current_iteration,
+        max_iterations=max_iterations,
     )
-    if not ordinary_queries:
-        ordinary_queries = _compact_runtime_strings(
-            getattr(evidence_state, "next_queries", ())
-        )
-    prior_queries = _compact_runtime_strings(existing.get("prior_queries"))
-    if not prior_queries:
-        prior_queries = _compact_runtime_strings(
-            getattr(evidence_state, "prior_queries", ())
-        )
-    resolving_queries = _compact_runtime_strings(conflict_resolving_queries)
-    if not resolving_queries:
-        resolving_queries = _compact_runtime_strings(
-            existing.get("conflict_resolving_queries")
-        )
-    if not resolving_queries:
-        resolving_queries = _compact_runtime_strings(
-            getattr(evidence_state, "resolving_queries", ())
-        )
-    source_path = existing.get("source_path") or existing.get("query_provenance")
-    blockers = [
-        blocker
-        for blocker in (existing.get("blockers") or [])
-        if blocker
-        not in {
-            "not_evaluated",
-            "no_ordinary_next_queries",
-            "source_path_not_ordinary_continuation",
-        }
-    ]
-    candidate = build_ordinary_continuation_candidate(
-        source_path=str(source_path) if source_path else None,
-        ordinary_next_queries=ordinary_queries,
-        query_provenance=str(source_path) if source_path else None,
-        prior_queries=prior_queries,
-        prior_query_count=existing.get("prior_query_count"),
-        conflict_resolving_queries=resolving_queries,
-        current_iteration=(
-            int(existing.get("current_iteration") or current_iteration or 0)
-        ),
-        max_iterations=(
-            int(existing.get("max_iterations") or max_iterations or 0)
-        ),
-        next_queries_redundant=(
-            "redundant_with_prior_queries" in set(existing.get("blockers") or [])
-        ),
-        budget_exhausted=(
-            "blocked_by_iteration_budget" in set(existing.get("blockers") or [])
-        ),
-        considered=bool(existing.get("considered") or ordinary_queries),
-        extra_blockers=blockers,
-    )
-    return candidate.to_dict()
 
 def _build_targeted_retrieval_lifecycle_from_runtime(
     *,
@@ -2698,9 +2380,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "retrieval_stop_shadow_available"
         ):
             return
-        decision_value = decision.decision.value
-        retrieval_stop_shadow_telemetry = _build_retrieval_stop_shadow_telemetry(
-            actual_decision=decision_value,
+        projection = build_retrieval_stop_trace_projection(
+            decision=decision,
             stage=stage,
             evaluator_sufficient=evaluator_sufficient,
             iteration=iteration,
@@ -2711,33 +2392,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             weak_corpus_recovery_used=weak_corpus_recovery_used,
             weak_corpus_recovery_completed=weak_corpus_recovery_completed,
             blockers=blockers,
+            build_shadow_telemetry=_build_retrieval_stop_shadow_telemetry,
         )
-        is_continue_retrieval = (
-            decision.decision is RetrievalStopControllerDecision.CONTINUE_RETRIEVAL
-        )
-        ordinary_continuation_candidate_trace = (
-            build_ordinary_continuation_candidate(
-                source_path=source_path_from_runtime_source(query_source),
-                ordinary_next_queries=next_queries,
-                query_provenance=source_path_from_runtime_source(query_source),
-                prior_queries=prior_queries,
-                conflict_resolving_queries=(),
-                current_iteration=iteration,
-                max_iterations=max_iterations,
-                next_queries_redundant=(
-                    (not is_continue_retrieval)
-                    and decision.decision
-                    is RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES
-                ),
-                budget_exhausted=(
-                    (not is_continue_retrieval)
-                    and decision.decision
-                    is RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED
-                ),
-                considered=True,
-                extra_blockers=blockers,
-            ).to_dict()
-        )
+        retrieval_stop_shadow_telemetry = projection[
+            "retrieval_stop_shadow_telemetry"
+        ]
+        ordinary_continuation_candidate_trace = projection[
+            "ordinary_continuation_candidate_trace"
+        ]
 
     def _decide_retrieval_loop_stop_continue(
         *,
