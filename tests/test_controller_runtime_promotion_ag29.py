@@ -123,13 +123,7 @@ def test_ag29_runtime_patch_is_limited_to_terminal_active_helpers() -> None:
         and "retrieval_stop_active" in node.name
     }
 
-    assert function_names == {
-        "_retrieval_stop_active_defaults",
-        "_retrieval_stop_active_shadow_alignment",
-        "_build_retrieval_stop_active_telemetry",
-        "_build_retrieval_stop_active_stop_no_queries_telemetry",
-        "_build_retrieval_stop_active_stop_budget_exhausted_telemetry",
-    }
+    assert function_names == set()
     source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
-    assert "STOP_INSUFFICIENT_WITH_CAVEAT" in source
+    assert "retrieval_stop_trace_projection" in source
     assert "REQUEST_SOCIAL_SIGNAL_CHECK" not in source

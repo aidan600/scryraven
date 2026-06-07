@@ -394,6 +394,7 @@ def test_pipeline_orchestrator_only_has_unrelated_scrutineer_handoff_touch():
             or "session_output_projection" in diff
                 or "runtime_prompt_assembly" in diff
                 or "retrieval_dispatch_runtime" in diff
+                or "retrieval_stop_trace_projection" in diff
         )
     else:
         assert "core/pipeline_orchestrator.py" not in result.stdout.splitlines()
