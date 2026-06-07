@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
+from core import legacy_review_runtime_stage
 from core.analyst_author_handoff_contract import (
     build_analyst_author_handoff_state,
     execute_analyst_author_handoff,
@@ -178,8 +179,6 @@ from core.retrieval_dispatch_runtime import (
     execute_conflict_resolution_from_scope,
     execute_disambiguation_retry_from_scope,
     execute_main_retrieval_pass_from_scope,
-    execute_scrutineer_remediation_from_scope,
-    execute_supplemental_search_from_scope,
     source_class_recovery_context_from_scope,
 )
 from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
@@ -202,9 +201,7 @@ from core.retrieval_stop_controller import (
     build_retrieval_stop_controller_input,
     decide_retrieval_stop,
 )
-from core.review_flags import (
-    recent_recurring_kb_hints,
-)
+from core.review_flags import recent_recurring_kb_hints
 from core.router_query_preparation_contract import (
     build_router_query_preparation_state,
     with_router_query_runtime_posture,
@@ -224,9 +221,6 @@ from core.runtime_prompt_assembly import (
     build_economist_preflight_prompt,
     build_expander_prompt,
     build_image_context,
-    build_scrutineer_prompt,
-    build_scrutineer_remediation_prompt,
-    build_synthesis_evaluator_prompt,
     build_unsupported_retrieval_prompt_fragments,
     evidence_slice_for_analyst,
     select_author_system_prompt,
@@ -235,7 +229,6 @@ from core.runtime_trace_export_attachment import (
     attach_runtime_trace_export_compatibility_payloads,
 )
 from core.scrutineer_remediation_runtime_handoff import (
-    RuntimeRemediationQueryFact,
     RuntimeScrutineerRemediationFacts,
     runtime_scrutineer_remediation_trace_fragment,
 )
@@ -3161,12 +3154,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     is_sufficient = False
     scout_context = None
     suppress_tavily = False
-    synth_was_insufficient = False
-    supplemental_ran = False
-    delta_urls_supplemental = 0
     scrutineer_high_count = 0
     queries_by_iteration: dict[int, list[str]] = {}
-    synth_deficiency: str | None = None
     synthesis_evaluator_supplemental_search_collector = (
         RuntimeSynthesisEvaluatorSupplementalSearchFactCollector()
     )
@@ -5578,16 +5567,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             ] = True
 
     # --- ANALYST ---
-    scrutineer_flags: list[dict[str, Any]] = []
-    scrutineer_remediation_queries: list[RuntimeRemediationQueryFact] = []
-    scrutineer_remediation_dispatch_authorized = False
-    scrutineer_remediation_dispatch_posture = "skipped"
-    scrutineer_remediation_provider_role: str | None = None
-    scrutineer_remediation_providers: list[str] = []
-    scrutineer_remediation_linkup_depth_override: str | None = None
-    scrutineer_remediation_evidence: list[Any] = []
-    scrutineer_remediation_resynthesis_triggered = False
-    scrutineer_pass_flags_directly_to_author = False
     _source_tier_pre_analyst = source_tier_telemetry(all_passages)
     _source_domain_pre_analyst = source_domain_telemetry(
         all_passages,
@@ -5764,348 +5743,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         analyst_seconds += max(0.0, time.monotonic() - _an_t0)
 
     # --- SYNTHESIZER EVALUATOR & SCRUTINEER ---
-    if (
-        complexity in ("medium", "high")
-        and analysis != "DIRECT_TO_AUTHOR"
-        and not post_retrieval_fast_path_used
-        and not economist_output_used_as_analysis
-    ):
-        synthesis_evaluator_supplemental_search_collector.mark_eligible()
-        strong_retrieval = (
-            not corpus_weak
-            and bool(entity_hint_for_retrieval)
-            and (utilization_rate_val is not None)
-            and utilization_rate_val >= synth_skip_utilization_threshold
-        )
-        if strong_retrieval:
-            status.step(
-                "Retrieval already matches the main subject well; "
-                "skipping synthesis completeness re-check and supplemental search."
-            )
-            synthesis_evaluator_supplemental_search_collector.mark_strong_retrieval_skipped()
-            if complexity in ("medium", "high"):
-                first_synth_sufficient = True
-        else:
-            status.step("Checking synthesis completeness...")
-            synth_eval_prompt = build_synthesis_evaluator_prompt(query=query, analysis=analysis)
-            _measure_context_stage(
-                "synth_evaluator",
-                prompt=synth_eval_prompt,
-                system_prompt=DEFAULT_SYSTEM["synth_evaluator"],
-            )
-            _se_t0 = time.monotonic()
-            synth_eval_text = deps.clean_json_response(
-                ask_model(
-                    synth_eval_prompt, DEFAULT_SYSTEM["synth_evaluator"],
-                    provider=fast_provider, model=fast_model, effort="low",
-                    base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=use_reasoning,
-                )
-            )
-            synth_evaluator_seconds += max(0.0, time.monotonic() - _se_t0)
-
-            synth_is_sufficient = True
-            synth_queries: list[str] = []
-            deficiency = "Missing key specifics."
-            try:
-                synth_eval_data = json.loads(synth_eval_text)
-                synth_is_sufficient = synth_eval_data.get("is_sufficient", True)
-                synth_queries = [
-                    str(q)[:300] for q in synth_eval_data.get("supplemental_queries", [])
-                ][:2]
-                deficiency = synth_eval_data.get("deficiency", "Missing key specifics.")
-                if not synth_is_sufficient:
-                    synth_was_insufficient = True
-                    synth_deficiency = str(deficiency) if deficiency is not None else "Missing key specifics."
-            except Exception as e:
-                synthesis_evaluator_supplemental_search_collector.mark_parse_failed(e)
-                run_log.warning("Synth Evaluator JSON parse failed: %s", e)
-            else:
-                synthesis_evaluator_supplemental_search_collector.mark_completeness(
-                    sufficient=bool(synth_is_sufficient),
-                    deficiency_text=synth_deficiency,
-                )
-            if complexity in ("medium", "high"):
-                first_synth_sufficient = bool(synth_is_sufficient)
-
-            if not synth_is_sufficient and synth_queries:
-                synth_queries = query_authority.finalize_supplemental(
-                    synth_queries, max_len=2
-                )
-                synthesis_evaluator_supplemental_search_collector.record_supplemental_queries(
-                    synth_queries
-                )
-                author_notes = (
-                    f"\n\n\u26a0\ufe0f NOTE FOR AUTHOR: Synthesis quality check flagged: '{deficiency}'. "
-                    "Hedge appropriately where data is missing."
-                )
-                synthesis_evaluator_supplemental_search_collector.record_author_hedge_note()
-                status.step(f"Completeness gap detected: {deficiency}. Running supplemental searches...")
-                supp_search_depth = choose_supplemental_search_depth(complexity, search_depth)
-                supp_providers = select_providers(
-                    query_type, intent, complexity, available_keys,
-                    report_type=report_type, is_academic=is_academic,
-                    suppress_tavily=suppress_tavily, override=None,
-                )
-                synthesis_evaluator_supplemental_search_collector.record_dispatch(
-                    providers=supp_providers,
-                    search_depth=supp_search_depth,
-                )
-                supplemental_ran = True
-                supplemental_outcome = execute_supplemental_search_from_scope(
-                    locals(),
-                    queries=synth_queries,
-                    search_depth=supp_search_depth,
-                    providers=supp_providers,
-                )
-                supp_passages = supplemental_outcome.passages
-                delta_urls_supplemental = supplemental_outcome.seen_url_delta
-                synthesis_evaluator_supplemental_search_collector.record_evidence(supp_passages)
-
-                if supp_passages:
-                    all_passages.extend(supp_passages)
-                    final_evidence_bundle = build_final_evidence_bundle(
-                        _final_evidence_bundle_inputs(),
-                        linkup_block=(
-                            linkup_block
-                            if complexity == "high"
-                            and os.getenv("LINKUP_API_KEY")
-                            and linkup_block
-                            else ""
-                        ),
-                    )
-                    final_top_evidence = final_evidence_bundle.final_top_evidence
-                    unique_source_urls = final_evidence_bundle.unique_source_urls
-                    ordered_sources = final_evidence_bundle.ordered_sources
-                    evidence_block = final_evidence_bundle.evidence_block
-                    cached_prefix = final_evidence_bundle.cached_prefix
-                    synthesis_evaluator_supplemental_search_collector.record_final_evidence_rebuild()
-                    status.step("Re-analyzing with supplemental evidence...")
-                    analyst_cached_prefix = _build_analyst_cached_prefix()
-                    _an_t0 = time.monotonic()
-                    _analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort)
-                    _measure_context_stage(
-                        "analyst_supplemental",
-                        prompt=_analyst_prompt,
-                        system_prompt=DEFAULT_SYSTEM["analyst"],
-                        stable_prefix=DEFAULT_SYSTEM["analyst"],
-                        evidence_passages=_evidence_slice_for_analyst(),
-                    )
-                    _record_analyst_model_call(_analyst_prompt)
-                    synthesis_evaluator_supplemental_search_collector.record_analyst_rerun()
-                    analysis = ask_model(
-                        _analyst_prompt,
-                        DEFAULT_SYSTEM["analyst"],
-                        provider=smart_provider, model=smart_model, effort=analyst_effort,
-                        base_url=local_url, api_key=or_api_key, use_reasoning=use_reasoning,
-                    )
-                    analyst_seconds += max(0.0, time.monotonic() - _an_t0)
-                else:
-                    status.step("Supplemental search yielded no new results. Passing gap directly to author.")
-
-        # --- SCRUTINEER (Deep only) ---
-        if complexity == "high":
-            scrutineer_ran = True
-            status.step("Running adversarial review (Scrutineer)...")
-            scrutineer_prompt = build_scrutineer_prompt(
-                intent=intent,
-                default_scrutineer_system=DEFAULT_SYSTEM["scrutineer"],
-                final_top_evidence=final_top_evidence,
-                unique_source_urls=unique_source_urls,
-                analysis=analysis,
-            )
-            flag_limit = scrutineer_prompt.flag_limit
-            scrutineer_sys_prompt = scrutineer_prompt.system_prompt
-            scrutineer_input = scrutineer_prompt.user_prompt
-            _measure_context_stage(
-                "scrutineer",
-                prompt=scrutineer_input,
-                system_prompt=scrutineer_sys_prompt,
-            )
-            _sc_t0 = time.monotonic()
-            scrutineer_text = deps.clean_json_response(
-                ask_model(
-                    scrutineer_input, scrutineer_sys_prompt,
-                    provider=smart_provider, model=smart_model, effort="medium",
-                    base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=False,
-                )
-            )
-            scrutineer_seconds += max(0.0, time.monotonic() - _sc_t0)
-            try:
-                scrutineer_data = json.loads(scrutineer_text)
-                scrutineer_flags = scrutineer_data.get("flags", [])
-                scrutineer_high_count = len(
-                    [f for f in scrutineer_flags if str(f.get("severity", "")).lower() == "high"]
-                )
-                scrutineer_verdict = scrutineer_data.get("verdict", "clean")
-                run_log.info(
-                    "Scrutineer verdict: %s | Flags: %d", scrutineer_verdict, len(scrutineer_flags)
-                )
-
-                HIGH_FLAG_THRESHOLD = 5
-                if scrutineer_flags and len(scrutineer_flags) >= HIGH_FLAG_THRESHOLD:
-                    scrutineer_pass_flags_directly_to_author = True
-                    run_log.warning(
-                        "Scrutineer returned %d flags — evidence base too thin for remediation. "
-                        "Passing flags as author context instead.",
-                        len(scrutineer_flags),
-                    )
-                    status.step(
-                        f"Scrutineer raised {len(scrutineer_flags)} issues. "
-                        "Evidence base too thin for remediation; passing flags directly to author."
-                    )
-                else:
-                    SEARCHABLE = {"SINGLE-SOURCE", "TEMPORAL DRIFT"}
-                    search_flag_pairs = [
-                        (i, f) for i, f in enumerate(scrutineer_flags)
-                        if f.get("severity", "").lower() == "high" and f.get("category") in SEARCHABLE
-                    ]
-                    search_flags = [f for _, f in search_flag_pairs]
-                    search_flag_ids = tuple(
-                        str(f.get("flag_id") or f.get("id") or f"scrutineer-flag-{i + 1}")
-                        for i, f in search_flag_pairs
-                    )
-                    if search_flags:
-                        status.step(
-                            f"Scrutineer raised {len(search_flags)} high-severity issue(s). "
-                            "Generating remediation queries..."
-                        )
-                        remed_prompt = build_scrutineer_remediation_prompt(
-                            current_date=current_date,
-                            core_topic=core_topic,
-                            past_searches=past_searches,
-                            search_flags=search_flags,
-                        )
-                        _measure_context_stage(
-                            "scrutineer_remediation_researcher",
-                            prompt=remed_prompt,
-                            system_prompt=DEFAULT_SYSTEM["researcher"],
-                        )
-                        _rem_t0 = time.monotonic()
-                        remed_raw = deps.clean_json_response(
-                            ask_model(
-                                remed_prompt, DEFAULT_SYSTEM["researcher"],
-                                provider=fast_provider, model=fast_model, effort="low",
-                                base_url=local_url, api_key=or_api_key,
-                                require_json=True, use_reasoning=use_reasoning,
-                            )
-                        )
-                        scrutineer_seconds += max(0.0, time.monotonic() - _rem_t0)
-                        remed_queries: list[str] = []
-                        try:
-                            remed_queries = [
-                                str(q)[:300] for q in json.loads(remed_raw).get("queries", [])
-                            ][:2]
-                        except Exception as e:
-                            run_log.warning("Remediation query parse failed: %s", e)
-
-                        if remed_queries:
-                            novel_queries = []
-                            raw_query_novelty: dict[str, bool] = {}
-                            for rq in remed_queries:
-                                is_novel = True
-                                rq_tokens = set(rq.lower().split())
-                                for pq in past_searches:
-                                    pq_tokens = set(pq.lower().split())
-                                    if not rq_tokens or not pq_tokens:
-                                        continue
-                                    overlap = len(rq_tokens & pq_tokens) / max(len(rq_tokens), 1)
-                                    if overlap > 0.6:
-                                        is_novel = False
-                                        break
-                                raw_query_novelty[rq] = is_novel
-                                if is_novel:
-                                    novel_queries.append(rq)
-
-                            novel_queries = query_authority.finalize_remediation(
-                                novel_queries, max_len=2
-                            )
-
-                            admitted_query_set = set(novel_queries)
-                            for _rq_index, _rq in enumerate(remed_queries):
-                                _is_novel = raw_query_novelty.get(_rq, False)
-                                scrutineer_remediation_queries.append(
-                                    RuntimeRemediationQueryFact(
-                                        query_id=f"scrutineer-remediation-query-{len(scrutineer_remediation_queries) + 1}",
-                                        query_text=_rq,
-                                        source_flag_ids=search_flag_ids,
-                                        filter_posture=(
-                                            "admitted"
-                                            if _rq in admitted_query_set
-                                            else ("rejected_not_novel" if _is_novel else "rejected_duplicate")
-                                        ),
-                                        rejection_reason=(
-                                            None
-                                            if _rq in admitted_query_set
-                                            else ("final_query_filter" if _is_novel else "overlap_gt_0_6")
-                                        ),
-                                    )
-                                )
-
-                            if not novel_queries:
-                                run_log.info(
-                                    "Scrutineer remediation: all generated queries too similar to prior searches. Skipping."
-                                )
-                                status.step("Remediation searches skipped (duplicate queries).")
-                            else:
-                                status.step(f"Remediation searches: {novel_queries}")
-                                scrutineer_remediation_dispatch_authorized = True
-                                scrutineer_remediation_dispatch_posture = "authorized"
-                                scrutineer_remediation_provider_role = "scrutineer_remediation"
-                                scrutineer_remediation_linkup_depth_override = "deep"
-                                remed_providers = select_providers(
-                                    query_type, intent, complexity, available_keys,
-                                    report_type=report_type, is_academic=is_academic,
-                                    suppress_tavily=suppress_tavily, override=None,
-                                )
-                                remediation_outcome = execute_scrutineer_remediation_from_scope(
-                                    locals(),
-                                    queries=novel_queries,
-                                    providers=remed_providers,
-                                )
-                                remed_passages = remediation_outcome.passages
-                                if remed_passages:
-                                    scrutineer_remediation_dispatch_posture = "completed"
-                                    scrutineer_remediation_evidence = list(remed_passages)
-                                    all_passages.extend(remed_passages)
-                                    final_evidence_bundle = build_final_evidence_bundle(
-                                        _final_evidence_bundle_inputs(),
-                                        linkup_block=(
-                                            linkup_block
-                                            if complexity == "high"
-                                            and os.getenv("LINKUP_API_KEY")
-                                            and linkup_block
-                                            else ""
-                                        ),
-                                    )
-                                    final_top_evidence = final_evidence_bundle.final_top_evidence
-                                    unique_source_urls = final_evidence_bundle.unique_source_urls
-                                    ordered_sources = final_evidence_bundle.ordered_sources
-                                    evidence_block = final_evidence_bundle.evidence_block
-                                    cached_prefix = final_evidence_bundle.cached_prefix
-                                    status.step("Re-synthesizing with remediation evidence...")
-                                    scrutineer_remediation_resynthesis_triggered = True
-                                    analyst_cached_prefix = _build_analyst_cached_prefix()
-                                    _an_t0 = time.monotonic()
-                                    _remed_analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort)
-                                    _measure_context_stage(
-                                        "analyst_scrutineer_remediation",
-                                        prompt=_remed_analyst_prompt,
-                                        system_prompt=DEFAULT_SYSTEM["analyst"],
-                                        stable_prefix=DEFAULT_SYSTEM["analyst"],
-                                        evidence_passages=_evidence_slice_for_analyst(),
-                                    )
-                                    analysis = ask_model(
-                                        _remed_analyst_prompt,
-                                        DEFAULT_SYSTEM["analyst"],
-                                        provider=smart_provider, model=smart_model, effort=analyst_effort,
-                                        base_url=local_url, api_key=or_api_key, use_reasoning=use_reasoning,
-                                    )
-                                    analyst_seconds += max(0.0, time.monotonic() - _an_t0)
-                                else:
-                                    status.step("Remediation search yielded no new results.")
-            except Exception as e:
-                run_log.warning("Scrutineer JSON parse failed: %s", e)
-                scrutineer_flags = []
+    legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(locals(), deps=legacy_review_runtime_stage.LegacyReviewRuntimeDeps(ask_model=ask_model, clean_json_response=deps.clean_json_response, measure_context_stage=_measure_context_stage, record_analyst_model_call=_record_analyst_model_call, build_final_evidence_bundle=build_final_evidence_bundle, final_evidence_bundle_inputs=_final_evidence_bundle_inputs, build_analyst_cached_prefix=_build_analyst_cached_prefix, evidence_slice_for_analyst=_evidence_slice_for_analyst, select_providers=select_providers, choose_supplemental_search_depth=choose_supplemental_search_depth), default_system=DEFAULT_SYSTEM)
+    analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency, supplemental_ran, delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds, scrutineer_ran, scrutineer_seconds, scrutineer_flags, scrutineer_high_count, scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role, scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override, scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls = legacy_review_outcome.orchestrator_values()
+    if legacy_review_outcome.ordered_sources is not None:
+        ordered_sources = legacy_review_outcome.ordered_sources
+    if legacy_review_outcome.evidence_block is not None:
+        evidence_block = legacy_review_outcome.evidence_block
+    if legacy_review_outcome.cached_prefix is not None:
+        cached_prefix = legacy_review_outcome.cached_prefix
 
     # ------------------------------------------------------------------
     # Build author prompt and generate final report

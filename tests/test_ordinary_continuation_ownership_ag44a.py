@@ -177,7 +177,8 @@ ORDINARY_CONTINUATION_OWNERSHIP_MAP = (
 
 
 def _pipeline_source() -> str:
-    return _PIPELINE_PATH.read_text(encoding="utf-8")
+    legacy_stage = _ROOT / "core" / "legacy_review_runtime_stage.py"
+    return _PIPELINE_PATH.read_text(encoding="utf-8") + "\n" + legacy_stage.read_text(encoding="utf-8")
 
 
 def _provider_roles(harness: Any) -> list[str | None]:
