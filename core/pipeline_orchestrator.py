@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
-from core import legacy_review_runtime_stage
+from core import analyst_runtime_stage, legacy_review_runtime_stage
 from core.analyst_author_handoff_contract import (
     build_analyst_author_handoff_state,
     execute_analyst_author_handoff,
@@ -75,7 +75,6 @@ from core.corpus_state import (
 from core.cost_accounting import CostAccumulator
 from core.economist_handoff_contract import (
     build_economist_handoff_state,
-    execute_economist_handoff,
 )
 from core.entity_extraction import fallback_entities_from_query
 from core.evidence_integration_checkpoint import (
@@ -216,12 +215,10 @@ from core.run_logging import (
 )
 from core.runtime_prompt_assembly import (
     build_analyst_cached_prefix_from_scope,
-    build_analyst_prompt,
     build_author_prompt_from_scope,
     build_economist_preflight_prompt,
     build_expander_prompt,
     build_image_context,
-    build_unsupported_retrieval_prompt_fragments,
     evidence_slice_for_analyst,
     select_author_system_prompt,
 )
@@ -272,7 +269,6 @@ from core.weak_corpus_controller import (
 )
 from core.weak_failure_gate_contract import (
     WEAK_FAILURE_GATE_TRACE_KEY,
-    build_analyst_gate_descriptor,
     build_weak_failure_gate_state,
     execute_weak_failure_gate_handoff,
 )
@@ -1465,218 +1461,21 @@ def _weak_corpus_recovery_seed_queries(
             out.append(q2)
     return out[:4]
 
-GENERIC_NEWS_DOMAINS = frozenset(
-    {
-        "abcnews.go.com",
-        "apnews.com",
-        "axios.com",
-        "bbc.com",
-        "bbc.co.uk",
-        "cbsnews.com",
-        "cnn.com",
-        "forbes.com",
-        "foxnews.com",
-        "msnbc.com",
-        "nbcnews.com",
-        "newsweek.com",
-        "nytimes.com",
-        "reuters.com",
-        "theguardian.com",
-        "usatoday.com",
-        "washingtonpost.com",
-        "yahoo.com",
-    }
+GENERIC_NEWS_DOMAINS = analyst_runtime_stage.GENERIC_NEWS_DOMAINS
+_query_expects_official_evidence = analyst_runtime_stage.query_expects_official_evidence
+_query_expects_community_evidence = analyst_runtime_stage.query_expects_community_evidence
+_query_requires_clinical_trial_comparative_caution = (
+    analyst_runtime_stage.query_requires_clinical_trial_comparative_caution
 )
-
-
-def _query_expects_official_evidence(query: str, report_type: str, query_type: str) -> bool:
-    text = f"{query} {report_type} {query_type}".casefold()
-    primary_source_request = bool(
-        re.search(
-            r"\bprimary[-\s]+"
-            r"(?:sources?|documents?|evidence|records?|materials?)\b",
-            text,
-        )
-    )
-    official_source_request = bool(
-        re.search(
-            r"\b(?:company|corporate|issuer|reported\s+company)[-\s]+"
-            r"(?:filings?|materials?|reports?|records?)\b",
-            text,
-        )
-        or re.search(r"\beligibility[-\s]+requirements?\b", text)
-    )
-    if primary_source_request or official_source_request:
-        return True
-
-    return bool(
-        re.search(
-            r"\b("
-            r"official|patch\s*notes?|release\s*notes?|changelog|pricing|prices?|"
-            r"policy|policies|terms|rate\s*card|fees?|tariffs?|developer|dev\s*notes?|"
-            r"filings?|regulatory|sec|announcement|roadmap"
-            r")\b",
-            text,
-        )
-    )
-
-
-def _query_expects_community_evidence(query: str, report_type: str, query_type: str) -> bool:
-    text = f"{query} {report_type} {query_type}".casefold()
-    return bool(
-        re.search(
-            r"\b("
-            r"community|forum|forums|reddit|users?|players?|reviews?|discussion|"
-            r"github|gitlab|stackoverflow|stack\s*overflow|issues?|pull\s*requests?|discord"
-            r")\b",
-            text,
-        )
-    )
 
 
 def _nutrition_macro_per_unit_lookup(query: str) -> bool:
     return bool(detect_nutrition_lookup_telemetry(query)["nutrition_lookup_detected"])
 
 
-def _pre_analyst_retrieval_gate(
-    *,
-    query: str,
-    report_type: str,
-    query_type: str,
-    corpus_state: str,
-    corpus_weak: bool,
-    failure_card_show: bool,
-    utilization_rate_val: float | None,
-    utilization_threshold: float,
-    source_tier_counts: dict[str, int],
-    source_domain_counts: dict[str, int],
-    top_source_domains: list[dict[str, Any]],
-    on_domain_source_count: int,
-    official_evidence_found: bool,
-    community_signal_found: bool,
-) -> dict[str, Any]:
-    """Decide whether post-retrieval evidence is too weak for Analyst spend."""
-    signals: list[str] = []
-    total_sources = max(0, sum(int(v or 0) for v in source_domain_counts.values()))
-    total_tiered = max(0, sum(int(v or 0) for v in source_tier_counts.values()))
-    unknown_count = int(source_tier_counts.get("unknown", 0) or 0)
-    unknown_ratio = (unknown_count / max(1, total_tiered)) if total_tiered else 0.0
-    generic_news_count = sum(
-        int(count or 0)
-        for domain, count in source_domain_counts.items()
-        if str(domain).lower() in GENERIC_NEWS_DOMAINS
-    )
-    generic_news_ratio = (generic_news_count / max(1, total_sources)) if total_sources else 0.0
-    top_domain = ""
-    top_count = 0
-    if top_source_domains:
-        top_domain = str(top_source_domains[0].get("domain") or "").lower()
-        top_count = int(top_source_domains[0].get("count") or 0)
-    top_generic_dominates = (
-        top_domain in GENERIC_NEWS_DOMAINS
-        and total_sources > 0
-        and (top_count / max(1, total_sources)) >= 0.5
-    )
-    generic_news_dominated = generic_news_ratio >= 0.6 or top_generic_dominates
-    mostly_unknown_sources = total_tiered > 0 and unknown_ratio >= 0.8
-    all_unknown_sources = total_tiered > 0 and unknown_count == total_tiered
-    expected_official = _query_expects_official_evidence(query, report_type, query_type)
-    expected_community = _query_expects_community_evidence(query, report_type, query_type)
-    low_utilization = (
-        utilization_rate_val is not None
-        and float(utilization_rate_val) <= max(float(utilization_threshold) + 0.10, 0.35)
-    )
-    no_domain_relevant_source = total_sources > 0 and int(on_domain_source_count or 0) <= 0
+_pre_analyst_retrieval_gate = analyst_runtime_stage.pre_analyst_retrieval_gate
+_post_economist_analyst_gate = analyst_runtime_stage.post_economist_analyst_gate
 
-    if generic_news_dominated:
-        signals.append("generic_news_dominated")
-    if mostly_unknown_sources:
-        signals.append("mostly_unknown_sources")
-    if all_unknown_sources:
-        signals.append("all_unknown_sources")
-    if expected_official and not official_evidence_found:
-        signals.append("missing_expected_official_evidence")
-    if expected_community and not community_signal_found:
-        signals.append("missing_expected_community_signal")
-    if low_utilization:
-        signals.append("low_utilization_near_threshold")
-    if no_domain_relevant_source:
-        signals.append("no_domain_relevant_source")
-
-    reason: str | None = None
-    if corpus_state == CorpusState.OFF_TOPIC.value:
-        reason = "corpus_off_topic"
-    elif corpus_weak:
-        reason = "corpus_weak"
-    elif failure_card_show:
-        reason = "failure_card_shown"
-    elif (
-        "missing_expected_official_evidence" in signals
-        and mostly_unknown_sources
-        and (generic_news_dominated or no_domain_relevant_source or low_utilization)
-    ):
-        reason = "missing_expected_official_evidence"
-    elif mostly_unknown_sources and low_utilization and (generic_news_dominated or no_domain_relevant_source):
-        reason = "low_utilization_unknown_sources"
-    elif generic_news_dominated and no_domain_relevant_source and len(signals) >= 3:
-        reason = "unsupported_off_domain_retrieval"
-
-    return {
-        "analyst_skipped": bool(reason),
-        "analyst_skip_reason": reason,
-        "post_retrieval_fast_path_used": bool(reason),
-        "pre_analyst_gate_signals": signals,
-    }
-
-
-def _post_economist_analyst_gate(
-    *,
-    query: str,
-    report_type: str,
-    complexity: str,
-    economist_ran: bool,
-    economist_block: str,
-    corpus_state: str,
-    corpus_weak: bool,
-    failure_card_show: bool,
-    pre_analyst_gate_skipped: bool,
-    economist_schema_valid: bool = False,
-) -> dict[str, Any]:
-    """Telemetry-only reason labels for the disabled post-Economist skip path.
-
-    Policy: Economist output must not skip Analyst and must not become Author-facing
-    analysis directly. The returned skip/use flags therefore remain hard-disabled;
-    only the reason string is retained for historical diagnostics and calibration.
-    """
-    normalized_report_type = str(report_type or "").strip().lower()
-    normalized_complexity = str(complexity or "").strip().lower()
-    block = str(economist_block or "").strip()
-    if normalized_report_type not in {"quantitative_comparison", "benchmark"}:
-        reason = "report_type_not_bounded_quant"
-    elif economist_schema_valid:
-        reason = "economist_shadow_mode_no_framework"
-    elif not economist_ran or not block:
-        reason = "economist_empty_or_failed"
-    elif corpus_state == CorpusState.OFF_TOPIC.value:
-        reason = "corpus_off_topic"
-    elif corpus_weak:
-        reason = "corpus_weak"
-    elif failure_card_show:
-        reason = "failure_card_shown"
-    elif pre_analyst_gate_skipped:
-        reason = "pre_analyst_gate_skipped"
-    elif normalized_complexity == "high":
-        reason = "deep_mode_requires_scrutineer_path"
-    elif _query_requires_clinical_trial_comparative_caution(query):
-        reason = "clinical_randomized_trial_comparative_effect_guardrail"
-    else:
-        reason = "economist_shadow_mode_no_framework"
-
-    return {
-        "analyst_skipped_after_economist": False,
-        "analyst_after_economist_skip_reason": reason,
-        "economist_output_used_as_analysis": False,
-    }
 
 
 ANALYST_QUANT_PACKET_STRING_LIMIT = 200
@@ -2414,13 +2213,6 @@ def _format_analyst_quant_packet_section(
     )
     return section, handoff
 
-
-def _query_requires_clinical_trial_comparative_caution(query: str) -> bool:
-    text = str(query or "").casefold()
-    clinical_context = bool(re.search(r"\b(clinical|patients?|treatments?|therap(?:y|ies))\b", text))
-    randomized_trial = bool(re.search(r"\b(rct|randomi[sz]ed|randomi[sz]ed controlled trial)\b", text))
-    comparative_effect = bool(re.search(r"\b(vs\.?|versus|compare[sd]?|comparative|effect|efficacy)\b", text))
-    return clinical_context and randomized_trial and comparative_effect
 
 
 def _pipeline_timing_payload(
@@ -5556,191 +5348,54 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     analyst_cached_prefix = _build_analyst_cached_prefix()
 
-    def _record_analyst_model_call(prompt: str) -> None:
-        analyst_quant_packet_handoff_telemetry["analyst_model_called"] = True
-        if (
-            analyst_quant_packet_handoff_telemetry.get("analyst_quant_packet_injected") is True
-            and "QUANTITATIVE PACKET FOR ANALYST REVIEW ONLY" in str(prompt or "")
-        ):
-            analyst_quant_packet_handoff_telemetry[
-                "analyst_quant_packet_reviewed_by_model"
-            ] = True
+    _record_analyst_model_call = analyst_runtime_stage.build_analyst_model_call_recorder(
+        analyst_quant_packet_handoff_telemetry
+    )
 
     # --- ANALYST ---
-    _source_tier_pre_analyst = source_tier_telemetry(all_passages)
-    _source_domain_pre_analyst = source_domain_telemetry(
-        all_passages,
-        domain_anchor=primary_entity or core_topic,
+    # AG-90F extracted seam preserves the former local operation order:
+    # post_economist_gate = _post_economist_analyst_gate
+    # economist_handoff_state = build_economist_handoff_state
+    # economist_handoff = execute_economist_handoff
+    # pre_analyst_gate_contract = build_analyst_gate_descriptor
+    # analyst_skipped = bool(pre_analyst_gate_handoff
+    # build_unsupported_retrieval_prompt_fragments
+    analyst_runtime_deps = analyst_runtime_stage.AnalystRuntimeDeps(
+        ask_model=ask_model,
+        measure_context_stage=_measure_context_stage,
+        record_analyst_model_call=_record_analyst_model_call,
+        evidence_slice_for_analyst=_evidence_slice_for_analyst,
+        pre_analyst_retrieval_gate=_pre_analyst_retrieval_gate,
+        post_economist_analyst_gate=_post_economist_analyst_gate,
     )
-    _pre_gate_total_chunks = max(0, int(total_chunks_embedded))
-    _pre_gate_utilization = float(utilization_rate_val or 0.0)
-    _pre_gate_chunks_with_entity = (
-        min(
-            _pre_gate_total_chunks,
-            max(0, int(round(_pre_gate_utilization * max(1, _pre_gate_total_chunks)))),
+    analyst_runtime_outcome = (
+        analyst_runtime_stage.execute_analyst_runtime_stage_from_scope(
+            locals(), deps=analyst_runtime_deps
         )
-        if _pre_gate_total_chunks
-        else 0
     )
-    _pre_gate_failure_card_show = failure_card_should_show(
-        corpus_state=corpus_state,
-        retrieval_retry_used=retrieval_retry_used,
-        empty_entity=empty_entity_flag,
-        scrutineer_high_count=0,
-        useful_content=True,
-    )
-    _pre_gate_failure_card_reason = failure_card_reason(
-        corpus_state=corpus_state,
-        retrieval_retry_used=retrieval_retry_used,
-        empty_entity=empty_entity_flag,
-        scrutineer_high_count=0,
-        useful_content=True,
-        chunks_with_entity=_pre_gate_chunks_with_entity,
-        total_chunks_embedded=_pre_gate_total_chunks,
-    )
-    pre_analyst_gate = _pre_analyst_retrieval_gate(
-        query=query,
-        report_type=report_type,
-        query_type=query_type,
-        corpus_state=corpus_state,
-        corpus_weak=corpus_weak,
-        failure_card_show=_pre_gate_failure_card_show,
-        utilization_rate_val=utilization_rate_val,
-        utilization_threshold=utilization_threshold,
-        source_tier_counts=_source_tier_pre_analyst["source_tier_counts"],
-        source_domain_counts=_source_domain_pre_analyst["source_domain_counts"],
-        top_source_domains=_source_domain_pre_analyst["top_source_domains"],
-        on_domain_source_count=_source_domain_pre_analyst["on_domain_source_count"],
-        official_evidence_found=_source_tier_pre_analyst["official_evidence_found"],
-        community_signal_found=_source_tier_pre_analyst["community_signal_found"],
-    )
-    post_economist_gate = _post_economist_analyst_gate(
-        query=query,
-        report_type=report_type,
-        complexity=complexity,
-        economist_ran=economist_ran,
-        economist_block="",
-        economist_schema_valid=bool(economist_safety_telemetry.get("economist_schema_valid")),
-        corpus_state=corpus_state,
-        corpus_weak=corpus_weak,
-        failure_card_show=_pre_gate_failure_card_show,
-        pre_analyst_gate_skipped=bool(pre_analyst_gate["analyst_skipped"]),
-    )
-    analyst_skipped_after_economist = bool(
-        post_economist_gate["analyst_skipped_after_economist"]
-    )
-    analyst_after_economist_skip_reason = post_economist_gate[
-        "analyst_after_economist_skip_reason"
-    ]
-    economist_output_used_as_analysis = bool(
-        post_economist_gate["economist_output_used_as_analysis"]
-    )
-    economist_handoff_state = build_economist_handoff_state(
-        run_id=run_id,
-        need_economist=need_economist,
-        economist_ran=economist_ran,
-        economist_preflight_allowed=economist_preflight_allowed,
-        economist_preflight_block_reason=economist_preflight_block_reason,
-        economist_preflight_missing_entities=economist_preflight_missing_entities,
-        economist_safety_telemetry=economist_safety_telemetry,
-        economist_pre_analyst_skip_candidate_telemetry=(
-            economist_pre_analyst_skip_candidate_telemetry
-        ),
-        analyst_quant_packet_handoff_telemetry=analyst_quant_packet_handoff_telemetry,
-        author_quant_source_telemetry=author_quant_source_telemetry,
-        analyst_skipped_after_economist=analyst_skipped_after_economist,
-        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
-        economist_output_used_as_analysis=economist_output_used_as_analysis,
-        estimate_from_priors_requested=estimate_from_priors_requested,
-        estimate_from_priors_blocked_by_pre_analyst_gate=(
-            estimate_from_priors_blocked_by_pre_analyst_gate
-        ),
-        answer_contract_ref=None,
-    )
-    economist_handoff = execute_economist_handoff(economist_handoff_state)
-    economist_ran = economist_handoff.economist_ran
-    economist_preflight_allowed = economist_handoff.economist_preflight_allowed
-    economist_preflight_block_reason = economist_handoff.economist_preflight_block_reason
-    economist_preflight_missing_entities = list(
-        economist_handoff.economist_preflight_missing_entities
-    )
-    analyst_skipped_after_economist = economist_handoff.analyst_skipped_after_economist
-    analyst_after_economist_skip_reason = (
-        economist_handoff.analyst_after_economist_skip_reason
-    )
-    economist_output_used_as_analysis = economist_handoff.economist_output_used_as_analysis
-    pre_analyst_gate_contract = build_analyst_gate_descriptor(
-        pre_analyst_gate=pre_analyst_gate,
-        post_economist_gate=post_economist_gate,
-    )
-    pre_analyst_gate_handoff = pre_analyst_gate_contract.to_trace()
-    analyst_skipped = bool(pre_analyst_gate_handoff["analyst_skipped"])
-    analyst_skip_reason = pre_analyst_gate_handoff["analyst_skip_reason"]
-    post_retrieval_fast_path_used = bool(
-        pre_analyst_gate_handoff["post_retrieval_fast_path_used"]
-    )
-    pre_analyst_gate_signals = list(
-        pre_analyst_gate_handoff["pre_analyst_gate_signals"]
-    )
-    estimate_from_priors_blocked_by_pre_analyst_gate = bool(
-        estimate_from_priors_requested
-        and analyst_skipped
-        and post_retrieval_fast_path_used
-        and analyst_skip_reason == "corpus_weak"
-    )
-    # These post-Economist fields are telemetry tripwires only. Analyst skip is
-    # disabled by policy; Economist output is never used as direct analysis.
-
-    if analyst_skipped:
-        status.step("Retrieval quality gate skipped Analyst; sending unsupported-evidence directive to Author.")
-        unsupported_retrieval_prompt = build_unsupported_retrieval_prompt_fragments(analyst_skip_reason=analyst_skip_reason, pre_analyst_gate_signals=pre_analyst_gate_signals, pre_gate_failure_card_reason=_pre_gate_failure_card_reason)
-        analysis = unsupported_retrieval_prompt.analysis
-        author_notes += unsupported_retrieval_prompt.author_note_append
-    elif complexity == "low":
-        status.step("Skipping deep analysis (Fast mode)...")
-        analysis = "DIRECT_TO_AUTHOR"
-    elif corpus_weak and complexity in ("medium", "high"):
-        if corpus_state == CorpusState.ESTIMATE_FROM_PRIORS.value:
-            status.step("Thin corpus vs anchors \u2014 running analyst pass with estimation framing\u2026")
-            _an_t0 = time.monotonic()
-            _analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort, estimate_from_priors=True)
-            _measure_context_stage(
-                "analyst_estimate_from_priors",
-                prompt=_analyst_prompt,
-                system_prompt=DEFAULT_SYSTEM["analyst_estimate_from_priors"],
-                stable_prefix=DEFAULT_SYSTEM["analyst_estimate_from_priors"],
-                evidence_passages=_evidence_slice_for_analyst(),
-            )
-            _record_analyst_model_call(_analyst_prompt)
-            analysis = ask_model(
-                _analyst_prompt,
-                DEFAULT_SYSTEM["analyst_estimate_from_priors"],
-                provider=smart_provider, model=smart_model, effort=analyst_effort,
-                base_url=local_url, api_key=or_api_key, use_reasoning=use_reasoning,
-            )
-            analyst_seconds += max(0.0, time.monotonic() - _an_t0)
-        else:
-            status.step("Source match is low for the main subject; keeping the answer short.")
-            analysis = "DIRECT_TO_AUTHOR"
-    else:
-        status.step(f"Analyzing and compressing evidence (Effort: {analyst_effort})...")
-        _an_t0 = time.monotonic()
-        _analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=intent, analyst_effort=analyst_effort)
-        _measure_context_stage(
-            "analyst",
-            prompt=_analyst_prompt,
-            system_prompt=DEFAULT_SYSTEM["analyst"],
-            stable_prefix=DEFAULT_SYSTEM["analyst"],
-            evidence_passages=_evidence_slice_for_analyst(),
-        )
-        _record_analyst_model_call(_analyst_prompt)
-        analysis = ask_model(
-            _analyst_prompt,
-            DEFAULT_SYSTEM["analyst"],
-            provider=smart_provider, model=smart_model, effort=analyst_effort,
-            base_url=local_url, api_key=or_api_key, use_reasoning=use_reasoning,
-        )
-        analyst_seconds += max(0.0, time.monotonic() - _an_t0)
+    (
+        analysis,
+        author_notes,
+        analyst_seconds,
+        pre_analyst_gate,
+        post_economist_gate,
+        _pre_gate_failure_card_show,
+        _pre_gate_failure_card_reason,
+        pre_analyst_gate_contract,
+        pre_analyst_gate_handoff,
+        analyst_skipped,
+        analyst_skip_reason,
+        post_retrieval_fast_path_used,
+        pre_analyst_gate_signals,
+        estimate_from_priors_blocked_by_pre_analyst_gate,
+        economist_ran,
+        economist_preflight_allowed,
+        economist_preflight_block_reason,
+        economist_preflight_missing_entities,
+        analyst_skipped_after_economist,
+        analyst_after_economist_skip_reason,
+        economist_output_used_as_analysis,
+    ) = analyst_runtime_outcome.orchestrator_values()
 
     # --- SYNTHESIZER EVALUATOR & SCRUTINEER ---
     # Keep runtime_prompt_assembly/retrieval_dispatch_runtime call shapes inside the extracted helper.
