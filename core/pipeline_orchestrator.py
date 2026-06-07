@@ -5743,7 +5743,22 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         analyst_seconds += max(0.0, time.monotonic() - _an_t0)
 
     # --- SYNTHESIZER EVALUATOR & SCRUTINEER ---
-    legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(locals(), deps=legacy_review_runtime_stage.LegacyReviewRuntimeDeps(ask_model=ask_model, clean_json_response=deps.clean_json_response, measure_context_stage=_measure_context_stage, record_analyst_model_call=_record_analyst_model_call, build_final_evidence_bundle=build_final_evidence_bundle, final_evidence_bundle_inputs=_final_evidence_bundle_inputs, build_analyst_cached_prefix=_build_analyst_cached_prefix, evidence_slice_for_analyst=_evidence_slice_for_analyst, select_providers=select_providers, choose_supplemental_search_depth=choose_supplemental_search_depth), default_system=DEFAULT_SYSTEM)
+    # Keep runtime_prompt_assembly/retrieval_dispatch_runtime call shapes inside the extracted helper.
+    legacy_review_deps = legacy_review_runtime_stage.LegacyReviewRuntimeDeps(
+        ask_model=ask_model,
+        clean_json_response=deps.clean_json_response,
+        measure_context_stage=_measure_context_stage,
+        record_analyst_model_call=_record_analyst_model_call,
+        build_final_evidence_bundle=build_final_evidence_bundle,
+        final_evidence_bundle_inputs=_final_evidence_bundle_inputs,
+        build_analyst_cached_prefix=_build_analyst_cached_prefix,
+        evidence_slice_for_analyst=_evidence_slice_for_analyst,
+        select_providers=select_providers,
+        choose_supplemental_search_depth=choose_supplemental_search_depth,
+    )
+    legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(
+        locals(), deps=legacy_review_deps, default_system=DEFAULT_SYSTEM
+    )
     analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency, supplemental_ran, delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds, scrutineer_ran, scrutineer_seconds, scrutineer_flags, scrutineer_high_count, scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role, scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override, scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls = legacy_review_outcome.orchestrator_values()
     if legacy_review_outcome.ordered_sources is not None:
         ordered_sources = legacy_review_outcome.ordered_sources

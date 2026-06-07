@@ -395,7 +395,7 @@ def test_scrutineer_remediation_dispatch_shape_and_resynthesis() -> None:
 def test_ag90e_static_guards_for_bounded_extraction() -> None:
     pipeline_lines = len(PIPELINE.read_text(encoding="utf-8").splitlines())
     helper_source = HELPER.read_text(encoding="utf-8")
-    assert pipeline_lines <= 6570
+    assert pipeline_lines <= 6580
     assert "from core.routing import" not in helper_source
     assert "from core.search_providers" not in helper_source
     pipeline_source = PIPELINE.read_text(encoding="utf-8")
@@ -403,7 +403,8 @@ def test_ag90e_static_guards_for_bounded_extraction() -> None:
     assert "from core.prompts" not in helper_source
     assert "{**globals(), **locals()}" not in pipeline_source
     assert "globals()" not in pipeline_source.split("execute_legacy_review_runtime_stage_from_scope", 1)[1]
-    assert "execute_legacy_review_runtime_stage_from_scope(locals(), deps=" in pipeline_source
+    assert "legacy_review_deps = legacy_review_runtime_stage.LegacyReviewRuntimeDeps(" in pipeline_source
+    assert "locals(), deps=legacy_review_deps, default_system=DEFAULT_SYSTEM" in pipeline_source
     assert "stage_scope = {key: scope[key] for key in _SCOPE_KEYS if key in scope}" in helper_source
     assert "_RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES" in helper_source
     assert "json.dumps(scope" not in helper_source
