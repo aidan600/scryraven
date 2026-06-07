@@ -136,10 +136,11 @@ def test_ag76c_bd_selected_phase_names_old_block_owner_surfaces_and_parity_tests
 
 def test_ag76c_bd_runtime_wires_completed_rt_helper_not_registry() -> None:
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    post_author_source = (_ORCHESTRATOR_PATH.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
 
     assert "pipeline_decision_registry" not in orchestrator_source
     assert "runtime_trace_export_attachment_handoff" not in orchestrator_source
-    assert "attach_runtime_trace_export_compatibility_payloads(" in orchestrator_source
+    assert "attach_runtime_trace_export_compatibility_payloads(" in post_author_source
     assert "attach_passive_runtime_projection_traces(" not in orchestrator_source
 
 

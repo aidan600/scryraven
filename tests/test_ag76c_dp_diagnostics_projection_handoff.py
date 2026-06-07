@@ -146,13 +146,14 @@ def test_ag76c_dp_runtime_projection_matches_legacy_recovered_passages() -> None
 
 def test_ag76c_dp_static_orchestrator_no_longer_owns_handoff_block() -> None:
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    post_author_source = (_ORCHESTRATOR_PATH.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
     handoff_source = _HANDOFF_PATH.read_text(encoding="utf-8").casefold()
 
     assert "build_source_class_recovery_projection_handoff(" in orchestrator_source
     assert "source_class_recovery_passage_candidates(" not in orchestrator_source
     assert "build_recovery_source_quality_diagnostics(" not in orchestrator_source
     assert "recovered_source_class_passages =" not in orchestrator_source
-    assert "attach_runtime_trace_export_compatibility_payloads(" in orchestrator_source
+    assert "attach_runtime_trace_export_compatibility_payloads(" in post_author_source
     assert "attach_passive_runtime_projection_traces(" not in orchestrator_source
 
     closed_terms = (

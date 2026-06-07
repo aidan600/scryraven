@@ -275,21 +275,22 @@ def test_ag76c_op_helper_has_no_protected_behavior_imports() -> None:
 
 def test_ag76c_op_orchestrator_delegates_packaging_and_rt_attachment() -> None:
     source = ORCHESTRATOR_PATH.read_text(encoding="utf-8")
+    post_author_source = (ORCHESTRATOR_PATH.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
     helper_source = HELPER_PATH.read_text(encoding="utf-8")
     rt_helper_source = RT_HELPER_PATH.read_text(encoding="utf-8")
     session_output_helper_source = SESSION_OUTPUT_HELPER_PATH.read_text(encoding="utf-8")
     pe_helper_source = PE_HELPER_PATH.read_text(encoding="utf-8")
 
     assert "build_session_payload(" in source
-    assert "build_execution_log_entry_projection(" in source
+    assert "build_execution_log_entry_projection(" in post_author_source
     assert "build_execution_log_entry(" in session_output_helper_source
     assert "build_sqlite_row_payload(" not in source
     assert "build_sqlite_row_payload(" in pe_helper_source
-    assert "build_run_outcome(" in source
+    assert "build_run_outcome(" in post_author_source
     assert "return RunOutcome(" not in source
     assert '"event": "execution"' not in source
     assert "execution_jsonl_to_run_row(" not in source
-    assert "attach_runtime_trace_export_compatibility_payloads(" in source
+    assert "attach_runtime_trace_export_compatibility_payloads(" in post_author_source
     assert "attach_passive_runtime_projection_traces(" not in source
     assert "build_retrieval_budget_pressure_shadow(" not in source
     assert "build_source_class_recovery_candidate_v2(" not in source
