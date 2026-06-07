@@ -11,7 +11,8 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass, field
+from collections import namedtuple
+from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
 from core.retrieval_dispatch_runtime import (
@@ -66,54 +67,22 @@ class LegacyReviewRuntimeRequest:
     scrutineer_remediation_resynthesis_triggered: bool = False; scrutineer_pass_flags_directly_to_author: bool = False
 
 
-@dataclass(frozen=True)
-class LegacyReviewRuntimeOutcome:
-    analysis: str; author_notes: str; first_synth_sufficient: bool; synth_was_insufficient: bool
-    synth_deficiency: str | None; supplemental_ran: bool; delta_urls_supplemental: int
-    synth_evaluator_seconds: float; analyst_seconds: float; scrutineer_ran: bool; scrutineer_seconds: float
-    scrutineer_flags: list[dict[str, Any]]; scrutineer_high_count: int
-    scrutineer_remediation_queries: list[RuntimeRemediationQueryFact]
-    scrutineer_remediation_dispatch_authorized: bool; scrutineer_remediation_dispatch_posture: str
-    scrutineer_remediation_provider_role: str | None; scrutineer_remediation_providers: list[str]
-    scrutineer_remediation_linkup_depth_override: str | None; scrutineer_remediation_evidence: list[Any]
-    scrutineer_remediation_resynthesis_triggered: bool; scrutineer_pass_flags_directly_to_author: bool
-    final_top_evidence: Any; unique_source_urls: Any; ordered_sources: Any; evidence_block: Any; cached_prefix: Any
+_OUTCOME_LOCAL_NAMES = """analysis author_notes first_synth_sufficient synth_was_insufficient synth_deficiency supplemental_ran delta_urls_supplemental synth_evaluator_seconds analyst_seconds scrutineer_ran scrutineer_seconds scrutineer_flags scrutineer_high_count scrutineer_remediation_queries scrutineer_remediation_dispatch_authorized scrutineer_remediation_dispatch_posture scrutineer_remediation_provider_role scrutineer_remediation_providers scrutineer_remediation_linkup_depth_override scrutineer_remediation_evidence scrutineer_remediation_resynthesis_triggered scrutineer_pass_flags_directly_to_author final_top_evidence unique_source_urls ordered_sources evidence_block cached_prefix""".split()
+_ORCHESTRATOR_VALUE_COUNT = _OUTCOME_LOCAL_NAMES.index("ordered_sources")
+
+_LegacyReviewRuntimeOutcomeBase = namedtuple("LegacyReviewRuntimeOutcome", _OUTCOME_LOCAL_NAMES)
+
+class LegacyReviewRuntimeOutcome(_LegacyReviewRuntimeOutcomeBase):
+    __slots__ = ()
 
     def orchestrator_values(self) -> tuple[Any, ...]:
         """Return legacy orchestrator assignment values in the old local order."""
-        return (
-            self.analysis, self.author_notes, self.first_synth_sufficient, self.synth_was_insufficient,
-            self.synth_deficiency, self.supplemental_ran, self.delta_urls_supplemental, self.synth_evaluator_seconds,
-            self.analyst_seconds, self.scrutineer_ran, self.scrutineer_seconds, self.scrutineer_flags,
-            self.scrutineer_high_count, self.scrutineer_remediation_queries, self.scrutineer_remediation_dispatch_authorized,
-            self.scrutineer_remediation_dispatch_posture, self.scrutineer_remediation_provider_role,
-            self.scrutineer_remediation_providers, self.scrutineer_remediation_linkup_depth_override,
-            self.scrutineer_remediation_evidence, self.scrutineer_remediation_resynthesis_triggered,
-            self.scrutineer_pass_flags_directly_to_author, self.final_top_evidence, self.unique_source_urls,
-        )
+        return self[:_ORCHESTRATOR_VALUE_COUNT]
 
 
-_DIRECT_SCOPE_FIELD_NAMES = (
-    "query", "analysis", "complexity", "corpus_weak", "entity_hint_for_retrieval", "utilization_rate_val",
-    "synth_skip_utilization_threshold", "post_retrieval_fast_path_used", "economist_output_used_as_analysis",
-    "query_authority", "search_depth", "query_type", "intent", "available_keys", "report_type", "is_academic",
-    "suppress_tavily", "local_url", "or_api_key", "use_reasoning", "fast_provider", "fast_model", "smart_provider",
-    "smart_model", "analyst_effort", "all_passages", "linkup_block", "current_date", "core_topic", "past_searches",
-    "final_top_evidence", "unique_source_urls", "run_log", "author_notes", "first_synth_sufficient",
-    "synth_was_insufficient", "synth_deficiency", "supplemental_ran", "delta_urls_supplemental",
-    "synth_evaluator_seconds", "analyst_seconds", "scrutineer_ran", "scrutineer_seconds", "scrutineer_flags",
-    "scrutineer_remediation_queries", "scrutineer_remediation_dispatch_authorized", "scrutineer_remediation_dispatch_posture",
-    "scrutineer_remediation_provider_role", "scrutineer_remediation_providers", "scrutineer_remediation_linkup_depth_override",
-    "scrutineer_remediation_evidence", "scrutineer_remediation_resynthesis_triggered", "scrutineer_pass_flags_directly_to_author",
-)
-_DEFAULTED_SCOPE_FIELDS = {
-    "synth_was_insufficient": False, "synth_deficiency": None, "supplemental_ran": False,
-    "delta_urls_supplemental": 0, "scrutineer_flags": [], "scrutineer_remediation_queries": [],
-    "scrutineer_remediation_dispatch_authorized": False, "scrutineer_remediation_dispatch_posture": "skipped",
-    "scrutineer_remediation_provider_role": None, "scrutineer_remediation_providers": [],
-    "scrutineer_remediation_linkup_depth_override": None, "scrutineer_remediation_evidence": [],
-    "scrutineer_remediation_resynthesis_triggered": False, "scrutineer_pass_flags_directly_to_author": False,
-}
+_REQUEST_NON_SCOPE_FIELD_NAMES = frozenset(("scope", "status", "collector", "default_system"))
+_DEFAULTED_SCOPE_FIELDS = {"synth_was_insufficient": False, "synth_deficiency": None, "supplemental_ran": False, "delta_urls_supplemental": 0, "scrutineer_flags": [], "scrutineer_remediation_queries": [], "scrutineer_remediation_dispatch_authorized": False, "scrutineer_remediation_dispatch_posture": "skipped", "scrutineer_remediation_provider_role": None, "scrutineer_remediation_providers": [], "scrutineer_remediation_linkup_depth_override": None, "scrutineer_remediation_evidence": [], "scrutineer_remediation_resynthesis_triggered": False, "scrutineer_pass_flags_directly_to_author": False}
+_DIRECT_SCOPE_FIELD_NAMES = tuple(f.name for f in fields(LegacyReviewRuntimeRequest) if f.name not in _REQUEST_NON_SCOPE_FIELD_NAMES)
 _RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES = (
     "process_search_queries", "query_embedding", "seen_urls", "collected_images", "embed_provider", "embed_model",
     "embed_texts", "deps", "provider_diagnostics", "results_per_query", "include_domains", "exclude_domains",
@@ -121,30 +90,25 @@ _RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES = (
 _SCOPE_KEYS = frozenset(_DIRECT_SCOPE_FIELD_NAMES + _RETRIEVAL_DISPATCH_SCOPE_FIELD_NAMES + (
     "status", "synthesis_evaluator_supplemental_search_collector", "ordered_sources", "evidence_block", "cached_prefix",
 ))
-_OUTCOME_LOCAL_NAMES = (
-    "analysis", "author_notes", "first_synth_sufficient", "synth_was_insufficient", "synth_deficiency",
-    "supplemental_ran", "delta_urls_supplemental", "synth_evaluator_seconds", "analyst_seconds",
-    "scrutineer_ran", "scrutineer_seconds", "scrutineer_flags", "scrutineer_high_count",
-    "scrutineer_remediation_queries", "scrutineer_remediation_dispatch_authorized",
-    "scrutineer_remediation_dispatch_posture", "scrutineer_remediation_provider_role",
-    "scrutineer_remediation_providers", "scrutineer_remediation_linkup_depth_override",
-    "scrutineer_remediation_evidence", "scrutineer_remediation_resynthesis_triggered",
-    "scrutineer_pass_flags_directly_to_author", "final_top_evidence", "unique_source_urls",
-    "ordered_sources", "evidence_block", "cached_prefix",
-)
 
 
 def execute_legacy_review_runtime_stage_from_scope(
-    scope: Mapping[str, Any],
-    *,
-    deps: LegacyReviewRuntimeDeps,
-    default_system: Mapping[str, str],
+    scope: Mapping[str, Any], *, deps: LegacyReviewRuntimeDeps, default_system: Mapping[str, str]
 ) -> LegacyReviewRuntimeOutcome:
     stage_scope = {key: scope[key] for key in _SCOPE_KEYS if key in scope}
-    request_kwargs = {
-        name: (stage_scope[name] if name in stage_scope else _DEFAULTED_SCOPE_FIELDS[name])
-        for name in _DIRECT_SCOPE_FIELD_NAMES if name in stage_scope or name in _DEFAULTED_SCOPE_FIELDS
-    }
+    request_kwargs = {}
+    for request_field in fields(LegacyReviewRuntimeRequest):
+        name = request_field.name
+        if name in _REQUEST_NON_SCOPE_FIELD_NAMES:
+            continue
+        if name in stage_scope:
+            request_kwargs[name] = stage_scope[name]
+        elif name in _DEFAULTED_SCOPE_FIELDS:
+            request_kwargs[name] = list(_DEFAULTED_SCOPE_FIELDS[name]) if isinstance(_DEFAULTED_SCOPE_FIELDS[name], list) else _DEFAULTED_SCOPE_FIELDS[name]
+        elif request_field.default is not MISSING:
+            request_kwargs[name] = request_field.default
+        elif request_field.default_factory is not MISSING:
+            request_kwargs[name] = request_field.default_factory()
     request = LegacyReviewRuntimeRequest(
         **request_kwargs, scope=stage_scope, status=stage_scope["status"],
         collector=stage_scope["synthesis_evaluator_supplemental_search_collector"], default_system=default_system,
@@ -152,22 +116,41 @@ def execute_legacy_review_runtime_stage_from_scope(
     return execute_legacy_review_runtime_stage(request, deps)
 
 
-def _bundle_outputs(bundle: Any) -> tuple[Any, Any, Any, Any, Any]:
-    return bundle.final_top_evidence, bundle.unique_source_urls, bundle.ordered_sources, bundle.evidence_block, bundle.cached_prefix
-
-
 def _rebuild_evidence(request: LegacyReviewRuntimeRequest, deps: LegacyReviewRuntimeDeps) -> tuple[Any, Any, Any, Any, Any]:
     final_evidence_bundle = deps.build_final_evidence_bundle(
         deps.final_evidence_bundle_inputs(),
         linkup_block=(request.linkup_block if request.complexity == "high" and deps.environ_get("LINKUP_API_KEY") and request.linkup_block else ""),
     )
-    return _bundle_outputs(final_evidence_bundle)
+    return (
+        final_evidence_bundle.final_top_evidence, final_evidence_bundle.unique_source_urls,
+        final_evidence_bundle.ordered_sources, final_evidence_bundle.evidence_block, final_evidence_bundle.cached_prefix,
+    )
 
 
-def execute_legacy_review_runtime_stage(
-    request: LegacyReviewRuntimeRequest,
-    deps: LegacyReviewRuntimeDeps,
-) -> LegacyReviewRuntimeOutcome:
+def _rerun_analyst(request: LegacyReviewRuntimeRequest, deps: LegacyReviewRuntimeDeps, stage: str) -> tuple[str, float, str]:
+    analyst_prompt = build_analyst_prompt(
+        analyst_cached_prefix=deps.build_analyst_cached_prefix(),
+        intent=request.intent,
+        analyst_effort=request.analyst_effort,
+    )
+    started = deps.monotonic()
+    deps.measure_context_stage(
+        stage,
+        prompt=analyst_prompt,
+        system_prompt=request.default_system["analyst"],
+        stable_prefix=request.default_system["analyst"],
+        evidence_passages=deps.evidence_slice_for_analyst(),
+    )
+    analysis = deps.ask_model(
+        analyst_prompt,
+        request.default_system["analyst"],
+        provider=request.smart_provider, model=request.smart_model, effort=request.analyst_effort,
+        base_url=request.local_url, api_key=request.or_api_key, use_reasoning=request.use_reasoning,
+    )
+    return analysis, max(0.0, deps.monotonic() - started), analyst_prompt
+
+
+def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, deps: LegacyReviewRuntimeDeps) -> LegacyReviewRuntimeOutcome:
     analysis = request.analysis
     author_notes = request.author_notes
     first_synth_sufficient = request.first_synth_sufficient
@@ -284,25 +267,10 @@ def execute_legacy_review_runtime_stage(
                     final_top_evidence, unique_source_urls, ordered_sources, evidence_block, cached_prefix = _rebuild_evidence(request, deps)
                     request.collector.record_final_evidence_rebuild()
                     request.status.step("Re-analyzing with supplemental evidence...")
-                    analyst_cached_prefix = deps.build_analyst_cached_prefix()
-                    _an_t0 = deps.monotonic()
-                    _analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=request.intent, analyst_effort=request.analyst_effort)
-                    deps.measure_context_stage(
-                        "analyst_supplemental",
-                        prompt=_analyst_prompt,
-                        system_prompt=request.default_system["analyst"],
-                        stable_prefix=request.default_system["analyst"],
-                        evidence_passages=deps.evidence_slice_for_analyst(),
-                    )
-                    deps.record_analyst_model_call(_analyst_prompt)
+                    analysis, elapsed, analyst_prompt = _rerun_analyst(request, deps, "analyst_supplemental")
+                    deps.record_analyst_model_call(analyst_prompt)
                     request.collector.record_analyst_rerun()
-                    analysis = deps.ask_model(
-                        _analyst_prompt,
-                        request.default_system["analyst"],
-                        provider=request.smart_provider, model=request.smart_model, effort=request.analyst_effort,
-                        base_url=request.local_url, api_key=request.or_api_key, use_reasoning=request.use_reasoning,
-                    )
-                    analyst_seconds += max(0.0, deps.monotonic() - _an_t0)
+                    analyst_seconds += elapsed
                 else:
                     request.status.step("Supplemental search yielded no new results. Passing gap directly to author.")
 
@@ -457,23 +425,8 @@ def execute_legacy_review_runtime_stage(
                                     final_top_evidence, unique_source_urls, ordered_sources, evidence_block, cached_prefix = _rebuild_evidence(request, deps)
                                     request.status.step("Re-synthesizing with remediation evidence...")
                                     scrutineer_remediation_resynthesis_triggered = True
-                                    analyst_cached_prefix = deps.build_analyst_cached_prefix()
-                                    _an_t0 = deps.monotonic()
-                                    _remed_analyst_prompt = build_analyst_prompt(analyst_cached_prefix=analyst_cached_prefix, intent=request.intent, analyst_effort=request.analyst_effort)
-                                    deps.measure_context_stage(
-                                        "analyst_scrutineer_remediation",
-                                        prompt=_remed_analyst_prompt,
-                                        system_prompt=request.default_system["analyst"],
-                                        stable_prefix=request.default_system["analyst"],
-                                        evidence_passages=deps.evidence_slice_for_analyst(),
-                                    )
-                                    analysis = deps.ask_model(
-                                        _remed_analyst_prompt,
-                                        request.default_system["analyst"],
-                                        provider=request.smart_provider, model=request.smart_model, effort=request.analyst_effort,
-                                        base_url=request.local_url, api_key=request.or_api_key, use_reasoning=request.use_reasoning,
-                                    )
-                                    analyst_seconds += max(0.0, deps.monotonic() - _an_t0)
+                                    analysis, elapsed, _ = _rerun_analyst(request, deps, "analyst_scrutineer_remediation")
+                                    analyst_seconds += elapsed
                                 else:
                                     request.status.step("Remediation search yielded no new results.")
             except Exception as e:
@@ -481,11 +434,8 @@ def execute_legacy_review_runtime_stage(
                 scrutineer_flags = []
 
     return LegacyReviewRuntimeOutcome(
-        analysis=analysis, author_notes=author_notes, first_synth_sufficient=first_synth_sufficient, synth_was_insufficient=synth_was_insufficient,
-        synth_deficiency=synth_deficiency, supplemental_ran=supplemental_ran, delta_urls_supplemental=delta_urls_supplemental, synth_evaluator_seconds=synth_evaluator_seconds, analyst_seconds=analyst_seconds,
-        scrutineer_ran=scrutineer_ran, scrutineer_seconds=scrutineer_seconds, scrutineer_flags=scrutineer_flags, scrutineer_high_count=scrutineer_high_count,
-        scrutineer_remediation_queries=scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized=scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture=scrutineer_remediation_dispatch_posture,
-        scrutineer_remediation_provider_role=scrutineer_remediation_provider_role, scrutineer_remediation_providers=scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override=scrutineer_remediation_linkup_depth_override,
-        scrutineer_remediation_evidence=scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered=scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author=scrutineer_pass_flags_directly_to_author,
-        final_top_evidence=final_top_evidence, unique_source_urls=unique_source_urls, ordered_sources=ordered_sources, evidence_block=evidence_block, cached_prefix=cached_prefix,
+        analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency, supplemental_ran,
+        delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds, scrutineer_ran, scrutineer_seconds, scrutineer_flags,
+        scrutineer_high_count, scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role, scrutineer_remediation_providers,
+        scrutineer_remediation_linkup_depth_override, scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls, ordered_sources, evidence_block, cached_prefix,
     )
