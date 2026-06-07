@@ -17,10 +17,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
-from core import analyst_runtime_stage, legacy_review_runtime_stage
-from core.analyst_author_handoff_contract import (
-    build_analyst_author_handoff_state,
-    execute_analyst_author_handoff,
+from core import (
+    analyst_runtime_stage,
+    legacy_review_runtime_stage,
+    post_analyst_handoff_packaging,
 )
 from core.anchor_resolution import (
     build_shadow_anchor_packet,
@@ -274,6 +274,23 @@ from core.weak_failure_gate_contract import (
 )
 
 logger = logging.getLogger(__name__)
+
+_author_quant_source_telemetry_defaults = (
+    post_analyst_handoff_packaging._author_quant_source_telemetry_defaults
+)
+_economist_skip_eligibility_shadow_defaults = (
+    post_analyst_handoff_packaging._economist_skip_eligibility_shadow_defaults
+)
+_economist_skip_eligibility_shadow_telemetry = (
+    post_analyst_handoff_packaging._economist_skip_eligibility_shadow_telemetry
+)
+_economist_skip_shadow_alignment = (
+    post_analyst_handoff_packaging._economist_skip_shadow_alignment
+)
+_scan_author_quant_source_telemetry = (
+    post_analyst_handoff_packaging._scan_author_quant_source_telemetry
+)
+
 
 DB_ENABLED = True
 _RETRIEVAL_STOP_SHADOW_MODE = "shadow_only"
@@ -1499,16 +1516,6 @@ def _analyst_quant_packet_telemetry_defaults() -> dict[str, Any]:
     }
 
 
-def _author_quant_source_telemetry_defaults() -> dict[str, Any]:
-    return {
-        "author_quant_content_source": "none",
-        "author_received_raw_quant_packet": False,
-        "author_received_economist_framework": False,
-        "author_received_analyst_packet_marker": False,
-        "author_quant_handoff_gate_reason": "no_quantitative_author_handoff_detected",
-    }
-
-
 def _query_allows_proxy_or_qualitative_metric_framing(query: str) -> bool:
     text = str(query or "").replace("_", " ").replace("-", " ").casefold()
     return bool(
@@ -1658,16 +1665,6 @@ def _final_answer_source_citation_telemetry(
     }
 
 
-def _economist_skip_eligibility_shadow_defaults() -> dict[str, Any]:
-    return {
-        "economist_skip_eligible_shadow": False,
-        "economist_skip_eligibility_reasons": [],
-        "economist_skip_eligibility_blockers": [],
-        "economist_skip_eligibility_gate_reason": "not_evaluated",
-        "economist_skip_eligibility_shadow_mode": True,
-    }
-
-
 def _economist_pre_analyst_skip_candidate_defaults() -> dict[str, Any]:
     return {
         "economist_pre_analyst_skip_candidate_shadow": False,
@@ -1791,282 +1788,6 @@ def _economist_pre_analyst_skip_candidate_telemetry(
         }
     )
     return telemetry
-
-
-def _economist_skip_shadow_alignment(
-    *,
-    pre_analyst_candidate_telemetry: dict[str, Any] | None,
-    posthoc_skip_eligibility_telemetry: dict[str, Any] | None,
-) -> str:
-    """Compare shadow candidate signals without changing runtime behavior."""
-    if not isinstance(pre_analyst_candidate_telemetry, dict) or not isinstance(
-        posthoc_skip_eligibility_telemetry, dict
-    ):
-        return "not_evaluated"
-    pre_candidate = bool(
-        pre_analyst_candidate_telemetry.get(
-            "economist_pre_analyst_skip_candidate_shadow"
-        )
-    )
-    posthoc_eligible = bool(
-        posthoc_skip_eligibility_telemetry.get("economist_skip_eligible_shadow")
-    )
-    if pre_candidate and posthoc_eligible:
-        return "candidate_and_posthoc_eligible"
-    if pre_candidate:
-        return "candidate_only"
-    if posthoc_eligible:
-        return "posthoc_only"
-    return "neither"
-
-
-def _economist_skip_eligibility_shadow_telemetry(
-    *,
-    report_type: str,
-    complexity: str,
-    mode: str,
-    economist_safety_telemetry: dict[str, Any],
-    analyst_quant_packet_handoff_telemetry: dict[str, Any],
-    author_quant_source_telemetry: dict[str, Any],
-    analyst_skipped_after_economist: bool,
-    economist_output_used_as_analysis: bool,
-    pre_analyst_gate_skipped: bool | None = None,
-    quant_retrieval_sufficiency_telemetry: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Diagnostic-only posthoc skip eligibility telemetry.
-
-    The computed ``economist_skip_eligible_shadow`` value is for readiness
-    analysis and log summarization only. It must not enable Analyst skip or pass
-    raw Economist/quantitative packet content to Author.
-    """
-    telemetry = _economist_skip_eligibility_shadow_defaults()
-    reasons: list[str] = []
-    blockers: list[str] = []
-
-    bounded_quantitative = str(report_type).lower() in {
-        "quantitative_comparison",
-        "benchmark",
-    }
-    if bounded_quantitative:
-        reasons.append("bounded_quantitative_report")
-    else:
-        blockers.append("non_bounded_quantitative_report")
-
-    if bounded_quantitative:
-        quant_retrieval_sufficiency_telemetry = (
-            quant_retrieval_sufficiency_telemetry or {}
-        )
-        retrieval_target_detected = bool(
-            quant_retrieval_sufficiency_telemetry.get(
-                "quant_retrieval_target_detected"
-            )
-        )
-        retrieval_sufficiency_valid = bool(
-            quant_retrieval_sufficiency_telemetry.get(
-                "quant_retrieval_sufficiency_valid"
-            )
-        )
-        if retrieval_target_detected and retrieval_sufficiency_valid:
-            reasons.append("retrieval_sufficiency_valid")
-        elif not retrieval_target_detected:
-            blockers.append("retrieval_sufficiency_missing")
-        else:
-            blockers.append("retrieval_sufficiency_failed")
-
-    if str(complexity).lower() == "medium":
-        reasons.append("medium_complexity")
-    else:
-        blockers.append("non_medium_complexity")
-
-    packet_valid = bool(economist_safety_telemetry.get("quantitative_packet_valid"))
-    packet_direct_use = bool(
-        economist_safety_telemetry.get("quantitative_packet_direct_use_eligible")
-    )
-    packet_requires_analyst = bool(
-        economist_safety_telemetry.get("quantitative_packet_requires_analyst")
-    )
-    if packet_valid and packet_direct_use and not packet_requires_analyst:
-        reasons.append("valid_direct_use_packet")
-    else:
-        if not packet_valid:
-            blockers.append("packet_invalid_or_missing")
-        if not packet_direct_use:
-            blockers.append("packet_not_direct_use_eligible")
-        if packet_requires_analyst:
-            blockers.append("packet_requires_analyst")
-
-    if bool(economist_safety_telemetry.get("high_stakes_quant_detected")):
-        blockers.append("high_stakes_requires_analyst")
-    else:
-        reasons.append("non_high_stakes")
-
-    if bool(economist_safety_telemetry.get("economist_code_execution_requested")):
-        blockers.append("economist_code_execution_requested")
-
-    analyst_reviewed_packet = bool(
-        analyst_quant_packet_handoff_telemetry.get("analyst_quant_packet_reviewed_by_model")
-    )
-    analyst_model_called = bool(
-        analyst_quant_packet_handoff_telemetry.get("analyst_model_called")
-    )
-    if analyst_reviewed_packet and analyst_model_called:
-        reasons.append("analyst_reviewed_packet")
-    else:
-        if not analyst_reviewed_packet:
-            blockers.append("packet_not_reviewed_by_analyst")
-        if not analyst_model_called:
-            blockers.append("analyst_model_not_called")
-
-    if author_quant_source_telemetry.get("author_quant_content_source") == "analyst_reviewed":
-        reasons.append("author_received_analyst_reviewed_synthesis")
-    else:
-        blockers.append("author_not_analyst_reviewed")
-
-    author_received_raw_packet = bool(
-        author_quant_source_telemetry.get("author_received_raw_quant_packet")
-    )
-    author_received_framework = bool(
-        author_quant_source_telemetry.get("author_received_economist_framework")
-    )
-    author_received_analyst_marker = bool(
-        author_quant_source_telemetry.get("author_received_analyst_packet_marker")
-    )
-    if not (
-        author_received_raw_packet
-        or author_received_framework
-        or author_received_analyst_marker
-    ):
-        reasons.append("no_author_marker_leak")
-    else:
-        if author_received_raw_packet:
-            blockers.append("author_raw_packet_marker_detected")
-        if author_received_framework:
-            blockers.append("author_framework_marker_detected")
-        if author_received_analyst_marker:
-            blockers.append("author_analyst_packet_marker_detected")
-
-    if economist_output_used_as_analysis:
-        blockers.append("economist_output_used_as_analysis")
-    else:
-        reasons.append("economist_not_used_as_analysis")
-
-    if analyst_skipped_after_economist:
-        blockers.append("analyst_already_skipped")
-    else:
-        reasons.append("analyst_not_skipped")
-
-    if pre_analyst_gate_skipped is True:
-        blockers.append("pre_analyst_gate_skipped")
-
-    eligible = not blockers
-    if eligible:
-        gate_reason = "eligible_shadow_only"
-    elif "high_stakes_requires_analyst" in blockers:
-        gate_reason = "blocked_by_high_stakes"
-    elif "packet_invalid_or_missing" in blockers:
-        gate_reason = "blocked_by_invalid_packet"
-    elif (
-        "packet_not_reviewed_by_analyst" in blockers
-        or "analyst_model_not_called" in blockers
-    ):
-        gate_reason = "blocked_by_missing_analyst_review"
-    elif (
-        "author_raw_packet_marker_detected" in blockers
-        or "author_framework_marker_detected" in blockers
-        or "author_analyst_packet_marker_detected" in blockers
-    ):
-        gate_reason = "blocked_by_author_marker_leak"
-    elif (
-        "retrieval_sufficiency_failed" in blockers
-        or "retrieval_sufficiency_missing" in blockers
-    ):
-        gate_reason = "blocked_by_retrieval_sufficiency"
-    elif "non_bounded_quantitative_report" in blockers:
-        gate_reason = "blocked_by_report_type"
-    elif "non_medium_complexity" in blockers:
-        gate_reason = "blocked_by_complexity"
-    elif "economist_code_execution_requested" in blockers:
-        gate_reason = "blocked_by_code_request"
-    elif "pre_analyst_gate_skipped" in blockers:
-        gate_reason = "blocked_by_pre_analyst_gate"
-    else:
-        gate_reason = "blocked_by_multiple_reasons"
-
-    telemetry.update(
-        {
-            "economist_skip_eligible_shadow": eligible,
-            "economist_skip_eligibility_reasons": reasons,
-            "economist_skip_eligibility_blockers": blockers,
-            "economist_skip_eligibility_gate_reason": gate_reason,
-            "economist_skip_eligibility_shadow_mode": True,
-        }
-    )
-    return telemetry
-
-
-def _scan_author_quant_source_telemetry(
-    author_prompt: str,
-    *,
-    analyst_quant_packet_reviewed_by_model: bool,
-    analysis: str | None,
-) -> dict[str, Any]:
-    telemetry = _author_quant_source_telemetry_defaults()
-    prompt = str(author_prompt or "")
-    has_raw_packet = (
-        "quantitative_packet" in prompt
-        or "quantitative_packet_v1" in prompt
-    )
-    has_analyst_packet_marker = "QUANTITATIVE PACKET FOR ANALYST REVIEW ONLY" in prompt
-    has_economist_framework = _author_prompt_contains_raw_economist_framework(prompt)
-    telemetry.update(
-        {
-            "author_received_raw_quant_packet": has_raw_packet,
-            "author_received_analyst_packet_marker": has_analyst_packet_marker,
-            "author_received_economist_framework": has_economist_framework,
-        }
-    )
-
-    if has_raw_packet:
-        telemetry["author_quant_content_source"] = "raw_quant_packet_detected"
-        telemetry["author_quant_handoff_gate_reason"] = "author_prompt_contains_raw_quant_packet"
-    elif has_analyst_packet_marker:
-        telemetry["author_quant_content_source"] = "analyst_packet_marker_detected"
-        telemetry["author_quant_handoff_gate_reason"] = "author_prompt_contains_analyst_packet_marker"
-    elif has_economist_framework:
-        telemetry["author_quant_content_source"] = "raw_economist_block_detected"
-        telemetry["author_quant_handoff_gate_reason"] = "author_prompt_contains_economist_framework"
-    elif analyst_quant_packet_reviewed_by_model and str(analysis or "").strip():
-        telemetry["author_quant_content_source"] = "analyst_reviewed"
-        telemetry["author_quant_handoff_gate_reason"] = (
-            "author_received_analyst_reviewed_quantitative_synthesis"
-        )
-
-    return telemetry
-
-
-def _author_prompt_contains_raw_economist_framework(prompt: str) -> bool:
-    text = str(prompt or "")
-    heading_pattern = re.compile(
-        r"(?im)^\s*(?:#{1,6}\s*)?(?:LEGACY\s+)?QUANTITATIVE FRAMEWORK\b[^\n]*"
-    )
-    payload_markers = (
-        "MODEL-DERIVED",
-        "Normalization approach",
-        "Computed results",
-        "computed value",
-        "Numeric rendering",
-        "central",
-        "range",
-    )
-    for match in heading_pattern.finditer(text):
-        heading = match.group(0)
-        normalized_heading = heading.casefold()
-        if re.search(r"\bnot\s+(?:run|shown)\b", normalized_heading):
-            continue
-        window = text[match.start() : match.start() + 1600]
-        if any(marker.casefold() in window.casefold() for marker in payload_markers):
-            return True
-    return False
 
 
 def _truncate_analyst_quant_packet_string(value: Any) -> Any:
@@ -5460,39 +5181,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_prompt_assembly = build_author_prompt_from_scope(locals())
     author_prompt = author_prompt_assembly.prompt
     author_notes = author_prompt_assembly.author_notes
-    author_quant_source_telemetry = _scan_author_quant_source_telemetry(
-        author_prompt,
-        analyst_quant_packet_reviewed_by_model=bool(
-            analyst_quant_packet_handoff_telemetry.get(
-                "analyst_quant_packet_reviewed_by_model"
-            )
-        ),
-        analysis=analysis,
-    )
-    economist_skip_eligibility_shadow_telemetry = (
-        _economist_skip_eligibility_shadow_telemetry(
-            report_type=report_type,
-            complexity=complexity,
-            mode=strategy,
-            economist_safety_telemetry=economist_safety_telemetry,
-            analyst_quant_packet_handoff_telemetry=analyst_quant_packet_handoff_telemetry,
-            author_quant_source_telemetry=author_quant_source_telemetry,
-            quant_retrieval_sufficiency_telemetry=quant_retrieval_sufficiency_telemetry,
-            analyst_skipped_after_economist=analyst_skipped_after_economist,
-            economist_output_used_as_analysis=economist_output_used_as_analysis,
-            pre_analyst_gate_skipped=bool(pre_analyst_gate["analyst_skipped"]),
-        )
-    )
-    economist_skip_shadow_alignment = _economist_skip_shadow_alignment(
-        pre_analyst_candidate_telemetry=economist_pre_analyst_skip_candidate_telemetry,
-        posthoc_skip_eligibility_telemetry=economist_skip_eligibility_shadow_telemetry,
-    )
 
     status.update("Writing final report...")
 
-    _author_system, author_system_prompt_key = select_author_system_prompt(default_system=DEFAULT_SYSTEM, corpus_weak=corpus_weak, estimate_from_priors_author=_efp_author)
+    _author_system, author_system_prompt_key = select_author_system_prompt(
+        default_system=DEFAULT_SYSTEM,
+        corpus_weak=corpus_weak,
+        estimate_from_priors_author=_efp_author,
+    )
     _author_effort = (
-        analyst_effort if ((not corpus_weak or _efp_author) and not _relevance_low) else "low"
+        analyst_effort
+        if ((not corpus_weak or _efp_author) and not _relevance_low)
+        else "low"
     )
     final_answer_author_runtime = assemble_final_answer_author_runtime_from_scope(
         locals()
@@ -5502,55 +5202,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_system_prompt_key = final_answer_author_runtime.author_system_prompt_key
     _author_effort = final_answer_author_runtime.author_effort
 
-    analyst_author_handoff_state = build_analyst_author_handoff_state(
-        run_id=run_id,
-        analyst_skipped=analyst_skipped,
-        analyst_skip_reason=analyst_skip_reason,
-        post_retrieval_fast_path_used=post_retrieval_fast_path_used,
-        pre_analyst_gate_signals=pre_analyst_gate_signals,
-        analyst_skipped_after_economist=analyst_skipped_after_economist,
-        analyst_after_economist_skip_reason=analyst_after_economist_skip_reason,
-        economist_output_used_as_analysis=economist_output_used_as_analysis,
-        analyst_evidence=_evidence_slice_for_analyst(),
-        analyst_context_prefix=analyst_cached_prefix,
-        linkup_block_included=bool(linkup_block),
-        quantitative_packet_injected=bool(
-            analyst_quant_packet_handoff_telemetry.get(
-                "analyst_quant_packet_injected"
-            )
-        ),
-        missing_target_metric_directive_emitted=missing_target_metric_directive_emitted,
-        corpus_weak=corpus_weak,
-        failure_card_payload={
-            "show": _pre_gate_failure_card_show,
-            "reason": _pre_gate_failure_card_reason,
-        },
-        author_notes=author_notes,
-        author_evidence=author_evidence,
-        selected_evidence=final_top_evidence,
-        final_evidence=final_top_evidence,
-        ordered_sources=ordered_sources,
-        unique_source_urls=unique_source_urls,
-        author_evidence_block=author_evidence_block,
-        author_prompt=author_prompt,
-        complexity=complexity,
-        author_system_prompt_key=author_system_prompt_key,
-        author_effort=_author_effort,
-        includes_analysis=(
-            complexity != "low" and (not corpus_weak or _efp_author) and not _relevance_low
-        ),
-        includes_recency_notes=bool(recency_notes),
-        includes_author_notes=bool(author_notes),
-        image_context_active=bool(image_context),
-        pre_analyst_gate_ref=pre_analyst_gate_contract,
-        retrieval_loop_state=retrieval_loop_contract_state,
-        router_query_preparation_state=router_query_preparation_contract,
+    # AG-90G: build_analyst_author_handoff_state / execute_analyst_author_handoff
+    # packaging moved to the bounded post-Analyst handoff helper;
+    # runtime_prompt_assembly Author/final-answer prompt construction stays local.
+    post_analyst_handoff = (
+        post_analyst_handoff_packaging.build_post_analyst_handoff_packaging_from_scope(
+            locals(), evidence_slice_for_analyst=_evidence_slice_for_analyst
+        )
     )
-    analyst_author_handoff = execute_analyst_author_handoff(
-        analyst_author_handoff_state
-    )
-    author_system_prompt_key = analyst_author_handoff.author_system_prompt_key
-    _author_effort = analyst_author_handoff.author_effort
+    (
+        analyst_author_handoff_state,
+        analyst_author_handoff,
+        author_system_prompt_key,
+        _author_effort,
+        author_quant_source_telemetry,
+        economist_skip_eligibility_shadow_telemetry,
+        economist_skip_shadow_alignment,
+    ) = post_analyst_handoff.orchestrator_values()
     _measure_context_stage(
         "author",
         prompt=author_prompt,
