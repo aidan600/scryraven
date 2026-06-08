@@ -1,11 +1,12 @@
 # Codex Guidance Map
 
-Status: Recommended entry point for future Codex tasks
+Status: Task-specific routing map for future Codex tasks
 Suggested repo path: `docs/codex/CODEX_GUIDANCE_MAP.md`
 
-Use this map to choose the smallest relevant guidance surface before starting a
-phase. Do not assume ChatGPT Project Sources are repo files; use repo-visible
-files and the current phase prompt.
+Repo-root `AGENTS.md` is the always-loaded standing instruction file for
+ScryRaven tasks. Use this map to choose the smallest relevant task-specific
+guidance surface before starting a phase. Do not assume ChatGPT Project Sources
+are repo files; use repo-visible files and the current phase prompt.
 
 ## Start here for ordinary work
 
