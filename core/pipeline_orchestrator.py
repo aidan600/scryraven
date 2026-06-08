@@ -3484,11 +3484,20 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 is_sufficient = True
                                 continue
                             current_queries = list(authorized_scout_queries)
-                            force_component_providers = select_providers(
-                                query_type, intent, complexity, available_keys,
-                                report_type=report_type, is_academic=is_academic,
-                                suppress_tavily=suppress_tavily, override=["exa", "linkup"],
+                            scout_provider_plan_record = provider_plan.record_continuation(
+                                role="scout_continuation",
+                                query_type=query_type,
+                                intent=intent,
+                                complexity=complexity,
+                                report_type=report_type,
+                                is_academic=is_academic,
+                                suppress_tavily=suppress_tavily,
+                                override=["exa", "linkup"],
                                 override_is_user=False,
+                                select_provider_list=select_providers,
+                            )
+                            force_component_providers = (
+                                scout_provider_plan_record.providers_list()
                             )
                             _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
                             iterations_run += 1
@@ -3567,10 +3576,20 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             len(current_queries), current_queries, expander_reasoning,
                         )
                         status.step(f"Component gaps identified: {current_queries}")
-                        force_component_providers = select_providers(
-                            query_type, intent, complexity, available_keys,
-                            report_type=report_type, is_academic=is_academic,
-                            suppress_tavily=suppress_tavily, override=None,
+                        expander_provider_plan_record = provider_plan.record_continuation(
+                            role="expander_continuation",
+                            query_type=query_type,
+                            intent=intent,
+                            complexity=complexity,
+                            report_type=report_type,
+                            is_academic=is_academic,
+                            suppress_tavily=suppress_tavily,
+                            override=None,
+                            override_is_user=True,
+                            select_provider_list=select_providers,
+                        )
+                        force_component_providers = (
+                            expander_provider_plan_record.providers_list()
                         )
                         _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
                         iterations_run += 1
