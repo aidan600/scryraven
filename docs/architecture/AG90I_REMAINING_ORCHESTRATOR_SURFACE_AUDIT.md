@@ -189,3 +189,22 @@ following static/offline tests before live validation is considered:
   dependency/cost setup, final side effects, or live model/search callsites.
 - **Stop** for any helper that needs broad `locals()`/`globals()` access or would
   need to own both runtime execution and trace projection.
+
+## Post-audit completion note — AG-90J and AG-90K
+
+AG-90J and AG-90K have now completed the two safest deterministic projection
+slices identified by this audit:
+
+- AG-90J extracted retrieval-stop / ordinary-continuation trace projection into
+  `core/retrieval_stop_trace_projection.py` and reduced
+  `core/pipeline_orchestrator.py` from **5,590** to **5,252** lines.
+- AG-90K extracted weak-corpus lifecycle fact projection,
+  conflict-resolution lifecycle fact projection, and evidence-integration
+  snapshot projection into `core/lifecycle_trace_projection.py` and reduced
+  `core/pipeline_orchestrator.py` from **5,252** to **5,069** lines.
+
+The remaining recommendations should now be read as post-AG-90K guidance:
+continue only with tightly bounded deterministic projection slices, or switch to
+a dedicated authority/product lane for pre-retrieval query/depth/provider,
+official/current acquisition, cache, Project Source retrieval, or Evidence
+Health work.
