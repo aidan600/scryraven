@@ -197,10 +197,10 @@ from core.retrieval_quality import (
     wants_official_source_bias,
 )
 from core.retrieval_scheduler import (
-    RetrievalScheduleInput,
-    schedule_continuation_action,
-    schedule_main_retrieval_action,
-    schedule_weak_corpus_recovery_action,
+    schedule_evaluator_continuation,
+    schedule_main_retrieval_from_provider_record,
+    schedule_provider_continuation_from_record,
+    schedule_weak_corpus_recovery_from_decision,
 )
 from core.retrieval_stop_controller import (
     RetrievalStopControllerDecision,
@@ -3208,20 +3208,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             if weak_corpus_recovery_used and iteration > 1
             else "main_retrieval"
         )
-        retrieval_scheduled_action = schedule_main_retrieval_action(
-            RetrievalScheduleInput(
-                stage="main_retrieval",
-                current_queries=current_queries,
-                iteration=iteration,
-                provider_role=retrieval_provider_role,
-                provider_record=provider_plan_record,
-                recovery_active=weak_corpus_recovery_used and iteration > 1,
-                metadata={
-                    "force_component_providers_consumed": (
-                        scheduled_force_component_providers
-                    ),
-                },
-            )
+        retrieval_scheduled_action = schedule_main_retrieval_from_provider_record(
+            current_queries=current_queries,
+            iteration=iteration,
+            provider_role=retrieval_provider_role,
+            provider_record=provider_plan_record,
+            recovery_active=weak_corpus_recovery_used and iteration > 1,
+            force_component_providers=scheduled_force_component_providers,
         )
         current_queries = retrieval_scheduled_action.queries_list()
         current_search_depth = retrieval_scheduled_action.search_depth
@@ -3409,28 +3402,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 )
                 if weak_corpus_decision.approved:
                     weak_corpus_recovery_schedule = (
-                        schedule_weak_corpus_recovery_action(
-                            RetrievalScheduleInput(
-                                stage="weak_corpus_recovery",
-                                current_queries=weak_corpus_decision.queries,
-                                iteration=iteration + 1,
-                                provider_role="weak_corpus_recovery",
-                                search_depth=current_search_depth,
-                                providers=loop_providers,
-                                continuation_authorized=(
-                                    weak_corpus_authorized_action
-                                    == RECOVER_WEAK_CORPUS
-                                ),
-                                recovery_active=True,
-                                metadata={
-                                    "authorized_action_name": (
-                                        weak_corpus_authorized_action
-                                    ),
-                                    "controller_decision_reason": (
-                                        weak_corpus_decision.reason
-                                    ),
-                                },
-                            )
+                        schedule_weak_corpus_recovery_from_decision(
+                            recovery_queries=weak_corpus_decision.queries,
+                            iteration=iteration + 1,
+                            current_search_depth=current_search_depth,
+                            providers=loop_providers,
+                            authorized_action_name=weak_corpus_authorized_action,
+                            recover_action_name=RECOVER_WEAK_CORPUS,
+                            controller_decision_reason=weak_corpus_decision.reason,
                         )
                     )
                     if weak_corpus_recovery_schedule.continue_retrieval:
@@ -3557,8 +3536,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                 override_is_user=False,
                                 select_provider_list=select_providers,
                             )
-                            scout_continuation_schedule = schedule_continuation_action(
-                                RetrievalScheduleInput(
+                            scout_continuation_schedule = (
+                                schedule_provider_continuation_from_record(
                                     stage="scout_directed_continuation",
                                     current_queries=authorized_scout_queries,
                                     iteration=iteration + 1,
@@ -3567,7 +3546,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                                     continuation_authorized=(
                                         scout_continuation_authorized
                                     ),
-                                    metadata={"query_source": "scout"},
+                                    query_source="scout",
                                 )
                             )
                             current_queries = (
@@ -3661,18 +3640,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             select_provider_list=select_providers,
                         )
                         expander_continuation_schedule = (
-                            schedule_continuation_action(
-                                RetrievalScheduleInput(
-                                    stage="expander_component_queries",
-                                    current_queries=authorized_expander_queries,
-                                    iteration=iteration + 1,
-                                    provider_role="expander_continuation",
-                                    provider_record=expander_provider_plan_record,
-                                    continuation_authorized=(
-                                        expander_continuation_authorized
-                                    ),
-                                    metadata={"query_source": "expander"},
-                                )
+                            schedule_provider_continuation_from_record(
+                                stage="expander_component_queries",
+                                current_queries=authorized_expander_queries,
+                                iteration=iteration + 1,
+                                provider_role="expander_continuation",
+                                provider_record=expander_provider_plan_record,
+                                continuation_authorized=(
+                                    expander_continuation_authorized
+                                ),
+                                query_source="expander",
                             )
                         )
                         current_queries = (
@@ -3823,18 +3800,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         ) = _authorize_evaluator_continuation_before_scheduling(
                             evaluator_queries=list(evaluator_stop_decision.next_queries),
                         )
-                        evaluator_continuation_schedule = schedule_continuation_action(
-                            RetrievalScheduleInput(
-                                stage="evaluator_next_queries",
-                                current_queries=authorized_evaluator_queries,
-                                iteration=iteration + 1,
-                                provider_role="evaluator_continuation",
-                                search_depth=current_search_depth,
-                                continuation_authorized=(
-                                    evaluator_continuation_authorized
-                                ),
-                                metadata={"query_source": "evaluator"},
-                            )
+                        evaluator_continuation_schedule = schedule_evaluator_continuation(
+                            current_queries=authorized_evaluator_queries,
+                            iteration=iteration + 1,
+                            current_search_depth=current_search_depth,
+                            continuation_authorized=evaluator_continuation_authorized,
                         )
                         if evaluator_continuation_authorized:
                             current_queries = (

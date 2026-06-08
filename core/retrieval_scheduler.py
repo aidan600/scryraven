@@ -127,6 +127,34 @@ def schedule_main_retrieval_action(
     )
 
 
+def schedule_main_retrieval_from_provider_record(
+    *,
+    current_queries: Sequence[str],
+    iteration: int,
+    provider_role: str,
+    provider_record: Any,
+    recovery_active: bool,
+    force_component_providers: Sequence[str] | None = None,
+) -> RetrievalScheduledAction:
+    """Schedule a main-loop pass from QueryPlan queries and a ProviderPlan record."""
+
+    return schedule_main_retrieval_action(
+        RetrievalScheduleInput(
+            stage="main_retrieval",
+            current_queries=current_queries,
+            iteration=iteration,
+            provider_role=provider_role,
+            provider_record=provider_record,
+            recovery_active=recovery_active,
+            metadata={
+                "force_component_providers_consumed": list(
+                    force_component_providers or ()
+                ),
+            },
+        )
+    )
+
+
 def schedule_continuation_action(
     schedule_input: RetrievalScheduleInput,
 ) -> RetrievalScheduledAction:
@@ -157,6 +185,53 @@ def schedule_continuation_action(
     )
 
 
+def schedule_provider_continuation_from_record(
+    *,
+    stage: str,
+    current_queries: Sequence[str],
+    iteration: int,
+    provider_role: str,
+    provider_record: Any,
+    continuation_authorized: bool,
+    query_source: str,
+) -> RetrievalScheduledAction:
+    """Schedule a continuation whose next pass forces ProviderPlan providers."""
+
+    return schedule_continuation_action(
+        RetrievalScheduleInput(
+            stage=stage,
+            current_queries=current_queries,
+            iteration=iteration,
+            provider_role=provider_role,
+            provider_record=provider_record,
+            continuation_authorized=continuation_authorized,
+            metadata={"query_source": query_source},
+        )
+    )
+
+
+def schedule_evaluator_continuation(
+    *,
+    current_queries: Sequence[str],
+    iteration: int,
+    current_search_depth: str,
+    continuation_authorized: bool,
+) -> RetrievalScheduledAction:
+    """Schedule evaluator continuation without introducing forced providers."""
+
+    return schedule_continuation_action(
+        RetrievalScheduleInput(
+            stage="evaluator_next_queries",
+            current_queries=current_queries,
+            iteration=iteration,
+            provider_role="evaluator_continuation",
+            search_depth=current_search_depth,
+            continuation_authorized=continuation_authorized,
+            metadata={"query_source": "evaluator"},
+        )
+    )
+
+
 def schedule_weak_corpus_recovery_action(
     schedule_input: RetrievalScheduleInput,
 ) -> RetrievalScheduledAction:
@@ -184,4 +259,34 @@ def schedule_weak_corpus_recovery_action(
             **_provider_record_metadata(schedule_input.provider_record),
             **dict(schedule_input.metadata or {}),
         },
+    )
+
+
+def schedule_weak_corpus_recovery_from_decision(
+    *,
+    recovery_queries: Sequence[str],
+    iteration: int,
+    current_search_depth: str,
+    providers: Sequence[str],
+    authorized_action_name: str,
+    recover_action_name: str,
+    controller_decision_reason: str | None,
+) -> RetrievalScheduledAction:
+    """Schedule the next weak-corpus pass from an approved controller decision."""
+
+    return schedule_weak_corpus_recovery_action(
+        RetrievalScheduleInput(
+            stage="weak_corpus_recovery",
+            current_queries=recovery_queries,
+            iteration=iteration,
+            provider_role="weak_corpus_recovery",
+            search_depth=current_search_depth,
+            providers=providers,
+            continuation_authorized=authorized_action_name == recover_action_name,
+            recovery_active=True,
+            metadata={
+                "authorized_action_name": authorized_action_name,
+                "controller_decision_reason": controller_decision_reason,
+            },
+        )
     )
