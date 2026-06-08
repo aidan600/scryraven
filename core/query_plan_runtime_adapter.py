@@ -6,6 +6,7 @@ ranking, citation, Author, and final-answer behavior untouched.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -15,6 +16,19 @@ from core.query_plan import (
     authorize_recency_merge,
     authorize_retrieval_queries,
 )
+from core.retrieval_quality import should_merge_recency_queries
+
+
+def _extract_recency_year(text: str) -> str:
+    match = re.search(r"\b(19|20)\d{2}\b", text or "")
+    return match.group(0) if match else "2026"
+
+
+@dataclass(frozen=True, slots=True)
+class RecencyMergeProjection:
+    current_queries: list[str]
+    recency_merge_used: bool
+    recency_merge_query: str | None
 
 
 @dataclass(slots=True)
@@ -91,6 +105,42 @@ class QueryPlanRuntimeAdapter:
             max_queries=max_queries,
         )
         return merged
+
+    def apply_initial_recency_merge(
+        self,
+        queries: Sequence[str],
+        *,
+        query_type: str,
+        current_date: str,
+        max_queries: int | None,
+    ) -> RecencyMergeProjection:
+        current_queries = list(queries[:max_queries])
+        if not should_merge_recency_queries(self.user_query, self.intent, query_type):
+            return RecencyMergeProjection(
+                current_queries=current_queries,
+                recency_merge_used=False,
+                recency_merge_query=None,
+            )
+
+        anchor = (self.primary_entity or self.core_topic or "")[:200]
+        if not anchor or not max_queries:
+            return RecencyMergeProjection(
+                current_queries=current_queries,
+                recency_merge_used=False,
+                recency_merge_query=None,
+            )
+
+        year = _extract_recency_year(current_date)
+        recency_query = self.clean(f"{anchor} {year} news")
+        return RecencyMergeProjection(
+            current_queries=self.merge_recency(
+                current_queries,
+                recency_query=recency_query,
+                max_queries=max_queries,
+            ),
+            recency_merge_used=True,
+            recency_merge_query=recency_query,
+        )
 
     def finalize_disambiguation(self, queries: Sequence[str]) -> list[str]:
         return self.finalize(

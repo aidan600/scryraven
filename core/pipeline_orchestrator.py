@@ -191,7 +191,6 @@ from core.retrieval_quality import (
     extract_recon_context,
     format_quoted_anchor,
     official_bias_phrase,
-    should_merge_recency_queries,
     should_retry_retrieval,
     utilization_entity_anchor,
     utilization_rate,
@@ -2048,19 +2047,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         status.step("Using recon-informed search queries (research planner skipped for pass 1).")
         queries = query_authority.admit_recon_candidates(pre_retrieval_query_candidates)
 
-    current_queries = queries[:max_queries]
-    recency_merge_used = False
-    recency_merge_query: str | None = None
-    if should_merge_recency_queries(query, intent, query_type) and current_queries is not None:
-        y = _extract_year(current_date)
-        _anchor = (primary_entity or core_topic or "")[:200]
-        if _anchor and max_queries:
-            recq = _clean_query(f"{_anchor} {y} news")
-            recency_merge_used = True
-            recency_merge_query = recq
-            current_queries = query_authority.merge_recency(
-                current_queries, recency_query=recq, max_queries=max_queries
-            )
+    recency_projection = query_authority.apply_initial_recency_merge(
+        queries,
+        query_type=query_type,
+        current_date=current_date,
+        max_queries=max_queries,
+    )
+    current_queries = recency_projection.current_queries
+    recency_merge_used = recency_projection.recency_merge_used
+    recency_merge_query = recency_projection.recency_merge_query
     current_queries = query_authority.finalize(
         current_queries, max_len=max_queries, include_official_bias=False
     )

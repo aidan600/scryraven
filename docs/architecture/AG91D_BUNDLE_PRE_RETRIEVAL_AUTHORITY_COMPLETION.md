@@ -158,6 +158,10 @@ Static tests guard that:
 ## Remaining known authority debt
 
 - Router retry/entity correction remains router-state normalization. It is not a final-query authority path in this phase, but any future query-affecting router candidate expansion should be admitted explicitly through QueryPlan.
+- Source-class recovery action queries remain owned by the Controller/RunAuthority
+  recovery action envelope. AG-91D did not collapse that action-query ownership
+  into QueryPlan; a future phase may choose to unify recovery action query
+  projection explicitly.
 - Recovery/conflict-resolution action paths already have bounded helper records/context seams; a later phase could further unify their action projection if useful, without creating a generic RunAuthority framework.
 
 ## Recommended next action

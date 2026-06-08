@@ -48,8 +48,12 @@ Authority-collapse phases should move toward these canonical owners:
   status, and stop/continue basis.
 - **EvidenceLedger** records evidence candidate custody, source obligations,
   official/current-source posture, and evidence observations.
-- **QueryPlan** owns query intent, finalized/current queries, continuation,
-  source-class recovery, and query mutation authority.
+- **QueryPlan** owns query intent, finalized/current queries, ordinary,
+  recon/researcher, recency, continuation, supplemental, remediation, and query
+  mutation authority where those producers feed retrieval-loop query identity.
+  Source-class recovery action queries currently remain owned by the
+  Controller/RunAuthority recovery action envelope unless a future phase
+  explicitly routes them through QueryPlan.
 - **FinalAnswerPacket** owns final evidence selection, citation eligibility,
   Author-facing posture, answer readiness, caveats, and handoff fields needed to
   write the final answer.
