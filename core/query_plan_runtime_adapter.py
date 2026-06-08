@@ -54,6 +54,29 @@ class QueryPlanRuntimeAdapter:
         )
         return authorized
 
+
+    def admit_recon_candidates(self, queries: Sequence[str]) -> list[str]:
+        """Admit recon-rewriter candidates before they become retrieval queries."""
+
+        return self.finalize(
+            queries,
+            include_official_bias=True,
+            origin="recon_rewriter",
+            role=QueryPlanRole.RECON_REWRITE,
+            phase="recon_seeded_queries",
+        )
+
+    def admit_researcher_candidates(self, queries: Sequence[str]) -> list[str]:
+        """Admit researcher fallback candidates before they become retrieval queries."""
+
+        return self.finalize(
+            queries,
+            include_official_bias=True,
+            origin="researcher",
+            role=QueryPlanRole.INITIAL,
+            phase="initial_researcher_queries",
+        )
+
     def merge_recency(
         self,
         current_queries: Sequence[str],

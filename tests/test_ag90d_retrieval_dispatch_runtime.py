@@ -180,3 +180,69 @@ def test_static_guard_helper_imports_no_provider_prompt_or_model_modules() -> No
     assert "core.routing" not in imported_modules
     assert "core.prompts" not in imported_modules
     assert "core.llm" not in imported_modules
+
+
+def test_embedding_action_record_preserves_exact_embedding_call_fields() -> None:
+    from core.retrieval_dispatch_runtime import EmbeddingActionRecord, execute_embedding_action
+
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def fake_embed(*args: Any, **kwargs: Any) -> list[list[float]]:
+        calls.append((args, kwargs))
+        return [[0.5, 0.25]]
+
+    action = EmbeddingActionRecord(
+        topic_text="Exact Topic",
+        provider="embed-provider",
+        model="embed-model",
+        base_url="http://local",
+    )
+
+    assert execute_embedding_action(action, fake_embed) == [0.5, 0.25]
+    assert calls == [((['Exact Topic'],), {"provider": "embed-provider", "model": "embed-model", "base_url": "http://local"})]
+    assert action.action_role == "pre_retrieval_topic_embedding"
+
+
+def test_retrieval_dispatch_action_preserves_exact_authorized_fields() -> None:
+    dispatch = RecordedRetrievalDispatch(
+        stage="main_retrieval",
+        queries=("q1", "q2"),
+        intent="research",
+        complexity="high",
+        search_depth="advanced",
+        results_per_query=8,
+        include_domains=("include.example",),
+        exclude_domains=("exclude.example",),
+        providers=("tavily", "linkup"),
+        provider_role="main_retrieval",
+        iteration=2,
+        exa_domain_filter=("edu",),
+        linkup_depth_override="deep",
+        entity_hint="Entity",
+        prior_queries_for_similarity=("old q",),
+        query_similarity_basis="previous_main_retrieval_iteration",
+    )
+
+    assert list(dispatch.queries) == ["q1", "q2"]
+    assert list(dispatch.providers) == ["tavily", "linkup"]
+    assert dispatch.search_depth == "advanced"
+    assert dispatch.results_per_query == 8
+    assert list(dispatch.include_domains) == ["include.example"]
+    assert list(dispatch.exclude_domains) == ["exclude.example"]
+    assert dispatch.provider_role == "main_retrieval"
+    assert dispatch.iteration == 2
+    assert list(dispatch.exa_domain_filter or ()) == ["edu"]
+    assert dispatch.linkup_depth_override == "deep"
+    assert dispatch.entity_hint == "Entity"
+
+
+def test_pipeline_embedding_and_main_retrieval_consume_action_records() -> None:
+    source = ORCHESTRATOR.read_text()
+    helper_source = HELPER.read_text()
+
+    assert "embedding_action = EmbeddingActionRecord" in source
+    assert "query_embedding = execute_embedding_action(embedding_action, embed_texts)" in source
+    assert "dispatch_action = RecordedRetrievalDispatch" in helper_source
+    assert "current_queries=dispatch_action.queries" in helper_source
+    assert "provider_list=dispatch_action.providers" in helper_source
+    assert "search_depth=dispatch_action.search_depth" in helper_source
