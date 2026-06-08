@@ -15,16 +15,19 @@ Phase type: documentation-only playbook; no runtime behavior change; no live val
 
 ## Purpose
 
-This playbook is the durable implementation guide for ScryRaven phases after the
-Controller-authority closure line documented by AG-79D. It explains how future
-phases should add, wire, test, and classify Controller-owned handoffs without
-accidentally moving protected legacy behavior, prompts, provider/search behavior,
-retrieval behavior, citation behavior, or Author prose.
+This playbook is legacy AG-80-era guidance for phases that explicitly select
+Controller-handoff maintenance, passive contracts, or behavior-preserving wiring.
+It explains how those selected phases should add, wire, test, and classify
+Controller-owned handoffs without accidentally moving protected legacy behavior,
+prompts, provider/search behavior, retrieval behavior, citation behavior, or
+Author prose.
 
-Use this file when a phase proposes to convert an orchestrator-local decision
-surface into a Controller-owned handoff, or when a phase needs to decide whether
-a surface is Controller-owned, protected legacy behavior, trace/projection-only,
-parked cleanup, or live-gated validation work.
+Use this file only when a phase explicitly chooses the legacy Controller-handoff
+pattern: maintaining an existing Controller-owned handoff, adding a passive
+Controller contract, or performing behavior-preserving Controller wiring. Do not
+use it as the default guide for AG-89+ authority-collapse work; route those
+phases through [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md)
+and [CODEX_GUIDANCE_MAP.md](CODEX_GUIDANCE_MAP.md).
 
 ## Controller authority model
 
@@ -387,9 +390,11 @@ Before implementation, write the phase in one of these forms:
 If the work cannot fit one of these forms, it probably needs a roadmap/design
 refresh before code changes.
 
-## Recommended next step
+## Historical note
 
-After AG-80A, the recommended next repo-planning step is **Roadmap v4 / Project
-Source refresh**. Do not treat that recommendation as approval to change runtime
-behavior, prompts, provider/search/retrieval behavior, citations, Author prose,
-or live validation.
+The original AG-80A-era next-step recommendation pointed to a Roadmap v4 /
+Project Source refresh. That recommendation is historical context, not current
+routing guidance and not approval to change runtime behavior, prompts,
+provider/search/retrieval behavior, citations, Author prose, or live validation.
+For current Codex guidance routing, start with
+[CODEX_GUIDANCE_MAP.md](CODEX_GUIDANCE_MAP.md).
