@@ -8,8 +8,14 @@ from core.retrieval_dispatch_runtime import (
     RecordedRetrievalDispatch,
     RetrievalDispatchDeps,
     build_retrieval_pass_record,
+    execute_main_retrieval_pass_from_scope,
     execute_recorded_retrieval_dispatch,
 )
+from core.retrieval_scheduler import (
+    RetrievalScheduleInput,
+    schedule_main_retrieval_action,
+)
+from core.router_query_preparation_contract import build_router_query_preparation_state
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "core" / "retrieval_dispatch_runtime.py"
@@ -236,12 +242,108 @@ def test_retrieval_dispatch_action_preserves_exact_authorized_fields() -> None:
     assert dispatch.entity_hint == "Entity"
 
 
+def test_main_retrieval_dispatch_consumes_scheduler_action_over_legacy_locals() -> None:
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+    seen_urls: set[str] = set()
+
+    def fake_process(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        calls.append((args, kwargs))
+        args[8].add("https://scheduled.example")
+        return [{"url": "https://scheduled.example", "text": "scheduled"}]
+
+    class _Deps:
+        @staticmethod
+        def compute_similarities(*_args: Any, **_kwargs: Any) -> list[Any]:
+            return []
+
+    scheduled_action = schedule_main_retrieval_action(
+        RetrievalScheduleInput(
+            stage="main_retrieval",
+            current_queries=["scheduled query"],
+            iteration=2,
+            provider_role="weak_corpus_recovery",
+            search_depth="advanced",
+            providers=["scheduled-provider"],
+            recovery_active=True,
+        )
+    )
+    scope = {
+        "iteration": 2,
+        "router_query_preparation_contract": build_router_query_preparation_state(
+            query="topic", router_text=None
+        ),
+        "retrieval_scheduled_action": scheduled_action,
+        "current_queries": ["legacy local query"],
+        "loop_providers": ["legacy-provider"],
+        "current_search_depth": "legacy-depth",
+        "retrieval_provider_role": "legacy-role",
+        "results_per_query": 4,
+        "top_chunks": 8,
+        "max_iterations": 3,
+        "intent": "research",
+        "complexity": "high",
+        "include_domains": ["include.example"],
+        "exclude_domains": ["exclude.example"],
+        "ACADEMIC_DOMAINS": ["edu"],
+        "is_academic": False,
+        "entity_hint_for_retrieval": "Entity",
+        "retrieval_stop_active_telemetry": {},
+        "run_id": "run-1",
+        "retrieval_batch_dispatch_trace": {"authorized": True},
+        "active_source_class_recovery_lifecycle": {},
+        "weak_corpus_recovery_used": True,
+        "weak_corpus_recovery_attempted": True,
+        "weak_corpus_recovery_decision": "approved",
+        "retrieval_loop_contract_state": None,
+        "similarity_prior_queries": ["prior query"],
+        "query_similarity_basis": "previous_main_retrieval_iteration",
+        "process_search_queries": fake_process,
+        "query_embedding": [0.1],
+        "seen_urls": seen_urls,
+        "collected_images": set(),
+        "embed_provider": "embed-provider",
+        "embed_model": "embed-model",
+        "local_url": None,
+        "embed_texts": lambda *_args, **_kwargs: [],
+        "deps": _Deps(),
+        "status": object(),
+        "provider_diagnostics": [],
+    }
+
+    records: list[dict[str, Any]] = []
+    outcome = execute_main_retrieval_pass_from_scope(
+        scope,
+        retrieval_pass_records=records,
+    )
+
+    args, kwargs = calls[0]
+    assert args[:7] == (
+        ["scheduled query"],
+        "research",
+        "high",
+        "advanced",
+        4,
+        ["include.example"],
+        ["exclude.example"],
+    )
+    assert kwargs["search_providers"] == ["scheduled-provider"]
+    assert kwargs["provider_role"] == "weak_corpus_recovery"
+    assert kwargs["iteration"] == 2
+    assert outcome.descriptor.current_queries == ("scheduled query",)
+    assert outcome.descriptor.provider_list == ("scheduled-provider",)
+    assert outcome.descriptor.search_depth == "advanced"
+    assert records[0]["queries"] == ["scheduled query"]
+    assert records[0]["providers"] == ["scheduled-provider"]
+
+
 def test_pipeline_embedding_and_main_retrieval_consume_action_records() -> None:
     source = ORCHESTRATOR.read_text()
     helper_source = HELPER.read_text()
 
     assert "embedding_action = EmbeddingActionRecord" in source
     assert "query_embedding = execute_embedding_action(embedding_action, embed_texts)" in source
+    assert '"retrieval_scheduled_action"' in helper_source
+    assert "scheduled_action: RetrievalScheduledAction" in helper_source
     assert "dispatch_action = RecordedRetrievalDispatch" in helper_source
     assert "current_queries=dispatch_action.queries" in helper_source
     assert "provider_list=dispatch_action.providers" in helper_source

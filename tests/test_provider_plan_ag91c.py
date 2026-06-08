@@ -427,8 +427,9 @@ def test_pipeline_consumes_provider_plan_for_main_loop_selection() -> None:
     assert "provider_plan_record = provider_plan.record_main_retrieval" in source
     assert "scout_provider_plan_record = provider_plan.record_continuation" in source
     assert "expander_provider_plan_record = provider_plan.record_continuation" in source
-    assert "loop_providers = provider_plan_record.providers_list()" in source
-    assert "current_search_depth = provider_plan_record.search_depth" in source
+    assert "provider_record=provider_plan_record" in source
+    assert "loop_providers = retrieval_scheduled_action.providers_list()" in source
+    assert "current_search_depth = retrieval_scheduled_action.search_depth" in source
 
 
 def test_supplemental_provider_plan_record_matches_legacy_depth_and_provider_selection() -> None:

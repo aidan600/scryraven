@@ -19,6 +19,7 @@ from core.retrieval_loop_contract import (
     execute_retrieval_pass_handoff,
     summarize_retrieval_pass_result,
 )
+from core.retrieval_scheduler import RetrievalScheduledAction
 
 
 @dataclass(frozen=True)
@@ -296,10 +297,7 @@ def execute_main_retrieval_pass_from_scope(
         scope,
         "iteration",
         "router_query_preparation_contract",
-        "retrieval_provider_role",
-        "current_queries",
-        "loop_providers",
-        "current_search_depth",
+        "retrieval_scheduled_action",
         "results_per_query",
         "top_chunks",
         "max_iterations",
@@ -321,27 +319,32 @@ def execute_main_retrieval_pass_from_scope(
         "similarity_prior_queries",
         "query_similarity_basis",
     )
+    scheduled_action: RetrievalScheduledAction = values["retrieval_scheduled_action"]
+    action_iteration = scheduled_action.iteration or values["iteration"]
     router_state = values["router_query_preparation_contract"]
-    query_source = router_state.query_preparation_provenance.get("query_source") or values["retrieval_provider_role"]
+    query_source = (
+        router_state.query_preparation_provenance.get("query_source")
+        or scheduled_action.provider_role
+    )
     retrieval_budget_facts = {
-        "iteration": values["iteration"],
+        "iteration": action_iteration,
         "max_iterations": values["max_iterations"],
-        "iterations_remaining_after_pass": max(0, values["max_iterations"] - values["iteration"]),
+        "iterations_remaining_after_pass": max(0, values["max_iterations"] - action_iteration),
         "results_per_query": values["results_per_query"],
         "top_chunks": values["top_chunks"],
     }
     dispatch_action = RecordedRetrievalDispatch(
-        stage="main_retrieval",
-        queries=values["current_queries"],
+        stage=scheduled_action.stage,
+        queries=scheduled_action.current_queries,
         intent=values["intent"],
         complexity=values["complexity"],
-        search_depth=values["current_search_depth"],
+        search_depth=scheduled_action.search_depth,
         results_per_query=values["results_per_query"],
         include_domains=values["include_domains"],
         exclude_domains=values["exclude_domains"],
-        providers=values["loop_providers"],
-        provider_role=values["retrieval_provider_role"],
-        iteration=values["iteration"],
+        providers=scheduled_action.providers,
+        provider_role=scheduled_action.provider_role,
+        iteration=action_iteration,
         exa_domain_filter=_exa_filter(values),
         entity_hint=values["entity_hint_for_retrieval"],
         prior_queries_for_similarity=values["similarity_prior_queries"],
