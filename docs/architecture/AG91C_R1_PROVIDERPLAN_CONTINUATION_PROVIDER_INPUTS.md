@@ -2,7 +2,7 @@
 
 Status: behavior-preserving ProviderPlan authority-boundary follow-up; no live validation; no provider/model/search/embedding calls
 
-Branch: `ag-91c-r1-providerplan-continuation-provider-inputs`  
+Branch: `ag-91c-r1-providerplan-continuation-provider-inputs`
 Base: `main`
 
 ## Purpose
