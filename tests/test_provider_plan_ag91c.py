@@ -22,6 +22,10 @@ HELPER = ROOT / "core" / "provider_plan.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 
 
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
 def _all_on() -> dict[str, bool]:
     return {"tavily": True, "linkup": True, "exa": True}
 
@@ -397,7 +401,7 @@ def test_dispatch_receives_same_providers_and_depth_from_provider_plan_record() 
 
 
 def test_static_guard_provider_plan_is_not_provider_or_search_brain() -> None:
-    source = HELPER.read_text()
+    source = _read_text(HELPER)
     forbidden = [
         "ask_model",
         "process_search_queries",
@@ -418,7 +422,7 @@ def test_static_guard_provider_plan_is_not_provider_or_search_brain() -> None:
 
 
 def test_pipeline_consumes_provider_plan_for_main_loop_selection() -> None:
-    source = PIPELINE.read_text()
+    source = _read_text(PIPELINE)
     assert "provider_plan = ProviderPlan.from_available_keys" in source
     assert "provider_plan_record = provider_plan.record_main_retrieval" in source
     assert "scout_provider_plan_record = provider_plan.record_continuation" in source
@@ -495,8 +499,8 @@ def test_scrutineer_remediation_provider_plan_record_matches_legacy_selection() 
 
 
 def test_pipeline_consumes_provider_plan_for_supplemental_and_scrutineer_selection() -> None:
-    source = PIPELINE.read_text()
-    legacy_source = (ROOT / "core" / "legacy_review_runtime_stage.py").read_text()
+    source = _read_text(PIPELINE)
+    legacy_source = _read_text(ROOT / "core" / "legacy_review_runtime_stage.py")
 
     assert "provider_plan = ProviderPlan.from_available_keys" in source
     assert "supplemental_provider_record = provider_plan.record_supplemental_retrieval" in legacy_source
