@@ -61,6 +61,31 @@ class RecordedRetrievalDispatch:
 
 
 @dataclass(frozen=True)
+class EmbeddingActionRecord:
+    """Already-authorized embedding kickoff facts for the initial topic embedding."""
+
+    topic_text: str
+    provider: str
+    model: str
+    base_url: str | None
+    action_role: str = "pre_retrieval_topic_embedding"
+
+
+def execute_embedding_action(
+    action: EmbeddingActionRecord,
+    embed_texts: Callable[..., Sequence[Any]],
+) -> Any:
+    """Execute an already-authorized embedding action without changing call shape."""
+
+    return embed_texts(
+        [action.topic_text],
+        provider=action.provider,
+        model=action.model,
+        base_url=action.base_url,
+    )[0]
+
+
+@dataclass(frozen=True)
 class RetrievalDispatchOutcome:
     """Mechanical result and caller-owned counter deltas."""
 
@@ -305,20 +330,37 @@ def execute_main_retrieval_pass_from_scope(
         "results_per_query": values["results_per_query"],
         "top_chunks": values["top_chunks"],
     }
-    descriptor = build_retrieval_pass_descriptor(
-        iteration=values["iteration"],
-        query_source=query_source,
-        current_queries=values["current_queries"],
-        provider_list=values["loop_providers"],
+    dispatch_action = RecordedRetrievalDispatch(
+        stage="main_retrieval",
+        queries=values["current_queries"],
+        intent=values["intent"],
+        complexity=values["complexity"],
         search_depth=values["current_search_depth"],
         results_per_query=values["results_per_query"],
+        include_domains=values["include_domains"],
+        exclude_domains=values["exclude_domains"],
+        providers=values["loop_providers"],
+        provider_role=values["retrieval_provider_role"],
+        iteration=values["iteration"],
+        exa_domain_filter=_exa_filter(values),
+        entity_hint=values["entity_hint_for_retrieval"],
+        prior_queries_for_similarity=values["similarity_prior_queries"],
+        query_similarity_basis=values["query_similarity_basis"],
+    )
+    descriptor = build_retrieval_pass_descriptor(
+        iteration=dispatch_action.iteration or values["iteration"],
+        query_source=query_source,
+        current_queries=dispatch_action.queries,
+        provider_list=dispatch_action.providers,
+        search_depth=dispatch_action.search_depth,
+        results_per_query=dispatch_action.results_per_query,
         top_chunks=values["top_chunks"],
         max_iterations=values["max_iterations"],
         intent=values["intent"],
         complexity=values["complexity"],
-        provider_role=values["retrieval_provider_role"],
-        query_similarity_basis=values["query_similarity_basis"],
-        prior_queries_for_similarity=values["similarity_prior_queries"],
+        provider_role=dispatch_action.provider_role,
+        query_similarity_basis=dispatch_action.query_similarity_basis,
+        prior_queries_for_similarity=dispatch_action.prior_queries_for_similarity,
         retrieval_budget_facts=retrieval_budget_facts,
         batch_dispatch_authorization_ref=values["retrieval_batch_dispatch_trace"],
         source_class_recovery_action_ref=values["active_source_class_recovery_lifecycle"],
@@ -330,10 +372,10 @@ def execute_main_retrieval_pass_from_scope(
     )
     envelope = build_retrieval_execution_envelope(
         descriptor,
-        include_domains=values["include_domains"],
-        exclude_domains=values["exclude_domains"],
-        exa_domain_filter=_exa_filter(values),
-        entity_hint=values["entity_hint_for_retrieval"],
+        include_domains=dispatch_action.include_domains,
+        exclude_domains=dispatch_action.exclude_domains,
+        exa_domain_filter=dispatch_action.exa_domain_filter,
+        entity_hint=dispatch_action.entity_hint,
     )
     loop_state = build_retrieval_loop_state(
         router_query_preparation_state=router_state,
@@ -367,9 +409,9 @@ def execute_main_retrieval_pass_from_scope(
         compute_similarities=deps.compute_similarities,
         status_container=deps.status_container,
         provider_diagnostics=deps.provider_diagnostics,
-        iteration=values["iteration"],
-        prior_queries_for_similarity=values["similarity_prior_queries"],
-        query_similarity_basis=values["query_similarity_basis"],
+        iteration=dispatch_action.iteration,
+        prior_queries_for_similarity=dispatch_action.prior_queries_for_similarity,
+        query_similarity_basis=dispatch_action.query_similarity_basis,
     )
     seen_url_delta = max(0, len(deps.seen_urls) - seen_before)
     loop_state = loop_state.with_pass_result(
@@ -380,13 +422,13 @@ def execute_main_retrieval_pass_from_scope(
         )
     )
     pass_record = build_retrieval_pass_record(
-        stage="main_retrieval",
-        iteration=values["iteration"],
-        queries=values["current_queries"],
-        providers=values["loop_providers"],
-        provider_role=values["retrieval_provider_role"],
-        search_depth=values["current_search_depth"],
-        results_per_query=values["results_per_query"],
+        stage=dispatch_action.stage,
+        iteration=dispatch_action.iteration,
+        queries=dispatch_action.queries,
+        providers=dispatch_action.providers,
+        provider_role=dispatch_action.provider_role,
+        search_depth=dispatch_action.search_depth,
+        results_per_query=dispatch_action.results_per_query,
     )
     retrieval_pass_records.append(pass_record)
     return MainRetrievalPassOutcome(

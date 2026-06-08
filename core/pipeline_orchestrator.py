@@ -176,8 +176,10 @@ from core.retrieval_batch_dispatch import (
     retrieval_batch_dispatch_defaults,
 )
 from core.retrieval_dispatch_runtime import (
+    EmbeddingActionRecord,
     execute_conflict_resolution_from_scope,
     execute_disambiguation_retry_from_scope,
+    execute_embedding_action,
     execute_main_retrieval_pass_from_scope,
     source_class_recovery_context_from_scope,
 )
@@ -1879,7 +1881,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if not session_title:
             session_title = query[:40]
 
-    queries: list[str] = []
+    pre_retrieval_query_candidates: list[str] = []
     _recon_qt = (query_type or "").lower()
     _recon_t0 = time.monotonic()
     if _recon_qt in ("person", "news", "current_events", "event"):
@@ -1945,7 +1947,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         if _clean_query(str(x))
                     ]
                     if rqq:
-                        queries = rqq
+                        pre_retrieval_query_candidates = rqq
                         recon_fired = True
                         recon_confidence = (rw_data.get("recon_confidence") or "").strip() or None
                         csub = (rw_data.get("canonical_subject") or "").strip()
@@ -1996,7 +1998,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         clean=_clean_query,
     )
 
-    if not queries:
+    if not pre_retrieval_query_candidates:
         status.step("Generating initial search plan...")
         anchor_context_for_researcher = (
             format_anchor_context_for_researcher(anchor_packet_telemetry)
@@ -2036,15 +2038,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         try:
             queries_dict = json.loads(q_text)
             queries_raw = queries_dict.get("queries", []) if isinstance(queries_dict, dict) else queries_dict
-            queries = [_clean_query(str(x)) for x in queries_raw if _clean_query(str(x))]
-            if not queries:
-                queries = [core_topic[:300]]
+            researcher_query_candidates = [_clean_query(str(x)) for x in queries_raw if _clean_query(str(x))]
+            if not researcher_query_candidates:
+                researcher_query_candidates = [core_topic[:300]]
         except Exception:
-            queries = [core_topic[:300]]
+            researcher_query_candidates = [core_topic[:300]]
+        queries = query_authority.admit_researcher_candidates(researcher_query_candidates)
     else:
         status.step("Using recon-informed search queries (research planner skipped for pass 1).")
+        queries = query_authority.admit_recon_candidates(pre_retrieval_query_candidates)
 
-    queries = query_authority.finalize(queries, include_official_bias=True)
     current_queries = queries[:max_queries]
     recency_merge_used = False
     recency_merge_query: str | None = None
@@ -2157,7 +2160,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         (_embed_tail if _embed_tail else ((primary_entity or core_topic) or query))[:2000]
         or core_topic
     )
-    query_embedding = embed_texts([_embed_topic], provider=embed_provider, model=embed_model, base_url=local_url)[0]
+    embedding_action = EmbeddingActionRecord(
+        topic_text=_embed_topic,
+        provider=embed_provider,
+        model=embed_model,
+        base_url=local_url,
+    )
+    query_embedding = execute_embedding_action(embedding_action, embed_texts)
     analyst_effort = {"low": "low", "medium": "medium", "high": "high"}.get(complexity, "low")
     entity_hint_for_retrieval = (primary_entity or core_topic or "").strip() or None
     provider_plan = ProviderPlan.from_available_keys(

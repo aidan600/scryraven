@@ -375,3 +375,57 @@ def test_ag91b_static_guard_queryplan_boundary_avoids_closed_surfaces() -> None:
     orchestrator_source = Path("core/pipeline_orchestrator.py").read_text()
     assert "def _finalize_retrieval_queries" not in orchestrator_source
     assert "current_queries = query_authority.admit_execution_queries" in orchestrator_source
+
+
+def test_ag91d_recon_admission_method_preserves_candidate_order_and_origin() -> None:
+    adapter = _adapter()
+    candidates = ["Acme Widget release notes", "AW deployment timeline"]
+
+    consumed = adapter.admit_recon_candidates(candidates)
+    legacy = finalize_retrieval_queries(
+        candidates,
+        primary_entity="Acme Widget",
+        entities_list=["Acme Widget", "AW"],
+        core_topic="Acme Widget deployment",
+        user_query="Acme Widget deployment official current status",
+        intent="general",
+        clean=_clean,
+        include_official_bias=True,
+    )
+
+    assert consumed == legacy
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    assert {item["origin"] for item in trace["items"][: len(candidates)]} == {"recon_rewriter"}
+    assert {item["phase"] for item in trace["items"][: len(candidates)]} == {"recon_seeded_queries"}
+
+
+def test_ag91d_researcher_admission_method_preserves_candidate_order_and_origin() -> None:
+    adapter = _adapter()
+    candidates = ["deployment status", "support policy", "deployment status", ""]
+
+    consumed = adapter.admit_researcher_candidates(candidates)
+    legacy = finalize_retrieval_queries(
+        candidates,
+        primary_entity="Acme Widget",
+        entities_list=["Acme Widget", "AW"],
+        core_topic="Acme Widget deployment",
+        user_query="Acme Widget deployment official current status",
+        intent="general",
+        clean=_clean,
+        include_official_bias=True,
+    )
+
+    assert consumed == legacy
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    assert trace["items"][0]["origin"] == "researcher"
+    assert trace["items"][0]["phase"] == "initial_researcher_queries"
+
+
+def test_ag91d_pipeline_demotes_pre_retrieval_candidates_before_consumption() -> None:
+    from pathlib import Path
+
+    source = Path("core/pipeline_orchestrator.py").read_text()
+    assert "pre_retrieval_query_candidates" in source
+    assert "queries = query_authority.admit_recon_candidates(pre_retrieval_query_candidates)" in source
+    assert "queries = query_authority.admit_researcher_candidates(researcher_query_candidates)" in source
+    assert "queries = query_authority.finalize(queries, include_official_bias=True)" not in source

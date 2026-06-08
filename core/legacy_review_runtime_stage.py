@@ -15,6 +15,7 @@ from collections import namedtuple
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any, Callable, Mapping, MutableSequence, Sequence
 
+from core.provider_plan import ProviderPlan
 from core.retrieval_dispatch_runtime import (
     execute_scrutineer_remediation_from_scope,
     execute_supplemental_search_from_scope,
@@ -65,6 +66,7 @@ class LegacyReviewRuntimeRequest:
     scrutineer_remediation_provider_role: str | None = None; scrutineer_remediation_providers: list[str] = field(default_factory=list)
     scrutineer_remediation_linkup_depth_override: str | None = None; scrutineer_remediation_evidence: list[Any] = field(default_factory=list)
     scrutineer_remediation_resynthesis_triggered: bool = False; scrutineer_pass_flags_directly_to_author: bool = False
+    provider_plan: Any | None = None
 
 
 _OUTCOME_LOCAL_NAMES = """analysis author_notes first_synth_sufficient synth_was_insufficient synth_deficiency supplemental_ran delta_urls_supplemental synth_evaluator_seconds analyst_seconds scrutineer_ran scrutineer_seconds scrutineer_flags scrutineer_high_count scrutineer_remediation_queries scrutineer_remediation_dispatch_authorized scrutineer_remediation_dispatch_posture scrutineer_remediation_provider_role scrutineer_remediation_providers scrutineer_remediation_linkup_depth_override scrutineer_remediation_evidence scrutineer_remediation_resynthesis_triggered scrutineer_pass_flags_directly_to_author final_top_evidence unique_source_urls ordered_sources evidence_block cached_prefix""".split()
@@ -178,6 +180,7 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
     ordered_sources = request.scope.get("ordered_sources")
     evidence_block = request.scope.get("evidence_block")
     cached_prefix = request.scope.get("cached_prefix")
+    provider_plan = request.provider_plan or ProviderPlan.from_available_keys(request.available_keys)
 
     if (
         request.complexity in ("medium", "high")
@@ -247,12 +250,19 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
                 )
                 request.collector.record_author_hedge_note()
                 request.status.step(f"Completeness gap detected: {deficiency}. Running supplemental searches...")
-                supp_search_depth = deps.choose_supplemental_search_depth(request.complexity, request.search_depth)
-                supp_providers = deps.select_providers(
-                    request.query_type, request.intent, request.complexity, request.available_keys,
-                    report_type=request.report_type, is_academic=request.is_academic,
-                    suppress_tavily=request.suppress_tavily, override=None,
+                supplemental_provider_record = provider_plan.record_supplemental_retrieval(
+                    query_type=request.query_type,
+                    intent=request.intent,
+                    complexity=request.complexity,
+                    report_type=request.report_type,
+                    is_academic=request.is_academic,
+                    suppress_tavily=request.suppress_tavily,
+                    base_search_depth=request.search_depth,
+                    choose_search_depth=deps.choose_supplemental_search_depth,
+                    select_provider_list=deps.select_providers,
                 )
+                supp_search_depth = supplemental_provider_record.search_depth or request.search_depth
+                supp_providers = supplemental_provider_record.providers_list()
                 request.collector.record_dispatch(providers=supp_providers, search_depth=supp_search_depth)
                 supplemental_ran = True
                 supplemental_outcome = deps.execute_supplemental_search(
@@ -408,11 +418,17 @@ def execute_legacy_review_runtime_stage(request: LegacyReviewRuntimeRequest, dep
                                 scrutineer_remediation_dispatch_posture = "authorized"
                                 scrutineer_remediation_provider_role = "scrutineer_remediation"
                                 scrutineer_remediation_linkup_depth_override = "deep"
-                                remed_providers = deps.select_providers(
-                                    request.query_type, request.intent, request.complexity, request.available_keys,
-                                    report_type=request.report_type, is_academic=request.is_academic,
-                                    suppress_tavily=request.suppress_tavily, override=None,
+                                remediation_provider_record = provider_plan.record_scrutineer_remediation(
+                                    query_type=request.query_type,
+                                    intent=request.intent,
+                                    complexity=request.complexity,
+                                    report_type=request.report_type,
+                                    is_academic=request.is_academic,
+                                    suppress_tavily=request.suppress_tavily,
+                                    search_depth=request.search_depth,
+                                    select_provider_list=deps.select_providers,
                                 )
+                                remed_providers = remediation_provider_record.providers_list()
                                 scrutineer_remediation_providers = list(remed_providers)
                                 remediation_outcome = deps.execute_scrutineer_remediation(
                                     request.scope, queries=novel_queries, providers=remed_providers
