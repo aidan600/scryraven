@@ -68,8 +68,6 @@ from core.corpus_state import (
 from core.cost_accounting import CostAccumulator
 from core.entity_extraction import fallback_entities_from_query
 from core.evidence_integration_checkpoint import (
-    EvidenceIntegrationBudgetSnapshot,
-    EvidenceIntegrationSnapshot,
     build_evidence_integration_checkpoint_trace,
     decide_evidence_integration_checkpoint,
     evidence_integration_checkpoint_unavailable_trace,
@@ -90,6 +88,17 @@ from core.final_evidence_bundle_builder import (
     build_final_source_telemetry_inputs,
 )
 from core.kb_review_persistence_context import build_kb_review_persistence_context
+
+# AG-90K lifecycle projection sits beside retrieval_stop_trace_projection seams.
+from core.lifecycle_trace_projection import (
+    build_evidence_integration_snapshot_from_runtime as _build_evidence_integration_snapshot_from_runtime,
+)
+from core.lifecycle_trace_projection import (
+    conflict_resolution_lifecycle_facts as _conflict_resolution_lifecycle_facts,
+)
+from core.lifecycle_trace_projection import (
+    weak_corpus_lifecycle_facts as _weak_corpus_lifecycle_facts,
+)
 from core.nutrition_author_notes import (
     _format_nutrition_partial_evidence_author_note as _format_nutrition_partial_evidence_author_note,  # noqa: F401
 )
@@ -140,8 +149,6 @@ from core.pipeline import (
 from core.policy import apply_policy_to_run_config, load_policy_state
 from core.post_author_output_projection import (
     _build_runtime_conflict_state_projection,
-    _scrutineer_allowed_by_contract,
-    _scrutineer_allowed_by_mode,
     build_post_author_output_packaging_from_scope,
     build_post_author_trace_packaging_from_scope,
     build_run_outcome_from_scope,
@@ -325,48 +332,6 @@ def _decide_retrieval_stop_for_active(
     snapshot: Any,
 ) -> Any:
     return decide_retrieval_stop(snapshot)
-
-def _social_signal_requested_from_contract(contract: Any) -> bool:
-    relevance = getattr(getattr(contract, "social_signal_relevance", None), "value", None)
-    return str(relevance or "").casefold() == "central"
-
-def _weak_corpus_lifecycle_facts(
-    decision: WeakCorpusRecoveryDecision | None,
-) -> dict[str, Any] | None:
-    if decision is None:
-        return None
-    return {
-        "approved": bool(decision.approved),
-        "reason": decision.reason,
-        "blockers": list(decision.blockers),
-    }
-
-def _conflict_resolution_lifecycle_facts(
-    *,
-    decision: ConflictResolutionDecision | None,
-    lifecycle_trace: dict[str, Any],
-) -> dict[str, Any]:
-    if decision is None:
-        return {
-            "approved": False,
-            "reason": lifecycle_trace.get("active_conflict_resolution_skip_reason")
-            or lifecycle_trace.get("active_conflict_resolution_reason")
-            or "blocked_by_lifecycle",
-            "blockers": list(
-                lifecycle_trace.get("active_conflict_resolution_blockers") or []
-            ),
-            "active_conflict_resolution_considered": bool(
-                lifecycle_trace.get("active_conflict_resolution_considered")
-            ),
-        }
-    return {
-        "approved": bool(decision.approved),
-        "reason": decision.reason,
-        "blockers": list(decision.blockers),
-        "active_conflict_resolution_considered": bool(
-            lifecycle_trace.get("active_conflict_resolution_considered")
-        ),
-    }
 
 def _compact_runtime_strings(
     values: Any,
@@ -706,154 +671,6 @@ def _build_targeted_retrieval_lifecycle_from_runtime(
         **source_fit_facts,
     )
     return build_targeted_retrieval_lifecycle(snapshot).to_trace_fields()
-
-def _build_evidence_integration_snapshot_from_runtime(
-    *,
-    answer_contract_result: Any,
-    source_class_recovery_recommendation: dict[str, Any],
-    active_source_class_recovery_lifecycle: dict[str, Any],
-    strategy: str,
-    is_sufficient: bool,
-    corpus_weak: bool,
-    corpus_state: str,
-    weak_corpus_recovery_used: bool,
-    weak_corpus_recovery_attempted: bool,
-    weak_corpus_recovery_skip_reason: str | None,
-    retrieval_stop_shadow_telemetry: dict[str, Any],
-    iterations_run: int,
-    max_iterations: int,
-) -> EvidenceIntegrationSnapshot:
-    """Build the compact AG-32 snapshot from already-computed runtime facts."""
-
-    adapter = answer_contract_result.adapter_result
-    contract = adapter.contract
-    evidence_state = answer_contract_result.state.evidence_state_summary
-    handoff = answer_contract_result.fulfillment_handoff
-    source_missing = tuple(evidence_state.source_classes_missing) + tuple(
-        source_class_recovery_recommendation.get("missing_expected_source_classes")
-        or ()
-    ) + tuple(
-        active_source_class_recovery_lifecycle.get(
-            "active_source_class_recovery_missing_classes"
-        )
-        or ()
-    )
-    source_queries = active_source_class_recovery_lifecycle.get(
-        "active_source_class_recovery_queries"
-    ) or source_class_recovery_recommendation.get(
-        "source_class_recovery_queries"
-    )
-    missing_information = tuple(answer_contract_result.state.missing_information)
-    if (
-        retrieval_stop_shadow_telemetry.get("retrieval_stop_shadow_decision")
-        == "continue_retrieval"
-        and retrieval_stop_shadow_telemetry.get(
-            "retrieval_stop_shadow_next_query_count"
-        )
-    ):
-        missing_information = missing_information + ("ordinary continuation gap",)
-    social_requested = _social_signal_requested_from_contract(contract)
-    scrutineer_contract_allowed = _scrutineer_allowed_by_contract(contract)
-    scrutineer_mode_allowed = _scrutineer_allowed_by_mode(strategy)
-    return EvidenceIntegrationSnapshot(
-        contract_family=contract.family.value,
-        contract_must_satisfy=contract.must_satisfy,
-        contract_should_satisfy=contract.should_satisfy,
-        required_source_classes=contract.evidence_classes_needed,
-        fulfilled_contract_items=handoff.fulfilled_items,
-        partial_contract_items=handoff.partial_items,
-        unfulfilled_contract_items=handoff.unfulfilled_items,
-        missing_information=missing_information,
-        evidence_available=bool(evidence_state.evidence_available),
-        evidence_sufficient=bool(is_sufficient and evidence_state.evidence_sufficient),
-        evidence_reference_count=len(adapter.evidence_used),
-        source_classes_present=evidence_state.source_classes_present,
-        source_classes_missing=source_missing,
-        weak_corpus=bool(corpus_weak),
-        weak_corpus_reason=(
-            (weak_corpus_recovery_skip_reason or corpus_state)
-            if corpus_weak
-            else None
-        ),
-        weak_corpus_recovery_used=bool(weak_corpus_recovery_used),
-        weak_corpus_recovery_available=bool(
-            corpus_weak
-            and not weak_corpus_recovery_used
-            and not weak_corpus_recovery_attempted
-            and weak_corpus_recovery_skip_reason in {None, "not_weak_corpus"}
-        ),
-        source_class_recovery_recommended=bool(
-            source_class_recovery_recommendation.get(
-                "source_class_recovery_recommended"
-            )
-        ),
-        source_class_recovery_eligible=bool(
-            active_source_class_recovery_lifecycle.get(
-                "active_source_class_recovery_eligible"
-            )
-        ),
-        source_class_recovery_missing_classes=source_missing,
-        source_class_recovery_queries_available=bool(source_queries),
-        source_class_recovery_blockers=tuple(
-            active_source_class_recovery_lifecycle.get(
-                "active_source_class_recovery_blockers"
-            )
-            or ()
-        ),
-        conflicts_present=bool(evidence_state.conflicts_present),
-        conflict_notes=evidence_state.conflict_notes,
-        conflict_resolution_available=bool(evidence_state.resolving_queries),
-        next_queries_available=bool(
-            retrieval_stop_shadow_telemetry.get(
-                "retrieval_stop_shadow_next_query_count"
-            )
-        ),
-        next_query_redundant=(
-            retrieval_stop_shadow_telemetry.get("retrieval_stop_shadow_decision")
-            == "stop_redundant_queries"
-        ),
-        prior_query_count=len(evidence_state.prior_queries),
-        next_query_count=int(
-            retrieval_stop_shadow_telemetry.get(
-                "retrieval_stop_shadow_next_query_count"
-            )
-            or 0
-        ),
-        clarification_needed=False,
-        social_signal_requested=social_requested,
-        social_signal_status=evidence_state.social_signal_status,
-        social_side_packet_placeholder_allowed=True,
-        scrutineer_requested=bool(evidence_state.scrutineer_requested),
-        scrutineer_needed=bool(evidence_state.scrutineer_needed),
-        scrutineer_allowed_by_mode=scrutineer_mode_allowed,
-        scrutineer_allowed_by_contract=scrutineer_contract_allowed,
-        budget=EvidenceIntegrationBudgetSnapshot.from_runtime(
-            mode=strategy,
-            iteration=iterations_run,
-            max_iterations=max_iterations,
-            weak_corpus_recovery_used=weak_corpus_recovery_used,
-            weak_corpus_recovery_attempted=weak_corpus_recovery_attempted,
-            source_class_recovery_attempt_count=0,
-            source_class_slot_available=(
-                max_iterations > 1
-                or bool(
-                    active_source_class_recovery_lifecycle.get(
-                        "active_source_class_recovery_eligible"
-                    )
-                )
-            ),
-            social_side_packet_placeholder_allowed=True,
-            scrutineer_review_allowed=(
-                scrutineer_mode_allowed and scrutineer_contract_allowed
-            ),
-        ),
-        metadata={
-            "stage": "post_retrieval_post_source_class_lifecycle_pre_source_class_execution",
-            "shadow_only": True,
-            "provider_routing_boundary": "orchestrator_owned",
-            "search_depth_boundary": "orchestrator_owned",
-        },
-    )
 
 def _authoritative_source_checkpoint_refresh_allowed(
     *,
