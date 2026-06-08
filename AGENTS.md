@@ -1,7 +1,8 @@
-# Draft Root AGENTS.md for ScryRaven
+# Root AGENTS.md for ScryRaven
 
-Status: Reviewable draft only. Do not copy to repo-root `AGENTS.md` until a later
-phase explicitly approves root guidance publication.
+Status: Active standing guidance for Codex tasks in this repository. This file is
+always loaded; use `docs/codex/CODEX_GUIDANCE_MAP.md` to route to
+task-specific guidance.
 
 ## Project identity
 
