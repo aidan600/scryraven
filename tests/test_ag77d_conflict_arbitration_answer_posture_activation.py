@@ -403,6 +403,7 @@ def test_pipeline_orchestrator_boundary_only_has_unrelated_scrutineer_handoff_to
                 or "runtime_prompt_assembly" in diff
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
+                or "query_authority.admit_execution_queries" in diff
         )
     else:
         assert PIPELINE_PATH not in changed

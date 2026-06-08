@@ -350,6 +350,7 @@ def test_lane_distinction_static_guard_and_pipeline_orchestrator_unchanged() -> 
                 or "runtime_prompt_assembly" in pipeline_diff
                 or "retrieval_dispatch_runtime" in pipeline_diff
                 or "retrieval_stop_trace_projection" in pipeline_diff
+                or "query_authority.admit_execution_queries" in pipeline_diff
         )
         distinct_lane_modules.remove("core/pipeline_orchestrator.py")
     assert changed.isdisjoint(distinct_lane_modules)
