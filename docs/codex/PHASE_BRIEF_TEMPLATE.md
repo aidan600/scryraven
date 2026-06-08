@@ -10,7 +10,13 @@ Copy this for future phases and fill in only phase-specific details.
 Architecture Groove / Prove Mode, Path B approved.
 
 Read:
+docs/codex/CODEX_GUIDANCE_MAP.md
 docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md
+
+Also read when relevant:
+- docs/codex/EXECUTION_PLAN_TEMPLATE.md for bundled multi-step phases
+- docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md for AG-89+ authority-collapse phases
+- docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md only for legacy Controller-handoff maintenance when explicitly selected
 
 Repository:
 C:\Users\aidan\ScryRaven
@@ -54,6 +60,10 @@ Rule 0 failure_analysis:
 
 In scope:
 - ...
+
+Autonomy / decision-point policy:
+- Proceed autonomously for relevant file inspection, scoped implementation, in-scope tests, in-scope test fixes, docs cross-link fixes caused by the phase, formatting/pre-commit fixes, final-bundle preparation, and PR creation when explicitly authorized.
+- Stop for product choices, unresolved architecture forks, unlicensed protected-surface changes, live validation, secrets/private data, destructive git, merge/rebase/force-push, broad scope expansion, or unresolved failing tests that imply a design decision.
 
 Out of scope:
 - live calls unless separately approved
