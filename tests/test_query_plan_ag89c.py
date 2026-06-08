@@ -199,6 +199,24 @@ def _adapter() -> object:
     )
 
 
+def _recency_adapter(
+    *,
+    primary_entity: str = "Acme Widget",
+    core_topic: str = "Acme Widget deployment",
+    user_query: str = "latest Acme Widget news",
+    intent: str = "news",
+) -> object:
+    return build_query_plan_runtime_adapter(
+        run_id="ag91e-recency",
+        primary_entity=primary_entity,
+        entities_list=[primary_entity] if primary_entity else [],
+        core_topic=core_topic,
+        user_query=user_query,
+        intent=intent,
+        clean=_clean,
+    )
+
+
 def test_ag91b_initial_researcher_queries_finalize_to_legacy_consumed_list() -> None:
     inputs = ["deployment status", "support policy", "deployment status", ""]
     adapter = _adapter()
@@ -284,6 +302,87 @@ def test_ag91b_recency_merge_then_admission_preserves_consumed_order() -> None:
     assert consumed == merged
     assert admitted == consumed
     assert adapter.queries_by_iteration()[1] == consumed
+
+
+def test_ag91e_adapter_owns_recency_gate_year_anchor_and_metadata() -> None:
+    adapter = _recency_adapter()
+    finalized = adapter.finalize(
+        ["deployment status", "support policy"],
+        include_official_bias=False,
+    )
+
+    projection = adapter.apply_initial_recency_merge(
+        finalized,
+        query_type="product",
+        current_date="June 8, 2026",
+        max_queries=3,
+    )
+
+    assert projection.recency_merge_used is True
+    assert projection.recency_merge_query == "Acme Widget 2026 news"
+    assert projection.current_queries == [
+        "Acme Widget 2026 news",
+        '"Acme Widget" deployment status',
+        '"Acme Widget" support policy',
+    ]
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    recency_records = [
+        item for item in trace["items"]
+        if item["status"] == "recency_merged"
+    ]
+    assert recency_records[-1]["authorized_query"] == projection.recency_merge_query
+    assert recency_records[-1]["metadata"]["output_order"] == projection.current_queries
+    assert recency_records[-1]["metadata"]["max_queries"] == 3
+
+
+def test_ag91e_adapter_skips_recency_merge_when_gate_not_admitted() -> None:
+    adapter = _recency_adapter(
+        user_query="Acme Widget deployment status",
+        intent="general",
+    )
+
+    projection = adapter.apply_initial_recency_merge(
+        ["q1", "q2"],
+        query_type="product",
+        current_date="June 8, 2026",
+        max_queries=2,
+    )
+
+    assert projection.current_queries == ["q1", "q2"]
+    assert projection.recency_merge_used is False
+    assert projection.recency_merge_query is None
+    assert "recency_merged" not in [
+        item["status"] for item in adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]["items"]
+    ]
+
+
+def test_ag91e_adapter_skips_recency_merge_with_missing_anchor() -> None:
+    adapter = _recency_adapter(primary_entity="", core_topic="")
+
+    projection = adapter.apply_initial_recency_merge(
+        ["q1"],
+        query_type="news",
+        current_date="June 8, 2026",
+        max_queries=2,
+    )
+
+    assert projection.current_queries == ["q1"]
+    assert projection.recency_merge_used is False
+    assert projection.recency_merge_query is None
+
+
+def test_ag91e_adapter_preserves_recency_max_query_cap_and_year_fallback() -> None:
+    adapter = _recency_adapter()
+
+    projection = adapter.apply_initial_recency_merge(
+        ["q1", "q2", "q3"],
+        query_type="news",
+        current_date="next Tuesday",
+        max_queries=2,
+    )
+
+    assert projection.recency_merge_query == "Acme Widget 2026 news"
+    assert projection.current_queries == ["Acme Widget 2026 news", "q1"]
 
 
 def test_ag91b_official_current_canonical_bias_insertion_remains_queryplan_separated() -> None:
@@ -375,6 +474,9 @@ def test_ag91b_static_guard_queryplan_boundary_avoids_closed_surfaces() -> None:
     orchestrator_source = Path("core/pipeline_orchestrator.py").read_text()
     assert "def _finalize_retrieval_queries" not in orchestrator_source
     assert "current_queries = query_authority.admit_execution_queries" in orchestrator_source
+    assert "recency_projection = query_authority.apply_initial_recency_merge" in orchestrator_source
+    assert "should_merge_recency_queries(" not in orchestrator_source
+    assert '_clean_query(f"{_anchor} {y} news")' not in orchestrator_source
 
 
 def test_ag91d_recon_admission_method_preserves_candidate_order_and_origin() -> None:
