@@ -152,6 +152,62 @@ class ProviderPlan:
         self.records.append(record)
         return record
 
+    def record_continuation(
+        self,
+        *,
+        role: str,
+        query_type: str,
+        intent: str,
+        complexity: str,
+        report_type: str,
+        is_academic: bool,
+        suppress_tavily: bool,
+        override: Sequence[str] | None,
+        override_is_user: bool,
+        premium_search_escalation: bool = False,
+        select_provider_list: Callable[..., list[str]] = routing_select_providers,
+    ) -> ProviderPlanRecord:
+        """Record a continuation provider-input selection and return consumed facts.
+
+        This delegates to the existing provider selector with the same call shape
+        as the orchestrator-local Scout/Expander continuation paths.  It records
+        the provider inputs that will become the next pass's forced component
+        providers; it does not merge main-loop overrides or choose depth.
+        """
+
+        available_keys = self.available_keys()
+        providers = select_provider_list(
+            query_type,
+            intent,
+            complexity,
+            available_keys,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            override=list(override) if override is not None else None,
+            override_is_user=override_is_user,
+            premium_search_escalation=premium_search_escalation,
+        )
+        record = ProviderPlanRecord(
+            role=role,
+            providers=tuple(providers),
+            provider_override=tuple(override) if override is not None else None,
+            availability=self.availability,
+            selection_inputs={
+                "query_type": query_type,
+                "intent": intent,
+                "complexity": complexity,
+                "report_type": report_type,
+                "is_academic": is_academic,
+                "suppress_tavily": suppress_tavily,
+                "override": list(override) if override is not None else None,
+                "override_is_user": override_is_user,
+                "premium_search_escalation": premium_search_escalation,
+            },
+        )
+        self.records.append(record)
+        return record
+
     def to_trace(self) -> dict[str, object]:
         """Return a JSON-safe trace/projection for diagnostics."""
 

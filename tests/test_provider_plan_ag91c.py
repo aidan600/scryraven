@@ -143,6 +143,170 @@ def test_scout_expander_internal_override_behavior_unchanged_when_selected_direc
     ) == ["exa", "linkup"]
 
 
+def test_scout_continuation_provider_plan_override_parity_cases() -> None:
+    cases = [
+        ("medium", _all_on()),
+        ("high", _all_on()),
+        ("high", {"tavily": True, "linkup": False, "exa": True}),
+        ("medium", {"tavily": True, "linkup": True, "exa": False}),
+        ("high", {"tavily": False, "linkup": False, "exa": False}),
+    ]
+
+    for complexity, available_keys in cases:
+        plan = ProviderPlan.from_available_keys(available_keys)
+        record = plan.record_continuation(
+            role="scout_continuation",
+            query_type="other",
+            intent="general",
+            complexity=complexity,
+            report_type="general_research",
+            is_academic=False,
+            suppress_tavily=False,
+            override=["exa", "linkup"],
+            override_is_user=False,
+        )
+
+        expected = select_providers(
+            "other",
+            "general",
+            complexity,
+            available_keys,
+            report_type="general_research",
+            is_academic=False,
+            suppress_tavily=False,
+            override=["exa", "linkup"],
+            override_is_user=False,
+        )
+        assert record.providers_list() == expected
+
+
+def test_expander_continuation_provider_plan_default_selection_parity_cases() -> None:
+    cases = [
+        ("medium", _all_on(), "general_research", False, False),
+        ("high", _all_on(), "general_research", False, False),
+        ("high", _all_on(), "benchmark", False, False),
+        ("medium", {"tavily": False, "linkup": True, "exa": True}, "general_research", True, False),
+        ("high", {"tavily": True, "linkup": True, "exa": True}, "general_research", False, True),
+    ]
+
+    for complexity, available_keys, report_type, is_academic, suppress_tavily in cases:
+        plan = ProviderPlan.from_available_keys(available_keys)
+        record = plan.record_continuation(
+            role="expander_continuation",
+            query_type="other",
+            intent="research",
+            complexity=complexity,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            override=None,
+            override_is_user=True,
+        )
+
+        expected = select_providers(
+            "other",
+            "research",
+            complexity,
+            available_keys,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            override=None,
+        )
+        assert record.providers_list() == expected
+
+
+def test_continuation_provider_plan_trace_projection_matches_consumed_values() -> None:
+    plan = ProviderPlan.from_available_keys(_all_on())
+    scout_record = plan.record_continuation(
+        role="scout_continuation",
+        query_type="other",
+        intent="general",
+        complexity="high",
+        report_type="general_research",
+        is_academic=False,
+        suppress_tavily=False,
+        override=["exa", "linkup"],
+        override_is_user=False,
+    )
+    expander_record = plan.record_continuation(
+        role="expander_continuation",
+        query_type="other",
+        intent="research",
+        complexity="medium",
+        report_type="general_research",
+        is_academic=False,
+        suppress_tavily=False,
+        override=None,
+        override_is_user=True,
+    )
+
+    trace_records = plan.to_trace()["records"]
+    assert trace_records[0]["role"] == "scout_continuation"
+    assert trace_records[0]["providers"] == scout_record.providers_list()
+    assert trace_records[0]["provider_override"] == ["exa", "linkup"]
+    assert trace_records[1]["role"] == "expander_continuation"
+    assert trace_records[1]["providers"] == expander_record.providers_list()
+    assert "provider_override" not in trace_records[1]
+
+
+def test_continuation_dispatch_receives_same_providers_after_main_loop_merge() -> None:
+    available_keys = _all_on()
+    plan = ProviderPlan.from_available_keys(available_keys)
+    continuation_record = plan.record_continuation(
+        role="scout_continuation",
+        query_type="other",
+        intent="general",
+        complexity="high",
+        report_type="general_research",
+        is_academic=False,
+        suppress_tavily=False,
+        override=["exa", "linkup"],
+        override_is_user=False,
+    )
+    main_record = plan.record_main_retrieval(
+        query_type="other",
+        intent="general",
+        complexity="high",
+        report_type="general_research",
+        is_academic=False,
+        suppress_tavily=False,
+        base_search_depth="basic",
+        iteration=2,
+        primary_override=None,
+        scout_override=continuation_record.providers_list(),
+        choose_search_depth=choose_retrieval_search_depth,
+    )
+
+    legacy_force_component_providers = select_providers(
+        "other",
+        "general",
+        "high",
+        available_keys,
+        report_type="general_research",
+        is_academic=False,
+        suppress_tavily=False,
+        override=["exa", "linkup"],
+        override_is_user=False,
+    )
+    legacy_merged_override = merge_search_provider_overrides(
+        None, legacy_force_component_providers, available_keys, complexity="high"
+    )
+    legacy_dispatch_providers = select_providers(
+        "other",
+        "general",
+        "high",
+        available_keys,
+        report_type="general_research",
+        is_academic=False,
+        suppress_tavily=False,
+        override=legacy_merged_override,
+    )
+
+    assert continuation_record.providers_list() == legacy_force_component_providers
+    assert main_record.providers_list() == legacy_dispatch_providers
+
+
 def test_supplemental_depth_provider_injection_parity_when_legacy_stage_is_untouched() -> None:
     available_keys = _all_on()
     assert choose_supplemental_search_depth("medium", "basic") == "basic"
@@ -257,5 +421,7 @@ def test_pipeline_consumes_provider_plan_for_main_loop_selection() -> None:
     source = PIPELINE.read_text()
     assert "provider_plan = ProviderPlan.from_available_keys" in source
     assert "provider_plan_record = provider_plan.record_main_retrieval" in source
+    assert "scout_provider_plan_record = provider_plan.record_continuation" in source
+    assert "expander_provider_plan_record = provider_plan.record_continuation" in source
     assert "loop_providers = provider_plan_record.providers_list()" in source
     assert "current_search_depth = provider_plan_record.search_depth" in source
