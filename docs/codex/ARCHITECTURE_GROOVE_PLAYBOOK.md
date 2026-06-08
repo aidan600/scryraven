@@ -5,32 +5,37 @@ Suggested repo path: `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md`
 
 ## Purpose
 
-This playbook contains repeated workflow rules for ScryRaven Codex architecture phases.
+This playbook contains repeated workflow rules for ScryRaven Codex phases. Future
+phase prompts should be short and should reference this playbook, the
+[Codex Guidance Map](CODEX_GUIDANCE_MAP.md), and any phase-specific guide rather
+than re-stating the whole operating manual.
 
 ScryRaven is the public project name for this repository. Historical docs may
 still mention earlier working names such as ProPlex, FauxPlex, and FauxPlexity;
-the `proplex` package, `python -m proplex`, and `PROPLEX_*` environment names
-remain supported compatibility surfaces unless a phase explicitly removes them.
+the `proplex` package, `python -m proplex`, `PROPLEX_*` environment names,
+`proplex.db`, and `proplex_*` state keys remain supported compatibility surfaces
+unless a phase explicitly removes them.
 
-Future phase prompts should be short and should reference this playbook instead of re-stating the whole operating manual.
-
-## Path B
+## Path B branch / PR workflow
 
 Default workflow:
 
 ```text
 1. Start from updated main.
 2. Create/use a phase branch.
-3. Implement within scope.
-4. Make local checkpoint commits if useful.
-5. Run required offline tests/checks.
-6. Fix in-scope failures.
-7. Self-review.
-8. If the phase brief allows publication, push the completed branch and create a PR.
-9. Return one final phase bundle.
+3. Inspect the relevant repo-visible files.
+4. Choose the right phase size and write a short plan.
+5. Implement within scope.
+6. Add/update in-scope tests and docs links caused by the phase.
+7. Run required offline tests/checks.
+8. Fix in-scope failures.
+9. Self-review the diff.
+10. If the phase brief allows publication, push the completed branch and create a PR.
+11. Return one final phase bundle.
 ```
 
-GitHub is the review surface for a completed phase branch, not a sub-step synchronization layer.
+GitHub is the review surface for a completed phase branch, not a sub-step
+synchronization layer. Codex must not merge the PR.
 
 ## Standard setup
 
@@ -41,80 +46,93 @@ git status -sb
 git switch -c <phase-branch>
 ```
 
-When giving PowerShell to the user for paste-back diagnostics, include a final `Set-Clipboard` summary block. Prefer robust `git -C <repo>` commands over brittle inline `cd ...; git ...` expressions.
+When giving PowerShell to the user for paste-back diagnostics, include a final
+`Set-Clipboard` summary block. Prefer robust `git -C <repo>` commands over
+brittle inline `cd ...; git ...` expressions.
 
-## Allowed by default in a phase
+## Phase-size choice
 
-If the phase prompt approves Architecture Groove / Prove Mode, Codex may:
+Do not force every phase into a tiny slice. Pick the smallest phase shape that
+can satisfy the brief without creating avoidable user coordination work.
 
-- inspect repo files,
-- edit within scope,
-- run offline tests,
-- add in-scope tests/harnesses,
-- add compact validation artifacts tied to the phase,
-- make local checkpoint commits,
-- fix in-scope failures,
-- self-review,
-- push the completed branch and create a PR only if the phase brief explicitly allows phase-end publication.
+### Tiny slice phase
 
-## Not allowed by default
+Use a tiny slice when the brief licenses one narrow seam, one protected surface,
+or one uncertain migration step. The plan may be only two or three bullets.
 
-Codex must not:
+### Bundled multi-step phase
 
-- merge,
-- squash merge,
-- rebase,
-- force-push,
-- delete branches,
-- reset,
-- clean destructively,
-- alter `main`,
-- run live ScryRaven/proplex provider/model/search calls,
-- access secrets/env/API keys,
-- inspect DBs/private logs/generated outputs/caches/virtualenvs unless explicitly scoped,
-- change protected surfaces outside phase scope.
+Use a bundled phase when the brief already names a coherent set of related edits,
+tests, doc links, and cleanup. Create a compact execution plan instead of asking
+the user to approve each small implementation detail. Use
+[EXECUTION_PLAN_TEMPLATE.md](EXECUTION_PLAN_TEMPLATE.md) when the bundle has
+multiple checkpoints, runtime consumers, or old authority paths.
 
-## Protected surfaces
+### Docs/design phase
 
-Treat unexpected changes as stop conditions:
+Use a docs/design phase when the requested output is guidance, architecture
+inventory, phase planning, or review material. Keep runtime/app code closed.
+Docs-only phases may still fix in-scope links, formatting, and stale guidance
+created or exposed by the doc edits.
 
-- Analyst/Economist/Author handoff,
-- Analyst skip behavior,
-- Economist shortcut behavior,
-- raw quantitative/Economist material exposure,
-- Scrutineer policy,
-- provider routing,
-- prompt semantics,
-- source ranking/filtering,
-- persistence schema,
-- weak-corpus/source-class/retrieval-stop runtime behavior,
-- live-run behavior.
+### Review-only phase
 
-## Live validation artifacts
+Use a review-only phase when the user asks for an audit, inventory, or critique
+without implementation. Do not modify code unless the brief explicitly expands
+from review into implementation.
 
-Live validation uses money and should produce reusable review material.
+### Local/live dogfood phase
 
-Unless explicitly waived, every live validation/smoke phase should produce:
+Use a dogfood phase only when live validation is explicitly scoped with a query
+class, run cap, provider/model/search budget, packet path, redaction plan,
+decision, and stop condition. Otherwise live ScryRaven/proplex provider, model,
+search, or retrieval calls remain disabled.
 
-1. A committed validation note under `docs/validation/` when durable phase history is useful.
-2. A local, ignored output-quality review packet under `output/ag##_output_quality_review_packet.md`.
+## Codex Cloud and local validation roles
 
-The local packet must not be committed.
+### Codex Cloud implementation role
 
-Legacy naming note: the terms `truth review`, `truth packet`, and `live truth review` are retired. Use `output-quality review packet` for local answer/source-quality review artifacts.
+Codex Cloud should inspect repo-visible files, plan briefly, execute scoped work,
+add or update in-scope tests/docs, run focused offline checks, fix in-scope
+failures, self-review, and open a PR when explicitly authorized.
 
-It should include exact queries, full final answers, final cited URLs, visible source sections/snippets, sanitized CLI-visible telemetry, and unavailable-telemetry notes.
+### Local desktop validation / dogfood role
 
-It must not include `.env`, API keys/secrets, DB rows, raw provider payloads, raw prompts, full traces, private logs, caches, or unrelated generated outputs.
+Local desktop validation is for user-run app review, secrets-backed live calls,
+private artifacts, DB inspection, caches, local packets, and output-quality
+judgment. Codex Cloud must not assume those artifacts are repo files and must not
+request them unless the phase explicitly scopes safe redacted access.
 
-Validation phases should confirm:
+## Bounded autonomy and decision points
 
-```powershell
-git check-ignore -v output/ag##_output_quality_review_packet.md
-git ls-files output
-```
+Codex should reduce user coordination burden. Do not stop for issues that are
+fixable within the phase scope.
 
-## Stop packet
+Proceed autonomously for:
+
+- relevant file inspection;
+- scoped implementation;
+- in-scope test additions or updates;
+- in-scope test failure fixes;
+- stale docs links or formatting caused by the phase;
+- formatting, lint, and pre-commit fixes;
+- final-bundle preparation;
+- PR creation when explicitly authorized by the phase brief.
+
+Stop and ask for a user decision only for:
+
+- product choices;
+- architecture forks not resolved by the brief or repo doctrine;
+- unlicensed protected-surface changes;
+- live validation or live-call budget;
+- secrets, private data, `.env`, DB rows, private logs, caches, raw provider
+  payloads, raw prompts, full raw traces, or local output packets;
+- destructive git (`reset`, destructive `clean`, branch deletion, history rewrite);
+- merge, squash merge, rebase, or force-push;
+- broad scope expansion;
+- unresolved failing tests whose fix changes the meaning of the phase.
+
+Use this stop packet when escalation is required:
 
 ```text
 STOP REASON:
@@ -132,6 +150,99 @@ C. ...
 
 RECOMMENDATION:
 ...
+```
+
+## Allowed by default in a phase
+
+If the phase prompt approves Architecture Groove / Prove Mode, Codex may:
+
+- inspect repo files;
+- edit within scope;
+- run offline tests;
+- add in-scope tests/harnesses;
+- add compact validation artifacts tied to the phase;
+- make local checkpoint commits;
+- fix in-scope failures;
+- self-review;
+- push the completed branch and create a PR only if the phase brief explicitly
+  allows phase-end publication.
+
+## Not allowed by default
+
+Codex must not:
+
+- merge;
+- squash merge;
+- rebase;
+- force-push;
+- delete branches;
+- reset;
+- clean destructively;
+- alter `main`;
+- run live ScryRaven/proplex provider/model/search calls;
+- access secrets/env/API keys;
+- inspect DBs/private logs/generated outputs/caches/virtualenvs unless explicitly
+  scoped;
+- change protected surfaces outside phase scope.
+
+## Protected surfaces
+
+Protected surfaces are high-custody and licensable, not categorically forbidden.
+A phase may change one only when the brief explicitly names the surface, allowed
+behavior, tests, and validation boundary. Treat unexpected changes as stop
+conditions:
+
+- Analyst/Economist/Author handoff;
+- Analyst skip behavior;
+- Economist shortcut behavior;
+- raw quantitative/Economist material exposure;
+- Scrutineer policy;
+- provider routing;
+- prompt semantics;
+- source ranking/filtering;
+- persistence schema;
+- weak-corpus/source-class/retrieval-stop runtime behavior;
+- live-run behavior.
+
+## AG-89+ RunAuthority work
+
+For AG-89+ authority-collapse phases, use
+[RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
+The legacy Controller handoff playbook is not the default doctrine for those
+phases. Authority-collapse success requires runtime consumption by the intended
+consumer and deletion, demotion, bypass, subordination, or scheduled retirement
+of the old authority path.
+
+Trace-only, storage-only, wrapper-only, prompt-visible-only, or test-only
+authority is failure unless the phase is explicitly passive, docs-only, or
+instrumentation-only.
+
+## Live validation artifacts
+
+Live validation uses money and should produce reusable review material. Unless
+explicitly waived, every live validation/smoke phase should produce:
+
+1. A committed validation note under `docs/validation/` when durable phase
+   history is useful.
+2. A local, ignored output-quality review packet under
+   `output/ag##_output_quality_review_packet.md`.
+
+The local packet must not be committed. Legacy naming note: the terms `truth
+review`, `truth packet`, and `live truth review` are retired. Use
+`output-quality review packet` for local answer/source-quality review artifacts.
+
+It should include exact queries, full final answers, final cited URLs, visible
+source sections/snippets, sanitized CLI-visible telemetry, and
+unavailable-telemetry notes.
+
+It must not include `.env`, API keys/secrets, DB rows, raw provider payloads, raw
+prompts, full traces, private logs, caches, or unrelated generated outputs.
+
+Validation phases should confirm:
+
+```powershell
+git check-ignore -v output/ag##_output_quality_review_packet.md
+git ls-files output
 ```
 
 ## Final bundle

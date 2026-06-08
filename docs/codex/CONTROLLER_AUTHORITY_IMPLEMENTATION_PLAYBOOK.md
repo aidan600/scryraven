@@ -1,7 +1,17 @@
 # Controller Authority Implementation Playbook
 
-Status: AG-80A repo-tracked implementation guidance
+Status: Legacy AG-80-era Controller-handoff implementation guidance
 Phase type: documentation-only playbook; no runtime behavior change; no live validation
+
+> **AG-89+ supersession note:** This playbook remains useful for legacy
+> Controller-handoff maintenance and for passive/wiring phases when a phase brief
+> explicitly selects that model. It is **not** the default doctrine for AG-89+
+> authority-collapse work. AG-89+ phases should use
+> [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md),
+> where success requires runtime consumption by the intended consumer and deletion,
+> demotion, bypass, subordination, or scheduled retirement of the old authority
+> path. Do not use the passive-contract ladder below to preserve old hidden
+> authority when the selected phase is an authority-collapse phase.
 
 ## Purpose
 
