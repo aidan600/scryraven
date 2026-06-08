@@ -464,4 +464,5 @@ def test_pipeline_orchestrator_is_not_rewritten() -> None:
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
+                or "provider_plan" in diff
         )

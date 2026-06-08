@@ -159,6 +159,7 @@ from core.provider_diagnostics import (
     build_provider_attempt_diagnostic,
     supported_diagnostic_kwargs,
 )
+from core.provider_plan import ProviderPlan
 from core.quantitative_consistency import (
     apply_quantitative_consistency_guard,
     build_two_item_normalized_consistency_diagnostic,
@@ -2159,11 +2160,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     query_embedding = embed_texts([_embed_topic], provider=embed_provider, model=embed_model, base_url=local_url)[0]
     analyst_effort = {"low": "low", "medium": "medium", "high": "high"}.get(complexity, "low")
     entity_hint_for_retrieval = (primary_entity or core_topic or "").strip() or None
-    available_keys = {
-        "tavily": bool(os.getenv("TAVILY_API_KEY")),
-        "linkup": bool(os.getenv("LINKUP_API_KEY")),
-        "exa": bool(os.getenv("EXA_API_KEY")),
-    }
+    provider_plan = ProviderPlan.from_available_keys(
+        {
+            "tavily": bool(os.getenv("TAVILY_API_KEY")),
+            "linkup": bool(os.getenv("LINKUP_API_KEY")),
+            "exa": bool(os.getenv("EXA_API_KEY")),
+        }
+    )
+    available_keys = provider_plan.available_keys()
     current_search_depth_for_recovery = search_depth
 
     pre_retrieval_seconds = max(0.0, time.monotonic() - _bucket_pre_retrieval_t0)
@@ -3168,25 +3172,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             recovery_active=weak_corpus_recovery_used and iteration > 1,
         )
         queries_by_iteration = query_authority.queries_by_iteration()
-        current_search_depth = choose_retrieval_search_depth(
-            complexity,
-            search_depth,
-            iteration,
+        scout_override = list(force_component_providers) if force_component_providers else None
+        provider_plan_record = provider_plan.record_main_retrieval(
+            query_type=query_type,
+            intent=intent,
+            complexity=complexity,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            base_search_depth=search_depth,
+            iteration=iteration,
+            primary_override=a5_provider_override,
+            scout_override=scout_override,
+            choose_search_depth=choose_retrieval_search_depth,
+            merge_provider_overrides=merge_search_provider_overrides,
+            select_provider_list=select_providers,
         )
+        current_search_depth = provider_plan_record.search_depth or "basic"
+        loop_providers = provider_plan_record.providers_list()
         current_search_depth_for_recovery = current_search_depth
         status.step(f"--- **Iteration {iteration}/{max_iterations}** ---")
         status.step(f"Executing Searches: {current_queries} ({current_search_depth} depth)")
         past_searches.extend(current_queries)
 
-        scout_override = list(force_component_providers) if force_component_providers else None
-        override_list = merge_search_provider_overrides(
-            a5_provider_override, scout_override, available_keys, complexity=complexity
-        )
-        loop_providers = select_providers(
-            query_type, intent, complexity, available_keys,
-            report_type=report_type, is_academic=is_academic,
-            suppress_tavily=suppress_tavily, override=override_list,
-        )
         force_component_providers = []
         status.step(f"Providers this pass: {', '.join(loop_providers)}")
         providers_by_iteration.append(list(loop_providers))
