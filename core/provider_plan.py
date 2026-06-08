@@ -80,14 +80,21 @@ class ProviderPlan:
     """Run-local holder for provider/depth facts selected by existing policy."""
 
     availability: ProviderAvailabilitySnapshot
+    selector_available_keys: Mapping[str, object] | None = None
     records: list[ProviderPlanRecord] = field(default_factory=list)
 
     @classmethod
     def from_available_keys(cls, available_keys: Mapping[str, object]) -> "ProviderPlan":
-        return cls(availability=ProviderAvailabilitySnapshot.from_mapping(available_keys))
+        return cls(
+            availability=ProviderAvailabilitySnapshot.from_mapping(available_keys),
+            selector_available_keys=dict(available_keys),
+        )
 
     def available_keys(self) -> dict[str, bool]:
         return self.availability.to_available_keys()
+
+    def _selector_available_keys(self) -> dict[str, object]:
+        return dict(self.selector_available_keys or self.available_keys())
 
     def record_main_retrieval(
         self,
@@ -112,7 +119,7 @@ class ProviderPlan:
         choose depth, merge user/scout overrides, then select providers.
         """
 
-        available_keys = self.available_keys()
+        available_keys = self._selector_available_keys()
         search_depth = choose_search_depth(complexity, base_search_depth, iteration)
         merged_override = merge_provider_overrides(
             list(primary_override) if primary_override else None,
@@ -175,7 +182,7 @@ class ProviderPlan:
         providers; it does not merge main-loop overrides or choose depth.
         """
 
-        available_keys = self.available_keys()
+        available_keys = self._selector_available_keys()
         providers = select_provider_list(
             query_type,
             intent,
@@ -203,6 +210,96 @@ class ProviderPlan:
                 "override": list(override) if override is not None else None,
                 "override_is_user": override_is_user,
                 "premium_search_escalation": premium_search_escalation,
+            },
+        )
+        self.records.append(record)
+        return record
+
+    def record_supplemental_retrieval(
+        self,
+        *,
+        query_type: str | None,
+        intent: str,
+        complexity: str,
+        report_type: str | None,
+        is_academic: bool,
+        suppress_tavily: bool,
+        base_search_depth: str,
+        choose_search_depth: Callable[[str, str], str],
+        select_provider_list: Callable[..., Sequence[str]] = routing_select_providers,
+    ) -> ProviderPlanRecord:
+        """Record supplemental-search provider/depth facts selected by existing policy."""
+
+        available_keys = self._selector_available_keys()
+        search_depth = choose_search_depth(complexity, base_search_depth)
+        providers = select_provider_list(
+            query_type,
+            intent,
+            complexity,
+            available_keys,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            override=None,
+        )
+        record = ProviderPlanRecord(
+            role="supplemental_search",
+            providers=tuple(providers),
+            search_depth=search_depth,
+            availability=self.availability,
+            selection_inputs={
+                "query_type": query_type,
+                "intent": intent,
+                "complexity": complexity,
+                "report_type": report_type,
+                "is_academic": is_academic,
+                "suppress_tavily": suppress_tavily,
+                "base_search_depth": base_search_depth,
+                "override": None,
+            },
+        )
+        self.records.append(record)
+        return record
+
+    def record_scrutineer_remediation(
+        self,
+        *,
+        query_type: str | None,
+        intent: str,
+        complexity: str,
+        report_type: str | None,
+        is_academic: bool,
+        suppress_tavily: bool,
+        search_depth: str,
+        select_provider_list: Callable[..., Sequence[str]] = routing_select_providers,
+    ) -> ProviderPlanRecord:
+        """Record Scrutineer remediation provider/depth facts selected by existing policy."""
+
+        available_keys = self._selector_available_keys()
+        providers = select_provider_list(
+            query_type,
+            intent,
+            complexity,
+            available_keys,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            override=None,
+        )
+        record = ProviderPlanRecord(
+            role="scrutineer_remediation",
+            providers=tuple(providers),
+            search_depth=search_depth,
+            availability=self.availability,
+            selection_inputs={
+                "query_type": query_type,
+                "intent": intent,
+                "complexity": complexity,
+                "report_type": report_type,
+                "is_academic": is_academic,
+                "suppress_tavily": suppress_tavily,
+                "search_depth": search_depth,
+                "override": None,
             },
         )
         self.records.append(record)

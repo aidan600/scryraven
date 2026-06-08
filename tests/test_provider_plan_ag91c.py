@@ -22,6 +22,10 @@ HELPER = ROOT / "core" / "provider_plan.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 
 
+def _read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
 def _all_on() -> dict[str, bool]:
     return {"tavily": True, "linkup": True, "exa": True}
 
@@ -397,7 +401,7 @@ def test_dispatch_receives_same_providers_and_depth_from_provider_plan_record() 
 
 
 def test_static_guard_provider_plan_is_not_provider_or_search_brain() -> None:
-    source = HELPER.read_text()
+    source = _read_text(HELPER)
     forbidden = [
         "ask_model",
         "process_search_queries",
@@ -418,10 +422,89 @@ def test_static_guard_provider_plan_is_not_provider_or_search_brain() -> None:
 
 
 def test_pipeline_consumes_provider_plan_for_main_loop_selection() -> None:
-    source = PIPELINE.read_text()
+    source = _read_text(PIPELINE)
     assert "provider_plan = ProviderPlan.from_available_keys" in source
     assert "provider_plan_record = provider_plan.record_main_retrieval" in source
     assert "scout_provider_plan_record = provider_plan.record_continuation" in source
     assert "expander_provider_plan_record = provider_plan.record_continuation" in source
     assert "loop_providers = provider_plan_record.providers_list()" in source
     assert "current_search_depth = provider_plan_record.search_depth" in source
+
+
+def test_supplemental_provider_plan_record_matches_legacy_depth_and_provider_selection() -> None:
+    cases = [
+        ("medium", "basic", _all_on()),
+        ("high", "basic", _all_on()),
+        ("high", "advanced", {"tavily": True, "linkup": False, "exa": True}),
+        ("medium", "advanced", {"tavily": False, "linkup": True, "exa": True}),
+    ]
+
+    for complexity, base_depth, available_keys in cases:
+        plan = ProviderPlan.from_available_keys(available_keys)
+        record = plan.record_supplemental_retrieval(
+            query_type="news",
+            intent="research",
+            complexity=complexity,
+            report_type="general_research",
+            is_academic=False,
+            suppress_tavily=False,
+            base_search_depth=base_depth,
+            choose_search_depth=choose_supplemental_search_depth,
+        )
+
+        assert record.search_depth == choose_supplemental_search_depth(complexity, base_depth)
+        assert record.providers_list() == select_providers(
+            "news",
+            "research",
+            complexity,
+            available_keys,
+            report_type="general_research",
+            is_academic=False,
+            suppress_tavily=False,
+            override=None,
+        )
+
+
+def test_scrutineer_remediation_provider_plan_record_matches_legacy_selection() -> None:
+    cases = [
+        ("high", _all_on(), "general_research", False, False),
+        ("high", {"tavily": True, "linkup": False, "exa": True}, "general_research", False, False),
+        ("high", {"tavily": False, "linkup": True, "exa": True}, "benchmark", True, False),
+        ("high", _all_on(), "general_research", False, True),
+    ]
+
+    for complexity, available_keys, report_type, is_academic, suppress_tavily in cases:
+        plan = ProviderPlan.from_available_keys(available_keys)
+        record = plan.record_scrutineer_remediation(
+            query_type="other",
+            intent="research",
+            complexity=complexity,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            search_depth="advanced",
+        )
+
+        assert record.search_depth == "advanced"
+        assert record.providers_list() == select_providers(
+            "other",
+            "research",
+            complexity,
+            available_keys,
+            report_type=report_type,
+            is_academic=is_academic,
+            suppress_tavily=suppress_tavily,
+            override=None,
+        )
+
+
+def test_pipeline_consumes_provider_plan_for_supplemental_and_scrutineer_selection() -> None:
+    source = _read_text(PIPELINE)
+    legacy_source = _read_text(ROOT / "core" / "legacy_review_runtime_stage.py")
+
+    assert "provider_plan = ProviderPlan.from_available_keys" in source
+    assert "supplemental_provider_record = provider_plan.record_supplemental_retrieval" in legacy_source
+    assert "supp_search_depth = supplemental_provider_record.search_depth" in legacy_source
+    assert "supp_providers = supplemental_provider_record.providers_list()" in legacy_source
+    assert "remediation_provider_record = provider_plan.record_scrutineer_remediation" in legacy_source
+    assert "remed_providers = remediation_provider_record.providers_list()" in legacy_source
