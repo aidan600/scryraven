@@ -175,7 +175,7 @@ class QueryPlanRuntimeAdapter:
         *,
         iteration: int,
         recovery_active: bool,
-    ) -> None:
+    ) -> list[str]:
         self.plan = self.plan.admit_execution_queries(
             queries,
             phase="retrieval_execution",
@@ -183,6 +183,10 @@ class QueryPlanRuntimeAdapter:
             role=QueryPlanRole.RECOVERY if recovery_active else QueryPlanRole.FINALIZED,
             origin="retrieval_loop",
         )
+        return self.authorized_queries_for_iteration(iteration)
+
+    def authorized_queries_for_iteration(self, iteration: int) -> list[str]:
+        return list(self.plan.queries_by_iteration().get(iteration, []))
 
     def queries_by_iteration(self) -> dict[int, list[str]]:
         return self.plan.queries_by_iteration()

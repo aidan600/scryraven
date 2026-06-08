@@ -11,6 +11,7 @@ from core.query_plan import (
     authorize_recency_merge,
     authorize_retrieval_queries,
 )
+from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.retrieval_quality import finalize_retrieval_queries
 
 
@@ -184,3 +185,193 @@ def test_ag89c_trace_projection_is_derived_from_query_plan_state() -> None:
     assert set(trace) == {QUERY_PLAN_TRACE_KEY}
     assert trace[QUERY_PLAN_TRACE_KEY]["authorized_queries_by_iteration"] == {"1": ["q1", "q2"]}
     assert trace[QUERY_PLAN_TRACE_KEY]["items"][0]["status"] == "ordered"
+
+
+def _adapter() -> object:
+    return build_query_plan_runtime_adapter(
+        run_id="ag91b",
+        primary_entity="Acme Widget",
+        entities_list=["Acme Widget", "AW"],
+        core_topic="Acme Widget deployment",
+        user_query="Acme Widget deployment official current status",
+        intent="general",
+        clean=_clean,
+    )
+
+
+def test_ag91b_initial_researcher_queries_finalize_to_legacy_consumed_list() -> None:
+    inputs = ["deployment status", "support policy", "deployment status", ""]
+    adapter = _adapter()
+
+    consumed = adapter.finalize(
+        inputs,
+        origin="researcher",
+        role=QueryPlanRole.INITIAL,
+        phase="initial_researcher_queries",
+    )
+    legacy = finalize_retrieval_queries(
+        inputs,
+        primary_entity="Acme Widget",
+        entities_list=["Acme Widget", "AW"],
+        core_topic="Acme Widget deployment",
+        user_query="Acme Widget deployment official current status",
+        intent="general",
+        clean=_clean,
+        include_official_bias=True,
+    )
+
+    assert consumed == legacy
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    assert [
+        item["authorized_query"]
+        for item in trace["items"]
+        if item["status"] in {"finalized", "official_bias_applied"}
+    ] == consumed
+
+
+def test_ag91b_recon_seeded_queries_finalize_to_legacy_consumed_list() -> None:
+    inputs = ["Acme Widget release notes", "AW deployment timeline"]
+    adapter = _adapter()
+
+    consumed = adapter.finalize(
+        inputs,
+        origin="recon_rewriter",
+        role=QueryPlanRole.RECON_REWRITE,
+        phase="recon_seeded_queries",
+    )
+    legacy = finalize_retrieval_queries(
+        inputs,
+        primary_entity="Acme Widget",
+        entities_list=["Acme Widget", "AW"],
+        core_topic="Acme Widget deployment",
+        user_query="Acme Widget deployment official current status",
+        intent="general",
+        clean=_clean,
+        include_official_bias=True,
+    )
+
+    assert consumed == legacy
+    assert [item["origin"] for item in adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]["items"][:2]] == [
+        "recon_rewriter",
+        "recon_rewriter",
+    ]
+
+
+def test_ag91b_recency_merge_then_admission_preserves_consumed_order() -> None:
+    adapter = _adapter()
+    finalized = adapter.finalize(
+        ["deployment status", "support policy"],
+        include_official_bias=False,
+    )
+
+    merged = adapter.merge_recency(
+        finalized,
+        recency_query="Acme Widget 2026 news",
+        max_queries=3,
+    )
+    consumed = adapter.finalize(merged, max_len=3, include_official_bias=False)
+    admitted = adapter.admit_execution_queries(
+        consumed,
+        iteration=1,
+        recovery_active=False,
+    )
+
+    assert merged == [
+        "Acme Widget 2026 news",
+        '"Acme Widget" deployment status',
+        '"Acme Widget" support policy',
+    ]
+    assert consumed == merged
+    assert admitted == consumed
+    assert adapter.queries_by_iteration()[1] == consumed
+
+
+def test_ag91b_official_current_canonical_bias_insertion_remains_queryplan_separated() -> None:
+    adapter = build_query_plan_runtime_adapter(
+        run_id="ag91b-official",
+        primary_entity="Acme Widget",
+        entities_list=["Acme Widget", "AW"],
+        core_topic="Acme Widget pricing",
+        user_query="Acme Widget pricing",
+        intent="general",
+        clean=_clean,
+    )
+
+    consumed = adapter.finalize(["pricing"], include_official_bias=True)
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    official_records = [item for item in trace["items"] if item.get("role") == "official_bias"]
+
+    assert consumed == ['"Acme Widget" official pricing', '"Acme Widget" pricing']
+    assert official_records[-1]["authorized_query"] == consumed[0]
+    assert official_records[-1]["metadata"]["custody_satisfied"] is False
+    assert trace["custody_satisfaction_owner"] == "official_current_source_custody"
+
+
+def test_ag91b_max_query_cap_preserves_consumed_list_and_rejected_records() -> None:
+    adapter = _adapter()
+
+    consumed = adapter.finalize(
+        ["deployment", "pricing", "support"],
+        max_len=2,
+        include_official_bias=False,
+    )
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    over_budget = [item for item in trace["items"] if item["status"] == "rejected_over_budget"]
+
+    assert consumed == ['"Acme Widget" deployment', '"Acme Widget" pricing']
+    assert [item["authorized_query"] for item in over_budget] == ['"Acme Widget" support']
+    assert over_budget[0]["metadata"]["max_len"] == 2
+
+
+def test_ag91b_retrieval_loop_consumes_queries_recorded_by_queryplan() -> None:
+    adapter = _adapter()
+    current_queries = adapter.finalize(
+        ["deployment", "pricing"],
+        include_official_bias=False,
+    )
+
+    current_queries = adapter.admit_execution_queries(
+        current_queries,
+        iteration=1,
+        recovery_active=False,
+    )
+
+    assert current_queries == adapter.authorized_queries_for_iteration(1)
+    assert current_queries == adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY][
+        "authorized_queries_by_iteration"
+    ]["1"]
+
+
+def test_ag91b_queries_by_iteration_is_queryplan_projection_not_local_reconstruction() -> None:
+    adapter = _adapter()
+    local_mirror = {1: ["stale local mirror"]}
+    current_queries = adapter.finalize(["deployment"], include_official_bias=False)
+    adapter.admit_execution_queries(current_queries, iteration=1, recovery_active=False)
+
+    assert adapter.queries_by_iteration() != local_mirror
+    assert adapter.queries_by_iteration() == {1: ['"Acme Widget" deployment']}
+
+
+def test_ag91b_static_guard_queryplan_boundary_avoids_closed_surfaces() -> None:
+    from pathlib import Path
+
+    queryplan_sources = "\n".join(
+        Path(path).read_text()
+        for path in ("core/query_plan.py", "core/query_plan_runtime_adapter.py")
+    )
+    closed_tokens = [
+        "ask_model(",
+        "brave_reconnaissance(",
+        "embed_texts(",
+        "select_providers(",
+        "choose_retrieval_search_depth(",
+        "choose_supplemental_search_depth(",
+        "DEFAULT_SYSTEM",
+        "final_evidence",
+        "format_citation",
+    ]
+
+    assert all(token not in queryplan_sources for token in closed_tokens)
+    orchestrator_source = Path("core/pipeline_orchestrator.py").read_text()
+    assert "def _finalize_retrieval_queries" not in orchestrator_source
+    assert "current_queries = query_authority.admit_execution_queries" in orchestrator_source

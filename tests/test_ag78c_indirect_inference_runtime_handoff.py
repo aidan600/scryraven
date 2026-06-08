@@ -369,6 +369,7 @@ def test_pipeline_orchestrator_remains_untouched_in_diff():
                 or "runtime_prompt_assembly" in diff
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
+                or "query_authority.admit_execution_queries" in diff
         )
 
 

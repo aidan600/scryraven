@@ -1995,16 +1995,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         clean=_clean_query,
     )
 
-    def _finalize_retrieval_queries(
-        qs: list[str],
-        *,
-        max_len: int | None = None,
-        include_official_bias: bool = True,
-    ) -> list[str]:
-        return query_authority.finalize(
-            qs, max_len=max_len, include_official_bias=include_official_bias
-        )
-
     if not queries:
         status.step("Generating initial search plan...")
         anchor_context_for_researcher = (
@@ -2053,7 +2043,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     else:
         status.step("Using recon-informed search queries (research planner skipped for pass 1).")
 
-    queries = _finalize_retrieval_queries(queries, include_official_bias=True)
+    queries = query_authority.finalize(queries, include_official_bias=True)
     current_queries = queries[:max_queries]
     recency_merge_used = False
     recency_merge_query: str | None = None
@@ -2067,7 +2057,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             current_queries = query_authority.merge_recency(
                 current_queries, recency_query=recq, max_queries=max_queries
             )
-    current_queries = _finalize_retrieval_queries(
+    current_queries = query_authority.finalize(
         current_queries, max_len=max_queries, include_official_bias=False
     )
     router_query_preparation_contract = with_router_query_runtime_posture(
@@ -3172,7 +3162,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             ):
                 waste_flags.append("query_redundancy_skipped")
                 break
-        query_authority.admit_execution_queries(
+        current_queries = query_authority.admit_execution_queries(
             current_queries,
             iteration=iteration,
             recovery_active=weak_corpus_recovery_used and iteration > 1,
