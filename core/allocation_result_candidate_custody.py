@@ -29,6 +29,9 @@ ALLOCATION_RESULT_CANDIDATE_CUSTODY_SCHEMA_VERSION = (
 ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY = (
     "allocation_result_candidate_custody"
 )
+ALLOCATION_RESULT_CANDIDATE_CUSTODY_COMPATIBILITY_STATUS = (
+    "sanitized_observation_input_for_run_kernel_evidence_ledger_ag91j"
+)
 
 UNKNOWN = "unknown"
 NOT_OBSERVABLE = "not_observable"
@@ -74,6 +77,9 @@ def build_allocation_result_candidate_custody_trace(
     return {
         "schema_version": ALLOCATION_RESULT_CANDIDATE_CUSTODY_SCHEMA_VERSION,
         "trace_key": ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY,
+        "run_kernel_compatibility_status": (
+            ALLOCATION_RESULT_CANDIDATE_CUSTODY_COMPATIBILITY_STATUS
+        ),
         "trace_mode": "controller_authorized_allocation_result_candidate_custody",
         "diagnostic_only": False,
         "sanitized": True,
@@ -125,6 +131,9 @@ def build_allocation_result_candidate_custody_projection(
 
     return {
         "schema_version": ALLOCATION_RESULT_CANDIDATE_CUSTODY_SCHEMA_VERSION,
+        "run_kernel_compatibility_status": (
+            ALLOCATION_RESULT_CANDIDATE_CUSTODY_COMPATIBILITY_STATUS
+        ),
         "admission_owner": "ControllerEvidenceLedger",
         "allocation_owner": "ControllerRecoveryDecision",
         "allocation_trace_present": bool(trace.get(PROVIDER_SEARCH_ALLOCATION_TRACE_KEY)),
@@ -455,6 +464,7 @@ def _result_id(result: Mapping[str, Any], *, index: int) -> str:
 
 __all__ = [
     "ALLOCATION_RESULT_CANDIDATE_CUSTODY_SCHEMA_VERSION",
+    "ALLOCATION_RESULT_CANDIDATE_CUSTODY_COMPATIBILITY_STATUS",
     "ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY",
     "allocation_result_candidate_custody_payload",
     "allocation_result_candidate_inputs",

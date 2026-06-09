@@ -27,6 +27,7 @@ from core.answer_contract_pipeline_adapter import (
     PipelineRouterFacts,
     adapt_pipeline_facts_to_answer_contract_controller,
 )
+from core.evidence_ledger import source_class_facts_from_evidence_ledger_projection
 from core.indirect_inference_answer_posture_activation import (
     IndirectInferenceAnswerPostureActivation,
     build_indirect_inference_answer_posture_activation,
@@ -123,7 +124,14 @@ def _source_classes_present_from_runtime(
     *,
     source_tier_counts: Mapping[str, Any],
     source_class_recovery_telemetry: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
+    ledger_facts = source_class_facts_from_evidence_ledger_projection(
+        evidence_ledger_projection
+    )
+    if ledger_facts["present"] or ledger_facts["missing"]:
+        return _copy_string_tuple(ledger_facts["present"])
+
     present: list[str] = []
     if int(source_tier_counts.get("official", 0) or 0) > 0:
         present.extend(("official_current_rules", "current_primary_or_official"))
@@ -147,7 +155,14 @@ def _source_classes_missing_from_runtime(
     *,
     source_class_recovery_telemetry: Mapping[str, Any],
     active_source_class_recovery_lifecycle: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
+    ledger_facts = source_class_facts_from_evidence_ledger_projection(
+        evidence_ledger_projection
+    )
+    if ledger_facts["present"] or ledger_facts["missing"]:
+        return _copy_string_tuple(ledger_facts["missing"])
+
     lifecycle_missing = active_source_class_recovery_lifecycle.get(
         f"{_SOURCE_CLASS_TRACE_PREFIX}missing_classes"
     )
@@ -162,7 +177,14 @@ def _source_classes_missing_from_runtime(
 
 def _current_source_classes_missing_from_runtime(
     source_class_recovery_telemetry: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
+    ledger_facts = source_class_facts_from_evidence_ledger_projection(
+        evidence_ledger_projection
+    )
+    if ledger_facts["present"] or ledger_facts["missing"]:
+        return _copy_string_tuple(ledger_facts["missing"])
+
     status_gaps: list[str] = []
     satisfaction_status = source_class_recovery_telemetry.get(
         "source_class_satisfaction_status"
@@ -352,6 +374,7 @@ class RuntimeAnswerContractFacts:
     source_tier_counts: Mapping[str, Any] = field(default_factory=dict)
     source_class_recovery_telemetry: Mapping[str, Any] = field(default_factory=dict)
     active_source_class_recovery_lifecycle: Mapping[str, Any] = field(default_factory=dict)
+    evidence_ledger_projection: Mapping[str, Any] = field(default_factory=dict)
     weak_corpus: bool = False
     weak_corpus_reason: str | None = None
     conflicts_present: bool = False
@@ -455,7 +478,8 @@ def _pipeline_facts_from_runtime(
         facts.active_source_class_recovery_lifecycle
     )
     source_classes_missing = _current_source_classes_missing_from_runtime(
-        source_class_recovery_telemetry
+        source_class_recovery_telemetry,
+        evidence_ledger_projection=facts.evidence_ledger_projection,
     )
     weak_corpus_reason = (
         facts.weak_corpus_reason
@@ -480,6 +504,7 @@ def _pipeline_facts_from_runtime(
             source_classes_present=_source_classes_present_from_runtime(
                 source_tier_counts=source_tier_counts,
                 source_class_recovery_telemetry=source_class_recovery_telemetry,
+                evidence_ledger_projection=facts.evidence_ledger_projection,
             ),
             source_classes_missing=source_classes_missing,
             derive_missing_source_classes=True,

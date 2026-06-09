@@ -145,4 +145,5 @@ def test_pipeline_orchestrator_boundary_guard_untouched() -> None:
                 or "retrieval_stop_trace_projection" in pipeline_diff
                 or "query_authority.admit_execution_queries" in pipeline_diff
                 or "provider_plan" in pipeline_diff
+                or "evidence_ledger" in pipeline_diff
         )

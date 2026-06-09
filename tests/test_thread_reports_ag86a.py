@@ -315,5 +315,6 @@ def test_normal_author_prompt_and_orchestrator_surfaces_unchanged_by_report_modu
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
                 or "provider_plan" in diff
+                or "evidence_ledger" in diff
         )
     assert "core/prompts.py" not in changed

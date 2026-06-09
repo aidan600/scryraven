@@ -98,6 +98,12 @@ def _custody_projection_from_any(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _evidence_ledger_projection_from_any(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping) and value.get("owner") == "RunKernel.EvidenceLedger":
+        return dict(value)
+    return {}
+
+
 def _source_obligations_from_custody(projection: Any) -> tuple[SourceObligationRecord, ...]:
     custody_projection = _custody_projection_from_any(projection)
     if not custody_projection:
@@ -125,17 +131,49 @@ def _source_obligations_from_custody(projection: Any) -> tuple[SourceObligationR
 
 def _custody_summary(projection: Any) -> dict[str, Any]:
     custody_projection = _custody_projection_from_any(projection)
+    evidence_ledger_projection = _evidence_ledger_projection_from_any(projection)
+    custody_authority = (
+        "RunKernel.EvidenceLedger"
+        if evidence_ledger_projection
+        else "OfficialCurrentSourceCustodyState"
+    )
     if not custody_projection:
-        return {"available": False, "custody_authority": "OfficialCurrentSourceCustodyState"}
+        return {"available": False, "custody_authority": custody_authority}
     state = OfficialCurrentSourceCustodyState.from_projection(custody_projection)
     requirements = state.requirements()
-    return {
+    summary = {
         "available": True,
-        "custody_authority": "OfficialCurrentSourceCustodyState",
+        "custody_authority": custody_authority,
         "requirements": [requirement.to_dict() for requirement in requirements],
         "satisfied_source_classes": [r.source_class for r in requirements if r.satisfied],
         "unsatisfied_source_classes": [r.source_class for r in requirements if not r.satisfied],
     }
+    if evidence_ledger_projection:
+        custody_gaps = list(evidence_ledger_projection.get("custody_gaps") or ())
+        final_gap_types = [
+            gap.get("gap_type")
+            for gap in custody_gaps
+            if isinstance(gap, Mapping)
+            and gap.get("gap_type")
+            == "final_evidence_selected_without_ledger_custody"
+        ]
+        summary.update(
+            {
+                "evidence_ledger_candidate_count": evidence_ledger_projection.get(
+                    "candidate_count", 0
+                ),
+                "evidence_ledger_requirement_count": evidence_ledger_projection.get(
+                    "requirement_count", 0
+                ),
+                "custody_gap_types": [
+                    gap.get("gap_type")
+                    for gap in custody_gaps
+                    if isinstance(gap, Mapping) and gap.get("gap_type")
+                ],
+                "final_evidence_compatibility_gap_count": len(final_gap_types),
+            }
+        )
+    return summary
 
 
 def _postures(
@@ -232,12 +270,15 @@ def build_final_answer_packet(
     ]
     if source_obligations:
         prohibited.append("do_not_infer_source_obligation_satisfaction_from_citation_presence")
+    custody_summary = _custody_summary(source_obligation_projection)
+    if custody_summary.get("final_evidence_compatibility_gap_count"):
+        prohibited.append("do_not_treat_uncustodied_final_evidence_as_ledger_proof")
     return FinalAnswerPacket(
         packet_id=packet_id,
         evidence_records=evidence_records,
         citation_records=citation_records,
         source_obligations=source_obligations,
-        official_current_custody_summary=_custody_summary(source_obligation_projection),
+        official_current_custody_summary=custody_summary,
         claim_postures=_postures(
             evidence_sufficient=evidence_sufficient,
             corpus_weak=corpus_weak,
