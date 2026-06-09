@@ -714,6 +714,8 @@ def build_deterministic_search_judgment(
             and not lower_tier_ids
             and not stale_ids
             and not strong_lead_ids
+            and not _context_prefers_legal(judgment_input)
+            and not _context_prefers_official_current(judgment_input)
         ):
             decision = RunSearchJudgmentDecision.DEFER_TO_EXISTING_LEGACY_COMPATIBILITY
             rationale = "generic_candidates_without_source_class_fit"

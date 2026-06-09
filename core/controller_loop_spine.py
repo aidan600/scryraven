@@ -441,6 +441,53 @@ def build_controller_loop_spine_result(
     )
 
 
+def reconcile_retrieval_dispatch_runtime_checkpoint_trace(
+    *,
+    checkpoint_trace: Mapping[str, Any],
+    ordinary_continuation_candidate_trace: Mapping[str, Any],
+    targeted_retrieval_lifecycle_trace: Mapping[str, Any],
+    authorized_gate_trace: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Preserve bounded continuation authorization after runtime batch dispatch."""
+
+    checkpoint = _json_safe_mapping(checkpoint_trace)
+    ordinary_candidate = mark_ordinary_continuation_candidate_spine_authorized(
+        _json_safe_mapping(ordinary_continuation_candidate_trace),
+        used=True,
+    )
+    targeted_lifecycle = {
+        **_json_safe_mapping(targeted_retrieval_lifecycle_trace),
+        "targeted_retrieval_candidate_used": True,
+    }
+    authorized_action = authorized_gate_trace.get("authorized_action_name")
+    authorized_queries = [
+        str(item)
+        for item in authorized_gate_trace.get("authorized_queries", [])
+        if str(item).strip()
+    ]
+    if authorized_action:
+        blocked_or_skipped = dict(checkpoint.get("blocked_or_skipped_actions") or {})
+        blocked_or_skipped.pop(str(authorized_action), None)
+        checkpoint.update(
+            {
+                "promoted_action_name": authorized_action,
+                "authorized_action_name": authorized_action,
+                "blocked_or_skipped_actions": blocked_or_skipped,
+                "ordinary_continuation_candidate_spine_authorized": True,
+                "targeted_retrieval_dispatch_authorized": True,
+                "targeted_retrieval_runtime_dispatch_inverted": True,
+                "targeted_retrieval_executor_dispatched": False,
+                "targeted_retrieval_gate_reason": authorized_gate_trace.get("reason"),
+                "targeted_retrieval_authorized_queries": authorized_queries,
+                "targeted_retrieval_authorized_query_provenance": (
+                    authorized_gate_trace.get("query_provenance")
+                ),
+            }
+        )
+    checkpoint[ORDINARY_CONTINUATION_TRACE_KEY] = dict(ordinary_candidate)
+    return checkpoint, ordinary_candidate, targeted_lifecycle
+
+
 def apply_checkpoint_gate_trace(
     checkpoint_trace: Mapping[str, Any] | None,
     gate_trace: Mapping[str, Any],

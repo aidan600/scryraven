@@ -167,6 +167,7 @@ class AuthoritativeSourceActionFacts:
     search_depth_reusable: bool = True
     search_depth_escalation_required: bool = False
     retrieve_to_anchor_recommended: bool = False
+    ordinary_continuation_path_active: bool = False
     pre_analyst_phase: bool = True
     author_phase: bool = False
     query_redundancy_skipped: bool = False
@@ -237,6 +238,7 @@ def build_authoritative_source_obligation_state_and_action(
     """Build authoritative-source obligation state and existing action readiness."""
 
     recommendation = _safe_mapping(facts.recommendation)
+    preexisting_source_gap_signal = _source_class_gap_signal_present(recommendation)
     observability = _safe_mapping(facts.source_class_observability)
     recommendation = apply_search_judgment_to_source_class_recovery_recommendation(
         recommendation,
@@ -259,6 +261,11 @@ def build_authoritative_source_obligation_state_and_action(
         core_topic=facts.core_topic,
         primary_entity=facts.primary_entity,
     )
+    recommendation = _suppress_promoted_recovery_for_owned_non_source_class_path(
+        recommendation=recommendation,
+        facts=facts,
+        preexisting_source_gap_signal=preexisting_source_gap_signal,
+    )
 
     bridge_trace: dict[str, Any] | None = None
     bridge_result = _try_bridge(
@@ -268,8 +275,27 @@ def build_authoritative_source_obligation_state_and_action(
         logger=logger,
     )
     if bridge_result is not None:
+        pre_bridge_reason = _clean_text(
+            recommendation.get("source_class_recovery_reason"), limit=220
+        )
         recommendation = bridge_result.recommendation
+        if (
+            pre_bridge_reason
+            and pre_bridge_reason.startswith("answer_contract_")
+            and str(recommendation.get("source_class_recovery_reason") or "").startswith(
+                "official_source_obligation_bridge:"
+            )
+        ):
+            recommendation = {
+                **recommendation,
+                "source_class_recovery_reason": pre_bridge_reason,
+            }
         bridge_trace = bridge_result.trace
+    recommendation = _suppress_promoted_recovery_for_owned_non_source_class_path(
+        recommendation=recommendation,
+        facts=facts,
+        preexisting_source_gap_signal=preexisting_source_gap_signal,
+    )
 
     authority_arbitration = _authority_runtime_arbitration(
         facts=facts,
@@ -359,7 +385,7 @@ def build_authoritative_source_obligation_state_and_action(
         provider_swap_required=facts.provider_swap_required,
         search_depth_reusable=facts.search_depth_reusable,
         search_depth_escalation_required=facts.search_depth_escalation_required,
-        retrieve_to_anchor_recommended=facts.retrieve_to_anchor_recommended,
+        retrieve_to_anchor_recommended=False,
         pre_analyst_phase=facts.pre_analyst_phase,
         author_phase=facts.author_phase,
     )
@@ -454,6 +480,75 @@ def _apply_answer_contract_gap_trigger(
             exc,
         )
         return dict(recommendation)
+
+
+def _source_class_gap_signal_present(recommendation: Mapping[str, Any]) -> bool:
+    return bool(
+        recommendation.get("source_class_recovery_recommended")
+        or recommendation.get("source_class_underfire_shadow")
+        or recommendation.get("source_class_gap_candidates")
+        or recommendation.get("missing_expected_source_classes")
+    )
+
+
+def _suppress_promoted_recovery_for_owned_non_source_class_path(
+    *,
+    recommendation: Mapping[str, Any],
+    facts: AuthoritativeSourceActionFacts,
+    preexisting_source_gap_signal: bool,
+) -> dict[str, Any]:
+    if preexisting_source_gap_signal:
+        return dict(recommendation)
+    if not recommendation.get("run_authority_search_judgment_promoted_recovery"):
+        return dict(recommendation)
+    blocker_reason: str | None = None
+    if facts.retrieve_to_anchor_recommended:
+        if _regulatory_authority_context(facts):
+            return dict(recommendation)
+        blocker_reason = "retrieve_to_anchor_recommendation"
+    elif facts.ordinary_continuation_path_active:
+        blocker_reason = "ordinary_continuation_path"
+    if blocker_reason is None:
+        return dict(recommendation)
+    out = dict(recommendation)
+    if not (
+        out.get("source_class_recovery_recommended")
+        or out.get("missing_expected_source_classes")
+        or out.get("source_class_recovery_queries")
+    ):
+        return out
+    out["source_class_recovery_recommended"] = False
+    out["missing_expected_source_classes"] = []
+    out["source_class_recovery_queries"] = []
+    out["source_class_recovery_query_count"] = 0
+    out["source_class_recovery_reason"] = None
+    out["authority_lifecycle_required_recovery_allowed"] = False
+    out["run_authority_search_judgment_recovery_blocked_by"] = blocker_reason
+    return _safe_value(out)
+
+
+def _regulatory_authority_context(facts: AuthoritativeSourceActionFacts) -> bool:
+    values = (
+        facts.intent,
+        facts.report_type,
+        facts.query_type,
+        facts.answer_contract_family,
+        facts.query,
+        facts.core_topic,
+    )
+    text = " ".join(str(value or "").casefold() for value in values)
+    return any(
+        marker in text
+        for marker in (
+            "regulatory",
+            "regulation",
+            "legal",
+            "statutory",
+            "statute",
+            " act ",
+            "current official rules",
+        )
+    )
 
 
 def _try_bridge(

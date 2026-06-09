@@ -63,6 +63,7 @@ from core.controller_loop_spine import (
     ControllerLoopSpineInput,
     build_controller_loop_spine_result,
     checkpoint_action_name_from_trace,
+    reconcile_retrieval_dispatch_runtime_checkpoint_trace,
 )
 from core.controller_recovery_decision import build_controller_recovery_decision
 from core.controller_state_mirror import record_run_metadata_snapshot
@@ -116,8 +117,6 @@ from core.official_source_obligation_bridge import (
     apply_official_source_obligation_bridge,
 )
 from core.ordinary_continuation_candidate import (
-    ORDINARY_CONTINUATION_TRACE_KEY,
-    mark_ordinary_continuation_candidate_spine_authorized,
     ordinary_continuation_candidate_defaults,
     source_path_from_runtime_source,
 )
@@ -3780,18 +3779,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             )
             else evaluator_continuation_spine_gate_trace
         )
-        ordinary_continuation_candidate_trace = (
-            mark_ordinary_continuation_candidate_spine_authorized(
-                ordinary_continuation_candidate_trace,
-                used=True,
-            )
-        )
-        targeted_retrieval_lifecycle_trace = {
-            **targeted_retrieval_lifecycle_trace,
-            "targeted_retrieval_candidate_used": True,
-        }
-        evidence_integration_checkpoint_trace[ORDINARY_CONTINUATION_TRACE_KEY] = dict(
-            ordinary_continuation_candidate_trace
+        (
+            evidence_integration_checkpoint_trace,
+            ordinary_continuation_candidate_trace,
+            targeted_retrieval_lifecycle_trace,
+        ) = reconcile_retrieval_dispatch_runtime_checkpoint_trace(
+            checkpoint_trace=evidence_integration_checkpoint_trace,
+            ordinary_continuation_candidate_trace=ordinary_continuation_candidate_trace,
+            targeted_retrieval_lifecycle_trace=targeted_retrieval_lifecycle_trace,
+            authorized_gate_trace=authorized_gate_trace,
         )
         evidence_integration_checkpoint_trace[
             "expander_continuation_spine_gate_trace"

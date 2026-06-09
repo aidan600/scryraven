@@ -19,6 +19,12 @@ _RECOVERY_DECISIONS = {
     RunSearchJudgmentDecision.RECOVER_MISSING_SOURCE_BOUND_NUMERIC.value,
     RunSearchJudgmentDecision.ESCALATE_EXISTING_PROVIDER_OR_DEPTH.value,
 }
+_REQUIRED_SOURCE_CLASS_RECOVERY_DECISIONS = {
+    RunSearchJudgmentDecision.RECOVER_MISSING_OFFICIAL_CURRENT.value,
+    RunSearchJudgmentDecision.RECOVER_MISSING_LEGAL_PRIMARY.value,
+    RunSearchJudgmentDecision.RECOVER_MISSING_CANONICAL.value,
+    RunSearchJudgmentDecision.RECOVER_MISSING_SOURCE_BOUND_NUMERIC.value,
+}
 _BLOCK_DECISIONS = {
     RunSearchJudgmentDecision.BLOCK_REDUNDANT_QUERY.value,
     RunSearchJudgmentDecision.STOP_INSUFFICIENT.value,
@@ -132,16 +138,25 @@ def apply_search_judgment_to_source_class_recovery_recommendation(
         if "run_authority_source_gap_signal_present" in out
         else _has_source_class_gap_signal(out)
     )
+    run_authority_required_gap_signal = bool(
+        decision in _REQUIRED_SOURCE_CLASS_RECOVERY_DECISIONS and target_classes
+    )
+    effective_signal_present = bool(
+        signal_present or run_authority_required_gap_signal
+    )
 
     out["run_authority_search_judgment_ref"] = ref
     out["run_authority_search_judgment_consumed"] = True
-    out["run_authority_source_gap_signal_present"] = signal_present
+    out["run_authority_source_gap_signal_present"] = effective_signal_present
+    out["run_authority_required_gap_signal_present"] = (
+        run_authority_required_gap_signal
+    )
     trigger_fields = _string_list(out.get("source_class_recovery_trigger_fields"))
     if "run_authority_search_judgment" not in trigger_fields:
         trigger_fields.append("run_authority_search_judgment")
     out["source_class_recovery_trigger_fields"] = trigger_fields
 
-    if decision in _RECOVERY_DECISIONS and target_classes and signal_present:
+    if decision in _RECOVERY_DECISIONS and target_classes and effective_signal_present:
         existing_classes = _string_list(out.get("missing_expected_source_classes"))
         for source_class in target_classes:
             if source_class not in existing_classes:
@@ -156,6 +171,7 @@ def apply_search_judgment_to_source_class_recovery_recommendation(
             if candidate not in queries:
                 queries.append(candidate)
         out["source_class_recovery_recommended"] = True
+        out["run_authority_search_judgment_promoted_recovery"] = True
         out["missing_expected_source_classes"] = existing_classes
         out["source_class_recovery_queries"] = queries[:2]
         out["source_class_recovery_query_count"] = len(queries[:2])
@@ -191,10 +207,49 @@ def apply_search_judgment_to_source_class_recovery_recommendation(
         out["authority_lifecycle_required_recovery_allowed"] = False
         return safe_json(out)
 
+    if decision == RunSearchJudgmentDecision.STOP_INSUFFICIENT.value:
+        existing_classes = _string_list(out.get("missing_expected_source_classes"))
+        for source_class in target_classes:
+            if source_class not in existing_classes:
+                existing_classes.append(source_class)
+        queries = _string_list(out.get("source_class_recovery_queries"), limit=220)
+        if target_classes:
+            for candidate in recommended_queries or _fallback_queries(
+                target_classes,
+                query=query,
+                core_topic=core_topic,
+                primary_entity=primary_entity,
+            ):
+                if candidate not in queries:
+                    queries.append(candidate)
+            out["source_class_recovery_recommended"] = True
+            out["run_authority_search_judgment_promoted_recovery"] = True
+            out["missing_expected_source_classes"] = existing_classes
+            out["source_class_recovery_queries"] = queries[:2]
+            out["source_class_recovery_query_count"] = len(queries[:2])
+        blockers = list(out.get("authority_lifecycle_blockers") or [])
+        blocker = {
+            "source": "RunKernel.RunAuthoritySearchJudgment",
+            "reason": "run_authority_stop_insufficient",
+            "decision": decision,
+        }
+        if blocker not in blockers:
+            blockers.append(blocker)
+        existing_reason = clean_text(out.get("source_class_recovery_reason"), limit=220)
+        out["source_class_recovery_blocked_by_run_authority"] = True
+        out["source_class_recovery_reason"] = (
+            existing_reason or f"run_authority_search_judgment:{decision}"
+        )
+        out["authority_lifecycle_blockers"] = blockers
+        out["authority_lifecycle_required_recovery_allowed"] = False
+        out["authority_lifecycle_final_posture"] = "insufficient_partial"
+        out["insufficient_posture"] = _mapping(projection.get("insufficient_posture"))
+        return safe_json(out)
+
     if (
         decision in _RECOVERY_DECISIONS
         and target_classes
-        and not signal_present
+        and not effective_signal_present
         and decision != RunSearchJudgmentDecision.RECOVER_MISSING_LEGAL_PRIMARY.value
         and str(out.get("source_class_recovery_reason") or "").startswith(
             "answer_contract_"
