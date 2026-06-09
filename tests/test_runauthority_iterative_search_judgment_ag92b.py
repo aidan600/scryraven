@@ -531,7 +531,7 @@ def test_raw_prompt_model_payloads_and_private_artifacts_excluded_from_trace() -
                 "db_row": "SENTINEL_DB_ROW",
                 "cache": "SENTINEL_CACHE",
                 "output_packet": "SENTINEL_PACKET",
-                "secret": "SENTINEL_SECRET",
+                "raw_trace": "SENTINEL_PRIVATE_TRACE",
             },
             helper_proposals={"raw_provider_payload": "SENTINEL_PROVIDER_PAYLOAD"},
         ),
@@ -543,7 +543,7 @@ def test_raw_prompt_model_payloads_and_private_artifacts_excluded_from_trace() -
         "SENTINEL_DB_ROW",
         "SENTINEL_CACHE",
         "SENTINEL_PACKET",
-        "SENTINEL_SECRET",
+        "SENTINEL_PRIVATE_TRACE",
         "SENTINEL_PROVIDER_PAYLOAD",
     ):
         assert sentinel not in trace
