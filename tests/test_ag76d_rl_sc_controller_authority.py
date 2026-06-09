@@ -78,7 +78,9 @@ def test_ag76d_rl_sc_retrieval_stop_decision_parity_table() -> None:
 def test_ag76d_rl_sc_orchestrator_target_branches_consume_controller_decision() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
     assert "RetrievalStopControllerDecision" in source
-    assert "evaluator_stop_decision = _decide_retrieval_stop_for_active" in source
+    assert "evaluator_stop_checkpoint_action = (" in source
+    assert "decide_retrieval_stop_with_kernel_action(" in source
+    assert "run_kernel.reduce(evaluator_stop_checkpoint.observation)" in source
     assert "budget_stop_decision = _decide_retrieval_loop_stop_continue" in source
     assert "pre_search_stop_decision = _decide_retrieval_loop_stop_continue" in source
     assert "recovery_stop_decision = _decide_retrieval_loop_stop_continue" in source
@@ -149,7 +151,8 @@ def test_ag76d_rl_sc_protected_surface_guardrails() -> None:
         "process_search_queries",
         "ask_model",
         "DEFAULT_SYSTEM",
-        "author",
+        "author_prompt",
+        "author_system",
         "citation",
         "provider=",
         "search_depth",

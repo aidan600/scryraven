@@ -22,6 +22,15 @@ from core import (
     legacy_review_runtime_stage,
     post_analyst_handoff_packaging,
 )
+from core.analyst_quant_packet_runtime import (
+    _analyst_quant_packet_payload,  # noqa: F401 - compatibility re-export
+    _analyst_quant_packet_telemetry_defaults,
+    _economist_pre_analyst_skip_candidate_defaults,
+    _economist_pre_analyst_skip_candidate_telemetry,
+    _format_analyst_quant_packet_section,
+    _format_missing_target_metric_fallback_directive,
+    _nutrition_macro_per_unit_lookup,  # noqa: F401 - compatibility re-export
+)
 from core.anchor_resolution import (
     build_shadow_anchor_packet,
     format_anchor_context_for_researcher,
@@ -66,7 +75,6 @@ from core.corpus_state import (
     is_weak_corpus_state,
 )
 from core.cost_accounting import CostAccumulator
-from core.entity_extraction import fallback_entities_from_query
 from core.evidence_integration_checkpoint import (
     build_evidence_integration_checkpoint_trace,
     decide_evidence_integration_checkpoint,
@@ -153,7 +161,7 @@ from core.post_author_output_projection import (
     build_post_author_trace_packaging_from_scope,
     build_run_outcome_from_scope,
 )
-from core.prompts import ROUTER_RETRY_USER_APPEND, SCOUT_REGISTRY
+from core.prompts import SCOUT_REGISTRY
 from core.protocols import StatusWriter
 from core.provider_diagnostics import (
     build_provider_attempt_diagnostic,
@@ -166,6 +174,7 @@ from core.quantitative_consistency import (
     is_two_item_calorie_gram_comparison_candidate,
 )
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
+from core.query_production_runtime import execute_query_plan_admission_action
 from core.recovered_evidence_visibility import (
     apply_controller_recovered_evidence_visibility,
 )
@@ -201,7 +210,7 @@ from core.retrieval_scheduler import (
     main_retrieval_action_values,
     schedule_evaluator_continuation,
     schedule_expander_continuation_from_pipeline_scope,
-    schedule_main_retrieval_from_pipeline_scope,
+    schedule_main_retrieval_from_kernel_action,
     schedule_scout_continuation_from_pipeline_scope,
     schedule_weak_corpus_recovery_from_pipeline_scope,
 )
@@ -209,7 +218,7 @@ from core.retrieval_stop_controller import (
     RetrievalStopControllerDecision,
     RetrievalStopDecision,
     build_retrieval_stop_controller_input,
-    decide_retrieval_stop,
+    decide_retrieval_stop_with_kernel_action,
 )
 from core.retrieval_stop_trace_projection import (
     build_ordinary_continuation_trace_projection,
@@ -221,13 +230,11 @@ from core.retrieval_stop_trace_projection import (
     retrieval_stop_shadow_defaults,
 )
 from core.review_flags import recent_recurring_kb_hints
-from core.router_query_preparation_contract import (
-    build_router_query_preparation_state,
-    with_router_query_runtime_posture,
-)
 from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
+from core.routing_runtime import execute_route_request_action
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
+from core.run_kernel import RunKernel
 from core.run_logging import (
     current_code_version_metadata,
     log_run_failed,
@@ -338,11 +345,6 @@ _build_retrieval_stop_active_stop_no_queries_telemetry = (
 _build_retrieval_stop_active_stop_budget_exhausted_telemetry = (
     build_retrieval_stop_active_stop_budget_exhausted_telemetry
 )
-
-def _decide_retrieval_stop_for_active(
-    snapshot: Any,
-) -> Any:
-    return decide_retrieval_stop(snapshot)
 
 def _compact_runtime_strings(
     values: Any,
@@ -941,152 +943,8 @@ _query_requires_clinical_trial_comparative_caution = (
 )
 
 
-def _nutrition_macro_per_unit_lookup(query: str) -> bool:
-    return bool(detect_nutrition_lookup_telemetry(query)["nutrition_lookup_detected"])
-
-
 _pre_analyst_retrieval_gate = analyst_runtime_stage.pre_analyst_retrieval_gate
 _post_economist_analyst_gate = analyst_runtime_stage.post_economist_analyst_gate
-
-
-
-ANALYST_QUANT_PACKET_STRING_LIMIT = 200
-ANALYST_QUANT_PACKET_SOURCE_VALUE_LIMIT = 12
-ANALYST_QUANT_PACKET_CALCULATION_LIMIT = 8
-ANALYST_QUANT_PACKET_REF_LIMIT = 12
-MISSING_TARGET_METRIC_NOTE_LIMIT = 12
-
-
-def _analyst_quant_packet_telemetry_defaults() -> dict[str, Any]:
-    return {
-        "analyst_quant_packet_present": False,
-        "analyst_quant_packet_review_requested": False,
-        "analyst_quant_packet_injected": False,
-        "analyst_quant_packet_reviewed_by_model": False,
-        "analyst_quant_packet_direct_use_eligible": False,
-        "analyst_quant_packet_requires_analyst": True,
-        "analyst_quant_packet_source": None,
-        "analyst_quant_packet_gate_reason": "no_packet_for_analyst",
-        "analyst_model_called": False,
-    }
-
-
-def _query_allows_proxy_or_qualitative_metric_framing(query: str) -> bool:
-    text = str(query or "").replace("_", " ").replace("-", " ").casefold()
-    return bool(
-        re.search(
-            r"\b("
-            r"proxy|proxies|proxy only|proxy metric|indirect|directional|"
-            r"qualitative|qualitatively"
-            r")\b",
-            text,
-        )
-    )
-
-
-def _format_missing_target_metric_fallback_directive(
-    *,
-    query: str = "",
-    report_type: str,
-    quant_report_types: Any,
-    economist_safety_telemetry: dict[str, Any],
-    quant_retrieval_sufficiency_telemetry: dict[str, Any] | None = None,
-    estimate_from_priors: bool = False,
-) -> str:
-    normalized_report_type = str(report_type or "").strip().lower()
-    normalized_quant_types = {
-        str(rt).strip().lower()
-        for rt in (quant_report_types or [])
-        if str(rt).strip()
-    }
-    bounded_quantitative_report = normalized_report_type in normalized_quant_types
-    validation_errors = {
-        str(error).strip()
-        for error in (
-            economist_safety_telemetry.get("quantitative_packet_validation_errors")
-            or []
-        )
-        if str(error).strip()
-    }
-    missing_metrics = [
-        str(metric).strip()[:ANALYST_QUANT_PACKET_STRING_LIMIT]
-        for metric in (economist_safety_telemetry.get("target_metric_missing") or [])
-        if str(metric).strip()
-    ][:MISSING_TARGET_METRIC_NOTE_LIMIT]
-    packet_missing_target = bool(
-        bounded_quantitative_report
-        and bool(economist_safety_telemetry.get("quantitative_packet_present"))
-        and not bool(economist_safety_telemetry.get("quantitative_packet_valid"))
-        and "target_metric_evidence_missing" in validation_errors
-        and missing_metrics
-    )
-
-    retrieval_missing_metrics: list[str] = []
-    if (
-        bounded_quantitative_report
-        and not estimate_from_priors
-        and not bool(economist_safety_telemetry.get("quantitative_packet_valid"))
-        and not _query_allows_proxy_or_qualitative_metric_framing(query)
-        and isinstance(quant_retrieval_sufficiency_telemetry, dict)
-        and bool(
-            quant_retrieval_sufficiency_telemetry.get(
-                "quant_retrieval_target_detected"
-            )
-        )
-        and not bool(
-            quant_retrieval_sufficiency_telemetry.get(
-                "quant_retrieval_metric_coverage_valid"
-            )
-        )
-        and bool(
-            quant_retrieval_sufficiency_telemetry.get(
-                "quant_retrieval_proxy_metric_detected"
-            )
-        )
-    ):
-        blockers = {
-            str(blocker).strip()
-            for blocker in (
-                quant_retrieval_sufficiency_telemetry.get(
-                    "quant_retrieval_sufficiency_blockers"
-                )
-                or []
-            )
-            if str(blocker).strip()
-        }
-        if "proxy_metric_only" in blockers and "missing_metric_coverage" in blockers:
-            retrieval_missing_metrics = [
-                str(metric).strip()[:ANALYST_QUANT_PACKET_STRING_LIMIT]
-                for metric in (
-                    quant_retrieval_sufficiency_telemetry.get(
-                        "quant_retrieval_metrics"
-                    )
-                    or []
-                )
-                if str(metric).strip()
-                and str(metric).strip() != "comparative_terms"
-            ][:MISSING_TARGET_METRIC_NOTE_LIMIT]
-
-    if retrieval_missing_metrics:
-        for metric in retrieval_missing_metrics:
-            if metric not in missing_metrics:
-                missing_metrics.append(metric)
-        missing_metrics = missing_metrics[:MISSING_TARGET_METRIC_NOTE_LIMIT]
-
-    if not (packet_missing_target or retrieval_missing_metrics):
-        return ""
-
-    metric_list = ", ".join(missing_metrics)
-    return (
-        "\n\nNOTE FOR DOWNSTREAM SYNTHESIS - MISSING TARGET METRIC EVIDENCE:\n"
-        "The requested quantitative target metric was not source-bound. "
-        f"Missing metric evidence: {metric_list}. "
-        "Available quantitative evidence may be adjacent or proxy-only; treat proxy "
-        "evidence as proxy-only unless explicitly labeled that way. "
-        "Do not present model-derived numeric estimates, ranges, or percent advantages "
-        "for the missing metric. Answer qualitatively from available sourced evidence "
-        "and explicitly state that direct evidence for the requested metric is missing.\n"
-    )
 
 
 def _extract_final_answer_source_ids(report: str) -> list[str]:
@@ -1118,277 +976,6 @@ def _final_answer_source_citation_telemetry(
         "final_answer_packet_source_ids_diverged": bool(final_source_ids ^ packet_source_ids),
         "final_answer_source_telemetry_shadow_mode": True,
     }
-
-
-def _economist_pre_analyst_skip_candidate_defaults() -> dict[str, Any]:
-    return {
-        "economist_pre_analyst_skip_candidate_shadow": False,
-        "economist_pre_analyst_skip_candidate_reasons": [],
-        "economist_pre_analyst_skip_candidate_blockers": [],
-        "economist_pre_analyst_skip_candidate_gate_reason": "not_evaluated",
-        "economist_pre_analyst_skip_candidate_shadow_mode": True,
-    }
-
-
-def _economist_pre_analyst_skip_candidate_telemetry(
-    *,
-    report_type: str,
-    complexity: str,
-    mode: str,
-    economist_safety_telemetry: dict[str, Any],
-    quant_retrieval_sufficiency_telemetry: dict[str, Any] | None,
-) -> dict[str, Any]:
-    """Diagnostic-only pre-Analyst skip candidate telemetry.
-
-    This reports whether a future policy might consider a clean Economist packet
-    reviewable. It is not runtime control flow and must not skip Analyst.
-    """
-    telemetry = _economist_pre_analyst_skip_candidate_defaults()
-    reasons: list[str] = []
-    blockers: list[str] = []
-
-    bounded_quantitative = str(report_type).lower() in {
-        "quantitative_comparison",
-        "benchmark",
-    }
-    if bounded_quantitative:
-        reasons.append("bounded_quantitative_report")
-    else:
-        blockers.append("non_bounded_quantitative_report")
-
-    if str(complexity).lower() == "medium":
-        reasons.append("medium_complexity")
-    else:
-        blockers.append("non_medium_complexity")
-
-    packet_valid = bool(economist_safety_telemetry.get("quantitative_packet_valid"))
-    packet_direct_use = bool(
-        economist_safety_telemetry.get("quantitative_packet_direct_use_eligible")
-    )
-    packet_requires_analyst = bool(
-        economist_safety_telemetry.get("quantitative_packet_requires_analyst")
-    )
-    if packet_valid:
-        reasons.append("packet_valid")
-    else:
-        blockers.append("packet_invalid_or_missing")
-    if packet_direct_use:
-        reasons.append("packet_direct_use_eligible")
-    else:
-        blockers.append("packet_not_direct_use_eligible")
-    if packet_requires_analyst:
-        blockers.append("packet_requires_analyst")
-    else:
-        reasons.append("packet_does_not_require_analyst")
-
-    if bool(economist_safety_telemetry.get("high_stakes_quant_detected")):
-        blockers.append("high_stakes_requires_analyst")
-    else:
-        reasons.append("non_high_stakes")
-
-    if bool(economist_safety_telemetry.get("economist_code_execution_requested")):
-        blockers.append("economist_code_execution_requested")
-    else:
-        reasons.append("no_economist_code_request")
-
-    if bounded_quantitative:
-        quant_retrieval_sufficiency_telemetry = (
-            quant_retrieval_sufficiency_telemetry or {}
-        )
-        retrieval_target_detected = bool(
-            quant_retrieval_sufficiency_telemetry.get(
-                "quant_retrieval_target_detected"
-            )
-        )
-        retrieval_sufficiency_valid = bool(
-            quant_retrieval_sufficiency_telemetry.get(
-                "quant_retrieval_sufficiency_valid"
-            )
-        )
-        if retrieval_target_detected and retrieval_sufficiency_valid:
-            reasons.append("retrieval_sufficiency_valid")
-        elif not retrieval_target_detected:
-            blockers.append("retrieval_sufficiency_missing")
-        else:
-            blockers.append("retrieval_sufficiency_failed")
-
-    candidate = not blockers
-    if candidate:
-        gate_reason = "candidate_shadow_only"
-    elif "high_stakes_requires_analyst" in blockers:
-        gate_reason = "blocked_by_high_stakes"
-    elif "packet_invalid_or_missing" in blockers:
-        gate_reason = "blocked_by_invalid_packet"
-    elif (
-        "retrieval_sufficiency_failed" in blockers
-        or "retrieval_sufficiency_missing" in blockers
-    ):
-        gate_reason = "blocked_by_retrieval_sufficiency"
-    elif "non_bounded_quantitative_report" in blockers:
-        gate_reason = "blocked_by_report_type"
-    elif "non_medium_complexity" in blockers:
-        gate_reason = "blocked_by_complexity"
-    elif "economist_code_execution_requested" in blockers:
-        gate_reason = "blocked_by_code_request"
-    else:
-        gate_reason = "blocked_by_multiple_reasons"
-
-    telemetry.update(
-        {
-            "economist_pre_analyst_skip_candidate_shadow": candidate,
-            "economist_pre_analyst_skip_candidate_reasons": reasons,
-            "economist_pre_analyst_skip_candidate_blockers": blockers,
-            "economist_pre_analyst_skip_candidate_gate_reason": gate_reason,
-            "economist_pre_analyst_skip_candidate_shadow_mode": True,
-        }
-    )
-    return telemetry
-
-
-def _truncate_analyst_quant_packet_string(value: Any) -> Any:
-    if not isinstance(value, str):
-        return value
-    if len(value) <= ANALYST_QUANT_PACKET_STRING_LIMIT:
-        return value
-    return value[: ANALYST_QUANT_PACKET_STRING_LIMIT - 3] + "..."
-
-
-def _sanitize_analyst_quant_packet_value(value: Any) -> Any:
-    if isinstance(value, str):
-        return _truncate_analyst_quant_packet_string(value)
-    if isinstance(value, dict):
-        return {
-            str(_truncate_analyst_quant_packet_string(k)): _sanitize_analyst_quant_packet_value(v)
-            for k, v in sorted(value.items(), key=lambda item: str(item[0]))
-        }
-    if isinstance(value, list):
-        return [_sanitize_analyst_quant_packet_value(item) for item in value]
-    return value
-
-
-def _bounded_analyst_quant_packet_list(value: Any, limit: int) -> list[Any]:
-    if not isinstance(value, list):
-        return []
-    return [_sanitize_analyst_quant_packet_value(item) for item in value[:limit]]
-
-
-def _analyst_quant_packet_payload(
-    telemetry: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any] | None]:
-    handoff = _analyst_quant_packet_telemetry_defaults()
-    packet = telemetry.get("quantitative_packet")
-    packet_present = bool(telemetry.get("quantitative_packet_present"))
-    packet_valid = bool(telemetry.get("quantitative_packet_valid"))
-    handoff["analyst_quant_packet_present"] = packet_present
-    if packet_present:
-        handoff["analyst_quant_packet_gate_reason"] = str(
-            telemetry.get("quantitative_packet_gate_reason") or "packet_not_available_for_analyst"
-        )[:ANALYST_QUANT_PACKET_STRING_LIMIT]
-
-    if not (packet_present and packet_valid and isinstance(packet, dict)):
-        return handoff, None
-
-    direct_use_eligible = bool(
-        telemetry.get("quantitative_packet_direct_use_eligible", packet.get("direct_use_eligible", False))
-    )
-    requires_analyst = bool(
-        telemetry.get("quantitative_packet_requires_analyst", packet.get("requires_analyst", True))
-    )
-    handoff.update(
-        {
-            "analyst_quant_packet_review_requested": True,
-            "analyst_quant_packet_injected": True,
-            "analyst_quant_packet_direct_use_eligible": direct_use_eligible,
-            "analyst_quant_packet_requires_analyst": requires_analyst,
-            "analyst_quant_packet_source": "economist_quantitative_packet_v1",
-        }
-    )
-
-    sanitized = {
-        "schema_version": _truncate_analyst_quant_packet_string(packet.get("schema_version")),
-        "target_metric_names": _bounded_analyst_quant_packet_list(
-            packet.get("target_metric_names", telemetry.get("target_metric_names")),
-            ANALYST_QUANT_PACKET_REF_LIMIT,
-        ),
-        "source_bound_values": _bounded_analyst_quant_packet_list(
-            packet.get("source_bound_values"),
-            ANALYST_QUANT_PACKET_SOURCE_VALUE_LIMIT,
-        ),
-        "unsupported_values": _bounded_analyst_quant_packet_list(
-            packet.get("unsupported_values"),
-            ANALYST_QUANT_PACKET_REF_LIMIT,
-        ),
-        "calculation_results": _bounded_analyst_quant_packet_list(
-            packet.get("calculation_results"),
-            ANALYST_QUANT_PACKET_CALCULATION_LIMIT,
-        ),
-        "target_metric_bound_value_refs": _bounded_analyst_quant_packet_list(
-            packet.get(
-                "target_metric_bound_value_refs",
-                telemetry.get("target_metric_bound_value_refs"),
-            ),
-            ANALYST_QUANT_PACKET_REF_LIMIT,
-        ),
-        "target_metric_calculation_refs": _bounded_analyst_quant_packet_list(
-            packet.get(
-                "target_metric_calculation_refs",
-                telemetry.get("target_metric_calculation_refs"),
-            ),
-            ANALYST_QUANT_PACKET_REF_LIMIT,
-        ),
-        "high_stakes_quant_detected": bool(
-            packet.get(
-                "high_stakes_quant_detected",
-                telemetry.get("high_stakes_quant_detected", False),
-            )
-        ),
-        "high_stakes_quant_domain": _truncate_analyst_quant_packet_string(
-            packet.get(
-                "high_stakes_quant_domain",
-                telemetry.get("high_stakes_quant_domain"),
-            )
-        ),
-        "direct_use_eligible": direct_use_eligible,
-        "requires_analyst": requires_analyst,
-        "validation_errors": _bounded_analyst_quant_packet_list(
-            packet.get(
-                "validation_errors",
-                telemetry.get("quantitative_packet_validation_errors"),
-            ),
-            ANALYST_QUANT_PACKET_REF_LIMIT,
-        ),
-        "gate_reason": str(
-            telemetry.get("quantitative_packet_gate_reason")
-            or packet.get("gate_reason")
-            or "valid_packet_for_analyst_review"
-        )[:ANALYST_QUANT_PACKET_STRING_LIMIT],
-    }
-    return handoff, sanitized
-
-
-def _format_analyst_quant_packet_section(
-    telemetry: dict[str, Any],
-) -> tuple[str, dict[str, Any]]:
-    handoff, packet = _analyst_quant_packet_payload(telemetry)
-    if packet is None:
-        return "", handoff
-    serialized = json.dumps(packet, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
-    section = (
-        "\n\nQUANTITATIVE PACKET FOR ANALYST REVIEW ONLY\n"
-        "Instructions:\n"
-        "- Treat this as structured evidence, not as a final conclusion.\n"
-        "- Verify that the packet supports the user's requested metric.\n"
-        "- Keep source_bound_values distinct from unsupported_values; unsupported_values are not sourced facts.\n"
-        "- Check whether validation_errors is empty.\n"
-        "- If direct_use_eligible is false, do not present it as a settled quantitative conclusion.\n"
-        "- If high_stakes_quant_detected is true, apply extra caution and state limitations.\n"
-        "- You may accept, reject, or qualify the packet.\n"
-        "- Do not invent calculations or unstated values; do not cite unsupported_values as source-bound.\n"
-        "Packet JSON:\n"
-        f"{serialized}\n"
-    )
-    return section, handoff
-
 
 
 def _pipeline_timing_payload(
@@ -1621,6 +1208,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     QUANT_REPORT_TYPES = deps.QUANT_REPORT_TYPES
     context_measurement = ContextMeasurementCollector()
     _run_controller_mirror = RunController()
+    run_kernel = RunKernel.start(
+        run_id=run_id,
+        request_id=session_id,
+        request={
+            "mode": strategy,
+            "current_date": current_date,
+            "query_length": len(query),
+        },
+    )
     active_source_class_recovery_lifecycle = source_class_recovery_lifecycle_defaults()
     active_conflict_resolution_lifecycle = conflict_resolution_lifecycle_defaults()
     targeted_retrieval_lifecycle_trace = targeted_retrieval_lifecycle_defaults()
@@ -1721,46 +1317,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     _bucket_pre_retrieval_t0 = time.monotonic()
     status.step(f"Routing query intent using {fast_provider} ({fast_model})...")
-    router_prompt = f"Today is {current_date}.\nUser Topic: {query}"
-    _measure_context_stage(
-        "router",
-        prompt=router_prompt,
-        system_prompt=DEFAULT_SYSTEM["router"],
+    route_request_action = run_kernel.authorize_route_request(
+        inputs={
+            "query_length": len(query),
+            "current_date": current_date,
+            "fast_provider": fast_provider,
+            "fast_model": fast_model,
+        }
     )
-
-    router_text = ask_model(
-        router_prompt, DEFAULT_SYSTEM["router"],
-        provider=fast_provider, model=fast_model, effort="low",
-        base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=use_reasoning,
-    )
-    router_text = deps.clean_json_response(router_text)
-
-    router_query_preparation_contract = build_router_query_preparation_state(
+    route_result = execute_route_request_action(
+        route_request_action,
         query=query,
-        router_text=router_text,
-        fallback_entities=fallback_entities_from_query(query),
+        current_date=current_date,
+        ask_model=ask_model,
+        clean_json_response=deps.clean_json_response,
+        default_system=DEFAULT_SYSTEM,
+        fast_provider=fast_provider,
+        fast_model=fast_model,
+        local_url=local_url,
+        api_key=or_api_key,
+        use_reasoning=use_reasoning,
+        measure_context_stage=_measure_context_stage,
     )
-
-    if not router_query_preparation_contract.entities:
-        router_retry_prompt = f"Today is {current_date}.\nUser Topic: {query}\n\n{ROUTER_RETRY_USER_APPEND}"
-        _measure_context_stage(
-            "router_retry",
-            prompt=router_retry_prompt,
-            system_prompt=DEFAULT_SYSTEM["router"],
-        )
-        retry_router_text = ask_model(
-            router_retry_prompt, DEFAULT_SYSTEM["router"],
-            provider=fast_provider, model=fast_model, effort="low",
-            base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=use_reasoning,
-        )
-        retry_router_text = deps.clean_json_response(retry_router_text)
-        router_query_preparation_contract = build_router_query_preparation_state(
-            query=query,
-            router_text=router_text,
-            fallback_entities=fallback_entities_from_query(query),
-            retry_router_text=retry_router_text,
-            retry_attempted=True,
-        )
+    run_kernel.reduce(route_result.observation)
+    router_query_preparation_contract = route_result.router_query_preparation_contract
 
     intent = router_query_preparation_contract.intent
     report_type = router_query_preparation_contract.report_type
@@ -2051,48 +1631,54 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 researcher_query_candidates = [core_topic[:300]]
         except Exception:
             researcher_query_candidates = [core_topic[:300]]
-        queries = query_authority.admit_researcher_candidates(researcher_query_candidates)
+        query_admission_candidates = researcher_query_candidates
+        query_candidate_source = "researcher"
     else:
         status.step("Using recon-informed search queries (research planner skipped for pass 1).")
-        queries = query_authority.admit_recon_candidates(pre_retrieval_query_candidates)
+        query_admission_candidates = pre_retrieval_query_candidates
+        query_candidate_source = "recon"
 
-    recency_projection = query_authority.apply_initial_recency_merge(
-        queries,
+    query_admission_action = run_kernel.authorize_query_plan_admission(
+        inputs={
+            "candidate_source": query_candidate_source,
+            "candidate_count": len(query_admission_candidates),
+            "query_plan_id": query_authority.plan.plan_id,
+            "max_queries": max_queries,
+        }
+    )
+    query_admission_result = execute_query_plan_admission_action(
+        query_admission_action,
+        query_authority=query_authority,
+        router_query_preparation_contract=router_query_preparation_contract,
+        candidate_queries=query_admission_candidates,
+        candidate_source=query_candidate_source,
         query_type=query_type,
         current_date=current_date,
         max_queries=max_queries,
+        route_runtime_posture={
+            "intent": intent,
+            "report_type": report_type,
+            "primary_entity": primary_entity,
+            "entities": entities_list,
+            "is_academic": is_academic,
+            "routing_override_applied": routing_override_applied,
+            "routing_override_reason": routing_override_reason,
+            "focus_academic": focus_academic,
+            "force_intent_news": force_intent_news,
+            "complexity": complexity,
+            "results_per_query": results_per_query,
+            "search_depth": search_depth,
+            "top_chunks": top_chunks,
+            "max_iterations": max_iterations,
+        },
     )
-    current_queries = recency_projection.current_queries
-    recency_merge_used = recency_projection.recency_merge_used
-    recency_merge_query = recency_projection.recency_merge_query
-    current_queries = query_authority.finalize(
-        current_queries, max_len=max_queries, include_official_bias=False
-    )
-    router_query_preparation_contract = with_router_query_runtime_posture(
-        router_query_preparation_contract,
-        intent=intent,
-        report_type=report_type,
-        query_type=query_type,
-        primary_entity=primary_entity,
-        entities=entities_list,
-        is_academic=is_academic,
-        routing_override_applied=routing_override_applied,
-        routing_override_reason=routing_override_reason,
-        focus_academic=focus_academic,
-        force_intent_news=force_intent_news,
-        complexity=complexity,
-        max_queries=max_queries,
-        results_per_query=results_per_query,
-        search_depth=search_depth,
-        top_chunks=top_chunks,
-        max_iterations=max_iterations,
-        recency_merge_used=recency_merge_used,
-        recency_query=recency_merge_query,
-        official_bias_requested=wants_official_source_bias(query, intent),
-        official_bias_phrase=(official_bias_phrase(query) if wants_official_source_bias(query, intent) else None),
-        finalized_queries=queries,
-        current_queries=current_queries,
-        query_source="recon" if recon_fired else "researcher",
+    run_kernel.reduce(query_admission_result.observation)
+    queries = query_admission_result.queries
+    current_queries = query_admission_result.current_queries
+    recency_merge_used = query_admission_result.recency_merge_used
+    recency_merge_query = query_admission_result.recency_merge_query
+    router_query_preparation_contract = (
+        query_admission_result.router_query_preparation_contract
     )
     intent = router_query_preparation_contract.intent
     report_type = router_query_preparation_contract.report_type
@@ -2246,7 +1832,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             weak_corpus_recovery_completed=weak_corpus_recovery_completed,
             blockers=blockers,
         )
-        decision = _decide_retrieval_stop_for_active(snapshot)
+        stop_checkpoint_action = run_kernel.authorize_retrieval_stop_checkpoint(
+            inputs={
+                "checkpoint_stage": stage,
+                "iteration": iteration,
+                "max_iterations": max_iterations,
+                "prior_query_count": len(tuple(prior_queries)),
+                "next_query_count": len(tuple(next_queries)),
+                "query_source": query_source,
+                "evaluator_sufficient": evaluator_sufficient,
+            }
+        )
+        stop_checkpoint = decide_retrieval_stop_with_kernel_action(
+            stop_checkpoint_action,
+            snapshot,
+            stage=stage,
+        )
+        run_kernel.reduce(stop_checkpoint.observation)
+        decision = stop_checkpoint.decision
         _record_retrieval_stop_shadow_once(
             decision=decision,
             stage=stage,
@@ -3185,7 +2788,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             recovery_active=weak_corpus_recovery_used and iteration > 1,
         )
         queries_by_iteration = query_authority.queries_by_iteration()
-        retrieval_scheduled_action = schedule_main_retrieval_from_pipeline_scope(
+        main_retrieval_kernel_action = run_kernel.authorize_main_retrieval_pass(
+            inputs={
+                "iteration": iteration,
+                "query_plan_id": query_authority.plan.plan_id,
+                "query_count": len(current_queries),
+                "recovery_active": weak_corpus_recovery_used and iteration > 1,
+                "provider_plan_record_count": len(provider_plan.records),
+            }
+        )
+        retrieval_scheduled_action = schedule_main_retrieval_from_kernel_action(
+            main_retrieval_kernel_action,
             locals(),
             current_queries=current_queries,
             recovery_active=weak_corpus_recovery_used and iteration > 1,
@@ -3209,6 +2822,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             locals(),
             retrieval_pass_records=retrieval_pass_records,
         )
+        run_kernel.reduce(main_retrieval_outcome.observation)
         new_passages = main_retrieval_outcome.passages
         seen_url_delta = main_retrieval_outcome.seen_url_delta
         total_urls_fetched += seen_url_delta
@@ -3658,9 +3272,26 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         query_source="evaluator",
                         weak_corpus_recovery_used=weak_corpus_recovery_used,
                     )
-                    evaluator_stop_decision = _decide_retrieval_stop_for_active(
-                        evaluator_stop_snapshot
+                    evaluator_stop_checkpoint_action = (
+                        run_kernel.authorize_retrieval_stop_checkpoint(
+                            inputs={
+                                "checkpoint_stage": "evaluator",
+                                "iteration": iteration,
+                                "max_iterations": max_iterations,
+                                "prior_query_count": len(tuple(evaluator_stop_prior_queries)),
+                                "next_query_count": len(tuple(evaluator_next_queries)),
+                                "query_source": "evaluator",
+                                "evaluator_sufficient": evaluator_sufficient_for_shadow,
+                            }
+                        )
                     )
+                    evaluator_stop_checkpoint = decide_retrieval_stop_with_kernel_action(
+                        evaluator_stop_checkpoint_action,
+                        evaluator_stop_snapshot,
+                        stage="evaluator",
+                    )
+                    run_kernel.reduce(evaluator_stop_checkpoint.observation)
+                    evaluator_stop_decision = evaluator_stop_checkpoint.decision
                     evaluator_stop_stage = {
                         RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS: (
                             "evaluator"
@@ -4871,6 +4502,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         router_query_preparation_contract.to_trace_fragment()
     )
     _run_controller_mirror.state.trace_fields.update(query_authority.to_trace_fragment())
+    _run_controller_mirror.state.trace_fields.update(run_kernel.to_trace_fragment())
     if retrieval_loop_contract_state is not None:
         _run_controller_mirror.state.trace_fields.update(
             retrieval_loop_contract_state.to_trace_fragment()

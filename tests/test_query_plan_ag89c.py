@@ -472,9 +472,12 @@ def test_ag91b_static_guard_queryplan_boundary_avoids_closed_surfaces() -> None:
 
     assert all(token not in queryplan_sources for token in closed_tokens)
     orchestrator_source = Path("core/pipeline_orchestrator.py").read_text()
+    query_runtime_source = Path("core/query_production_runtime.py").read_text()
     assert "def _finalize_retrieval_queries" not in orchestrator_source
     assert "current_queries = query_authority.admit_execution_queries" in orchestrator_source
-    assert "recency_projection = query_authority.apply_initial_recency_merge" in orchestrator_source
+    assert "execute_query_plan_admission_action(" in orchestrator_source
+    assert "run_kernel.authorize_query_plan_admission(" in orchestrator_source
+    assert "recency_projection = query_authority.apply_initial_recency_merge" in query_runtime_source
     assert "should_merge_recency_queries(" not in orchestrator_source
     assert '_clean_query(f"{_anchor} {y} news")' not in orchestrator_source
 
@@ -527,7 +530,11 @@ def test_ag91d_pipeline_demotes_pre_retrieval_candidates_before_consumption() ->
     from pathlib import Path
 
     source = Path("core/pipeline_orchestrator.py").read_text()
+    query_runtime_source = Path("core/query_production_runtime.py").read_text()
     assert "pre_retrieval_query_candidates" in source
-    assert "queries = query_authority.admit_recon_candidates(pre_retrieval_query_candidates)" in source
-    assert "queries = query_authority.admit_researcher_candidates(researcher_query_candidates)" in source
+    assert "query_admission_candidates = pre_retrieval_query_candidates" in source
+    assert "query_admission_candidates = researcher_query_candidates" in source
+    assert "execute_query_plan_admission_action(" in source
+    assert "queries = query_authority.admit_recon_candidates(candidate_queries)" in query_runtime_source
+    assert "queries = query_authority.admit_researcher_candidates(candidate_queries)" in query_runtime_source
     assert "queries = query_authority.finalize(queries, include_official_bias=True)" not in source

@@ -11,6 +11,16 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from core.run_kernel import (
+    RETRIEVAL_STOP_CHECKPOINT_STAGE,
+    ActionType,
+    AuthorizedAction,
+    Observation,
+    ObservationType,
+    RunStageStatus,
+    validate_authorized_action,
+)
+
 REDUNDANT_QUERY_JACCARD_THRESHOLD = 0.7
 
 
@@ -100,6 +110,14 @@ class RetrievalStopDecision:
             "query_source": self.query_source,
             "redundancy_score": self.redundancy_score,
         }
+
+
+@dataclass(frozen=True)
+class RetrievalStopKernelCheckpoint:
+    """Existing stop-controller decision plus RunKernel observation."""
+
+    decision: RetrievalStopDecision
+    observation: Observation
 
 
 def _clean_query(query: str) -> str:
@@ -248,11 +266,55 @@ def decide_retrieval_stop(
     )
 
 
+def decide_retrieval_stop_with_kernel_action(
+    action: AuthorizedAction,
+    snapshot: RetrievalStopControllerInput,
+    *,
+    stage: str,
+) -> RetrievalStopKernelCheckpoint:
+    """Run existing stop policy under a consumed RunKernel checkpoint action."""
+
+    validate_authorized_action(
+        action,
+        action_type=ActionType.RETRIEVAL_STOP_CHECKPOINT,
+        stage=RETRIEVAL_STOP_CHECKPOINT_STAGE,
+        expected_observation_type=ObservationType.RETRIEVAL_STOP_DECISION,
+    )
+    decision = decide_retrieval_stop(snapshot)
+    observation = Observation.from_action(
+        action,
+        observation_type=ObservationType.RETRIEVAL_STOP_DECISION,
+        status=RunStageStatus.COMPLETED,
+        payload={
+            "checkpoint_stage": stage,
+            "decision": decision.to_dict(),
+            "snapshot": snapshot.to_dict(),
+            "next_stage_ready": (
+                decision.decision
+                in {
+                    RetrievalStopControllerDecision.PROCEED_TO_SYNTHESIS,
+                    RetrievalStopControllerDecision.STOP_NO_QUERIES,
+                    RetrievalStopControllerDecision.STOP_BUDGET_EXHAUSTED,
+                    RetrievalStopControllerDecision.STOP_REDUNDANT_QUERIES,
+                    RetrievalStopControllerDecision.STOP_AFTER_RECOVERY,
+                    RetrievalStopControllerDecision.BLOCKED_WITH_REASON,
+                }
+            ),
+        },
+    )
+    return RetrievalStopKernelCheckpoint(
+        decision=decision,
+        observation=observation,
+    )
+
+
 __all__ = [
     "REDUNDANT_QUERY_JACCARD_THRESHOLD",
     "RetrievalStopControllerDecision",
     "RetrievalStopControllerInput",
     "RetrievalStopDecision",
+    "RetrievalStopKernelCheckpoint",
     "build_retrieval_stop_controller_input",
     "decide_retrieval_stop",
+    "decide_retrieval_stop_with_kernel_action",
 ]
