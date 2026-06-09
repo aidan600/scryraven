@@ -181,7 +181,7 @@ from core.retrieval_dispatch_runtime import (
     execute_disambiguation_retry_from_scope,
     execute_embedding_action,
     execute_main_retrieval_pass_from_scope,
-    source_class_recovery_context_from_pipeline_scope,
+    source_class_recovery_context_from_scope,
 )
 from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
 from core.retrieval_quality import (
@@ -225,7 +225,7 @@ from core.router_query_preparation_contract import (
     build_router_query_preparation_state,
     with_router_query_runtime_posture,
 )
-from core.routing import is_quantitative_query, select_providers
+from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
 from core.run_logging import (
@@ -2180,7 +2180,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "exa": bool(os.getenv("EXA_API_KEY")),
         }
     )
-    available_keys = provider_plan.available_keys()
+    available_keys, (select_provider_list, merge_provider_overrides) = provider_plan.available_keys(), (select_providers, merge_search_provider_overrides)
     current_search_depth_for_recovery = search_depth
 
     pre_retrieval_seconds = max(0.0, time.monotonic() - _bucket_pre_retrieval_t0)
@@ -4183,7 +4183,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
 
     source_class_recovery_result = run_source_class_recovery_dispatch(
-        source_class_recovery_context_from_pipeline_scope(
+        source_class_recovery_context_from_scope(
             locals(),
             controller_recovery_decision=build_controller_recovery_decision(
                 active_source_class_recovery_lifecycle

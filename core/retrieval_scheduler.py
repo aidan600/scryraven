@@ -257,6 +257,8 @@ def schedule_main_retrieval_from_pipeline_scope(
             "iteration",
             "a5_provider_override",
             "force_component_providers",
+            "merge_provider_overrides",
+            "select_provider_list",
         ),
     )
     return schedule_main_retrieval_with_provider_plan(
@@ -274,6 +276,8 @@ def schedule_main_retrieval_from_pipeline_scope(
         current_queries=current_queries,
         recovery_active=recovery_active,
         choose_search_depth=choose_search_depth,
+        merge_provider_overrides=values["merge_provider_overrides"],
+        select_provider_list=values["select_provider_list"],
     )
 
 
@@ -400,6 +404,7 @@ def schedule_scout_continuation_from_pipeline_scope(
             "report_type",
             "is_academic",
             "suppress_tavily",
+            "select_provider_list",
         ),
     )
     return schedule_provider_continuation_with_plan(
@@ -418,6 +423,7 @@ def schedule_scout_continuation_from_pipeline_scope(
         suppress_tavily=values["suppress_tavily"],
         override=["exa", "linkup"],
         override_is_user=False,
+        select_provider_list=values["select_provider_list"],
     )
 
 
@@ -440,6 +446,7 @@ def schedule_expander_continuation_from_pipeline_scope(
             "report_type",
             "is_academic",
             "suppress_tavily",
+            "select_provider_list",
         ),
     )
     return schedule_provider_continuation_with_plan(
@@ -458,6 +465,7 @@ def schedule_expander_continuation_from_pipeline_scope(
         suppress_tavily=values["suppress_tavily"],
         override=None,
         override_is_user=True,
+        select_provider_list=values["select_provider_list"],
     )
 
 

@@ -245,4 +245,4 @@ def test_source_class_recovery_remains_controller_action_owned_not_query_plan_ow
     assert 'queries = list(getattr(action, "queries", None) or [])' in executor
     assert "from core.query_plan" not in executor
     assert "source_class_recovery_scope = {" not in pipeline
-    assert "source_class_recovery_context_from_pipeline_scope" in pipeline
+    assert "source_class_recovery_context_from_scope(" in pipeline
