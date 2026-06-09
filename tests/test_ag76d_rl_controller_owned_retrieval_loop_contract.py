@@ -250,7 +250,10 @@ def test_orchestrator_handoff_static_guard():
     assert "build_retrieval_pass_descriptor" in helper_text
     assert "build_retrieval_loop_state" in helper_text
     assert "execute_retrieval_pass_handoff" in helper_text
-    assert "provider_plan.record_main_retrieval" in loop_section  # consumed ProviderPlan policy record
+    assert "schedule_main_retrieval_from_pipeline_scope" in loop_section
+    assert "retrieval_scheduled_action" in loop_section
+    assert "provider_plan.record_main_retrieval" not in loop_section
+    assert "provider_plan.record_main_retrieval" in (ROOT / "core" / "retrieval_scheduler.py").read_text()
     assert "process_search_queries(" not in loop_section
     assert "retrieval_loop_contract_state.to_trace_fragment()" in text
 
