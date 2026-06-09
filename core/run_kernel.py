@@ -16,6 +16,7 @@ from typing import Any, Mapping, Sequence
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
 ROUTE_REQUEST_STAGE = "route_request"
+QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
@@ -52,6 +53,7 @@ class ActionType(str, Enum):
     """Bounded action vocabulary authorized by RunKernel."""
 
     ROUTE_REQUEST = "route_request"
+    QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
     MAIN_RETRIEVAL_PASS = "main_retrieval_pass"
     RETRIEVAL_STOP_CHECKPOINT = "retrieval_stop_checkpoint"
@@ -61,6 +63,7 @@ class ObservationType(str, Enum):
     """Observation vocabulary returned by bounded executors/adapters."""
 
     ROUTE_RESULT = "route_result"
+    QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
     RETRIEVAL_PASS_RESULT = "retrieval_pass_result"
     RETRIEVAL_STOP_DECISION = "retrieval_stop_decision"
@@ -405,6 +408,20 @@ class RunKernel:
             expected_observation_type=ObservationType.QUERY_PLAN_ADMITTED,
         )
 
+    def authorize_query_production(
+        self,
+        *,
+        reason: str = "query_production_before_candidate_generation",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        return self.authorize(
+            stage=QUERY_PRODUCTION_STAGE,
+            action_type=ActionType.QUERY_PRODUCTION,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.QUERY_CANDIDATES_PRODUCED,
+        )
+
     def authorize_main_retrieval_pass(
         self,
         *,
@@ -498,6 +515,7 @@ def validate_authorized_action(
 
 __all__ = [
     "MAIN_RETRIEVAL_STAGE",
+    "QUERY_PRODUCTION_STAGE",
     "QUERY_PLAN_ADMISSION_STAGE",
     "RETRIEVAL_STOP_CHECKPOINT_STAGE",
     "ROUTE_REQUEST_STAGE",

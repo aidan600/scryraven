@@ -31,10 +31,6 @@ from core.analyst_quant_packet_runtime import (
     _format_missing_target_metric_fallback_directive,
     _nutrition_macro_per_unit_lookup,  # noqa: F401 - compatibility re-export
 )
-from core.anchor_resolution import (
-    build_shadow_anchor_packet,
-    format_anchor_context_for_researcher,
-)
 from core.answer_contract_runtime_handoff import (
     RuntimeAnswerContractFacts,
     build_runtime_answer_contract_handoff,
@@ -146,10 +142,8 @@ from core.outcome_persistence_packaging import (
 from core.persistence_side_effects import execute_persistence_side_effects
 from core.pipeline import (
     _quant_retrieval_sufficiency_shadow_telemetry,
-    detect_nutrition_lookup_telemetry,
     economist_schema_telemetry_defaults,
     kb_review_agent,
-    nutrition_lookup_telemetry_defaults,
     quant_retrieval_sufficiency_telemetry_defaults,
     thin_quant_preflight_missing_entities,
     validate_high_stakes_quantitative_query_shadow,
@@ -163,10 +157,7 @@ from core.post_author_output_projection import (
 )
 from core.prompts import SCOUT_REGISTRY
 from core.protocols import StatusWriter
-from core.provider_diagnostics import (
-    build_provider_attempt_diagnostic,
-    supported_diagnostic_kwargs,
-)
+from core.provider_diagnostics import supported_diagnostic_kwargs
 from core.provider_plan import ProviderPlan
 from core.quantitative_consistency import (
     apply_quantitative_consistency_guard,
@@ -174,7 +165,11 @@ from core.quantitative_consistency import (
     is_two_item_calorie_gram_comparison_candidate,
 )
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
-from core.query_production_runtime import execute_query_plan_admission_action
+from core.query_production_runtime import (
+    execute_query_plan_admission_action,
+    execute_query_production_action,
+    query_plan_admission_inputs_from_query_production_projection,
+)
 from core.recovered_evidence_visibility import (
     apply_controller_recovered_evidence_visibility,
 )
@@ -197,7 +192,6 @@ from core.retrieval_quality import (
     DEFAULT_UTILIZATION_THRESHOLD,
     VERBOSITY_GATE_UTILIZATION_THRESHOLD,
     build_disambiguation_queries,
-    extract_recon_context,
     format_quoted_anchor,
     official_bias_phrase,
     should_retry_retrieval,
@@ -234,7 +228,7 @@ from core.routing import is_quantitative_query, merge_search_provider_overrides,
 from core.routing_runtime import execute_route_request_action
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
-from core.run_kernel import RunKernel
+from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel
 from core.run_logging import (
     current_code_version_metadata,
     log_run_failed,
@@ -249,7 +243,6 @@ from core.runtime_prompt_assembly import (
     evidence_slice_for_analyst,
     select_author_system_prompt,
 )
-from core.search_providers import brave_reconnaissance
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
     build_source_class_recovery_recommendation,
@@ -1295,7 +1288,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     quant_retrieval_sufficiency_telemetry: dict[str, Any] = (
         quant_retrieval_sufficiency_telemetry_defaults()
     )
-    nutrition_lookup_telemetry: dict[str, Any] = nutrition_lookup_telemetry_defaults()
+    nutrition_lookup_telemetry: dict[str, Any] = {}
     analyst_quant_packet_handoff_telemetry: dict[str, Any] = (
         _analyst_quant_packet_telemetry_defaults()
     )
@@ -1342,75 +1335,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     run_kernel.reduce(route_result.observation)
     router_query_preparation_contract = route_result.router_query_preparation_contract
 
-    intent = router_query_preparation_contract.intent
-    report_type = router_query_preparation_contract.report_type
-    image_mode = router_query_preparation_contract.image_mode
     core_topic = router_query_preparation_contract.core_topic
-    is_academic = router_query_preparation_contract.is_academic
-    query_type = router_query_preparation_contract.query_type
-    primary_entity = router_query_preparation_contract.primary_entity
-    entities_list = router_query_preparation_contract.entities_list
     router_entity_retry_used = router_query_preparation_contract.router_entity_retry_used
     router_original_report_type = router_query_preparation_contract.router_original_report_type
     router_original_query_type = router_query_preparation_contract.router_original_query_type
-    routing_override_applied = False
-    routing_override_reason: str | None = None
-    nutrition_lookup_telemetry = detect_nutrition_lookup_telemetry(query)
-    if nutrition_lookup_telemetry["nutrition_lookup_detected"]:
-        report_type = "quantitative_comparison"
-        routing_override_applied = True
-        routing_override_reason = "nutrition_macro_per_100g_lookup"
-
-    if focus_academic:
-        is_academic = True
-    if force_intent_news:
-        intent = "news"
-
-    anchor_packet_telemetry: dict[str, Any] = {}
-    if strategy == "Balanced":
-        anchor_packet_telemetry = build_shadow_anchor_packet(
-            mode=strategy,
-            query=query,
-            current_date=current_date,
-            intent=intent,
-            report_type=report_type,
-            router_original_report_type=router_original_report_type,
-            query_type=query_type,
-            router_original_query_type=router_original_query_type,
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            entities=entities_list,
-            router_entity_retry_used=router_entity_retry_used,
-        )
-
-    if intent == "news":
-        include_domains = list(set(include_domains + NEWS_PREFERRED_DOMAINS))
-
-    if strategy == "Fast":
-        complexity = "low"
-    elif strategy == "Balanced":
-        complexity = "medium"
-    else:
-        complexity = "high"
-
-    if complexity == "high":
-        max_queries = 3
-        results_per_query = 8
-        search_depth = "advanced"
-        top_chunks = 40
-        max_iterations = 3
-    elif complexity == "medium":
-        max_queries = 2
-        results_per_query = 6
-        search_depth = "basic"
-        top_chunks = 20
-        max_iterations = 2
-    else:
-        max_queries = 2
-        results_per_query = 5
-        search_depth = "basic"
-        top_chunks = 8
-        max_iterations = 1
 
     policy_state = load_policy_state(policy_state_path)
     cfg = apply_policy_to_run_config(
@@ -1469,112 +1397,73 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         if not session_title:
             session_title = query[:40]
 
-    pre_retrieval_query_candidates: list[str] = []
-    _recon_qt = (query_type or "").lower()
-    _recon_t0 = time.monotonic()
-    if _recon_qt in ("person", "news", "current_events", "event"):
-        _well_scoped = bool(re.search(r"\b(19|20)\d{2}\b", query or "")) and len(
-            (primary_entity or core_topic or "").split()
-        ) >= 4
-        if _well_scoped:
-            recon_confidence = "low"
-            waste_flags.append("recon_skipped")
-        elif not os.getenv("BRAVE_API_KEY"):
-            waste_flags.append("recon_skipped")
-        else:
-            brave_call_completed = False
-            try:
-                status.step("Reconnaissance search (resolving entities and terms)\u2026")
-                br = brave_reconnaissance(
-                    (query or core_topic)[:500],
-                    num_results=5,
-                    cost_accumulator=accumulator,
-                    cost_phase="recon",
-                )
-                brave_call_completed = True
-                recon_url_count = len({str(item.get("url") or "") for item in br if item.get("url")})
-                provider_diagnostics.append(
-                    build_provider_attempt_diagnostic(
-                        provider="brave",
-                        provider_role="recon",
-                        cost_phase="recon",
-                        query=(query or core_topic)[:500],
-                        max_results=5,
-                        output_type="searchResults",
-                        success=True,
-                        result_count=len(br),
-                        new_url_count=recon_url_count,
-                        accepted_url_count=recon_url_count,
-                    )
-                )
-                rctx = extract_recon_context(br)
-                if (rctx.get("recon_titles") or "").strip() or (rctx.get("recon_snippets") or "").strip():
-                    rw_in = (
-                        f"Today is {current_date}.\n"
-                        f"Original query: {query}\n"
-                        f"Recon titles: {rctx.get('recon_titles', '')}\n"
-                        f"Recon snippets: {rctx.get('recon_snippets', '')}\n"
-                    )
-                    _measure_context_stage(
-                        "recon_rewriter",
-                        prompt=rw_in,
-                        system_prompt=DEFAULT_SYSTEM["recon_query_rewriter"],
-                    )
-                    rw_text = deps.clean_json_response(
-                        ask_model(
-                            rw_in, DEFAULT_SYSTEM["recon_query_rewriter"],
-                            provider=fast_provider, model=fast_model, effort="low",
-                            base_url=local_url, api_key=or_api_key,
-                            require_json=True, use_reasoning=use_reasoning,
-                        )
-                    )
-                    rw_data = json.loads(rw_text)
-                    rqq = [
-                        _clean_query(str(x))
-                        for x in (rw_data.get("rewritten_queries") or [])
-                        if _clean_query(str(x))
-                    ]
-                    if rqq:
-                        pre_retrieval_query_candidates = rqq
-                        recon_fired = True
-                        recon_confidence = (rw_data.get("recon_confidence") or "").strip() or None
-                        csub = (rw_data.get("canonical_subject") or "").strip()
-                        if csub:
-                            canonical_subject_resolved = csub[:200]
-                        if csub and csub.lower() == (core_topic or "").strip().lower():
-                            recon_confidence = "low"
-                        if (recon_confidence or "") in ("high", "medium") and csub:
-                            primary_entity = csub[:200]
-            except Exception as e:
-                if not brave_call_completed:
-                    provider_diagnostics.append(
-                        build_provider_attempt_diagnostic(
-                            provider="brave",
-                            provider_role="recon",
-                            cost_phase="recon",
-                            query=(query or core_topic)[:500],
-                            max_results=5,
-                            output_type="searchResults",
-                            success=False,
-                            failure_type=type(e).__name__,
-                        )
-                    )
-                run_log.warning("Reconnaissance skipped: %s", e)
-                waste_flags.append("recon_skipped")
-    recon_seconds = max(0.0, time.monotonic() - _recon_t0)
+    query_production_action = run_kernel.authorize_query_production(
+        inputs={
+            "route_action_id": route_request_action.action_id,
+            "query_length": len(query),
+            "strategy": strategy,
+            "focus_academic": focus_academic,
+            "force_intent_news": force_intent_news,
+            "include_domain_count": len(include_domains),
+        }
+    )
+    query_production_result = execute_query_production_action(
+        query_production_action,
+        router_query_preparation_contract=router_query_preparation_contract,
+        query=query,
+        strategy=strategy,
+        current_date=current_date,
+        focus_academic=focus_academic,
+        force_intent_news=force_intent_news,
+        include_domains=include_domains,
+        news_preferred_domains=NEWS_PREFERRED_DOMAINS,
+        ask_model=ask_model,
+        clean_json_response=deps.clean_json_response,
+        default_system=DEFAULT_SYSTEM,
+        fast_provider=fast_provider,
+        fast_model=fast_model,
+        local_url=local_url,
+        api_key=or_api_key,
+        use_reasoning=use_reasoning,
+        measure_context_stage=_measure_context_stage,
+        clean_query=_clean_query,
+        cost_accumulator=accumulator,
+        status=status,
+        provider_diagnostics=provider_diagnostics,
+        run_log=run_log,
+        waste_flags=waste_flags,
+    )
+    run_kernel.reduce(query_production_result.observation)
+    query_production_projection = run_kernel.state.projections[QUERY_PRODUCTION_STAGE]
+    query_plan_inputs = query_plan_admission_inputs_from_query_production_projection(
+        query_production_projection
+    )
 
-    _canon_ent = (canonical_subject_resolved or "").strip()[:200]
-    if _canon_ent:
-        lows = {e.casefold() for e in entities_list}
-        if _canon_ent.casefold() not in lows:
-            entities_list = [_canon_ent] + entities_list
-    if entities_list:
-        primary_entity = entities_list[0][:200]
-    elif primary_entity.strip():
-        entities_list = [primary_entity.strip()[:200]]
-        primary_entity = entities_list[0][:200]
-
-    empty_entity_flag = len(entities_list) == 0
+    intent = query_production_result.intent
+    report_type = query_production_result.report_type
+    image_mode = query_production_result.image_mode
+    core_topic = query_production_result.core_topic
+    is_academic = query_production_result.is_academic
+    query_type = query_production_result.query_type
+    primary_entity = query_production_result.primary_entity
+    entities_list = query_production_result.entities_list
+    routing_override_applied = query_production_result.routing_override_applied
+    routing_override_reason = query_production_result.routing_override_reason
+    complexity = query_production_result.complexity
+    max_queries = query_production_result.max_queries
+    results_per_query = query_production_result.results_per_query
+    search_depth = query_production_result.search_depth
+    top_chunks = query_production_result.top_chunks
+    max_iterations = query_production_result.max_iterations
+    include_domains = query_production_result.include_domains
+    anchor_packet_telemetry = query_production_result.anchor_packet_telemetry
+    nutrition_lookup_telemetry = query_production_result.nutrition_lookup_telemetry
+    waste_flags = query_production_result.waste_flags
+    recon_fired = query_production_result.recon_fired
+    recon_confidence = query_production_result.recon_confidence
+    canonical_subject_resolved = query_production_result.canonical_subject_resolved
+    recon_seconds = query_production_result.recon_seconds
+    empty_entity_flag = query_production_result.empty_entity_flag
 
     query_authority = build_query_plan_runtime_adapter(
         run_id=run_id,
@@ -1586,91 +1475,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         clean=_clean_query,
     )
 
-    if not pre_retrieval_query_candidates:
-        status.step("Generating initial search plan...")
-        anchor_context_for_researcher = (
-            format_anchor_context_for_researcher(anchor_packet_telemetry)
-            if strategy == "Balanced"
-            else ""
-        )
-        anchor_context_section = (
-            f"{anchor_context_for_researcher}\n"
-            if anchor_context_for_researcher
-            else ""
-        )
-        q_prompt = (
-            f"Today is {current_date}.\n"
-            f"Original Prompt: {query}\n"
-            f"Core Topic: {core_topic}\n"
-            f"Intent: {intent}\n"
-            f"query_type: {query_type}\n"
-            f"entities: {entities_list}\n"
-            f"primary_entity: {primary_entity}\n"
-            f"{anchor_context_section}"
-            "If query_type is person, each search query must include a disambiguating term "
-            "(role, employer, 'NYU', podcast, etc.) so results are not confused with other people. "
-            "Return JSON with a queries array."
-        )
-        _measure_context_stage(
-            "researcher",
-            prompt=q_prompt,
-            system_prompt=DEFAULT_SYSTEM["researcher"],
-        )
-        q_text = deps.clean_json_response(
-            ask_model(
-                q_prompt, DEFAULT_SYSTEM["researcher"],
-                provider=fast_provider, model=fast_model, effort="low",
-                base_url=local_url, api_key=or_api_key, require_json=True, use_reasoning=use_reasoning,
-            )
-        )
-        try:
-            queries_dict = json.loads(q_text)
-            queries_raw = queries_dict.get("queries", []) if isinstance(queries_dict, dict) else queries_dict
-            researcher_query_candidates = [_clean_query(str(x)) for x in queries_raw if _clean_query(str(x))]
-            if not researcher_query_candidates:
-                researcher_query_candidates = [core_topic[:300]]
-        except Exception:
-            researcher_query_candidates = [core_topic[:300]]
-        query_admission_candidates = researcher_query_candidates
-        query_candidate_source = "researcher"
-    else:
-        status.step("Using recon-informed search queries (research planner skipped for pass 1).")
-        query_admission_candidates = pre_retrieval_query_candidates
-        query_candidate_source = "recon"
-
     query_admission_action = run_kernel.authorize_query_plan_admission(
         inputs={
-            "candidate_source": query_candidate_source,
-            "candidate_count": len(query_admission_candidates),
+            "query_production_action_id": query_production_action.action_id,
+            "candidate_source": query_plan_inputs.candidate_source,
+            "candidate_count": len(query_plan_inputs.candidate_queries),
             "query_plan_id": query_authority.plan.plan_id,
-            "max_queries": max_queries,
+            "max_queries": query_plan_inputs.max_queries,
         }
     )
     query_admission_result = execute_query_plan_admission_action(
         query_admission_action,
         query_authority=query_authority,
         router_query_preparation_contract=router_query_preparation_contract,
-        candidate_queries=query_admission_candidates,
-        candidate_source=query_candidate_source,
-        query_type=query_type,
+        candidate_queries=query_plan_inputs.candidate_queries,
+        candidate_source=query_plan_inputs.candidate_source,
+        query_type=query_plan_inputs.query_type,
         current_date=current_date,
-        max_queries=max_queries,
-        route_runtime_posture={
-            "intent": intent,
-            "report_type": report_type,
-            "primary_entity": primary_entity,
-            "entities": entities_list,
-            "is_academic": is_academic,
-            "routing_override_applied": routing_override_applied,
-            "routing_override_reason": routing_override_reason,
-            "focus_academic": focus_academic,
-            "force_intent_news": force_intent_news,
-            "complexity": complexity,
-            "results_per_query": results_per_query,
-            "search_depth": search_depth,
-            "top_chunks": top_chunks,
-            "max_iterations": max_iterations,
-        },
+        max_queries=query_plan_inputs.max_queries,
+        route_runtime_posture=query_plan_inputs.effective_route_posture,
     )
     run_kernel.reduce(query_admission_result.observation)
     queries = query_admission_result.queries

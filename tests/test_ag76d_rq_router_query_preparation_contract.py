@@ -332,9 +332,11 @@ def test_orchestrator_authority_guard_consumes_contract_after_router_handoff() -
     query_runtime = Path("core/query_production_runtime.py").read_text(encoding="utf-8")
 
     assert "json.loads(router_text)" not in post_router
-    assert "intent = router_query_preparation_contract.intent" in post_router
-    assert "report_type = router_query_preparation_contract.report_type" in post_router
-    assert "entities_list = router_query_preparation_contract.entities_list" in post_router
+    assert "run_kernel.authorize_query_production(" in post_router
+    assert "execute_query_production_action(" in post_router
+    assert "run_kernel.reduce(query_production_result.observation)" in post_router
+    assert "query_plan_admission_inputs_from_query_production_projection(" in post_router
+    assert "candidate_queries=query_plan_inputs.candidate_queries" in post_router
     assert "execute_route_request_action(" in text
     assert "run_kernel.authorize_route_request(" in text
     assert "build_router_query_preparation_state(" in routing_runtime

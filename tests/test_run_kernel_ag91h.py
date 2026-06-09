@@ -555,11 +555,15 @@ def test_kernel_trace_projection_derives_from_run_state() -> None:
 
 def test_pipeline_orchestrator_consumes_run_kernel_for_migrated_stages() -> None:
     source = PIPELINE.read_text()
-    assert "from core.run_kernel import RunKernel" in source
+    assert "from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel" in source
     assert "run_kernel = RunKernel.start(" in source
     assert "run_kernel.authorize_route_request(" in source
     assert "execute_route_request_action(" in source
     assert "run_kernel.reduce(route_result.observation)" in source
+    assert "run_kernel.authorize_query_production(" in source
+    assert "execute_query_production_action(" in source
+    assert "run_kernel.reduce(query_production_result.observation)" in source
+    assert "query_plan_admission_inputs_from_query_production_projection(" in source
     assert "run_kernel.authorize_query_plan_admission(" in source
     assert "execute_query_plan_admission_action(" in source
     assert "run_kernel.reduce(query_admission_result.observation)" in source
@@ -576,6 +580,9 @@ def test_migrated_stages_are_not_purely_orchestrator_local() -> None:
     source = PIPELINE.read_text()
     assert "router_prompt = f\"Today is {current_date}" not in source
     assert "router_text = ask_model(" not in source
+    assert "brave_reconnaissance(" not in source
+    assert "q_prompt =" not in source
+    assert "rw_in =" not in source
     assert "queries = query_authority.admit_researcher_candidates" not in source
     assert "queries = query_authority.admit_recon_candidates" not in source
     assert "recency_projection = query_authority.apply_initial_recency_merge" not in source
@@ -593,6 +600,8 @@ def test_static_guards_for_authority_boundaries_and_closed_surfaces() -> None:
     assert "validate_authorized_action(" in routing_source
     assert "ActionType.ROUTE_REQUEST" in routing_source
     assert "validate_authorized_action(" in query_source
+    assert "ActionType.QUERY_PRODUCTION" in query_source
+    assert "ObservationType.QUERY_CANDIDATES_PRODUCED" in query_source
     assert "ActionType.QUERY_PLAN_ADMISSION" in query_source
     assert '"query_order_owner": "QueryPlan"' in query_source
     assert "scheduled_action: RetrievalScheduledAction" in dispatch_source
