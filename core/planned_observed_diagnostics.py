@@ -788,11 +788,18 @@ def _planned_observed_stage_payload(
 
 
 def _source_class_recovery_not_activated(trace: Mapping[str, Any]) -> bool:
+    active_queries = _as_list(trace.get("active_source_class_recovery_queries"))
+    query_only_insufficient_posture = bool(
+        active_queries
+        and trace.get("authority_lifecycle_insufficient_partial_posture_explicit")
+        is True
+        and trace.get("authority_lifecycle_weak_corpus_may_own_path") is True
+    )
     return (
         trace.get("active_source_class_recovery_used") is False
         and (_as_int(trace.get("active_source_class_recovery_attempt_count")) or 0) == 0
         and trace.get("active_source_class_recovery_provider_role") in (None, "")
-        and not _as_list(trace.get("active_source_class_recovery_queries"))
+        and (not active_queries or query_only_insufficient_posture)
         and (_as_int(trace.get("active_source_class_recovery_result_count")) or 0) == 0
         and (_as_int(trace.get("active_source_class_recovery_new_url_count")) or 0)
         == 0

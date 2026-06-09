@@ -63,6 +63,7 @@ from core.controller_loop_spine import (
     ControllerLoopSpineInput,
     build_controller_loop_spine_result,
     checkpoint_action_name_from_trace,
+    reconcile_retrieval_dispatch_runtime_checkpoint_trace,
 )
 from core.controller_recovery_decision import build_controller_recovery_decision
 from core.controller_state_mirror import record_run_metadata_snapshot
@@ -116,8 +117,6 @@ from core.official_source_obligation_bridge import (
     apply_official_source_obligation_bridge,
 )
 from core.ordinary_continuation_candidate import (
-    ORDINARY_CONTINUATION_TRACE_KEY,
-    mark_ordinary_continuation_candidate_spine_authorized,
     ordinary_continuation_candidate_defaults,
     source_path_from_runtime_source,
 )
@@ -228,6 +227,10 @@ from core.review_flags import recent_recurring_kb_hints
 from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
 from core.routing_runtime import execute_route_request_action
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
+from core.run_authority_search_judgment import RunSearchJudgmentInput
+from core.run_authority_search_judgment_runtime import (
+    execute_run_authority_search_judgment_action,
+)
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
 from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel
@@ -1132,6 +1135,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     or_api_key = config.or_api_key
     use_reasoning = config.use_reasoning
     run_authority_contract_smart_model = bool(config.run_authority_contract_smart_model)
+    run_authority_search_judgment_smart_model = bool(
+        config.run_authority_search_judgment_smart_model
+    )
     current_date = config.current_date
 
     a5_provider_override: list[str] | None = None
@@ -1214,6 +1220,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+    search_judgment_projection: dict[str, Any] = {}
     active_source_class_recovery_lifecycle = source_class_recovery_lifecycle_defaults()
     active_conflict_resolution_lifecycle = conflict_resolution_lifecycle_defaults()
     targeted_retrieval_lifecycle_trace = targeted_retrieval_lifecycle_defaults()
@@ -3337,6 +3344,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     official_canonical_recovery_query_acquisition_trace: dict[str, Any] | None = None
     official_canonical_recovery_execution_admission_trace: dict[str, Any] | None = None
     official_canonical_recovery_execution_admitted = False
+    _search_judgment_started = False
     try:
         _source_class_recovery_answer_contract_observability = (
             build_source_class_observability_telemetry(
@@ -3351,6 +3359,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 final_answer_source_ids=None,
             )
         )
+        _pre_recovery_contract_ledger_action = (
+            run_kernel.authorize_evidence_ledger_reduction(
+                inputs={
+                    "observation_source": "run_authority_contract_pre_recovery",
+                    "contract_id": run_contract_projection.get("contract_id"),
+                    "source_requirement_count": len(
+                        run_contract_projection.get("source_requirements", [])
+                    ),
+                }
+            )
+        )
+        _pre_recovery_contract_ledger_result = (
+            execute_evidence_ledger_reduction_action(
+                _pre_recovery_contract_ledger_action,
+                payload=build_evidence_ledger_observation_from_run_contract(
+                    observation_id=(
+                        f"{run_id}:evidence-ledger:run-contract-pre-recovery"
+                    ),
+                    contract_projection=run_contract_projection,
+                ).to_dict(),
+            )
+        )
+        run_kernel.reduce(_pre_recovery_contract_ledger_result.observation)
         _evidence_ledger_observation = build_evidence_ledger_observation_from_runtime(
             observation_id=f"{run_id}:evidence-ledger:pre-recovery",
             observation_source="pre_recovery_source_obligation",
@@ -3441,7 +3472,87 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 max_recovery_attempts=1,
             )
         )
+        _pre_recovery_answer_contract_projection = (
+            _pre_recovery_answer_contract_result.fulfillment_handoff.to_dict()
+        )
+        _search_judgment_started = True
+        _search_judgment_input = RunSearchJudgmentInput(
+            contract_projection=run_contract_projection,
+            evidence_ledger_projection=evidence_ledger_projection,
+            query_facts={
+                **query_authority.to_trace_fragment(),
+                "query_role": "post_retrieval_recovery",
+                "core_topic": core_topic,
+                "primary_entity": primary_entity,
+            },
+            retrieval_observations={
+                "result_count": len(all_passages),
+                "iterations_run": iterations_run,
+                "source_tier_counts": _source_tier_recovery_lifecycle[
+                    "source_tier_counts"
+                ],
+                "source_domain_counts": _source_domain_recovery_lifecycle[
+                    "source_domain_counts"
+                ],
+                "top_source_domains": _source_domain_recovery_lifecycle[
+                    "top_source_domains"
+                ],
+                "provider_diagnostic_count": len(provider_diagnostics),
+            },
+            helper_proposals={
+                "source_class_recovery": {
+                    **_source_class_recovery_lifecycle_recommendation,
+                    **_source_class_recovery_answer_contract_observability,
+                },
+                "retrieval_stop": {
+                    "shadow": retrieval_stop_shadow_telemetry,
+                    "active": retrieval_stop_active_telemetry,
+                },
+                "answer_contract": _pre_recovery_answer_contract_projection,
+            },
+            budget={
+                "iteration": iterations_run,
+                "max_iterations": max_iterations,
+                "remaining_budget": max(0, max_iterations - iterations_run),
+                "recovery_attempts": (
+                    _run_controller_mirror.state.active_source_class_recovery_attempt_count
+                ),
+                "budget_exhausted": iterations_run >= max_iterations,
+                "source_class_recovery_slot_available": max_iterations > 1,
+            },
+        )
+        _search_judgment_action = run_kernel.authorize_search_judgment(
+            inputs={
+                "contract_id": run_contract_projection.get("contract_id"),
+                "candidate_count": evidence_ledger_projection.get("candidate_count"),
+                "requirement_count": evidence_ledger_projection.get(
+                    "requirement_count"
+                ),
+                "iteration": iterations_run,
+                "max_iterations": max_iterations,
+            }
+        )
+        _search_judgment_result = execute_run_authority_search_judgment_action(
+            _search_judgment_action,
+            judgment_input=_search_judgment_input,
+            ask_model=(
+                ask_model if run_authority_search_judgment_smart_model else None
+            ),
+            clean_json_response=deps.clean_json_response,
+            smart_model_enabled=run_authority_search_judgment_smart_model,
+            provider=smart_provider,
+            model=smart_model,
+            base_url=local_url,
+            api_key=or_api_key,
+            effort="high",
+            use_reasoning=use_reasoning,
+            measure_context_stage=_measure_context_stage,
+        )
+        run_kernel.reduce(_search_judgment_result.observation)
+        search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
     except Exception as exc:
+        if _search_judgment_started:
+            raise
         run_log.warning(
             "Non-fatal answer-contract source-class recovery trigger omitted: %s",
             exc,
@@ -3668,18 +3779,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             )
             else evaluator_continuation_spine_gate_trace
         )
-        ordinary_continuation_candidate_trace = (
-            mark_ordinary_continuation_candidate_spine_authorized(
-                ordinary_continuation_candidate_trace,
-                used=True,
-            )
-        )
-        targeted_retrieval_lifecycle_trace = {
-            **targeted_retrieval_lifecycle_trace,
-            "targeted_retrieval_candidate_used": True,
-        }
-        evidence_integration_checkpoint_trace[ORDINARY_CONTINUATION_TRACE_KEY] = dict(
-            ordinary_continuation_candidate_trace
+        (
+            evidence_integration_checkpoint_trace,
+            ordinary_continuation_candidate_trace,
+            targeted_retrieval_lifecycle_trace,
+        ) = reconcile_retrieval_dispatch_runtime_checkpoint_trace(
+            checkpoint_trace=evidence_integration_checkpoint_trace,
+            ordinary_continuation_candidate_trace=ordinary_continuation_candidate_trace,
+            targeted_retrieval_lifecycle_trace=targeted_retrieval_lifecycle_trace,
+            authorized_gate_trace=authorized_gate_trace,
         )
         evidence_integration_checkpoint_trace[
             "expander_continuation_spine_gate_trace"

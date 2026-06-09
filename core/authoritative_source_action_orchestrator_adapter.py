@@ -108,9 +108,28 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
     answer_contract_result = orchestrator_state.get(
         "_pre_recovery_answer_contract_result"
     )
+    recommendation = _mapping(
+        orchestrator_state.get("_source_class_recovery_lifecycle_recommendation")
+    )
     checkpoint_trace = _mapping(
         orchestrator_state.get("evidence_integration_checkpoint_trace")
     )
+    anchor_packet = _mapping(orchestrator_state.get("anchor_packet_telemetry"))
+    nested_anchor_packet = _mapping(anchor_packet.get("anchor_packet"))
+    ordinary_continuation = _mapping(
+        orchestrator_state.get("ordinary_continuation_candidate_trace")
+    )
+    retrieval_batch_dispatch = _mapping(
+        orchestrator_state.get("retrieval_batch_dispatch_trace")
+    )
+    evaluator_gate = _mapping(
+        orchestrator_state.get("evaluator_continuation_spine_gate_trace")
+    )
+    expander_gate = _mapping(
+        orchestrator_state.get("expander_continuation_spine_gate_trace")
+    )
+    scout_gate = _mapping(orchestrator_state.get("scout_continuation_spine_gate_trace"))
+    scout_fired = bool(orchestrator_state.get("scout_fired"))
     iterations_run = _int_value(orchestrator_state.get("iterations_run"))
     max_iterations = _int_value(orchestrator_state.get("max_iterations"))
     waste_flags = set(_sequence(orchestrator_state.get("waste_flags")))
@@ -122,9 +141,7 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
         query_type=_string_or_none(orchestrator_state.get("query_type")),
         core_topic=_string_or_none(orchestrator_state.get("core_topic")),
         primary_entity=_string_or_none(orchestrator_state.get("primary_entity")),
-        recommendation=_mapping(
-            orchestrator_state.get("_source_class_recovery_lifecycle_recommendation")
-        ),
+        recommendation=recommendation,
         source_class_observability=_mapping(
             orchestrator_state.get(
                 "_source_class_recovery_answer_contract_observability"
@@ -133,6 +150,9 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
         source_class_evidence_signals=source_class_recovery_evidence_signals(
             source_tier_recovery_lifecycle=source_tier,
             source_domain_recovery_lifecycle=source_domain,
+        ),
+        run_search_judgment_projection=_mapping(
+            orchestrator_state.get("search_judgment_projection")
         ),
         answer_contract_family=_answer_contract_family(answer_contract_result),
         answer_contract_source_classes_missing=(
@@ -164,6 +184,24 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
         ),
         iteration_budget_available=iterations_run < max_iterations,
         answer_contract_source_class_slot_available=max_iterations > 1,
+        retrieve_to_anchor_recommended=(
+            (
+                anchor_packet.get("anchor_packet_next_action") == "retrieve_to_anchor"
+                or nested_anchor_packet.get("next_action") == "retrieve_to_anchor"
+            )
+            and not _source_class_gap_signal_present(recommendation)
+        ),
+        ordinary_continuation_path_active=(
+            _ordinary_continuation_path_active(
+                ordinary_continuation=ordinary_continuation,
+                retrieval_batch_dispatch=retrieval_batch_dispatch,
+                evaluator_gate=evaluator_gate,
+                expander_gate=expander_gate,
+                scout_gate=scout_gate,
+                scout_fired=scout_fired,
+            )
+            and not _source_class_gap_signal_present(recommendation)
+        ),
         query_redundancy_skipped="query_redundancy_skipped" in waste_flags,
         iteration_budget_hard_exhausted=(
             iterations_run >= max_iterations and max_iterations <= 1
@@ -318,6 +356,34 @@ def _prior_recovery_attempt_count(controller: RunController) -> int:
 
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _source_class_gap_signal_present(recommendation: Mapping[str, Any]) -> bool:
+    return bool(
+        recommendation.get("source_class_recovery_recommended")
+        or recommendation.get("source_class_underfire_shadow")
+        or recommendation.get("source_class_gap_candidates")
+        or recommendation.get("missing_expected_source_classes")
+    )
+
+
+def _ordinary_continuation_path_active(
+    *,
+    ordinary_continuation: Mapping[str, Any],
+    retrieval_batch_dispatch: Mapping[str, Any],
+    evaluator_gate: Mapping[str, Any],
+    expander_gate: Mapping[str, Any],
+    scout_gate: Mapping[str, Any],
+    scout_fired: bool = False,
+) -> bool:
+    if scout_fired:
+        return True
+    if ordinary_continuation.get("used"):
+        return True
+    for gate in (evaluator_gate, expander_gate, scout_gate):
+        if gate.get("targeted_retrieval_dispatch_authorized"):
+            return True
+    return False
 
 
 def _sequence(value: Any) -> tuple[Any, ...]:

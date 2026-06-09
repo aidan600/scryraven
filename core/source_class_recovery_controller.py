@@ -123,6 +123,7 @@ class SourceClassRecoveryControllerInput:
     iteration_budget_available: bool = False
     answer_contract_source_class_slot_available: bool = False
     official_canonical_source_class_slot_available: bool = False
+    run_authority_required_recovery_allowed: bool = False
     provider_policy_reusable: bool = True
     provider_swap_required: bool = False
     search_depth_reusable: bool = True
@@ -154,6 +155,9 @@ class SourceClassRecoveryControllerInput:
             ),
             "official_canonical_source_class_slot_available": (
                 self.official_canonical_source_class_slot_available
+            ),
+            "run_authority_required_recovery_allowed": (
+                self.run_authority_required_recovery_allowed
             ),
             "provider_policy_reusable": self.provider_policy_reusable,
             "provider_swap_required": self.provider_swap_required,
@@ -397,6 +401,7 @@ def _can_run_official_legal_source_class_after_weak_corpus(
     if not (
         _uses_answer_contract_source_class_slot(snapshot)
         or _uses_official_canonical_source_class_slot(snapshot)
+        or snapshot.run_authority_required_recovery_allowed
     ):
         return False
     if not snapshot.weak_corpus_recovery_used:
@@ -466,6 +471,10 @@ def build_source_class_recovery_controller_input(
         ),
         official_canonical_source_class_slot_available=bool(
             official_canonical_source_class_slot_available
+        ),
+        run_authority_required_recovery_allowed=bool(
+            telemetry.get("authority_lifecycle_required_recovery_allowed")
+            and telemetry.get("run_authority_search_judgment_consumed")
         ),
         provider_policy_reusable=bool(provider_policy_reusable),
         provider_swap_required=bool(provider_swap_required),
