@@ -114,7 +114,7 @@ def _base_kwargs(**overrides: Any) -> dict[str, Any]:
         "fast_provider": "fast-provider",
         "fast_model": "fast-model",
         "local_url": "http://local",
-        "api_key": "api-key",
+        "api_key": None,
         "use_reasoning": True,
         "measure_context_stage": lambda *_args, **_kwargs: None,
         "clean_query": _clean,
@@ -308,7 +308,7 @@ def test_researcher_prompt_bytes_and_ask_model_kwargs_are_preserved() -> None:
         "model": "fast-model",
         "effort": "low",
         "base_url": "http://local",
-        "api_key": "api-key",
+        "api_key": None,
         "require_json": True,
         "use_reasoning": True,
     }
@@ -385,7 +385,7 @@ def test_recon_rewriter_prompt_bytes_ask_kwargs_and_brave_success_diagnostics() 
         "model": "fast-model",
         "effort": "low",
         "base_url": "http://local",
-        "api_key": "api-key",
+        "api_key": None,
         "require_json": True,
         "use_reasoning": True,
     }
