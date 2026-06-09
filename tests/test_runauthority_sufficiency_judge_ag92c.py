@@ -622,7 +622,7 @@ def test_smart_model_ready_direct_with_required_gaps_is_repaired() -> None:
 def test_sufficiency_state_excludes_sensitive_raw_material() -> None:
     kernel, contract, ledger = _kernel_with_contract_ledger_search(satisfied=True)
     action = kernel.authorize_sufficiency_judgment(
-        inputs={"raw_prompt": "should redact", "api_key": "secret"}
+        inputs={"raw_prompt": "should redact PRIVATE_SENTINEL_PAYLOAD"}
     )
     result = execute_run_authority_sufficiency_judgment_action(
         action,
@@ -640,6 +640,7 @@ def test_sufficiency_state_excludes_sensitive_raw_material() -> None:
         "raw prompt",
         "raw_model_response",
         "raw_provider_payload",
+        "private_sentinel_payload",
         "db_row",
         "output_packet",
         "full_trace",
