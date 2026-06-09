@@ -153,6 +153,58 @@ def _run_kernel_final_answer_ref(run_kernel: Any, local_packet: Any) -> dict[str
         "storage_only": False,
     }
 
+
+def _answer_contract_compatibility_ledger_projection(
+    projection: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Keep AG-92A contract requirements out of legacy post-Author handoff."""
+
+    if projection.get("owner") != "RunKernel.EvidenceLedger":
+        return dict(projection or {})
+    filtered = dict(projection)
+    removed_requirement_ids: set[str] = set()
+    source_requirements: list[dict[str, Any]] = []
+    for requirement in projection.get("source_requirements", []) or []:
+        if not isinstance(requirement, Mapping):
+            continue
+        origin_ref = str(requirement.get("origin_ref") or "")
+        requirement_id = str(requirement.get("requirement_id") or "")
+        if origin_ref.startswith("RunKernel.RunAuthorityContract:"):
+            if requirement_id:
+                removed_requirement_ids.add(requirement_id)
+            continue
+        source_requirements.append(dict(requirement))
+    filtered["source_requirements"] = source_requirements
+    filtered["requirement_count"] = len(source_requirements)
+    if removed_requirement_ids:
+        filtered["custody_gaps"] = [
+            dict(gap)
+            for gap in projection.get("custody_gaps", []) or []
+            if isinstance(gap, Mapping)
+            and str(gap.get("requirement_id") or "") not in removed_requirement_ids
+        ]
+        custody = dict(projection.get("official_current_source_custody") or {})
+        custody["requirements"] = [
+            dict(item)
+            for item in custody.get("requirements", []) or []
+            if isinstance(item, Mapping)
+            and str(item.get("requirement_id") or "") not in removed_requirement_ids
+        ]
+        custody["records"] = [
+            dict(item)
+            for item in custody.get("records", []) or []
+            if isinstance(item, Mapping)
+            and str(item.get("requirement_id") or "") not in removed_requirement_ids
+        ]
+        filtered["official_current_source_custody"] = custody
+        compatibility = dict(filtered.get("compatibility") or {})
+        compatibility[
+            "run_authority_contract_requirements_hidden_from_post_author_answer_contract"
+        ] = True
+        filtered["compatibility"] = compatibility
+    return filtered
+
+
 def build_post_author_trace_packaging_from_scope(
     runtime_values: Mapping[str, Any],
     *,
@@ -183,7 +235,9 @@ def build_post_author_trace_packaging_from_scope(
                 source_tier_counts=v["_source_tier_exec"]["source_tier_counts"],
                 source_class_recovery_telemetry=v["runtime_source_class_recovery_telemetry"],
                 active_source_class_recovery_lifecycle=v["runtime_active_source_class_recovery_lifecycle"],
-                evidence_ledger_projection=v["evidence_ledger_projection"],
+                evidence_ledger_projection=_answer_contract_compatibility_ledger_projection(
+                    v["evidence_ledger_projection"]
+                ),
                 weak_corpus=bool(v["corpus_weak"]),
                 weak_corpus_reason=(v["weak_corpus_recovery_skip_reason"] or v["corpus_state"]) if v["corpus_weak"] else None,
                 weak_corpus_recovery_considered=bool(v["weak_corpus_recovery_considered"]),

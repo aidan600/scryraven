@@ -20,6 +20,7 @@ RUN_KERNEL_TRACE_KEY = "run_kernel"
 ROUTE_REQUEST_STAGE = "route_request"
 QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
+RUN_CONTRACT_STAGE = "run_contract"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
@@ -58,6 +59,7 @@ class ActionType(str, Enum):
     """Bounded action vocabulary authorized by RunKernel."""
 
     ROUTE_REQUEST = "route_request"
+    RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
     MAIN_RETRIEVAL_PASS = "main_retrieval_pass"
@@ -71,6 +73,7 @@ class ObservationType(str, Enum):
     """Observation vocabulary returned by bounded executors/adapters."""
 
     ROUTE_RESULT = "route_result"
+    RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
     RETRIEVAL_PASS_RESULT = "retrieval_pass_result"
@@ -276,6 +279,9 @@ class RunState:
     reduced_action_ids: set[str] = field(default_factory=set)
     observations: list[Observation] = field(default_factory=list)
     projections: dict[str, dict[str, Any]] = field(default_factory=dict)
+    run_contract: dict[str, Any] = field(default_factory=dict)
+    run_contract_projection: dict[str, Any] = field(default_factory=dict)
+    run_contract_validation: dict[str, Any] = field(default_factory=dict)
     evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
     final_answer_packet: dict[str, Any] = field(default_factory=dict)
     author_observation: dict[str, Any] = field(default_factory=dict)
@@ -306,6 +312,9 @@ class RunState:
             actions=[action.to_dict() for action in self.issued_actions.values()],
             observations=[observation.to_dict() for observation in self.observations],
             projections=deepcopy(self.projections),
+            run_contract=deepcopy(self.run_contract),
+            run_contract_projection=deepcopy(self.run_contract_projection),
+            run_contract_validation=deepcopy(self.run_contract_validation),
             evidence_ledger=self.evidence_ledger.to_projection().to_dict(),
             final_answer_packet=deepcopy(self.final_answer_packet),
             author_observation=deepcopy(self.author_observation),
@@ -330,6 +339,9 @@ class KernelTraceProjection:
     actions: Sequence[Mapping[str, Any]]
     observations: Sequence[Mapping[str, Any]]
     projections: Mapping[str, Any]
+    run_contract: Mapping[str, Any]
+    run_contract_projection: Mapping[str, Any]
+    run_contract_validation: Mapping[str, Any]
     evidence_ledger: Mapping[str, Any]
     final_answer_packet: Mapping[str, Any]
     author_observation: Mapping[str, Any]
@@ -350,6 +362,9 @@ class KernelTraceProjection:
                 _safe_mapping(observation) for observation in self.observations
             ],
             "projections": _safe_mapping(self.projections),
+            "run_contract": _safe_mapping(self.run_contract),
+            "run_contract_projection": _safe_mapping(self.run_contract_projection),
+            "run_contract_validation": _safe_mapping(self.run_contract_validation),
             "evidence_ledger": _safe_mapping(self.evidence_ledger),
             "final_answer_packet": _safe_mapping(self.final_answer_packet),
             "author_observation": _safe_mapping(self.author_observation),
@@ -427,6 +442,20 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.ROUTE_RESULT,
+        )
+
+    def authorize_run_contract_synthesis(
+        self,
+        *,
+        reason: str = "run_authority_contract_synthesis_before_query_production",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        return self.authorize(
+            stage=RUN_CONTRACT_STAGE,
+            action_type=ActionType.RUN_CONTRACT_SYNTHESIZE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.RUN_CONTRACT_SYNTHESIZED,
         )
 
     def authorize_query_plan_admission(
@@ -582,7 +611,68 @@ class RunKernel:
         self.state.reduced_action_ids.add(action.action_id)
         self.state.action_statuses[action.action_id] = observation.status
         self.state.stage_statuses[action.stage] = observation.status
-        if action.action_type is ActionType.EVIDENCE_LEDGER_REDUCE:
+        if action.action_type is ActionType.RUN_CONTRACT_SYNTHESIZE:
+            contract_projection = _safe_mapping(
+                observation.payload.get("contract_projection")
+            )
+            if not contract_projection:
+                raise RunKernelTransitionError(
+                    "run contract synthesis observation requires contract_projection"
+                )
+            validation = _safe_mapping(observation.payload.get("validation"))
+            self.state.run_contract = contract_projection
+            self.state.run_contract_projection = {
+                "owner": "RunKernel.RunAuthorityContract",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "contract_id": contract_projection.get("contract_id"),
+                "schema_version": contract_projection.get("schema_version"),
+                "synthesis_mode": contract_projection.get("synthesis_mode"),
+                "selected_template_ids": contract_projection.get(
+                    "selected_template_ids",
+                    [],
+                ),
+                "query_ref": contract_projection.get("query_ref")
+                or contract_projection.get("user_query_ref", {}),
+                "user_query_ref": contract_projection.get("user_query_ref", {}),
+                "selected_depth": contract_projection.get("selected_depth"),
+                "source_requirement_summary": contract_projection.get(
+                    "source_requirement_summary",
+                    [],
+                ),
+                "source_requirements": contract_projection.get(
+                    "source_requirements",
+                    [],
+                ),
+                "inference_policy": contract_projection.get("inference_policy", {}),
+                "conflict_policy": contract_projection.get("conflict_policy", {}),
+                "numeric_policy": contract_projection.get("numeric_policy", {}),
+                "final_posture_policy": contract_projection.get(
+                    "final_posture_policy",
+                    {},
+                ),
+                "downstream_hints": contract_projection.get("downstream_hints", {}),
+                "validation_status": validation.get("status"),
+                "prompt_hash": validation.get("prompt_hash")
+                or observation.payload.get("prompt_hash"),
+                "prompt_length": validation.get("prompt_length")
+                or observation.payload.get("prompt_length"),
+                "model_identity": {
+                    "provider": validation.get("provider"),
+                    "model": validation.get("model"),
+                    "effort": validation.get("effort"),
+                    "use_reasoning": validation.get("use_reasoning"),
+                },
+                "prompt_text_retained": False,
+                "model_response_text_retained": False,
+                "provider_payload_retained": False,
+            }
+            self.state.run_contract_validation = validation
+            self.state.projections[action.stage] = deepcopy(
+                self.state.run_contract_projection
+            )
+        elif action.action_type is ActionType.EVIDENCE_LEDGER_REDUCE:
             self.state.evidence_ledger.reduce_observation(observation.payload)
             self.state.projections[action.stage] = (
                 self.state.evidence_ledger.to_projection().to_dict()
@@ -683,6 +773,7 @@ __all__ = [
     "FINAL_ANSWER_PACKET_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
+    "RUN_CONTRACT_STAGE",
     "QUERY_PRODUCTION_STAGE",
     "QUERY_PLAN_ADMISSION_STAGE",
     "RETRIEVAL_STOP_CHECKPOINT_STAGE",

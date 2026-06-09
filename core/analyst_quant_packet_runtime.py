@@ -11,7 +11,7 @@ import json
 import re
 from typing import Any
 
-from core.pipeline import detect_nutrition_lookup_telemetry
+from core.nutrition_lookup import detect_nutrition_lookup_telemetry
 
 ANALYST_QUANT_PACKET_STRING_LIMIT = 200
 ANALYST_QUANT_PACKET_SOURCE_VALUE_LIMIT = 12

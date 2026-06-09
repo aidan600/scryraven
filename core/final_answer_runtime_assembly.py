@@ -80,6 +80,7 @@ def assemble_final_answer_author_runtime(
     author_model: str | None = None,
     answer_contract_projection: Any | None = None,
     evidence_ledger_projection: Mapping[str, Any] | None = None,
+    run_contract_projection: Mapping[str, Any] | None = None,
 ) -> FinalAnswerAuthorRuntimeAssembly:
     """Build packet and Author payload from already-computed runtime facts."""
 
@@ -106,6 +107,7 @@ def assemble_final_answer_author_runtime(
         final_answer_source_telemetry=None,
         source_obligation_projection=source_obligation_projection,
         answer_contract_projection=answer_contract_projection,
+        run_contract_projection=run_contract_projection,
         query_lineage_refs=query_lineage_refs,
         evidence_sufficient=None,
         corpus_weak=corpus_weak,

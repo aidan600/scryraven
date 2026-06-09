@@ -32,6 +32,7 @@ from core.router_query_preparation_contract import (
     RouterQueryPreparationState,
     with_router_query_runtime_posture,
 )
+from core.run_authority_contract import contract_query_hints_from_projection
 from core.run_kernel import (
     QUERY_PLAN_ADMISSION_STAGE,
     QUERY_PRODUCTION_STAGE,
@@ -42,7 +43,14 @@ from core.run_kernel import (
     RunStageStatus,
     validate_authorized_action,
 )
-from core.search_providers import brave_reconnaissance
+
+
+def brave_reconnaissance(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+    """Import the live provider boundary only when recon actually uses it."""
+
+    from core.search_providers import brave_reconnaissance as _brave_reconnaissance
+
+    return _brave_reconnaissance(*args, **kwargs)
 
 _RECON_QUERY_TYPES = frozenset({"person", "news", "current_events", "event"})
 
@@ -54,6 +62,7 @@ class QueryProductionAdmissionInputs:
     candidate_queries: list[str]
     candidate_source: str
     effective_route_posture: dict[str, Any]
+    contract_source_requirement_hints: list[dict[str, Any]]
 
     @property
     def query_type(self) -> str:
@@ -81,6 +90,7 @@ class QueryProductionResult:
     recon_seconds: float
     researcher_fallback_status: str
     empty_entity_flag: bool
+    contract_source_requirement_hints: list[dict[str, Any]]
     observation: Observation
 
     @property
@@ -266,6 +276,8 @@ def _effective_route_posture(
     search_depth: str,
     top_chunks: int,
     max_iterations: int,
+    run_contract_ref: Mapping[str, Any] | None = None,
+    contract_source_requirement_hints: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     return {
         "intent": intent,
@@ -286,6 +298,13 @@ def _effective_route_posture(
         "search_depth": search_depth,
         "top_chunks": int(top_chunks),
         "max_iterations": int(max_iterations),
+        "run_contract_ref": dict(run_contract_ref or {}),
+        "contract_source_requirement_hints": [
+            dict(item)
+            for item in (contract_source_requirement_hints or ())
+            if isinstance(item, Mapping)
+        ],
+        "contract_consumed_by_query_production": bool(run_contract_ref),
     }
 
 
@@ -305,6 +324,7 @@ def _build_query_production_payload(
     nutrition_lookup_telemetry: Mapping[str, Any],
     include_domains: Sequence[str],
     provider_diagnostics: Sequence[Mapping[str, Any]],
+    contract_source_requirement_hints: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     return {
         "action_id": action.action_id,
@@ -324,6 +344,11 @@ def _build_query_production_payload(
         "canonical_subject_projection": canonical_subject_resolved,
         "entity_update_projection": dict(entity_update_projection),
         "researcher_fallback_status": researcher_fallback_status,
+        "contract_source_requirement_hints": [
+            dict(item)
+            for item in contract_source_requirement_hints
+            if isinstance(item, Mapping)
+        ],
         "diagnostics": {
             "anchor_packet_present": bool(anchor_packet_telemetry.get("anchor_packet_present")),
             "nutrition_lookup_detected": bool(
@@ -366,6 +391,11 @@ def query_plan_admission_inputs_from_query_production_projection(
         candidate_queries=[str(query) for query in candidate_queries],
         candidate_source=candidate_source,
         effective_route_posture=effective_route_posture,
+        contract_source_requirement_hints=[
+            dict(item)
+            for item in projection.get("contract_source_requirement_hints", [])
+            if isinstance(item, Mapping)
+        ],
     )
 
 
@@ -397,6 +427,7 @@ def execute_query_production_action(
     waste_flags: Sequence[str] | None = None,
     brave_api_key_available: bool | None = None,
     brave_reconnaissance_func: Callable[..., list[dict[str, Any]]] = brave_reconnaissance,
+    run_contract_projection: Mapping[str, Any] | None = None,
 ) -> QueryProductionResult:
     """Execute old initial candidate production after RunKernel authorization."""
 
@@ -421,6 +452,24 @@ def execute_query_production_action(
     routing_override_applied = False
     routing_override_reason: str | None = None
     active_waste_flags = list(waste_flags or [])
+    contract_source_requirement_hints = contract_query_hints_from_projection(
+        run_contract_projection
+    )
+    run_contract_ref = {}
+    if isinstance(run_contract_projection, Mapping) and run_contract_projection:
+        run_contract_ref = {
+            "owner": run_contract_projection.get("owner"),
+            "contract_id": run_contract_projection.get("contract_id"),
+            "synthesis_mode": run_contract_projection.get("synthesis_mode"),
+            "selected_template_ids": run_contract_projection.get(
+                "selected_template_ids",
+                [],
+            ),
+            "source_requirement_count": run_contract_projection.get(
+                "source_requirement_count",
+                0,
+            ),
+        }
 
     nutrition_lookup_telemetry = detect_nutrition_lookup_telemetry(query)
     if nutrition_lookup_telemetry["nutrition_lookup_detected"]:
@@ -697,6 +746,8 @@ def execute_query_production_action(
         search_depth=search_depth,
         top_chunks=top_chunks,
         max_iterations=max_iterations,
+        run_contract_ref=run_contract_ref,
+        contract_source_requirement_hints=contract_source_requirement_hints,
     )
     entity_update_projection = {
         "entity_count_before": entity_count_before,
@@ -719,6 +770,7 @@ def execute_query_production_action(
         nutrition_lookup_telemetry=nutrition_lookup_telemetry,
         include_domains=active_include_domains,
         provider_diagnostics=provider_diagnostics,
+        contract_source_requirement_hints=contract_source_requirement_hints,
     )
     observation = Observation.from_action(
         action,
@@ -740,6 +792,7 @@ def execute_query_production_action(
         recon_seconds=recon_seconds,
         researcher_fallback_status=researcher_fallback_status,
         empty_entity_flag=empty_entity_flag,
+        contract_source_requirement_hints=list(contract_source_requirement_hints),
         observation=observation,
     )
 
@@ -763,6 +816,7 @@ def _query_plan_projection(
     recency_merge_used: bool,
     recency_merge_query: str | None,
     current_queries: Sequence[str],
+    contract_source_requirement_hints: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     query_plan = query_authority.to_trace_fragment().get(QUERY_PLAN_TRACE_KEY, {})
     return {
@@ -772,6 +826,11 @@ def _query_plan_projection(
         "recency_merge_query": recency_merge_query,
         "current_query_count": len(list(current_queries)),
         "query_order_owner": "QueryPlan",
+        "contract_source_requirement_hints": [
+            dict(item)
+            for item in (contract_source_requirement_hints or ())
+            if isinstance(item, Mapping)
+        ],
     }
 
 
@@ -813,6 +872,29 @@ def execute_query_plan_admission_action(
         max_len=max_queries,
         include_official_bias=False,
     )
+    contract_source_requirement_hints = [
+        dict(item)
+        for item in route_runtime_posture.get("contract_source_requirement_hints", [])
+        if isinstance(item, Mapping)
+    ]
+    run_contract_ref = (
+        dict(route_runtime_posture.get("run_contract_ref") or {})
+        if isinstance(route_runtime_posture.get("run_contract_ref"), Mapping)
+        else {}
+    )
+    if run_contract_ref or contract_source_requirement_hints:
+        query_authority.plan = query_authority.plan.append(
+            origin="run_authority_contract",
+            role="initial",
+            status="admitted",
+            phase="run_contract_source_requirements",
+            admission_reason="source_requirement_hints_consumed",
+            metadata={
+                "contract_ref": run_contract_ref,
+                "contract_source_requirement_hints": contract_source_requirement_hints,
+                "contract_changed_query_order": False,
+            },
+        )
 
     intent = str(route_runtime_posture["intent"])
     route_entities = route_runtime_posture.get(
@@ -852,6 +934,8 @@ def execute_query_plan_admission_action(
         finalized_queries=queries,
         current_queries=current_queries,
         query_source=candidate_source,
+        run_contract_ref=run_contract_ref,
+        contract_source_requirement_hints=contract_source_requirement_hints,
     )
     payload = _query_plan_projection(
         query_authority,
@@ -859,6 +943,7 @@ def execute_query_plan_admission_action(
         recency_merge_used=recency_projection.recency_merge_used,
         recency_merge_query=recency_projection.recency_merge_query,
         current_queries=current_queries,
+        contract_source_requirement_hints=contract_source_requirement_hints,
     )
     observation = Observation.from_action(
         action,

@@ -274,6 +274,8 @@ def with_router_query_runtime_posture(
     finalized_queries: Sequence[str] | None,
     current_queries: Sequence[str] | None,
     query_source: str,
+    run_contract_ref: Mapping[str, Any] | None = None,
+    contract_source_requirement_hints: Sequence[Mapping[str, Any]] | None = None,
     answer_contract_visible: bool = True,
     controller_ledger_visible: bool = True,
 ) -> RouterQueryPreparationState:
@@ -294,11 +296,26 @@ def with_router_query_runtime_posture(
         primary_entity=normalized_primary,
         entities=normalized_entities,
         router_source_obligation_hints={
-            "source_obligation_inferred_later_from_source_class_recovery": True,
-            "contract_does_not_change_obligation_bridge": True,
+            "source_obligation_seeded_by_run_contract": bool(run_contract_ref),
+            "run_contract_ref": _safe_mapping(run_contract_ref),
+            "contract_source_requirement_hints": [
+                _safe_mapping(item)
+                for item in (contract_source_requirement_hints or ())
+                if isinstance(item, Mapping)
+            ],
+            "source_obligation_inferred_later_from_source_class_recovery": not bool(
+                run_contract_ref
+            ),
         },
         official_current_posture_hints={
-            "official_current_posture_inferred_later_from_existing_source_class_helpers": True,
+            "official_current_posture_seeded_by_run_contract": any(
+                str(item.get("query_hint") or "").casefold().find("official") >= 0
+                for item in (contract_source_requirement_hints or ())
+                if isinstance(item, Mapping)
+            ),
+            "official_current_posture_inferred_later_from_existing_source_class_helpers": not bool(
+                run_contract_ref
+            ),
             "contract_does_not_classify_sources": True,
         },
         routing_override_provenance={
@@ -313,6 +330,9 @@ def with_router_query_runtime_posture(
             "finalized_by_existing_retrieval_quality_helper": True,
             "contract_generated_queries": False,
             "contract_changed_query_order": False,
+            "run_contract_source_hints_consumed": bool(
+                contract_source_requirement_hints
+            ),
         },
         retrieval_budget_seed_facts={
             "complexity": complexity,

@@ -77,7 +77,10 @@ from core.evidence_integration_checkpoint import (
     decide_evidence_integration_checkpoint,
     evidence_integration_checkpoint_unavailable_trace,
 )
-from core.evidence_ledger import build_evidence_ledger_observation_from_runtime
+from core.evidence_ledger import (
+    build_evidence_ledger_observation_from_run_contract,
+    build_evidence_ledger_observation_from_runtime,
+)
 from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.evidence_registry_mirror import record_final_evidence_snapshot
 from core.failure_card import (
@@ -224,6 +227,7 @@ from core.retrieval_stop_trace_projection import (
 from core.review_flags import recent_recurring_kb_hints
 from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
 from core.routing_runtime import execute_route_request_action
+from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
 from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel
@@ -1127,6 +1131,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     local_url = config.local_url
     or_api_key = config.or_api_key
     use_reasoning = config.use_reasoning
+    run_authority_contract_smart_model = bool(config.run_authority_contract_smart_model)
     current_date = config.current_date
 
     a5_provider_override: list[str] | None = None
@@ -1207,6 +1212,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "query_length": len(query),
         },
     )
+    run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     active_source_class_recovery_lifecycle = source_class_recovery_lifecycle_defaults()
     active_conflict_resolution_lifecycle = conflict_resolution_lifecycle_defaults()
@@ -1338,6 +1344,35 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     router_original_report_type = router_query_preparation_contract.router_original_report_type
     router_original_query_type = router_query_preparation_contract.router_original_query_type
 
+    status.step("Synthesizing RunAuthority contract...")
+    run_contract_action = run_kernel.authorize_run_contract_synthesis(
+        inputs={
+            "route_action_id": route_request_action.action_id,
+            "query_length": len(query),
+            "strategy": strategy,
+            "smart_model_enabled": bool(run_authority_contract_smart_model),
+        }
+    )
+    run_contract_result = execute_run_contract_synthesis_action(
+        run_contract_action,
+        query=query,
+        mode=strategy,
+        current_date=current_date,
+        route_projection=run_kernel.state.projections.get("route_request", {}),
+        ask_model=ask_model if run_authority_contract_smart_model else None,
+        clean_json_response=deps.clean_json_response,
+        smart_model_enabled=run_authority_contract_smart_model,
+        provider=smart_provider,
+        model=smart_model,
+        base_url=local_url,
+        api_key=or_api_key,
+        effort="low",
+        use_reasoning=use_reasoning,
+        measure_context_stage=_measure_context_stage,
+    )
+    run_kernel.reduce(run_contract_result.observation)
+    run_contract_projection = dict(run_kernel.state.run_contract_projection)
+
     policy_state = load_policy_state(policy_state_path)
     cfg = apply_policy_to_run_config(
         {
@@ -1403,6 +1438,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "focus_academic": focus_academic,
             "force_intent_news": force_intent_news,
             "include_domain_count": len(include_domains),
+            "run_contract_id": run_contract_projection.get("contract_id"),
+            "run_contract_source_requirement_count": len(
+                run_contract_projection.get("source_requirements", [])
+            ),
         }
     )
     query_production_result = execute_query_production_action(
@@ -1414,6 +1453,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         focus_academic=focus_academic,
         force_intent_news=force_intent_news,
         include_domains=include_domains,
+        run_contract_projection=run_contract_projection,
         news_preferred_domains=NEWS_PREFERRED_DOMAINS,
         ask_model=ask_model,
         clean_json_response=deps.clean_json_response,
@@ -3711,6 +3751,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     final_top_evidence = final_evidence_bundle.final_top_evidence
     unique_source_urls = final_evidence_bundle.unique_source_urls
     ordered_sources = final_evidence_bundle.ordered_sources
+    _run_contract_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
+        inputs={
+            "observation_source": "run_authority_contract",
+            "contract_id": run_contract_projection.get("contract_id"),
+            "source_requirement_count": len(
+                run_contract_projection.get("source_requirements", [])
+            ),
+        }
+    )
+    _run_contract_ledger_result = execute_evidence_ledger_reduction_action(
+        _run_contract_ledger_action,
+        payload=build_evidence_ledger_observation_from_run_contract(
+            observation_id=f"{run_id}:evidence-ledger:run-contract",
+            contract_projection=run_contract_projection,
+        ).to_dict(),
+    )
+    run_kernel.reduce(_run_contract_ledger_result.observation)
+    evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     _final_evidence_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
         inputs={
             "observation_source": "final_evidence_bundle",
@@ -4129,6 +4187,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "candidate_count": len(final_top_evidence),
             "author_evidence_count": len(author_evidence),
             "evidence_ledger_available": bool(evidence_ledger_projection),
+            "run_contract_available": bool(run_contract_projection),
+            "run_contract_id": run_contract_projection.get("contract_id"),
         }
     )
     final_answer_author_runtime = execute_final_answer_packet_prepare_action_from_scope(

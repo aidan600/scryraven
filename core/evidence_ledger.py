@@ -968,6 +968,60 @@ def build_evidence_ledger_observation_from_runtime(
     )
 
 
+def build_evidence_ledger_observation_from_run_contract(
+    *,
+    observation_id: str,
+    contract_projection: Mapping[str, Any] | None,
+) -> EvidenceLedgerObservation:
+    """Build ledger source requirements from canonical RunAuthority contract state."""
+
+    projection = _safe_mapping(contract_projection)
+    contract_id = _clean_token(projection.get("contract_id")) or "unknown_contract"
+    requirements: list[dict[str, Any]] = []
+    kind_aliases = {
+        "official_current": "official_current",
+        "legal_primary": "legal",
+        "canonical_docs": "canonical",
+        "source_bound_numeric": "source_bound",
+        "academic": "academic",
+        "user_document": "user_document",
+        "reputable_secondary": "general",
+    }
+    for requirement in _list(projection.get("source_requirements")):
+        if not isinstance(requirement, Mapping):
+            continue
+        req_id = _clean_token(requirement.get("requirement_id"))
+        source_class = _clean_token(requirement.get("required_source_class"))
+        if not req_id or not source_class:
+            continue
+        requirement_kind = _clean_token(requirement.get("requirement_kind"))
+        requirements.append(
+            {
+                "requirement_id": req_id,
+                "requirement_kind": kind_aliases.get(
+                    requirement_kind,
+                    requirement_kind or "general",
+                ),
+                "origin_ref": f"RunKernel.RunAuthorityContract:{contract_id}",
+                "required_source_class": source_class,
+                "required_source_tier": requirement.get("required_source_tier"),
+                "required_currentness": requirement.get("required_currentness"),
+                "aggregate_counts_insufficient": False,
+            }
+        )
+    return EvidenceLedgerObservation(
+        observation_id=observation_id,
+        source="run_authority_contract",
+        payload={
+            "observation_id": observation_id,
+            "observation_source": "run_authority_contract",
+            "requirements": requirements,
+            "contract_id": contract_id,
+            "owner": "RunKernel.RunAuthorityContract",
+        },
+    )
+
+
 def source_class_facts_from_evidence_ledger_projection(
     projection: Mapping[str, Any] | None,
 ) -> dict[str, tuple[str, ...]]:
@@ -1358,6 +1412,7 @@ __all__ = [
     "SourceObligationLink",
     "SourceRequirementRecord",
     "SourceRequirementStatus",
+    "build_evidence_ledger_observation_from_run_contract",
     "build_evidence_ledger_observation_from_runtime",
     "source_class_facts_from_evidence_ledger_projection",
 ]

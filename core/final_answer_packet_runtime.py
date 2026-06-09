@@ -104,6 +104,7 @@ def execute_final_answer_packet_prepare_action(
     smart_model: str | None,
     evidence_ledger_projection: Mapping[str, Any] | None = None,
     answer_contract_projection: Any | None = None,
+    run_contract_projection: Mapping[str, Any] | None = None,
 ) -> FinalAnswerPacketPreparationResult:
     """Build a FinalAnswerPacket and packet-derived Author payload."""
 
@@ -161,6 +162,7 @@ def execute_final_answer_packet_prepare_action(
         author_model=author_model,
         answer_contract_projection=answer_contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
+        run_contract_projection=run_contract_projection,
     )
     packet_projection = assembly.packet.to_dict()
     payload_ref = assembly.author_payload.to_trace_ref()
@@ -237,6 +239,7 @@ def execute_final_answer_packet_prepare_action_from_scope(
         smart_model=runtime_scope["smart_model"],
         evidence_ledger_projection=runtime_scope.get("evidence_ledger_projection"),
         answer_contract_projection=runtime_scope.get("answer_contract_projection"),
+        run_contract_projection=runtime_scope.get("run_contract_projection"),
     )
 
 
