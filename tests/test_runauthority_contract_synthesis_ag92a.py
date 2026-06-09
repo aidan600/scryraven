@@ -15,7 +15,15 @@ from core.answer_contract_runtime_handoff import (
 )
 from core.evidence_ledger import build_evidence_ledger_observation_from_run_contract
 from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
+from core.final_answer_packet import (
+    FinalAnswerReadinessStatus,
+    SourceObligationStatus,
+)
 from core.final_answer_runtime_adapter import build_final_answer_packet
+from core.official_current_source_custody import (
+    OfficialCurrentCustodyStatus,
+    OfficialCurrentSourceCustodyState,
+)
 from core.query_plan import QUERY_PLAN_TRACE_KEY
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 
@@ -164,6 +172,26 @@ def _final_passage() -> dict[str, Any]:
         "text": "The current rule is listed here.",
         "source_tier": "official",
         "source_class": "official_current_rules",
+    }
+
+
+def _satisfied_ledger_custody_projection(
+    *,
+    requirement_id: str,
+    source_class: str = "official_current_rules",
+) -> dict[str, Any]:
+    custody = (
+        OfficialCurrentSourceCustodyState()
+        .require(source_class, requirement_id=requirement_id)
+        .record_candidate_disposition(
+            requirement_id,
+            status=OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED,
+            candidate_id=f"{requirement_id}:candidate",
+        )
+    )
+    return {
+        "owner": "RunKernel.EvidenceLedger",
+        "official_current_source_custody": custody.to_dict(),
     }
 
 
@@ -485,6 +513,100 @@ def test_final_answer_packet_consumes_contract_into_author_payload() -> None:
     assert "do_not_treat_secondary_or_aggregate_counts" in payload.prompt
     assert payload.prohibited_upgrades
     assert payload.mandatory_caveats
+
+
+def test_final_answer_packet_does_not_mark_satisfied_contract_requirement_missing() -> None:
+    projection = _contract_projection()
+    packet = build_final_answer_packet(
+        run_id="ag92a-packet-satisfied",
+        final_evidence=[_final_passage()],
+        evidence_sufficient=True,
+        source_obligation_projection=_satisfied_ledger_custody_projection(
+            requirement_id="run_contract:official_current_rules",
+        ),
+        run_contract_projection=projection,
+    )
+
+    assert packet.readiness_status is FinalAnswerReadinessStatus.AUTHOR_READY
+    assert "source_obligations_missing_or_unsatisfied" not in packet.readiness_reasons
+    assert not any(
+        obligation.status is SourceObligationStatus.OFFICIAL_CURRENT_UNSATISFIED
+        for obligation in packet.source_obligations
+    )
+    assert "official_current_unsatisfied:official_current_rules" not in (
+        packet.mandatory_caveats
+    )
+    assert "missing_official_current_source_must_be_caveated" not in (
+        packet.mandatory_caveats
+    )
+
+
+def test_final_answer_packet_keeps_contract_obligation_missing_without_custody() -> None:
+    projection = _contract_projection()
+    packet = build_final_answer_packet(
+        run_id="ag92a-packet-missing",
+        final_evidence=[_final_passage()],
+        evidence_sufficient=True,
+        run_contract_projection=projection,
+    )
+
+    assert packet.readiness_status is FinalAnswerReadinessStatus.INSUFFICIENT_AUTHORIZED
+    assert any(
+        obligation.status is SourceObligationStatus.OFFICIAL_CURRENT_UNSATISFIED
+        for obligation in packet.source_obligations
+    )
+    assert "official_current_unsatisfied:official_current_rules" in (
+        packet.mandatory_caveats
+    )
+    assert "missing_official_current_source_must_be_caveated" in (
+        packet.mandatory_caveats
+    )
+
+
+def test_final_answer_packet_does_not_false_missing_satisfied_source_bound_numeric() -> None:
+    projection = _contract_projection()
+    packet = build_final_answer_packet(
+        run_id="ag92a-packet-source-bound-satisfied",
+        final_evidence=[_final_passage()],
+        evidence_sufficient=True,
+        source_obligation_projection=_satisfied_ledger_custody_projection(
+            requirement_id="run_contract:source_bound_numeric",
+        ),
+        run_contract_projection=projection,
+    )
+
+    assert packet.readiness_status is FinalAnswerReadinessStatus.AUTHOR_READY
+    assert not any(
+        obligation.status is SourceObligationStatus.SOURCE_BOUND_VALUE_MISSING
+        for obligation in packet.source_obligations
+    )
+    assert "source_bound_value_missing:official_current_rules" not in (
+        packet.mandatory_caveats
+    )
+    assert "missing_source_bound_numeric_value_remains_unknown" not in (
+        packet.mandatory_caveats
+    )
+
+
+def test_contract_missing_source_caveats_are_conditional_not_unconditional() -> None:
+    projection = _contract_projection()
+    packet = build_final_answer_packet(
+        run_id="ag92a-packet-conditional-caveats",
+        final_evidence=[_final_passage()],
+        evidence_sufficient=True,
+        source_obligation_projection=_satisfied_ledger_custody_projection(
+            requirement_id="run_contract:official_current_rules",
+        ),
+        run_contract_projection=projection,
+    )
+
+    assert not any(
+        caveat.startswith("missing_") for caveat in packet.mandatory_caveats
+    )
+    assert (
+        "do_not_treat_secondary_or_aggregate_counts_as_official_current_satisfaction"
+        in packet.prohibited_upgrades
+    )
 
 
 def test_query_production_and_query_plan_receive_contract_hints() -> None:
