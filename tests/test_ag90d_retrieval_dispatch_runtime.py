@@ -16,6 +16,7 @@ from core.retrieval_scheduler import (
     schedule_main_retrieval_action,
 )
 from core.router_query_preparation_contract import build_router_query_preparation_state
+from core.run_kernel import RunKernel
 
 ROOT = Path(__file__).resolve().parents[1]
 HELPER = ROOT / "core" / "retrieval_dispatch_runtime.py"
@@ -256,6 +257,10 @@ def test_main_retrieval_dispatch_consumes_scheduler_action_over_legacy_locals() 
         def compute_similarities(*_args: Any, **_kwargs: Any) -> list[Any]:
             return []
 
+    kernel = RunKernel.start(run_id="run-1", request_id="request-1")
+    main_retrieval_kernel_action = kernel.authorize_main_retrieval_pass(
+        inputs={"iteration": 2, "query_count": 1}
+    )
     scheduled_action = schedule_main_retrieval_action(
         RetrievalScheduleInput(
             stage="main_retrieval",
@@ -272,6 +277,7 @@ def test_main_retrieval_dispatch_consumes_scheduler_action_over_legacy_locals() 
         "router_query_preparation_contract": build_router_query_preparation_state(
             query="topic", router_text=None
         ),
+        "main_retrieval_kernel_action": main_retrieval_kernel_action,
         "retrieval_scheduled_action": scheduled_action,
         "current_queries": ["legacy local query"],
         "loop_providers": ["legacy-provider"],
@@ -332,6 +338,7 @@ def test_main_retrieval_dispatch_consumes_scheduler_action_over_legacy_locals() 
     assert outcome.descriptor.current_queries == ("scheduled query",)
     assert outcome.descriptor.provider_list == ("scheduled-provider",)
     assert outcome.descriptor.search_depth == "advanced"
+    assert outcome.observation.action_id == main_retrieval_kernel_action.action_id
     assert records[0]["queries"] == ["scheduled query"]
     assert records[0]["providers"] == ["scheduled-provider"]
 
@@ -342,7 +349,9 @@ def test_pipeline_embedding_and_main_retrieval_consume_action_records() -> None:
 
     assert "embedding_action = EmbeddingActionRecord" in source
     assert "query_embedding = execute_embedding_action(embedding_action, embed_texts)" in source
+    assert "main_retrieval_kernel_action = run_kernel.authorize_main_retrieval_pass" in source
     assert '"retrieval_scheduled_action"' in helper_source
+    assert '"main_retrieval_kernel_action"' in helper_source
     assert "scheduled_action: RetrievalScheduledAction" in helper_source
     assert "dispatch_action = RecordedRetrievalDispatch" in helper_source
     assert "current_queries=dispatch_action.queries" in helper_source

@@ -425,7 +425,7 @@ def test_pipeline_consumes_provider_plan_for_main_loop_selection() -> None:
     source = _read_text(PIPELINE)
     scheduler_source = _read_text(ROOT / "core" / "retrieval_scheduler.py")
     assert "provider_plan = ProviderPlan.from_available_keys" in source
-    assert "schedule_main_retrieval_from_pipeline_scope" in source
+    assert "schedule_main_retrieval_from_kernel_action" in source
     assert "provider_record = provider_plan.record_main_retrieval" in scheduler_source
     assert "provider_record = provider_plan.record_continuation" in scheduler_source
     assert "main_retrieval_action_values(retrieval_scheduled_action)" in source

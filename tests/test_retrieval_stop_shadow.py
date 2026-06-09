@@ -19,8 +19,10 @@ from core.protocols import NullStatusWriter
 from core.retrieval_stop_controller import (
     RetrievalStopControllerDecision,
     RetrievalStopDecision,
+    RetrievalStopKernelCheckpoint,
 )
 from core.run_config import RunConfig, RunDeps
+from core.run_kernel import Observation, ObservationType, RunStageStatus
 from tests.test_weak_corpus_recovery import _run as _run_weak_corpus_case
 
 SHADOW_FIELDS = {
@@ -51,6 +53,18 @@ ACTIVE_FIELDS = {
     "retrieval_stop_active_shadow_alignment",
     "retrieval_stop_active_fallback_reason",
 }
+
+
+def _kernel_checkpoint(action: Any, decision: RetrievalStopDecision) -> RetrievalStopKernelCheckpoint:
+    return RetrievalStopKernelCheckpoint(
+        decision=decision,
+        observation=Observation.from_action(
+            action,
+            observation_type=ObservationType.RETRIEVAL_STOP_DECISION,
+            status=RunStageStatus.COMPLETED,
+            payload={"decision": decision.to_dict()},
+        ),
+    )
 
 LEAK_MARKERS = (
     "retrieval_stop_shadow",
@@ -707,17 +721,18 @@ def test_no_query_branch_consumes_controller_decision_without_local_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _controller_continue(_snapshot: Any) -> RetrievalStopDecision:
-        return RetrievalStopDecision(
+    def _controller_continue(action: Any, _snapshot: Any, *, stage: str) -> RetrievalStopKernelCheckpoint:
+        decision = RetrievalStopDecision(
             decision=RetrievalStopControllerDecision.CONTINUE_RETRIEVAL,
             reason="candidate_queries_available",
             next_queries=("Acme Widget migration timeline",),
             query_source="evaluator",
         )
+        return _kernel_checkpoint(action, decision)
 
     monkeypatch.setattr(
         orchestrator,
-        "_decide_retrieval_stop_for_active",
+        "decide_retrieval_stop_with_kernel_action",
         _controller_continue,
     )
     outcome, harness, _log_entry = _run_case(
@@ -740,12 +755,12 @@ def test_no_query_branch_does_not_hide_controller_exception(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _raise_controller(_snapshot: Any) -> None:
+    def _raise_controller(_action: Any, _snapshot: Any, *, stage: str) -> None:
         raise RuntimeError("synthetic active controller failure")
 
     monkeypatch.setattr(
         orchestrator,
-        "_decide_retrieval_stop_for_active",
+        "decide_retrieval_stop_with_kernel_action",
         _raise_controller,
     )
 
@@ -760,17 +775,18 @@ def test_budget_branch_consumes_controller_decision_without_local_fallback(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _controller_continue(_snapshot: Any) -> RetrievalStopDecision:
-        return RetrievalStopDecision(
+    def _controller_continue(action: Any, _snapshot: Any, *, stage: str) -> RetrievalStopKernelCheckpoint:
+        decision = RetrievalStopDecision(
             decision=RetrievalStopControllerDecision.CONTINUE_RETRIEVAL,
             reason="candidate_queries_available",
             next_queries=("Acme Widget migration timeline",),
             query_source="budget",
         )
+        return _kernel_checkpoint(action, decision)
 
     monkeypatch.setattr(
         orchestrator,
-        "_decide_retrieval_stop_for_active",
+        "decide_retrieval_stop_with_kernel_action",
         _controller_continue,
     )
     outcome, harness, _log_entry = _run_case(tmp_path, mode="Fast")
@@ -792,12 +808,12 @@ def test_budget_branch_does_not_hide_controller_exception(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def _raise_controller(_snapshot: Any) -> None:
+    def _raise_controller(_action: Any, _snapshot: Any, *, stage: str) -> None:
         raise RuntimeError("synthetic active controller failure")
 
     monkeypatch.setattr(
         orchestrator,
-        "_decide_retrieval_stop_for_active",
+        "decide_retrieval_stop_with_kernel_action",
         _raise_controller,
     )
 

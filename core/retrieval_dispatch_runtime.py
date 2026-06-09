@@ -20,6 +20,15 @@ from core.retrieval_loop_contract import (
     summarize_retrieval_pass_result,
 )
 from core.retrieval_scheduler import RetrievalScheduledAction
+from core.run_kernel import (
+    MAIN_RETRIEVAL_STAGE,
+    ActionType,
+    AuthorizedAction,
+    Observation,
+    ObservationType,
+    RunStageStatus,
+    validate_authorized_action,
+)
 
 
 @dataclass(frozen=True)
@@ -201,6 +210,7 @@ class MainRetrievalPassOutcome(RetrievalDispatchOutcome):
     retrieval_loop_contract_state: RetrievalLoopState
     descriptor: Any
     execution_envelope: Any
+    observation: Observation
 
 
 _DISPATCH_DEP_KEYS = (
@@ -297,6 +307,7 @@ def execute_main_retrieval_pass_from_scope(
         scope,
         "iteration",
         "router_query_preparation_contract",
+        "main_retrieval_kernel_action",
         "retrieval_scheduled_action",
         "results_per_query",
         "top_chunks",
@@ -318,6 +329,12 @@ def execute_main_retrieval_pass_from_scope(
         "retrieval_loop_contract_state",
         "similarity_prior_queries",
         "query_similarity_basis",
+    )
+    kernel_action: AuthorizedAction = validate_authorized_action(
+        values["main_retrieval_kernel_action"],
+        action_type=ActionType.MAIN_RETRIEVAL_PASS,
+        stage=MAIN_RETRIEVAL_STAGE,
+        expected_observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
     )
     scheduled_action: RetrievalScheduledAction = values["retrieval_scheduled_action"]
     action_iteration = scheduled_action.iteration or values["iteration"]
@@ -434,6 +451,24 @@ def execute_main_retrieval_pass_from_scope(
         results_per_query=dispatch_action.results_per_query,
     )
     retrieval_pass_records.append(pass_record)
+    observation = Observation.from_action(
+        kernel_action,
+        observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+        status=RunStageStatus.COMPLETED,
+        payload={
+            "stage": dispatch_action.stage,
+            "iteration": dispatch_action.iteration,
+            "provider_role": dispatch_action.provider_role,
+            "provider_count": len(tuple(dispatch_action.providers)),
+            "query_count": len(tuple(dispatch_action.queries)),
+            "search_depth": dispatch_action.search_depth,
+            "results_per_query": dispatch_action.results_per_query,
+            "seen_url_delta": seen_url_delta,
+            "chunk_delta": len(passages),
+            "scheduled_action": scheduled_action.to_trace(),
+            "pass_record": pass_record,
+        },
+    )
     return MainRetrievalPassOutcome(
         passages=passages,
         pass_record=pass_record,
@@ -442,6 +477,7 @@ def execute_main_retrieval_pass_from_scope(
         retrieval_loop_contract_state=loop_state,
         descriptor=descriptor,
         execution_envelope=envelope,
+        observation=observation,
     )
 
 

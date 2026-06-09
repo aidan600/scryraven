@@ -12,6 +12,14 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 
+from core.run_kernel import (
+    MAIN_RETRIEVAL_STAGE,
+    ActionType,
+    AuthorizedAction,
+    ObservationType,
+    validate_authorized_action,
+)
+
 
 class RetrievalScheduleReason(str, Enum):
     MAIN_PASS_SCHEDULED = "main_pass_scheduled"
@@ -278,6 +286,30 @@ def schedule_main_retrieval_from_pipeline_scope(
         choose_search_depth=choose_search_depth,
         merge_provider_overrides=values["merge_provider_overrides"],
         select_provider_list=values["select_provider_list"],
+    )
+
+
+def schedule_main_retrieval_from_kernel_action(
+    action: AuthorizedAction,
+    scope: Mapping[str, Any],
+    *,
+    current_queries: Sequence[str],
+    recovery_active: bool,
+    choose_search_depth: Callable[[str, str | None, int], str],
+) -> RetrievalScheduledAction:
+    """Schedule main retrieval only after RunKernel authorizes the pass."""
+
+    validate_authorized_action(
+        action,
+        action_type=ActionType.MAIN_RETRIEVAL_PASS,
+        stage=MAIN_RETRIEVAL_STAGE,
+        expected_observation_type=ObservationType.RETRIEVAL_PASS_RESULT,
+    )
+    return schedule_main_retrieval_from_pipeline_scope(
+        scope,
+        current_queries=current_queries,
+        recovery_active=recovery_active,
+        choose_search_depth=choose_search_depth,
     )
 
 

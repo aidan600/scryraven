@@ -224,12 +224,13 @@ def test_scheduler_static_guard_has_no_provider_or_query_policy_imports() -> Non
 def test_pipeline_continuation_branches_consume_scheduler_output() -> None:
     source = PIPELINE.read_text()
     assert "RetrievalScheduleInput" not in source
-    assert "schedule_main_retrieval_from_pipeline_scope" in source
+    assert "schedule_main_retrieval_from_kernel_action" in source
     assert "schedule_scout_continuation_from_pipeline_scope" in source
     assert "schedule_expander_continuation_from_pipeline_scope" in source
     assert "schedule_evaluator_continuation" in source
     assert "schedule_weak_corpus_recovery_from_pipeline_scope" in source
-    assert "retrieval_scheduled_action = schedule_main_retrieval_from_pipeline_scope" in source
+    assert "retrieval_scheduled_action = schedule_main_retrieval_from_kernel_action" in source
+    assert "main_retrieval_kernel_action = run_kernel.authorize_main_retrieval_pass" in source
     assert "current_queries = list(authorized_scout_queries)" not in source
     assert "current_queries = list(authorized_expander_queries)" not in source
     assert "current_queries = list(authorized_evaluator_queries)" not in source

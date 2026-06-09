@@ -322,15 +322,23 @@ def test_static_protected_import_guard() -> None:
 
 def test_orchestrator_authority_guard_consumes_contract_after_router_handoff() -> None:
     text = ORCHESTRATOR_PATH.read_text(encoding="utf-8")
-    handoff = text.index("router_query_preparation_contract = build_router_query_preparation_state")
-    runtime_handoff = text.index("router_query_preparation_contract = with_router_query_runtime_posture")
-    post_router = text[handoff:runtime_handoff]
+    route_handoff = text.index("router_query_preparation_contract = route_result.router_query_preparation_contract")
+    runtime_handoff = text.index(
+        "router_query_preparation_contract = (\n        query_admission_result.router_query_preparation_contract"
+    )
+    post_router = text[route_handoff:runtime_handoff]
     post_runtime = text[runtime_handoff:text.index("all_passages: list", runtime_handoff)]
+    routing_runtime = Path("core/routing_runtime.py").read_text(encoding="utf-8")
+    query_runtime = Path("core/query_production_runtime.py").read_text(encoding="utf-8")
 
     assert "json.loads(router_text)" not in post_router
     assert "intent = router_query_preparation_contract.intent" in post_router
     assert "report_type = router_query_preparation_contract.report_type" in post_router
     assert "entities_list = router_query_preparation_contract.entities_list" in post_router
+    assert "execute_route_request_action(" in text
+    assert "run_kernel.authorize_route_request(" in text
+    assert "build_router_query_preparation_state(" in routing_runtime
+    assert "with_router_query_runtime_posture(" in query_runtime
     assert "intent = router_query_preparation_contract.intent" in post_runtime
     assert "primary_entity = router_query_preparation_contract.primary_entity" in post_runtime
 
