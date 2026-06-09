@@ -27,7 +27,7 @@ from core.session_output_projection import build_execution_log_entry_projection,
 from core.weak_failure_gate_contract import WEAK_FAILURE_GATE_TRACE_KEY
 
 _POST_AUTHOR_TRACE_SCOPE_KEYS = ('_run_controller_mirror', '_source_domain_exec', '_source_tier_exec', 'analysis', 'analyst_after_economist_skip_reason', 'analyst_cached_prefix', 'analyst_quant_packet_handoff_telemetry', 'analyst_skip_reason', 'analyst_skipped', 'analyst_skipped_after_economist', 'author_evidence', 'author_evidence_block', 'author_notes', 'author_prompt', 'author_quant_source_telemetry', 'author_system_prompt_key', 'complexity', 'core_topic', 'corpus_state', 'corpus_weak', 'current_date', 'delta_urls_supplemental', 'economist_output_used_as_analysis', 'economist_pre_analyst_skip_candidate_telemetry', 'economist_preflight_allowed', 'economist_preflight_block_reason', 'economist_preflight_missing_entities', 'economist_ran', 'economist_safety_telemetry', 'estimate_from_priors_blocked_by_pre_analyst_gate', 'estimate_from_priors_requested', 'evidence_integration_checkpoint_handoff', 'evidence_ledger_projection', 'evidence_sufficient', 'failure_card_payload', 'final_answer_packet', 'final_answer_source_telemetry', 'final_source_telemetry_inputs', 'final_top_evidence', 'image_context', 'intent', 'iterations_run', 'linkup_block', 'max_iterations', 'missing_target_metric_directive_emitted', 'need_economist', 'ordered_sources', 'post_retrieval_fast_path_used', 'pre_analyst_gate_contract', 'pre_analyst_gate_signals', 'primary_entity', 'provider_diagnostics', 'queries_per_iter', 'query', 'query_type', 'recency_notes', 'report_type', 'results_per_query', 'retrieval_loop_contract_state', 'retrieval_stop_active_telemetry', 'retrieval_stop_shadow_telemetry', 'router_query_preparation_contract', 'run_id', 'runtime_active_source_class_recovery_lifecycle', 'runtime_source_class_recovery_telemetry', 'scrutineer_flags', 'scrutineer_pass_flags_directly_to_author', 'scrutineer_ran', 'scrutineer_remediation_dispatch_authorized', 'scrutineer_remediation_dispatch_posture', 'scrutineer_remediation_evidence', 'scrutineer_remediation_linkup_depth_override', 'scrutineer_remediation_provider_role', 'scrutineer_remediation_providers', 'scrutineer_remediation_queries', 'scrutineer_remediation_resynthesis_triggered', 'search_depth', 'strategy', 'supplemental_ran', 'synth_was_insufficient', 'synthesis_evaluator_supplemental_search_collector', 'unique_source_urls', 'weak_corpus_recovery_considered', 'weak_corpus_recovery_skip_reason', 'weak_corpus_recovery_used', 'weak_failure_gate_contract_state', '_author_effort', '_efp_author', '_relevance_low')
-_POST_AUTHOR_OUTPUT_SCOPE_KEYS = ('_source_domain_exec', '_source_tier_exec', '_timing_payload', 'active_conflict_resolution_lifecycle', 'active_source_class_recovery_lifecycle', 'analyst_after_economist_skip_reason', 'analyst_quant_packet_handoff_telemetry', 'analyst_skip_reason', 'analyst_skipped', 'analyst_skipped_after_economist', 'anchor_packet_telemetry', 'answer_class', 'author_quant_source_telemetry', 'author_system_prompt_key', 'authoritative_source_action_trace', 'complexity', 'context_measurement', 'corpus_state', 'corpus_state_forced_flag', 'corpus_weak', 'cost_snapshot', 'current_date', 'disambiguation_queries_per_iter', 'economist_output_used_as_analysis', 'economist_pre_analyst_skip_candidate_telemetry', 'economist_preflight_allowed', 'economist_preflight_block_reason', 'economist_preflight_missing_entities', 'economist_ran', 'economist_safety_telemetry', 'economist_skip_eligibility_shadow_telemetry', 'economist_skip_shadow_alignment', 'empty_entity_flag', 'estimate_from_priors_blocked_by_pre_analyst_gate', 'estimate_from_priors_requested', 'evaluator_continuation_spine_gate_trace', 'evidence_integration_checkpoint_trace', 'evidence_sufficient', 'expander_continuation_spine_gate_trace', 'failure_card_payload', 'fast_model', 'final_top_evidence', 'intent', 'iterations_run', 'latency_seconds', 'max_iterations', 'missing_target_metric_directive_emitted', 'new_session', 'nutrition_lookup_telemetry', 'official_canonical_recovery_execution_admission_trace', 'official_canonical_recovery_query_acquisition_trace', 'official_source_obligation_bridge_trace', 'ordinary_continuation_candidate_trace', 'post_retrieval_fast_path_used', 'pre_analyst_gate_signals', 'providers_by_iteration', 'quant_retrieval_sufficiency_telemetry', 'quantitative_consistency_guard_telemetry', 'quantitative_consistency_telemetry', 'queries_per_iter', 'query', 'query_authority', 'query_type', 'recon_confidence', 'recon_fired', 'report', 'report_type', 'response_displayable', 'retrieval_batch_dispatch_trace', 'retrieval_retry_used', 'retrieval_stop_active_telemetry', 'retrieval_stop_shadow_telemetry', 'router_entity_retry_used', 'router_original_query_type', 'router_original_report_type', 'router_query_preparation_contract', 'routing_override_applied', 'routing_override_reason', 'run_id', 'run_log', 'scout_continuation_spine_gate_trace', 'scout_fired', 'scout_key_used', 'scout_queries', 'scout_skip_reason', 'scrutineer_flag_count', 'scrutineer_ran', 'session_id', 'smart_model', 'source_class_evidence_bundle_observability_telemetry', 'source_class_observability_telemetry', 'source_class_projection_handoff', 'source_class_recovery_telemetry', 'strategy', 'supplemental_ran', 'synth_sufficient_first_pass', 'synth_sufficient_first_pass_raw', 'synth_was_insufficient', 'targeted_retrieval_lifecycle_trace', 'total_chunks_embedded', 'total_urls_fetched', 'ts_utc', 'useful_content', 'useful_content_reason', 'utilization_pre_retry', 'utilization_rate_val', 'waste_flags', 'weak_corpus_recovery_blockers', 'weak_corpus_recovery_considered', 'weak_corpus_recovery_decision', 'weak_corpus_recovery_queries', 'weak_corpus_recovery_reason', 'weak_corpus_recovery_skip_reason', 'weak_corpus_recovery_used')
+_POST_AUTHOR_OUTPUT_SCOPE_KEYS = ('_source_domain_exec', '_source_tier_exec', '_timing_payload', 'active_conflict_resolution_lifecycle', 'active_source_class_recovery_lifecycle', 'analyst_after_economist_skip_reason', 'analyst_quant_packet_handoff_telemetry', 'analyst_skip_reason', 'analyst_skipped', 'analyst_skipped_after_economist', 'anchor_packet_telemetry', 'answer_class', 'author_quant_source_telemetry', 'author_system_prompt_key', 'authoritative_source_action_trace', 'complexity', 'context_measurement', 'corpus_state', 'corpus_state_forced_flag', 'corpus_weak', 'cost_snapshot', 'current_date', 'disambiguation_queries_per_iter', 'economist_output_used_as_analysis', 'economist_pre_analyst_skip_candidate_telemetry', 'economist_preflight_allowed', 'economist_preflight_block_reason', 'economist_preflight_missing_entities', 'economist_ran', 'economist_safety_telemetry', 'economist_skip_eligibility_shadow_telemetry', 'economist_skip_shadow_alignment', 'empty_entity_flag', 'estimate_from_priors_blocked_by_pre_analyst_gate', 'estimate_from_priors_requested', 'evaluator_continuation_spine_gate_trace', 'evidence_integration_checkpoint_trace', 'evidence_sufficient', 'expander_continuation_spine_gate_trace', 'failure_card_payload', 'fast_model', 'final_top_evidence', 'intent', 'iterations_run', 'latency_seconds', 'max_iterations', 'missing_target_metric_directive_emitted', 'new_session', 'nutrition_lookup_telemetry', 'official_canonical_recovery_execution_admission_trace', 'official_canonical_recovery_query_acquisition_trace', 'official_source_obligation_bridge_trace', 'ordinary_continuation_candidate_trace', 'post_retrieval_fast_path_used', 'pre_analyst_gate_signals', 'providers_by_iteration', 'quant_retrieval_sufficiency_telemetry', 'quantitative_consistency_guard_telemetry', 'quantitative_consistency_telemetry', 'queries_per_iter', 'query', 'query_authority', 'query_type', 'recon_confidence', 'recon_fired', 'report', 'report_type', 'response_displayable', 'retrieval_batch_dispatch_trace', 'retrieval_retry_used', 'retrieval_stop_active_telemetry', 'retrieval_stop_shadow_telemetry', 'router_entity_retry_used', 'router_original_query_type', 'router_original_report_type', 'router_query_preparation_contract', 'routing_override_applied', 'routing_override_reason', 'run_id', 'run_kernel', 'run_log', 'scout_continuation_spine_gate_trace', 'scout_fired', 'scout_key_used', 'scout_queries', 'scout_skip_reason', 'scrutineer_flag_count', 'scrutineer_ran', 'session_id', 'smart_model', 'source_class_evidence_bundle_observability_telemetry', 'source_class_observability_telemetry', 'source_class_projection_handoff', 'source_class_recovery_telemetry', 'strategy', 'supplemental_ran', 'synth_sufficient_first_pass', 'synth_sufficient_first_pass_raw', 'synth_was_insufficient', 'targeted_retrieval_lifecycle_trace', 'total_chunks_embedded', 'total_urls_fetched', 'ts_utc', 'useful_content', 'useful_content_reason', 'utilization_pre_retry', 'utilization_rate_val', 'waste_flags', 'weak_corpus_recovery_blockers', 'weak_corpus_recovery_considered', 'weak_corpus_recovery_decision', 'weak_corpus_recovery_queries', 'weak_corpus_recovery_reason', 'weak_corpus_recovery_skip_reason', 'weak_corpus_recovery_used')
 _RUN_OUTCOME_SCOPE_KEYS = ('collected_images', 'complexity', 'config', 'core_topic', 'corpus_state', 'cost_snapshot', 'execution_trace', 'failure_card_payload', 'final_top_evidence', 'intent', 'kb_instrumentation', 'kb_warning', 'latency_seconds', 'new_session', 'pipeline_config_payload', 'quantitative_guard_stream_buffered', 'query', 'report', 'run_id', 'seen_urls', 'session_id', 'session_title')
 @dataclass(frozen=True, slots=True)
 class PostAuthorTracePackaging:
@@ -114,7 +114,44 @@ def _post_author_citation_scope(v: Mapping[str, Any], answer_contract_runtime_re
     )
     scoped = {key: v[key] for key in keys}
     scoped["answer_contract_runtime_result"] = answer_contract_runtime_result
+    scoped["run_kernel_final_answer_ref"] = _run_kernel_final_answer_ref(
+        v.get("run_kernel"),
+        scoped["final_answer_packet"],
+    )
     return scoped
+
+def _run_kernel_final_answer_ref(run_kernel: Any, local_packet: Any) -> dict[str, Any]:
+    state = getattr(run_kernel, "state", None)
+    packet_projection = getattr(state, "final_answer_packet", None) or {}
+    if not isinstance(packet_projection, Mapping) or not packet_projection:
+        return {
+            "source": "compatibility_local_final_answer_packet",
+            "canonical_state": False,
+        }
+    packet_id = packet_projection.get("packet_id")
+    local_packet_id = getattr(local_packet, "packet_id", None)
+    if local_packet_id is not None and local_packet_id != packet_id:
+        raise ValueError("local FinalAnswerPacket diverges from RunKernel state")
+    authority_projection = getattr(
+        state,
+        "final_answer_authority_projection",
+        {},
+    ) or {}
+    payload_ref = (
+        authority_projection.get("author_payload_ref", {})
+        if isinstance(authority_projection, Mapping)
+        else {}
+    )
+    return {
+        "source": "RunKernel.final_answer_packet",
+        "canonical_state": True,
+        "packet_id": packet_id,
+        "readiness_status": packet_projection.get("readiness_status"),
+        "author_payload_status": payload_ref.get("status"),
+        "citation_eligible_source_ids": payload_ref.get("citation_source_ids", []),
+        "trace_only": False,
+        "storage_only": False,
+    }
 
 def build_post_author_trace_packaging_from_scope(
     runtime_values: Mapping[str, Any],
@@ -124,6 +161,7 @@ def build_post_author_trace_packaging_from_scope(
     answer_contract_handoff_builder: Any = build_runtime_answer_contract_handoff,
 ) -> PostAuthorTracePackaging:
     v = {key: runtime_values[key] for key in _POST_AUTHOR_TRACE_SCOPE_KEYS}
+    v["run_kernel"] = runtime_values.get("run_kernel")
     answer_contract_runtime_trace_fragment: dict[str, Any] = {}
     answer_contract_runtime_result = None
     try:
@@ -265,8 +303,12 @@ def build_post_author_output_packaging_from_scope(
         latency_seconds=runtime_values["latency_seconds"],
         cost_snapshot=runtime_values["cost_snapshot"],
     )
+    runtime_values_with_optional = {"run_kernel": None, **dict(runtime_values)}
     v = {
-        **{key: runtime_values[key] for key in _POST_AUTHOR_OUTPUT_SCOPE_KEYS},
+        **{
+            key: runtime_values_with_optional[key]
+            for key in _POST_AUTHOR_OUTPUT_SCOPE_KEYS
+        },
         **trace_packaging.runtime_values(),
         "final_output_metadata": final_output_metadata,
         "output_word_count": final_output_metadata["output_word_count"],

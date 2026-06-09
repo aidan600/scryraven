@@ -36,6 +36,7 @@ from core.answer_contract_runtime_handoff import (
     build_runtime_answer_contract_handoff,
 )
 from core.answer_outcome import classify_answer_outcome
+from core.author_execution_runtime import execute_author_action
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
@@ -84,8 +85,8 @@ from core.failure_card import (
     failure_card_should_show,
     normalize_force_corpus_state,
 )
-from core.final_answer_runtime_assembly import (
-    assemble_final_answer_author_runtime_from_scope,
+from core.final_answer_packet_runtime import (
+    execute_final_answer_packet_prepare_action_from_scope,
 )
 from core.final_evidence_bundle_builder import (
     FinalEvidenceBundleInputs,
@@ -161,11 +162,6 @@ from core.prompts import SCOUT_REGISTRY
 from core.protocols import StatusWriter
 from core.provider_diagnostics import supported_diagnostic_kwargs
 from core.provider_plan import ProviderPlan
-from core.quantitative_consistency import (
-    apply_quantitative_consistency_guard,
-    build_two_item_normalized_consistency_diagnostic,
-    is_two_item_calorie_gram_comparison_candidate,
-)
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.query_production_runtime import (
     execute_query_plan_admission_action,
@@ -243,7 +239,6 @@ from core.runtime_prompt_assembly import (
     build_expander_prompt,
     build_image_context,
     evidence_slice_for_analyst,
-    select_author_system_prompt,
 )
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
@@ -4129,27 +4124,31 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     status.update("Writing final report...")
 
-    _author_system, author_system_prompt_key = select_author_system_prompt(
+    final_answer_packet_action = run_kernel.authorize_final_answer_packet_prepare(
+        inputs={
+            "candidate_count": len(final_top_evidence),
+            "author_evidence_count": len(author_evidence),
+            "evidence_ledger_available": bool(evidence_ledger_projection),
+        }
+    )
+    final_answer_author_runtime = execute_final_answer_packet_prepare_action_from_scope(
+        final_answer_packet_action,
+        locals(),
         default_system=DEFAULT_SYSTEM,
-        corpus_weak=corpus_weak,
-        estimate_from_priors_author=_efp_author,
     )
-    _author_effort = (
-        analyst_effort
-        if ((not corpus_weak or _efp_author) and not _relevance_low)
-        else "low"
-    )
-    final_answer_author_runtime = assemble_final_answer_author_runtime_from_scope(
-        locals()
-    )
+    run_kernel.reduce(final_answer_author_runtime.observation)
     final_answer_packet = final_answer_author_runtime.packet
-    author_prompt = final_answer_author_runtime.author_prompt
-    author_system_prompt_key = final_answer_author_runtime.author_system_prompt_key
-    _author_effort = final_answer_author_runtime.author_effort
+    final_answer_author_payload = final_answer_author_runtime.author_payload
+    author_prompt = final_answer_author_payload.prompt
+    author_system_prompt_key = final_answer_author_payload.author_system_prompt_key
+    _author_effort = final_answer_author_payload.author_effort
+    _author_provider = final_answer_author_payload.author_provider
+    _author_model = final_answer_author_payload.author_model
+    _author_system = final_answer_author_runtime.author_system_prompt
 
     # AG-90G: build_analyst_author_handoff_state / execute_analyst_author_handoff
     # packaging moved to the bounded post-Analyst handoff helper;
-    # runtime_prompt_assembly Author/final-answer prompt construction stays local.
+    # packet-derived Author settings now remain authoritative for execution.
     post_analyst_handoff = (
         post_analyst_handoff_packaging.build_post_analyst_handoff_packaging_from_scope(
             locals(), evidence_slice_for_analyst=_evidence_slice_for_analyst
@@ -4158,8 +4157,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     (
         analyst_author_handoff_state,
         analyst_author_handoff,
-        author_system_prompt_key,
-        _author_effort,
+        _post_analyst_author_system_prompt_key,
+        _post_analyst_author_effort,
         author_quant_source_telemetry,
         economist_skip_eligibility_shadow_telemetry,
         economist_skip_shadow_alignment,
@@ -4172,59 +4171,33 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         evidence_passages=author_evidence,
     )
 
-    if strategy in ("Fast", "Balanced"):
-        _author_provider = fast_provider
-        _author_model = fast_model
-    else:
-        _author_provider = smart_provider
-        _author_model = smart_model
-
-    _synth_t0 = time.monotonic()
-    quantitative_guard_stream_buffered = (
-        config.author_stream_display is not None
-        and is_two_item_calorie_gram_comparison_candidate(query)
+    author_action = run_kernel.authorize_author_execution(
+        inputs={
+            "packet_action_id": final_answer_packet_action.action_id,
+        }
     )
-    # Streaming author: accumulate full text for execution_trace / logs / RunOutcome.report.
-    _stream_out = ask_model(
-        author_prompt, _author_system,
-        provider=_author_provider, model=_author_model, effort=_author_effort,
-        base_url=local_url, api_key=or_api_key, stream=True, use_reasoning=False,
+    author_execution = execute_author_action(
+        author_action,
+        author_payload=final_answer_author_payload,
+        ask_model=ask_model,
+        system_prompt_registry=DEFAULT_SYSTEM,
+        base_url=local_url,
+        api_key=or_api_key,
+        query=query,
+        quantitative_packet=economist_safety_telemetry.get("quantitative_packet"),
+        calculation_results=economist_safety_telemetry.get("calculation_results"),
+        stream_display=config.author_stream_display,
     )
-    if isinstance(_stream_out, str):
-        report = str(_stream_out or "")
-    else:
-        _author_chunks: list[str] = []
-
-        def _author_stream_iter():
-            for ch in _stream_out:
-                _author_chunks.append(ch)
-                yield ch
-
-        if config.author_stream_display is not None and not quantitative_guard_stream_buffered:
-            config.author_stream_display(_author_stream_iter())
-        else:
-            for _ in _author_stream_iter():
-                pass
-        report = "".join(_author_chunks)
-    report = str(report or "")
-    author_seconds = max(0.0, time.monotonic() - _synth_t0)
+    run_kernel.reduce(author_execution.observation)
+    report = author_execution.report
+    author_seconds = author_execution.author_seconds
     synthesis_seconds = author_seconds  # noqa: F841
+    quantitative_guard_stream_buffered = author_execution.stream_buffered
     quantitative_consistency_telemetry = (
-        build_two_item_normalized_consistency_diagnostic(
-            query=query,
-            final_answer=report,
-            quantitative_packet=economist_safety_telemetry.get("quantitative_packet"),
-            calculation_results=economist_safety_telemetry.get("calculation_results"),
-        )
+        author_execution.quantitative_consistency_telemetry
     )
-    report, quantitative_consistency_guard_telemetry = (
-        apply_quantitative_consistency_guard(
-            query=query,
-            final_answer=report,
-            diagnostic=quantitative_consistency_telemetry,
-            quantitative_packet=economist_safety_telemetry.get("quantitative_packet"),
-            calculation_results=economist_safety_telemetry.get("calculation_results"),
-        )
+    quantitative_consistency_guard_telemetry = (
+        author_execution.quantitative_consistency_guard_telemetry
     )
     final_answer_source_telemetry = _final_answer_source_citation_telemetry(
         report,

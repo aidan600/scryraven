@@ -23,6 +23,8 @@ QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
+FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
+AUTHOR_EXECUTION_STAGE = "author_execution"
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -61,6 +63,8 @@ class ActionType(str, Enum):
     MAIN_RETRIEVAL_PASS = "main_retrieval_pass"
     RETRIEVAL_STOP_CHECKPOINT = "retrieval_stop_checkpoint"
     EVIDENCE_LEDGER_REDUCE = "evidence_ledger_reduce"
+    FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
+    AUTHOR_EXECUTE = "author_execute"
 
 
 class ObservationType(str, Enum):
@@ -72,6 +76,8 @@ class ObservationType(str, Enum):
     RETRIEVAL_PASS_RESULT = "retrieval_pass_result"
     RETRIEVAL_STOP_DECISION = "retrieval_stop_decision"
     EVIDENCE_CUSTODY_OBSERVED = "evidence_custody_observed"
+    FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
+    AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
 
 
 class RunStageStatus(str, Enum):
@@ -271,6 +277,10 @@ class RunState:
     observations: list[Observation] = field(default_factory=list)
     projections: dict[str, dict[str, Any]] = field(default_factory=dict)
     evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
+    final_answer_packet: dict[str, Any] = field(default_factory=dict)
+    author_observation: dict[str, Any] = field(default_factory=dict)
+    final_answer_outcome: dict[str, Any] = field(default_factory=dict)
+    final_answer_authority_projection: dict[str, Any] = field(default_factory=dict)
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -297,6 +307,12 @@ class RunState:
             observations=[observation.to_dict() for observation in self.observations],
             projections=deepcopy(self.projections),
             evidence_ledger=self.evidence_ledger.to_projection().to_dict(),
+            final_answer_packet=deepcopy(self.final_answer_packet),
+            author_observation=deepcopy(self.author_observation),
+            final_answer_outcome=deepcopy(self.final_answer_outcome),
+            final_answer_authority_projection=deepcopy(
+                self.final_answer_authority_projection
+            ),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -315,6 +331,10 @@ class KernelTraceProjection:
     observations: Sequence[Mapping[str, Any]]
     projections: Mapping[str, Any]
     evidence_ledger: Mapping[str, Any]
+    final_answer_packet: Mapping[str, Any]
+    author_observation: Mapping[str, Any]
+    final_answer_outcome: Mapping[str, Any]
+    final_answer_authority_projection: Mapping[str, Any]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -331,6 +351,12 @@ class KernelTraceProjection:
             ],
             "projections": _safe_mapping(self.projections),
             "evidence_ledger": _safe_mapping(self.evidence_ledger),
+            "final_answer_packet": _safe_mapping(self.final_answer_packet),
+            "author_observation": _safe_mapping(self.author_observation),
+            "final_answer_outcome": _safe_mapping(self.final_answer_outcome),
+            "final_answer_authority_projection": _safe_mapping(
+                self.final_answer_authority_projection
+            ),
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
         }
@@ -473,6 +499,55 @@ class RunKernel:
             expected_observation_type=ObservationType.EVIDENCE_CUSTODY_OBSERVED,
         )
 
+    def authorize_final_answer_packet_prepare(
+        self,
+        *,
+        reason: str = "final_answer_packet_preparation_before_author_execution",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        return self.authorize(
+            stage=FINAL_ANSWER_PACKET_STAGE,
+            action_type=ActionType.FINAL_ANSWER_PACKET_PREPARE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.FINAL_ANSWER_PACKET_PREPARED,
+        )
+
+    def authorize_author_execution(
+        self,
+        *,
+        reason: str = "author_execution_from_final_answer_packet_payload",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.final_answer_packet:
+            raise RunKernelTransitionError(
+                "author execution requires a reduced FinalAnswerPacket"
+            )
+        payload_ref = self.state.final_answer_authority_projection.get(
+            "author_payload_ref",
+            {},
+        )
+        if payload_ref.get("status") != "author_input_ready":
+            raise RunKernelTransitionError(
+                "author execution requires packet-ready author input payload"
+            )
+        merged_inputs = {
+            "packet_id": self.state.final_answer_packet.get("packet_id"),
+            "author_payload_status": payload_ref.get("status"),
+            "author_system_prompt_key": payload_ref.get("author_system_prompt_key"),
+            "author_effort": payload_ref.get("author_effort"),
+            "author_provider": payload_ref.get("author_provider"),
+            "author_model": payload_ref.get("author_model"),
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=AUTHOR_EXECUTION_STAGE,
+            action_type=ActionType.AUTHOR_EXECUTE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.AUTHOR_OUTPUT_OBSERVED,
+        )
+
     def reduce(self, observation: Observation) -> RunState:
         action = self.state.issued_actions.get(observation.action_id)
         if action is None:
@@ -512,6 +587,67 @@ class RunKernel:
             self.state.projections[action.stage] = (
                 self.state.evidence_ledger.to_projection().to_dict()
             )
+        elif action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE:
+            packet_projection = _safe_mapping(
+                observation.payload.get("packet_projection")
+            )
+            if not packet_projection:
+                raise RunKernelTransitionError(
+                    "final answer packet observation requires packet_projection"
+                )
+            author_payload_ref = _safe_mapping(
+                observation.payload.get("author_payload_ref")
+            )
+            self.state.final_answer_packet = packet_projection
+            self.state.final_answer_authority_projection = {
+                "owner": "RunKernel.FinalAnswerPacket",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "packet_id": packet_projection.get("packet_id"),
+                "readiness_status": packet_projection.get("readiness_status"),
+                "readiness_reasons": packet_projection.get("readiness_reasons", []),
+                "author_payload_ref": author_payload_ref,
+                "citation_eligible_source_ids": author_payload_ref.get(
+                    "citation_source_ids",
+                    [],
+                ),
+                "missing_source_obligation_count": len(
+                    author_payload_ref.get("missing_source_obligations", []) or []
+                ),
+                "mandatory_caveat_count": author_payload_ref.get(
+                    "mandatory_caveat_count",
+                    0,
+                ),
+                "prohibited_upgrade_count": author_payload_ref.get(
+                    "prohibited_upgrade_count",
+                    0,
+                ),
+            }
+            self.state.projections[action.stage] = deepcopy(
+                self.state.final_answer_authority_projection
+            )
+        elif action.action_type is ActionType.AUTHOR_EXECUTE:
+            payload = _safe_mapping(observation.payload)
+            self.state.author_observation = payload
+            self.state.final_answer_outcome = {
+                "owner": "RunKernel.AuthorObservation",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "packet_id": payload.get("packet_id"),
+                "report_hash": payload.get("report_hash"),
+                "report_length": payload.get("report_length"),
+                "author_seconds": payload.get("author_seconds"),
+                "stream_displayed": payload.get("stream_displayed"),
+                "author_provider": payload.get("author_provider"),
+                "author_model": payload.get("author_model"),
+                "author_effort": payload.get("author_effort"),
+                "final_text_included": False,
+            }
+            self.state.projections[action.stage] = deepcopy(
+                self.state.final_answer_outcome
+            )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
@@ -543,6 +679,8 @@ def validate_authorized_action(
 
 
 __all__ = [
+    "AUTHOR_EXECUTION_STAGE",
+    "FINAL_ANSWER_PACKET_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "QUERY_PRODUCTION_STAGE",

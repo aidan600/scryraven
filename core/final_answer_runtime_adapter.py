@@ -13,6 +13,7 @@ from core.final_answer_packet import (
     EvidenceAuthorityStatus,
     FinalAnswerAuthorInputPayload,
     FinalAnswerPacket,
+    FinalAnswerReadinessStatus,
     FinalEvidenceRecord,
     SourceObligationRecord,
     SourceObligationStatus,
@@ -129,6 +130,60 @@ def _source_obligations_from_custody(projection: Any) -> tuple[SourceObligationR
     return tuple(obligations)
 
 
+def _source_obligations_from_answer_contract(
+    projection: Any,
+) -> tuple[SourceObligationRecord, ...]:
+    if projection is None:
+        return ()
+    if hasattr(projection, "fulfillment_handoff"):
+        projection = getattr(projection, "fulfillment_handoff")
+    if hasattr(projection, "to_dict"):
+        projection = projection.to_dict()
+    if hasattr(projection, "to_controller_state"):
+        projection = projection.to_controller_state()
+    if not isinstance(projection, Mapping):
+        return ()
+
+    source_classes: list[str] = []
+    for key in (
+        "unfulfilled_source_classes",
+        "missing_source_classes",
+        "unfulfilled_obligations",
+        "missing_information",
+    ):
+        value = projection.get(key)
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            for item in value:
+                text = str(item or "").strip()
+                if text and text not in source_classes:
+                    source_classes.append(text)
+
+    obligations: list[SourceObligationRecord] = []
+    for index, source_class in enumerate(source_classes, start=1):
+        obligations.append(
+            SourceObligationRecord(
+                obligation_id=f"answer-contract:{index}:{source_class}",
+                source_class=source_class,
+                status=SourceObligationStatus.MISSING_REQUIRED_SOURCE,
+                reason="answer_contract_unfulfilled_source_obligation",
+            )
+        )
+    return tuple(obligations)
+
+
+def _dedupe_source_obligations(
+    obligations: Sequence[SourceObligationRecord],
+) -> tuple[SourceObligationRecord, ...]:
+    out: list[SourceObligationRecord] = []
+    seen: set[tuple[str, str]] = set()
+    for obligation in obligations:
+        key = (obligation.source_class, obligation.status.value)
+        if key not in seen:
+            out.append(obligation)
+            seen.add(key)
+    return tuple(out)
+
+
 def _custody_summary(projection: Any) -> dict[str, Any]:
     custody_projection = _custody_projection_from_any(projection)
     evidence_ledger_projection = _evidence_ledger_projection_from_any(projection)
@@ -196,7 +251,15 @@ def _postures(
         out.append(ClaimPosture.INSUFFICIENT_EVIDENCE)
     if conflicts_present:
         out.append(ClaimPosture.CONFLICT_PRESERVED)
-    if any(o.status is SourceObligationStatus.OFFICIAL_CURRENT_UNSATISFIED for o in source_obligations):
+    if any(
+        o.status
+        in {
+            SourceObligationStatus.OFFICIAL_CURRENT_UNSATISFIED,
+            SourceObligationStatus.MISSING_REQUIRED_SOURCE,
+            SourceObligationStatus.SOURCE_BOUND_VALUE_MISSING,
+        }
+        for o in source_obligations
+    ):
         out.append(ClaimPosture.INSUFFICIENT_EVIDENCE)
     if not out:
         out.append(ClaimPosture.DIRECTLY_SOURCED)
@@ -224,7 +287,43 @@ def _mandatory_caveats(
     for obligation in source_obligations:
         if obligation.status is SourceObligationStatus.OFFICIAL_CURRENT_UNSATISFIED:
             caveats.append(f"official_current_unsatisfied:{obligation.source_class}")
+        elif obligation.status is SourceObligationStatus.MISSING_REQUIRED_SOURCE:
+            caveats.append(f"missing_required_source:{obligation.source_class}")
+        elif obligation.status is SourceObligationStatus.SOURCE_BOUND_VALUE_MISSING:
+            caveats.append(f"source_bound_value_missing:{obligation.source_class}")
     return tuple(dict.fromkeys(caveats))
+
+
+def _readiness(
+    *,
+    evidence_records: Sequence[FinalEvidenceRecord],
+    source_obligations: Sequence[SourceObligationRecord],
+    evidence_sufficient: bool | None,
+    corpus_weak: bool | None,
+    failure_card_payload: Mapping[str, Any] | None,
+    synth_was_insufficient: bool | None,
+) -> tuple[FinalAnswerReadinessStatus, tuple[str, ...]]:
+    reasons: list[str] = []
+    if not evidence_records:
+        reasons.append("no_final_evidence_available")
+    if evidence_sufficient is False:
+        reasons.append("evidence_sufficient_false")
+    if corpus_weak:
+        reasons.append("weak_corpus_authorized")
+    if synth_was_insufficient:
+        reasons.append("synthesis_insufficient_authorized")
+    if failure_card_payload and failure_card_payload.get("show"):
+        reasons.append("failure_card_authorized")
+    if any(
+        obligation.status is not SourceObligationStatus.SATISFIED
+        for obligation in source_obligations
+    ):
+        reasons.append("source_obligations_missing_or_unsatisfied")
+    if reasons:
+        return FinalAnswerReadinessStatus.INSUFFICIENT_AUTHORIZED, tuple(
+            dict.fromkeys(reasons)
+        )
+    return FinalAnswerReadinessStatus.AUTHOR_READY, ()
 
 
 def build_final_answer_packet(
@@ -236,6 +335,7 @@ def build_final_answer_packet(
     unique_source_urls: Mapping[str, Any] | None = None,
     final_answer_source_telemetry: Mapping[str, Any] | None = None,
     source_obligation_projection: Any | None = None,
+    answer_contract_projection: Any | None = None,
     query_lineage_refs: Mapping[str, Any] | None = None,
     evidence_sufficient: bool | None = None,
     corpus_weak: bool | None = None,
@@ -250,7 +350,10 @@ def build_final_answer_packet(
         for index, passage in enumerate(final_evidence or (), start=1)
     )
     citation_records = tuple(_citation_record_for_evidence(record) for record in evidence_records)
-    source_obligations = _source_obligations_from_custody(source_obligation_projection)
+    source_obligations = _dedupe_source_obligations(
+        _source_obligations_from_custody(source_obligation_projection)
+        + _source_obligations_from_answer_contract(answer_contract_projection)
+    )
     author_evidence_ids = []
     author_urls = {str(p.get("url") or "") for p in (author_evidence or ())}
     for record in evidence_records:
@@ -273,6 +376,16 @@ def build_final_answer_packet(
     custody_summary = _custody_summary(source_obligation_projection)
     if custody_summary.get("final_evidence_compatibility_gap_count"):
         prohibited.append("do_not_treat_uncustodied_final_evidence_as_ledger_proof")
+    if not evidence_records:
+        prohibited.append("do_not_present_unsourced_claims_as_supported")
+    readiness_status, readiness_reasons = _readiness(
+        evidence_records=evidence_records,
+        source_obligations=source_obligations,
+        evidence_sufficient=evidence_sufficient,
+        corpus_weak=corpus_weak,
+        failure_card_payload=failure_card_payload,
+        synth_was_insufficient=synth_was_insufficient,
+    )
     return FinalAnswerPacket(
         packet_id=packet_id,
         evidence_records=evidence_records,
@@ -297,6 +410,8 @@ def build_final_answer_packet(
         prohibited_upgrades=tuple(prohibited),
         author_input_refs=author_refs,
         query_lineage_refs=dict(query_lineage_refs or {}),
+        readiness_status=readiness_status,
+        readiness_reasons=readiness_reasons,
     )
 
 
@@ -306,12 +421,16 @@ def derive_author_input_payload(
     prompt: str,
     author_system_prompt_key: str,
     author_effort: str,
+    author_provider: str | None = None,
+    author_model: str | None = None,
 ) -> tuple[FinalAnswerPacket, FinalAnswerAuthorInputPayload]:
     refs = packet.author_input_refs if isinstance(packet.author_input_refs, Mapping) else {}
     payload = packet.to_author_input_payload(
         prompt=prompt,
         author_system_prompt_key=author_system_prompt_key,
         author_effort=author_effort,
+        author_provider=author_provider,
+        author_model=author_model,
         author_evidence_ids=refs.get("author_evidence_ids") if isinstance(refs.get("author_evidence_ids"), Sequence) else None,
     )
     return packet.with_author_input_payload(payload), payload
@@ -386,11 +505,18 @@ def build_packet_derived_citation_source_handoff_state(
     analyst_author_handoff_state: Any | None = None,
     ledger_ref: Any | None = None,
     source_telemetry_ref: Mapping[str, Any] | None = None,
+    run_kernel_final_answer_ref: Mapping[str, Any] | None = None,
 ):
     """Demote legacy citation/source handoff inputs behind FinalAnswerPacket."""
 
     projection = packet.to_legacy_citation_handoff_inputs()
     compatibility_refs = final_answer_packet_compatibility_refs(packet)
+    resolved_ledger_ref = ledger_ref or compatibility_refs["ledger_ref"]
+    if run_kernel_final_answer_ref:
+        resolved_ledger_ref = {
+            **dict(resolved_ledger_ref),
+            "run_kernel_final_answer_ref": dict(run_kernel_final_answer_ref),
+        }
     return build_citation_source_handoff_state(
         run_id=run_id,
         final_evidence=projection["final_evidence"],
@@ -401,7 +527,7 @@ def build_packet_derived_citation_source_handoff_state(
         final_answer_source_telemetry=projection["final_answer_source_telemetry"],
         final_citation_observation_refs=projection["final_citation_observation_refs"],
         final_evidence_bundle_ref=compatibility_refs["final_evidence_bundle_ref"],
-        ledger_ref=ledger_ref or compatibility_refs["ledger_ref"],
+        ledger_ref=resolved_ledger_ref,
         answer_contract_ref=answer_contract_ref,
         analyst_author_handoff_state=analyst_author_handoff_state,
         source_telemetry_ref=source_telemetry_ref or compatibility_refs["source_telemetry_ref"],
