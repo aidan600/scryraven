@@ -76,6 +76,8 @@ from core.evidence_integration_checkpoint import (
     decide_evidence_integration_checkpoint,
     evidence_integration_checkpoint_unavailable_trace,
 )
+from core.evidence_ledger import build_evidence_ledger_observation_from_runtime
+from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.evidence_registry_mirror import record_final_evidence_snapshot
 from core.failure_card import (
     failure_card_reason,
@@ -1210,6 +1212,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "query_length": len(query),
         },
     )
+    evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     active_source_class_recovery_lifecycle = source_class_recovery_lifecycle_defaults()
     active_conflict_resolution_lifecycle = conflict_resolution_lifecycle_defaults()
     targeted_retrieval_lifecycle_trace = targeted_retrieval_lifecycle_defaults()
@@ -3313,6 +3316,29 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 final_answer_source_ids=None,
             )
         )
+        _evidence_ledger_observation = build_evidence_ledger_observation_from_runtime(
+            observation_id=f"{run_id}:evidence-ledger:pre-recovery",
+            observation_source="pre_recovery_source_obligation",
+            source_class_recovery_telemetry={
+                **_source_class_recovery_lifecycle_recommendation,
+                **_source_class_recovery_answer_contract_observability,
+            },
+            final_top_evidence=all_passages,
+        )
+        _evidence_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
+            inputs={
+                "observation_source": "pre_recovery_source_obligation",
+                "candidate_count": len(all_passages),
+            }
+        )
+        _evidence_ledger_result = execute_evidence_ledger_reduction_action(
+            _evidence_ledger_action,
+            payload=_evidence_ledger_observation.to_dict(),
+        )
+        run_kernel.reduce(_evidence_ledger_result.observation)
+        evidence_ledger_projection = (
+            run_kernel.state.evidence_ledger.to_projection().to_dict()
+        )
         (
             _pre_recovery_conflict_state,
             pre_recovery_conflict_projection,
@@ -3349,6 +3375,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     **_source_class_recovery_lifecycle_recommendation,
                     **_source_class_recovery_answer_contract_observability,
                 },
+                evidence_ledger_projection=evidence_ledger_projection,
                 active_source_class_recovery_lifecycle=(
                     source_class_recovery_lifecycle_defaults()
                 ),
@@ -3689,6 +3716,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     final_top_evidence = final_evidence_bundle.final_top_evidence
     unique_source_urls = final_evidence_bundle.unique_source_urls
     ordered_sources = final_evidence_bundle.ordered_sources
+    _final_evidence_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
+        inputs={
+            "observation_source": "final_evidence_bundle",
+            "final_evidence_count": len(final_top_evidence),
+        }
+    )
+    _final_evidence_ledger_result = execute_evidence_ledger_reduction_action(
+        _final_evidence_ledger_action,
+        payload=build_evidence_ledger_observation_from_runtime(
+            observation_id=f"{run_id}:evidence-ledger:final-evidence",
+            observation_source="final_evidence_bundle",
+            final_top_evidence=final_top_evidence,
+            final_evidence_selected=True,
+        ).to_dict(),
+    )
+    run_kernel.reduce(_final_evidence_ledger_result.observation)
+    evidence_ledger_projection = (
+        run_kernel.state.evidence_ledger.to_projection().to_dict()
+    )
 
     status.step("--- **Final Synthesis & Reporting** ---")
     evidence_block = final_evidence_bundle.evidence_block
@@ -4500,6 +4546,32 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     if source_class != reserved_missing_class
                 ],
             }
+    _post_final_evidence_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
+        inputs={
+            "observation_source": "post_final_source_obligation",
+            "candidate_count": len(final_top_evidence),
+        }
+    )
+    _post_final_evidence_ledger_observation = (
+        build_evidence_ledger_observation_from_runtime(
+            observation_id=f"{run_id}:evidence-ledger:post-final",
+            observation_source="post_final_source_obligation",
+            source_class_recovery_telemetry={
+                **runtime_source_class_recovery_telemetry,
+                **source_class_observability_telemetry,
+            },
+            final_top_evidence=final_top_evidence,
+            final_evidence_selected=True,
+        )
+    )
+    _post_final_evidence_ledger_result = execute_evidence_ledger_reduction_action(
+        _post_final_evidence_ledger_action,
+        payload=_post_final_evidence_ledger_observation.to_dict(),
+    )
+    run_kernel.reduce(_post_final_evidence_ledger_result.observation)
+    evidence_ledger_projection = (
+        run_kernel.state.evidence_ledger.to_projection().to_dict()
+    )
     # Post-Author citation assembly is delegated; helper calls assemble_final_answer_citation_runtime_from_scope(...).
     post_author_trace_packaging = build_post_author_trace_packaging_from_scope(
         locals(),

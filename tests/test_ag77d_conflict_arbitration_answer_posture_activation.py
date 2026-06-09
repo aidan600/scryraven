@@ -405,6 +405,7 @@ def test_pipeline_orchestrator_boundary_only_has_unrelated_scrutineer_handoff_to
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
                 or "provider_plan" in diff
+                or "evidence_ledger" in diff
         )
     else:
         assert PIPELINE_PATH not in changed

@@ -1,0 +1,1363 @@
+"""RunKernel-owned evidence custody ledger for AG-91J.
+
+The ledger consumes sanitized runtime observations and records candidate-level
+custody, source requirements, requirement links, final-evidence compatibility
+gaps, and subordinate official/current custody projections. It does not call
+providers, models, prompts, retrieval, ranking, citation formatting, persistence,
+or orchestration code.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import re
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any
+from urllib.parse import urlparse, urlunparse
+
+from core.official_current_source_custody import (
+    OfficialCurrentCustodyStatus,
+    OfficialCurrentSourceCustodyState,
+)
+
+EVIDENCE_LEDGER_SCHEMA_VERSION = "evidence_ledger_ag91j_v1"
+EVIDENCE_LEDGER_TRACE_KEY = "evidence_ledger"
+
+UNKNOWN = "unknown"
+NOT_OBSERVABLE = "not_observable"
+
+
+class CandidateDisposition(str, Enum):
+    UNKNOWN = "unknown"
+    OBSERVED = "observed"
+    ACCEPTED = "accepted"
+    PARTIALLY_ACCEPTED = "partially_accepted"
+    REJECTED = "rejected"
+    CONTEXTUAL = "contextual"
+    LOWER_TIER = "lower_tier"
+    UNREADABLE = "unreadable"
+    UNFETCHABLE = "unfetchable"
+    DROPPED = "dropped"
+    PROPOSED = "proposed"
+    HELPER_ASSESSED = "helper_assessed"
+
+
+class CandidateCustodyKind(str, Enum):
+    FACT = "fact"
+    HELPER_ASSESSMENT = "helper_assessment"
+    PROPOSAL = "proposal"
+
+
+class SourceRequirementStatus(str, Enum):
+    SATISFIED = "satisfied"
+    PARTIALLY_SATISFIED = "partially_satisfied"
+    UNSATISFIED = "unsatisfied"
+    UNKNOWN = "unknown"
+    NOT_OBSERVABLE = "not_observable"
+
+
+class EvidenceCustodyGapType(str, Enum):
+    MISSING_CANDIDATE_IDENTITY = "missing_candidate_identity"
+    MISSING_READABLE_SOURCE = "missing_readable_source"
+    MISSING_SOURCE_CLASS_FIT = "missing_source_class_fit"
+    MISSING_OFFICIAL_CURRENT_CANDIDATE = "missing_official_current_candidate"
+    LEGACY_AGGREGATE_ONLY_PATH = "legacy_aggregate_only_path"
+    HELPER_CONTROLLER_ASSESSMENT_NOT_PROMOTABLE = (
+        "helper_controller_assessment_not_promotable"
+    )
+    CANDIDATE_DROPPED_WITHOUT_DISPOSITION = "candidate_dropped_without_disposition"
+    FINAL_EVIDENCE_SELECTED_WITHOUT_LEDGER_CUSTODY = (
+        "final_evidence_selected_without_ledger_custody"
+    )
+    MISSING_SOURCE_BOUND_VALUE = "missing_source_bound_value"
+    UNSUPPORTED_NUMERIC_VALUE = "unsupported_numeric_value"
+
+
+_MAX_LIST_ITEMS = 50
+_MAX_TEXT_CHARS = 260
+_SENSITIVE_KEY_MARKERS = (
+    "api_key",
+    "cache",
+    "credential",
+    "db",
+    "env",
+    "full_text",
+    "full_trace",
+    "log",
+    "model_response",
+    "output_packet",
+    "password",
+    "prompt",
+    "provider_payload",
+    "raw_",
+    "secret",
+    "snippet",
+    "token",
+)
+_SENSITIVE_EXACT_KEYS = frozenset(
+    {
+        "full_text",
+        "raw_text",
+        "snippet",
+        "snippets",
+        "source_text",
+        "text",
+        "key",
+    }
+)
+_SECRET_VALUE_PATTERNS = (
+    re.compile(r"sk-[A-Za-z0-9_-]{8,}"),
+    re.compile(
+        r"(?i)\b(api[_ -]?key|secret|token|password)\b\s*[:=]\s*[^,\s;]+"
+    ),
+)
+_STRONG_REQUIREMENT_KINDS = frozenset(
+    {
+        "official",
+        "current",
+        "legal",
+        "canonical",
+        "source_bound",
+        "official_current",
+        "official_current_legal",
+    }
+)
+_STRONG_SOURCE_CLASSES = frozenset(
+    {
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "current_primary_or_official",
+        "primary_source_documents",
+        "archival_primary_text",
+        "historical_legal_text",
+    }
+)
+_STRONG_SOURCE_TIERS = frozenset({"official", "primary", "canonical"})
+_WEAK_SOURCE_CLASSES = frozenset(
+    {
+        "secondary",
+        "secondary_only",
+        "secondary_analysis",
+        "reputable_secondary",
+        "social_signal",
+        "social_or_forum",
+        "community",
+        "context",
+    }
+)
+_WEAK_SOURCE_TIERS = frozenset(
+    {
+        "secondary",
+        "trusted_community",
+        "social_or_forum",
+        "context",
+        "analysis",
+        "low_trust_commercial",
+        "content_mill",
+    }
+)
+_BAD_READABILITY = frozenset(
+    {
+        "unreadable",
+        "fetch_failed",
+        "not_readable",
+        "blocked",
+        "unfetchable",
+        "no_readable_text",
+    }
+)
+_BAD_CURRENTNESS = frozenset(
+    {
+        "stale",
+        "outdated",
+        "historical_only",
+        "off_topic",
+        "not_current",
+    }
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateCustodyRecord:
+    candidate_id: str
+    record_kind: CandidateCustodyKind | str
+    disposition: CandidateDisposition | str
+    reason: str | None = None
+    source: str | None = None
+    requirement_id: str | None = None
+    observation_id: str | None = None
+
+    def __post_init__(self) -> None:
+        kind = _coerce_enum(
+            CandidateCustodyKind,
+            self.record_kind,
+            CandidateCustodyKind.FACT.value,
+        )
+        disposition = _coerce_enum(
+            CandidateDisposition,
+            self.disposition,
+            CandidateDisposition.UNKNOWN.value,
+        )
+        if not _clean_token(self.candidate_id):
+            raise ValueError("candidate custody records require candidate_id")
+        object.__setattr__(self, "record_kind", kind)
+        object.__setattr__(self, "disposition", disposition)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = {
+            "candidate_id": _clean_token(self.candidate_id),
+            "record_kind": self.record_kind.value,
+            "disposition": self.disposition.value,
+            "reason": _clean_text(self.reason),
+            "source": _clean_text(self.source, limit=120),
+            "requirement_id": _clean_token(self.requirement_id),
+            "observation_id": _clean_token(self.observation_id),
+        }
+        return _compact(payload)
+
+
+@dataclass(slots=True)
+class EvidenceCandidate:
+    candidate_id: str
+    url: str | None = None
+    normalized_source_identity: str | None = None
+    title: str | None = None
+    domain: str | None = None
+    source_label: str | None = None
+    provider_name: str | None = None
+    provider_role: str | None = None
+    retrieval_pass_id: str | None = None
+    query_ref: str | None = None
+    action_ref: str | None = None
+    source_tier: str | None = None
+    source_class: str | None = None
+    currentness_signal: str | None = None
+    readable_status: str | None = None
+    fetchable_status: str | None = None
+    fact_disposition: CandidateDisposition = CandidateDisposition.UNKNOWN
+    helper_assessment: str | None = None
+    proposal_disposition: str | None = None
+    disposition_reason: str | None = None
+    eligible_for_stronger_obligation: bool = False
+    contextual_only: bool = False
+    lower_tier: bool = False
+    final_evidence_eligible: bool | str = UNKNOWN
+
+    def merge(self, update: Mapping[str, Any]) -> None:
+        for field_name in (
+            "url",
+            "normalized_source_identity",
+            "title",
+            "domain",
+            "source_label",
+            "provider_name",
+            "provider_role",
+            "retrieval_pass_id",
+            "query_ref",
+            "action_ref",
+            "source_tier",
+            "source_class",
+            "currentness_signal",
+            "readable_status",
+            "fetchable_status",
+            "disposition_reason",
+        ):
+            current = getattr(self, field_name)
+            incoming = update.get(field_name)
+            if current in (None, "", UNKNOWN) and incoming not in (None, "", UNKNOWN):
+                setattr(self, field_name, _clean_text(incoming))
+
+        for field_name in ("contextual_only", "lower_tier"):
+            if bool(update.get(field_name)):
+                setattr(self, field_name, True)
+        if update.get("final_evidence_eligible") not in (None, "", UNKNOWN):
+            self.final_evidence_eligible = bool(update.get("final_evidence_eligible"))
+        if update.get("eligible_for_stronger_obligation") is not None:
+            self.eligible_for_stronger_obligation = bool(
+                update.get("eligible_for_stronger_obligation")
+            )
+        else:
+            self.eligible_for_stronger_obligation = (
+                self.eligible_for_stronger_obligation
+                or _strong_source_candidate(self)
+            )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact(
+            {
+                "candidate_id": _clean_token(self.candidate_id),
+                "url": _clean_text(self.url, limit=500),
+                "normalized_source_identity": _clean_text(
+                    self.normalized_source_identity, limit=500
+                ),
+                "title": _clean_text(self.title),
+                "domain": _clean_text(self.domain, limit=160),
+                "source_label": _clean_text(self.source_label),
+                "provider_name": _clean_text(self.provider_name, limit=120),
+                "provider_role": _clean_text(self.provider_role, limit=120),
+                "retrieval_pass_id": _clean_token(self.retrieval_pass_id),
+                "query_ref": _clean_text(self.query_ref),
+                "action_ref": _clean_token(self.action_ref),
+                "source_tier": _clean_token(self.source_tier),
+                "source_class": _clean_token(self.source_class),
+                "currentness_signal": _clean_token(self.currentness_signal),
+                "readable_status": _clean_token(self.readable_status),
+                "fetchable_status": _clean_token(self.fetchable_status),
+                "fact_disposition": self.fact_disposition.value,
+                "helper_assessment": _clean_text(self.helper_assessment),
+                "proposal_disposition": _clean_text(self.proposal_disposition),
+                "disposition_reason": _clean_text(self.disposition_reason),
+                "eligible_for_stronger_obligation": bool(
+                    self.eligible_for_stronger_obligation
+                ),
+                "contextual_only": bool(self.contextual_only),
+                "lower_tier": bool(self.lower_tier),
+                "final_evidence_eligible": self.final_evidence_eligible,
+            }
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceObligationLink:
+    requirement_id: str
+    candidate_id: str
+    link_reason: str | None = None
+    link_status: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact(
+            {
+                "requirement_id": _clean_token(self.requirement_id),
+                "candidate_id": _clean_token(self.candidate_id),
+                "link_reason": _clean_text(self.link_reason),
+                "link_status": _clean_token(self.link_status),
+            }
+        )
+
+
+@dataclass(slots=True)
+class SourceRequirementRecord:
+    requirement_id: str
+    requirement_kind: str
+    origin_ref: str | None = None
+    required_source_class: str | None = None
+    required_source_tier: str | None = None
+    required_currentness: str | None = None
+    linked_candidate_ids: list[str] = field(default_factory=list)
+    status: SourceRequirementStatus = SourceRequirementStatus.UNKNOWN
+    reason: str | None = None
+    aggregate_counts_insufficient: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = _compact(
+            {
+                "requirement_id": _clean_token(self.requirement_id),
+                "requirement_kind": _clean_token(self.requirement_kind),
+                "origin_ref": _clean_text(self.origin_ref),
+                "required_source_class": _clean_token(self.required_source_class),
+                "required_source_tier": _clean_token(self.required_source_tier),
+                "required_currentness": _clean_token(self.required_currentness),
+                "status": self.status.value,
+                "reason": _clean_text(self.reason),
+                "aggregate_counts_insufficient": bool(
+                    self.aggregate_counts_insufficient
+                ),
+            }
+        )
+        payload["linked_candidate_ids"] = list(self.linked_candidate_ids)
+        return payload
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceCustodyGap:
+    gap_type: EvidenceCustodyGapType | str
+    requirement_id: str | None = None
+    candidate_id: str | None = None
+    reason: str | None = None
+    source_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "gap_type",
+            _coerce_enum(
+                EvidenceCustodyGapType,
+                self.gap_type,
+                EvidenceCustodyGapType.MISSING_CANDIDATE_IDENTITY.value,
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _compact(
+            {
+                "gap_type": self.gap_type.value,
+                "requirement_id": _clean_token(self.requirement_id),
+                "candidate_id": _clean_token(self.candidate_id),
+                "reason": _clean_text(self.reason),
+                "source_ref": _clean_text(self.source_ref),
+            }
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceLedgerProjection:
+    payload: Mapping[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        return _safe_mapping(dict(self.payload))
+
+
+@dataclass(frozen=True, slots=True)
+class EvidenceLedgerObservation:
+    observation_id: str
+    source: str
+    payload: Mapping[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = _safe_mapping(self.payload)
+        payload["observation_id"] = _clean_token(self.observation_id)
+        payload["observation_source"] = _clean_text(self.source, limit=120)
+        return payload
+
+
+@dataclass(slots=True)
+class EvidenceLedger:
+    candidates: dict[str, EvidenceCandidate] = field(default_factory=dict)
+    custody_records: list[CandidateCustodyRecord] = field(default_factory=list)
+    requirements: dict[str, SourceRequirementRecord] = field(default_factory=dict)
+    links: list[SourceObligationLink] = field(default_factory=list)
+    gaps: list[EvidenceCustodyGap] = field(default_factory=list)
+    final_evidence_refs: list[dict[str, Any]] = field(default_factory=list)
+    observation_refs: list[dict[str, Any]] = field(default_factory=list)
+
+    def reduce_observation(
+        self,
+        observation: Mapping[str, Any] | EvidenceLedgerObservation,
+    ) -> "EvidenceLedger":
+        payload = (
+            observation.to_dict()
+            if isinstance(observation, EvidenceLedgerObservation)
+            else _safe_mapping(observation)
+        )
+        observation_id = _clean_token(payload.get("observation_id")) or (
+            f"evidence-ledger-observation:{len(self.observation_refs) + 1}"
+        )
+        source = _clean_text(payload.get("observation_source"), limit=120) or UNKNOWN
+        self.observation_refs.append(
+            {"observation_id": observation_id, "source": source}
+        )
+        for requirement in _list(payload.get("requirements") or payload.get("source_requirements")):
+            self._admit_requirement(requirement)
+        for candidate in _list(payload.get("candidates")):
+            self._admit_candidate(candidate, observation_id=observation_id, source=source)
+        for link in _list(payload.get("requirement_links") or payload.get("links")):
+            self._link_candidate(
+                _clean_token(link.get("requirement_id")),
+                _clean_token(link.get("candidate_id")),
+                reason=_clean_text(link.get("link_reason")),
+                status=_clean_token(link.get("link_status")),
+            )
+        self._admit_aggregate_counts(payload.get("aggregate_counts"))
+        self._admit_final_evidence(payload.get("final_evidence"))
+        self._evaluate_requirements()
+        return self
+
+    def to_projection(self) -> EvidenceLedgerProjection:
+        official_current_projection = self.to_official_current_source_custody()
+        gap_payloads = [gap.to_dict() for gap in self.gaps]
+        payload = {
+            "schema_version": EVIDENCE_LEDGER_SCHEMA_VERSION,
+            "trace_key": EVIDENCE_LEDGER_TRACE_KEY,
+            "owner": "RunKernel.EvidenceLedger",
+            "canonical_state": True,
+            "diagnostic_only": False,
+            "storage_only": False,
+            "trace_only": False,
+            "sanitized": True,
+            "aggregate_counts_are_authoritative_for_custody": False,
+            "candidate_count": len(self.candidates),
+            "requirement_count": len(self.requirements),
+            "custody_record_count": len(self.custody_records),
+            "candidate_records": [
+                candidate.to_dict()
+                for candidate in sorted(
+                    self.candidates.values(), key=lambda item: item.candidate_id
+                )
+            ],
+            "custody_records": [record.to_dict() for record in self.custody_records],
+            "source_requirements": [
+                requirement.to_dict()
+                for requirement in sorted(
+                    self.requirements.values(), key=lambda item: item.requirement_id
+                )
+            ],
+            "requirement_links": [link.to_dict() for link in self.links],
+            "custody_gaps": gap_payloads,
+            "final_evidence_refs": list(self.final_evidence_refs),
+            "observation_refs": list(self.observation_refs),
+            "official_current_source_custody": official_current_projection.to_dict(),
+            "compatibility": {
+                "controller_evidence_ledger_status": "compatibility_only_subordinate",
+                "allocation_result_candidate_custody_status": (
+                    "admitted_as_sanitized_observation_input_when_present"
+                ),
+                "legacy_aggregate_only_authority_status": "demoted_not_satisfying",
+                "final_evidence_compatibility_gap_count": len(
+                    [
+                        gap
+                        for gap in gap_payloads
+                        if gap.get("gap_type")
+                        == EvidenceCustodyGapType.FINAL_EVIDENCE_SELECTED_WITHOUT_LEDGER_CUSTODY.value
+                    ]
+                ),
+            },
+        }
+        return EvidenceLedgerProjection(payload)
+
+    def to_official_current_source_custody(self) -> OfficialCurrentSourceCustodyState:
+        state = OfficialCurrentSourceCustodyState()
+        for requirement in self.requirements.values():
+            required_class = _clean_token(requirement.required_source_class)
+            if required_class not in _STRONG_SOURCE_CLASSES:
+                continue
+            state = state.require(required_class, requirement_id=requirement.requirement_id)
+            if requirement.aggregate_counts_insufficient:
+                state = state.record_candidate_aggregate_only(
+                    requirement.requirement_id,
+                    reason="evidence_ledger_aggregate_counts_without_candidate_identity",
+                    attempt_id="evidence_ledger_requirement_projection",
+                )
+            for candidate_id in requirement.linked_candidate_ids:
+                candidate = self.candidates.get(candidate_id)
+                if candidate is None:
+                    state = state.record_candidate_identity_missing(
+                        requirement.requirement_id,
+                        reason="linked_candidate_missing_from_evidence_ledger",
+                        attempt_id="evidence_ledger_requirement_projection",
+                    )
+                    continue
+                state = state.record_candidate_returned(
+                    requirement.requirement_id,
+                    candidate_id=candidate.candidate_id,
+                    attempt_id="evidence_ledger_requirement_projection",
+                )
+                if _candidate_satisfies_requirement(candidate, requirement):
+                    status = (
+                        OfficialCurrentCustodyStatus.CANDIDATE_PARTIALLY_ACCEPTED
+                        if candidate.fact_disposition
+                        is CandidateDisposition.PARTIALLY_ACCEPTED
+                        else OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED
+                    )
+                elif _bad_readability(candidate):
+                    status = OfficialCurrentCustodyStatus.CANDIDATE_UNREADABLE
+                else:
+                    status = OfficialCurrentCustodyStatus.CANDIDATE_REJECTED
+                state = state.record_candidate_disposition(
+                    requirement.requirement_id,
+                    status=status,
+                    candidate_id=candidate.candidate_id,
+                    reason=_candidate_requirement_rejection_reason(
+                        candidate, requirement
+                    ),
+                    attempt_id="evidence_ledger_requirement_projection",
+                )
+        return state.finalize_requirements()
+
+    def _admit_requirement(self, record: Any) -> None:
+        if not isinstance(record, Mapping):
+            return
+        requirement_id = _clean_token(
+            record.get("requirement_id")
+            or record.get("custody_requirement_id")
+            or record.get("source_class")
+            or record.get("required_source_class")
+        )
+        if not requirement_id:
+            return
+        if ":" not in requirement_id and _clean_token(record.get("required_source_class")):
+            requirement_id = f"source_requirement:{requirement_id}"
+        requirement = self.requirements.get(requirement_id)
+        if requirement is None:
+            requirement = SourceRequirementRecord(
+                requirement_id=requirement_id,
+                requirement_kind=_requirement_kind(record),
+                origin_ref=_clean_text(
+                    record.get("origin_ref")
+                    or record.get("answer_contract_ref")
+                    or record.get("source_obligation_ref")
+                ),
+                required_source_class=_clean_token(
+                    record.get("required_source_class") or record.get("source_class")
+                ),
+                required_source_tier=_clean_token(record.get("required_source_tier")),
+                required_currentness=_clean_token(record.get("required_currentness")),
+                aggregate_counts_insufficient=bool(
+                    record.get("aggregate_counts_insufficient")
+                ),
+            )
+            self.requirements[requirement_id] = requirement
+        else:
+            if not requirement.required_source_class:
+                requirement.required_source_class = _clean_token(
+                    record.get("required_source_class") or record.get("source_class")
+                )
+            requirement.aggregate_counts_insufficient = (
+                requirement.aggregate_counts_insufficient
+                or bool(record.get("aggregate_counts_insufficient"))
+            )
+        linked = _list(record.get("linked_candidate_ids"))
+        for candidate_id in linked:
+            self._link_candidate(
+                requirement_id,
+                _clean_token(candidate_id),
+                reason="requirement_declared_link",
+            )
+
+    def _admit_candidate(
+        self,
+        record: Any,
+        *,
+        observation_id: str,
+        source: str,
+    ) -> None:
+        if not isinstance(record, Mapping):
+            return
+        if record.get("aggregate_only") is True:
+            self._gap(
+                EvidenceCustodyGapType.LEGACY_AGGREGATE_ONLY_PATH,
+                requirement_id=_clean_token(record.get("requirement_id")),
+                reason=_clean_text(record.get("reason"))
+                or "aggregate candidate observation has no candidate identity",
+                source_ref=source,
+            )
+            req = self.requirements.get(_clean_token(record.get("requirement_id")))
+            if req is not None:
+                req.aggregate_counts_insufficient = True
+            return
+        candidate_id = _candidate_id(record, index=len(self.candidates) + 1)
+        if not candidate_id:
+            self._gap(
+                EvidenceCustodyGapType.MISSING_CANDIDATE_IDENTITY,
+                requirement_id=_clean_token(record.get("requirement_id")),
+                reason="candidate observation lacked stable candidate id/url/title",
+                source_ref=source,
+            )
+            return
+        update = _candidate_update(record, candidate_id=candidate_id)
+        candidate = self.candidates.get(candidate_id)
+        if candidate is None:
+            candidate = EvidenceCandidate(candidate_id=candidate_id)
+            self.candidates[candidate_id] = candidate
+        candidate.merge(update)
+
+        record_kind = _record_kind(record)
+        disposition = _candidate_disposition(record)
+        if record_kind is CandidateCustodyKind.FACT:
+            candidate.fact_disposition = disposition
+            candidate.disposition_reason = (
+                _clean_text(record.get("reason") or record.get("disposition_reason"))
+                or candidate.disposition_reason
+            )
+        elif record_kind is CandidateCustodyKind.HELPER_ASSESSMENT:
+            candidate.helper_assessment = disposition.value
+            self._gap(
+                EvidenceCustodyGapType.HELPER_CONTROLLER_ASSESSMENT_NOT_PROMOTABLE,
+                candidate_id=candidate_id,
+                requirement_id=_clean_token(record.get("requirement_id")),
+                reason="helper assessment recorded but not promoted as fact",
+                source_ref=source,
+            )
+        else:
+            candidate.proposal_disposition = disposition.value
+
+        self.custody_records.append(
+            CandidateCustodyRecord(
+                candidate_id=candidate_id,
+                record_kind=record_kind,
+                disposition=disposition,
+                reason=_clean_text(
+                    record.get("reason")
+                    or record.get("disposition_reason")
+                    or record.get("rejection_reason")
+                ),
+                source=source,
+                requirement_id=_clean_token(record.get("requirement_id")),
+                observation_id=observation_id,
+            )
+        )
+        requirement_ids = _candidate_requirement_ids(record)
+        for requirement_id in requirement_ids:
+            self._link_candidate(
+                requirement_id,
+                candidate_id,
+                reason=_clean_text(record.get("link_reason"))
+                or "candidate_observation_link",
+                status=disposition.value,
+            )
+        if disposition is CandidateDisposition.DROPPED:
+            self._gap(
+                EvidenceCustodyGapType.CANDIDATE_DROPPED_WITHOUT_DISPOSITION,
+                candidate_id=candidate_id,
+                requirement_id=next(iter(requirement_ids), None),
+                reason="candidate dropped before accepted/rejected disposition",
+                source_ref=source,
+            )
+        if _bad_readability(candidate):
+            self._gap(
+                EvidenceCustodyGapType.MISSING_READABLE_SOURCE,
+                candidate_id=candidate_id,
+                requirement_id=next(iter(requirement_ids), None),
+                reason="candidate is not readable/fetchable",
+                source_ref=source,
+            )
+
+    def _link_candidate(
+        self,
+        requirement_id: str | None,
+        candidate_id: str | None,
+        *,
+        reason: str | None = None,
+        status: str | None = None,
+    ) -> None:
+        if not requirement_id or not candidate_id:
+            return
+        requirement = self.requirements.get(requirement_id)
+        if requirement is None:
+            requirement = SourceRequirementRecord(
+                requirement_id=requirement_id,
+                requirement_kind=_kind_for_requirement_id(requirement_id),
+                required_source_class=_required_class_for_requirement_id(requirement_id),
+            )
+            self.requirements[requirement_id] = requirement
+        if candidate_id not in requirement.linked_candidate_ids:
+            requirement.linked_candidate_ids.append(candidate_id)
+        if not any(
+            link.requirement_id == requirement_id and link.candidate_id == candidate_id
+            for link in self.links
+        ):
+            self.links.append(
+                SourceObligationLink(
+                    requirement_id=requirement_id,
+                    candidate_id=candidate_id,
+                    link_reason=reason,
+                    link_status=status,
+                )
+            )
+
+    def _admit_aggregate_counts(self, value: Any) -> None:
+        if not isinstance(value, Mapping):
+            return
+        for requirement_id, count in value.items():
+            req_id = _clean_token(requirement_id)
+            if not req_id:
+                continue
+            try:
+                positive = int(count or 0) > 0
+            except (TypeError, ValueError):
+                positive = False
+            if not positive:
+                continue
+            requirement = self.requirements.get(req_id)
+            if requirement is None:
+                requirement = SourceRequirementRecord(
+                    requirement_id=req_id,
+                    requirement_kind=_kind_for_requirement_id(req_id),
+                    required_source_class=_required_class_for_requirement_id(req_id),
+                )
+                self.requirements[req_id] = requirement
+            requirement.aggregate_counts_insufficient = True
+            self._gap(
+                EvidenceCustodyGapType.LEGACY_AGGREGATE_ONLY_PATH,
+                requirement_id=req_id,
+                reason="aggregate count observed without candidate identity",
+                source_ref="aggregate_counts",
+            )
+
+    def _admit_final_evidence(self, value: Any) -> None:
+        for index, evidence in enumerate(_list(value), start=1):
+            if not isinstance(evidence, Mapping):
+                continue
+            candidate_id = _candidate_id(evidence, index=index)
+            ref = _compact(
+                {
+                    "candidate_id": candidate_id,
+                    "source_id": evidence.get("source_id"),
+                    "url": _clean_text(evidence.get("url"), limit=500),
+                    "title": _clean_text(evidence.get("title")),
+                    "position": index,
+                }
+            )
+            self.final_evidence_refs.append(ref)
+            if not candidate_id or candidate_id not in self.candidates:
+                self._gap(
+                    EvidenceCustodyGapType.FINAL_EVIDENCE_SELECTED_WITHOUT_LEDGER_CUSTODY,
+                    candidate_id=candidate_id,
+                    reason="final evidence selected before ledger candidate custody",
+                    source_ref="final_evidence",
+                )
+
+    def _evaluate_requirements(self) -> None:
+        for requirement in self.requirements.values():
+            linked_candidates = [
+                self.candidates[candidate_id]
+                for candidate_id in requirement.linked_candidate_ids
+                if candidate_id in self.candidates
+            ]
+            satisfying = [
+                candidate
+                for candidate in linked_candidates
+                if _candidate_satisfies_requirement(candidate, requirement)
+            ]
+            if satisfying:
+                requirement.status = SourceRequirementStatus.SATISFIED
+                requirement.reason = "linked_candidate_satisfies_requirement"
+                continue
+            if linked_candidates:
+                requirement.status = SourceRequirementStatus.UNSATISFIED
+                requirement.reason = "no_linked_candidate_satisfies_requirement"
+                if _strong_requirement(requirement):
+                    self._gap(
+                        EvidenceCustodyGapType.MISSING_SOURCE_CLASS_FIT,
+                        requirement_id=requirement.requirement_id,
+                        reason="linked candidates are lower-tier, stale, unreadable, or off-class",
+                        source_ref="requirement_evaluation",
+                    )
+                continue
+            if requirement.aggregate_counts_insufficient:
+                requirement.status = SourceRequirementStatus.UNSATISFIED
+                requirement.reason = "aggregate_counts_cannot_satisfy_custody"
+                continue
+            if _strong_requirement(requirement):
+                requirement.status = SourceRequirementStatus.UNSATISFIED
+                requirement.reason = "missing_official_current_candidate"
+                self._gap(
+                    EvidenceCustodyGapType.MISSING_OFFICIAL_CURRENT_CANDIDATE,
+                    requirement_id=requirement.requirement_id,
+                    reason="no linked candidate identity satisfies stronger obligation",
+                    source_ref="requirement_evaluation",
+                )
+            else:
+                requirement.status = SourceRequirementStatus.UNKNOWN
+                requirement.reason = "requirement_has_no_linked_candidate_observation"
+
+    def _gap(
+        self,
+        gap_type: EvidenceCustodyGapType,
+        *,
+        requirement_id: str | None = None,
+        candidate_id: str | None = None,
+        reason: str | None = None,
+        source_ref: str | None = None,
+    ) -> None:
+        gap = EvidenceCustodyGap(
+            gap_type=gap_type,
+            requirement_id=requirement_id,
+            candidate_id=candidate_id,
+            reason=reason,
+            source_ref=source_ref,
+        )
+        payload = gap.to_dict()
+        if payload not in [existing.to_dict() for existing in self.gaps]:
+            self.gaps.append(gap)
+
+
+def build_evidence_ledger_observation_from_runtime(
+    *,
+    observation_id: str,
+    observation_source: str,
+    source_class_recovery_telemetry: Mapping[str, Any] | None = None,
+    final_top_evidence: Iterable[Mapping[str, Any]] | None = None,
+    final_evidence_selected: bool = False,
+) -> EvidenceLedgerObservation:
+    """Build a sanitized ledger observation from existing runtime projections."""
+
+    telemetry = _safe_mapping(source_class_recovery_telemetry)
+    custody = telemetry.get("official_current_source_custody")
+    requirements: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    links: list[dict[str, Any]] = []
+    aggregate_counts: dict[str, int] = {}
+
+    if isinstance(custody, Mapping):
+        for requirement in _list(custody.get("requirements")):
+            req_id = _clean_token(requirement.get("requirement_id"))
+            source_class = _clean_token(requirement.get("source_class"))
+            if not req_id:
+                continue
+            requirements.append(
+                {
+                    "requirement_id": req_id,
+                    "requirement_kind": _kind_for_source_class(source_class),
+                    "required_source_class": source_class,
+                    "origin_ref": "official_current_source_custody",
+                    "aggregate_counts_insufficient": False,
+                }
+            )
+        for record in _list(custody.get("records")):
+            req_id = _clean_token(record.get("requirement_id"))
+            candidate_id = _clean_token(record.get("candidate_id"))
+            status = _clean_token(record.get("status"))
+            if status == OfficialCurrentCustodyStatus.CANDIDATE_AGGREGATE_ONLY.value:
+                aggregate_counts[req_id] = aggregate_counts.get(req_id, 0) + 1
+                continue
+            if not candidate_id:
+                continue
+            candidates.append(
+                {
+                    "candidate_id": candidate_id,
+                    "requirement_id": req_id,
+                    "disposition": _disposition_from_official_current_status(status),
+                    "record_kind": CandidateCustodyKind.FACT.value,
+                    "reason": record.get("disposition_reason"),
+                    "source_class": record.get("source_class")
+                    or _required_class_for_requirement_id(req_id),
+                    "eligible_for_stronger_obligation": status
+                    in {
+                        OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED.value,
+                        OfficialCurrentCustodyStatus.CANDIDATE_PARTIALLY_ACCEPTED.value,
+                    },
+                }
+            )
+            links.append(
+                {
+                    "requirement_id": req_id,
+                    "candidate_id": candidate_id,
+                    "link_reason": "official_current_source_custody_record",
+                    "link_status": status,
+                }
+            )
+
+    source_candidates = []
+    for index, source in enumerate(final_top_evidence or (), start=1):
+        if not isinstance(source, Mapping):
+            continue
+        candidate_id = _candidate_id(source, index=index)
+        if not candidate_id:
+            continue
+        source_candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "url": source.get("url"),
+                "title": source.get("title"),
+                "source_tier": source.get("source_tier"),
+                "source_class": source.get("source_class"),
+                "readable_status": source.get("readability_status") or "readable",
+                "disposition": CandidateDisposition.OBSERVED.value,
+                "record_kind": CandidateCustodyKind.FACT.value,
+                "final_evidence_eligible": bool(final_evidence_selected),
+            }
+        )
+    candidates.extend(source_candidates)
+
+    payload: dict[str, Any] = {
+        "observation_id": observation_id,
+        "observation_source": observation_source,
+        "requirements": requirements,
+        "candidates": candidates,
+        "requirement_links": links,
+        "aggregate_counts": aggregate_counts,
+    }
+    if final_evidence_selected:
+        payload["final_evidence"] = list(final_top_evidence or ())
+    return EvidenceLedgerObservation(
+        observation_id=observation_id,
+        source=observation_source,
+        payload=payload,
+    )
+
+
+def source_class_facts_from_evidence_ledger_projection(
+    projection: Mapping[str, Any] | None,
+) -> dict[str, tuple[str, ...]]:
+    """Return AnswerContract-ready source-class facts from ledger projection."""
+
+    if not isinstance(projection, Mapping):
+        return {"present": (), "missing": ()}
+    requirements = _list(projection.get("source_requirements"))
+    present: list[str] = []
+    missing: list[str] = []
+    for requirement in requirements:
+        if not isinstance(requirement, Mapping):
+            continue
+        source_class = _clean_token(requirement.get("required_source_class"))
+        status = _clean_token(requirement.get("status"))
+        if not source_class:
+            continue
+        if status == SourceRequirementStatus.SATISFIED.value:
+            _append_unique(present, source_class)
+        elif status in {
+            SourceRequirementStatus.UNSATISFIED.value,
+            SourceRequirementStatus.PARTIALLY_SATISFIED.value,
+        }:
+            _append_unique(missing, source_class)
+    return {"present": tuple(present), "missing": tuple(missing)}
+
+
+def _candidate_update(record: Mapping[str, Any], *, candidate_id: str) -> dict[str, Any]:
+    url = _clean_text(record.get("url") or record.get("source_url"), limit=500)
+    source_class = _clean_token(record.get("source_class"))
+    source_tier = _clean_token(record.get("source_tier"))
+    lower_tier = (
+        bool(record.get("contextual_only"))
+        or source_class in _WEAK_SOURCE_CLASSES
+        or source_tier in _WEAK_SOURCE_TIERS
+    )
+    domain = _clean_text(record.get("domain") or record.get("normalized_domain"), limit=160)
+    if not domain:
+        domain = _domain_from_url(url)
+    return {
+        "candidate_id": candidate_id,
+        "url": url,
+        "normalized_source_identity": _normalize_identity(
+            record.get("normalized_source_identity") or url or candidate_id
+        ),
+        "title": _clean_text(record.get("title")),
+        "domain": domain,
+        "source_label": _clean_text(record.get("source_label") or record.get("label")),
+        "provider_name": _clean_text(record.get("provider_name") or record.get("provider")),
+        "provider_role": _clean_text(record.get("provider_role"), limit=120),
+        "retrieval_pass_id": _clean_token(record.get("retrieval_pass_id")),
+        "query_ref": _clean_text(
+            record.get("query_ref")
+            or record.get("query_preview")
+            or record.get("query")
+        ),
+        "action_ref": _clean_token(record.get("action_ref") or record.get("action_id")),
+        "source_tier": source_tier,
+        "source_class": source_class,
+        "currentness_signal": _clean_token(
+            record.get("currentness_signal") or record.get("currentness")
+        ),
+        "readable_status": _clean_token(
+            record.get("readable_status") or record.get("readability_status")
+        ),
+        "fetchable_status": _clean_token(
+            record.get("fetchable_status") or record.get("fetch_status")
+        ),
+        "disposition_reason": _clean_text(
+            record.get("reason")
+            or record.get("disposition_reason")
+            or record.get("rejection_reason")
+        ),
+        "eligible_for_stronger_obligation": record.get(
+            "eligible_for_stronger_obligation"
+        ),
+        "contextual_only": bool(record.get("contextual_only")) or lower_tier,
+        "lower_tier": lower_tier,
+        "final_evidence_eligible": record.get("final_evidence_eligible", UNKNOWN),
+    }
+
+
+def _candidate_disposition(record: Mapping[str, Any]) -> CandidateDisposition:
+    raw = _clean_token(
+        record.get("disposition")
+        or record.get("fit_disposition")
+        or record.get("final_disposition")
+        or record.get("status")
+    )
+    aliases = {
+        "candidate_accepted": CandidateDisposition.ACCEPTED.value,
+        "candidate_partially_accepted": CandidateDisposition.PARTIALLY_ACCEPTED.value,
+        "candidate_rejected": CandidateDisposition.REJECTED.value,
+        "promoted_final_authority_evidence": CandidateDisposition.ACCEPTED.value,
+        "matched_selected": CandidateDisposition.ACCEPTED.value,
+        "rejected_with_reason": CandidateDisposition.REJECTED.value,
+        "context": CandidateDisposition.CONTEXTUAL.value,
+        "secondary": CandidateDisposition.LOWER_TIER.value,
+        "candidate_returned": CandidateDisposition.OBSERVED.value,
+    }
+    raw = aliases.get(raw, raw)
+    return _coerce_enum(CandidateDisposition, raw, CandidateDisposition.OBSERVED.value)
+
+
+def _record_kind(record: Mapping[str, Any]) -> CandidateCustodyKind:
+    raw = _clean_token(record.get("record_kind") or record.get("custody_kind"))
+    return _coerce_enum(CandidateCustodyKind, raw, CandidateCustodyKind.FACT.value)
+
+
+def _candidate_requirement_ids(record: Mapping[str, Any]) -> list[str]:
+    out: list[str] = []
+    for value in (
+        record.get("requirement_id"),
+        record.get("custody_requirement_id"),
+    ):
+        clean = _clean_token(value)
+        if clean:
+            _append_unique(out, clean)
+    for value in _list(record.get("linked_requirement_ids")):
+        clean = _clean_token(value)
+        if clean:
+            _append_unique(out, clean)
+    return out
+
+
+def _candidate_satisfies_requirement(
+    candidate: EvidenceCandidate,
+    requirement: SourceRequirementRecord,
+) -> bool:
+    if candidate.fact_disposition not in {
+        CandidateDisposition.ACCEPTED,
+        CandidateDisposition.PARTIALLY_ACCEPTED,
+    }:
+        return False
+    if _bad_readability(candidate):
+        return False
+    if _strong_requirement(requirement):
+        if candidate.contextual_only or candidate.lower_tier:
+            return False
+        if not candidate.eligible_for_stronger_obligation:
+            return False
+        if _clean_token(candidate.currentness_signal) in _BAD_CURRENTNESS:
+            return False
+    required_class = _clean_token(requirement.required_source_class)
+    if required_class and required_class not in {UNKNOWN, NOT_OBSERVABLE}:
+        candidate_class = _clean_token(candidate.source_class)
+        candidate_tier = _clean_token(candidate.source_tier)
+        if required_class == "official_current_rules" and candidate_tier in _STRONG_SOURCE_TIERS:
+            return True
+        if candidate_class != required_class:
+            return False
+    required_tier = _clean_token(requirement.required_source_tier)
+    if required_tier and _clean_token(candidate.source_tier) != required_tier:
+        return False
+    return True
+
+
+def _candidate_requirement_rejection_reason(
+    candidate: EvidenceCandidate,
+    requirement: SourceRequirementRecord,
+) -> str:
+    if _bad_readability(candidate):
+        return "candidate_not_readable_or_fetchable"
+    if _strong_requirement(requirement):
+        if candidate.contextual_only or candidate.lower_tier:
+            return "lower_tier_or_contextual_candidate_cannot_satisfy_stronger_obligation"
+        if _clean_token(candidate.currentness_signal) in _BAD_CURRENTNESS:
+            return "stale_or_off_topic_candidate_cannot_satisfy_current_obligation"
+        if not candidate.eligible_for_stronger_obligation:
+            return "candidate_not_eligible_for_stronger_obligation"
+    if _clean_token(requirement.required_source_class) and (
+        _clean_token(candidate.source_class) != _clean_token(requirement.required_source_class)
+    ):
+        if not (
+            _clean_token(requirement.required_source_class) == "official_current_rules"
+            and _clean_token(candidate.source_tier) in _STRONG_SOURCE_TIERS
+        ):
+            return "candidate_source_class_does_not_match_requirement"
+    return candidate.disposition_reason or "candidate_not_accepted_for_requirement"
+
+
+def _strong_requirement(requirement: SourceRequirementRecord) -> bool:
+    return (
+        _clean_token(requirement.requirement_kind) in _STRONG_REQUIREMENT_KINDS
+        or _clean_token(requirement.required_source_class) in _STRONG_SOURCE_CLASSES
+        or _clean_token(requirement.required_source_tier) in _STRONG_SOURCE_TIERS
+        or _clean_token(requirement.required_currentness) in {"current", "official_current"}
+    )
+
+
+def _strong_source_candidate(candidate: EvidenceCandidate) -> bool:
+    return (
+        _clean_token(candidate.source_class) in _STRONG_SOURCE_CLASSES
+        or _clean_token(candidate.source_tier) in _STRONG_SOURCE_TIERS
+        or (_clean_text(candidate.domain, limit=160) or "").endswith(".gov")
+    ) and _clean_token(candidate.currentness_signal) not in _BAD_CURRENTNESS
+
+
+def _bad_readability(candidate: EvidenceCandidate) -> bool:
+    return (
+        _clean_token(candidate.readable_status) in _BAD_READABILITY
+        or _clean_token(candidate.fetchable_status) in _BAD_READABILITY
+    )
+
+
+def _requirement_kind(record: Mapping[str, Any]) -> str:
+    raw = _clean_token(record.get("requirement_kind") or record.get("kind"))
+    if raw:
+        return raw
+    return _kind_for_source_class(
+        _clean_token(record.get("required_source_class") or record.get("source_class"))
+    )
+
+
+def _kind_for_requirement_id(requirement_id: str) -> str:
+    source_class = _required_class_for_requirement_id(requirement_id)
+    return _kind_for_source_class(source_class)
+
+
+def _kind_for_source_class(source_class: str | None) -> str:
+    source_class = _clean_token(source_class)
+    if source_class in {"official_current_rules", "current_primary_or_official"}:
+        return "official_current"
+    if source_class in {"legal_or_regulatory_text", "historical_legal_text"}:
+        return "legal"
+    if source_class in {"primary_source_documents", "archival_primary_text"}:
+        return "canonical"
+    return "general"
+
+
+def _required_class_for_requirement_id(requirement_id: str | None) -> str | None:
+    value = _clean_token(requirement_id)
+    if not value:
+        return None
+    if value.startswith("official_current_source:"):
+        return value.split(":", 1)[1]
+    if value in _STRONG_SOURCE_CLASSES:
+        return value
+    return None
+
+
+def _disposition_from_official_current_status(status: str | None) -> str:
+    if status == OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED.value:
+        return CandidateDisposition.ACCEPTED.value
+    if status == OfficialCurrentCustodyStatus.CANDIDATE_PARTIALLY_ACCEPTED.value:
+        return CandidateDisposition.PARTIALLY_ACCEPTED.value
+    if status == OfficialCurrentCustodyStatus.CANDIDATE_UNREADABLE.value:
+        return CandidateDisposition.UNREADABLE.value
+    if status == OfficialCurrentCustodyStatus.CANDIDATE_RETURNED.value:
+        return CandidateDisposition.OBSERVED.value
+    return CandidateDisposition.REJECTED.value
+
+
+def _candidate_id(record: Mapping[str, Any], *, index: int) -> str:
+    explicit = _clean_token(record.get("candidate_id"))
+    if explicit:
+        return explicit
+    for key in ("url", "source_url", "normalized_source_identity", "source_identity"):
+        value = _normalize_identity(record.get(key))
+        if value:
+            return f"candidate:{hashlib.sha256(value.encode('utf-8')).hexdigest()[:16]}"
+    source_id = _clean_token(record.get("source_id"))
+    if source_id:
+        return f"source-id:{source_id}"
+    title = _clean_text(record.get("title"))
+    if title:
+        return f"title:{hashlib.sha256(title.encode('utf-8')).hexdigest()[:16]}"
+    return ""
+
+
+def _normalize_identity(value: Any) -> str:
+    text = _clean_text(value, limit=500) or ""
+    if not text:
+        return ""
+    parsed = urlparse(text)
+    if not parsed.netloc:
+        return text.casefold()
+    return urlunparse(
+        (
+            parsed.scheme.casefold() or "https",
+            parsed.netloc.casefold(),
+            parsed.path.rstrip("/"),
+            "",
+            parsed.query,
+            "",
+        )
+    )
+
+
+def _domain_from_url(value: Any) -> str | None:
+    parsed = urlparse(str(value or "").strip())
+    return parsed.netloc.casefold() or None
+
+
+def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        return {}
+    out: dict[str, Any] = {}
+    for key, item in value.items():
+        key_text = str(key or "")
+        if _is_sensitive_key(key_text):
+            continue
+        safe = _safe_value(item)
+        if safe is not None:
+            out[key_text] = safe
+    return out
+
+
+def _safe_value(value: Any) -> Any:
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, Mapping):
+        return _safe_mapping(value)
+    if isinstance(value, (list, tuple)):
+        return [_safe_value(item) for item in list(value)[:_MAX_LIST_ITEMS]]
+    if isinstance(value, (set, frozenset)):
+        return [_safe_value(item) for item in sorted(value, key=str)[:_MAX_LIST_ITEMS]]
+    text = _clean_text(value)
+    if any(pattern.search(text or "") for pattern in _SECRET_VALUE_PATTERNS):
+        return None
+    return text
+
+
+def _clean_text(value: Any, *, limit: int = _MAX_TEXT_CHARS) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _clean_token(value: Any, *, limit: int = 160) -> str:
+    text = _clean_text(value, limit=limit)
+    if not text:
+        return ""
+    return text.casefold().replace("-", "_").replace(" ", "_")[:limit]
+
+
+def _is_sensitive_key(key: Any) -> bool:
+    text = str(key or "").casefold()
+    if text in _SENSITIVE_EXACT_KEYS:
+        return True
+    return any(marker in text for marker in _SENSITIVE_KEY_MARKERS)
+
+
+def _list(value: Any) -> list[Any]:
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return list(value)[:_MAX_LIST_ITEMS]
+    return []
+
+
+def _compact(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in payload.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _append_unique(target: list[str], value: str | None) -> None:
+    if value and value not in target:
+        target.append(value)
+
+
+def _coerce_enum(enum_cls: type[Enum], value: Any, default: str) -> Any:
+    raw = value.value if isinstance(value, Enum) else _clean_token(value)
+    try:
+        return enum_cls(raw or default)
+    except ValueError:
+        return enum_cls(default)
+
+
+__all__ = [
+    "EVIDENCE_LEDGER_SCHEMA_VERSION",
+    "EVIDENCE_LEDGER_TRACE_KEY",
+    "CandidateCustodyKind",
+    "CandidateCustodyRecord",
+    "CandidateDisposition",
+    "EvidenceCandidate",
+    "EvidenceCustodyGap",
+    "EvidenceCustodyGapType",
+    "EvidenceLedger",
+    "EvidenceLedgerObservation",
+    "EvidenceLedgerProjection",
+    "SourceObligationLink",
+    "SourceRequirementRecord",
+    "SourceRequirementStatus",
+    "build_evidence_ledger_observation_from_runtime",
+    "source_class_facts_from_evidence_ledger_projection",
+]

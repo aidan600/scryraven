@@ -397,6 +397,7 @@ def test_pipeline_orchestrator_only_has_unrelated_scrutineer_handoff_touch():
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
                 or "provider_plan" in diff
+                or "evidence_ledger" in diff
         )
     else:
         assert "core/pipeline_orchestrator.py" not in result.stdout.splitlines()

@@ -22,7 +22,7 @@ def missing_required_api_keys(
     env: Mapping[str, str] | None = None,
 ) -> list[str]:
     """Return required API key env var names that are currently missing."""
-    env_map = env or os.environ
+    env_map = os.environ if env is None else env
     missing: list[str] = []
 
     providers = (fast_provider, smart_provider, embed_provider)

@@ -20,6 +20,9 @@ CONTROLLER_EVIDENCE_LEDGER_TRACE_SCHEMA_VERSION = (
     "controller_evidence_ledger_runtime_custody_ag74b_v1"
 )
 CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY = "controller_evidence_ledger"
+CONTROLLER_EVIDENCE_LEDGER_COMPATIBILITY_STATUS = (
+    "compatibility_only_subordinate_to_run_kernel_evidence_ledger_ag91j"
+)
 
 AUTHORITY_REQUIREMENT_DECLARED = "AuthorityRequirementDeclared"
 RECOVERY_ACTION_AUTHORIZED = "RecoveryActionAuthorized"
@@ -168,6 +171,9 @@ def build_controller_evidence_ledger(
     state = {
         "schema_version": CONTROLLER_EVIDENCE_LEDGER_SCHEMA_VERSION,
         "owner": "ControllerEvidenceLedger",
+        "run_kernel_compatibility_status": (
+            CONTROLLER_EVIDENCE_LEDGER_COMPATIBILITY_STATUS
+        ),
         "controller_owned": True,
         "diagnostic_only": False,
         "sanitized": True,
@@ -227,6 +233,9 @@ def build_controller_evidence_ledger_trace(
     return {
         "schema_version": CONTROLLER_EVIDENCE_LEDGER_TRACE_SCHEMA_VERSION,
         "trace_key": CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
+        "run_kernel_compatibility_status": (
+            CONTROLLER_EVIDENCE_LEDGER_COMPATIBILITY_STATUS
+        ),
         "trace_mode": "controller_owned_authority_custody",
         "diagnostic_only": False,
         "sanitized": True,
@@ -1242,6 +1251,7 @@ __all__ = [
     "CONTEXT_EXPOSURE_OBSERVED",
     "CONTEXT_EXPOSURE_REQUIRED",
     "CONTROLLER_EVIDENCE_LEDGER_SCHEMA_VERSION",
+    "CONTROLLER_EVIDENCE_LEDGER_COMPATIBILITY_STATUS",
     "CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY",
     "CONTROLLER_EVIDENCE_LEDGER_TRACE_SCHEMA_VERSION",
     "FINAL_CITATION_OBSERVED",

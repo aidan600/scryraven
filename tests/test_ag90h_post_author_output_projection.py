@@ -56,6 +56,7 @@ def _runtime_values() -> dict:
         "retrieval_stop_active_telemetry": {"active": True},
         "queries_per_iter": {1: ["q"]},
         "evidence_integration_checkpoint_handoff": {"checkpoint": True},
+        "evidence_ledger_projection": {},
         "iterations_run": 1,
         "max_iterations": 2,
         "_run_controller_mirror": object(),

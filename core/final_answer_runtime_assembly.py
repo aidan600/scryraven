@@ -74,10 +74,11 @@ def assemble_final_answer_author_runtime(
     author_prompt: str,
     author_system_prompt_key: str,
     author_effort: str,
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
 ) -> FinalAnswerAuthorRuntimeAssembly:
     """Build packet and Author payload from already-computed runtime facts."""
 
-    source_obligation_projection = build_source_class_observability_telemetry(
+    legacy_source_obligation_projection = build_source_class_observability_telemetry(
         query=query,
         intent=intent,
         report_type=report_type,
@@ -88,6 +89,9 @@ def assemble_final_answer_author_runtime(
         final_top_evidence=final_top_evidence,
         final_answer_source_ids=None,
     ).get("official_current_source_custody")
+    source_obligation_projection = (
+        evidence_ledger_projection or legacy_source_obligation_projection
+    )
     packet = build_final_answer_packet(
         run_id=run_id,
         final_evidence=final_top_evidence,
@@ -291,6 +295,7 @@ def assemble_final_answer_author_runtime_from_scope(
         author_prompt=runtime_scope["author_prompt"],
         author_system_prompt_key=runtime_scope["author_system_prompt_key"],
         author_effort=runtime_scope["_author_effort"],
+        evidence_ledger_projection=runtime_scope.get("evidence_ledger_projection"),
     )
 
 

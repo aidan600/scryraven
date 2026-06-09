@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
+from core.evidence_ledger import EvidenceLedger
+
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
 ROUTE_REQUEST_STAGE = "route_request"
@@ -20,6 +22,7 @@ QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
+EVIDENCE_LEDGER_STAGE = "evidence_ledger"
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -57,6 +60,7 @@ class ActionType(str, Enum):
     QUERY_PLAN_ADMISSION = "query_plan_admission"
     MAIN_RETRIEVAL_PASS = "main_retrieval_pass"
     RETRIEVAL_STOP_CHECKPOINT = "retrieval_stop_checkpoint"
+    EVIDENCE_LEDGER_REDUCE = "evidence_ledger_reduce"
 
 
 class ObservationType(str, Enum):
@@ -67,6 +71,7 @@ class ObservationType(str, Enum):
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
     RETRIEVAL_PASS_RESULT = "retrieval_pass_result"
     RETRIEVAL_STOP_DECISION = "retrieval_stop_decision"
+    EVIDENCE_CUSTODY_OBSERVED = "evidence_custody_observed"
 
 
 class RunStageStatus(str, Enum):
@@ -265,6 +270,7 @@ class RunState:
     reduced_action_ids: set[str] = field(default_factory=set)
     observations: list[Observation] = field(default_factory=list)
     projections: dict[str, dict[str, Any]] = field(default_factory=dict)
+    evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -290,6 +296,7 @@ class RunState:
             actions=[action.to_dict() for action in self.issued_actions.values()],
             observations=[observation.to_dict() for observation in self.observations],
             projections=deepcopy(self.projections),
+            evidence_ledger=self.evidence_ledger.to_projection().to_dict(),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -307,6 +314,7 @@ class KernelTraceProjection:
     actions: Sequence[Mapping[str, Any]]
     observations: Sequence[Mapping[str, Any]]
     projections: Mapping[str, Any]
+    evidence_ledger: Mapping[str, Any]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -322,6 +330,7 @@ class KernelTraceProjection:
                 _safe_mapping(observation) for observation in self.observations
             ],
             "projections": _safe_mapping(self.projections),
+            "evidence_ledger": _safe_mapping(self.evidence_ledger),
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
         }
@@ -450,6 +459,20 @@ class RunKernel:
             expected_observation_type=ObservationType.RETRIEVAL_STOP_DECISION,
         )
 
+    def authorize_evidence_ledger_reduction(
+        self,
+        *,
+        reason: str = "evidence_custody_observation_reduction",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        return self.authorize(
+            stage=EVIDENCE_LEDGER_STAGE,
+            action_type=ActionType.EVIDENCE_LEDGER_REDUCE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.EVIDENCE_CUSTODY_OBSERVED,
+        )
+
     def reduce(self, observation: Observation) -> RunState:
         action = self.state.issued_actions.get(observation.action_id)
         if action is None:
@@ -484,7 +507,13 @@ class RunKernel:
         self.state.reduced_action_ids.add(action.action_id)
         self.state.action_statuses[action.action_id] = observation.status
         self.state.stage_statuses[action.stage] = observation.status
-        self.state.projections[action.stage] = _safe_mapping(observation.payload)
+        if action.action_type is ActionType.EVIDENCE_LEDGER_REDUCE:
+            self.state.evidence_ledger.reduce_observation(observation.payload)
+            self.state.projections[action.stage] = (
+                self.state.evidence_ledger.to_projection().to_dict()
+            )
+        else:
+            self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
         self.state.next_observation_sequence += 1
         return self.state
@@ -515,6 +544,7 @@ def validate_authorized_action(
 
 __all__ = [
     "MAIN_RETRIEVAL_STAGE",
+    "EVIDENCE_LEDGER_STAGE",
     "QUERY_PRODUCTION_STAGE",
     "QUERY_PLAN_ADMISSION_STAGE",
     "RETRIEVAL_STOP_CHECKPOINT_STAGE",
