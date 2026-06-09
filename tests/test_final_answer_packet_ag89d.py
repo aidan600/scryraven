@@ -435,12 +435,15 @@ def test_ag89d_static_orchestrator_wiring_does_not_change_protected_surfaces() -
     text = (ROOT / "core" / "pipeline_orchestrator.py").read_text()
     helper_text = (ROOT / "core" / "final_answer_runtime_assembly.py").read_text()
     retrieval_helper_text = (ROOT / "core" / "retrieval_dispatch_runtime.py").read_text()
-    assert "assemble_final_answer_author_runtime_from_scope(" in text
+    assert "execute_final_answer_packet_prepare_action_from_scope(" in text
     assert "assemble_final_answer_citation_runtime_from_scope(" in text
     assert "process_search_queries(" in text or "process_search_queries(" in retrieval_helper_text
     assert "select_providers" not in retrieval_helper_text
     assert "ask_model" not in retrieval_helper_text
-    assert "ask_model(\n        author_prompt, _author_system," in text
+    assert "run_kernel.authorize_final_answer_packet_prepare(" in text
+    assert "run_kernel.authorize_author_execution(" in text
+    assert "execute_author_action(" in text
+    assert "ask_model(\n        author_prompt, _author_system," not in text
     assert "build_final_answer_packet(" in helper_text
     assert "derive_author_input_payload(" in helper_text
     assert "build_packet_derived_citation_source_handoff_state(" in helper_text

@@ -47,6 +47,20 @@ def official_or_canonical_source_class_count(
     return max(counts) if counts else None
 
 
+def _final_answer_packet_trace_fragment_from_state(
+    runtime_values: Mapping[str, Any],
+) -> dict[str, Any]:
+    run_kernel = runtime_values.get("run_kernel")
+    state = getattr(run_kernel, "state", None)
+    packet_projection = getattr(state, "final_answer_packet", None) or {}
+    if isinstance(packet_projection, Mapping) and packet_projection:
+        payload = dict(packet_projection)
+        payload["canonical_state"] = True
+        payload["trace_mode"] = "run_kernel_final_answer_packet_projection"
+        return {"final_answer_packet": payload}
+    return final_answer_packet_trace_fragment(runtime_values["final_answer_packet"])
+
+
 def build_execution_trace_projection(runtime_values: Mapping[str, Any]) -> dict[str, Any]:
     """Assemble the legacy execution_trace from already-computed run facts."""
 
@@ -155,7 +169,7 @@ def build_execution_trace_projection(runtime_values: Mapping[str, Any]) -> dict[
         ),
         **v["answer_contract_runtime_trace_fragment"],
         **v["analyst_author_handoff_trace_fragment"],
-        **final_answer_packet_trace_fragment(v["final_answer_packet"]),
+        **_final_answer_packet_trace_fragment_from_state(v),
         **v["citation_source_handoff_trace_fragment"],
         **v["economist_handoff_trace_fragment"],
         **v["synthesis_evaluator_supplemental_search_handoff_trace_fragment"],

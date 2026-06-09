@@ -55,6 +55,12 @@ class AuthorInputStatus(str, Enum):
     AUTHOR_INPUT_READY = "author_input_ready"
 
 
+class FinalAnswerReadinessStatus(str, Enum):
+    AUTHOR_READY = "author_ready"
+    INSUFFICIENT_AUTHORIZED = "insufficient_authorized"
+    BLOCKED = "blocked"
+
+
 _SENSITIVE_KEYS = frozenset(
     {
         "api_key",
@@ -266,6 +272,8 @@ class FinalAnswerAuthorInputPayload:
     prompt: str
     author_system_prompt_key: str
     author_effort: str
+    author_provider: str | None = None
+    author_model: str | None = None
     status: AuthorInputStatus | str = AuthorInputStatus.AUTHOR_INPUT_READY
     author_evidence_ids: tuple[str, ...] = ()
     citation_source_ids: tuple[Any, ...] = ()
@@ -290,6 +298,8 @@ class FinalAnswerAuthorInputPayload:
             "prompt_text_included": False,
             "author_system_prompt_key": self.author_system_prompt_key,
             "author_effort": self.author_effort,
+            "author_provider": self.author_provider,
+            "author_model": self.author_model,
             "author_evidence_ids": list(self.author_evidence_ids),
             "citation_source_ids": list(self.citation_source_ids),
             "citation_ineligible_refs": _safe_json(self.citation_ineligible_refs),
@@ -313,7 +323,25 @@ class FinalAnswerPacket:
     prohibited_upgrades: tuple[str, ...] = ()
     author_input_refs: Mapping[str, Any] = field(default_factory=dict)
     query_lineage_refs: Mapping[str, Any] = field(default_factory=dict)
+    readiness_status: FinalAnswerReadinessStatus | str = (
+        FinalAnswerReadinessStatus.AUTHOR_READY
+    )
+    readiness_reasons: tuple[str, ...] = ()
     schema_version: str = FINAL_ANSWER_PACKET_SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        raw_status = (
+            self.readiness_status.value
+            if isinstance(self.readiness_status, FinalAnswerReadinessStatus)
+            else str(self.readiness_status)
+        )
+        if raw_status not in {item.value for item in FinalAnswerReadinessStatus}:
+            raise ValueError(f"unknown final answer readiness status: {raw_status}")
+        object.__setattr__(
+            self,
+            "readiness_status",
+            FinalAnswerReadinessStatus(raw_status),
+        )
 
     @property
     def evidence_allowed(self) -> tuple[FinalEvidenceRecord, ...]:
@@ -356,8 +384,19 @@ class FinalAnswerPacket:
         prompt: str,
         author_system_prompt_key: str,
         author_effort: str,
+        author_provider: str | None = None,
+        author_model: str | None = None,
         author_evidence_ids: Sequence[str] | None = None,
     ) -> FinalAnswerAuthorInputPayload:
+        if self.readiness_status is FinalAnswerReadinessStatus.BLOCKED:
+            raise ValueError("blocked FinalAnswerPacket cannot produce Author input")
+        insufficient_authorized = self.readiness_status is (
+            FinalAnswerReadinessStatus.INSUFFICIENT_AUTHORIZED
+        )
+        if self.evidence_records and not self.citation_records and not insufficient_authorized:
+            raise ValueError(
+                "FinalAnswerPacket with evidence requires citation eligibility records"
+            )
         allowed_ids = tuple(record.evidence_id for record in self.evidence_allowed)
         citation_source_ids = tuple(record.source_id for record in self.citation_eligible if record.source_id is not None)
         citation_ineligible_refs = tuple(
@@ -383,6 +422,8 @@ class FinalAnswerPacket:
             prompt=(prompt + authority_block if authority_block else prompt),
             author_system_prompt_key=author_system_prompt_key,
             author_effort=author_effort,
+            author_provider=author_provider,
+            author_model=author_model,
             author_evidence_ids=tuple(author_evidence_ids or allowed_ids),
             citation_source_ids=citation_source_ids,
             citation_ineligible_refs=citation_ineligible_refs,
@@ -471,6 +512,10 @@ class FinalAnswerPacket:
             "prohibited_upgrades": [_clean_text(item, limit=300) for item in self.prohibited_upgrades],
             "author_input_refs": _safe_json(self.author_input_refs),
             "query_lineage_refs": _safe_json(self.query_lineage_refs),
+            "readiness_status": self.readiness_status.value,
+            "readiness_reasons": [
+                _clean_text(item, limit=220) for item in self.readiness_reasons
+            ],
             "trace_mode": "final_answer_packet_authority_projection",
         }
 
@@ -489,6 +534,7 @@ __all__ = [
     "EvidenceAuthorityStatus",
     "FinalAnswerAuthorInputPayload",
     "FinalAnswerPacket",
+    "FinalAnswerReadinessStatus",
     "FinalEvidenceRecord",
     "SourceObligationRecord",
     "SourceObligationStatus",

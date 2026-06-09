@@ -33,6 +33,8 @@ class FinalAnswerAuthorRuntimeAssembly:
     author_prompt: str
     author_system_prompt_key: str
     author_effort: str
+    author_provider: str | None
+    author_model: str | None
     source_obligation_projection: Any
 
 
@@ -74,6 +76,9 @@ def assemble_final_answer_author_runtime(
     author_prompt: str,
     author_system_prompt_key: str,
     author_effort: str,
+    author_provider: str | None = None,
+    author_model: str | None = None,
+    answer_contract_projection: Any | None = None,
     evidence_ledger_projection: Mapping[str, Any] | None = None,
 ) -> FinalAnswerAuthorRuntimeAssembly:
     """Build packet and Author payload from already-computed runtime facts."""
@@ -100,6 +105,7 @@ def assemble_final_answer_author_runtime(
         unique_source_urls=unique_source_urls,
         final_answer_source_telemetry=None,
         source_obligation_projection=source_obligation_projection,
+        answer_contract_projection=answer_contract_projection,
         query_lineage_refs=query_lineage_refs,
         evidence_sufficient=None,
         corpus_weak=corpus_weak,
@@ -113,6 +119,8 @@ def assemble_final_answer_author_runtime(
         prompt=author_prompt,
         author_system_prompt_key=author_system_prompt_key,
         author_effort=author_effort,
+        author_provider=author_provider,
+        author_model=author_model,
     )
     return FinalAnswerAuthorRuntimeAssembly(
         packet=packet,
@@ -120,6 +128,8 @@ def assemble_final_answer_author_runtime(
         author_prompt=payload.prompt,
         author_system_prompt_key=payload.author_system_prompt_key,
         author_effort=payload.author_effort,
+        author_provider=payload.author_provider,
+        author_model=payload.author_model,
         source_obligation_projection=source_obligation_projection,
     )
 
@@ -178,6 +188,7 @@ def assemble_final_answer_citation_runtime(
     weak_failure_gate_state: Any,
     retrieval_loop_state: Any,
     router_query_preparation_state: Any,
+    run_kernel_final_answer_ref: Mapping[str, Any] | None = None,
 ) -> FinalAnswerCitationRuntimeAssembly:
     """Refresh packet observations and build legacy Author/citation handoffs."""
 
@@ -239,6 +250,7 @@ def assemble_final_answer_citation_runtime(
         answer_contract_ref=answer_contract_ref,
         analyst_author_handoff_state=analyst_author_handoff_state,
         source_telemetry_ref=compatibility_refs["source_telemetry_ref"],
+        run_kernel_final_answer_ref=run_kernel_final_answer_ref,
     )
     citation_source_handoff = execute_citation_source_handoff(
         citation_source_handoff_state
@@ -295,6 +307,9 @@ def assemble_final_answer_author_runtime_from_scope(
         author_prompt=runtime_scope["author_prompt"],
         author_system_prompt_key=runtime_scope["author_system_prompt_key"],
         author_effort=runtime_scope["_author_effort"],
+        author_provider=runtime_scope.get("_author_provider"),
+        author_model=runtime_scope.get("_author_model"),
+        answer_contract_projection=runtime_scope.get("answer_contract_projection"),
         evidence_ledger_projection=runtime_scope.get("evidence_ledger_projection"),
     )
 
@@ -361,6 +376,7 @@ def assemble_final_answer_citation_runtime_from_scope(
         router_query_preparation_state=runtime_scope[
             "router_query_preparation_contract"
         ],
+        run_kernel_final_answer_ref=runtime_scope.get("run_kernel_final_answer_ref"),
     )
 
 
