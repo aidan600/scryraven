@@ -88,7 +88,9 @@ def test_records_candidate_identity_custody_and_excludes_sensitive_payloads() ->
             "requirements": [_official_requirement()],
             "candidates": [
                 _official_candidate(
-                    raw_provider_payload={"secret": "sk-should-not-survive"},
+                    raw_provider_payload={
+                        "payload_marker": "fake-provider-sentinel-should-not-survive"
+                    },
                     raw_prompt="raw prompt should not survive",
                     snippet="full snippet should not survive",
                     text="full source text should not survive",
@@ -123,7 +125,7 @@ def test_records_candidate_identity_custody_and_excludes_sensitive_payloads() ->
         "raw_provider_payload",
         "full source text",
         "full snippet",
-        "sk-should-not-survive",
+        "fake-provider-sentinel-should-not-survive",
         "db_row",
         "output_packet",
     ):
