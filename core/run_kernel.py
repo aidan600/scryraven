@@ -25,6 +25,7 @@ MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
 SEARCH_JUDGMENT_STAGE = "search_judgment"
+SUFFICIENCY_JUDGMENT_STAGE = "sufficiency_judgment"
 FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
 
@@ -67,6 +68,7 @@ class ActionType(str, Enum):
     RETRIEVAL_STOP_CHECKPOINT = "retrieval_stop_checkpoint"
     EVIDENCE_LEDGER_REDUCE = "evidence_ledger_reduce"
     SEARCH_JUDGMENT_DECIDE = "search_judgment_decide"
+    SUFFICIENCY_JUDGMENT_DECIDE = "sufficiency_judgment_decide"
     FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
     AUTHOR_EXECUTE = "author_execute"
 
@@ -82,6 +84,7 @@ class ObservationType(str, Enum):
     RETRIEVAL_STOP_DECISION = "retrieval_stop_decision"
     EVIDENCE_CUSTODY_OBSERVED = "evidence_custody_observed"
     SEARCH_JUDGMENT_DECIDED = "search_judgment_decided"
+    SUFFICIENCY_JUDGMENT_DECIDED = "sufficiency_judgment_decided"
     FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
 
@@ -289,6 +292,9 @@ class RunState:
     search_judgment: dict[str, Any] = field(default_factory=dict)
     search_judgment_projection: dict[str, Any] = field(default_factory=dict)
     search_judgment_history: list[dict[str, Any]] = field(default_factory=list)
+    sufficiency_judgment: dict[str, Any] = field(default_factory=dict)
+    sufficiency_judgment_projection: dict[str, Any] = field(default_factory=dict)
+    sufficiency_judgment_history: list[dict[str, Any]] = field(default_factory=list)
     final_answer_packet: dict[str, Any] = field(default_factory=dict)
     author_observation: dict[str, Any] = field(default_factory=dict)
     final_answer_outcome: dict[str, Any] = field(default_factory=dict)
@@ -325,6 +331,13 @@ class RunState:
             search_judgment=deepcopy(self.search_judgment),
             search_judgment_projection=deepcopy(self.search_judgment_projection),
             search_judgment_history=deepcopy(self.search_judgment_history),
+            sufficiency_judgment=deepcopy(self.sufficiency_judgment),
+            sufficiency_judgment_projection=deepcopy(
+                self.sufficiency_judgment_projection
+            ),
+            sufficiency_judgment_history=deepcopy(
+                self.sufficiency_judgment_history
+            ),
             final_answer_packet=deepcopy(self.final_answer_packet),
             author_observation=deepcopy(self.author_observation),
             final_answer_outcome=deepcopy(self.final_answer_outcome),
@@ -355,6 +368,9 @@ class KernelTraceProjection:
     search_judgment: Mapping[str, Any]
     search_judgment_projection: Mapping[str, Any]
     search_judgment_history: Sequence[Mapping[str, Any]]
+    sufficiency_judgment: Mapping[str, Any]
+    sufficiency_judgment_projection: Mapping[str, Any]
+    sufficiency_judgment_history: Sequence[Mapping[str, Any]]
     final_answer_packet: Mapping[str, Any]
     author_observation: Mapping[str, Any]
     final_answer_outcome: Mapping[str, Any]
@@ -384,6 +400,13 @@ class KernelTraceProjection:
             ),
             "search_judgment_history": [
                 _safe_mapping(item) for item in self.search_judgment_history
+            ],
+            "sufficiency_judgment": _safe_mapping(self.sufficiency_judgment),
+            "sufficiency_judgment_projection": _safe_mapping(
+                self.sufficiency_judgment_projection
+            ),
+            "sufficiency_judgment_history": [
+                _safe_mapping(item) for item in self.sufficiency_judgment_history
             ],
             "final_answer_packet": _safe_mapping(self.final_answer_packet),
             "author_observation": _safe_mapping(self.author_observation),
@@ -570,6 +593,31 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.SEARCH_JUDGMENT_DECIDED,
+        )
+
+    def authorize_sufficiency_judgment(
+        self,
+        *,
+        reason: str = "run_authority_final_sufficiency_judgment",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.run_contract_projection:
+            raise RunKernelTransitionError(
+                "sufficiency judgment requires a reduced RunAuthority contract"
+            )
+        if self.state.evidence_ledger.to_projection().to_dict().get(
+            "requirement_count",
+            0,
+        ) <= 0:
+            raise RunKernelTransitionError(
+                "sufficiency judgment requires a reduced EvidenceLedger projection"
+            )
+        return self.authorize(
+            stage=SUFFICIENCY_JUDGMENT_STAGE,
+            action_type=ActionType.SUFFICIENCY_JUDGMENT_DECIDE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.SUFFICIENCY_JUDGMENT_DECIDED,
         )
 
     def authorize_final_answer_packet_prepare(
@@ -789,6 +837,110 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.search_judgment_projection
             )
+        elif action.action_type is ActionType.SUFFICIENCY_JUDGMENT_DECIDE:
+            judgment_projection = _safe_mapping(
+                observation.payload.get("judgment_projection")
+            )
+            if not judgment_projection:
+                raise RunKernelTransitionError(
+                    "sufficiency judgment observation requires judgment_projection"
+                )
+            validation = _safe_mapping(observation.payload.get("validation"))
+            self.state.sufficiency_judgment = judgment_projection
+            self.state.sufficiency_judgment_projection = {
+                "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": judgment_projection.get("schema_version"),
+                "judgment_id": judgment_projection.get("judgment_id"),
+                "decision": judgment_projection.get("decision"),
+                "mode": judgment_projection.get("mode"),
+                "contract_id": judgment_projection.get("contract_id"),
+                "selected_template_ids": judgment_projection.get(
+                    "selected_template_ids",
+                    [],
+                ),
+                "contract_fulfilled": judgment_projection.get("contract_fulfilled"),
+                "required_obligations_satisfied": judgment_projection.get(
+                    "required_obligations_satisfied"
+                ),
+                "missing_required_obligations": judgment_projection.get(
+                    "missing_required_obligations",
+                    [],
+                ),
+                "partial_obligations": judgment_projection.get(
+                    "partial_obligations",
+                    [],
+                ),
+                "satisfied_obligations": judgment_projection.get(
+                    "satisfied_obligations",
+                    [],
+                ),
+                "unresolved_conflicts": judgment_projection.get(
+                    "unresolved_conflicts",
+                    [],
+                ),
+                "indirect_inference_claims": judgment_projection.get(
+                    "indirect_inference_claims",
+                    [],
+                ),
+                "source_bound_numeric_unknowns": judgment_projection.get(
+                    "source_bound_numeric_unknowns",
+                    [],
+                ),
+                "weak_or_thin_evidence": judgment_projection.get(
+                    "weak_or_thin_evidence",
+                    [],
+                ),
+                "failure_card_authorized": judgment_projection.get(
+                    "failure_card_authorized"
+                ),
+                "final_answer_allowed": judgment_projection.get(
+                    "final_answer_allowed"
+                ),
+                "final_answer_posture": judgment_projection.get(
+                    "final_answer_posture"
+                ),
+                "mandatory_caveats": judgment_projection.get(
+                    "mandatory_caveats",
+                    [],
+                ),
+                "prohibited_upgrades": judgment_projection.get(
+                    "prohibited_upgrades",
+                    [],
+                ),
+                "readiness_reasons": judgment_projection.get(
+                    "readiness_reasons",
+                    [],
+                ),
+                "final_packet_inputs": judgment_projection.get(
+                    "final_packet_inputs",
+                    {},
+                ),
+                "rationale": judgment_projection.get("rationale"),
+                "validation_status": validation.get("status")
+                or judgment_projection.get("validation", {}).get("status"),
+                "prompt_hash": validation.get("prompt_hash")
+                or observation.payload.get("prompt_hash"),
+                "prompt_length": validation.get("prompt_length")
+                or observation.payload.get("prompt_length"),
+                "model_identity": {
+                    "provider": validation.get("provider"),
+                    "model": validation.get("model"),
+                    "effort": validation.get("effort"),
+                    "use_reasoning": validation.get("use_reasoning"),
+                },
+                "prompt_text_retained": False,
+                "model_response_text_retained": False,
+                "provider_payload_retained": False,
+            }
+            self.state.sufficiency_judgment_history.append(
+                deepcopy(self.state.sufficiency_judgment_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.sufficiency_judgment_projection
+            )
         elif action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE:
             packet_projection = _safe_mapping(
                 observation.payload.get("packet_projection")
@@ -886,6 +1038,7 @@ __all__ = [
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
+    "SUFFICIENCY_JUDGMENT_STAGE",
     "RUN_CONTRACT_STAGE",
     "QUERY_PRODUCTION_STAGE",
     "QUERY_PLAN_ADMISSION_STAGE",

@@ -81,6 +81,7 @@ def assemble_final_answer_author_runtime(
     answer_contract_projection: Any | None = None,
     evidence_ledger_projection: Mapping[str, Any] | None = None,
     run_contract_projection: Mapping[str, Any] | None = None,
+    sufficiency_judgment_projection: Mapping[str, Any] | None = None,
 ) -> FinalAnswerAuthorRuntimeAssembly:
     """Build packet and Author payload from already-computed runtime facts."""
 
@@ -108,6 +109,7 @@ def assemble_final_answer_author_runtime(
         source_obligation_projection=source_obligation_projection,
         answer_contract_projection=answer_contract_projection,
         run_contract_projection=run_contract_projection,
+        sufficiency_judgment_projection=sufficiency_judgment_projection,
         query_lineage_refs=query_lineage_refs,
         evidence_sufficient=None,
         corpus_weak=corpus_weak,
@@ -313,6 +315,10 @@ def assemble_final_answer_author_runtime_from_scope(
         author_model=runtime_scope.get("_author_model"),
         answer_contract_projection=runtime_scope.get("answer_contract_projection"),
         evidence_ledger_projection=runtime_scope.get("evidence_ledger_projection"),
+        run_contract_projection=runtime_scope.get("run_contract_projection"),
+        sufficiency_judgment_projection=runtime_scope.get(
+            "sufficiency_judgment_projection"
+        ),
     )
 
 

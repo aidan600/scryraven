@@ -105,6 +105,7 @@ def execute_final_answer_packet_prepare_action(
     evidence_ledger_projection: Mapping[str, Any] | None = None,
     answer_contract_projection: Any | None = None,
     run_contract_projection: Mapping[str, Any] | None = None,
+    sufficiency_judgment_projection: Mapping[str, Any] | None = None,
 ) -> FinalAnswerPacketPreparationResult:
     """Build a FinalAnswerPacket and packet-derived Author payload."""
 
@@ -163,6 +164,7 @@ def execute_final_answer_packet_prepare_action(
         answer_contract_projection=answer_contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
         run_contract_projection=run_contract_projection,
+        sufficiency_judgment_projection=sufficiency_judgment_projection,
     )
     packet_projection = assembly.packet.to_dict()
     payload_ref = assembly.author_payload.to_trace_ref()
@@ -179,6 +181,12 @@ def execute_final_answer_packet_prepare_action(
         ),
         "mandatory_caveat_count": payload_ref.get("mandatory_caveat_count", 0),
         "prohibited_upgrade_count": payload_ref.get("prohibited_upgrade_count", 0),
+        "sufficiency_judgment_consumed": bool(sufficiency_judgment_projection),
+        "sufficiency_decision": (
+            sufficiency_judgment_projection.get("decision")
+            if isinstance(sufficiency_judgment_projection, Mapping)
+            else None
+        ),
         **_ledger_summary(evidence_ledger_projection),
     }
     return FinalAnswerPacketPreparationResult(
@@ -240,6 +248,9 @@ def execute_final_answer_packet_prepare_action_from_scope(
         evidence_ledger_projection=runtime_scope.get("evidence_ledger_projection"),
         answer_contract_projection=runtime_scope.get("answer_contract_projection"),
         run_contract_projection=runtime_scope.get("run_contract_projection"),
+        sufficiency_judgment_projection=runtime_scope.get(
+            "sufficiency_judgment_projection"
+        ),
     )
 
 

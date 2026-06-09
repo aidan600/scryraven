@@ -44,6 +44,7 @@ class RunConfig:
     use_reasoning: bool = True
     run_authority_contract_smart_model: bool = False
     run_authority_search_judgment_smart_model: bool = False
+    run_authority_sufficiency_smart_model: bool = False
 
     # Provider / corpus-state overrides (from UI failure-card controls)
     provider_override: list[str] | None = None

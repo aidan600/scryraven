@@ -468,6 +468,19 @@ class FinalAnswerPacket:
                 "- Missing or unsatisfied source obligations to caveat: "
                 + "; ".join(rendered)
             )
+        final_answer_posture = _clean_text(
+            self.author_input_refs.get("final_answer_posture"),
+            limit=120,
+        )
+        sufficiency_decision = _clean_text(
+            self.author_input_refs.get("sufficiency_decision"),
+            limit=120,
+        )
+        if final_answer_posture:
+            line = "- Final answer posture: " + final_answer_posture
+            if sufficiency_decision:
+                line += f" ({sufficiency_decision})"
+            lines.append(line)
         if self.mandatory_caveats:
             lines.append(
                 "- Mandatory caveats to reflect: "

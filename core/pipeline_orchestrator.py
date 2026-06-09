@@ -231,6 +231,10 @@ from core.run_authority_search_judgment import RunSearchJudgmentInput
 from core.run_authority_search_judgment_runtime import (
     execute_run_authority_search_judgment_action,
 )
+from core.run_authority_sufficiency import RunSufficiencyJudgmentInput
+from core.run_authority_sufficiency_runtime import (
+    execute_run_authority_sufficiency_judgment_action,
+)
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
 from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel
@@ -1138,6 +1142,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     run_authority_search_judgment_smart_model = bool(
         config.run_authority_search_judgment_smart_model
     )
+    run_authority_sufficiency_smart_model = bool(
+        config.run_authority_sufficiency_smart_model
+    )
     current_date = config.current_date
 
     a5_provider_override: list[str] | None = None
@@ -1221,6 +1228,8 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     search_judgment_projection: dict[str, Any] = {}
+    sufficiency_judgment_projection: dict[str, Any] = {}
+    answer_contract_projection: dict[str, Any] = {}
     active_source_class_recovery_lifecycle = source_class_recovery_lifecycle_defaults()
     active_conflict_resolution_lifecycle = conflict_resolution_lifecycle_defaults()
     targeted_retrieval_lifecycle_trace = targeted_retrieval_lifecycle_defaults()
@@ -3475,6 +3484,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         _pre_recovery_answer_contract_projection = (
             _pre_recovery_answer_contract_result.fulfillment_handoff.to_dict()
         )
+        answer_contract_projection = dict(_pre_recovery_answer_contract_projection)
         _search_judgment_started = True
         _search_judgment_input = RunSearchJudgmentInput(
             contract_projection=run_contract_projection,
@@ -4288,6 +4298,81 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_prompt = author_prompt_assembly.prompt
     author_notes = author_prompt_assembly.author_notes
 
+    status.step("Judging final answer sufficiency...")
+    sufficiency_input = RunSufficiencyJudgmentInput(
+        contract_projection=run_contract_projection,
+        evidence_ledger_projection=evidence_ledger_projection,
+        search_judgment_projection=search_judgment_projection,
+        search_judgment_history=run_kernel.state.search_judgment_history,
+        answer_contract_projection=answer_contract_projection,
+        source_obligation_projection=evidence_ledger_projection,
+        final_evidence_facts={
+            "final_evidence_count": len(final_top_evidence),
+            "author_evidence_count": len(author_evidence),
+            "citation_eligible_candidate_count": len(unique_source_urls),
+        },
+        conflict_facts={
+            "conflicts_present": bool(scrutineer_flags),
+            "scrutineer_flag_count": len(scrutineer_flags),
+            "conflict_posture": (
+                "unresolved" if scrutineer_flags else "none"
+            ),
+        },
+        indirect_inference_facts={},
+        weak_failure_facts={
+            "corpus_weak": bool(corpus_weak),
+            "weak_corpus_reason": (
+                weak_corpus_recovery_skip_reason or corpus_state
+                if corpus_weak
+                else None
+            ),
+            "synth_was_insufficient": bool(synth_was_insufficient),
+            "failure_card": {
+                "show": _pre_gate_failure_card_show,
+                "reason": _pre_gate_failure_card_reason,
+            },
+        },
+        budget={
+            "iteration": iterations_run,
+            "max_iterations": max_iterations,
+            "remaining_budget": max(0, max_iterations - iterations_run),
+            "recovery_attempts": (
+                _run_controller_mirror.state.active_source_class_recovery_attempt_count
+            ),
+            "budget_exhausted": iterations_run >= max_iterations,
+        },
+    )
+    sufficiency_action = run_kernel.authorize_sufficiency_judgment(
+        inputs={
+            "contract_id": run_contract_projection.get("contract_id"),
+            "candidate_count": evidence_ledger_projection.get("candidate_count"),
+            "requirement_count": evidence_ledger_projection.get(
+                "requirement_count"
+            ),
+            "search_judgment_decision": search_judgment_projection.get("decision"),
+            "final_evidence_count": len(final_top_evidence),
+            "smart_model_enabled": bool(run_authority_sufficiency_smart_model),
+        }
+    )
+    sufficiency_result = execute_run_authority_sufficiency_judgment_action(
+        sufficiency_action,
+        judgment_input=sufficiency_input,
+        ask_model=ask_model if run_authority_sufficiency_smart_model else None,
+        clean_json_response=deps.clean_json_response,
+        smart_model_enabled=run_authority_sufficiency_smart_model,
+        provider=smart_provider,
+        model=smart_model,
+        base_url=local_url,
+        api_key=or_api_key,
+        effort="high",
+        use_reasoning=use_reasoning,
+        measure_context_stage=_measure_context_stage,
+    )
+    run_kernel.reduce(sufficiency_result.observation)
+    sufficiency_judgment_projection = dict(
+        run_kernel.state.sufficiency_judgment_projection
+    )
+
     status.update("Writing final report...")
 
     final_answer_packet_action = run_kernel.authorize_final_answer_packet_prepare(
@@ -4297,6 +4382,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "evidence_ledger_available": bool(evidence_ledger_projection),
             "run_contract_available": bool(run_contract_projection),
             "run_contract_id": run_contract_projection.get("contract_id"),
+            "sufficiency_judgment_available": bool(
+                sufficiency_judgment_projection
+            ),
+            "sufficiency_decision": sufficiency_judgment_projection.get(
+                "decision"
+            ),
         }
     )
     final_answer_author_runtime = execute_final_answer_packet_prepare_action_from_scope(
