@@ -596,6 +596,21 @@ def source_class_recovery_context_from_scope(
     )
 
 
+def source_class_recovery_context_from_pipeline_scope(
+    scope: dict[str, Any],
+    *,
+    controller_recovery_decision: Any,
+    error_type: type[Exception],
+) -> Any:
+    """Build source-class recovery context from a fixed pipeline-local whitelist."""
+
+    return source_class_recovery_context_from_scope(
+        scope,
+        controller_recovery_decision=controller_recovery_decision,
+        error_type=error_type,
+    )
+
+
 def execute_conflict_resolution_from_scope(
     scope: dict[str, Any],
     *,

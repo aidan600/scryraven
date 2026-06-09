@@ -181,7 +181,7 @@ from core.retrieval_dispatch_runtime import (
     execute_disambiguation_retry_from_scope,
     execute_embedding_action,
     execute_main_retrieval_pass_from_scope,
-    source_class_recovery_context_from_scope,
+    source_class_recovery_context_from_pipeline_scope,
 )
 from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
 from core.retrieval_quality import (
@@ -197,10 +197,13 @@ from core.retrieval_quality import (
     wants_official_source_bias,
 )
 from core.retrieval_scheduler import (
+    continuation_action_values,
+    main_retrieval_action_values,
     schedule_evaluator_continuation,
-    schedule_main_retrieval_from_provider_record,
-    schedule_provider_continuation_from_record,
-    schedule_weak_corpus_recovery_from_decision,
+    schedule_expander_continuation_from_pipeline_scope,
+    schedule_main_retrieval_from_pipeline_scope,
+    schedule_scout_continuation_from_pipeline_scope,
+    schedule_weak_corpus_recovery_from_pipeline_scope,
 )
 from core.retrieval_stop_controller import (
     RetrievalStopControllerDecision,
@@ -222,7 +225,7 @@ from core.router_query_preparation_contract import (
     build_router_query_preparation_state,
     with_router_query_runtime_posture,
 )
-from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
+from core.routing import is_quantitative_query, select_providers
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
 from core.run_logging import (
@@ -3182,51 +3185,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             recovery_active=weak_corpus_recovery_used and iteration > 1,
         )
         queries_by_iteration = query_authority.queries_by_iteration()
-        scheduled_force_component_providers = list(force_component_providers)
-        scout_override = (
-            scheduled_force_component_providers
-            if scheduled_force_component_providers
-            else None
-        )
-        provider_plan_record = provider_plan.record_main_retrieval(
-            query_type=query_type,
-            intent=intent,
-            complexity=complexity,
-            report_type=report_type,
-            is_academic=is_academic,
-            suppress_tavily=suppress_tavily,
-            base_search_depth=search_depth,
-            iteration=iteration,
-            primary_override=a5_provider_override,
-            scout_override=scout_override,
-            choose_search_depth=choose_retrieval_search_depth,
-            merge_provider_overrides=merge_search_provider_overrides,
-            select_provider_list=select_providers,
-        )
-        retrieval_provider_role = (
-            "weak_corpus_recovery"
-            if weak_corpus_recovery_used and iteration > 1
-            else "main_retrieval"
-        )
-        retrieval_scheduled_action = schedule_main_retrieval_from_provider_record(
+        retrieval_scheduled_action = schedule_main_retrieval_from_pipeline_scope(
+            locals(),
             current_queries=current_queries,
-            iteration=iteration,
-            provider_role=retrieval_provider_role,
-            provider_record=provider_plan_record,
             recovery_active=weak_corpus_recovery_used and iteration > 1,
-            force_component_providers=scheduled_force_component_providers,
+            choose_search_depth=choose_retrieval_search_depth,
         )
-        current_queries = retrieval_scheduled_action.queries_list()
-        current_search_depth = retrieval_scheduled_action.search_depth
-        loop_providers = retrieval_scheduled_action.providers_list()
+        current_queries, current_search_depth, loop_providers, force_component_providers = main_retrieval_action_values(retrieval_scheduled_action)
         current_search_depth_for_recovery = current_search_depth
         status.step(f"--- **Iteration {iteration}/{max_iterations}** ---")
         status.step(f"Executing Searches: {current_queries} ({current_search_depth} depth)")
         past_searches.extend(current_queries)
 
-        force_component_providers = (
-            retrieval_scheduled_action.force_component_providers_list()
-        )
         status.step(f"Providers this pass: {', '.join(loop_providers)}")
         providers_by_iteration.append(list(loop_providers))
         similarity_prior_queries = (
@@ -3402,11 +3372,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 )
                 if weak_corpus_decision.approved:
                     weak_corpus_recovery_schedule = (
-                        schedule_weak_corpus_recovery_from_decision(
+                        schedule_weak_corpus_recovery_from_pipeline_scope(
+                            locals(),
                             recovery_queries=weak_corpus_decision.queries,
                             iteration=iteration + 1,
-                            current_search_depth=current_search_depth,
-                            providers=loop_providers,
                             authorized_action_name=weak_corpus_authorized_action,
                             recover_action_name=RECOVER_WEAK_CORPUS,
                             controller_decision_reason=weak_corpus_decision.reason,
@@ -3524,37 +3493,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                             if not scout_continuation_authorized:
                                 is_sufficient = True
                                 continue
-                            scout_provider_plan_record = provider_plan.record_continuation(
-                                role="scout_continuation",
-                                query_type=query_type,
-                                intent=intent,
-                                complexity=complexity,
-                                report_type=report_type,
-                                is_academic=is_academic,
-                                suppress_tavily=suppress_tavily,
-                                override=["exa", "linkup"],
-                                override_is_user=False,
-                                select_provider_list=select_providers,
+                            scout_continuation_schedule = schedule_scout_continuation_from_pipeline_scope(
+                                locals(),
+                                current_queries=authorized_scout_queries,
+                                iteration=iteration + 1,
+                                continuation_authorized=scout_continuation_authorized,
                             )
-                            scout_continuation_schedule = (
-                                schedule_provider_continuation_from_record(
-                                    stage="scout_directed_continuation",
-                                    current_queries=authorized_scout_queries,
-                                    iteration=iteration + 1,
-                                    provider_role="scout_continuation",
-                                    provider_record=scout_provider_plan_record,
-                                    continuation_authorized=(
-                                        scout_continuation_authorized
-                                    ),
-                                    query_source="scout",
-                                )
-                            )
-                            current_queries = (
-                                scout_continuation_schedule.queries_list()
-                            )
-                            force_component_providers = (
-                                scout_continuation_schedule
-                                .force_component_providers_list()
+                            current_queries, force_component_providers = (
+                                continuation_action_values(scout_continuation_schedule)
                             )
                             _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
                             iterations_run += 1
@@ -3627,43 +3573,20 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                         if not expander_continuation_authorized:
                             is_sufficient = True
                             continue
-                        expander_provider_plan_record = provider_plan.record_continuation(
-                            role="expander_continuation",
-                            query_type=query_type,
-                            intent=intent,
-                            complexity=complexity,
-                            report_type=report_type,
-                            is_academic=is_academic,
-                            suppress_tavily=suppress_tavily,
-                            override=None,
-                            override_is_user=True,
-                            select_provider_list=select_providers,
+                        expander_continuation_schedule = schedule_expander_continuation_from_pipeline_scope(
+                            locals(),
+                            current_queries=authorized_expander_queries,
+                            iteration=iteration + 1,
+                            continuation_authorized=expander_continuation_authorized,
                         )
-                        expander_continuation_schedule = (
-                            schedule_provider_continuation_from_record(
-                                stage="expander_component_queries",
-                                current_queries=authorized_expander_queries,
-                                iteration=iteration + 1,
-                                provider_role="expander_continuation",
-                                provider_record=expander_provider_plan_record,
-                                continuation_authorized=(
-                                    expander_continuation_authorized
-                                ),
-                                query_source="expander",
-                            )
-                        )
-                        current_queries = (
-                            expander_continuation_schedule.queries_list()
+                        current_queries, force_component_providers = (
+                            continuation_action_values(expander_continuation_schedule)
                         )
                         run_log.info(
                             "Expander generated %d component queries: %s | Reason: %s",
                             len(current_queries), current_queries, expander_reasoning,
                         )
                         status.step(f"Component gaps identified: {current_queries}")
-                        force_component_providers = (
-                            expander_continuation_schedule
-                            .force_component_providers_list()
-                        )
                         _acc_iter_time(iteration, _iter_t0, iter_timing_seconds)
                         iterations_run += 1
                         iteration += 1
@@ -4259,38 +4182,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             dict(retrieval_batch_dispatch_trace)
         )
 
-    source_class_recovery_scope = {
-        "_run_controller_mirror": _run_controller_mirror,
-        "authorized_spine_action": authorized_spine_action,
-        "active_source_class_recovery_lifecycle": (
-            active_source_class_recovery_lifecycle
-        ),
-        "process_search_queries": process_search_queries,
-        "all_passages": all_passages,
-        "intent": intent,
-        "complexity": complexity,
-        "results_per_query": results_per_query,
-        "include_domains": include_domains,
-        "exclude_domains": exclude_domains,
-        "query_embedding": query_embedding,
-        "seen_urls": seen_urls,
-        "collected_images": collected_images,
-        "embed_provider": embed_provider,
-        "embed_model": embed_model,
-        "local_url": local_url,
-        "embed_texts": embed_texts,
-        "deps": deps,
-        "status": status,
-        "providers_by_iteration": providers_by_iteration,
-        "ACADEMIC_DOMAINS": ACADEMIC_DOMAINS,
-        "is_academic": is_academic,
-        "entity_hint_for_retrieval": entity_hint_for_retrieval,
-        "provider_diagnostics": provider_diagnostics,
-        "retrieval_pass_records": retrieval_pass_records,
-    }
     source_class_recovery_result = run_source_class_recovery_dispatch(
-        source_class_recovery_context_from_scope(
-            source_class_recovery_scope,
+        source_class_recovery_context_from_pipeline_scope(
+            locals(),
             controller_recovery_decision=build_controller_recovery_decision(
                 active_source_class_recovery_lifecycle
             ),

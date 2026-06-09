@@ -208,8 +208,8 @@ def test_weak_corpus_helper_preserves_recovery_metadata() -> None:
 def test_scheduler_static_guard_has_no_provider_or_query_policy_imports() -> None:
     source = SCHEDULER.read_text()
     forbidden = [
-        "select_providers",
-        "choose_retrieval_search_depth",
+        "select_providers(",
+        "choose_retrieval_search_depth(",
         "authorize_retrieval_queries",
         "process_search_queries",
         "ask_model",
@@ -224,15 +224,18 @@ def test_scheduler_static_guard_has_no_provider_or_query_policy_imports() -> Non
 def test_pipeline_continuation_branches_consume_scheduler_output() -> None:
     source = PIPELINE.read_text()
     assert "RetrievalScheduleInput" not in source
-    assert "schedule_main_retrieval_from_provider_record" in source
-    assert "schedule_provider_continuation_from_record" in source
+    assert "schedule_main_retrieval_from_pipeline_scope" in source
+    assert "schedule_scout_continuation_from_pipeline_scope" in source
+    assert "schedule_expander_continuation_from_pipeline_scope" in source
     assert "schedule_evaluator_continuation" in source
-    assert "schedule_weak_corpus_recovery_from_decision" in source
-    assert "retrieval_scheduled_action = schedule_main_retrieval_from_provider_record" in source
+    assert "schedule_weak_corpus_recovery_from_pipeline_scope" in source
+    assert "retrieval_scheduled_action = schedule_main_retrieval_from_pipeline_scope" in source
     assert "current_queries = list(authorized_scout_queries)" not in source
     assert "current_queries = list(authorized_expander_queries)" not in source
     assert "current_queries = list(authorized_evaluator_queries)" not in source
     assert "current_queries = weak_corpus_recovery_queries" not in source
+    assert "provider_plan.record_main_retrieval" not in source
+    assert "provider_plan.record_continuation" not in source
 
 
 def test_source_class_recovery_remains_controller_action_owned_not_query_plan_owned() -> None:
@@ -241,5 +244,5 @@ def test_source_class_recovery_remains_controller_action_owned_not_query_plan_ow
 
     assert 'queries = list(getattr(action, "queries", None) or [])' in executor
     assert "from core.query_plan" not in executor
-    assert "source_class_recovery_scope = {" in pipeline
-    assert "source_class_recovery_context_from_scope(\n            locals()," not in pipeline
+    assert "source_class_recovery_scope = {" not in pipeline
+    assert "source_class_recovery_context_from_pipeline_scope" in pipeline

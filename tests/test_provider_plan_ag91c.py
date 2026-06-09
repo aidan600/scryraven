@@ -423,13 +423,12 @@ def test_static_guard_provider_plan_is_not_provider_or_search_brain() -> None:
 
 def test_pipeline_consumes_provider_plan_for_main_loop_selection() -> None:
     source = _read_text(PIPELINE)
+    scheduler_source = _read_text(ROOT / "core" / "retrieval_scheduler.py")
     assert "provider_plan = ProviderPlan.from_available_keys" in source
-    assert "provider_plan_record = provider_plan.record_main_retrieval" in source
-    assert "scout_provider_plan_record = provider_plan.record_continuation" in source
-    assert "expander_provider_plan_record = provider_plan.record_continuation" in source
-    assert "provider_record=provider_plan_record" in source
-    assert "loop_providers = retrieval_scheduled_action.providers_list()" in source
-    assert "current_search_depth = retrieval_scheduled_action.search_depth" in source
+    assert "schedule_main_retrieval_from_pipeline_scope" in source
+    assert "provider_record = provider_plan.record_main_retrieval" in scheduler_source
+    assert "provider_record = provider_plan.record_continuation" in scheduler_source
+    assert "main_retrieval_action_values(retrieval_scheduled_action)" in source
 
 
 def test_supplemental_provider_plan_record_matches_legacy_depth_and_provider_selection() -> None:
