@@ -42,6 +42,7 @@ class RunConfig:
     local_url: str = "http://localhost:1234/v1"
     or_api_key: str = ""
     use_reasoning: bool = True
+    run_authority_contract_smart_model: bool = False
 
     # Provider / corpus-state overrides (from UI failure-card controls)
     provider_override: list[str] | None = None

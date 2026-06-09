@@ -171,6 +171,44 @@ def _source_obligations_from_answer_contract(
     return tuple(obligations)
 
 
+def _source_obligations_from_run_contract(
+    projection: Any,
+) -> tuple[SourceObligationRecord, ...]:
+    if not isinstance(projection, Mapping):
+        return ()
+    if projection.get("owner") != "RunKernel.RunAuthorityContract":
+        return ()
+    obligations: list[SourceObligationRecord] = []
+    for index, requirement in enumerate(projection.get("source_requirements") or (), start=1):
+        if not isinstance(requirement, Mapping):
+            continue
+        if str(requirement.get("strictness") or "") != "required":
+            continue
+        source_class = str(requirement.get("required_source_class") or "").strip()
+        if not source_class:
+            continue
+        kind = str(requirement.get("requirement_kind") or "").strip()
+        if kind == "official_current":
+            status = SourceObligationStatus.OFFICIAL_CURRENT_UNSATISFIED
+        elif kind == "source_bound_numeric":
+            status = SourceObligationStatus.SOURCE_BOUND_VALUE_MISSING
+        else:
+            status = SourceObligationStatus.MISSING_REQUIRED_SOURCE
+        obligations.append(
+            SourceObligationRecord(
+                obligation_id=(
+                    f"run-contract:{index}:"
+                    f"{requirement.get('requirement_id') or source_class}"
+                ),
+                source_class=source_class,
+                status=status,
+                custody_requirement_id=requirement.get("requirement_id"),
+                reason="run_authority_contract_required_source_obligation",
+            )
+        )
+    return tuple(obligations)
+
+
 def _dedupe_source_obligations(
     obligations: Sequence[SourceObligationRecord],
 ) -> tuple[SourceObligationRecord, ...]:
@@ -294,6 +332,21 @@ def _mandatory_caveats(
     return tuple(dict.fromkeys(caveats))
 
 
+def _contract_final_posture_items(
+    projection: Any,
+    key: str,
+) -> tuple[str, ...]:
+    if not isinstance(projection, Mapping):
+        return ()
+    policy = projection.get("final_posture_policy")
+    if not isinstance(policy, Mapping):
+        return ()
+    value = policy.get(key)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return tuple(str(item) for item in value if str(item or "").strip())
+    return ()
+
+
 def _readiness(
     *,
     evidence_records: Sequence[FinalEvidenceRecord],
@@ -336,6 +389,7 @@ def build_final_answer_packet(
     final_answer_source_telemetry: Mapping[str, Any] | None = None,
     source_obligation_projection: Any | None = None,
     answer_contract_projection: Any | None = None,
+    run_contract_projection: Any | None = None,
     query_lineage_refs: Mapping[str, Any] | None = None,
     evidence_sufficient: bool | None = None,
     corpus_weak: bool | None = None,
@@ -353,6 +407,7 @@ def build_final_answer_packet(
     source_obligations = _dedupe_source_obligations(
         _source_obligations_from_custody(source_obligation_projection)
         + _source_obligations_from_answer_contract(answer_contract_projection)
+        + _source_obligations_from_run_contract(run_contract_projection)
     )
     author_evidence_ids = []
     author_urls = {str(p.get("url") or "") for p in (author_evidence or ())}
@@ -373,6 +428,12 @@ def build_final_answer_packet(
     ]
     if source_obligations:
         prohibited.append("do_not_infer_source_obligation_satisfaction_from_citation_presence")
+    prohibited.extend(
+        _contract_final_posture_items(
+            run_contract_projection,
+            "prohibited_upgrades",
+        )
+    )
     custody_summary = _custody_summary(source_obligation_projection)
     if custody_summary.get("final_evidence_compatibility_gap_count"):
         prohibited.append("do_not_treat_uncustodied_final_evidence_as_ledger_proof")
@@ -400,14 +461,22 @@ def build_final_answer_packet(
             synth_was_insufficient=synth_was_insufficient,
             source_obligations=source_obligations,
         ),
-        mandatory_caveats=_mandatory_caveats(
-            author_notes=author_notes,
-            corpus_weak=corpus_weak,
-            failure_card_payload=failure_card_payload,
-            source_obligations=source_obligations,
-            synth_was_insufficient=synth_was_insufficient,
+        mandatory_caveats=tuple(
+            dict.fromkeys(
+                _mandatory_caveats(
+                    author_notes=author_notes,
+                    corpus_weak=corpus_weak,
+                    failure_card_payload=failure_card_payload,
+                    source_obligations=source_obligations,
+                    synth_was_insufficient=synth_was_insufficient,
+                )
+                + _contract_final_posture_items(
+                    run_contract_projection,
+                    "mandatory_caveats",
+                )
+            )
         ),
-        prohibited_upgrades=tuple(prohibited),
+        prohibited_upgrades=tuple(dict.fromkeys(prohibited)),
         author_input_refs=author_refs,
         query_lineage_refs=dict(query_lineage_refs or {}),
         readiness_status=readiness_status,

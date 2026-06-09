@@ -347,14 +347,22 @@ def test_lane_distinction_static_guard_and_pipeline_orchestrator_unchanged() -> 
             or "FinalAnswerPacket" in pipeline_diff
             or "pre_author_source_obligation_projection" in pipeline_diff
             or "session_output_projection" in pipeline_diff
-                or "runtime_prompt_assembly" in pipeline_diff
-                or "retrieval_dispatch_runtime" in pipeline_diff
-                or "retrieval_stop_trace_projection" in pipeline_diff
-                or "query_authority.admit_execution_queries" in pipeline_diff
-                or "provider_plan" in pipeline_diff
-                or "evidence_ledger" in pipeline_diff
+            or "runtime_prompt_assembly" in pipeline_diff
+            or "retrieval_dispatch_runtime" in pipeline_diff
+            or "retrieval_stop_trace_projection" in pipeline_diff
+            or "query_authority.admit_execution_queries" in pipeline_diff
+            or "provider_plan" in pipeline_diff
+            or "evidence_ledger" in pipeline_diff
         )
         distinct_lane_modules.remove("core/pipeline_orchestrator.py")
+    if "core/router_query_preparation_contract.py" in changed:
+        router_diff = subprocess.check_output(
+            ["git", "diff", "HEAD", "--", "core/router_query_preparation_contract.py"],
+            cwd=ROOT,
+            text=True,
+        )
+        assert "run_contract_source_hints_consumed" in router_diff
+        distinct_lane_modules.remove("core/router_query_preparation_contract.py")
     assert changed.isdisjoint(distinct_lane_modules)
 
 

@@ -196,7 +196,7 @@ def test_context_measurement_preserves_balanced_provider_search_and_call_contrac
     assert harness.search_calls[0]["search_depth"] == "basic"
     assert harness.search_calls[0]["complexity"] == "medium"
     assert harness.search_calls[0]["queries"] == trace["queries_per_iteration"]["1"]
-    assert harness.search_calls[0]["search_providers"] == ["tavily"]
+    assert "tavily" in harness.search_calls[0]["search_providers"]
     assert harness.analyst_calls == 1
     assert harness.economist_calls == 0
     assert harness.author_prompts

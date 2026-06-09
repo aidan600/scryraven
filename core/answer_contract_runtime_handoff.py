@@ -45,6 +45,7 @@ from core.retrieval_stop_controller import (
     RetrievalStopControllerDecision,
     RetrievalStopDecision,
 )
+from core.run_authority_contract import source_class_facts_from_run_contract_projection
 from core.run_controller import RunController
 from core.source_class_recovery_controller import (
     SOURCE_CLASS_RECOVERY_PROVIDER_ROLE,
@@ -125,12 +126,18 @@ def _source_classes_present_from_runtime(
     source_tier_counts: Mapping[str, Any],
     source_class_recovery_telemetry: Mapping[str, Any],
     evidence_ledger_projection: Mapping[str, Any] | None = None,
+    run_contract_projection: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     ledger_facts = source_class_facts_from_evidence_ledger_projection(
         evidence_ledger_projection
     )
     if ledger_facts["present"] or ledger_facts["missing"]:
         return _copy_string_tuple(ledger_facts["present"])
+    contract_facts = source_class_facts_from_run_contract_projection(
+        run_contract_projection
+    )
+    if contract_facts["required"]:
+        return ()
 
     present: list[str] = []
     if int(source_tier_counts.get("official", 0) or 0) > 0:
@@ -156,12 +163,18 @@ def _source_classes_missing_from_runtime(
     source_class_recovery_telemetry: Mapping[str, Any],
     active_source_class_recovery_lifecycle: Mapping[str, Any],
     evidence_ledger_projection: Mapping[str, Any] | None = None,
+    run_contract_projection: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     ledger_facts = source_class_facts_from_evidence_ledger_projection(
         evidence_ledger_projection
     )
     if ledger_facts["present"] or ledger_facts["missing"]:
         return _copy_string_tuple(ledger_facts["missing"])
+    contract_facts = source_class_facts_from_run_contract_projection(
+        run_contract_projection
+    )
+    if contract_facts["missing"]:
+        return _copy_string_tuple(contract_facts["missing"])
 
     lifecycle_missing = active_source_class_recovery_lifecycle.get(
         f"{_SOURCE_CLASS_TRACE_PREFIX}missing_classes"
@@ -178,12 +191,18 @@ def _source_classes_missing_from_runtime(
 def _current_source_classes_missing_from_runtime(
     source_class_recovery_telemetry: Mapping[str, Any],
     evidence_ledger_projection: Mapping[str, Any] | None = None,
+    run_contract_projection: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     ledger_facts = source_class_facts_from_evidence_ledger_projection(
         evidence_ledger_projection
     )
     if ledger_facts["present"] or ledger_facts["missing"]:
         return _copy_string_tuple(ledger_facts["missing"])
+    contract_facts = source_class_facts_from_run_contract_projection(
+        run_contract_projection
+    )
+    if contract_facts["missing"]:
+        return _copy_string_tuple(contract_facts["missing"])
 
     status_gaps: list[str] = []
     satisfaction_status = source_class_recovery_telemetry.get(
@@ -375,6 +394,7 @@ class RuntimeAnswerContractFacts:
     source_class_recovery_telemetry: Mapping[str, Any] = field(default_factory=dict)
     active_source_class_recovery_lifecycle: Mapping[str, Any] = field(default_factory=dict)
     evidence_ledger_projection: Mapping[str, Any] = field(default_factory=dict)
+    run_contract_projection: Mapping[str, Any] = field(default_factory=dict)
     weak_corpus: bool = False
     weak_corpus_reason: str | None = None
     conflicts_present: bool = False
@@ -480,6 +500,7 @@ def _pipeline_facts_from_runtime(
     source_classes_missing = _current_source_classes_missing_from_runtime(
         source_class_recovery_telemetry,
         evidence_ledger_projection=facts.evidence_ledger_projection,
+        run_contract_projection=facts.run_contract_projection,
     )
     weak_corpus_reason = (
         facts.weak_corpus_reason
@@ -505,6 +526,7 @@ def _pipeline_facts_from_runtime(
                 source_tier_counts=source_tier_counts,
                 source_class_recovery_telemetry=source_class_recovery_telemetry,
                 evidence_ledger_projection=facts.evidence_ledger_projection,
+                run_contract_projection=facts.run_contract_projection,
             ),
             source_classes_missing=source_classes_missing,
             derive_missing_source_classes=True,
