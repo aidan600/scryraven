@@ -70,6 +70,14 @@ and recovery counts, sufficiency posture, FinalAnswerPacket caveats and
 citation-eligible source IDs, final answer text, observed ingredients/claims,
 missing ingredients, unsupported claims, and citation alignment findings.
 
+AG-93E adds a normalized final evidence/citation custody projection for
+completed-run snapshots. When a sanitized `run_kernel` projection contains
+`evidence_ledger` and `final_answer_packet`, AG-93C can consume those fields as
+the source of final evidence and citation custody even if the older
+`ControllerEvidenceLedger` diagnostic still reports `legacy_gap_observed`. The
+legacy gap remains represented under the normalized custody projection and is not
+treated as ControllerEvidenceLedger completion.
+
 ## Human-Readable Rendering
 
 `packet.to_markdown()` renders a compact review packet with these sections:
@@ -124,6 +132,8 @@ Focused tests cover:
 - citation source alignment mismatches;
 - non-failing prose notes separated from evidence failures;
 - weak-corpus insufficient-evidence posture;
+- AG-93E successful-answer completed-run projection with legacy Controller
+  evidence/citation custody gap but RunKernel FinalAnswerPacket custody;
 - privacy/output hygiene for synthetic forbidden keys;
 - static offline-boundary guards for the AG-93C module.
 

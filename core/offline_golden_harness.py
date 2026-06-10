@@ -20,6 +20,9 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.final_evidence_citation_custody_projection import (
+    build_ag93c_observed_snapshot_projection,
+)
 from core.offline_golden_tasks import GoldenTask
 
 OFFLINE_GOLDEN_HARNESS_SCHEMA_VERSION = "offline_golden_harness_ag93b_v1"
@@ -222,12 +225,14 @@ class OfflineObservedRunSnapshot:
     final_answer_ingredient_ids: tuple[str, ...] = ()
     final_answer_claim_ids: tuple[str, ...] = ()
     final_citations: tuple[Mapping[str, Any], ...] = ()
+    final_evidence_citation_custody: Mapping[str, Any] = field(default_factory=dict)
     search_attempt_count: int = 0
     recovery_attempt_count: int = 0
     style_notes: tuple[str, ...] = ()
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "OfflineObservedRunSnapshot":
+        payload = build_ag93c_observed_snapshot_projection(payload)
         final_answer = _mapping(payload.get("final_answer"))
         search = _first_projection(
             payload,
@@ -289,6 +294,11 @@ class OfflineObservedRunSnapshot:
             ),
             final_citations=tuple(
                 dict(item) for item in _list(citations) if isinstance(item, Mapping)
+            ),
+            final_evidence_citation_custody=_first_projection(
+                payload,
+                "final_evidence_citation_custody",
+                "final_evidence_citation_custody_projection",
             ),
             search_attempt_count=int(search_attempt_count or 0),
             recovery_attempt_count=int(recovery_attempt_count or 0),
