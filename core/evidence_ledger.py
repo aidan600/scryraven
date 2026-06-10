@@ -696,6 +696,15 @@ class EvidenceLedger:
                 or "candidate_observation_link",
                 status=disposition.value,
             )
+        if not requirement_ids:
+            for requirement in self.requirements.values():
+                if _candidate_satisfies_requirement(candidate, requirement):
+                    self._link_candidate(
+                        requirement.requirement_id,
+                        candidate_id,
+                        reason="selected_candidate_matches_existing_requirement",
+                        status=disposition.value,
+                    )
         if disposition is CandidateDisposition.DROPPED:
             self._gap(
                 EvidenceCustodyGapType.CANDIDATE_DROPPED_WITHOUT_DISPOSITION,
@@ -936,15 +945,37 @@ def build_evidence_ledger_observation_from_runtime(
         candidate_id = _candidate_id(source, index=index)
         if not candidate_id:
             continue
+        selected_disposition = (
+            CandidateDisposition.ACCEPTED.value
+            if final_evidence_selected
+            else CandidateDisposition.OBSERVED.value
+        )
         source_candidates.append(
             {
                 "candidate_id": candidate_id,
+                "source_id": source.get("source_id"),
                 "url": source.get("url"),
                 "title": source.get("title"),
+                "domain": source.get("domain") or source.get("normalized_domain"),
+                "provider_name": source.get("provider_name")
+                or source.get("provider"),
+                "provider_role": source.get("provider_role")
+                or source.get("_provider_role"),
+                "retrieval_pass_id": source.get("retrieval_pass_id")
+                or source.get("retrieval_stage"),
+                "query_ref": source.get("query_ref")
+                or source.get("query_preview")
+                or source.get("query"),
                 "source_tier": source.get("source_tier"),
                 "source_class": source.get("source_class"),
-                "readable_status": source.get("readability_status") or "readable",
-                "disposition": CandidateDisposition.OBSERVED.value,
+                "currentness_signal": source.get("currentness_signal")
+                or source.get("currentness"),
+                "readable_status": source.get("readable_status")
+                or source.get("readability_status")
+                or "readable",
+                "fetchable_status": source.get("fetchable_status")
+                or source.get("fetch_status"),
+                "disposition": selected_disposition,
                 "record_kind": CandidateCustodyKind.FACT.value,
                 "final_evidence_eligible": bool(final_evidence_selected),
             }
@@ -1171,6 +1202,12 @@ def _candidate_satisfies_requirement(
         candidate_tier = _clean_token(candidate.source_tier)
         if required_class == "official_current_rules" and candidate_tier in _STRONG_SOURCE_TIERS:
             return True
+        if required_class == "current_primary_or_official" and candidate_class in {
+            "official_current_rules",
+            "legal_or_regulatory_text",
+            "primary_source_documents",
+        }:
+            return True
         if candidate_class != required_class:
             return False
     required_tier = _clean_token(requirement.required_source_tier)
@@ -1198,6 +1235,15 @@ def _candidate_requirement_rejection_reason(
         if not (
             _clean_token(requirement.required_source_class) == "official_current_rules"
             and _clean_token(candidate.source_tier) in _STRONG_SOURCE_TIERS
+        ) and not (
+            _clean_token(requirement.required_source_class)
+            == "current_primary_or_official"
+            and _clean_token(candidate.source_class)
+            in {
+                "official_current_rules",
+                "legal_or_regulatory_text",
+                "primary_source_documents",
+            }
         ):
             return "candidate_source_class_does_not_match_requirement"
     return candidate.disposition_reason or "candidate_not_accepted_for_requirement"
@@ -1215,6 +1261,7 @@ def _strong_requirement(requirement: SourceRequirementRecord) -> bool:
 def _strong_source_candidate(candidate: EvidenceCandidate) -> bool:
     return (
         _clean_token(candidate.source_class) in _STRONG_SOURCE_CLASSES
+        or _clean_token(candidate.source_class) == "sourced_numeric_values"
         or _clean_token(candidate.source_tier) in _STRONG_SOURCE_TIERS
         or (_clean_text(candidate.domain, limit=160) or "").endswith(".gov")
     ) and _clean_token(candidate.currentness_signal) not in _BAD_CURRENTNESS
