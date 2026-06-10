@@ -256,6 +256,119 @@ def _anchor_claim_type(anchor_packet: dict[str, Any] | None) -> str:
     return _compact_text(_anchor_payload(anchor_packet).get("claim_or_metric_type"), limit=80).casefold()
 
 
+def _government_access_identity_rule_request(text: str) -> bool:
+    identity_document_context = _has_any(
+        text,
+        (
+            r"\b(?:identification|identity\s+documents?|id\s+documents?|"
+            r"acceptable\s+ids?|accepted\s+ids?|valid\s+ids?)\b",
+            r"\b(?:credentials?|proof\s+of\s+(?:identity|identification)|"
+            r"identity\s+proof|documentary\s+proof)\b",
+            r"\b(?:documents?|proof|credentials?)\s+"
+            r"(?:accepted|required|needed|valid|acceptable)\b",
+            r"\b(?:accepted|acceptable|required|valid)\s+"
+            r"(?:documents?|proof|credentials?)\b",
+        ),
+    )
+    if not identity_document_context:
+        return False
+
+    requirement_context = _has_any(
+        text,
+        (
+            r"\b(?:need|needs|needed|require|required|requires|must|have\s+to)\b",
+            r"\b(?:accepted|acceptable|valid|allowed|recognized|recognised)\b",
+            r"\bwhat\s+(?:identification|documents?|credentials?|proof)\s+"
+            r"(?:is|are)\s+(?:accepted|required|valid|needed)\b",
+        ),
+    )
+    access_context = _has_any(
+        text,
+        (
+            r"\b(?:access|entry|enter|admission|admitted|screening|"
+            r"security\s+checkpoint|checkpoint|travel|flight|flights|"
+            r"domestic\s+travel|domestic\s+flights?|air\s+travel|"
+            r"board|boarding|fly|service|services|benefits?|eligibility)\b",
+        ),
+    )
+    if not (requirement_context and access_context):
+        return False
+
+    official_or_government_context = _has_any(
+        text,
+        (
+            r"\b(?:official|government|public\s+authority|agency|"
+            r"federal|state|county|municipal|local|provincial)\b",
+            r"\b(?:regulatory|compliance|enforcement|effective\s+date|"
+            r"official\s+requirements?)\b",
+        ),
+    )
+    administered_access_context = _has_any(
+        text,
+        (
+            r"\b(?:screening|security\s+checkpoint|checkpoint|border|customs|"
+            r"airport|air\s+travel|domestic\s+travel|domestic\s+flights?|"
+            r"flights?|public\s+services?|public\s+benefits?|courts?|"
+            r"courthouse|government\s+building|voting|election|"
+            r"immigration|licens(?:e|ing)|permits?)\b",
+        ),
+    )
+    current_or_enforcement_context = _has_any(
+        text,
+        (
+            r"\b(?:current|currently|now|today|latest|as\s+of)\b",
+            r"\b(?:enforcement|effective|compliance)\s+(?:date|dates?|"
+            r"start(?:ed)?|begin|began|status)\b",
+            r"\bwhen\s+(?:did|does|do)\s+"
+            r"(?:enforcement|the\s+rule|the\s+requirement)\s+"
+            r"(?:start|begin|go\s+into\s+effect|take\s+effect)\b",
+        ),
+    )
+
+    return bool(
+        official_or_government_context
+        or (administered_access_context and current_or_enforcement_context)
+    )
+
+
+def _government_enforcement_date_rule_request(text: str) -> bool:
+    enforcement_date_context = _has_any(
+        text,
+        (
+            r"\bwhen\s+(?:did|does|do)\s+"
+            r"(?:enforcement|the\s+rule|the\s+requirement|requirements?)\s+"
+            r"(?:start|begin|go\s+into\s+effect|take\s+effect)\b",
+            r"\b(?:enforcement|effective|compliance)\s+(?:date|dates?)\b",
+            r"\b(?:rule|requirement|requirements?)\s+"
+            r"(?:start(?:ed)?|began|begin|effective|in\s+effect)\b",
+        ),
+    )
+    if not enforcement_date_context:
+        return False
+
+    rule_context = _has_any(
+        text,
+        (
+            r"\b(?:rules?|requirements?|guidance|eligibility|access|entry|"
+            r"screening|compliance|enforcement|accepted|acceptable|valid)\b",
+            r"\b(?:identification|id|credentials?|documents?|proof)\b",
+        ),
+    )
+    government_context = _has_any(
+        text,
+        (
+            r"\b(?:official|government|public\s+authority|agency|"
+            r"federal|state|county|municipal|local|provincial|regulatory|"
+            r"compliance)\b",
+            r"\b(?:public\s+services?|public\s+benefits?|courts?|courthouse|"
+            r"government\s+building|screening|security\s+checkpoint|"
+            r"border|customs|airport|air\s+travel|domestic\s+travel|"
+            r"domestic\s+flights?|immigration|licens(?:e|ing)|permits?)\b",
+        ),
+    )
+    return bool(rule_context and government_context)
+
+
 def _expected_source_classes(
     *,
     text: str,
@@ -320,8 +433,17 @@ def _expected_source_classes(
             r"\b(?:rate|rates|fee|fees|threshold|limit|maximum|eligibility|status)\b",
         ),
     )
+    government_access_identity_rule_request = (
+        _government_access_identity_rule_request(text)
+    )
+    government_enforcement_date_rule_request = (
+        _government_enforcement_date_rule_request(text)
+    )
     if (
-        official_current_request or official_current_numeric_rule_request
+        official_current_request
+        or official_current_numeric_rule_request
+        or government_access_identity_rule_request
+        or government_enforcement_date_rule_request
     ) and not historical_rule_context:
         add("official_current_rules", "query")
     elif source_class == "official" and claim_type == "rule" and not historical_rule_context:
