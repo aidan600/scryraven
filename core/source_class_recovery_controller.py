@@ -55,6 +55,10 @@ _ANSWER_CONTRACT_OFFICIAL_OR_LEGAL_CLASSES = {
     "legal_or_regulatory_text",
     "current_primary_or_official",
 }
+_STRONG_AUTHORITY_SOURCE_CLASSES = _ANSWER_CONTRACT_OFFICIAL_OR_LEGAL_CLASSES | {
+    "primary_source_documents",
+    "archival_primary_text",
+}
 _LEGAL_AUTHORITY_DOMAINS = {
     "federalregister.gov",
     "ecfr.gov",
@@ -395,7 +399,22 @@ def _has_useful_official_or_legal_evidence(
     ) or _authority_domain_present(signals)
 
 
-def _can_run_official_legal_source_class_after_weak_corpus(
+def _weak_corpus_path_present(snapshot: SourceClassRecoveryControllerInput) -> bool:
+    return bool(
+        snapshot.weak_corpus_recovery_used
+        or (
+            snapshot.weak_corpus_recovery_considered
+            and snapshot.weak_corpus_recovery_skip_reason
+            not in {None, "not_weak_corpus"}
+        )
+        or _corpus_is_weak(
+            corpus_state=snapshot.corpus_state,
+            corpus_weak=snapshot.corpus_weak,
+        )
+    )
+
+
+def _can_run_strong_authority_source_class_despite_weak_corpus(
     snapshot: SourceClassRecoveryControllerInput,
 ) -> bool:
     if not (
@@ -404,16 +423,19 @@ def _can_run_official_legal_source_class_after_weak_corpus(
         or snapshot.run_authority_required_recovery_allowed
     ):
         return False
-    if not snapshot.weak_corpus_recovery_used:
+    if not _weak_corpus_path_present(snapshot):
         return False
-    if snapshot.weak_corpus_recovery_skip_reason not in {None, "not_weak_corpus"}:
-        return False
-    if not (
+    missing_authority_classes = (
         set(snapshot.missing_expected_source_classes)
-        & _ANSWER_CONTRACT_OFFICIAL_OR_LEGAL_CLASSES
-    ):
+        & _STRONG_AUTHORITY_SOURCE_CLASSES
+    )
+    if not missing_authority_classes:
         return False
-    return not _has_useful_official_or_legal_evidence(snapshot.evidence_signals)
+    if missing_authority_classes & _ANSWER_CONTRACT_OFFICIAL_OR_LEGAL_CLASSES:
+        return not _has_useful_official_or_legal_evidence(
+            snapshot.evidence_signals
+        )
+    return True
 
 
 def build_source_class_recovery_controller_input(
@@ -492,8 +514,8 @@ def decide_source_class_recovery(
 ) -> SourceClassRecoveryDecision:
     """Return no_action, blocked_with_reason, or run_source_class_recovery."""
     blockers: list[str] = []
-    official_legal_gap_after_weak_corpus = (
-        _can_run_official_legal_source_class_after_weak_corpus(snapshot)
+    strong_authority_gap_despite_weak_corpus = (
+        _can_run_strong_authority_source_class_despite_weak_corpus(snapshot)
     )
 
     if not snapshot.recommendation_evaluated:
@@ -519,12 +541,12 @@ def decide_source_class_recovery(
         snapshot.weak_corpus_recovery_considered
         and snapshot.weak_corpus_recovery_skip_reason not in {None, "not_weak_corpus"}
     )
-    if weak_recovery_owns_path and not official_legal_gap_after_weak_corpus:
+    if weak_recovery_owns_path and not strong_authority_gap_despite_weak_corpus:
         blockers.append("blocked_by_weak_corpus_recovery")
     elif _corpus_is_weak(
         corpus_state=snapshot.corpus_state,
         corpus_weak=snapshot.corpus_weak,
-    ) and not official_legal_gap_after_weak_corpus:
+    ) and not strong_authority_gap_despite_weak_corpus:
         blockers.append("blocked_by_corpus_weak")
     if (
         not snapshot.iteration_budget_available
