@@ -3,6 +3,9 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+from core.authoritative_source_action_orchestrator_adapter import (
+    build_authoritative_source_action_orchestrator_handoff,
+)
 from core.controller_action_envelope import RECOVER_MISSING_SOURCE_CLASS
 from core.controller_loop_spine import build_controller_loop_spine_result
 from core.controller_provider_search_allocation import (
@@ -23,10 +26,6 @@ from core.source_class_recovery_runner import (
     SourceClassRecoveryRunnerContext,
     run_source_class_recovery_dispatch,
 )
-from core.authoritative_source_action_orchestrator_adapter import (
-    build_authoritative_source_action_orchestrator_handoff,
-)
-
 
 _QUERY = (
     "Do people need REAL ID or other acceptable identification for domestic "
