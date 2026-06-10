@@ -1,0 +1,683 @@
+{
+  "schema_version": "offline_observed_snapshot_ag93b_v1",
+  "snapshots": [
+    {
+      "task_id": "ag93b_current_official_fact",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_alpha_official_current",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_alpha_official_current",
+            "status": "satisfied",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current",
+            "linked_candidate_ids": ["src_alpha_official_current"]
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_alpha_official_current",
+            "source_class": "official_current_rules",
+            "source_tier": "official",
+            "currentness_signal": "current",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": true
+          },
+          {
+            "candidate_id": "src_alpha_secondary_context",
+            "source_class": "reputable_secondary",
+            "source_tier": "secondary",
+            "currentness_signal": "current",
+            "fact_disposition": "lower_tier"
+          }
+        ],
+        "custody_gaps": []
+      },
+      "search": {
+        "decision": "stop_satisfied",
+        "classifications": ["contract_satisfied"],
+        "target_source_classes": [],
+        "attempt_count": 1,
+        "recovery_attempt_count": 0
+      },
+      "sufficiency": {
+        "decision": "ready_direct",
+        "final_answer_posture": "direct_answer",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_upgrade_secondary_alpha_context_to_official_current"]
+      },
+      "final_packet": {
+        "readiness_status": "author_ready",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_upgrade_secondary_alpha_context_to_official_current"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_alpha_official_current",
+            "source_id": "src_alpha_official_current"
+          }
+        ],
+        "citation_eligible": [
+          {
+            "citation_id": "cit_alpha_official_current",
+            "evidence_id": "ev_alpha_official_current",
+            "source_id": "src_alpha_official_current"
+          }
+        ]
+      },
+      "final_answer": {
+        "text": "The Alpha permit window is open under the current official fixture notice.",
+        "ingredient_ids": ["alpha_current_status"],
+        "claim_ids": ["alpha_current_status"],
+        "citations": [
+          {
+            "ingredient_id": "alpha_current_status",
+            "source_ids": ["src_alpha_official_current"]
+          }
+        ]
+      }
+    },
+    {
+      "task_id": "ag93b_legal_regulatory_current_primary",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_legal_primary_current",
+            "required_source_class": "legal_or_regulatory_text",
+            "required_source_tier": "primary",
+            "required_currentness": "current"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_legal_primary_current",
+            "status": "satisfied",
+            "required_source_class": "legal_or_regulatory_text",
+            "required_source_tier": "primary",
+            "required_currentness": "current",
+            "linked_candidate_ids": ["src_legal_primary_current"]
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_legal_primary_current",
+            "source_class": "legal_or_regulatory_text",
+            "source_tier": "primary",
+            "currentness_signal": "current",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": true
+          },
+          {
+            "candidate_id": "src_legal_secondary_summary",
+            "source_class": "reputable_secondary",
+            "source_tier": "secondary",
+            "currentness_signal": "current",
+            "fact_disposition": "lower_tier"
+          }
+        ],
+        "custody_gaps": []
+      },
+      "search": {
+        "decision": "stop_satisfied",
+        "classifications": ["contract_satisfied"],
+        "attempt_count": 1,
+        "recovery_attempt_count": 0
+      },
+      "sufficiency": {
+        "decision": "ready_direct",
+        "final_answer_posture": "direct_answer",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_treat_secondary_summary_as_legal_primary"]
+      },
+      "final_packet": {
+        "readiness_status": "author_ready",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_treat_secondary_summary_as_legal_primary"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_legal_primary_current",
+            "source_id": "src_legal_primary_current"
+          }
+        ],
+        "citation_eligible": [
+          {
+            "citation_id": "cit_legal_primary_current",
+            "evidence_id": "ev_legal_primary_current",
+            "source_id": "src_legal_primary_current"
+          }
+        ]
+      },
+      "final_answer": {
+        "text": "The current Example Rule deadline is 12 fixture days under the primary legal fixture.",
+        "ingredient_ids": ["legal_current_deadline"],
+        "claim_ids": ["legal_current_deadline"],
+        "citations": [
+          {
+            "ingredient_id": "legal_current_deadline",
+            "source_ids": ["src_legal_primary_current"]
+          }
+        ]
+      }
+    },
+    {
+      "task_id": "ag93b_canonical_technical_documentation",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_widgetdb_canonical",
+            "required_source_class": "primary_source_documents",
+            "required_source_tier": "canonical",
+            "required_currentness": "current"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_widgetdb_canonical",
+            "status": "satisfied",
+            "required_source_class": "primary_source_documents",
+            "required_source_tier": "canonical",
+            "required_currentness": "current",
+            "linked_candidate_ids": ["src_widgetdb_canonical_doc"]
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_widgetdb_canonical_doc",
+            "source_class": "primary_source_documents",
+            "source_tier": "canonical",
+            "currentness_signal": "current",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": true
+          },
+          {
+            "candidate_id": "src_widgetdb_blog_context",
+            "source_class": "reputable_secondary",
+            "source_tier": "secondary",
+            "currentness_signal": "current",
+            "fact_disposition": "lower_tier"
+          }
+        ],
+        "custody_gaps": []
+      },
+      "search": {
+        "decision": "stop_satisfied",
+        "classifications": ["contract_satisfied"],
+        "attempt_count": 1,
+        "recovery_attempt_count": 0
+      },
+      "sufficiency": {
+        "decision": "ready_direct",
+        "final_answer_posture": "direct_answer",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_use_blog_as_widgetdb_canonical_doc"]
+      },
+      "final_packet": {
+        "readiness_status": "author_ready",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_use_blog_as_widgetdb_canonical_doc"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_widgetdb_canonical_doc",
+            "source_id": "src_widgetdb_canonical_doc"
+          }
+        ],
+        "citation_eligible": [
+          {
+            "citation_id": "cit_widgetdb_canonical_doc",
+            "evidence_id": "ev_widgetdb_canonical_doc",
+            "source_id": "src_widgetdb_canonical_doc"
+          }
+        ]
+      },
+      "final_answer": {
+        "text": "WidgetDB checkpoint mode is restart-safe according to the canonical fixture manual.",
+        "ingredient_ids": ["widgetdb_checkpoint_mode"],
+        "claim_ids": ["widgetdb_checkpoint_mode"],
+        "citations": [
+          {
+            "ingredient_id": "widgetdb_checkpoint_mode",
+            "source_ids": ["src_widgetdb_canonical_doc"]
+          }
+        ]
+      }
+    },
+    {
+      "task_id": "ag93b_source_bound_numeric_fact",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_numeric_source_bound",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_numeric_source_bound",
+            "status": "satisfied",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current",
+            "linked_candidate_ids": ["src_numeric_official_table"]
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_numeric_official_table",
+            "source_class": "official_current_rules",
+            "source_tier": "official",
+            "currentness_signal": "current",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": true
+          },
+          {
+            "candidate_id": "src_numeric_secondary_article",
+            "source_class": "reputable_secondary",
+            "source_tier": "secondary",
+            "currentness_signal": "current",
+            "fact_disposition": "lower_tier"
+          }
+        ],
+        "custody_gaps": []
+      },
+      "search": {
+        "decision": "stop_satisfied",
+        "classifications": ["contract_satisfied"],
+        "attempt_count": 1,
+        "recovery_attempt_count": 0
+      },
+      "sufficiency": {
+        "decision": "ready_direct",
+        "final_answer_posture": "direct_answer",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_detach_742_from_fixture_official_table"]
+      },
+      "final_packet": {
+        "readiness_status": "author_ready",
+        "mandatory_caveats": [],
+        "prohibited_upgrades": ["do_not_detach_742_from_fixture_official_table"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_numeric_official_table",
+            "source_id": "src_numeric_official_table"
+          }
+        ],
+        "citation_eligible": [
+          {
+            "citation_id": "cit_numeric_official_table",
+            "evidence_id": "ev_numeric_official_table",
+            "source_id": "src_numeric_official_table"
+          }
+        ]
+      },
+      "final_answer": {
+        "text": "The Example Table current limit is 742 fixture units, source-bound to the official fixture table.",
+        "ingredient_ids": ["fixture_limit_amount"],
+        "claim_ids": ["fixture_limit_amount"],
+        "citations": [
+          {
+            "ingredient_id": "fixture_limit_amount",
+            "source_ids": ["src_numeric_official_table"]
+          }
+        ]
+      }
+    },
+    {
+      "task_id": "ag93b_ordinary_explainer_secondary_allowed",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_explainer_secondary",
+            "required_source_class": "reputable_secondary",
+            "required_source_tier": "secondary",
+            "required_currentness": "not_applicable"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_explainer_secondary",
+            "status": "satisfied",
+            "required_source_class": "reputable_secondary",
+            "required_source_tier": "secondary",
+            "required_currentness": "not_applicable",
+            "linked_candidate_ids": ["src_explainer_secondary"]
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_explainer_secondary",
+            "source_class": "reputable_secondary",
+            "source_tier": "secondary",
+            "currentness_signal": "not_applicable",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": false
+          }
+        ],
+        "custody_gaps": []
+      },
+      "search": {
+        "decision": "stop_satisfied",
+        "classifications": ["contract_satisfied"],
+        "attempt_count": 1,
+        "recovery_attempt_count": 0
+      },
+      "sufficiency": {
+        "decision": "ready_with_caveats",
+        "final_answer_posture": "answer_with_caveats",
+        "mandatory_caveats": ["attribute_reputable_secondary_explainer"],
+        "prohibited_upgrades": ["do_not_present_secondary_explainer_as_official"]
+      },
+      "final_packet": {
+        "readiness_status": "author_ready",
+        "mandatory_caveats": ["attribute_reputable_secondary_explainer"],
+        "prohibited_upgrades": ["do_not_present_secondary_explainer_as_official"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_explainer_secondary",
+            "source_id": "src_explainer_secondary"
+          }
+        ],
+        "citation_eligible": [
+          {
+            "citation_id": "cit_explainer_secondary",
+            "evidence_id": "ev_explainer_secondary",
+            "source_id": "src_explainer_secondary"
+          }
+        ]
+      },
+      "final_answer": {
+        "text": "The secondary fixture explains that ice lenses push soil upward, so the answer keeps attribution at background-explainer strength.",
+        "ingredient_ids": ["frost_heave_definition"],
+        "claim_ids": ["frost_heave_definition"],
+        "citations": [
+          {
+            "ingredient_id": "frost_heave_definition",
+            "source_ids": ["src_explainer_secondary"]
+          }
+        ]
+      }
+    },
+    {
+      "task_id": "ag93b_conflict_changed_over_time",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_beta_current_official",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_beta_current_official",
+            "status": "satisfied",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current",
+            "linked_candidate_ids": ["src_beta_current_official"]
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_beta_current_official",
+            "source_class": "official_current_rules",
+            "source_tier": "official",
+            "currentness_signal": "current",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": true
+          },
+          {
+            "candidate_id": "src_beta_stale_archive",
+            "source_class": "official_current_rules",
+            "source_tier": "official",
+            "currentness_signal": "stale",
+            "fact_disposition": "rejected"
+          }
+        ],
+        "custody_gaps": []
+      },
+      "search": {
+        "decision": "stop_satisfied",
+        "classifications": ["contract_satisfied"],
+        "attempt_count": 1,
+        "recovery_attempt_count": 0
+      },
+      "sufficiency": {
+        "decision": "ready_with_caveats",
+        "final_answer_posture": "answer_with_caveats",
+        "mandatory_caveats": ["older_fixture_archive_conflicts_with_current_official"],
+        "prohibited_upgrades": ["do_not_use_stale_archive_as_current_status"]
+      },
+      "final_packet": {
+        "readiness_status": "author_ready",
+        "mandatory_caveats": ["older_fixture_archive_conflicts_with_current_official"],
+        "prohibited_upgrades": ["do_not_use_stale_archive_as_current_status"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_beta_current_official",
+            "source_id": "src_beta_current_official"
+          }
+        ],
+        "citation_eligible": [
+          {
+            "citation_id": "cit_beta_current_official",
+            "evidence_id": "ev_beta_current_official",
+            "source_id": "src_beta_current_official"
+          }
+        ]
+      },
+      "final_answer": {
+        "text": "The current official fixture says the Beta code is B-26; the older archive conflicts and is treated as stale.",
+        "ingredient_ids": ["beta_current_code"],
+        "claim_ids": ["beta_current_code"],
+        "citations": [
+          {
+            "ingredient_id": "beta_current_code",
+            "source_ids": ["src_beta_current_official"]
+          }
+        ]
+      }
+    },
+    {
+      "task_id": "ag93b_indirect_inference_from_sources",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_inference_premise_a",
+            "required_source_class": "primary_source_documents",
+            "required_source_tier": "primary",
+            "required_currentness": "not_applicable"
+          },
+          {
+            "requirement_id": "req_inference_premise_b",
+            "required_source_class": "primary_source_documents",
+            "required_source_tier": "primary",
+            "required_currentness": "not_applicable"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_inference_premise_a",
+            "status": "satisfied",
+            "required_source_class": "primary_source_documents",
+            "required_source_tier": "primary",
+            "required_currentness": "not_applicable",
+            "linked_candidate_ids": ["src_inference_premise_a"]
+          },
+          {
+            "requirement_id": "req_inference_premise_b",
+            "status": "satisfied",
+            "required_source_class": "primary_source_documents",
+            "required_source_tier": "primary",
+            "required_currentness": "not_applicable",
+            "linked_candidate_ids": ["src_inference_premise_b"]
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_inference_premise_a",
+            "source_class": "primary_source_documents",
+            "source_tier": "primary",
+            "currentness_signal": "not_applicable",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": true
+          },
+          {
+            "candidate_id": "src_inference_premise_b",
+            "source_class": "primary_source_documents",
+            "source_tier": "primary",
+            "currentness_signal": "not_applicable",
+            "fact_disposition": "accepted",
+            "eligible_for_stronger_obligation": true
+          }
+        ],
+        "custody_gaps": []
+      },
+      "search": {
+        "decision": "stop_satisfied",
+        "classifications": ["contract_satisfied"],
+        "attempt_count": 1,
+        "recovery_attempt_count": 0
+      },
+      "sufficiency": {
+        "decision": "inference_only_with_labeling",
+        "final_answer_posture": "answer_with_caveats",
+        "mandatory_caveats": ["label_zone3_as_inferred_from_sourced_premises"],
+        "prohibited_upgrades": ["do_not_present_zone3_as_direct_source_statement"]
+      },
+      "final_packet": {
+        "readiness_status": "author_ready",
+        "mandatory_caveats": ["label_zone3_as_inferred_from_sourced_premises"],
+        "prohibited_upgrades": ["do_not_present_zone3_as_direct_source_statement"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_inference_premise_a",
+            "source_id": "src_inference_premise_a"
+          },
+          {
+            "evidence_id": "ev_inference_premise_b",
+            "source_id": "src_inference_premise_b"
+          }
+        ],
+        "citation_eligible": [
+          {
+            "citation_id": "cit_inference_premise_a",
+            "evidence_id": "ev_inference_premise_a",
+            "source_id": "src_inference_premise_a"
+          },
+          {
+            "citation_id": "cit_inference_premise_b",
+            "evidence_id": "ev_inference_premise_b",
+            "source_id": "src_inference_premise_b"
+          }
+        ]
+      },
+      "final_answer": {
+        "text": "Taken together, the sourced premises imply that Component Z is in Zone 3; this is labeled as an inference from the premises.",
+        "ingredient_ids": ["inferred_zone3_conclusion"],
+        "claim_ids": ["inferred_zone3_conclusion"],
+        "citations": [
+          {
+            "ingredient_id": "inferred_zone3_conclusion",
+            "source_ids": ["src_inference_premise_a", "src_inference_premise_b"]
+          }
+        ]
+      }
+    },
+    {
+      "task_id": "ag93b_weak_corpus_insufficient",
+      "contract": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_gamma_official_current",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current"
+          }
+        ]
+      },
+      "ledger": {
+        "source_requirements": [
+          {
+            "requirement_id": "req_gamma_official_current",
+            "status": "unsatisfied",
+            "required_source_class": "official_current_rules",
+            "required_source_tier": "official",
+            "required_currentness": "current",
+            "linked_candidate_ids": []
+          }
+        ],
+        "candidate_records": [
+          {
+            "candidate_id": "src_gamma_weak_forum",
+            "source_class": "social_signal",
+            "source_tier": "social_or_forum",
+            "currentness_signal": "current",
+            "fact_disposition": "lower_tier",
+            "eligible_for_stronger_obligation": false
+          }
+        ],
+        "custody_gaps": [
+          {
+            "gap_type": "missing_official_current_candidate",
+            "requirement_id": "req_gamma_official_current"
+          }
+        ]
+      },
+      "search": {
+        "decision": "stop_insufficient",
+        "classifications": ["active_required_gap", "budget_exhausted"],
+        "target_source_classes": ["official_current_rules"],
+        "attempt_count": 2,
+        "recovery_attempt_count": 1
+      },
+      "sufficiency": {
+        "decision": "insufficient_evidence",
+        "final_answer_posture": "insufficient_answer",
+        "mandatory_caveats": ["official_current_fixture_source_unavailable"],
+        "prohibited_upgrades": ["do_not_claim_fixture_threshold_without_official_source"]
+      },
+      "final_packet": {
+        "readiness_status": "insufficient_authorized",
+        "mandatory_caveats": ["official_current_fixture_source_unavailable"],
+        "prohibited_upgrades": ["do_not_claim_fixture_threshold_without_official_source"],
+        "evidence_allowed": [
+          {
+            "evidence_id": "ev_gamma_weak_forum",
+            "source_id": "src_gamma_weak_forum"
+          }
+        ],
+        "citation_eligible": []
+      },
+      "final_answer": {
+        "text": "The current official Gamma threshold is unavailable from this fixture corpus; the forum item is only weak context.",
+        "ingredient_ids": ["gamma_official_threshold_unavailable"],
+        "claim_ids": ["gamma_official_threshold_unavailable"],
+        "citations": []
+      }
+    }
+  ]
+}
