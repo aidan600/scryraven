@@ -157,6 +157,105 @@ def test_care_like_official_current_rules_recommends_generic_recovery() -> None:
     assert "government" in query_text
 
 
+def test_access_id_enforcement_question_recommends_official_current_rules() -> None:
+    out = _recommendation(
+        query=(
+            "Do people need REAL ID or other acceptable identification for "
+            "domestic flights now, and when did enforcement start?"
+        ),
+        core_topic="acceptable identification for domestic flights",
+        primary_entity="domestic flight identification requirements",
+    )
+
+    _assert_shadow_recovery_shape(out)
+    assert out["missing_expected_source_classes"] == ["official_current_rules"]
+    assert out["source_class_recovery_reason"] == (
+        "missing_expected_source_class:official_current_rules"
+    )
+
+
+def test_generic_government_access_document_rule_recommends_official_current_rules() -> None:
+    out = _recommendation(
+        query=(
+            "What identification documents are accepted for entry at a state "
+            "courthouse screening checkpoint?"
+        ),
+        core_topic="state courthouse screening accepted identification documents",
+        primary_entity="state courthouse screening",
+    )
+
+    _assert_shadow_recovery_shape(out)
+    assert out["missing_expected_source_classes"] == ["official_current_rules"]
+
+
+def test_non_government_document_explainer_does_not_recommend_official_recovery() -> None:
+    out = _recommendation(
+        query=(
+            "Explain why gyms ask for identification documents when people "
+            "sign up for membership."
+        ),
+        core_topic="gym membership identification documents explainer",
+        primary_entity="gym membership",
+    )
+
+    assert out["source_class_recovery_recommended"] is False
+    assert out["missing_expected_source_classes"] == []
+    assert out["source_class_recovery_queries"] == []
+
+
+def test_enforcement_date_access_rule_uses_active_recovery() -> None:
+    out = _recommendation(
+        query=(
+            "When did enforcement begin for the state access credential rule "
+            "used for public service entry?"
+        ),
+        core_topic="state public service access credential enforcement date",
+        primary_entity="state access credential rule",
+    )
+
+    _assert_shadow_recovery_shape(out)
+    assert out["missing_expected_source_classes"] == ["official_current_rules"]
+    assert "query" in out["source_class_recovery_trigger_fields"]
+
+
+def test_existing_irs_uscis_and_canonical_active_cases_still_work() -> None:
+    irs = _recommendation(
+        query="What is the current IRS standard mileage rate for 2026?",
+        core_topic="IRS standard mileage rate",
+        primary_entity="IRS",
+    )
+    uscis = _recommendation(
+        query="What is the current USCIS N-400 naturalization filing fee?",
+        core_topic="USCIS N-400 naturalization filing fee",
+        primary_entity="USCIS",
+    )
+    canonical = _recommendation(
+        query="Use official documentation to explain PostgreSQL MVCC concurrency behavior.",
+        core_topic="PostgreSQL MVCC official documentation",
+        primary_entity="PostgreSQL",
+    )
+
+    assert irs["missing_expected_source_classes"] == ["official_current_rules"]
+    assert uscis["missing_expected_source_classes"] == ["official_current_rules"]
+    assert canonical["missing_expected_source_classes"] == [
+        "primary_source_documents"
+    ]
+
+
+def test_existing_legal_observability_case_still_works() -> None:
+    out = _observability(
+        query=(
+            "What legal or regulatory text explains the public access rule, "
+            "and what does the regulation require?"
+        ),
+        core_topic="public access regulation text",
+        primary_entity="public access regulation",
+    )
+
+    assert "legal_or_regulatory_text" in out["expected_source_classes_raw"]
+    assert "legal_or_regulatory_text" in out["source_class_gap_candidates"]
+
+
 def test_tesla_like_issuer_filings_recommends_investor_or_sec_recovery() -> None:
     out = _recommendation(
         query=(
@@ -1141,6 +1240,13 @@ def test_candidate_v2_production_predicates_do_not_hardcode_named_topics() -> No
     production_text = source.read_text(encoding="utf-8").casefold()
 
     for marker in (
+        "real id",
+        "real-id",
+        "realid",
+        "tsa",
+        "dhs",
+        "homeland security",
+        "transportation security",
         "nhtsa",
         "cybertruck",
         "uk hereditary peers",

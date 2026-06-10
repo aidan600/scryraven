@@ -233,6 +233,59 @@ def test_ag93e3_weak_corpus_does_not_block_strong_official_obligation() -> None:
     )
 
 
+def test_ag93e4_access_id_missing_class_activates_weak_corpus_override() -> None:
+    recommendation = build_source_class_recovery_recommendation(
+        query=(
+            "Do people need REAL ID or other acceptable identification for "
+            "domestic flights now, and when did enforcement start?"
+        ),
+        current_date="2026-06-10",
+        intent="general",
+        report_type="general_research",
+        query_type="other",
+        core_topic="acceptable identification for domestic flights",
+        primary_entity="domestic flight identification requirements",
+        anchor_packet=None,
+        source_tier_counts={"secondary": 3},
+        source_domain_counts={"news.example": 2, "analysis.example": 1},
+        top_source_domains=[{"domain": "news.example", "count": 2}],
+        official_evidence_found=False,
+    )
+    controller = RunController()
+
+    lifecycle = record_source_class_recovery_lifecycle(
+        controller,
+        recommendation=recommendation,
+        recommendation_evaluated=True,
+        source_class_evidence_signals=_secondary_evidence_signals(),
+        corpus_state="OFF_TOPIC",
+        corpus_weak=True,
+        weak_corpus_recovery_considered=True,
+        weak_corpus_recovery_used=False,
+        weak_corpus_recovery_skip_reason="blocked_by_weak_corpus_recovery",
+        current_search_depth="basic",
+        iteration_budget_available=False,
+        official_canonical_source_class_slot_available=True,
+    )
+
+    assert recommendation["source_class_recovery_recommended"] is True
+    assert recommendation["missing_expected_source_classes"] == [
+        "official_current_rules"
+    ]
+    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert lifecycle["active_source_class_recovery_skip_reason"] is None
+    assert "blocked_by_weak_corpus_recovery" not in lifecycle[
+        "active_source_class_recovery_blockers"
+    ]
+    envelope = lifecycle["active_source_class_recovery_action_envelope"]
+    assert envelope["required_source_class"] == ["official_current_rules"]
+    assert envelope["allowed_action"] is True
+    assert envelope["obligation_status"] == "required"
+    assert controller.snapshot_ledger()["retrieval_actions"][0]["provider_role"] == (
+        "source_class_recovery"
+    )
+
+
 def test_ag93e3_hard_exhausted_budget_still_stops_insufficient() -> None:
     decision = build_controller_recovery_decision(
         {
@@ -373,6 +426,7 @@ def test_ag93e3_secondary_news_and_stale_evidence_do_not_satisfy_official_curren
 def test_ag93e3_core_dispatch_has_no_case_specific_real_id_logic() -> None:
     marker = re.compile(r"\breal[-\s]?id\b|\btsa\b|\bdhs\b", re.IGNORECASE)
     for path in (
+        _ROOT / "core" / "source_class_recovery.py",
         _ROOT / "core" / "source_class_recovery_controller.py",
         _ROOT / "core" / "controller_recovery_decision.py",
         _ROOT / "core" / "controller_provider_search_allocation.py",
