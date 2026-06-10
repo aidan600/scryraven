@@ -231,7 +231,6 @@ def apply_official_canonical_recovery_query_acquisition(
         if item in set(visible_missing)
         and _source_class_has_supported_context(item, base=base, trace=trace)
     ]
-    blockers = _acquisition_blockers(existing_blockers, base, trace)
     considered = facts.obligation_status != UNKNOWN
 
     subject = _query_subject(base=base, trace=trace)
@@ -254,6 +253,14 @@ def apply_official_canonical_recovery_query_acquisition(
     )
     executable_queries = _dedupe([*promoted_queries, *added_queries])
     source_specific_terms_present = _source_specific_terms_present(executable_queries)
+    blockers = _acquisition_blockers(
+        existing_blockers,
+        base,
+        trace,
+        weak_corpus_can_coexist=bool(
+            set(acquisition_classes) & _OFFICIAL_CURRENT_CLASSES
+        ),
+    )
     eligible = bool(
         considered
         and facts.obligation_status == REQUIRED
@@ -963,6 +970,8 @@ def _acquisition_blockers(
     explicit_blockers: Iterable[Any],
     recommendation: Mapping[str, Any],
     runtime_trace: Mapping[str, Any],
+    *,
+    weak_corpus_can_coexist: bool = False,
 ) -> list[str]:
     blockers: list[str] = []
     authority_lifecycle_preserves_recovery = bool(
@@ -982,7 +991,10 @@ def _acquisition_blockers(
                     "blocked_by_weak_corpus_recovery",
                     "weak_corpus_recovery_owns_path",
                 }
-                and authority_lifecycle_preserves_recovery
+                and (
+                    authority_lifecycle_preserves_recovery
+                    or weak_corpus_can_coexist
+                )
             ):
                 continue
             if item in _BLOCKERS_THAT_PRESERVE_EXISTING_OWNERSHIP:
@@ -994,11 +1006,13 @@ def _acquisition_blockers(
     if (
         runtime_trace.get("weak_corpus_recovery_used") is True
         and not authority_lifecycle_preserves_recovery
+        and not weak_corpus_can_coexist
     ):
         _append_one(blockers, "weak_corpus_recovery_owns_path")
     if (
         runtime_trace.get("corpus_weak") is True
         and not authority_lifecycle_preserves_recovery
+        and not weak_corpus_can_coexist
     ):
         _append_one(blockers, "blocked_by_corpus_weak")
     if runtime_trace.get("active_source_class_recovery_used") is True:

@@ -78,6 +78,13 @@ _ALLOWED_SOURCE_CLASSES = frozenset(
         "archival_primary_text",
     }
 )
+_OFFICIAL_CURRENT_SOURCE_CLASSES = frozenset(
+    {
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "current_primary_or_official",
+    }
+)
 _OFFICIAL_CANONICAL_ACQUISITION_PATH_VISIBLE_KEY = (
     "official_canonical_acquisition_path_visible"
 )
@@ -757,28 +764,40 @@ def _acquisition_blockers(
     *,
     authority_arbitration: AuthorityRuntimeArbitration | None,
 ) -> tuple[str, ...]:
+    weak_corpus_query_acquisition_allowed = (
+        _weak_corpus_query_acquisition_allowed(authority_arbitration)
+    )
     blockers = _string_tuple(facts.existing_acquisition_blockers)
     if blockers:
-        return _filter_authority_runtime_blockers(
+        return _filter_authority_runtime_blockers_for_acquisition(
             blockers,
             authority_arbitration=authority_arbitration,
+            weak_corpus_query_acquisition_allowed=(
+                weak_corpus_query_acquisition_allowed
+            ),
         )
     _state, lifecycle_corpus_weak, _skip = _source_class_lifecycle_corpus_facts(
         facts,
         authority_arbitration=authority_arbitration,
     )
     out: list[str] = []
-    if facts.weak_corpus_recovery_used:
+    if (
+        facts.weak_corpus_recovery_used
+        and not weak_corpus_query_acquisition_allowed
+    ):
         out.append("weak_corpus_recovery_owns_path")
-    if lifecycle_corpus_weak:
+    if lifecycle_corpus_weak and not weak_corpus_query_acquisition_allowed:
         out.append("blocked_by_corpus_weak")
     if facts.iteration_budget_hard_exhausted:
         out.append("blocked_by_iteration_budget")
     if facts.query_redundancy_skipped:
         out.append("blocked_by_redundant_query")
-    return _filter_authority_runtime_blockers(
+    return _filter_authority_runtime_blockers_for_acquisition(
         out,
         authority_arbitration=authority_arbitration,
+        weak_corpus_query_acquisition_allowed=(
+            weak_corpus_query_acquisition_allowed
+        ),
     )
 
 
@@ -818,6 +837,55 @@ def _filter_authority_runtime_blockers(
     if authority_arbitration is None:
         return _string_tuple(blockers)
     return authority_arbitration.filter_blockers(blockers)
+
+
+def _filter_authority_runtime_blockers_for_acquisition(
+    blockers: Iterable[Any],
+    *,
+    authority_arbitration: AuthorityRuntimeArbitration | None,
+    weak_corpus_query_acquisition_allowed: bool,
+) -> tuple[str, ...]:
+    if not weak_corpus_query_acquisition_allowed:
+        return _filter_authority_runtime_blockers(
+            blockers,
+            authority_arbitration=authority_arbitration,
+        )
+    return tuple(
+        blocker
+        for blocker in _filter_authority_runtime_blockers(
+            blockers,
+            authority_arbitration=authority_arbitration,
+        )
+        if _clean_token(blocker)
+        not in {
+            "blocked_by_corpus_weak",
+            "blocked_by_weak_corpus_recovery",
+            "weak_corpus_recovery_owns_path",
+        }
+    )
+
+
+def _weak_corpus_query_acquisition_allowed(
+    authority_arbitration: AuthorityRuntimeArbitration | None,
+) -> bool:
+    if authority_arbitration is None:
+        return False
+    lifecycle = authority_arbitration.lifecycle
+    recovery_needed = getattr(getattr(lifecycle, "recovery_needed", None), "value", None)
+    required_authority = _clean_token(
+        getattr(lifecycle, "required_authority", None)
+    )
+    try:
+        recovery_query_count = int(
+            getattr(lifecycle, "recovery_query_count", 0) or 0
+        )
+    except (TypeError, ValueError):
+        recovery_query_count = 0
+    return bool(
+        recovery_needed == "required"
+        and required_authority in _OFFICIAL_CURRENT_SOURCE_CLASSES
+        and recovery_query_count <= 0
+    )
 
 
 def _build_authoritative_obligation_state(
