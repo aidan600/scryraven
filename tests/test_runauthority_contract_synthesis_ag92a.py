@@ -674,12 +674,14 @@ def test_static_guards_keep_contract_brain_out_of_pipeline() -> None:
     runtime = (ROOT / "core" / "run_authority_contract_runtime.py").read_text()
     templates = (ROOT / "core" / "run_authority_contract_templates.py").read_text()
     kernel = (ROOT / "core" / "run_kernel.py").read_text()
+    ledger_lifecycle = (ROOT / "core" / "evidence_ledger_lifecycle.py").read_text()
     query_runtime = (ROOT / "core" / "query_production_runtime.py").read_text()
     answer_contract = (ROOT / "core" / "answer_contract_runtime_handoff.py").read_text()
     final_adapter = (ROOT / "core" / "final_answer_runtime_adapter.py").read_text()
 
     assert "execute_run_contract_synthesis_action(" in pipeline
-    assert "build_evidence_ledger_observation_from_run_contract(" in pipeline
+    assert "reduce_run_contract_requirements_into_evidence_ledger(" in pipeline
+    assert "build_evidence_ledger_observation_from_run_contract(" in ledger_lifecycle
     assert "run_contract_projection=run_contract_projection" in pipeline
     assert "current_official_numeric_or_rule" not in pipeline
     assert "RUN_AUTHORITY_CONTRACT_SYSTEM_PROMPT" not in pipeline

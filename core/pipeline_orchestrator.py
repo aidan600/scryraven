@@ -78,11 +78,12 @@ from core.evidence_integration_checkpoint import (
     decide_evidence_integration_checkpoint,
     evidence_integration_checkpoint_unavailable_trace,
 )
-from core.evidence_ledger import (
-    build_evidence_ledger_observation_from_run_contract,
-    build_evidence_ledger_observation_from_runtime,
+from core.evidence_ledger_lifecycle import (
+    reduce_final_evidence_bundle_into_evidence_ledger,
+    reduce_post_final_source_obligations_into_evidence_ledger,
+    reduce_pre_recovery_source_obligations_into_evidence_ledger,
+    reduce_run_contract_requirements_into_evidence_ledger,
 )
-from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.evidence_registry_mirror import record_final_evidence_snapshot
 from core.failure_card import (
     failure_card_reason,
@@ -227,11 +228,15 @@ from core.review_flags import recent_recurring_kb_hints
 from core.routing import is_quantitative_query, merge_search_provider_overrides, select_providers
 from core.routing_runtime import execute_route_request_action
 from core.run_authority_contract_runtime import execute_run_contract_synthesis_action
-from core.run_authority_search_judgment import RunSearchJudgmentInput
+from core.run_authority_search_judgment_adapter import (
+    build_search_judgment_input_from_runtime,
+)
 from core.run_authority_search_judgment_runtime import (
     execute_run_authority_search_judgment_action,
 )
-from core.run_authority_sufficiency import RunSufficiencyJudgmentInput
+from core.run_authority_sufficiency_adapter import (
+    build_sufficiency_judgment_input_from_runtime,
+)
 from core.run_authority_sufficiency_runtime import (
     execute_run_authority_sufficiency_judgment_action,
 )
@@ -3368,51 +3373,25 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 final_answer_source_ids=None,
             )
         )
-        _pre_recovery_contract_ledger_action = (
-            run_kernel.authorize_evidence_ledger_reduction(
-                inputs={
-                    "observation_source": "run_authority_contract_pre_recovery",
-                    "contract_id": run_contract_projection.get("contract_id"),
-                    "source_requirement_count": len(
-                        run_contract_projection.get("source_requirements", [])
-                    ),
-                }
-            )
+        reduce_run_contract_requirements_into_evidence_ledger(
+            run_kernel=run_kernel,
+            run_id=run_id,
+            run_contract_projection=run_contract_projection,
+            observation_id_suffix="run-contract-pre-recovery",
+            authorization_observation_source=(
+                "run_authority_contract_pre_recovery"
+            ),
         )
-        _pre_recovery_contract_ledger_result = (
-            execute_evidence_ledger_reduction_action(
-                _pre_recovery_contract_ledger_action,
-                payload=build_evidence_ledger_observation_from_run_contract(
-                    observation_id=(
-                        f"{run_id}:evidence-ledger:run-contract-pre-recovery"
-                    ),
-                    contract_projection=run_contract_projection,
-                ).to_dict(),
-            )
-        )
-        run_kernel.reduce(_pre_recovery_contract_ledger_result.observation)
-        _evidence_ledger_observation = build_evidence_ledger_observation_from_runtime(
-            observation_id=f"{run_id}:evidence-ledger:pre-recovery",
-            observation_source="pre_recovery_source_obligation",
-            source_class_recovery_telemetry={
-                **_source_class_recovery_lifecycle_recommendation,
-                **_source_class_recovery_answer_contract_observability,
-            },
-            final_top_evidence=all_passages,
-        )
-        _evidence_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
-            inputs={
-                "observation_source": "pre_recovery_source_obligation",
-                "candidate_count": len(all_passages),
-            }
-        )
-        _evidence_ledger_result = execute_evidence_ledger_reduction_action(
-            _evidence_ledger_action,
-            payload=_evidence_ledger_observation.to_dict(),
-        )
-        run_kernel.reduce(_evidence_ledger_result.observation)
         evidence_ledger_projection = (
-            run_kernel.state.evidence_ledger.to_projection().to_dict()
+            reduce_pre_recovery_source_obligations_into_evidence_ledger(
+                run_kernel=run_kernel,
+                run_id=run_id,
+                source_class_recovery_telemetry={
+                    **_source_class_recovery_lifecycle_recommendation,
+                    **_source_class_recovery_answer_contract_observability,
+                },
+                final_top_evidence=all_passages,
+            )
         )
         (
             _pre_recovery_conflict_state,
@@ -3486,50 +3465,37 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         answer_contract_projection = dict(_pre_recovery_answer_contract_projection)
         _search_judgment_started = True
-        _search_judgment_input = RunSearchJudgmentInput(
+        _search_judgment_input = build_search_judgment_input_from_runtime(
             contract_projection=run_contract_projection,
             evidence_ledger_projection=evidence_ledger_projection,
-            query_facts={
-                **query_authority.to_trace_fragment(),
-                "query_role": "post_retrieval_recovery",
-                "core_topic": core_topic,
-                "primary_entity": primary_entity,
-            },
-            retrieval_observations={
-                "result_count": len(all_passages),
-                "iterations_run": iterations_run,
-                "source_tier_counts": _source_tier_recovery_lifecycle[
-                    "source_tier_counts"
-                ],
-                "source_domain_counts": _source_domain_recovery_lifecycle[
-                    "source_domain_counts"
-                ],
-                "top_source_domains": _source_domain_recovery_lifecycle[
-                    "top_source_domains"
-                ],
-                "provider_diagnostic_count": len(provider_diagnostics),
-            },
-            helper_proposals={
-                "source_class_recovery": {
-                    **_source_class_recovery_lifecycle_recommendation,
-                    **_source_class_recovery_answer_contract_observability,
-                },
-                "retrieval_stop": {
-                    "shadow": retrieval_stop_shadow_telemetry,
-                    "active": retrieval_stop_active_telemetry,
-                },
-                "answer_contract": _pre_recovery_answer_contract_projection,
-            },
-            budget={
-                "iteration": iterations_run,
-                "max_iterations": max_iterations,
-                "remaining_budget": max(0, max_iterations - iterations_run),
-                "recovery_attempts": (
-                    _run_controller_mirror.state.active_source_class_recovery_attempt_count
-                ),
-                "budget_exhausted": iterations_run >= max_iterations,
-                "source_class_recovery_slot_available": max_iterations > 1,
-            },
+            query_authority_trace=query_authority.to_trace_fragment(),
+            core_topic=core_topic,
+            primary_entity=primary_entity,
+            result_count=len(all_passages),
+            iterations_run=iterations_run,
+            source_tier_counts=_source_tier_recovery_lifecycle[
+                "source_tier_counts"
+            ],
+            source_domain_counts=_source_domain_recovery_lifecycle[
+                "source_domain_counts"
+            ],
+            top_source_domains=_source_domain_recovery_lifecycle[
+                "top_source_domains"
+            ],
+            provider_diagnostic_count=len(provider_diagnostics),
+            source_class_recovery_recommendation=(
+                _source_class_recovery_lifecycle_recommendation
+            ),
+            source_class_observability=(
+                _source_class_recovery_answer_contract_observability
+            ),
+            retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
+            retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
+            answer_contract_projection=_pre_recovery_answer_contract_projection,
+            max_iterations=max_iterations,
+            recovery_attempt_count=(
+                _run_controller_mirror.state.active_source_class_recovery_attempt_count
+            ),
         )
         _search_judgment_action = run_kernel.authorize_search_judgment(
             inputs={
@@ -3869,42 +3835,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     final_top_evidence = final_evidence_bundle.final_top_evidence
     unique_source_urls = final_evidence_bundle.unique_source_urls
     ordered_sources = final_evidence_bundle.ordered_sources
-    _run_contract_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
-        inputs={
-            "observation_source": "run_authority_contract",
-            "contract_id": run_contract_projection.get("contract_id"),
-            "source_requirement_count": len(
-                run_contract_projection.get("source_requirements", [])
-            ),
-        }
+    evidence_ledger_projection = reduce_run_contract_requirements_into_evidence_ledger(
+        run_kernel=run_kernel,
+        run_id=run_id,
+        run_contract_projection=run_contract_projection,
+        observation_id_suffix="run-contract",
+        authorization_observation_source="run_authority_contract",
     )
-    _run_contract_ledger_result = execute_evidence_ledger_reduction_action(
-        _run_contract_ledger_action,
-        payload=build_evidence_ledger_observation_from_run_contract(
-            observation_id=f"{run_id}:evidence-ledger:run-contract",
-            contract_projection=run_contract_projection,
-        ).to_dict(),
-    )
-    run_kernel.reduce(_run_contract_ledger_result.observation)
-    evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
-    _final_evidence_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
-        inputs={
-            "observation_source": "final_evidence_bundle",
-            "final_evidence_count": len(final_top_evidence),
-        }
-    )
-    _final_evidence_ledger_result = execute_evidence_ledger_reduction_action(
-        _final_evidence_ledger_action,
-        payload=build_evidence_ledger_observation_from_runtime(
-            observation_id=f"{run_id}:evidence-ledger:final-evidence",
-            observation_source="final_evidence_bundle",
-            final_top_evidence=final_top_evidence,
-            final_evidence_selected=True,
-        ).to_dict(),
-    )
-    run_kernel.reduce(_final_evidence_ledger_result.observation)
     evidence_ledger_projection = (
-        run_kernel.state.evidence_ledger.to_projection().to_dict()
+        reduce_final_evidence_bundle_into_evidence_ledger(
+            run_kernel=run_kernel,
+            run_id=run_id,
+            final_top_evidence=final_top_evidence,
+        )
     )
 
     status.step("--- **Final Synthesis & Reporting** ---")
@@ -4299,48 +4242,31 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_notes = author_prompt_assembly.author_notes
 
     status.step("Judging final answer sufficiency...")
-    sufficiency_input = RunSufficiencyJudgmentInput(
+    sufficiency_input = build_sufficiency_judgment_input_from_runtime(
         contract_projection=run_contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
         search_judgment_projection=search_judgment_projection,
         search_judgment_history=run_kernel.state.search_judgment_history,
         answer_contract_projection=answer_contract_projection,
-        source_obligation_projection=evidence_ledger_projection,
-        final_evidence_facts={
-            "final_evidence_count": len(final_top_evidence),
-            "author_evidence_count": len(author_evidence),
-            "citation_eligible_candidate_count": len(unique_source_urls),
-        },
-        conflict_facts={
-            "conflicts_present": bool(scrutineer_flags),
-            "scrutineer_flag_count": len(scrutineer_flags),
-            "conflict_posture": (
-                "unresolved" if scrutineer_flags else "none"
-            ),
-        },
-        indirect_inference_facts={},
-        weak_failure_facts={
-            "corpus_weak": bool(corpus_weak),
-            "weak_corpus_reason": (
-                weak_corpus_recovery_skip_reason or corpus_state
-                if corpus_weak
-                else None
-            ),
-            "synth_was_insufficient": bool(synth_was_insufficient),
-            "failure_card": {
-                "show": _pre_gate_failure_card_show,
-                "reason": _pre_gate_failure_card_reason,
-            },
-        },
-        budget={
-            "iteration": iterations_run,
-            "max_iterations": max_iterations,
-            "remaining_budget": max(0, max_iterations - iterations_run),
-            "recovery_attempts": (
-                _run_controller_mirror.state.active_source_class_recovery_attempt_count
-            ),
-            "budget_exhausted": iterations_run >= max_iterations,
-        },
+        final_evidence_count=len(final_top_evidence),
+        author_evidence_count=len(author_evidence),
+        citation_eligible_candidate_count=len(unique_source_urls),
+        conflicts_present=bool(scrutineer_flags),
+        scrutineer_flag_count=len(scrutineer_flags),
+        corpus_weak=bool(corpus_weak),
+        weak_corpus_reason=(
+            weak_corpus_recovery_skip_reason or corpus_state
+            if corpus_weak
+            else None
+        ),
+        synth_was_insufficient=bool(synth_was_insufficient),
+        failure_card_show=_pre_gate_failure_card_show,
+        failure_card_reason=_pre_gate_failure_card_reason,
+        iterations_run=iterations_run,
+        max_iterations=max_iterations,
+        recovery_attempt_count=(
+            _run_controller_mirror.state.active_source_class_recovery_attempt_count
+        ),
     )
     sufficiency_action = run_kernel.authorize_sufficiency_judgment(
         inputs={
@@ -4778,31 +4704,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     if source_class != reserved_missing_class
                 ],
             }
-    _post_final_evidence_ledger_action = run_kernel.authorize_evidence_ledger_reduction(
-        inputs={
-            "observation_source": "post_final_source_obligation",
-            "candidate_count": len(final_top_evidence),
-        }
-    )
-    _post_final_evidence_ledger_observation = (
-        build_evidence_ledger_observation_from_runtime(
-            observation_id=f"{run_id}:evidence-ledger:post-final",
-            observation_source="post_final_source_obligation",
+    evidence_ledger_projection = (
+        reduce_post_final_source_obligations_into_evidence_ledger(
+            run_kernel=run_kernel,
+            run_id=run_id,
             source_class_recovery_telemetry={
                 **runtime_source_class_recovery_telemetry,
                 **source_class_observability_telemetry,
             },
             final_top_evidence=final_top_evidence,
-            final_evidence_selected=True,
         )
-    )
-    _post_final_evidence_ledger_result = execute_evidence_ledger_reduction_action(
-        _post_final_evidence_ledger_action,
-        payload=_post_final_evidence_ledger_observation.to_dict(),
-    )
-    run_kernel.reduce(_post_final_evidence_ledger_result.observation)
-    evidence_ledger_projection = (
-        run_kernel.state.evidence_ledger.to_projection().to_dict()
     )
     # Post-Author citation assembly is delegated; helper calls assemble_final_answer_citation_runtime_from_scope(...).
     post_author_trace_packaging = build_post_author_trace_packaging_from_scope(

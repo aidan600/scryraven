@@ -19,6 +19,10 @@ from core.final_answer_packet import (
     SourceObligationStatus,
 )
 from core.official_current_source_custody import OfficialCurrentSourceCustodyState
+from core.run_authority_projection_refs import (
+    canonical_sufficiency_judgment_projection,
+    compact_sufficiency_judgment_ref,
+)
 
 
 def _hash_or_none(text: Any) -> tuple[str | None, int | None]:
@@ -286,13 +290,7 @@ def _dedupe_source_obligations(
 
 
 def _sufficiency_projection_from_any(value: Any) -> dict[str, Any]:
-    if not isinstance(value, Mapping):
-        return {}
-    if value.get("owner") != "RunKernel.RunAuthoritySufficiencyJudgment":
-        return {}
-    if value.get("canonical_state") is not True:
-        return {}
-    return dict(value)
+    return canonical_sufficiency_judgment_projection(value)
 
 
 def _status_for_sufficiency_obligation(
@@ -441,18 +439,7 @@ def _sufficiency_packet_items(
 
 
 def _sufficiency_author_ref(projection: Any) -> dict[str, Any]:
-    sufficiency = _sufficiency_projection_from_any(projection)
-    if not sufficiency:
-        return {}
-    return {
-        "owner": sufficiency.get("owner"),
-        "judgment_id": sufficiency.get("judgment_id"),
-        "decision": sufficiency.get("decision"),
-        "final_answer_posture": sufficiency.get("final_answer_posture"),
-        "final_answer_allowed": sufficiency.get("final_answer_allowed"),
-        "canonical_state": sufficiency.get("canonical_state"),
-        "trace_only": sufficiency.get("trace_only"),
-    }
+    return compact_sufficiency_judgment_ref(projection)
 
 
 def _custody_summary(projection: Any) -> dict[str, Any]:

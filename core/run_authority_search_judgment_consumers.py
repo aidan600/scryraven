@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from core.run_authority_projection_refs import (
+    canonical_search_judgment_projection,
+    compact_search_judgment_ref,
+)
 from core.run_authority_search_judgment import (
     RunSearchJudgmentDecision,
     clean_text,
@@ -89,18 +93,7 @@ def _fallback_queries(
 
 
 def _compact_projection_ref(projection: Mapping[str, Any]) -> dict[str, Any]:
-    return safe_json(
-        {
-            "owner": projection.get("owner"),
-            "judgment_id": projection.get("judgment_id"),
-            "decision": projection.get("decision"),
-            "classifications": projection.get("classifications", []),
-            "target_source_classes": projection.get("target_source_classes", []),
-            "validation_status": projection.get("validation_status"),
-            "canonical_state": projection.get("canonical_state"),
-            "trace_only": projection.get("trace_only"),
-        }
-    )
+    return safe_json(compact_search_judgment_ref(projection))
 
 
 def _has_source_class_gap_signal(recommendation: Mapping[str, Any]) -> bool:
@@ -123,10 +116,8 @@ def apply_search_judgment_to_source_class_recovery_recommendation(
     """Promote/block source-class recovery from reduced RunKernel judgment."""
 
     out = _mapping(recommendation)
-    projection = _mapping(search_judgment_projection)
-    if projection.get("owner") != "RunKernel.RunAuthoritySearchJudgment":
-        return out
-    if projection.get("canonical_state") is not True:
+    projection = canonical_search_judgment_projection(search_judgment_projection)
+    if not projection:
         return out
 
     decision = clean_token(projection.get("decision")) or ""
