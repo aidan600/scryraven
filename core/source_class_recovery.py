@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
@@ -159,6 +160,15 @@ _KERNEL_SOURCE_CLASS_MAP = {
     "academic_literature": ACADEMIC_LITERATURE,
     "sourced_numeric_values": SOURCED_NUMERIC_VALUES,
 }
+
+
+@dataclass(frozen=True)
+class _AuthorityVenueInference:
+    """Trace-safe official venue hints inferred from public query text."""
+
+    family_ids: tuple[str, ...] = ()
+    search_hints: tuple[str, ...] = ()
+    domain_constraints: tuple[str, ...] = ()
 
 
 def _compact_text(value: Any, *, limit: int = _CAP_TEXT) -> str:
@@ -1803,14 +1813,291 @@ def _query_subject(*, primary_entity: str, core_topic: str, query: str) -> str:
     return "source topic"
 
 
+def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
+    """Infer reusable official venue families from trace-safe public text."""
+    text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
+    family_ids: list[str] = []
+    search_hints: list[str] = []
+    domain_constraints: list[str] = []
+
+    def add_family(
+        family_id: str,
+        *,
+        hints: tuple[str, ...] = (),
+        domains: tuple[str, ...] = (),
+    ) -> None:
+        _append_unique(family_ids, family_id)
+        for hint in hints:
+            _append_unique(search_hints, hint)
+        for domain in domains:
+            if domain not in domain_constraints:
+                domain_constraints.append(domain)
+
+    travel_or_screening_context = _has_any(
+        text,
+        (
+            r"\b(?:air\s+travel|domestic\s+travel|domestic\s+flights?|"
+            r"flights?|airport|airports?|airlines?|airline\s+passengers?|"
+            r"boarding|board|checkpoint|screening|security\s+checkpoint)\b",
+            r"\b(?:air\s+carrier\s+access\s+act|wheelchairs?|"
+            r"passengers?\s+with\s+disabilities)\b",
+        ),
+    )
+    access_credential_context = _has_any(
+        text,
+        (
+            r"\b(?:identification|identity\s+documents?|id\s+documents?|"
+            r"acceptable\s+ids?|accepted\s+ids?|valid\s+ids?|credentials?|"
+            r"proof\s+of\s+(?:identity|identification)|access|entry)\b",
+            r"\b(?:accepted|acceptable|required|valid|needed)\s+"
+            r"(?:identification|documents?|credentials?|proof)\b",
+        ),
+    )
+    travel_rule_context = _has_any(
+        text,
+        (
+            r"\b(?:rules?|requirements?|guidance|enforcement|compliance|"
+            r"effective\s+date|complaint\s+rights?|milestones?)\b",
+        ),
+    )
+    if travel_or_screening_context and (
+        access_credential_context or travel_rule_context
+    ):
+        travel_hints = (
+            (
+                "airport screening",
+                "official agency guidance",
+                "acceptable identification",
+                "enforcement date",
+                "checkpoint requirements",
+                "Department of Transportation",
+                "14 CFR Part 382",
+                "Air Carrier Access Act",
+            )
+            if access_credential_context
+            else (
+                "Department of Transportation",
+                "14 CFR Part 382",
+                "Air Carrier Access Act",
+                "official agency guidance",
+                "passenger rights",
+                "enforcement date",
+            )
+        )
+        add_family(
+            "travel_air_access_credential_rule",
+            hints=travel_hints,
+            domains=("transportation.gov",),
+        )
+
+    tax_context = _has_any(
+        text,
+        (
+            r"\b(?:tax|taxes|irs|internal\s+revenue\s+service|revenue\s+"
+            r"procedure|internal\s+revenue\s+bulletin)\b",
+            r"\b(?:standard\s+mileage\s+rate|mileage\s+rate|tax\s+"
+            r"credits?|deductions?|tax\s+return)\b",
+        ),
+    ) or (
+        _has_any(
+            text,
+            (r"\b(?:filing|forms?|instructions?|fee|fees|rates?|thresholds?)\b",),
+        )
+        and _has_any(text, (r"\b(?:tax|taxes|irs|revenue)\b",))
+    )
+    if tax_context:
+        add_family(
+            "tax_rate_form_fee_rule",
+            hints=(
+                "official tax guidance",
+                "form instructions",
+                "Internal Revenue Bulletin",
+                "revenue procedure",
+                "fee schedule",
+            ),
+            domains=("irs.gov",),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:immigration|naturalization|citizenship|visa|green\s+card|"
+            r"uscis|n-400|asylum|adjustment\s+of\s+status)\b",
+            r"\b(?:filing\s+fee|service\s+request|application\s+fee|"
+            r"policy\s+manual|form\s+instructions?)\b",
+        ),
+    ):
+        add_family(
+            "immigration_naturalization_filing_rule",
+            hints=(
+                "official immigration guidance",
+                "policy manual",
+                "form instructions",
+                "filing fee schedule",
+                "service rule",
+            ),
+            domains=("uscis.gov",),
+        )
+
+    labor_context = _has_any(
+        text,
+        (
+            r"\b(?:labor|workplace|workers?|employees?|wage|wages|"
+            r"minimum\s+wage|overtime|leave|payroll|dol|department\s+of\s+"
+            r"labor|osha|occupational\s+safety|hazard\s+communication|"
+            r"29\s+cfr\s+1910\.1200)\b",
+        ),
+    ) and not _has_any(
+        text,
+        (
+            r"\b(?:social\s+security|taxable\s+maximum|wage\s+base|"
+            r"contribution\s+and\s+benefit\s+base)\b",
+        ),
+    )
+    if labor_context:
+        labor_domains = ["dol.gov"]
+        if _has_any(
+            text,
+            (
+                r"\b(?:osha|occupational\s+safety|hazard\s+communication|"
+                r"29\s+cfr\s+1910\.1200|workplace\s+safety)\b",
+            ),
+        ):
+            labor_domains.append("osha.gov")
+        add_family(
+            "labor_workplace_wage_compliance_rule",
+            hints=(
+                "labor agency guidance",
+                "workplace compliance",
+                "wage and hour",
+                "fact sheet",
+                "compliance assistance",
+            ),
+            domains=tuple(labor_domains),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:consumer\s+finance|consumer\s+financial\s+protection|"
+            r"cfpb|mortgage|credit\s+card|loan|debt\s+collection|"
+            r"banking\s+regulator|consumer\s+protection|ftc|federal\s+"
+            r"trade\s+commission|non[-\s]?competes?|negative\s+option|"
+            r"click[-\s]?to[-\s]?cancel)\b",
+        ),
+    ):
+        add_family(
+            "consumer_finance_regulator_rule",
+            hints=(
+                "consumer regulator guidance",
+                "official rule",
+                "compliance guide",
+                "court status",
+                "agency FAQ",
+            ),
+            domains=("consumerfinance.gov", "ftc.gov"),
+        )
+
+    sec_context = _has_any(
+        text,
+        (
+            r"\b(?:securities\s+and\s+exchange\s+commission|issuer\s+"
+            r"filings?|edgar|10[-\s]?[qk]|form\s+10[-\s]?[qk]|"
+            r"securities\s+filings?|public\s+company\s+filings?)\b",
+        ),
+    ) or (
+        _has_any(text, (r"\bsec\b",))
+        and _has_any(text, (r"\b(?:filings?|issuer|edgar|securities)\b",))
+    )
+    if sec_context:
+        add_family(
+            "securities_issuer_filing_rule",
+            hints=("EDGAR", "issuer filing", "official filing", "Form 10-Q 10-K"),
+            domains=("sec.gov",),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:court|courts|challenge|challenged|lawsuit|litigation|"
+            r"injunction|stay|vacatur|order|docket|legal\s+status|"
+            r"effective\s+date|compliance\s+date|enforcement\s+date|"
+            r"enforcement\s+status|final\s+rule|proposed\s+rule)\b",
+        ),
+    ):
+        add_family(
+            "legal_regulatory_challenge_effective_date_rule",
+            hints=(
+                "Federal Register",
+                "court order",
+                "agency docket",
+                "final rule",
+                "compliance date",
+                "enforcement status",
+            ),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:government|public|federal|state|county|municipal|local|"
+            r"provincial)\s+[a-z0-9'.\-\s]{0,70}"
+            r"(?:programs?|benefits?|services?|assistance|aid|subsid(?:y|ies)|"
+            r"eligibility|applications?|access|credentials?|permits?|licenses?)\b",
+            r"\b(?:public\s+benefits?|public\s+services?|government\s+"
+            r"benefits?|government\s+services?|agency\s+guidance|program\s+"
+            r"eligibility|application\s+requirements?|access\s+rules?)\b",
+        ),
+    ):
+        add_family(
+            "government_program_eligibility_access_rule",
+            hints=(
+                "official program guidance",
+                "agency FAQ",
+                "eligibility requirements",
+                "application instructions",
+                "access rules",
+            ),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:fda|food\s+and\s+drug\s+administration|laboratory\s+"
+            r"developed\s+tests?|ldts?|medical\s+devices?|enforcement\s+"
+            r"discretion)\b",
+        ),
+    ):
+        add_family(
+            "health_product_regulator_rule",
+            hints=(
+                "health regulator guidance",
+                "Federal Register",
+                "enforcement discretion",
+                "final rule",
+            ),
+            domains=("fda.gov",),
+        )
+
+    return _AuthorityVenueInference(
+        family_ids=tuple(family_ids),
+        search_hints=tuple(search_hints),
+        domain_constraints=tuple(domain_constraints),
+    )
+
+
 def _official_source_target_hints(*texts: str) -> list[str]:
     """Return deterministic public-authority hints as ordinary search terms."""
-    text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
+    inferred = _infer_official_authority_venue(*texts)
     hints: list[str] = []
 
     def add(*values: str) -> None:
         for value in values:
             _append_unique(hints, value)
+
+    add(*inferred.search_hints)
+
+    text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
 
     dot_context = _has_any(
         text,
@@ -1956,6 +2243,7 @@ def build_official_source_recovery_domain_constraints(
     official_or_legal_missing = bool(
         missing & {"official_current_rules", "legal_or_regulatory_text"}
     )
+    inferred_venue = _infer_official_authority_venue(text)
 
     dot_context = _has_any(
         text,
@@ -2054,6 +2342,8 @@ def build_official_source_recovery_domain_constraints(
         ),
     )
     us_agency_domains: list[str] = []
+    for domain in inferred_venue.domain_constraints:
+        _append_domain(us_agency_domains, domain)
     if dot_context:
         _append_domain(us_agency_domains, "transportation.gov")
     for patterns, domain in agency_targets:
