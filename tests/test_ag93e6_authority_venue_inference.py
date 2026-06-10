@@ -96,8 +96,55 @@ def test_ag93e6_air_travel_access_id_query_gets_official_venue_hints() -> None:
 
     assert "travel_air_access_credential_rule" in venue.family_ids
     assert "airport screening" in query_text
-    assert "official agency guidance" in query_text
+    assert "official agency" in query_text
     assert _BASE_AUTHORITY_DOMAINS | {"transportation.gov"} <= domains
+
+
+def test_ag93e6_official_agency_domains_survive_query_hint_cap() -> None:
+    cases = [
+        (
+            (
+                "As of today, what are the current U.S. DOT rules for airline "
+                "passengers who use wheelchairs?"
+            ),
+            "DOT wheelchair airline passenger current rules",
+            "DOT wheelchair passenger rules",
+            "transportation.gov",
+            "14 cfr part 382",
+        ),
+        (
+            (
+                "What are the current official rules and legal status of the "
+                "FTC noncompete rule?"
+            ),
+            "FTC noncompete rule current legal status",
+            "FTC noncompete rule",
+            "ftc.gov",
+            "court status",
+        ),
+        (
+            (
+                "What are the current official rules for FDA enforcement of "
+                "laboratory developed tests after the LDT final rule?"
+            ),
+            "FDA LDT final rule enforcement posture",
+            "FDA laboratory developed tests",
+            "fda.gov",
+            "enforcement discretion",
+        ),
+    ]
+
+    for query, core_topic, primary_entity, domain, legacy_hint in cases:
+        out = _recommendation(
+            query=query,
+            core_topic=core_topic,
+            primary_entity=primary_entity,
+        )
+        query_text = " ".join(out["source_class_recovery_queries"]).casefold()
+
+        assert domain in query_text
+        assert legacy_hint in query_text
+        assert domain in out["source_class_recovery_official_domains"]
 
 
 def test_ag93e6_non_air_government_credential_query_uses_program_access_family() -> None:

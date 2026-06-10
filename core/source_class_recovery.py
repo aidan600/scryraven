@@ -2095,7 +2095,7 @@ def _official_source_target_hints(*texts: str) -> list[str]:
         for value in values:
             _append_unique(hints, value)
 
-    add(*inferred.search_hints)
+    add(*inferred.domain_constraints)
 
     text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
 
@@ -2182,6 +2182,8 @@ def _official_source_target_hints(*texts: str) -> list[str]:
     )
     if sec_context:
         add("sec.gov", "EDGAR", "issuer filing")
+
+    add(*inferred.search_hints)
 
     return hints
 
