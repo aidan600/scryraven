@@ -163,6 +163,74 @@ def test_citation_alignment_packet_reports_expected_vs_observed_source_ids() -> 
     assert "CITATION_ALIGNMENT_FAILED" in markdown
 
 
+def test_ag93e_completed_run_projection_repairs_successful_answer_legacy_custody_gap() -> None:
+    base = deepcopy(_raw_snapshots()["ag93b_current_official_fact"])
+    completed_run_projection = {
+        "task_id": "ag93b_current_official_fact",
+        "run_kernel": {
+            "run_contract_projection": base["contract"],
+            "evidence_ledger": {
+                "owner": "RunKernel.EvidenceLedger",
+                "candidate_count": 2,
+                "requirement_count": 1,
+                **base["ledger"],
+            },
+            "search_judgment_projection": base["search"],
+            "sufficiency_judgment_projection": base["sufficiency"],
+            "final_answer_packet": {
+                "packet_id": "final-answer-packet-ag93e-live-gap-fixture",
+                "trace_mode": "run_kernel_final_answer_packet_projection",
+                **base["final_packet"],
+            },
+        },
+        "controller_evidence_ledger": {
+            "ControllerEvidenceLedger": {
+                "final_evidence_citation_custody": {
+                    "owner": "ControllerEvidenceLedger",
+                    "status": "legacy_gap_observed",
+                    "custody_complete": False,
+                    "final_evidence_observed_count": 1,
+                    "final_citation_observed_count": 1,
+                    "represented_authority_candidate_count": 0,
+                    "candidate_disposition_count": 0,
+                    "selected_authority_evidence_count": 0,
+                    "legacy_gap_types": [
+                        "final_evidence_or_citation_without_candidate_passport_custody",
+                        "final_evidence_or_citation_without_final_selected_authority_evidence",
+                        "provider_result_to_final_evidence_custody_parallel_path",
+                    ],
+                    "old_path_classification": (
+                        "final evidence/citation counts are subordinate to ControllerEvidenceLedger custody"
+                    ),
+                }
+            }
+        },
+        "final_answer": base["final_answer"],
+    }
+
+    packet, result = _packet("ag93b_current_official_fact", completed_run_projection)
+
+    assert result.passed, result.human_summary()
+    final_packet = packet.to_dict()["observed_final_answer_packet"]
+    custody = final_packet["final_evidence_citation_custody"]
+    assert final_packet["final_evidence_citation_custody_status"] == (
+        "final_answer_packet_custody_projected"
+    )
+    assert final_packet["final_evidence_citation_custody_complete"] is True
+    assert custody["projection_source"] == "RunKernel.FinalAnswerPacket"
+    assert custody["legacy_controller_custody"]["status"] == "legacy_gap_observed"
+    assert custody["legacy_parallel_path_classification"] == "classified_legacy_not_complete"
+    assert custody["final_evidence_refs"][0]["custody_source"] == (
+        "RunKernel.FinalAnswerPacket.evidence_allowed"
+    )
+    assert custody["final_citation_refs"][0]["custody_source"] == (
+        "RunKernel.FinalAnswerPacket.citation_eligible"
+    )
+    assert "Final evidence/citation custody: final_answer_packet_custody_projected" in (
+        packet.to_markdown()
+    )
+
+
 def test_prose_note_remains_non_failing_and_separate_from_evidence_failures() -> None:
     snapshot = deepcopy(_raw_snapshots()["ag93b_current_official_fact"])
     snapshot["final_answer"]["text"] = "Different wording, same structured official-status ingredient."

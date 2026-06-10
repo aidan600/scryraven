@@ -190,6 +190,47 @@ def test_wrong_source_cited_for_key_fact_fails_alignment() -> None:
     assert GoldenEvaluationStatus.CITATION_ALIGNMENT_FAILED.value in _finding_statuses(result)
 
 
+def test_ag93e_normalizes_completed_run_projection_with_legacy_custody_gap() -> None:
+    base = deepcopy(_raw_snapshots()["ag93b_current_official_fact"])
+    completed_run_projection = {
+        "task_id": "ag93b_current_official_fact",
+        "run_kernel": {
+            "run_contract_projection": base["contract"],
+            "evidence_ledger": {
+                "owner": "RunKernel.EvidenceLedger",
+                "candidate_count": 2,
+                "requirement_count": 1,
+                **base["ledger"],
+            },
+            "search_judgment_projection": base["search"],
+            "sufficiency_judgment_projection": base["sufficiency"],
+            "final_answer_packet": {
+                "packet_id": "final-answer-packet-ag93e-harness-fixture",
+                **base["final_packet"],
+            },
+        },
+        "controller_evidence_ledger": {
+            "ControllerEvidenceLedger": {
+                "final_evidence_citation_custody": {
+                    "owner": "ControllerEvidenceLedger",
+                    "status": "legacy_gap_observed",
+                    "custody_complete": False,
+                    "legacy_gap_types": [
+                        "final_evidence_or_citation_without_candidate_passport_custody",
+                        "final_evidence_or_citation_without_final_selected_authority_evidence",
+                        "provider_result_to_final_evidence_custody_parallel_path",
+                    ],
+                }
+            }
+        },
+        "final_answer": base["final_answer"],
+    }
+
+    result = _evaluate("ag93b_current_official_fact", completed_run_projection)
+
+    assert result.passed, result.human_summary()
+
+
 def test_search_and_recovery_count_out_of_bounds_fails_distinct_taxonomy() -> None:
     snapshot = deepcopy(_raw_snapshots()["ag93b_current_official_fact"])
     snapshot["search"]["attempt_count"] = 5

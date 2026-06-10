@@ -252,6 +252,7 @@ def render_offline_replay_review_packet_markdown(
             f"- Sufficiency warnings: {_render_warnings(sufficiency.get('warnings', []))}",
             f"- Final packet allowed evidence: {_join_or_none(final_packet.get('allowed_evidence_source_ids'))}",
             f"- Citation eligible: {_join_or_none(final_packet.get('citation_eligible_source_ids'))}",
+            f"- Final evidence/citation custody: {final_packet.get('final_evidence_citation_custody_status')} ({'complete' if final_packet.get('final_evidence_citation_custody_complete') else 'incomplete'})",
             f"- Missing caveats/upgrades: {_join_or_none(final_packet.get('missing_caveats') + final_packet.get('missing_prohibited_upgrades'))}",
             f"- Final packet warnings: {_render_warnings(final_packet.get('warnings', []))}",
             "",
@@ -547,16 +548,27 @@ def _final_packet_summary(
     missing_upgrades = [item for item in expected.prohibited_upgrades if item not in upgrades]
     missing_allowed = [item for item in expected.allowed_evidence_source_ids if item not in allowed]
     missing_citation = [item for item in expected.citation_eligible_source_ids if item not in citation_eligible]
+    custody = _mapping(snapshot.final_evidence_citation_custody)
     warnings = [{"code": "MANDATORY_CAVEAT_MISSING", "caveat": item} for item in missing_caveats]
     warnings.extend(
         {"code": "PROHIBITED_UPGRADE_GUARDRAIL_MISSING", "prohibited_upgrade": item} for item in missing_upgrades
     )
     warnings.extend({"code": "ALLOWED_EVIDENCE_SOURCE_MISSING", "source_id": item} for item in missing_allowed)
     warnings.extend({"code": "CITATION_ELIGIBLE_SOURCE_MISSING", "source_id": item} for item in missing_citation)
+    if custody.get("status") == "legacy_gap_observed":
+        warnings.append(
+            {
+                "code": "FINAL_EVIDENCE_CITATION_LEGACY_GAP_OBSERVED",
+                "legacy_gap_types": custody.get("legacy_controller_custody", {}).get("legacy_gap_types", []),
+            }
+        )
     return {
         "readiness_status": _clean_text(snapshot.final_answer_packet.get("readiness_status")),
         "allowed_evidence_source_ids": list(allowed),
         "citation_eligible_source_ids": list(citation_eligible),
+        "final_evidence_citation_custody_status": _clean_text(custody.get("status")) or "not_observed",
+        "final_evidence_citation_custody_complete": bool(custody.get("custody_complete")),
+        "final_evidence_citation_custody": custody,
         "mandatory_caveats": list(caveats),
         "prohibited_upgrades": list(upgrades),
         "missing_caveats": missing_caveats,
@@ -864,6 +876,10 @@ def _mapping_list(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, (list, tuple)):
         return [dict(item) for item in value if isinstance(item, Mapping)]
     return []
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _strings(value: Any) -> list[str]:
