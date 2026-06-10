@@ -408,12 +408,15 @@ def test_final_answer_packet_consumes_ledger_custody_and_preserves_uncustodied_g
 def test_static_guards_preserve_runkernel_custody_authority() -> None:
     pipeline = (ROOT / "core" / "pipeline_orchestrator.py").read_text()
     ledger = (ROOT / "core" / "evidence_ledger.py").read_text()
+    lifecycle = (ROOT / "core" / "evidence_ledger_lifecycle.py").read_text()
     answer_contract = (
         ROOT / "core" / "answer_contract_runtime_handoff.py"
     ).read_text()
 
-    assert "run_kernel.authorize_evidence_ledger_reduction(" in pipeline
-    assert "execute_evidence_ledger_reduction_action(" in pipeline
+    assert "reduce_run_contract_requirements_into_evidence_ledger(" in pipeline
+    assert "reduce_pre_recovery_source_obligations_into_evidence_ledger(" in pipeline
+    assert "run_kernel.authorize_evidence_ledger_reduction(" in lifecycle
+    assert "execute_evidence_ledger_reduction_action(" in lifecycle
     assert "evidence_ledger_projection=evidence_ledger_projection" in pipeline
     assert "EvidenceCandidate(" not in pipeline
     assert "SourceRequirementRecord(" not in pipeline
@@ -430,6 +433,7 @@ def test_static_guards_preserve_runkernel_custody_authority() -> None:
     )
     for forbidden in forbidden_runtime_calls:
         assert forbidden not in ledger
+        assert forbidden not in lifecycle
 
     assert (
         build_controller_evidence_ledger()[
