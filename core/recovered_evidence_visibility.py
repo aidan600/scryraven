@@ -479,6 +479,24 @@ def _non_authority_source_fit_reason(source: Mapping[str, Any]) -> str:
     return "not_strong_source_class"
 
 
+def _bool_or_unknown(value: Any) -> bool | None:
+    if value is True:
+        return True
+    if value is False:
+        return False
+    return None
+
+
+def _explicit_unreadability_reason(source: Mapping[str, Any]) -> str | None:
+    explicit = _bool_or_unknown(source.get("readable_text_available"))
+    if explicit is False:
+        return "readability_failed"
+    status = _compact_text(source.get("readability_status")).casefold()
+    if status in {"unreadable", "readability_failed", "failed"}:
+        return "readability_failed"
+    return None
+
+
 def _approved_recover_missing_source_class_envelope(
     lifecycle_trace: Mapping[str, Any],
 ) -> bool:
@@ -620,7 +638,6 @@ def apply_recovered_evidence_visibility_boundary(
                 dropped.append(identity)
             drop_reasons.append("duplicate_recovered_source")
             continue
-
         strong_classes = _strong_source_classes(source)
         if not strong_classes:
             if identity:
@@ -636,6 +653,13 @@ def apply_recovered_evidence_visibility_boundary(
             if identity:
                 dropped.append(identity)
             drop_reasons.append("source_class_mismatch")
+            continue
+
+        unreadability_reason = _explicit_unreadability_reason(source)
+        if unreadability_reason:
+            if identity:
+                dropped.append(identity)
+            drop_reasons.append(unreadability_reason)
             continue
 
         if _historical_or_archival_blocks_current_gap(

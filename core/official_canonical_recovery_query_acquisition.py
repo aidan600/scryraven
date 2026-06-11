@@ -33,6 +33,7 @@ from core.official_source_obligation_candidate_visibility import (
 )
 from core.source_class_recovery import (
     _infer_official_authority_venue,
+    build_official_authority_acquisition_plan,
     build_official_source_recovery_domain_constraints,
 )
 
@@ -238,6 +239,13 @@ def apply_official_canonical_recovery_query_acquisition(
     considered = facts.obligation_status != UNKNOWN
 
     subject = _query_subject(base=base, trace=trace)
+    context_text = _context_text(base=base, trace=trace)
+    official_plan = build_official_authority_acquisition_plan(
+        source_classes=acquisition_classes,
+        subject=subject,
+        context_text=context_text,
+        max_query_variants=_MAX_ADDED_QUERIES,
+    )
     needed_intents = _needed_intents(
         source_classes=acquisition_classes,
         existing_queries=visible_queries,
@@ -254,10 +262,18 @@ def apply_official_canonical_recovery_query_acquisition(
         generation_intents,
         subject,
         existing_queries=[*visible_queries, *promoted_queries],
-        context_text=_context_text(base=base, trace=trace),
+        context_text=context_text,
+        source_classes=acquisition_classes,
     )
     executable_queries = _dedupe([*promoted_queries, *added_queries])
     source_specific_terms_present = _source_specific_terms_present(executable_queries)
+    source_specific_terms_allowed = bool(
+        official_plan.get("hard_domains")
+        or official_plan.get("soft_candidate_domains")
+    )
+    source_specific_terms_blocking = (
+        source_specific_terms_present and not source_specific_terms_allowed
+    )
     blockers = _acquisition_blockers(
         existing_blockers,
         base,
@@ -272,7 +288,7 @@ def apply_official_canonical_recovery_query_acquisition(
         and acquisition_classes
         and (needed_intents or promoted_queries)
         and not blockers
-        and not source_specific_terms_present
+        and not source_specific_terms_blocking
     )
     used = bool(eligible and executable_queries)
 
@@ -310,7 +326,6 @@ def apply_official_canonical_recovery_query_acquisition(
             recommendation_out["source_class_recovery_domain_constraint_source"] = (
                 "official_source_recovery_lane"
             )
-
     trace_payload = {
         "schema_version": (
             OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_SCHEMA_VERSION
@@ -329,7 +344,7 @@ def apply_official_canonical_recovery_query_acquisition(
             needed_intents=needed_intents,
             promoted_queries=promoted_queries,
             blockers=blockers,
-            source_specific_terms_present=source_specific_terms_present,
+            source_specific_terms_present=source_specific_terms_blocking,
             added_queries=added_queries,
         ),
         "acquisition_repair_blockers": blockers,
@@ -348,7 +363,11 @@ def apply_official_canonical_recovery_query_acquisition(
                 used=used,
             )
         ),
+        "official_authority_acquisition_plan": official_plan,
         "source_specific_terms_present": source_specific_terms_present,
+        "source_specific_terms_allowed_by_official_authority_plan": (
+            source_specific_terms_allowed
+        ),
         "provider_policy_unchanged": True,
         "depth_policy_unchanged": True,
         "ranking_unchanged": True,
@@ -621,6 +640,7 @@ def _generic_queries_for_intents(
     *,
     existing_queries: Iterable[str] = (),
     context_text: str = "",
+    source_classes: Iterable[str] = (),
 ) -> tuple[str, ...]:
     queries: list[str] = []
     for intent in intents:
@@ -633,7 +653,11 @@ def _generic_queries_for_intents(
                     break
         elif intent == "official_current_source":
             queries.extend(
-                _official_current_queries(subject, context_text=context_text)
+                _official_current_queries(
+                    subject,
+                    context_text=context_text,
+                    source_classes=source_classes,
+                )
             )
         if len(queries) >= _MAX_ADDED_QUERIES:
             break
@@ -669,10 +693,21 @@ def _year_terms(text: str) -> str:
     return " ".join(dict.fromkeys(years))
 
 
-def _official_current_queries(subject: str, *, context_text: str = "") -> list[str]:
+def _official_current_queries(
+    subject: str,
+    *,
+    context_text: str = "",
+    source_classes: Iterable[str] = (),
+) -> list[str]:
     """Return deterministic official/current query variants for numeric rules."""
     text = subject.casefold()
     year_text = _year_terms(subject)
+    plan = build_official_authority_acquisition_plan(
+        source_classes=source_classes or ("official_current_rules",),
+        subject=subject,
+        context_text=context_text,
+        max_query_variants=_MAX_ADDED_QUERIES,
+    )
     role_only_hints = _official_current_role_only_venue_hints(
         subject,
         context_text,
@@ -683,6 +718,13 @@ def _official_current_queries(subject: str, *, context_text: str = "") -> list[s
         if query not in queries and len(queries) < _MAX_ADDED_QUERIES:
             queries.append(query)
 
+    if (
+        plan.get("venue_families")
+        or plan.get("hard_domains")
+        or plan.get("soft_candidate_domains")
+    ):
+        for query in plan.get("query_variants", ()):
+            add(query)
     if role_only_hints:
         add(" ".join(("official current source", *role_only_hints, subject)))
     if "irs" in text or "internal revenue service" in text:
