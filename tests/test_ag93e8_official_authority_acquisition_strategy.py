@@ -324,6 +324,23 @@ def test_ag93e8_readable_official_fixture_is_admitted_and_passported() -> None:
     assert passport["final_disposition"] == "promoted_final_authority_evidence"
 
 
+def test_ag93e8_missing_text_metadata_does_not_fail_readability_gate() -> None:
+    trace = _authority_trace()
+    candidate = _official_candidate(candidate_id="official-metadata-only")
+    candidate.pop("text", None)
+
+    final, decision = apply_recovered_evidence_visibility_boundary(
+        final_top_evidence=[_secondary_context("https://analysis.example/context")],
+        recovered_passages=[candidate],
+        lifecycle_trace=trace,
+        max_final_evidence=4,
+    )
+
+    assert decision.source_fit_status == "matched_selected"
+    assert final[-1]["candidate_id"] == "official-metadata-only"
+    assert "readability_failed" not in decision.source_fit_rejection_reasons
+
+
 def test_ag93e8_news_and_unreadable_official_candidates_do_not_satisfy() -> None:
     news_trace = _authority_trace(result_count=1, accepted_url_count=0)
     news_final, news_decision = apply_recovered_evidence_visibility_boundary(

@@ -326,11 +326,6 @@ def apply_official_canonical_recovery_query_acquisition(
             recommendation_out["source_class_recovery_domain_constraint_source"] = (
                 "official_source_recovery_lane"
             )
-        if official_plan.get("source_classes_required"):
-            recommendation_out["source_class_recovery_official_acquisition_plan"] = (
-                official_plan
-            )
-
     trace_payload = {
         "schema_version": (
             OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_SCHEMA_VERSION

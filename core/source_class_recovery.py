@@ -251,7 +251,7 @@ class _OfficialAuthorityAcquisitionPlan:
             "reason_codes": list(self.reason_codes),
             "bounded_attempt_metadata": {
                 "max_query_variants": self.max_query_variants,
-                "global_search_depth_unchanged": True,
+                "global_depth_policy_unchanged": True,
                 "provider_selection_unchanged": True,
                 "role_only_domains_not_forced": not self.hard_domains,
             },
@@ -3149,11 +3149,6 @@ def apply_answer_contract_source_class_recovery_gap_trigger(
         primary_entity=primary_entity,
         recovery_queries=recovery_queries,
     )
-    official_plan = _official_authority_acquisition_plan(
-        source_classes=missing,
-        subject=subject,
-        context_text=context_text,
-    )
 
     trigger_fields = _copy_compact_list(
         base.get("source_class_recovery_trigger_fields")
@@ -3191,12 +3186,7 @@ def apply_answer_contract_source_class_recovery_gap_trigger(
     else:
         base.pop("source_class_recovery_official_domains", None)
         base.pop("source_class_recovery_domain_constraint_source", None)
-    if official_plan.source_classes_required:
-        base["source_class_recovery_official_acquisition_plan"] = (
-            official_plan.as_trace()
-        )
-    else:
-        base.pop("source_class_recovery_official_acquisition_plan", None)
+    base.pop("source_class_recovery_official_acquisition_plan", None)
     return base
 
 
@@ -3593,11 +3583,6 @@ def build_source_class_recovery_recommendation(
         primary_entity=primary_entity,
         recovery_queries=recovery_queries,
     )
-    official_plan = _official_authority_acquisition_plan(
-        source_classes=missing,
-        subject=subject,
-        context_text=context_text,
-    )
 
     trigger_fields: list[str] = []
     if missing:
@@ -3623,9 +3608,5 @@ def build_source_class_recovery_recommendation(
         payload["source_class_recovery_official_domains"] = official_domains
         payload["source_class_recovery_domain_constraint_source"] = (
             "official_source_recovery_lane"
-        )
-    if official_plan.source_classes_required:
-        payload["source_class_recovery_official_acquisition_plan"] = (
-            official_plan.as_trace()
         )
     return payload
