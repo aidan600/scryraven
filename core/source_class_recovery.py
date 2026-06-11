@@ -574,6 +574,38 @@ def _expected_source_classes(
     elif source_class == "official" and claim_type == "rule" and not historical_rule_context:
         add("official_current_rules", "anchor_packet")
 
+    legal_regulatory_primary_request = _has_any(
+        text,
+        (
+            r"\bofficial\s+(?:legal|regulatory|statutory)\s+"
+            r"(?:texts?|sources?|materials?|requirements?|obligations?|rules?)\b",
+            r"\bcurrent\b.{0,40}\b(?:statutes?|regulations?|laws?|codes?)\b"
+            r".{0,80}\b(?:requires?|says?|lists?|defines?|provides?)\b",
+            r"\b(?:statutes?|regulations?|laws?|codes?)\b.{0,80}\bcurrent\b"
+            r".{0,80}\b(?:requires?|says?|lists?|defines?|provides?)\b",
+            r"\bapproved\s+(?:lists?|preservatives?|additives?|ingredients?)\b"
+            r".{0,80}\b(?:regulation|regulatory|legal|official|current)\b",
+            r"\b(?:regulation|regulatory|legal|official|current)\b.{0,80}"
+            r"\bapproved\s+(?:lists?|preservatives?|additives?|ingredients?)\b",
+        ),
+    )
+    if legal_regulatory_primary_request and not historical_rule_context:
+        add("legal_or_regulatory_text", "query")
+
+    official_product_status_request = _has_any(
+        text,
+        (
+            r"\bofficial\s+(?:product\s+)?(?:release\s+notes?|changelogs?|"
+            r"status\s+page|support\s+matrix|version\s+support|release\s+status)\b",
+            r"\b(?:release\s+notes?|changelogs?|status\s+page|support\s+matrix)\b"
+            r".{0,80}\b(?:official|current|supported|version)\b",
+            r"\b(?:version|release)\s+[a-z0-9][a-z0-9.\-_]*\b.{0,80}"
+            r"\b(?:supported|support|status)\b",
+        ),
+    )
+    if official_product_status_request and not historical_rule_context:
+        add("primary_source_documents", "query")
+
     issuer_request = _has_any(
         text,
         (
@@ -1894,6 +1926,10 @@ def _source_class_present(
         return _polling_domain_signal(domains)
     elif bucket == "primary_source_documents":
         present = official_present or _primary_document_domain_signal(domains)
+    elif bucket in {"legal_or_regulatory_text", "current_primary_or_official"}:
+        present = official_present or any(
+            _legal_authority_domain_signal(domain) for domain in domains
+        )
     else:
         return True
 
