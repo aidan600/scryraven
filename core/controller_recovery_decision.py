@@ -142,6 +142,7 @@ def build_controller_recovery_decision(
     source_obligation_status = _source_obligation_status(trace, source_classes)
     budget_state = _recovery_budget_state(trace)
     candidate_state = _candidate_state_summary(trace)
+    hard_blocker_state = _recovery_hard_blocker_state(trace)
     gate_authoritative = _controller_gate_authoritative(
         trace=trace,
         ledger_status=ledger_status,
@@ -156,6 +157,7 @@ def build_controller_recovery_decision(
         source_obligation_status=source_obligation_status,
         budget_state=budget_state,
         candidate_state=candidate_state,
+        hard_blocker_state=hard_blocker_state,
         gate_authoritative=gate_authoritative,
     )
     if decision not in _DECISIONS:
@@ -171,6 +173,7 @@ def build_controller_recovery_decision(
         "source_obligation_status": source_obligation_status,
         "candidate_state_summary": candidate_state,
         "recovery_budget_state": budget_state,
+        "recovery_hard_blocker_state": hard_blocker_state,
         "decision": decision,
         "decision_reason": reason,
         "allowed_executor_action": _allowed_executor_action(decision, reason),
@@ -222,6 +225,7 @@ def _decide(
     source_obligation_status: str,
     budget_state: str,
     candidate_state: str,
+    hard_blocker_state: str,
     gate_authoritative: bool,
 ) -> tuple[str, str]:
     if ledger_status == "controller_complete" and custody_complete is True:
@@ -238,6 +242,16 @@ def _decide(
             STOP_FOR_ARCHITECTURE_DECISION,
             "missing_controller_disposition_not_aggregate_success",
         )
+    if source_obligation_status == "not_required_or_satisfied":
+        return STOP_SUFFICIENT, "official_current_obligation_satisfied_no_retry"
+    if hard_blocker_state == "terminal_stop":
+        return STOP_INSUFFICIENT, "terminal_stop_blocks_recovery"
+    if hard_blocker_state == "hard_recovery_cap":
+        return STOP_INSUFFICIENT, "hard_recovery_cap_blocks_recovery"
+    if hard_blocker_state == "conflict_resolution":
+        return STOP_INSUFFICIENT, "conflict_resolution_blocks_recovery"
+    if hard_blocker_state == "provider_policy_or_depth":
+        return STOP_INSUFFICIENT, "provider_policy_or_depth_blocks_recovery"
     if candidate_state == "selected_complete_official_current_evidence_exists":
         return CONTINUE_DOWNSTREAM, "selected_official_current_evidence_exists"
     if candidate_state == "candidate_acquired_but_unreadable":
@@ -261,8 +275,6 @@ def _decide(
         and gate_authoritative
     ):
         return RETRY_RECOVERY, "official_current_obligation_unmet_retry_available"
-    if source_obligation_status == "not_required_or_satisfied":
-        return STOP_SUFFICIENT, "official_current_obligation_satisfied_no_retry"
     return STOP_FOR_ARCHITECTURE_DECISION, "unknown_or_contradictory_recovery_state"
 
 
@@ -382,6 +394,36 @@ def _recovery_budget_state(trace: Mapping[str, Any]) -> str:
     )
     if "exhausted" in skip_reason or "hard_recovery_attempt_cap" in skip_reason:
         return "exhausted"
+    return _UNKNOWN
+
+
+def _recovery_hard_blocker_state(trace: Mapping[str, Any]) -> str:
+    blockers = set(
+        _string_list(trace.get("admission_blockers"))
+        + _string_list(trace.get("active_source_class_recovery_blockers"))
+        + _string_list(trace.get("source_class_recovery_candidate_v2_blockers"))
+        + _string_list(trace.get("candidate_acquisition_blockers"))
+    )
+    skip_reason = _text(
+        _first_present(
+            trace.get("admission_skip_reason"),
+            trace.get("active_source_class_recovery_skip_reason"),
+            trace.get("candidate_acquisition_skip_reason"),
+        )
+    )
+    if blockers & {"terminal_stop_approved", "blocked_by_terminal_stop"}:
+        return "terminal_stop"
+    if blockers & {"budget_hard_exhausted", "already_attempted"}:
+        return "hard_recovery_cap"
+    if "hard_recovery_attempt_cap" in skip_reason:
+        return "hard_recovery_cap"
+    if blockers & {"conflict_resolution_owns_path", "blocked_by_conflict_resolution"}:
+        return "conflict_resolution"
+    if blockers & {
+        "blocked_by_provider_policy_change_required",
+        "blocked_by_search_depth_escalation_required",
+    }:
+        return "provider_policy_or_depth"
     return _UNKNOWN
 
 
