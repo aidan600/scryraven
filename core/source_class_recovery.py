@@ -2590,24 +2590,49 @@ def _official_authority_query_variants(
             subject,
         )
     if "legal_regulatory_challenge_effective_date_rule" in families:
-        add(
-            "Federal Register court order agency docket final rule",
-            "compliance date enforcement status",
-            subject,
-        )
+        if _us_federal_authority_context(subject, context_text):
+            add(
+                "Federal Register court order agency docket final rule",
+                "compliance date enforcement status",
+                subject,
+            )
+        else:
+            add(
+                "official legal status court order regulator notice",
+                "compliance date enforcement status current rule",
+                subject,
+            )
     if not queries and "legal_or_regulatory_text" in source_classes:
-        add(
-            "legal regulatory text official source Federal Register CFR eCFR",
-            subject,
-        )
+        if _us_federal_authority_context(subject, context_text):
+            add(
+                "legal regulatory text official source Federal Register CFR eCFR",
+                subject,
+            )
+        else:
+            add(
+                "official legal text current regulatory source competent authority",
+                "primary legal source regulation current rule",
+                subject,
+            )
     if not queries and "current_primary_or_official" in source_classes:
-        add(
-            "current official primary source agency guidance Federal Register",
-            subject,
-        )
+        if _us_federal_authority_context(subject, context_text):
+            add(
+                "current official primary source agency guidance Federal Register",
+                subject,
+            )
+        else:
+            add(
+                "current official primary source competent authority",
+                "regulator guidance current rule",
+                subject,
+            )
     if not queries:
         hint_text = _compact_text(" ".join(role_hints), limit=80)
-        add("official current source agency guidance current requirements", hint_text, subject)
+        add(
+            "official current source agency guidance current requirements",
+            hint_text,
+            subject,
+        )
     return tuple(queries)
 
 
@@ -2972,6 +2997,25 @@ def _append_hint(base: str, hint_text: str) -> str:
     return f"{base} {hint_text}"
 
 
+def _us_federal_authority_context(*texts: str) -> bool:
+    text = " ".join(
+        _compact_text(value, limit=260) for value in texts if str(value or "").strip()
+    ).casefold()
+    if not text:
+        return False
+    return _has_any(
+        text,
+        (
+            r"\b(?:u\.s\.|united\s+states|federal)\b",
+            r"\b(?:federal\s+register|code\s+of\s+federal\s+regulations|"
+            r"cfr|ecfr|govinfo|regulations\.gov)\b",
+            r"\b(?:irs|internal\s+revenue\s+service|uscis|ssa|social\s+"
+            r"security|department\s+of\s+labor|dol|ftc|fda|cfpb|sec|"
+            r"department\s+of\s+transportation|transportation\s+department)\b",
+        ),
+    )
+
+
 def _candidate_queries_for_bucket(
     bucket: str,
     subject: str,
@@ -2998,13 +3042,23 @@ def _candidate_queries_for_bucket(
             [
                 *plan_queries,
             _append_hint(
-                f"{subject} official source current rules government agency guidance "
-                "Federal Register CFR eCFR GovInfo",
+                (
+                    f"{subject} official source current rules government agency "
+                    "guidance Federal Register CFR eCFR GovInfo"
+                    if _us_federal_authority_context(subject, context_text)
+                    else f"{subject} official source current rules government "
+                    "agency guidance competent authority"
+                ),
                 hints,
             ),
             _append_hint(
-                f"{subject} final rule compliance date enforcement status "
-                "agency guidance official requirements",
+                (
+                    f"{subject} final rule compliance date enforcement status "
+                    "agency guidance official requirements"
+                    if _us_federal_authority_context(subject, context_text)
+                    else f"{subject} current regulatory source official "
+                    "requirements enforcement status regulator guidance"
+                ),
                 hints,
             ),
             ]
@@ -3014,13 +3068,23 @@ def _candidate_queries_for_bucket(
             [
                 *plan_queries,
             _append_hint(
-                f"{subject} legal regulatory text statute regulation CFR eCFR "
-                "Code of Federal Regulations",
+                (
+                    f"{subject} legal regulatory text statute regulation CFR eCFR "
+                    "Code of Federal Regulations"
+                    if _us_federal_authority_context(subject, context_text)
+                    else f"{subject} official legal text regulation current "
+                    "regulatory source competent authority"
+                ),
                 hints,
             ),
             _append_hint(
-                f"{subject} Federal Register GovInfo final rule docket "
-                "compliance date regulation text",
+                (
+                    f"{subject} Federal Register GovInfo final rule docket "
+                    "compliance date regulation text"
+                    if _us_federal_authority_context(subject, context_text)
+                    else f"{subject} primary legal source regulator guidance "
+                    "current rule approved list"
+                ),
                 hints,
             ),
             ]
@@ -3030,13 +3094,23 @@ def _candidate_queries_for_bucket(
             [
                 *plan_queries,
             _append_hint(
-                f"{subject} current official primary source agency guidance "
-                "Federal Register enforcement status",
+                (
+                    f"{subject} current official primary source agency guidance "
+                    "Federal Register enforcement status"
+                    if _us_federal_authority_context(subject, context_text)
+                    else f"{subject} current official source primary source "
+                    "competent authority regulator guidance"
+                ),
                 hints,
             ),
             _append_hint(
-                f"{subject} official source current status final rule "
-                "court status compliance date",
+                (
+                    f"{subject} official source current status final rule "
+                    "court status compliance date"
+                    if _us_federal_authority_context(subject, context_text)
+                    else f"{subject} official current regulatory source "
+                    "current rule primary authority"
+                ),
                 hints,
             ),
             ]

@@ -835,6 +835,8 @@ def _admission_blockers(
         out.append("conflict_resolution_owns_path")
     if facts.terminal_stop_approved:
         out.append("terminal_stop_approved")
+    if facts.iteration_budget_hard_exhausted:
+        out.append("budget_hard_exhausted")
     if not facts.provider_policy_reusable or facts.provider_swap_required:
         out.append("blocked_by_provider_policy_change_required")
     if (
