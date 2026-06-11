@@ -554,14 +554,14 @@ def test_jurisdiction_neutral_legal_regulatory_recovery_query_uses_neutral_autho
 def test_us_legal_regulatory_recovery_query_may_include_us_legal_sources_when_us_context() -> None:
     rec = build_source_class_recovery_recommendation(
         query=(
-            "What U.S. federal legal or regulatory text currently lists "
+            "What U.S. legal or regulatory text currently lists "
             "approved additives for infant formula?"
         ),
         current_date="2026-06-11",
         intent="general",
         report_type="general_research",
         query_type="other",
-        core_topic="U.S. federal infant formula additives approved list",
+        core_topic="U.S. infant formula additives approved list",
         primary_entity="infant formula additives",
         anchor_packet=None,
         source_tier_counts={"secondary": 2},

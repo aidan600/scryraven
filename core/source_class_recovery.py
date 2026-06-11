@@ -3006,7 +3006,8 @@ def _us_federal_authority_context(*texts: str) -> bool:
     return _has_any(
         text,
         (
-            r"\b(?:u\.s\.|united\s+states|federal)\b",
+            r"(?<![a-z0-9])u\.s\.(?![a-z0-9])",
+            r"\b(?:united\s+states|federal)\b",
             r"\b(?:federal\s+register|code\s+of\s+federal\s+regulations|"
             r"cfr|ecfr|govinfo|regulations\.gov)\b",
             r"\b(?:irs|internal\s+revenue\s+service|uscis|ssa|social\s+"
