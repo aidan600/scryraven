@@ -18,6 +18,25 @@ For ordinary setup, docs, UI, or non-authority work, start from the
 
 ## Core doctrine
 
+### Current implemented baseline
+
+As of AG-94C, the implemented runtime authority baseline is:
+
+```text
+RunAuthorityContract -> EvidenceLedger -> SearchJudgment -> SufficiencyJudgment
+-> FinalAnswerPacket -> AuthorExecutor
+```
+
+RunKernel / RunAuthority owns run-level meaning and canonical authority.
+Executors perform bounded work. Reducers commit observations into canonical
+RunState / EvidenceLedger / FinalAnswerPacket state. Trace, export, report, and
+projection surfaces observe canonical state and must not re-decide it.
+
+Legacy Controller/lifecycle surfaces may remain only as passive mirrors,
+compatibility executors, bounded adapters, RunAuthority-subordinated lanes, or
+explicitly scheduled retirement surfaces. `core/pipeline_orchestrator.py` should
+remain a coordination shell, not a domain brain.
+
 ### No orchestrator brain
 
 The orchestrator should coordinate lifecycle flow and call bounded executors. It

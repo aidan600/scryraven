@@ -25,6 +25,10 @@ are repo files; use repo-visible files and the current phase prompt.
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - **AG-89+ RunAuthority / authority-collapse work:**
   [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
+- **Current authority doctrine / stale Controller vocabulary audit:** read
+  `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md` after the
+  RunAuthority guide when a phase touches authority, projection/export/report
+  meaning, controller/orchestrator cleanup, or naming debt.
 - **AG-89 architecture inventory and doctrine:** start with
   `docs/architecture/AG89A_RUN_KERNEL_ORCHESTRATOR_RETIREMENT_ACCOUNTABILITY_INVENTORY.md`
   and then read later AG-89 docs relevant to the phase (`AG89B` if present,
@@ -62,9 +66,13 @@ When guidance conflicts:
 2. The current phase prompt wins over older docs.
 3. For AG-89+ authority-collapse, the RunAuthority guide wins over the legacy
    Controller passive-contract ladder.
-4. For legacy Controller-handoff maintenance explicitly selected by a phase, the
+4. For current-looking architecture summaries that still say "Controller
+   decides, orchestrator executes", prefer the AG-94C authority doctrine audit
+   and treat older summaries as historical unless a phase explicitly refreshes
+   them.
+5. For legacy Controller-handoff maintenance explicitly selected by a phase, the
    Controller playbook may be used within its stated scope.
-5. If a conflict would require a product choice, unresolved architecture fork,
+6. If a conflict would require a product choice, unresolved architecture fork,
    unlicensed protected-surface change, live validation, secrets/private data, or
    destructive git, stop and ask.
 
