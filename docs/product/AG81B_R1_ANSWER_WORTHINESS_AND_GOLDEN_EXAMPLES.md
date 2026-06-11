@@ -2,6 +2,12 @@
 
 Status: product behavior design / docs-first; extends AG-81B; no runtime behavior change; no prompt tuning; no live validation; no provider/model/search calls
 
+> **AG-94G authority-routing note:** This product rubric remains useful for
+> answer-quality review, but any Controller/AnswerContract defect-owner wording
+> below is historical routing language. For current AG-89+ authority work, use
+> `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md` and
+> `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`.
+
 ## 1. Purpose and scope
 
 AG-81B-R1 extends the AG-81B answer-quality rubric by defining what makes a ScryRaven answer worth the search time, latency, and provider cost. AG-81B already describes the stable Fast / Balanced / Deep output contract; this companion document adds search-value criteria, answer-density targets, source return-on-investment rules, golden example specs, answer-state labels, lower-tier evidence roles, and defect-classification guidance.

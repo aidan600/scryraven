@@ -34,8 +34,12 @@ projection surfaces observe canonical state and must not re-decide it.
 
 Legacy Controller/lifecycle surfaces may remain only as passive mirrors,
 compatibility executors, bounded adapters, RunAuthority-subordinated lanes, or
-explicitly scheduled retirement surfaces. `core/pipeline_orchestrator.py` should
-remain a coordination shell, not a domain brain.
+explicitly scheduled retirement surfaces. `core/pipeline_orchestrator.py` is a
+coordination shell with remaining authority debt and is a target surface for
+bounded strangulation phases. In ordinary product behavior phases it may be
+closed for scope safety; in orchestrator-strangulation phases, touching it can
+be the point. `core/pipeline_orchestrator.py` line delta `0` is a
+scope-control fact, not architecture success.
 
 ### No orchestrator brain
 
@@ -137,13 +141,25 @@ Common failure patterns:
 - adding prompts that describe policy while runtime code still decides elsewhere;
 - proving only serialization while no runtime consumer reads the new state.
 
-## Protected surfaces
+## Surface Boundary Vocabulary
 
-Protected surfaces are high-custody and licensable, not forbidden. A phase may
-change protected behavior only when the brief names the surface, expected
-behavior, consumer, tests, validation boundary, and rollback/stop condition.
-Without that license, preserve user-visible behavior and confine the change to
-ownership collapse, projection cleanup, tests, or docs.
+Use these terms for current AG-89+ prompts and reviews:
+
+- **Licensed surface:** a file, module, behavior, or document the current phase
+  explicitly allows Codex to inspect or change.
+- **Closed surface:** a surface kept out of scope for this phase.
+- **Target surface:** a surface intentionally being reduced, moved, simplified,
+  or retired over time.
+- **Historical surface:** retained as project history, not current doctrine.
+- **Safety-sensitive surface:** high-custody behavior such as provider/model
+  routing, search depth, prompt semantics, citation behavior, persistence shape,
+  or live validation.
+
+The legacy word "protected" should not mean sacred. If an older document says a
+surface was protected, read that as a phase boundary from that historical moment
+unless current guidance or the phase brief relicenses it. Without an explicit
+license, preserve user-visible behavior and confine changes to ownership
+collapse, projection cleanup, tests, or docs.
 
 ## Implementation checklist
 
@@ -170,6 +186,7 @@ Every AG-89+ authority-collapse final bundle must include:
 - old-path retirement status (`deleted`, `demoted`, `bypassed`, `subordinated`,
   or `scheduled for retirement`);
 - remaining duplicate-owner risk;
-- protected surfaces opened or kept closed;
+- licensed target surfaces opened, closed surfaces kept closed, and any
+  safety-sensitive surfaces affected;
 - live validation status;
 - user-visible behavior changes, if any.

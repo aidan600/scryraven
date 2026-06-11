@@ -63,7 +63,7 @@ In scope:
 
 Autonomy / decision-point policy:
 - Proceed autonomously for relevant file inspection, scoped implementation, in-scope tests, in-scope test fixes, docs cross-link fixes caused by the phase, formatting/pre-commit fixes, final-bundle preparation, and PR creation when explicitly authorized.
-- Stop for product choices, unresolved architecture forks, unlicensed protected-surface changes, live validation, secrets/private data, destructive git, merge/rebase/force-push, broad scope expansion, or unresolved failing tests that imply a design decision.
+- Stop for product choices, unresolved architecture forks, unlicensed or closed-surface changes, live validation, secrets/private data, destructive git, merge/rebase/force-push, broad scope expansion, or unresolved failing tests that imply a design decision.
 
 Out of scope:
 - live calls unless separately approved
@@ -71,7 +71,7 @@ Out of scope:
 - prompt rewrites unless explicitly scoped
 - source ranking/filtering changes unless explicitly scoped
 - persistence schema changes unless explicitly scoped
-- protected-surface redesign unless explicitly scoped
+- safety-sensitive surface redesign unless explicitly scoped
 - social provider integration unless explicitly scoped
 - destructive git
 - merge
@@ -199,7 +199,7 @@ Independent qualitative source check, if explicitly approved:
     acquisition | preservation | source classification | citation selection | extraction/restatement | synthesis/posture | telemetry gap | unclear
   - Evidence for that localization:
     ...
-  - Would repair require a protected-surface change?
+  - Would repair require a safety-sensitive or closed-surface change?
     yes | no | unclear
   - If yes, which surface:
     provider routing | provider depth | query generation | prompt behavior | source ranking | Economist | Analyst/Author handoff | final answer behavior | other
@@ -208,7 +208,7 @@ Independent qualitative source check, if explicitly approved:
 - Review-only boundary:
   This authorizes source-quality comparison only. It does not authorize provider routing changes, provider selection changes, provider depth/search-depth changes, query-generation changes, prompt changes, source ranking changes, source filtering changes, Economist behavior changes, Analyst/Author/Scrutineer handoff changes, or final-answer behavior changes.
 - No repair by implication:
-  If the independent check reveals a likely fix outside the scoped phase surface, stop and return a STOP packet. Do not patch protected surfaces merely because the external check found a better source.
+  If the independent check reveals a likely fix outside the scoped phase surface, stop and return a STOP packet. Do not patch closed or unlicensed surfaces merely because the external check found a better source.
 - If no external search tool is available:
   Mark the independent qualitative source check as unavailable. Do not invent external findings, do not infer search results from memory, and do not treat the missing qualitative layer as a deterministic pass.
 
@@ -240,7 +240,7 @@ Bounded live before/after loop, if explicitly approved:
 - Diagnostic validation mode success criterion:
   The before/after comparison should show whether the new sanitized fields, trace projection, review packet, or source-check comparison makes the failure easier to localize. Do not treat unchanged answer quality as phase failure if observability improved.
 - Repair mode success criterion:
-  The before/after comparison should show whether the scoped fix improved source acquisition, source survival, citation/source-fit, extraction accuracy, or answer posture without violating protected surfaces.
+  The before/after comparison should show whether the scoped fix improved source acquisition, source survival, citation/source-fit, extraction accuracy, or answer posture without violating closed or unlicensed surfaces.
 - The local output packet must not be committed.
 - Do not inspect or expose:
   - secrets;
@@ -252,7 +252,7 @@ Bounded live before/after loop, if explicitly approved:
   - private logs;
   - full raw traces.
 - Do not change provider routing, provider selection, search depth, prompt behavior, Economist behavior, Author behavior, source ranking, or final-answer behavior unless the phase explicitly scopes that exact surface.
-- If the instrumentation or fix requires a protected-surface change not already scoped, stop and return a STOP packet.
+- If the instrumentation or fix requires a safety-sensitive or closed-surface change not already scoped, stop and return a STOP packet.
 
 Required validation cases:
 1. ...
@@ -278,7 +278,7 @@ If live validation used an independent qualitative source check, include:
 - whether ScryRaven acquired/cited/preserved those candidates;
 - numeric/status/date/canonical extraction comparison;
 - likely failure layer;
-- whether any protected-surface change would be needed for repair;
+- whether any safety-sensitive or closed-surface change would be needed for repair;
 - confirmation that independent findings were review-only and did not drive unscoped runtime changes.
 
 Return one final phase bundle only after implementation, tests, in-scope fixes, self-review, and optional phase-end PR creation.

@@ -354,7 +354,7 @@ def test_document_review_helpers_do_not_reference_raw_text_persistence_surfaces(
         assert not leaked_terms, (path, leaked_terms)
 
 
-def test_pipeline_orchestrator_remains_unchanged() -> None:
+def test_pipeline_orchestrator_diff_remains_bounded() -> None:
     orchestrator_status = __import__("subprocess").run(
         ["git", "diff", "--name-only", "--", "core/pipeline_orchestrator.py"],
         cwd=ROOT,
@@ -379,6 +379,7 @@ def test_pipeline_orchestrator_remains_unchanged() -> None:
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
+                or "_final_answer_source_citation_telemetry" in diff
                 or "provider_plan" in diff
                 or "evidence_ledger" in diff
         )

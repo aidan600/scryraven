@@ -15,17 +15,17 @@ Phase type:
 - tiny slice | bundled multi-step | docs/design | review-only | local/live dogfood
 
 Opened surfaces:
-- Files, modules, docs, tests, or protected surfaces explicitly in scope.
+- Files, modules, docs, tests, or licensed surfaces explicitly in scope.
 
 Closed surfaces:
-- Runtime/app behavior, live calls, secrets/private artifacts, protected surfaces,
+- Runtime/app behavior, live calls, secrets/private artifacts, closed surfaces,
   or historical docs that remain out of scope.
 
 Autonomy level:
 - Codex may inspect, edit, test, fix in-scope failures, update caused docs links,
   self-review, and create a PR if authorized.
 - Codex must stop for product choices, unresolved architecture forks, unlicensed
-  protected-surface changes, live validation, secrets/private data, destructive
+  or closed-surface changes, live validation, secrets/private data, destructive
   git, merge/rebase/force-push, broad scope expansion, or tests that reveal a
   design decision.
 
@@ -59,7 +59,7 @@ In-scope repair policy:
 Stop conditions:
 - Product decision:
 - Architecture fork:
-- Protected surface not licensed:
+- Safety-sensitive or closed surface not licensed:
 - Live validation/budget needed:
 - Secret/private artifact needed:
 - Destructive git or merge/rebase/force-push needed:
@@ -70,7 +70,7 @@ Final bundle requirements:
 - Branch/base/HEAD/status.
 - Changed files and diff stat.
 - Tests/checks run and results.
-- Protected surfaces opened/closed.
+- Licensed/closed/target surfaces.
 - Live validation status.
 - PR URL if created.
 - For authority-collapse: old owner, new owner, runtime consumer, consumption
