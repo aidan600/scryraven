@@ -74,6 +74,29 @@ def test_ag49b_detects_official_current_numeric_obligation() -> None:
     assert projection["behavior_changed"] is False
 
 
+def test_ag49b_detects_government_access_identity_enforcement_obligation() -> None:
+    projection = _candidate(
+        {
+            "query_preview": (
+                "At airport checkpoints, which identification documents are "
+                "accepted for domestic flights, and when did enforcement begin?"
+            ),
+            "query_type": "other",
+            "core_topic": (
+                "airport checkpoint accepted identification for domestic flights"
+            ),
+            "primary_entity": "domestic flight identification access rule",
+        }
+    )
+
+    assert projection["obligation_status"] == REQUIRED
+    assert projection["obligation_reason"] == (
+        "government_access_identity_enforcement_rule_request"
+    )
+    assert projection["required_source_classes"] == ["official_current_rules"]
+    assert projection["likely_visibility_gap"] == "obligation_detection_gap"
+
+
 def test_ag49b_detects_canonical_technical_obligation_without_source_specific_rule() -> None:
     projection = _candidate(
         {
