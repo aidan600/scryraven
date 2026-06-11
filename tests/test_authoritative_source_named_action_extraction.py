@@ -418,7 +418,7 @@ def test_competing_checkpoint_action_blocks_fallback_dispatch_as_before() -> Non
     assert spine.authorized_dispatch != "recover_missing_source_class"
 
 
-def test_terminal_stop_checkpoint_preserves_required_recovery_without_blocker() -> None:
+def test_terminal_stop_checkpoint_blocks_required_recovery() -> None:
     result = build_authoritative_source_obligation_state_and_action(
         RunController(),
         facts=_facts(terminal_stop_approved=True),
@@ -435,18 +435,13 @@ def test_terminal_stop_checkpoint_preserves_required_recovery_without_blocker() 
         )
     )
 
-    assert result.official_canonical_recovery_execution_admitted is True
+    assert result.official_canonical_recovery_execution_admitted is False
     assert result.active_source_class_recovery_lifecycle[
         "authority_lifecycle_required_recovery_allowed"
     ] is True
-    assert spine.source_class_executor_dispatched is True
+    assert spine.source_class_executor_dispatched is False
     assert spine.terminal_stop_approved is True
-    assert (
-        spine.dispatch_authorization.blocked_or_skipped_actions[
-            STOP_INSUFFICIENT_WITH_CAVEAT
-        ]
-        == "authority_lifecycle_preserved_required_recovery"
-    )
+    assert spine.authorized_dispatch is None
 
 
 def test_weak_corpus_blocker_remains_authoritative_for_canonical_docs() -> None:

@@ -175,6 +175,7 @@ class AuthoritativeSourceActionFacts:
     search_depth_escalation_required: bool = False
     retrieve_to_anchor_recommended: bool = False
     ordinary_continuation_path_active: bool = False
+    conflict_resolution_owns_path: bool = False
     pre_analyst_phase: bool = True
     author_phase: bool = False
     query_redundancy_skipped: bool = False
@@ -788,6 +789,15 @@ def _acquisition_blockers(
         out.append("weak_corpus_recovery_owns_path")
     if lifecycle_corpus_weak and not weak_corpus_query_acquisition_allowed:
         out.append("blocked_by_corpus_weak")
+    if facts.conflict_resolution_owns_path:
+        out.append("conflict_resolution_owns_path")
+    if not facts.provider_policy_reusable or facts.provider_swap_required:
+        out.append("blocked_by_provider_policy_change_required")
+    if (
+        not facts.search_depth_reusable
+        or facts.search_depth_escalation_required
+    ):
+        out.append("blocked_by_search_depth_escalation_required")
     if facts.iteration_budget_hard_exhausted:
         out.append("blocked_by_iteration_budget")
     if facts.query_redundancy_skipped:
@@ -821,8 +831,17 @@ def _admission_blockers(
         out.append("weak_corpus_recovery_owns_path")
     if lifecycle_corpus_weak:
         out.append("blocked_by_corpus_weak")
+    if facts.conflict_resolution_owns_path:
+        out.append("conflict_resolution_owns_path")
     if facts.terminal_stop_approved:
         out.append("terminal_stop_approved")
+    if not facts.provider_policy_reusable or facts.provider_swap_required:
+        out.append("blocked_by_provider_policy_change_required")
+    if (
+        not facts.search_depth_reusable
+        or facts.search_depth_escalation_required
+    ):
+        out.append("blocked_by_search_depth_escalation_required")
     return _filter_authority_runtime_blockers(
         out,
         authority_arbitration=authority_arbitration,

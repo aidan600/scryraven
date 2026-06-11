@@ -156,7 +156,7 @@ def _requirement_bound_blocker(requirement_id: str) -> dict[str, Any]:
     }
 
 
-def test_ag69b_terminal_stop_cannot_preempt_required_recovery_without_blocker() -> None:
+def test_ag69b_terminal_stop_blocks_required_recovery_admission() -> None:
     handoff = _handoff(_facts(terminal_stop_approved=True))
     lifecycle = handoff.active_source_class_recovery_lifecycle
     admission = handoff.official_canonical_recovery_execution_admission_trace[
@@ -164,14 +164,12 @@ def test_ag69b_terminal_stop_cannot_preempt_required_recovery_without_blocker() 
     ]
     spine = _spine(lifecycle, checkpoint_trace=_terminal_checkpoint())
 
-    assert admission["admission_used"] is True
-    assert admission["admission_blockers"] == []
+    assert admission["admission_used"] is False
+    assert admission["admission_blockers"] == ["terminal_stop_approved"]
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
     assert lifecycle["authority_lifecycle_terminal_stop_may_preempt"] is False
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.trace_packet["blocked_or_skipped_actions"][
-        STOP_INSUFFICIENT_WITH_CAVEAT
-    ] == "authority_lifecycle_preserved_required_recovery"
+    assert spine.authorized_dispatch is None
+    assert spine.terminal_stop_approved is True
 
 
 def test_ag69b_weak_corpus_cannot_own_path_while_recovery_allowed() -> None:
@@ -196,7 +194,7 @@ def test_ag69b_weak_corpus_cannot_own_path_while_recovery_allowed() -> None:
     )
 
 
-def test_ag69b_required_recovery_permission_survives_terminal_and_weak_local_gates() -> None:
+def test_ag69b_required_recovery_permission_survives_weak_local_gate_only() -> None:
     terminal = _handoff(_facts(terminal_stop_approved=True))
     weak = _handoff(_facts(corpus_weak=True, weak_corpus_recovery_used=True))
 
@@ -210,14 +208,13 @@ def test_ag69b_required_recovery_permission_survives_terminal_and_weak_local_gat
         weak_lifecycle=_weak_lifecycle(),
     )
 
-    assert terminal_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert terminal_spine.authorized_dispatch is None
     assert weak_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
 
-def test_ag69b_controller_hard_blocker_must_be_requirement_bound() -> None:
+def test_ag69b_controller_hard_blocker_projection_is_requirement_bound() -> None:
     wrong_requirement = _handoff(
         _facts(
-            terminal_stop_approved=True,
             recommendation=_recommendation(
                 authority_lifecycle_blockers=[
                     _requirement_bound_blocker("different-requirement")
@@ -227,33 +224,25 @@ def test_ag69b_controller_hard_blocker_must_be_requirement_bound() -> None:
     )
     bound = _handoff(
         _facts(
-            terminal_stop_approved=True,
             recommendation=_recommendation(
                 authority_lifecycle_blockers=[
-                    _requirement_bound_blocker("official_current_rules")
+                    _requirement_bound_blocker(
+                        "official_current_source:official_current_rules"
+                    )
                 ]
             ),
         )
     )
 
-    wrong_spine = _spine(
-        wrong_requirement.active_source_class_recovery_lifecycle,
-        checkpoint_trace=_terminal_checkpoint(),
-    )
-    bound_spine = _spine(
-        bound.active_source_class_recovery_lifecycle,
-        checkpoint_trace=_terminal_checkpoint(),
-    )
-
     assert wrong_requirement.official_canonical_recovery_execution_admitted is True
-    assert wrong_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert bound.official_canonical_recovery_execution_admitted is False
-    assert bound.active_source_class_recovery_lifecycle[
-        "authority_lifecycle_terminal_stop_may_preempt"
-    ] is True
-    assert bound_spine.authorized_dispatch is None
-    assert bound_spine.trace_packet["promoted_action_name"] == (
-        STOP_INSUFFICIENT_WITH_CAVEAT
+    assert wrong_requirement.action_decision.approved is True
+    assert bound.official_canonical_recovery_execution_admitted is True
+    assert any(
+        blocker.get("requirement_id")
+        == "official_current_source:official_current_rules"
+        for blocker in bound.active_source_class_recovery_lifecycle[
+            "authority_lifecycle"
+        ].get("explicit_blockers", [])
     )
 
 
@@ -294,7 +283,7 @@ def test_ag69b_projection_fields_do_not_control_arbitration() -> None:
 
     assert lifecycle["authority_lifecycle_projection_used_as_control_input"] is False
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert spine.authorized_dispatch is None
 
 
 def test_ag69b_no_broad_pipeline_domain_logic_added() -> None:

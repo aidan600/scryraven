@@ -112,6 +112,7 @@ _BLOCKERS_THAT_PRESERVE_EXISTING_OWNERSHIP = frozenset(
         "active_recovery_already_used",
         "already_attempted",
         "blocked_by_author_phase",
+        "blocked_by_conflict_resolution",
         "blocked_by_corpus_weak",
         "blocked_by_iteration_budget",
         "blocked_by_post_analyst_phase",
@@ -122,11 +123,19 @@ _BLOCKERS_THAT_PRESERVE_EXISTING_OWNERSHIP = frozenset(
         "blocked_by_terminal_stop",
         "blocked_by_weak_corpus_recovery",
         "budget_hard_exhausted",
+        "conflict_resolution_owns_path",
         "existing_active_recovery_blocked_by_budget",
         "fast_mode_policy_block",
         "no_useful_query",
         "no_useful_recovery_query",
         "terminal_stop_approved",
+        "weak_corpus_recovery_owns_path",
+    }
+)
+_WEAK_CORPUS_BLOCKERS = frozenset(
+    {
+        "blocked_by_corpus_weak",
+        "blocked_by_weak_corpus_recovery",
         "weak_corpus_recovery_owns_path",
     }
 )
@@ -282,6 +291,12 @@ def apply_official_canonical_recovery_query_acquisition(
             set(acquisition_classes) & _OFFICIAL_CURRENT_CLASSES
         ),
     )
+    weak_corpus_coexistence_reason = _weak_corpus_coexistence_reason(
+        runtime_trace=trace,
+        acquisition_classes=acquisition_classes,
+        recovery_queries=executable_queries,
+        blockers=blockers,
+    )
     eligible = bool(
         considered
         and facts.obligation_status == REQUIRED
@@ -364,6 +379,7 @@ def apply_official_canonical_recovery_query_acquisition(
             )
         ),
         "official_authority_acquisition_plan": official_plan,
+        "weak_corpus_coexistence_reason": weak_corpus_coexistence_reason,
         "source_specific_terms_present": source_specific_terms_present,
         "source_specific_terms_allowed_by_official_authority_plan": (
             source_specific_terms_allowed
@@ -599,6 +615,27 @@ def _source_class_has_supported_context(
     return len(hits) >= 2 and any(
         term in text for term in _CANONICAL_TECHNICAL_HARD_TERMS
     )
+
+
+def _weak_corpus_coexistence_reason(
+    *,
+    runtime_trace: Mapping[str, Any],
+    acquisition_classes: Iterable[str],
+    recovery_queries: Iterable[str],
+    blockers: Iterable[str],
+) -> str | None:
+    if not (
+        runtime_trace.get("corpus_weak") is True
+        or runtime_trace.get("weak_corpus_recovery_used") is True
+    ):
+        return None
+    if any(item in _WEAK_CORPUS_BLOCKERS for item in blockers):
+        return None
+    if not (set(acquisition_classes) & _OFFICIAL_CURRENT_CLASSES):
+        return None
+    if not recovery_queries:
+        return None
+    return "unsatisfied_official_current_recovery_lane"
 
 
 def _context_text(
