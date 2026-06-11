@@ -10,6 +10,7 @@ from core.official_canonical_recovery_query_acquisition import (
 from core.run_controller import RunController
 from core.source_class_recovery import (
     _infer_official_authority_venue,
+    build_official_source_recovery_domain_constraints,
     build_recovery_source_quality_diagnostics,
     build_source_class_recovery_recommendation,
 )
@@ -76,28 +77,42 @@ def _record_lifecycle(recommendation: dict[str, Any]) -> tuple[dict[str, Any], d
     return lifecycle, action
 
 
-def test_ag93e6_air_travel_access_id_query_gets_official_venue_hints() -> None:
+def _candidate_by_family(venue: Any, family_id: str) -> Any:
+    for candidate in venue.candidates:
+        if candidate.family_id == family_id:
+            return candidate
+    raise AssertionError(f"missing venue family {family_id}")
+
+
+def test_ag93e6_airport_screening_access_id_query_gets_role_level_venue_hints() -> None:
     query = (
-        "Do people need REAL ID or other acceptable identification for "
-        "domestic flights now, and when did enforcement start?"
+        "At airport checkpoints, which identification documents are accepted "
+        "for domestic flights, and when did enforcement begin?"
     )
     out = _recommendation(
         query=query,
-        core_topic="acceptable identification for domestic flights",
-        primary_entity="domestic flight identification requirements",
+        core_topic="airport checkpoint accepted identification for domestic flights",
+        primary_entity="domestic flight identification access rule",
     )
     venue = _infer_official_authority_venue(
         query,
-        "acceptable identification for domestic flights",
-        "domestic flight identification requirements",
+        "airport checkpoint accepted identification for domestic flights",
+        "domestic flight identification access rule",
     )
     query_text = " ".join(out["source_class_recovery_queries"]).casefold()
-    domains = set(out["source_class_recovery_official_domains"])
+    domains = set(out.get("source_class_recovery_official_domains", ()))
+    candidate = _candidate_by_family(
+        venue,
+        "airport_screening_identity_access_rule",
+    )
 
-    assert "travel_air_access_credential_rule" in venue.family_ids
+    assert candidate.constraint_strength == "role_only"
+    assert "accepted_id_guidance" in candidate.venue_roles
     assert "airport screening" in query_text
-    assert "official agency" in query_text
-    assert _BASE_AUTHORITY_DOMAINS | {"transportation.gov"} <= domains
+    assert "accepted-id guidance" in query_text
+    assert "official agency" in " ".join(candidate.search_hints).casefold()
+    assert "transportation.gov" not in venue.domain_constraints
+    assert "transportation.gov" not in domains
 
 
 def test_ag93e6_official_agency_domains_survive_query_hint_cap() -> None:
@@ -140,11 +155,23 @@ def test_ag93e6_official_agency_domains_survive_query_hint_cap() -> None:
             core_topic=core_topic,
             primary_entity=primary_entity,
         )
+        venue = _infer_official_authority_venue(query, core_topic, primary_entity)
         query_text = " ".join(out["source_class_recovery_queries"]).casefold()
 
         assert domain in query_text
         assert legacy_hint in query_text
+        assert domain in venue.domain_constraints
         assert domain in out["source_class_recovery_official_domains"]
+
+    dot_venue = _infer_official_authority_venue(
+        "Current U.S. DOT wheelchair passenger rights under the Air Carrier Access Act",
+        "DOT wheelchair airline passenger current rules",
+        "DOT wheelchair passenger rules",
+    )
+    dot_candidate = _candidate_by_family(dot_venue, "travel_air_passenger_rights_rule")
+    assert dot_candidate.constraint_strength == "hard_constraint"
+    assert "transportation.gov" in dot_candidate.domain_constraints
+    assert "14 CFR Part 382" in dot_candidate.search_hints
 
 
 def test_ag93e6_non_air_government_credential_query_uses_program_access_family() -> None:
@@ -163,16 +190,39 @@ def test_ag93e6_non_air_government_credential_query_uses_program_access_family()
         "state unemployment benefits service portal",
     )
     query_text = " ".join(out["source_class_recovery_queries"]).casefold()
+    candidate = _candidate_by_family(
+        venue,
+        "government_program_eligibility_access_rule",
+    )
 
     assert out["missing_expected_source_classes"] == ["official_current_rules"]
-    assert "government_program_eligibility_access_rule" in venue.family_ids
-    assert "travel_air_access_credential_rule" not in venue.family_ids
+    assert candidate.constraint_strength == "role_only"
+    assert candidate.domain_constraints == ()
+    assert "airport_screening_identity_access_rule" not in venue.family_ids
     assert "official program guidance" in query_text
     assert "agency faq" in query_text
+    assert "source_class_recovery_official_domains" not in out
+    assert build_official_source_recovery_domain_constraints(
+        missing_expected_source_classes=out["missing_expected_source_classes"],
+        query=query,
+        core_topic="state unemployment benefits access credential rule",
+        primary_entity="state unemployment benefits service portal",
+        recovery_queries=out["source_class_recovery_queries"],
+    ) == []
 
 
 def test_ag93e6_tax_immigration_labor_and_legal_current_venues_remain_mapped() -> None:
     cases = [
+        (
+            "What is the current legal status of the FTC noncompete rule?",
+            "consumer_finance_regulator_rule",
+            "ftc.gov",
+        ),
+        (
+            "What is the current FDA enforcement posture for laboratory developed tests?",
+            "health_product_regulator_rule",
+            "fda.gov",
+        ),
         (
             "What is the current tax filing fee, form instruction, and rate rule?",
             "tax_rate_form_fee_rule",
@@ -187,6 +237,11 @@ def test_ag93e6_tax_immigration_labor_and_legal_current_venues_remain_mapped() -
             "What workplace wage compliance rule applies to the current minimum wage?",
             "labor_workplace_wage_compliance_rule",
             "dol.gov",
+        ),
+        (
+            "Which current SEC issuer filing contains the company's Form 10-Q?",
+            "securities_issuer_filing_rule",
+            "sec.gov",
         ),
         (
             "What is the current legal status, court order, and effective date for the final rule?",
@@ -247,35 +302,35 @@ def test_ag93e6_venue_hints_are_trace_safe_and_deterministic() -> None:
     encoded = repr(first).casefold()
 
     assert first == second
-    assert "travel_air_access_credential_rule" in first.family_ids
+    assert "airport_screening_identity_access_rule" in first.family_ids
     for forbidden in ("raw_prompt", "provider_payload", "secret"):
         assert forbidden not in encoded
 
 
-def test_ag93e6_recommendation_domains_are_consumed_by_lifecycle_action() -> None:
+def test_ag93e6_explicit_agency_domains_are_consumed_by_lifecycle_action() -> None:
     recommendation = _recommendation(
         query=(
-            "Do people need REAL ID or other acceptable identification for "
-            "domestic flights now, and when did enforcement start?"
+            "As of today, what are the current U.S. DOT rules for airline "
+            "passengers who use wheelchairs?"
         ),
-        core_topic="acceptable identification for domestic flights",
-        primary_entity="domestic flight identification requirements",
+        core_topic="DOT wheelchair airline passenger current rules",
+        primary_entity="DOT wheelchair passenger rules",
     )
 
     lifecycle, action = _record_lifecycle(recommendation)
 
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert any(
-        "airport screening" in query.casefold()
+        "transportation.gov" in query.casefold()
         for query in action["queries"]
     )
     assert "transportation.gov" in action["metadata"]["official_domain_constraints"]
 
 
-def test_ag93e6_acquired_queries_receive_same_official_domain_constraints() -> None:
+def test_ag93e6_acquired_queries_consume_venue_inference_with_domain_gating() -> None:
     query = (
-        "Do people need REAL ID or other acceptable identification for "
-        "domestic flights now, and when did enforcement start?"
+        "At airport checkpoints, which identification documents are accepted "
+        "for domestic flights, and when did enforcement begin?"
     )
     result = apply_official_canonical_recovery_query_acquisition(
         recommendation={
@@ -286,8 +341,8 @@ def test_ag93e6_acquired_queries_receive_same_official_domain_constraints() -> N
         runtime_trace={
             "query_preview": query,
             "query_type": "official_current_status",
-            "core_topic": "acceptable identification for domestic flights",
-            "primary_entity": "domestic flight identification requirements",
+            "core_topic": "airport checkpoint accepted identification for domestic flights",
+            "primary_entity": "domestic flight identification access rule",
         },
     )
 
@@ -297,11 +352,16 @@ def test_ag93e6_acquired_queries_receive_same_official_domain_constraints() -> N
     assert result.trace["OfficialCanonicalRecoveryQueryAcquisition"][
         "acquisition_repair_used"
     ] is True
-    assert "transportation.gov" in recommendation[
-        "source_class_recovery_official_domains"
-    ]
+    assert recommendation["source_class_recovery_queries"]
+    assert "transportation.gov" not in recommendation.get(
+        "source_class_recovery_official_domains",
+        (),
+    )
     assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert "transportation.gov" in action["metadata"]["official_domain_constraints"]
+    assert "transportation.gov" not in action["metadata"].get(
+        "official_domain_constraints",
+        (),
+    )
 
 
 def test_ag93e6_production_code_has_no_named_case_hardcoding() -> None:
