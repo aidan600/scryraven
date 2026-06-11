@@ -25,6 +25,7 @@ from core.controller_provider_search_allocation import (
 )
 from core.controller_recovery_decision import (
     CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
+    ControllerRecoveryDecision,
     build_controller_recovery_decision,
 )
 from core.official_canonical_recovery_execution_admission import (
@@ -260,6 +261,12 @@ def build_official_canonical_recovery_visibility_export(
         admission.get("recovery_query_count"),
         len(recovery_query_previews) if recovery_query_previews else UNKNOWN,
     )
+    source_obligation_custody = _source_obligation_custody_fields(
+        trace=trace,
+        admission=admission,
+        acquisition=acquisition,
+        recovery_query_count=recovery_query_count,
+    )
 
     export = {
         "schema_version": OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_SCHEMA_VERSION,
@@ -282,6 +289,7 @@ def build_official_canonical_recovery_visibility_export(
         "admission_acquisition_path_visible": _bool_or_unknown(
             admission.get("admission_acquisition_path_visible")
         ),
+        **source_obligation_custody,
         "acquisition_repair_considered": _bool_or_unknown(
             acquisition.get("acquisition_repair_considered")
         ),
@@ -635,8 +643,16 @@ def build_official_canonical_recovery_visibility_export(
         "unknown_fields": [],
         "behavior_changed": False,
     }
-    controller_recovery_decision = build_controller_recovery_decision(export)
+    controller_recovery_decision, decision_projection_source = (
+        _controller_recovery_decision_for_visibility(trace=trace, export=export)
+    )
     export.update(controller_recovery_decision.to_trace_fields())
+    export["controller_recovery_decision_projection_source"] = (
+        decision_projection_source
+    )
+    export["controller_recovery_decision_authority"] = (
+        "compatibility_projection_observes_authoritative_runtime_state"
+    )
     export["unknown_fields"] = _unknown_fields(export)
     return export
 
@@ -778,6 +794,21 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "admission_used",
         "admission_skip_reason",
         "admission_blockers",
+        "admission_acquisition_path_visible",
+        "required_source_class",
+        "required_source_classes",
+        "unsatisfied_required_source_classes",
+        "active_source_class_recovery_missing_classes",
+        "source_obligation_status",
+        "active_source_class_recovery_official_canonical_admitted",
+        "source_obligation_custody_fields_present",
+        "acquisition_repair_considered",
+        "acquisition_repair_eligible",
+        "acquisition_repair_used",
+        "acquisition_repair_skip_reason",
+        "official_authority_acquisition_plan",
+        "source_class_recovery_queries",
+        "weak_corpus_coexistence_reason",
         "source_class_recovery_eligible",
         "source_class_recovery_used",
         "source_class_recovery_execution_attempted",
@@ -865,6 +896,8 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "controller_recovery_allowed_executor_action",
         "controller_recovery_provider_search_review_requested",
         "controller_recovery_old_path_subordinated",
+        "controller_recovery_decision_projection_source",
+        "controller_recovery_decision_authority",
         "provider_search_allocation_trace",
         "provider_search_allocation_execution_trace",
         "allocation_result_candidate_custody_available",
@@ -890,6 +923,178 @@ def append_official_canonical_recovery_diagnostics_section(
     base = str(report or "").rstrip()
     section = format_official_canonical_recovery_diagnostics_markdown(runtime_trace)
     return f"{base}\n\n{section}\n" if base else f"{section}\n"
+
+
+def _source_obligation_custody_fields(
+    *,
+    trace: Mapping[str, Any],
+    admission: Mapping[str, Any],
+    acquisition: Mapping[str, Any],
+    recovery_query_count: Any,
+) -> dict[str, Any]:
+    required = _class_values(
+        trace.get("required_source_class"),
+        trace.get("required_source_classes"),
+        admission.get("required_source_classes"),
+        acquisition.get("required_source_classes"),
+        _nested(
+            trace,
+            (
+                "active_source_class_recovery_action_envelope",
+                "required_source_class",
+            ),
+        ),
+        _nested(
+            trace,
+            (
+                "active_source_class_recovery_action_envelope",
+                "required_source_classes",
+            ),
+        ),
+    )
+    unsatisfied = _class_values(
+        trace.get("unsatisfied_required_source_classes"),
+        admission.get("unsatisfied_required_source_classes"),
+        trace.get("active_source_class_recovery_missing_classes"),
+    )
+    missing = _class_values(
+        trace.get("active_source_class_recovery_missing_classes"),
+        unsatisfied,
+        required,
+    )
+    admitted = _bool_or_unknown(
+        trace.get("active_source_class_recovery_official_canonical_admitted")
+    )
+    if admitted == UNKNOWN:
+        admitted = _bool_or_unknown(
+            admission.get("source_class_recovery_execution_admitted")
+        )
+    recovery_slot_available = _bool_or_unknown(
+        _first_present(
+            trace.get("recovery_slot_available"),
+            admission.get("recovery_slot_available"),
+        )
+    )
+    prior_attempt_count = _first_known_int(
+        trace.get("prior_recovery_attempt_count"),
+        trace.get("active_source_class_recovery_attempt_count"),
+        admission.get("prior_recovery_attempt_count"),
+    )
+    max_recovery_attempts = _first_known_int(
+        trace.get("max_recovery_attempts"),
+        admission.get("max_recovery_attempts"),
+    )
+    source_obligation_status = _source_obligation_status_for_export(
+        trace=trace,
+        required=required,
+        unsatisfied=unsatisfied,
+        admitted=admitted,
+    )
+    source_class_eligible = _bool_or_unknown(
+        trace.get("active_source_class_recovery_eligible")
+    )
+    source_class_execution_attempted = _bool_or_unknown(
+        trace.get("active_source_class_recovery_execution_attempted")
+    )
+    return {
+        "required_source_class": required,
+        "required_source_classes": required,
+        "unsatisfied_required_source_classes": unsatisfied,
+        "active_source_class_recovery_missing_classes": missing,
+        "source_obligation_status": source_obligation_status,
+        "active_source_class_recovery_official_canonical_admitted": admitted,
+        "active_source_class_recovery_eligible": source_class_eligible,
+        "active_source_class_recovery_execution_attempted": (
+            source_class_execution_attempted
+        ),
+        "recovery_slot_available": recovery_slot_available,
+        "prior_recovery_attempt_count": prior_attempt_count,
+        "max_recovery_attempts": max_recovery_attempts,
+        "source_obligation_custody_fields_present": (
+            bool(required)
+            and source_obligation_status not in {UNKNOWN, NOT_OBSERVABLE}
+            and recovery_query_count != UNKNOWN
+        ),
+    }
+
+
+def _controller_recovery_decision_for_visibility(
+    *,
+    trace: Mapping[str, Any],
+    export: Mapping[str, Any],
+) -> tuple[ControllerRecoveryDecision, str]:
+    existing = _controller_recovery_decision_from_trace(trace)
+    if existing is not None:
+        return existing, "authoritative_runtime_decision_trace"
+    return (
+        build_controller_recovery_decision(
+            _controller_decision_visibility_input(trace=trace, export=export)
+        ),
+        "hydrated_authoritative_lifecycle_projection",
+    )
+
+
+def _controller_recovery_decision_from_trace(
+    trace: Mapping[str, Any],
+) -> ControllerRecoveryDecision | None:
+    for key in (CONTROLLER_RECOVERY_DECISION_TRACE_KEY, "recovery_decision_trace"):
+        packet = trace.get(key)
+        if not isinstance(packet, Mapping):
+            continue
+        payload = packet.get("ControllerRecoveryDecision")
+        if isinstance(payload, Mapping) and payload.get("decision"):
+            return ControllerRecoveryDecision(payload=_safe_mapping(payload))
+    return None
+
+
+def _controller_decision_visibility_input(
+    *,
+    trace: Mapping[str, Any],
+    export: Mapping[str, Any],
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for key in (
+        "requirement_id",
+        "required_source_class",
+        "required_source_classes",
+        "unsatisfied_required_source_classes",
+        "active_source_class_recovery_missing_classes",
+        "source_obligation_status",
+        "active_source_class_recovery_official_canonical_admitted",
+        "active_source_class_recovery_eligible",
+        "source_class_recovery_eligible",
+        "admission_used",
+        "admission_blockers",
+        "recovery_slot_available",
+        "prior_recovery_attempt_count",
+        "active_source_class_recovery_attempt_count",
+        "max_recovery_attempts",
+        "admission_skip_reason",
+        "active_source_class_recovery_skip_reason",
+        "active_source_class_recovery_blockers",
+        "source_class_recovery_candidate_v2_blockers",
+        "candidate_acquisition_blockers",
+        "active_source_class_recovery_result_count",
+        "recovered_result_count",
+        "candidate_official_or_canonical_count",
+        "accepted_or_readable_official_or_canonical_count",
+        "recovered_candidate_selected_readable_count",
+        "recovered_candidate_rejection_reasons",
+        "recovered_candidate_source_fit_status",
+        "candidate_return_status",
+        "final_selected_authority_evidence_count",
+        "final_evidence_official_or_canonical_count",
+        "final_citation_official_or_canonical_count",
+        "final_evidence_citation_custody",
+        "final_evidence_citation_custody_status",
+        "final_evidence_citation_custody_complete",
+        "ledger_legacy_gap_types",
+        CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
+    ):
+        value = _first_present(export.get(key), trace.get(key))
+        if value is not None:
+            payload[key] = value
+    return payload
 
 
 def _admission_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
@@ -1462,6 +1667,53 @@ def _looks_like_export(value: Mapping[str, Any] | None) -> bool:
     return isinstance(value, Mapping) and value.get("schema_version") == (
         OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_SCHEMA_VERSION
     )
+
+
+def _first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None and value != UNKNOWN:
+            return value
+    return None
+
+
+def _class_values(*values: Any) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if isinstance(value, str):
+            items = [value]
+        elif isinstance(value, (list, tuple, set, frozenset)):
+            items = list(value)
+        else:
+            items = []
+        for item in items:
+            clean = _clean_token(item)
+            if clean in _OFFICIAL_OR_CANONICAL_CLASSES and clean not in seen:
+                out.append(clean)
+                seen.add(clean)
+    return out
+
+
+def _source_obligation_status_for_export(
+    *,
+    trace: Mapping[str, Any],
+    required: list[str],
+    unsatisfied: list[str],
+    admitted: Any,
+) -> str:
+    direct = _optional_text(trace.get("source_obligation_status"))
+    if direct not in {UNKNOWN, NOT_OBSERVABLE}:
+        return direct
+    if any(item in _OFFICIAL_OR_CANONICAL_CLASSES for item in unsatisfied):
+        return "official_current_required_unmet"
+    if any(item in _OFFICIAL_OR_CANONICAL_CLASSES for item in required):
+        if trace.get("active_source_class_recovery_eligible") is True:
+            return "official_current_required_unmet"
+        if admitted is True:
+            return "official_current_required_unmet"
+    if trace.get("admission_used") is False or not required:
+        return "not_required_or_satisfied"
+    return UNKNOWN
 
 
 def _nested(source: Mapping[str, Any], keys: Iterable[str]) -> Any:
