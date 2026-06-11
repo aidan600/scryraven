@@ -7,9 +7,12 @@ to be missing an expected source class and suggests generic follow-up queries.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from functools import lru_cache
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
@@ -77,6 +80,8 @@ SOURCE_CLASS_RECOVERY_CANDIDATE_V2_REASONS = (
     "at_cap_with_source_class_underfire",
     "budget_exhausted_with_source_class_underfire",
 )
+
+_OFFICIAL_AUTHORITY_SOFT_DOMAIN_FILE = "official_authority_venue_soft_domains.json"
 
 SOURCE_CLASS_RECOVERY_CANDIDATE_V2_BLOCKERS = (
     "all_expected_source_classes_satisfied_strong",
@@ -221,6 +226,29 @@ class _AuthorityVenueInference:
     @property
     def matched_signal_codes(self) -> tuple[str, ...]:
         return self._candidate_values("reasons")
+
+
+@lru_cache(maxsize=1)
+def _official_authority_soft_domain_candidates() -> Mapping[str, tuple[str, ...]]:
+    path = Path(__file__).with_name(_OFFICIAL_AUTHORITY_SOFT_DOMAIN_FILE)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+
+    out: dict[str, tuple[str, ...]] = {}
+    for raw_family_id, raw_domains in payload.items():
+        family_id = str(raw_family_id or "").strip()
+        if not family_id or not isinstance(raw_domains, list):
+            continue
+        domains: list[str] = []
+        for raw_domain in raw_domains:
+            _append_domain(domains, raw_domain)
+        if domains:
+            out[family_id] = tuple(domains)
+    return out
 
 
 @dataclass(frozen=True)
@@ -2390,12 +2418,15 @@ def _official_authority_acquisition_plan(
     soft_domains: list[str] = []
     role_hints: list[str] = []
     reasons: list[str] = []
+    soft_domain_candidates_by_family = _official_authority_soft_domain_candidates()
     for candidate in active_candidates:
         if candidate.constraint_strength == "hard_constraint":
             for domain in candidate.domain_constraints:
                 _append_domain(hard_domains, domain)
-        elif candidate.constraint_strength == "soft_domain_candidate":
+        elif candidate.constraint_strength in {"soft_domain_candidate", "role_only"}:
             for domain in candidate.domain_candidates:
+                _append_domain(soft_domains, domain)
+            for domain in soft_domain_candidates_by_family.get(candidate.family_id, ()):
                 _append_domain(soft_domains, domain)
         for hint in candidate.search_hints:
             _append_unique(role_hints, hint)

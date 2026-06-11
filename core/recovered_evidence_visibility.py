@@ -343,6 +343,37 @@ def _visible_duplicate_drop_reason(
     )
 
 
+def _visible_duplicate_should_block_candidate(
+    reason: str,
+    source: Mapping[str, Any],
+) -> bool:
+    if reason in {
+        "already_visible_authority_satisfying",
+        "duplicate_visible_authority_satisfying",
+    }:
+        return True
+    return not bool(_strong_source_classes(source))
+
+
+def _non_authority_visible_duplicate_index(
+    final_evidence: list[Mapping[str, Any]],
+    source: Mapping[str, Any],
+    missing_classes: Iterable[str],
+) -> int | None:
+    source_keys = _identity_keys(source)
+    if not source_keys:
+        return None
+    for index, existing in enumerate(final_evidence):
+        if not isinstance(existing, Mapping):
+            continue
+        if not (_identity_keys(existing) & source_keys):
+            continue
+        if _source_satisfies_missing_authority(existing, missing_classes):
+            continue
+        return index
+    return None
+
+
 def _is_lower_priority_replaceable(source: Mapping[str, Any]) -> bool:
     if source.get("retrieval_stage") == "source_class_recovery":
         return False
@@ -628,7 +659,10 @@ def apply_recovered_evidence_visibility_boundary(
             visible_keys=visible_keys,
             missing_classes=missing_classes,
         )
-        if visible_duplicate_reason:
+        if visible_duplicate_reason and _visible_duplicate_should_block_candidate(
+            visible_duplicate_reason,
+            source,
+        ):
             if identity:
                 dropped.append(identity)
             drop_reasons.append(visible_duplicate_reason)
@@ -717,11 +751,51 @@ def apply_recovered_evidence_visibility_boundary(
 
     if len(updated) < cap:
         room = cap - len(updated)
-        selected = selected[:room]
         for source, identity, missing_source_class, recovered_source_class in selected:
+            duplicate_index = _non_authority_visible_duplicate_index(
+                updated,
+                source,
+                missing_classes,
+            )
+            if duplicate_index is not None:
+                updated[duplicate_index] = source
+                reserved.append((identity, missing_source_class, recovered_source_class))
+                reason = "reserved_replace_non_authority_duplicate"
+                continue
+            if room <= 0:
+                continue
             updated.append(source)
             reserved.append((identity, missing_source_class, recovered_source_class))
+            room -= 1
     else:
+        duplicate_index = _non_authority_visible_duplicate_index(
+            updated,
+            selected[0][0],
+            missing_classes,
+        )
+        if duplicate_index is not None:
+            source, identity, missing_source_class, recovered_source_class = selected[0]
+            updated[duplicate_index] = source
+            reserved.append((identity, missing_source_class, recovered_source_class))
+            reason = "reserved_replace_non_authority_duplicate"
+            return _finalize(updated, RecoveredEvidenceVisibilityDecision(
+                considered=considered,
+                eligible=True,
+                used=True,
+                reason=reason,
+                blockers=(),
+                missing_source_class=reserved[0][1],
+                recovered_source_class=reserved[0][2],
+                reserved_source_count=len(reserved),
+                reserved_source_ids_or_urls=tuple(identity for identity, _, _ in reserved),
+                reserved_source_classes=tuple(source_class for _, _, source_class in reserved),
+                dropped_source_ids_or_urls=tuple(dropped),
+                drop_reason=None,
+                source_fit_status="matched_selected",
+                source_fit_candidate_count=len(candidates),
+                source_fit_selected_count=len(reserved),
+                source_fit_rejection_reasons=tuple(dict.fromkeys(drop_reasons)),
+            ))
         replace_at = _replaceable_index(updated)
         if replace_at is None:
             return _finalize(final_evidence, RecoveredEvidenceVisibilityDecision(

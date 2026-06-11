@@ -81,8 +81,9 @@ def _trace(
 
 def _official_source(
     url: str = "https://agency.example/current-2026-rate",
+    **overrides: Any,
 ) -> dict[str, Any]:
-    return {
+    source = {
         "title": "Official current 2026 rate",
         "url": url,
         "text": "Official current agency guidance for the 2026 rate.",
@@ -91,6 +92,8 @@ def _official_source(
         "retrieval_stage": "source_class_recovery",
         "_provider_role": "source_class_recovery",
     }
+    source.update(overrides)
+    return source
 
 
 def _secondary_source(
@@ -128,7 +131,14 @@ def test_ag70b_counted_but_not_readable_candidate_is_structured_absent() -> None
     shared_url = "https://agency.example/current-2026-rate"
     _final, decision, lifecycle, export = _run_visibility(
         final=[_secondary_source(shared_url)],
-        recovered=[_official_source(shared_url)],
+        recovered=[
+            _official_source(
+                shared_url,
+                text="",
+                readable_text_available=False,
+                readability_status="readability_failed",
+            )
+        ],
     )
 
     assert export["returned_or_evaluated_official_or_canonical_count"] > 0
@@ -151,7 +161,7 @@ def test_ag70b_already_visible_lower_tier_duplicate_is_precise_rejection() -> No
     shared_url = "https://agency.example/current-2026-rate"
     _final, _decision, lifecycle, export = _run_visibility(
         final=[_secondary_source(shared_url)],
-        recovered=[_official_source(shared_url)],
+        recovered=[_secondary_source(shared_url)],
     )
     rejection = lifecycle["authority_lifecycle"]["candidate_fit"][
         "structured_rejections"
@@ -174,7 +184,14 @@ def test_ag70b_rejected_lifecycle_count_is_not_accepted_readable_evidence() -> N
     shared_url = "https://agency.example/current-2026-rate"
     _final, _decision, _lifecycle, export = _run_visibility(
         final=[_secondary_source(shared_url)],
-        recovered=[_official_source(shared_url)],
+        recovered=[
+            _official_source(
+                shared_url,
+                text="",
+                readable_text_available=False,
+                readability_status="readability_failed",
+            )
+        ],
     )
 
     assert export["returned_or_evaluated_official_or_canonical_count"] == 1
@@ -212,7 +229,14 @@ def test_ag70b_citation_eligibility_remains_explained_ineligible_when_absent() -
     shared_url = "https://agency.example/current-2026-rate"
     _final, _decision, lifecycle, export = _run_visibility(
         final=[_secondary_source(shared_url)],
-        recovered=[_official_source(shared_url)],
+        recovered=[
+            _official_source(
+                shared_url,
+                text="",
+                readable_text_available=False,
+                readability_status="readability_failed",
+            )
+        ],
     )
 
     assert lifecycle["authority_lifecycle"]["final_evidence_state"] == (

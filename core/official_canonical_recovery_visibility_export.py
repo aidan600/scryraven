@@ -206,6 +206,25 @@ def build_official_canonical_recovery_visibility_export(
     candidate_visibility_blocker_kind = _optional_text(
         trace.get("candidate_visibility_blocker_kind")
     )
+    provider_result_official_or_canonical_count = (
+        _provider_result_official_or_canonical_count(provider_result_bridge)
+        if provider_result_bridge
+        else UNKNOWN
+    )
+    provider_result_represented_official_or_canonical_count = (
+        _provider_result_represented_official_or_canonical_count(
+            provider_result_bridge
+        )
+        if provider_result_bridge
+        else UNKNOWN
+    )
+    provider_result_unrepresented_official_or_canonical_count = (
+        _provider_result_unrepresented_official_or_canonical_count(
+            provider_result_bridge
+        )
+        if provider_result_bridge
+        else UNKNOWN
+    )
 
     candidate_official_or_canonical_count = _candidate_count(
         trace,
@@ -254,6 +273,22 @@ def build_official_canonical_recovery_visibility_export(
     legacy_gap_observed = _ledger_legacy_gap_observed(
         custody_status=ledger_custody_status,
         legacy_gap_types=ledger_legacy_gap_types,
+    )
+    recovered_candidate_source_fit_status = _optional_text(
+        trace.get("recovered_visibility_source_fit_status")
+        or _legacy_lifecycle_fit_state(lifecycle_candidate_fit)
+    )
+    recovered_candidate_rejection_reasons = _safe_list(
+        trace.get("recovered_visibility_source_fit_rejection_reasons")
+        or _lifecycle_rejection_reasons(lifecycle_candidate_fit)
+    )
+    authority_candidate_passport_first_missing_stages = (
+        _passport_field_values(
+            authority_candidate_passport,
+            "first_missing_stage",
+        )
+        if authority_candidate_passport
+        else NOT_OBSERVABLE
     )
 
     recovery_query_previews = _recovery_query_previews(trace, admission)
@@ -507,6 +542,15 @@ def build_official_canonical_recovery_visibility_export(
             if provider_result_bridge
             else UNKNOWN
         ),
+        "provider_result_official_or_canonical_count": (
+            provider_result_official_or_canonical_count
+        ),
+        "provider_result_represented_official_or_canonical_count": (
+            provider_result_represented_official_or_canonical_count
+        ),
+        "provider_result_unrepresented_official_or_canonical_count": (
+            provider_result_unrepresented_official_or_canonical_count
+        ),
         "provider_result_bridge_disposition_counts": (
             _safe_count_map_unrestricted(
                 provider_result_bridge.get("bridge_disposition_counts")
@@ -529,10 +573,7 @@ def build_official_canonical_recovery_visibility_export(
         "provider_result_represented_candidate_bridge": (
             provider_result_bridge or NOT_OBSERVABLE
         ),
-        "recovered_candidate_source_fit_status": _optional_text(
-            trace.get("recovered_visibility_source_fit_status")
-            or _legacy_lifecycle_fit_state(lifecycle_candidate_fit)
-        ),
+        "recovered_candidate_source_fit_status": recovered_candidate_source_fit_status,
         "recovered_candidate_source_fit_count": _first_known_int(
             trace.get("recovered_visibility_source_fit_candidate_count"),
             _lifecycle_candidate_count(lifecycle_candidate_fit),
@@ -541,10 +582,7 @@ def build_official_canonical_recovery_visibility_export(
             trace.get("recovered_visibility_source_fit_selected_count"),
             _lifecycle_selected_count(lifecycle_candidate_fit),
         ),
-        "recovered_candidate_rejection_reasons": _safe_list(
-            trace.get("recovered_visibility_source_fit_rejection_reasons")
-            or _lifecycle_rejection_reasons(lifecycle_candidate_fit)
-        ),
+        "recovered_candidate_rejection_reasons": recovered_candidate_rejection_reasons,
         "citation_eligibility_state": _citation_eligibility_state(trace),
         "accepted_readable_visibility_status": _count_visibility_status(
             accepted_or_readable_count
@@ -595,6 +633,41 @@ def build_official_canonical_recovery_visibility_export(
         ),
         "next_failure_layer_custody_interpretation": (
             RECOVERY_LANE_OBSERVATION_CUSTODY_INTERPRETATION
+        ),
+        "official_source_acquisition_quality_layer": (
+            classify_official_source_acquisition_quality_layer(
+                admission_used=admission_used,
+                execution_attempted=execution_attempted,
+                recovered_result_count=recovered_result_count,
+                candidate_acquisition_result_status=(
+                    candidate_acquisition_result_status
+                ),
+                candidate_official_or_canonical_count=(
+                    candidate_official_or_canonical_count
+                ),
+                accepted_or_readable_official_or_canonical_count=(
+                    accepted_or_readable_count
+                ),
+                accepted_readable_authority_evidence_count=(
+                    accepted_readable_authority_evidence_count
+                ),
+                final_evidence_official_or_canonical_count=final_evidence_count,
+                recovered_candidate_source_fit_status=(
+                    recovered_candidate_source_fit_status
+                ),
+                recovered_candidate_rejection_reasons=(
+                    recovered_candidate_rejection_reasons
+                ),
+                authority_candidate_passport_first_missing_stages=(
+                    authority_candidate_passport_first_missing_stages
+                ),
+                provider_result_official_or_canonical_count=(
+                    provider_result_official_or_canonical_count
+                ),
+                provider_result_unrepresented_official_or_canonical_count=(
+                    provider_result_unrepresented_official_or_canonical_count
+                ),
+            )
         ),
         "provider_search_allocation_trace": (
             provider_search_allocation or NOT_OBSERVABLE
@@ -776,6 +849,165 @@ def classify_ag50d_next_failure_layer(
     return "telemetry_gap"
 
 
+def classify_official_source_acquisition_quality_layer(
+    *,
+    admission_used: Any,
+    execution_attempted: Any,
+    recovered_result_count: Any,
+    candidate_acquisition_result_status: Any,
+    candidate_official_or_canonical_count: Any,
+    accepted_or_readable_official_or_canonical_count: Any,
+    accepted_readable_authority_evidence_count: Any,
+    final_evidence_official_or_canonical_count: Any,
+    recovered_candidate_source_fit_status: Any,
+    recovered_candidate_rejection_reasons: Any,
+    authority_candidate_passport_first_missing_stages: Any,
+    provider_result_official_or_canonical_count: Any,
+    provider_result_unrepresented_official_or_canonical_count: Any,
+) -> str:
+    """Classify the official-source acquisition layer from sanitized telemetry."""
+    if admission_used is False:
+        return "admission_not_used"
+    if admission_used != True:  # noqa: E712 - preserve unknown sentinel handling.
+        return NOT_OBSERVABLE
+    if execution_attempted is False:
+        return "execution_not_attempted"
+    if execution_attempted != True:  # noqa: E712
+        return NOT_OBSERVABLE
+
+    if _positive_int(provider_result_unrepresented_official_or_canonical_count) and (
+        candidate_official_or_canonical_count == UNKNOWN
+        or _is_zero(candidate_official_or_canonical_count)
+    ):
+        return "provider_result_forwarding_or_filtering_dropped_official_candidate"
+
+    if recovered_result_count == UNKNOWN:
+        return "candidate_return_unknown"
+    if _is_zero(recovered_result_count):
+        if candidate_acquisition_result_status == "provider_returned_zero_results":
+            return "provider_or_query_failed_to_return_official_candidate"
+        return "provider_or_query_failed_to_return_official_candidate"
+
+    if (
+        _positive_int(recovered_result_count)
+        and _is_zero(candidate_official_or_canonical_count)
+    ):
+        if _positive_int(provider_result_official_or_canonical_count):
+            return "provider_result_forwarding_or_filtering_dropped_official_candidate"
+        return "provider_or_query_failed_to_return_official_candidate"
+
+    if (
+        _positive_int(candidate_official_or_canonical_count)
+        and _zero_or_unknown(accepted_or_readable_official_or_canonical_count)
+        and _zero_or_unknown(accepted_readable_authority_evidence_count)
+    ):
+        if _readability_or_passport_failure(
+            recovered_candidate_rejection_reasons,
+            authority_candidate_passport_first_missing_stages,
+        ):
+            return "official_candidate_readability_or_passport_failed"
+        if _optional_text(recovered_candidate_source_fit_status) in {
+            "no_matching_source_fit",
+            "rejected_with_reason",
+            "matched_not_selected",
+        }:
+            return "candidate_source_fit_rejected_official_candidate"
+        return "candidate_source_fit_rejected_official_candidate"
+
+    if (
+        _positive_int(accepted_or_readable_official_or_canonical_count)
+        or _positive_int(accepted_readable_authority_evidence_count)
+    ):
+        if _is_zero(final_evidence_official_or_canonical_count):
+            return "accepted_official_candidate_lost_after_acquisition"
+        if _positive_int(final_evidence_official_or_canonical_count):
+            return "official_source_acquisition_quality_satisfied"
+
+    return NOT_OBSERVABLE
+
+
+def _provider_result_official_or_canonical_count(
+    provider_result_bridge: Mapping[str, Any],
+) -> int:
+    return sum(
+        1
+        for record in _provider_result_bridge_records(provider_result_bridge)
+        if _provider_result_record_official_or_canonical(record)
+    )
+
+
+def _provider_result_represented_official_or_canonical_count(
+    provider_result_bridge: Mapping[str, Any],
+) -> int:
+    return sum(
+        1
+        for record in _provider_result_bridge_records(provider_result_bridge)
+        if _provider_result_record_official_or_canonical(record)
+        and _provider_result_record_represented(record)
+    )
+
+
+def _provider_result_unrepresented_official_or_canonical_count(
+    provider_result_bridge: Mapping[str, Any],
+) -> int:
+    return sum(
+        1
+        for record in _provider_result_bridge_records(provider_result_bridge)
+        if _provider_result_record_official_or_canonical(record)
+        and not _provider_result_record_represented(record)
+    )
+
+
+def _provider_result_bridge_records(
+    provider_result_bridge: Mapping[str, Any],
+) -> list[Mapping[str, Any]]:
+    records = provider_result_bridge.get("bridge_records")
+    if not isinstance(records, list):
+        return []
+    return [record for record in records if isinstance(record, Mapping)]
+
+
+def _provider_result_record_official_or_canonical(record: Mapping[str, Any]) -> bool:
+    source_class = _clean_token(record.get("source_class"))
+    source_tier = _clean_token(record.get("source_tier"))
+    domain = _optional_text(record.get("normalized_domain"))
+    if source_class in _OFFICIAL_OR_CANONICAL_CLASSES:
+        return True
+    if source_tier in _OFFICIAL_OR_CANONICAL_TIERS:
+        return True
+    return domain != UNKNOWN and domain.endswith(".gov")
+
+
+def _provider_result_record_represented(record: Mapping[str, Any]) -> bool:
+    return bool(
+        record.get("represented_candidate_visible") is True
+        or record.get("passport_visible") is True
+        or _optional_text(record.get("represented_candidate_id")) != UNKNOWN
+        or _optional_text(record.get("passport_candidate_id")) != UNKNOWN
+    )
+
+
+def _zero_or_unknown(value: Any) -> bool:
+    return value == UNKNOWN or _is_zero(value)
+
+
+def _readability_or_passport_failure(
+    rejection_reasons: Any,
+    passport_first_missing_stages: Any,
+) -> bool:
+    values: list[str] = []
+    if isinstance(rejection_reasons, (list, tuple, set)):
+        values.extend(str(item or "") for item in rejection_reasons)
+    elif isinstance(rejection_reasons, str):
+        values.append(rejection_reasons)
+    if isinstance(passport_first_missing_stages, (list, tuple, set)):
+        values.extend(str(item or "") for item in passport_first_missing_stages)
+    elif isinstance(passport_first_missing_stages, str):
+        values.append(passport_first_missing_stages)
+    text = " ".join(values).casefold()
+    return "readab" in text or "passport" in text
+
+
 def format_official_canonical_recovery_diagnostics_markdown(
     runtime_trace_or_export: Mapping[str, Any] | None,
 ) -> str:
@@ -872,6 +1104,9 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "provider_result_bridge_available",
         "provider_result_bridge_schema_version",
         "provider_result_bridge_record_count",
+        "provider_result_official_or_canonical_count",
+        "provider_result_represented_official_or_canonical_count",
+        "provider_result_unrepresented_official_or_canonical_count",
         "provider_result_bridge_disposition_counts",
         "provider_result_bridge_aggregate_reconciliation_status",
         "provider_result_bridge_unobservable_boundary",
@@ -889,6 +1124,7 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "likely_next_failure_layer_custody_interpretation",
         "next_failure_layer",
         "next_failure_layer_custody_interpretation",
+        "official_source_acquisition_quality_layer",
         CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
         "controller_recovery_decision",
         "controller_recovery_decision_reason",
@@ -1919,6 +2155,7 @@ __all__ = [
     "OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_TRACE_KEY",
     "UNKNOWN",
     "append_official_canonical_recovery_diagnostics_section",
+    "classify_official_source_acquisition_quality_layer",
     "build_official_canonical_recovery_visibility_export",
     "build_official_canonical_recovery_visibility_trace",
     "classify_ag50d_next_failure_layer",
