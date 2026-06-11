@@ -157,6 +157,7 @@ from core.pipeline import (
 from core.policy import apply_policy_to_run_config, load_policy_state
 from core.post_author_output_projection import (
     _build_runtime_conflict_state_projection,
+    _final_answer_source_citation_telemetry,
     build_post_author_output_packaging_from_scope,
     build_post_author_trace_packaging_from_scope,
     build_run_outcome_from_scope,
@@ -951,37 +952,6 @@ _query_requires_clinical_trial_comparative_caution = (
 
 _pre_analyst_retrieval_gate = analyst_runtime_stage.pre_analyst_retrieval_gate
 _post_economist_analyst_gate = analyst_runtime_stage.post_economist_analyst_gate
-
-
-def _extract_final_answer_source_ids(report: str) -> list[str]:
-    return sorted({match for match in re.findall(r"\[\[(\d+)\]\]\(", str(report or ""))})
-
-
-def _final_answer_source_citation_telemetry(
-    report: str,
-    economist_safety_telemetry: dict[str, Any] | None,
-) -> dict[str, Any]:
-    final_source_ids = set(_extract_final_answer_source_ids(report))
-    packet_source_ids: set[str] = set()
-    packet = (
-        economist_safety_telemetry.get("quantitative_packet")
-        if isinstance(economist_safety_telemetry, dict)
-        else None
-    )
-    if isinstance(packet, dict):
-        packet_source_ids = {
-            str(source_id).strip()
-            for source_id in (packet.get("source_ids_used") or [])
-            if str(source_id).strip()
-        }
-
-    return {
-        "final_answer_source_ids_used": sorted(final_source_ids),
-        "final_answer_source_ids_not_in_packet": sorted(final_source_ids - packet_source_ids),
-        "packet_source_ids_not_in_final_answer": sorted(packet_source_ids - final_source_ids),
-        "final_answer_packet_source_ids_diverged": bool(final_source_ids ^ packet_source_ids),
-        "final_answer_source_telemetry_shadow_mode": True,
-    }
 
 
 def _pipeline_timing_payload(

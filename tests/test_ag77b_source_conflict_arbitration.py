@@ -437,7 +437,7 @@ def test_no_ag78_indirect_inference_api_is_defined() -> None:
     assert all(term not in source for term in banned_terms)
 
 
-def test_pipeline_orchestrator_is_not_rewritten() -> None:
+def test_pipeline_orchestrator_diff_remains_bounded() -> None:
     changed = subprocess.run(
         ["git", "diff", "--name-only"],
         cwd=ROOT,
@@ -464,6 +464,7 @@ def test_pipeline_orchestrator_is_not_rewritten() -> None:
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
+                or "_final_answer_source_citation_telemetry" in diff
                 or "provider_plan" in diff
                 or "evidence_ledger" in diff
         )

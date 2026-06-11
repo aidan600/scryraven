@@ -403,7 +403,7 @@ def test_protected_surface_flags_remain_false() -> None:
     assert state["protected_surface_flags"]["orchestrator_behavior_changed"] is False
 
 
-def test_static_guard_contract_does_not_import_or_rewrite_pipeline_orchestrator() -> None:
+def test_static_guard_contract_does_not_import_or_broadly_rewrite_pipeline_orchestrator() -> None:
     module_text = Path("core/indirect_inference_contract.py").read_text(encoding="utf-8")
     assert "pipeline_orchestrator" not in module_text
     diff_name_only = Path(".git").exists()
@@ -428,6 +428,7 @@ def test_static_guard_contract_does_not_import_or_rewrite_pipeline_orchestrator(
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
+                or "_final_answer_source_citation_telemetry" in diff
                 or "provider_plan" in diff
                 or "evidence_ledger" in diff
         )

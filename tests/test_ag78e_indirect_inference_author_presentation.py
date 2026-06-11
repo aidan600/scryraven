@@ -370,7 +370,7 @@ def test_static_protected_import_guard_for_author_presentation_helper():
     )
 
 
-def test_pipeline_orchestrator_only_has_unrelated_scrutineer_handoff_touch():
+def test_pipeline_orchestrator_only_has_bounded_handoff_or_projection_touch():
     result = subprocess.run(
         ["git", "diff", "--name-only"],
         check=True,
@@ -396,6 +396,7 @@ def test_pipeline_orchestrator_only_has_unrelated_scrutineer_handoff_touch():
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
+                or "_final_answer_source_citation_telemetry" in diff
                 or "provider_plan" in diff
                 or "evidence_ledger" in diff
         )

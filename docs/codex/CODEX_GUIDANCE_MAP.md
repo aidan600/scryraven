@@ -25,6 +25,11 @@ are repo files; use repo-visible files and the current phase prompt.
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - **AG-89+ RunAuthority / authority-collapse work:**
   [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
+- **Orchestrator strangulation and phase-boundary vocabulary:** read
+  `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
+  RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,
+  controller/orchestrator cleanup, or the licensed/closed/target/historical
+  surface vocabulary.
 - **Current authority doctrine / stale Controller vocabulary audit:** read
   `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md` after the
   RunAuthority guide when a phase touches authority, projection/export/report
@@ -53,10 +58,29 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## PR and final-bundle review
 
-- Use the Path B, bounded-autonomy, protected-surface, and final-bundle sections
+- Use the Path B, bounded-autonomy, surface-boundary, and final-bundle sections
   in [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - If the phase is AG-89+ authority-collapse work, also include the final bundle
   fields from [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
+
+## Surface Boundary Vocabulary
+
+Use precise phase-boundary words in current prompts and reviews:
+
+- **Licensed surface:** a file, module, behavior, or document the current phase
+  explicitly allows Codex to inspect or change.
+- **Closed surface:** a surface kept out of scope for this phase.
+- **Target surface:** a surface intentionally being reduced, moved, simplified,
+  or retired over time.
+- **Historical surface:** retained as project history, not current doctrine.
+- **Safety-sensitive surface:** high-custody behavior such as provider routing,
+  prompt semantics, citation behavior, persistence shape, or live validation.
+
+The legacy word "protected" should not mean sacred. For
+`core/pipeline_orchestrator.py`, "line delta: 0" is only a scope-control fact.
+It is not architecture success. In ordinary product behavior phases the
+orchestrator may be closed for safety; in orchestrator-strangulation phases it
+is a target surface.
 
 ## Stale-guidance questions
 
@@ -73,8 +97,8 @@ When guidance conflicts:
 5. For legacy Controller-handoff maintenance explicitly selected by a phase, the
    Controller playbook may be used within its stated scope.
 6. If a conflict would require a product choice, unresolved architecture fork,
-   unlicensed protected-surface change, live validation, secrets/private data, or
-   destructive git, stop and ask.
+   unlicensed or closed-surface change, live validation, secrets/private data,
+   or destructive git, stop and ask.
 
 ## Bounded-autonomy policy summary
 
@@ -83,7 +107,7 @@ tests, in-scope test fixes, docs cross-link fixes caused by the phase,
 formatting/pre-commit fixes, final-bundle preparation, and PR creation when the
 phase brief explicitly authorizes it.
 
-Stop for product choices, unresolved architecture forks, unlicensed protected
+Stop for product choices, unresolved architecture forks, unlicensed or closed
 surfaces, live validation, secrets/private data, destructive git,
 merge/rebase/force-push, broad scope expansion, or unresolved failing tests that
 imply a design decision.

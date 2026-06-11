@@ -115,7 +115,7 @@ def test_ag79b_helper_has_static_protected_import_guard() -> None:
     assert imported.isdisjoint(forbidden)
 
 
-def test_pipeline_orchestrator_boundary_guard_untouched() -> None:
+def test_pipeline_orchestrator_boundary_guard_remains_bounded() -> None:
     diff = subprocess.run(
         ["git", "diff", "--name-only", "HEAD"],
         check=True,
@@ -144,6 +144,7 @@ def test_pipeline_orchestrator_boundary_guard_untouched() -> None:
             or "retrieval_dispatch_runtime" in pipeline_diff
                 or "retrieval_stop_trace_projection" in pipeline_diff
                 or "query_authority.admit_execution_queries" in pipeline_diff
+                or "_final_answer_source_citation_telemetry" in pipeline_diff
                 or "provider_plan" in pipeline_diff
                 or "evidence_ledger" in pipeline_diff
         )

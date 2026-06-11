@@ -13,6 +13,12 @@ Phase type: documentation-only playbook; no runtime behavior change; no live val
 > path. Do not use the passive-contract ladder below to preserve old hidden
 > authority when the selected phase is an authority-collapse phase.
 
+> **AG-94G vocabulary note:** Treat this file as a historical/legacy guidance
+> surface unless a phase explicitly selects Controller-handoff maintenance.
+> Current phase briefs should distinguish licensed, closed, target, historical,
+> and safety-sensitive surfaces. `core/pipeline_orchestrator.py` is a
+> coordination shell with remaining authority debt, not a sacred surface.
+
 ## Purpose
 
 This playbook is legacy AG-80-era guidance for phases that explicitly select

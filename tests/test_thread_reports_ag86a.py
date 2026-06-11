@@ -291,7 +291,7 @@ def test_thread_reports_module_has_no_closed_surface_imports_or_calls() -> None:
     assert {"process_search_queries", "embed_texts", "ask_model"}.isdisjoint(call_names)
 
 
-def test_normal_author_prompt_and_orchestrator_surfaces_unchanged_by_report_module() -> None:
+def test_normal_author_prompt_unchanged_and_orchestrator_diff_remains_bounded() -> None:
     changed = subprocess.run(
         ["git", "diff", "--name-only", "HEAD", "--"],
         check=True,
@@ -314,6 +314,7 @@ def test_normal_author_prompt_and_orchestrator_surfaces_unchanged_by_report_modu
                 or "retrieval_dispatch_runtime" in diff
                 or "retrieval_stop_trace_projection" in diff
                 or "query_authority.admit_execution_queries" in diff
+                or "_final_answer_source_citation_telemetry" in diff
                 or "provider_plan" in diff
                 or "evidence_ledger" in diff
         )

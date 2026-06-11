@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -65,6 +66,46 @@ class PostAuthorOutputPackaging:
     execution_trace: dict[str, Any]
     output_word_count: int
     execution_log_entry: dict[str, Any]
+
+
+def _extract_final_answer_source_ids(report: str) -> list[str]:
+    return sorted(
+        {match for match in re.findall(r"\[\[(\d+)\]\]\(", str(report or ""))}
+    )
+
+
+def _final_answer_source_citation_telemetry(
+    report: str,
+    economist_safety_telemetry: dict[str, Any] | None,
+) -> dict[str, Any]:
+    final_source_ids = set(_extract_final_answer_source_ids(report))
+    packet_source_ids: set[str] = set()
+    packet = (
+        economist_safety_telemetry.get("quantitative_packet")
+        if isinstance(economist_safety_telemetry, dict)
+        else None
+    )
+    if isinstance(packet, dict):
+        packet_source_ids = {
+            str(source_id).strip()
+            for source_id in (packet.get("source_ids_used") or [])
+            if str(source_id).strip()
+        }
+
+    return {
+        "final_answer_source_ids_used": sorted(final_source_ids),
+        "final_answer_source_ids_not_in_packet": sorted(
+            final_source_ids - packet_source_ids
+        ),
+        "packet_source_ids_not_in_final_answer": sorted(
+            packet_source_ids - final_source_ids
+        ),
+        "final_answer_packet_source_ids_diverged": bool(
+            final_source_ids ^ packet_source_ids
+        ),
+        "final_answer_source_telemetry_shadow_mode": True,
+    }
+
 
 def _scrutineer_allowed_by_contract(contract: Any) -> bool:
     relevance = getattr(getattr(contract, "scrutineer_relevance", None), "value", None)

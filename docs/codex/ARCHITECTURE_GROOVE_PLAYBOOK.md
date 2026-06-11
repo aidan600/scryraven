@@ -57,8 +57,9 @@ can satisfy the brief without creating avoidable user coordination work.
 
 ### Tiny slice phase
 
-Use a tiny slice when the brief licenses one narrow seam, one protected surface,
-or one uncertain migration step. The plan may be only two or three bullets.
+Use a tiny slice when the brief licenses one narrow seam, one safety-sensitive
+surface, or one uncertain migration step. The plan may be only two or three
+bullets.
 
 ### Bundled multi-step phase
 
@@ -123,7 +124,7 @@ Stop and ask for a user decision only for:
 
 - product choices;
 - architecture forks not resolved by the brief or repo doctrine;
-- unlicensed protected-surface changes;
+- unlicensed or closed-surface changes;
 - live validation or live-call budget;
 - secrets, private data, `.env`, DB rows, private logs, caches, raw provider
   payloads, raw prompts, full raw traces, or local output packets;
@@ -136,7 +137,7 @@ Use this stop packet when escalation is required:
 
 ```text
 STOP REASON:
-scope_break | protected_surface_uncertainty | live_budget_request |
+scope_break | surface_boundary_uncertainty | live_budget_request |
 secret_or_generated_data_access_needed | destructive_git_needed |
 merge_or_destructive_git_needed | design_decision | tests_reveal_architecture_choice
 
@@ -183,14 +184,25 @@ Codex must not:
 - access secrets/env/API keys;
 - inspect DBs/private logs/generated outputs/caches/virtualenvs unless explicitly
   scoped;
-- change protected surfaces outside phase scope.
+- change closed or unlicensed surfaces outside phase scope.
 
-## Protected surfaces
+## Surface Boundary Vocabulary
 
-Protected surfaces are high-custody and licensable, not categorically forbidden.
-A phase may change one only when the brief explicitly names the surface, allowed
-behavior, tests, and validation boundary. Treat unexpected changes as stop
-conditions:
+Use current phase-boundary words precisely:
+
+- **Licensed surface:** explicitly allowed for inspection or change in this
+  phase.
+- **Closed surface:** out of scope for this phase.
+- **Target surface:** intentionally being reduced, moved, simplified, or retired
+  over time.
+- **Historical surface:** retained as project history, not current doctrine.
+- **Safety-sensitive surface:** high-custody behavior that needs explicit scope,
+  tests, and validation boundaries.
+
+The word "protected" may appear in older phase records, but it should not mean
+sacred. A phase may change a safety-sensitive surface only when the brief names
+the surface, allowed behavior, tests, and validation boundary. Treat unexpected
+changes as stop conditions:
 
 - Analyst/Economist/Author handoff;
 - Analyst skip behavior;
@@ -203,6 +215,11 @@ conditions:
 - persistence schema;
 - weak-corpus/source-class/retrieval-stop runtime behavior;
 - live-run behavior.
+
+`core/pipeline_orchestrator.py` is not architecture-successful merely because a
+phase leaves it untouched. It is a coordination shell with remaining authority
+debt. It may be closed in ordinary product behavior phases, and it may be a
+licensed target surface in orchestrator-strangulation phases.
 
 ## AG-89+ RunAuthority work
 
@@ -260,7 +277,7 @@ Return:
 8. Commands run and results
 9. Behavior changes
 10. Answer-contract / fulfillment / handoff changes, if any
-11. Protected-surface changes, if any
+11. Licensed/closed/target surface changes, if any
 12. Telemetry/validation artifacts added, with consumer/decision/deletion criteria
 13. Risky-surface scan
 14. Live validation used or not used

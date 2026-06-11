@@ -316,7 +316,7 @@ def test_static_protected_surface_guard_for_model_imports() -> None:
     assert imported_modules <= {"__future__", "dataclasses", "enum", "hashlib", "typing"}
 
 
-def test_lane_distinction_static_guard_and_pipeline_orchestrator_unchanged() -> None:
+def test_lane_distinction_static_guard_allows_bounded_orchestrator_projection_extraction() -> None:
     changed = set(
         subprocess.check_output(
             ["git", "diff", "--name-only", "HEAD", "--"],
@@ -351,6 +351,7 @@ def test_lane_distinction_static_guard_and_pipeline_orchestrator_unchanged() -> 
             or "retrieval_dispatch_runtime" in pipeline_diff
             or "retrieval_stop_trace_projection" in pipeline_diff
             or "query_authority.admit_execution_queries" in pipeline_diff
+            or "_final_answer_source_citation_telemetry" in pipeline_diff
             or "provider_plan" in pipeline_diff
             or "evidence_ledger" in pipeline_diff
         )

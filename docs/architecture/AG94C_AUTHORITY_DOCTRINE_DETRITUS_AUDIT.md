@@ -7,6 +7,13 @@ Live validation: not run
 Provider/model/search calls: not run
 Runtime behavior change: none
 
+> **AG-94G clarification:** This audit remains valid history and input, but
+> AG-94G supersedes any reading that treats `core/pipeline_orchestrator.py` as a
+> sacred or default-closed architecture success surface. In current guidance,
+> the orchestrator is a coordination shell with remaining authority debt and can
+> be a licensed target surface for strangulation phases. `pipeline_orchestrator.py`
+> line delta `0` is a scope-control fact, not architecture success.
+
 ## Executive Verdict
 
 The current runtime authority doctrine is coherent but still easy to misread
