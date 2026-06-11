@@ -31,6 +31,9 @@ from core.official_source_obligation_candidate_visibility import (
     UNKNOWN,
     OfficialSourceObligationCandidateVisibilityFacts,
 )
+from core.source_class_recovery import (
+    build_official_source_recovery_domain_constraints,
+)
 
 OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_TRACE_KEY = (
     "official_canonical_recovery_query_acquisition_trace"
@@ -291,6 +294,20 @@ def apply_official_canonical_recovery_query_acquisition(
                 ),
             }
         )
+        official_domains = _official_domain_constraints_for_acquired_queries(
+            source_classes=acquisition_classes,
+            base=base,
+            trace=trace,
+            subject=subject,
+            recovery_queries=merged_queries,
+        )
+        if official_domains:
+            recommendation_out["source_class_recovery_official_domains"] = (
+                official_domains
+            )
+            recommendation_out["source_class_recovery_domain_constraint_source"] = (
+                "official_source_recovery_lane"
+            )
 
     trace_payload = {
         "schema_version": (
@@ -618,6 +635,30 @@ def _generic_queries_for_intents(
     return tuple(_dedupe(_compact_text(query, limit=_CAP_QUERY) for query in queries))
 
 
+def _official_domain_constraints_for_acquired_queries(
+    *,
+    source_classes: Iterable[str],
+    base: Mapping[str, Any],
+    trace: Mapping[str, Any],
+    subject: str,
+    recovery_queries: Iterable[str],
+) -> list[str]:
+    official_classes = [
+        source_class
+        for source_class in source_classes
+        if source_class in _OFFICIAL_CURRENT_CLASSES
+    ]
+    if not official_classes:
+        return []
+    return build_official_source_recovery_domain_constraints(
+        missing_expected_source_classes=official_classes,
+        query=_context_value("query_preview", base=base, trace=trace) or subject,
+        core_topic=_context_value("core_topic", base=base, trace=trace),
+        primary_entity=_context_value("primary_entity", base=base, trace=trace),
+        recovery_queries=recovery_queries,
+    )
+
+
 def _year_terms(text: str) -> str:
     years = re.findall(r"\b20\d{2}\b", text)
     return " ".join(dict.fromkeys(years))
@@ -815,6 +856,19 @@ def _query_subject(
             if subject:
                 return subject
     return "source topic"
+
+
+def _context_value(
+    key: str,
+    *,
+    base: Mapping[str, Any],
+    trace: Mapping[str, Any],
+) -> str:
+    for source in (trace, base):
+        text = _compact_text(source.get(key), limit=160)
+        if text:
+            return text
+    return ""
 
 
 def _combined_entity_topic_subject(source: Mapping[str, Any]) -> str:

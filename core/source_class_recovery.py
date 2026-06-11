@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
@@ -159,6 +160,62 @@ _KERNEL_SOURCE_CLASS_MAP = {
     "academic_literature": ACADEMIC_LITERATURE,
     "sourced_numeric_values": SOURCED_NUMERIC_VALUES,
 }
+
+
+@dataclass(frozen=True)
+class _AuthorityVenueCandidate:
+    """Trace-safe official authority venue candidate inferred from public text."""
+
+    family_id: str
+    venue_roles: tuple[str, ...] = ()
+    search_hints: tuple[str, ...] = ()
+    domain_candidates: tuple[str, ...] = ()
+    domain_constraints: tuple[str, ...] = ()
+    constraint_strength: str = "role_only"
+    reasons: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class _AuthorityVenueInference:
+    """Trace-safe official venue hints inferred from public query text."""
+
+    candidates: tuple[_AuthorityVenueCandidate, ...] = ()
+
+    def _candidate_values(self, attr_name: str) -> tuple[str, ...]:
+        values: list[str] = []
+        for candidate in self.candidates:
+            for value in getattr(candidate, attr_name):
+                if value not in values:
+                    values.append(value)
+        return tuple(values)
+
+    @property
+    def family_ids(self) -> tuple[str, ...]:
+        values: list[str] = []
+        for candidate in self.candidates:
+            if candidate.family_id not in values:
+                values.append(candidate.family_id)
+        return tuple(values)
+
+    @property
+    def venue_roles(self) -> tuple[str, ...]:
+        return self._candidate_values("venue_roles")
+
+    @property
+    def search_hints(self) -> tuple[str, ...]:
+        return self._candidate_values("search_hints")
+
+    @property
+    def domain_candidates(self) -> tuple[str, ...]:
+        return self._candidate_values("domain_candidates")
+
+    @property
+    def domain_constraints(self) -> tuple[str, ...]:
+        return self._candidate_values("domain_constraints")
+
+    @property
+    def matched_signal_codes(self) -> tuple[str, ...]:
+        return self._candidate_values("reasons")
 
 
 def _compact_text(value: Any, *, limit: int = _CAP_TEXT) -> str:
@@ -1803,14 +1860,453 @@ def _query_subject(*, primary_entity: str, core_topic: str, query: str) -> str:
     return "source topic"
 
 
+def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
+    """Infer reusable official venue families from trace-safe public text."""
+    text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
+    candidates: list[_AuthorityVenueCandidate] = []
+
+    def clean_tuple(values: Iterable[str], *, limit: int = 80) -> tuple[str, ...]:
+        cleaned: list[str] = []
+        for value in values:
+            clean = _compact_text(value, limit=limit)
+            if clean and clean not in cleaned:
+                cleaned.append(clean)
+        return tuple(cleaned)
+
+    def add_candidate(
+        family_id: str,
+        *,
+        roles: tuple[str, ...] = (),
+        hints: tuple[str, ...] = (),
+        domain_candidates: tuple[str, ...] = (),
+        domain_constraints: tuple[str, ...] = (),
+        constraint_strength: str = "role_only",
+        reasons: tuple[str, ...] = (),
+    ) -> None:
+        if any(candidate.family_id == family_id for candidate in candidates):
+            return
+        candidates.append(
+            _AuthorityVenueCandidate(
+                family_id=_compact_text(family_id, limit=80),
+                venue_roles=clean_tuple(roles),
+                search_hints=clean_tuple(hints),
+                domain_candidates=clean_tuple(domain_candidates),
+                domain_constraints=clean_tuple(domain_constraints),
+                constraint_strength=_compact_text(
+                    constraint_strength or "role_only",
+                    limit=40,
+                ),
+                reasons=clean_tuple(reasons),
+            )
+        )
+
+    dot_agency_context = _has_any(
+        text,
+        (
+            r"\b(?:department\s+of\s+transportation|transportation\s+department|"
+            r"transportation\.gov)\b",
+        ),
+    ) or (
+        _has_any(text, (r"\bdot\b",))
+        and _has_any(
+            text,
+            (
+                r"\b(?:airlines?|transportation|carrier|passengers?|"
+                r"wheelchairs?|regulations?|rules?|complaints?|rights?)\b",
+            ),
+        )
+    )
+    air_carrier_instrument_context = _has_any(
+        text,
+        (
+            r"\bair\s+carrier\s+access\s+act\b",
+            r"\b14\s+cfr\s+part\s+382\b",
+        ),
+    )
+    air_passenger_rights_context = _has_any(
+        text,
+        (
+            r"\b(?:airline\s+passengers?|passengers?\s+with\s+disabilities|"
+            r"wheelchair\s+passengers?|passengers?\s+who\s+use\s+wheelchairs?|"
+            r"complaint\s+rights?)\b",
+        ),
+    ) and _has_any(
+        text,
+        (r"\b(?:airlines?|air\s+carrier|flights?|passengers?)\b",),
+    )
+    if (
+        dot_agency_context
+        or air_carrier_instrument_context
+        or air_passenger_rights_context
+    ):
+        add_candidate(
+            "travel_air_passenger_rights_rule",
+            roles=(
+                "official_agency_guidance",
+                "passenger_rights_rule",
+                "regulatory_text",
+                "complaint_rights_guidance",
+            ),
+            hints=(
+                "transportation.gov",
+                "DOT",
+                "14 CFR Part 382",
+                "Air Carrier Access Act",
+                "passenger rights",
+                "official agency guidance",
+            ),
+            domain_candidates=("transportation.gov",),
+            domain_constraints=("transportation.gov",),
+            constraint_strength="hard_constraint",
+            reasons=(
+                "transportation_agency_or_air_carrier_instrument",
+                "air_passenger_rights_context",
+            ),
+        )
+
+    travel_or_screening_context = _has_any(
+        text,
+        (
+            r"\b(?:air\s+travel|domestic\s+travel|domestic\s+flights?|"
+            r"flights?|airport|airports?|airlines?|airline\s+passengers?|"
+            r"boarding|board|checkpoint|screening|security\s+checkpoint)\b",
+            r"\b(?:air\s+carrier\s+access\s+act|wheelchairs?|"
+            r"passengers?\s+with\s+disabilities)\b",
+        ),
+    )
+    access_credential_context = _has_any(
+        text,
+        (
+            r"\b(?:identification|identity\s+documents?|id\s+documents?|"
+            r"acceptable\s+ids?|accepted\s+ids?|valid\s+ids?|credentials?|"
+            r"proof\s+of\s+(?:identity|identification)|access|entry)\b",
+            r"\b(?:accepted|acceptable|required|valid|needed)\s+"
+            r"(?:identification|documents?|credentials?|proof)\b",
+        ),
+    )
+    if travel_or_screening_context and access_credential_context:
+        add_candidate(
+            "airport_screening_identity_access_rule",
+            roles=(
+                "official_agency_guidance",
+                "accepted_id_guidance",
+                "checkpoint_requirements",
+                "enforcement_date_notice",
+                "regulatory_text",
+            ),
+            hints=(
+                "airport screening",
+                "accepted-ID guidance",
+                "official agency",
+                "checkpoint requirements",
+                "enforcement-date notice",
+                "regulatory text",
+            ),
+            constraint_strength="role_only",
+            reasons=(
+                "air_travel_or_screening_context",
+                "identity_access_rule_context",
+            ),
+        )
+
+    tax_context = _has_any(
+        text,
+        (
+            r"\b(?:tax|taxes|irs|internal\s+revenue\s+service|revenue\s+"
+            r"procedure|internal\s+revenue\s+bulletin)\b",
+            r"\b(?:standard\s+mileage\s+rate|mileage\s+rate|tax\s+"
+            r"credits?|deductions?|tax\s+return)\b",
+        ),
+    ) or (
+        _has_any(
+            text,
+            (r"\b(?:filing|forms?|instructions?|fee|fees|rates?|thresholds?)\b",),
+        )
+        and _has_any(text, (r"\b(?:tax|taxes|irs|revenue)\b",))
+    )
+    if tax_context:
+        add_candidate(
+            "tax_rate_form_fee_rule",
+            roles=(
+                "official_agency_guidance",
+                "form_instructions",
+                "rate_notice",
+            ),
+            hints=(
+                "irs.gov",
+                "official tax guidance",
+                "form instructions",
+                "Internal Revenue Bulletin",
+                "revenue procedure",
+                "fee schedule",
+            ),
+            domain_candidates=("irs.gov",),
+            domain_constraints=("irs.gov",),
+            constraint_strength="hard_constraint",
+            reasons=("tax_rate_form_fee_signal",),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:immigration|naturalization|citizenship|visa|green\s+card|"
+            r"uscis|n-400|asylum|adjustment\s+of\s+status)\b",
+            r"\b(?:filing\s+fee|service\s+request|application\s+fee|"
+            r"policy\s+manual|form\s+instructions?)\b",
+        ),
+    ):
+        add_candidate(
+            "immigration_naturalization_filing_rule",
+            roles=(
+                "official_agency_guidance",
+                "policy_manual",
+                "form_instructions",
+                "filing_fee_schedule",
+            ),
+            hints=(
+                "uscis.gov",
+                "official immigration guidance",
+                "policy manual",
+                "form instructions",
+                "filing fee schedule",
+                "service rule",
+            ),
+            domain_candidates=("uscis.gov",),
+            domain_constraints=("uscis.gov",),
+            constraint_strength="hard_constraint",
+            reasons=("immigration_naturalization_filing_signal",),
+        )
+
+    labor_context = _has_any(
+        text,
+        (
+            r"\b(?:labor|workplace|workers?|employees?|wage|wages|"
+            r"minimum\s+wage|overtime|leave|payroll|dol|department\s+of\s+"
+            r"labor|osha|occupational\s+safety|hazard\s+communication|"
+            r"29\s+cfr\s+1910\.1200)\b",
+        ),
+    ) and not _has_any(
+        text,
+        (
+            r"\b(?:social\s+security|taxable\s+maximum|wage\s+base|"
+            r"contribution\s+and\s+benefit\s+base)\b",
+        ),
+    )
+    if labor_context:
+        labor_domains = ["dol.gov"]
+        if _has_any(
+            text,
+            (
+                r"\b(?:osha|occupational\s+safety|hazard\s+communication|"
+                r"29\s+cfr\s+1910\.1200|workplace\s+safety)\b",
+            ),
+        ):
+            labor_domains.append("osha.gov")
+        add_candidate(
+            "labor_workplace_wage_compliance_rule",
+            roles=(
+                "official_agency_guidance",
+                "workplace_compliance_guidance",
+                "wage_and_hour_rule",
+            ),
+            hints=(
+                "dol.gov",
+                "labor agency guidance",
+                "workplace compliance",
+                "wage and hour",
+                "fact sheet",
+                "compliance assistance",
+            ),
+            domain_candidates=tuple(labor_domains),
+            domain_constraints=tuple(labor_domains),
+            constraint_strength="hard_constraint",
+            reasons=("labor_workplace_wage_compliance_signal",),
+        )
+
+    consumer_finance_context = _has_any(
+        text,
+        (
+            r"\b(?:consumer\s+finance|consumer\s+financial\s+protection|"
+            r"cfpb|mortgage|credit\s+card|loan|debt\s+collection|"
+            r"banking\s+regulator|consumer\s+protection|ftc|federal\s+"
+            r"trade\s+commission|non[-\s]?competes?|negative\s+option|"
+            r"click[-\s]?to[-\s]?cancel)\b",
+        ),
+    )
+    if consumer_finance_context:
+        consumer_domain_constraints: list[str] = []
+        if _has_any(
+            text,
+            (
+                r"\b(?:cfpb|consumer\s+financial\s+protection\s+bureau)\b",
+                r"\bconsumerfinance\.gov\b",
+            ),
+        ):
+            consumer_domain_constraints.append("consumerfinance.gov")
+        if _has_any(
+            text,
+            (
+                r"\b(?:ftc|federal\s+trade\s+commission|ftc\.gov)\b",
+                r"\bnon[-\s]?competes?\b",
+                r"\b(?:negative\s+option|click[-\s]?to[-\s]?cancel)\b",
+            ),
+        ):
+            consumer_domain_constraints.append("ftc.gov")
+        add_candidate(
+            "consumer_finance_regulator_rule",
+            roles=(
+                "official_agency_guidance",
+                "regulator_rule",
+                "compliance_guidance",
+                "court_status",
+            ),
+            hints=(
+                "consumer regulator guidance",
+                "official rule",
+                "compliance guide",
+                "court status",
+                "agency FAQ",
+            ),
+            domain_candidates=("consumerfinance.gov", "ftc.gov"),
+            domain_constraints=tuple(consumer_domain_constraints),
+            constraint_strength=(
+                "hard_constraint"
+                if consumer_domain_constraints
+                else "soft_domain_candidate"
+            ),
+            reasons=("consumer_finance_regulator_signal",),
+        )
+
+    sec_context = _has_any(
+        text,
+        (
+            r"\b(?:securities\s+and\s+exchange\s+commission|issuer\s+"
+            r"filings?|edgar|10[-\s]?[qk]|form\s+10[-\s]?[qk]|"
+            r"securities\s+filings?|public\s+company\s+filings?)\b",
+        ),
+    ) or (
+        _has_any(text, (r"\bsec\b",))
+        and _has_any(text, (r"\b(?:filings?|issuer|edgar|securities)\b",))
+    )
+    if sec_context:
+        add_candidate(
+            "securities_issuer_filing_rule",
+            roles=("official_filing_database", "issuer_filing"),
+            hints=(
+                "sec.gov",
+                "EDGAR",
+                "issuer filing",
+                "official filing",
+                "Form 10-Q 10-K",
+            ),
+            domain_candidates=("sec.gov",),
+            domain_constraints=("sec.gov",),
+            constraint_strength="hard_constraint",
+            reasons=("securities_issuer_filing_signal",),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:court|courts|challenge|challenged|lawsuit|litigation|"
+            r"injunction|stay|vacatur|order|docket|legal\s+status|"
+            r"effective\s+date|compliance\s+date|enforcement\s+date|"
+            r"enforcement\s+status|final\s+rule|proposed\s+rule)\b",
+        ),
+    ):
+        add_candidate(
+            "legal_regulatory_challenge_effective_date_rule",
+            roles=(
+                "legal_status_source",
+                "court_order_or_docket",
+                "agency_rulemaking_record",
+            ),
+            hints=(
+                "Federal Register",
+                "court order",
+                "agency docket",
+                "final rule",
+                "compliance date",
+                "enforcement status",
+            ),
+            constraint_strength="role_only",
+            reasons=("legal_regulatory_status_signal",),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:government|public|federal|state|county|municipal|local|"
+            r"provincial)\s+[a-z0-9'.\-\s]{0,70}"
+            r"(?:programs?|benefits?|services?|assistance|aid|subsid(?:y|ies)|"
+            r"eligibility|applications?|access|credentials?|permits?|licenses?)\b",
+            r"\b(?:public\s+benefits?|public\s+services?|government\s+"
+            r"benefits?|government\s+services?|agency\s+guidance|program\s+"
+            r"eligibility|application\s+requirements?|access\s+rules?)\b",
+        ),
+    ):
+        add_candidate(
+            "government_program_eligibility_access_rule",
+            roles=(
+                "official_program_guidance",
+                "agency_faq",
+                "eligibility_access_rule",
+                "application_instructions",
+            ),
+            hints=(
+                "official program guidance",
+                "agency FAQ",
+                "eligibility requirements",
+                "application instructions",
+                "access rules",
+            ),
+            constraint_strength="role_only",
+            reasons=("government_program_access_signal",),
+        )
+
+    if _has_any(
+        text,
+        (
+            r"\b(?:fda|food\s+and\s+drug\s+administration|laboratory\s+"
+            r"developed\s+tests?|ldts?|medical\s+devices?|enforcement\s+"
+            r"discretion)\b",
+        ),
+    ):
+        add_candidate(
+            "health_product_regulator_rule",
+            roles=(
+                "official_agency_guidance",
+                "health_product_rule",
+                "enforcement_discretion_guidance",
+            ),
+            hints=(
+                "fda.gov",
+                "health regulator guidance",
+                "Federal Register",
+                "enforcement discretion",
+                "final rule",
+            ),
+            domain_candidates=("fda.gov",),
+            domain_constraints=("fda.gov",),
+            constraint_strength="hard_constraint",
+            reasons=("health_product_regulator_signal",),
+        )
+
+    return _AuthorityVenueInference(candidates=tuple(candidates))
+
+
 def _official_source_target_hints(*texts: str) -> list[str]:
     """Return deterministic public-authority hints as ordinary search terms."""
-    text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
+    inferred = _infer_official_authority_venue(*texts)
     hints: list[str] = []
 
     def add(*values: str) -> None:
         for value in values:
             _append_unique(hints, value)
+
+    add(*inferred.domain_constraints)
+
+    text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
 
     dot_context = _has_any(
         text,
@@ -1896,6 +2392,8 @@ def _official_source_target_hints(*texts: str) -> list[str]:
     if sec_context:
         add("sec.gov", "EDGAR", "issuer filing")
 
+    add(*inferred.search_hints)
+
     return hints
 
 
@@ -1937,25 +2435,29 @@ def build_official_source_recovery_domain_constraints(
     if not (missing & OFFICIAL_SOURCE_DOMAIN_CONSTRAINT_CLASSES):
         return []
 
-    text = " ".join(
+    context_text = " ".join(
         _compact_text(value, limit=240)
         for value in (
             query,
             core_topic,
             primary_entity,
-            " ".join(
-                _compact_text(item, limit=120)
-                for item in (recovery_queries or ())
-                if str(item or "").strip()
-            ),
         )
         if str(value or "").strip()
+    ).casefold()
+    recovery_text = " ".join(
+        _compact_text(item, limit=120)
+        for item in (recovery_queries or ())
+        if str(item or "").strip()
+    ).casefold()
+    text = " ".join(
+        value for value in (context_text, recovery_text) if value
     ).casefold()
 
     domains: list[str] = []
     official_or_legal_missing = bool(
         missing & {"official_current_rules", "legal_or_regulatory_text"}
     )
+    inferred_venue = _infer_official_authority_venue(context_text)
 
     dot_context = _has_any(
         text,
@@ -2054,24 +2556,47 @@ def build_official_source_recovery_domain_constraints(
         ),
     )
     us_agency_domains: list[str] = []
+    for domain in inferred_venue.domain_constraints:
+        _append_domain(us_agency_domains, domain)
     if dot_context:
         _append_domain(us_agency_domains, "transportation.gov")
     for patterns, domain in agency_targets:
         if _has_any(text, patterns):
             _append_domain(us_agency_domains, domain)
 
+    local_program_role_only_context = (
+        "government_program_eligibility_access_rule" in inferred_venue.family_ids
+        and not inferred_venue.domain_constraints
+        and _has_any(
+            context_text,
+            (r"\b(?:state|county|municipal|local|provincial)\b",),
+        )
+        and not _has_any(
+            context_text,
+            (
+                r"\b(?:federal|u\.s\.|us|united\s+states|american)\b",
+                r"\b(?:irs|uscis|ssa|social\s+security|dol|department\s+of\s+"
+                r"labor|ftc|fda|cfpb|sec|department\s+of\s+transportation|"
+                r"transportation\s+department)\b",
+            ),
+        )
+    )
+
     us_legal_context = (
         bool(us_agency_domains)
-        or _has_any(
-            text,
-            (
-                r"\b(?:u\.s\.|us|united\s+states|american)\b"
-                r".{0,100}"
-                r"\b(?:law|legal|regulation|regulatory|rule|rules|"
-                r"statute|agency|federal)\b",
-                r"\b(?:cfr|ecfr|code\s+of\s+federal\s+regulations|"
-                r"federal\s+register|govinfo|regulations\.gov)\b",
-            ),
+        or (
+            not local_program_role_only_context
+            and _has_any(
+                text,
+                (
+                    r"\b(?:u\.s\.|us|united\s+states|american)\b"
+                    r".{0,100}"
+                    r"\b(?:law|legal|regulation|regulatory|rule|rules|"
+                    r"statute|agency|federal)\b",
+                    r"\b(?:cfr|ecfr|code\s+of\s+federal\s+regulations|"
+                    r"federal\s+register|govinfo|regulations\.gov)\b",
+                ),
+            )
         )
     )
     eu_legal_context = _has_any(
