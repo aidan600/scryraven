@@ -129,6 +129,11 @@ OFFICIAL_SOURCE_DOMAIN_CONSTRAINT_CLASSES = frozenset(
         "current_primary_or_official",
     }
 )
+OFFICIAL_AUTHORITY_ACQUISITION_SOURCE_CLASSES = (
+    "official_current_rules",
+    "legal_or_regulatory_text",
+    "current_primary_or_official",
+)
 OFFICIAL_SOURCE_US_AUTHORITY_DOMAINS = (
     "federalregister.gov",
     "ecfr.gov",
@@ -216,6 +221,41 @@ class _AuthorityVenueInference:
     @property
     def matched_signal_codes(self) -> tuple[str, ...]:
         return self._candidate_values("reasons")
+
+
+@dataclass(frozen=True)
+class _OfficialAuthorityAcquisitionPlan:
+    """Trace-safe official/current authority acquisition strategy."""
+
+    source_classes_required: tuple[str, ...] = ()
+    venue_families: tuple[str, ...] = ()
+    acquisition_role: str = "official_current_authority_acquisition"
+    query_variants: tuple[str, ...] = ()
+    hard_domains: tuple[str, ...] = ()
+    soft_candidate_domains: tuple[str, ...] = ()
+    role_hints: tuple[str, ...] = ()
+    avoid_source_tiers: tuple[str, ...] = ("news", "secondary")
+    reason_codes: tuple[str, ...] = ()
+    max_query_variants: int = 3
+
+    def as_trace(self) -> dict[str, Any]:
+        return {
+            "source_classes_required": list(self.source_classes_required),
+            "venue_families": list(self.venue_families),
+            "acquisition_role": self.acquisition_role,
+            "query_variants": list(self.query_variants),
+            "hard_domains": list(self.hard_domains),
+            "soft_candidate_domains": list(self.soft_candidate_domains),
+            "role_hints": list(self.role_hints),
+            "avoid_source_tiers": list(self.avoid_source_tiers),
+            "reason_codes": list(self.reason_codes),
+            "bounded_attempt_metadata": {
+                "max_query_variants": self.max_query_variants,
+                "global_search_depth_unchanged": True,
+                "provider_selection_unchanged": True,
+                "role_only_domains_not_forced": not self.hard_domains,
+            },
+        }
 
 
 def _compact_text(value: Any, *, limit: int = _CAP_TEXT) -> str:
@@ -2295,6 +2335,215 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
     return _AuthorityVenueInference(candidates=tuple(candidates))
 
 
+def build_official_authority_acquisition_plan(
+    *,
+    source_classes: Iterable[Any],
+    subject: str,
+    context_text: str = "",
+    max_query_variants: int = 3,
+) -> dict[str, Any]:
+    """Return a sanitized bounded official-authority acquisition plan."""
+
+    return _official_authority_acquisition_plan(
+        source_classes=source_classes,
+        subject=subject,
+        context_text=context_text,
+        max_query_variants=max_query_variants,
+    ).as_trace()
+
+
+def _official_authority_acquisition_plan(
+    *,
+    source_classes: Iterable[Any],
+    subject: str,
+    context_text: str = "",
+    max_query_variants: int = 3,
+) -> _OfficialAuthorityAcquisitionPlan:
+    classes: list[str] = []
+    for item in source_classes or ():
+        clean = str(item or "").strip()
+        if clean in OFFICIAL_AUTHORITY_ACQUISITION_SOURCE_CLASSES:
+            _append_unique(classes, clean)
+    if not classes:
+        return _OfficialAuthorityAcquisitionPlan()
+
+    subject_text = _compact_text(subject, limit=120) or "official source topic"
+    combined_context = " ".join(
+        part
+        for part in (
+            subject_text,
+            _compact_text(context_text, limit=260),
+        )
+        if part
+    )
+    venue = _infer_official_authority_venue(combined_context)
+    active_candidates = tuple(
+        candidate
+        for candidate in venue.candidates
+        if not (
+            candidate.family_id == "government_program_eligibility_access_rule"
+            and not _program_access_role_context(combined_context)
+        )
+    )
+    active_venue = _AuthorityVenueInference(candidates=active_candidates)
+    hard_domains: list[str] = []
+    soft_domains: list[str] = []
+    role_hints: list[str] = []
+    reasons: list[str] = []
+    for candidate in active_candidates:
+        if candidate.constraint_strength == "hard_constraint":
+            for domain in candidate.domain_constraints:
+                _append_domain(hard_domains, domain)
+        elif candidate.constraint_strength == "soft_domain_candidate":
+            for domain in candidate.domain_candidates:
+                _append_domain(soft_domains, domain)
+        for hint in candidate.search_hints:
+            _append_unique(role_hints, hint)
+        for reason in candidate.reasons:
+            _append_unique(reasons, reason)
+
+    queries = _official_authority_query_variants(
+        source_classes=tuple(classes),
+        subject=subject_text,
+        context_text=combined_context,
+        venue=active_venue,
+        hard_domains=tuple(hard_domains),
+        soft_domains=tuple(soft_domains),
+        role_hints=tuple(role_hints),
+        max_query_variants=max_query_variants,
+    )
+    return _OfficialAuthorityAcquisitionPlan(
+        source_classes_required=tuple(classes),
+        venue_families=active_venue.family_ids,
+        query_variants=queries,
+        hard_domains=tuple(hard_domains),
+        soft_candidate_domains=tuple(
+            domain for domain in soft_domains if domain not in hard_domains
+        ),
+        role_hints=tuple(role_hints),
+        reason_codes=tuple(reasons),
+        max_query_variants=max_query_variants,
+    )
+
+
+def _program_access_role_context(text: str) -> bool:
+    return _has_any(
+        text.casefold(),
+        (
+            r"\b(?:credentials?|identification|identity|id\s+documents?|"
+            r"documents?|proof|access|entry|screening|checkpoint)\b",
+        ),
+    )
+
+
+def _official_authority_query_variants(
+    *,
+    source_classes: tuple[str, ...],
+    subject: str,
+    context_text: str,
+    venue: _AuthorityVenueInference,
+    hard_domains: tuple[str, ...],
+    soft_domains: tuple[str, ...],
+    role_hints: tuple[str, ...],
+    max_query_variants: int,
+) -> tuple[str, ...]:
+    text = f"{subject} {context_text}".casefold()
+    years = " ".join(dict.fromkeys(re.findall(r"\b20\d{2}\b", text)))
+    families = set(venue.family_ids)
+    queries: list[str] = []
+
+    def add(*parts: str) -> None:
+        query = _compact_text(
+            " ".join(part for part in parts if str(part or "").strip()),
+            limit=_CAP_QUERY,
+        )
+        if query and query not in queries and len(queries) < max_query_variants:
+            queries.append(query)
+
+    if "tax_rate_form_fee_rule" in families:
+        if "mileage" in text or "standard mileage" in text:
+            add(
+                "IRS",
+                years,
+                "standard mileage rate business official notice revenue procedure",
+            )
+        else:
+            add(
+                "IRS",
+                years,
+                "official tax guidance form instructions Internal Revenue Bulletin",
+                subject,
+            )
+    if "immigration_naturalization_filing_rule" in families:
+        add(
+            "USCIS Form N-400 naturalization filing fee official current fee schedule",
+            "policy manual form instructions filing fee schedule",
+        )
+    if "health_product_regulator_rule" in families:
+        add(
+            "fda.gov FDA Federal Register final rule enforcement discretion",
+            "official guidance",
+            subject,
+        )
+    if "consumer_finance_regulator_rule" in families:
+        if "ftc.gov" in hard_domains or "ftc" in text or "noncompete" in text:
+            add(
+                "ftc.gov FTC Federal Register final rule current legal status",
+                "court status official rule",
+                subject,
+            )
+        elif "consumerfinance.gov" in hard_domains or "cfpb" in text:
+            add(
+                "consumerfinance.gov CFPB official rule compliance guide",
+                "agency FAQ",
+                subject,
+            )
+        else:
+            add(
+                "official consumer regulator guidance compliance guide agency FAQ",
+                " ".join(soft_domains),
+                subject,
+            )
+    if "travel_air_passenger_rights_rule" in families:
+        add(
+            "transportation.gov DOT 14 CFR Part 382 Federal Register CFR eCFR GovInfo",
+            "Air Carrier Access Act passenger rights official guidance",
+            subject,
+        )
+    if "airport_screening_identity_access_rule" in families:
+        add(
+            "official current source airport screening accepted-ID guidance",
+            "enforcement-date notice checkpoint requirements",
+            subject,
+        )
+    if "government_program_eligibility_access_rule" in families:
+        add(
+            "official program guidance agency FAQ eligibility requirements",
+            "application instructions access rules",
+            subject,
+        )
+    if "legal_regulatory_challenge_effective_date_rule" in families:
+        add(
+            "Federal Register court order agency docket final rule",
+            "compliance date enforcement status",
+            subject,
+        )
+    if not queries and "legal_or_regulatory_text" in source_classes:
+        add(
+            "legal regulatory text official source Federal Register CFR eCFR",
+            subject,
+        )
+    if not queries and "current_primary_or_official" in source_classes:
+        add(
+            "current official primary source agency guidance Federal Register",
+            subject,
+        )
+    if not queries:
+        hint_text = _compact_text(" ".join(role_hints), limit=80)
+        add("official current source agency guidance current requirements", hint_text, subject)
+    return tuple(queries)
+
+
 def _official_source_target_hints(*texts: str) -> list[str]:
     """Return deterministic public-authority hints as ordinary search terms."""
     inferred = _infer_official_authority_venue(*texts)
@@ -2460,16 +2709,16 @@ def build_official_source_recovery_domain_constraints(
     inferred_venue = _infer_official_authority_venue(context_text)
 
     dot_context = _has_any(
-        text,
+        context_text,
         (
             r"\b(?:department\s+of\s+transportation|transportation\s+department)\b",
             r"\bair\s+carrier\s+access\s+act\b",
             r"\b(?:airlines?|airline\s+passengers?|passengers?\s+with\s+disabilities)\b",
         ),
     ) or (
-        _has_any(text, (r"\bdot\b",))
+        _has_any(context_text, (r"\bdot\b",))
         and _has_any(
-            text,
+            context_text,
             (
                 r"\b(?:airlines?|transportation|carrier|passengers?|"
                 r"wheelchairs?|regulations?|rules?)\b",
@@ -2543,7 +2792,7 @@ def build_official_source_recovery_domain_constraints(
         (
             (
                 r"\b(?:cfpb|consumer\s+financial\s+protection\s+bureau)\b",
-                r"\bconsumer\s+finance\b",
+                r"\bconsumerfinance\.gov\b",
             ),
             "consumerfinance.gov",
         ),
@@ -2561,7 +2810,7 @@ def build_official_source_recovery_domain_constraints(
     if dot_context:
         _append_domain(us_agency_domains, "transportation.gov")
     for patterns, domain in agency_targets:
-        if _has_any(text, patterns):
+        if _has_any(context_text, patterns):
             _append_domain(us_agency_domains, domain)
 
     local_program_role_only_context = (
@@ -2662,9 +2911,25 @@ def _candidate_queries_for_bucket(
     *,
     context_text: str = "",
 ) -> list[str]:
+    plan_queries: list[str] = []
+    if bucket in OFFICIAL_AUTHORITY_ACQUISITION_SOURCE_CLASSES:
+        plan = _official_authority_acquisition_plan(
+            source_classes=(bucket,),
+            subject=subject,
+            context_text=context_text,
+            max_query_variants=_MAX_RECOVERY_QUERIES,
+        )
+        if (
+            plan.venue_families
+            or plan.hard_domains
+            or plan.soft_candidate_domains
+        ):
+            plan_queries = list(plan.query_variants)
     hints = _hint_text(_official_source_target_hints(subject, context_text))
     if bucket == "official_current_rules":
-        return [
+        return _dedupe_cap_queries(
+            [
+                *plan_queries,
             _append_hint(
                 f"{subject} official source current rules government agency guidance "
                 "Federal Register CFR eCFR GovInfo",
@@ -2675,9 +2940,12 @@ def _candidate_queries_for_bucket(
                 "agency guidance official requirements",
                 hints,
             ),
-        ]
+            ]
+        )
     if bucket == "legal_or_regulatory_text":
-        return [
+        return _dedupe_cap_queries(
+            [
+                *plan_queries,
             _append_hint(
                 f"{subject} legal regulatory text statute regulation CFR eCFR "
                 "Code of Federal Regulations",
@@ -2688,9 +2956,12 @@ def _candidate_queries_for_bucket(
                 "compliance date regulation text",
                 hints,
             ),
-        ]
+            ]
+        )
     if bucket == "current_primary_or_official":
-        return [
+        return _dedupe_cap_queries(
+            [
+                *plan_queries,
             _append_hint(
                 f"{subject} current official primary source agency guidance "
                 "Federal Register enforcement status",
@@ -2701,7 +2972,8 @@ def _candidate_queries_for_bucket(
                 "court status compliance date",
                 hints,
             ),
-        ]
+            ]
+        )
     if bucket == "issuer_filings_or_company_materials":
         return [
             f"{subject} investor relations quarterly results earnings release SEC",
@@ -2877,6 +3149,11 @@ def apply_answer_contract_source_class_recovery_gap_trigger(
         primary_entity=primary_entity,
         recovery_queries=recovery_queries,
     )
+    official_plan = _official_authority_acquisition_plan(
+        source_classes=missing,
+        subject=subject,
+        context_text=context_text,
+    )
 
     trigger_fields = _copy_compact_list(
         base.get("source_class_recovery_trigger_fields")
@@ -2914,6 +3191,12 @@ def apply_answer_contract_source_class_recovery_gap_trigger(
     else:
         base.pop("source_class_recovery_official_domains", None)
         base.pop("source_class_recovery_domain_constraint_source", None)
+    if official_plan.source_classes_required:
+        base["source_class_recovery_official_acquisition_plan"] = (
+            official_plan.as_trace()
+        )
+    else:
+        base.pop("source_class_recovery_official_acquisition_plan", None)
     return base
 
 
@@ -3310,6 +3593,11 @@ def build_source_class_recovery_recommendation(
         primary_entity=primary_entity,
         recovery_queries=recovery_queries,
     )
+    official_plan = _official_authority_acquisition_plan(
+        source_classes=missing,
+        subject=subject,
+        context_text=context_text,
+    )
 
     trigger_fields: list[str] = []
     if missing:
@@ -3335,5 +3623,9 @@ def build_source_class_recovery_recommendation(
         payload["source_class_recovery_official_domains"] = official_domains
         payload["source_class_recovery_domain_constraint_source"] = (
             "official_source_recovery_lane"
+        )
+    if official_plan.source_classes_required:
+        payload["source_class_recovery_official_acquisition_plan"] = (
+            official_plan.as_trace()
         )
     return payload

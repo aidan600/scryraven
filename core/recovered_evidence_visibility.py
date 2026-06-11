@@ -479,6 +479,24 @@ def _non_authority_source_fit_reason(source: Mapping[str, Any]) -> str:
     return "not_strong_source_class"
 
 
+def _bool_or_unknown(value: Any) -> bool | None:
+    if value is True:
+        return True
+    if value is False:
+        return False
+    return None
+
+
+def _readable_recovered_source(source: Mapping[str, Any]) -> bool:
+    explicit = _bool_or_unknown(source.get("readable_text_available"))
+    if explicit is not None:
+        return explicit
+    status = _compact_text(source.get("readability_status")).casefold()
+    if status in {"unreadable", "readability_failed", "failed"}:
+        return False
+    return bool(_compact_text(source.get("text")))
+
+
 def _approved_recover_missing_source_class_envelope(
     lifecycle_trace: Mapping[str, Any],
 ) -> bool:
@@ -619,6 +637,11 @@ def apply_recovered_evidence_visibility_boundary(
             if identity:
                 dropped.append(identity)
             drop_reasons.append("duplicate_recovered_source")
+            continue
+        if not _readable_recovered_source(source):
+            if identity:
+                dropped.append(identity)
+            drop_reasons.append("readability_failed")
             continue
 
         strong_classes = _strong_source_classes(source)
