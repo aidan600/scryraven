@@ -78,12 +78,16 @@ _WEAK_CORPUS_BLOCKERS = frozenset(
         "weak_corpus_recovery_owns_path",
     }
 )
-_OFFICIAL_OR_LEGAL_REQUIRED_CLASSES = frozenset(
+_SUPPORTED_STRONG_AUTHORITY_RECOVERY_CLASSES = frozenset(
     {
         "official_current_rules",
         "legal_or_regulatory_text",
         "current_primary_or_official",
     }
+)
+_VISIBLE_STRONG_AUTHORITY_RECOVERY_CLASSES = (
+    _SUPPORTED_STRONG_AUTHORITY_RECOVERY_CLASSES
+    | {"primary_source_documents", "archival_primary_text"}
 )
 _KERNEL_AUTHORITY_CLASS_BY_LEGACY_CLASS = {
     "official_current_rules": OFFICIAL_CURRENT_RULES,
@@ -406,33 +410,9 @@ def _official_or_legal_gap_can_coexist_with_weak_corpus(
     recovery_queries: Iterable[str],
 ) -> bool:
     required = set(unsatisfied_required_source_classes)
-    if not required & _OFFICIAL_OR_LEGAL_REQUIRED_CLASSES:
+    if not required & _SUPPORTED_STRONG_AUTHORITY_RECOVERY_CLASSES:
         return False
-    return any(_official_or_legal_recovery_query(query) for query in recovery_queries)
-
-
-def _official_or_legal_recovery_query(query: Any) -> bool:
-    text = str(query or "").casefold()
-    if not text:
-        return False
-    if any(
-        term in text
-        for term in (
-            "official current",
-            "official source",
-            "government agency",
-            "federal register",
-            "cfr",
-            "ecfr",
-            "govinfo",
-            "revenue procedure",
-            "official notice",
-            "contribution benefit base",
-            "federal minimum wage",
-        )
-    ):
-        return True
-    return False
+    return bool(tuple(recovery_queries))
 
 
 def _weak_corpus_coexistence_reason(
@@ -488,7 +468,78 @@ def _official_canonical_acquisition_path_visible(
         payload = trace_packet.get("OfficialCanonicalRecoveryQueryAcquisition")
         if isinstance(payload, Mapping):
             return bool(payload.get("acquisition_repair_used"))
+    if _source_class_recovery_recommendation_path_visible(
+        recommendation,
+        runtime_trace,
+    ):
+        return True
     return False
+
+
+def _source_class_recovery_recommendation_path_visible(
+    recommendation: Mapping[str, Any],
+    runtime_trace: Mapping[str, Any],
+) -> bool:
+    if not (
+        recommendation.get("source_class_recovery_recommended")
+        or runtime_trace.get("source_class_recovery_recommended")
+    ):
+        return False
+    if not _recovery_queries(recommendation, runtime_trace, _empty_facts()):
+        return False
+    visible_classes: set[str] = set()
+    for source in (recommendation, runtime_trace):
+        for key in (
+            "missing_expected_source_classes",
+            "required_source_classes",
+            "source_class_gap_candidates",
+            "active_source_class_recovery_missing_classes",
+            "unsatisfied_required_source_classes",
+        ):
+            visible_classes.update(_class_list(source.get(key)))
+        status = source.get("source_class_satisfaction_status")
+        if isinstance(status, Mapping):
+            visible_classes.update(_class_list(status.keys()))
+    if not (visible_classes & _VISIBLE_STRONG_AUTHORITY_RECOVERY_CLASSES):
+        return False
+    reason = " ".join(
+        item
+        for item in (
+            _clean_text(recommendation.get("source_class_recovery_reason"), limit=180),
+            _clean_text(runtime_trace.get("source_class_recovery_reason"), limit=180),
+        )
+        if item
+    )
+    trigger_fields = {
+        *_string_list(recommendation.get("source_class_recovery_trigger_fields")),
+        *_string_list(runtime_trace.get("source_class_recovery_trigger_fields")),
+    }
+    if reason.startswith(
+        (
+            "missing_expected_source_class:",
+            "answer_contract_",
+            "official_source_obligation_bridge:",
+            "run_authority_search_judgment:",
+        )
+    ):
+        return True
+    return bool(
+        trigger_fields
+        & {
+            "answer_contract_source_class_gap",
+            "official_canonical_acquisition_path_visibility",
+            "official_source_obligation_bridge",
+            "official_source_obligation_trace",
+            "run_authority_search_judgment",
+            "source_domain_counts",
+            "source_tier_counts",
+            "official_evidence_found",
+        }
+    )
+
+
+def _empty_facts() -> OfficialSourceObligationCandidateVisibilityFacts:
+    return OfficialSourceObligationCandidateVisibilityFacts.from_runtime_trace({})
 
 
 def _status_by_class(

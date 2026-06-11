@@ -177,9 +177,9 @@ def test_ag15_recovery_queries_emphasize_official_and_legal_authority_sources() 
         primary_entity="Example Act",
     )
     legal_query_text = " ".join(legal["source_class_recovery_queries"]).casefold()
-    assert "federal register" in legal_query_text
-    assert "govinfo" in legal_query_text
-    assert "ecfr" in legal_query_text
+    assert "official legal text" in legal_query_text
+    assert "current regulatory source" in legal_query_text
+    assert "competent authority" in legal_query_text
 
 
 def test_ag15_historical_archival_control_does_not_become_current_official() -> None:

@@ -173,8 +173,6 @@ def test_public_recommendation_helper_output_shape_and_reason_codes_are_preserve
         "source_class_recovery_queries",
         "source_class_recovery_query_count",
         "source_class_recovery_trigger_fields",
-        "source_class_recovery_official_domains",
-        "source_class_recovery_domain_constraint_source",
     ]
     assert out["missing_expected_source_classes"] == ["official_current_rules"]
     assert out["source_class_recovery_reason"] == (
