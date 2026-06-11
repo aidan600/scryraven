@@ -30,6 +30,9 @@ from core.controller_recovery_decision import (
 from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
 )
+from core.official_canonical_recovery_query_acquisition import (
+    OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_TRACE_KEY,
+)
 from core.official_source_obligation_candidate_visibility import (
     OFFICIAL_SOURCE_CANDIDATE_VISIBILITY_TRACE_KEY,
 )
@@ -110,6 +113,7 @@ def build_official_canonical_recovery_visibility_export(
 ) -> dict[str, Any]:
     """Build the compact AG-50C visibility export from whitelisted fields."""
     trace = runtime_trace if isinstance(runtime_trace, Mapping) else {}
+    acquisition = _query_acquisition_payload(trace)
     admission = _admission_payload(trace)
     candidate = _candidate_payload(trace)
     survival = _survival_payload(trace)
@@ -275,6 +279,34 @@ def build_official_canonical_recovery_visibility_export(
             "admission_skip_reason",
         ),
         "admission_blockers": _safe_list(admission.get("admission_blockers")),
+        "admission_acquisition_path_visible": _bool_or_unknown(
+            admission.get("admission_acquisition_path_visible")
+        ),
+        "acquisition_repair_considered": _bool_or_unknown(
+            acquisition.get("acquisition_repair_considered")
+        ),
+        "acquisition_repair_eligible": _bool_or_unknown(
+            acquisition.get("acquisition_repair_eligible")
+        ),
+        "acquisition_repair_used": _bool_or_unknown(
+            acquisition.get("acquisition_repair_used")
+        ),
+        "acquisition_repair_skip_reason": _optional_text_field(
+            acquisition,
+            "acquisition_repair_skip_reason",
+        ),
+        "official_authority_acquisition_plan": (
+            _safe_mapping(acquisition.get("official_authority_acquisition_plan"))
+            if isinstance(
+                acquisition.get("official_authority_acquisition_plan"), Mapping
+            )
+            else NOT_OBSERVABLE
+        ),
+        "source_class_recovery_queries": recovery_query_previews,
+        "weak_corpus_coexistence_reason": _optional_text(
+            admission.get("weak_corpus_coexistence_reason")
+            or acquisition.get("weak_corpus_coexistence_reason")
+        ),
         "source_class_recovery_eligible": source_class_eligible,
         "source_class_recovery_used": source_class_used,
         "source_class_recovery_execution_attempted": execution_attempted,
@@ -1008,6 +1040,15 @@ def _allocation_result_candidate_custody_payload(
     packet = trace.get(ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY)
     if isinstance(packet, Mapping):
         payload = packet.get("AllocationResultCandidateCustody")
+        if isinstance(payload, Mapping):
+            return _safe_mapping(payload)
+    return {}
+
+
+def _query_acquisition_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
+    packet = trace.get(OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_TRACE_KEY)
+    if isinstance(packet, Mapping):
+        payload = packet.get("OfficialCanonicalRecoveryQueryAcquisition")
         if isinstance(payload, Mapping):
             return _safe_mapping(payload)
     return {}

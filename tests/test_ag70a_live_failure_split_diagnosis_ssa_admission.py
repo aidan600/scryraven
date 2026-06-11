@@ -265,7 +265,7 @@ def test_no_executable_query_records_requirement_bound_lifecycle_blocker() -> No
     assert blocker["recovery_may_be_retried"] is True
 
 
-def test_terminal_stop_and_weak_corpus_cannot_preempt_surfaced_recovery() -> None:
+def test_terminal_stop_blocks_but_weak_corpus_cannot_preempt_surfaced_recovery() -> None:
     terminal = _handoff(_facts(terminal_stop_approved=True))
     weak = _handoff(_facts(corpus_weak=True, weak_corpus_recovery_used=True))
 
@@ -278,9 +278,9 @@ def test_terminal_stop_and_weak_corpus_cannot_preempt_surfaced_recovery() -> Non
         action_name=RECOVER_WEAK_CORPUS,
     )
 
-    assert terminal.official_canonical_recovery_execution_admitted is True
+    assert terminal.official_canonical_recovery_execution_admitted is False
     assert weak.official_canonical_recovery_execution_admitted is True
-    assert terminal_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert terminal_spine.authorized_dispatch is None
     assert weak_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
 

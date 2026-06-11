@@ -311,20 +311,20 @@ def test_aggregate_only_ordinary_authoritative_success_remains_insufficient_cust
     assert forced["missing_authoritative_source_state_forced"] is True
 
 
-def test_terminal_stop_without_lifecycle_blocker_preserves_recovery() -> None:
+def test_terminal_stop_blocks_required_recovery_admission() -> None:
     _controller, result = _run_action(_facts(terminal_stop_approved=True))
     payload = result.official_canonical_recovery_execution_admission_trace[
         "OfficialCanonicalRecoveryExecutionAdmission"
     ]
     spine = _spine(result.active_source_class_recovery_lifecycle)
 
-    assert payload["admission_used"] is True
-    assert payload["admission_skip_reason"] is None
-    assert payload["admission_blockers"] == []
+    assert payload["admission_used"] is False
+    assert payload["admission_skip_reason"] == "existing_runtime_blocker"
+    assert payload["admission_blockers"] == ["terminal_stop_approved"]
     assert result.active_source_class_recovery_lifecycle[
         "authority_lifecycle_required_recovery_allowed"
     ] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert spine.authorized_dispatch is None
 
 
 def test_weak_corpus_cannot_preempt_required_recovery_without_blocker() -> None:

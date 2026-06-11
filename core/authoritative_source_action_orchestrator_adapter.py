@@ -129,6 +129,9 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
         orchestrator_state.get("expander_continuation_spine_gate_trace")
     )
     scout_gate = _mapping(orchestrator_state.get("scout_continuation_spine_gate_trace"))
+    conflict_resolution = _mapping(
+        orchestrator_state.get("active_conflict_resolution_lifecycle")
+    )
     scout_fired = bool(orchestrator_state.get("scout_fired"))
     iterations_run = _int_value(orchestrator_state.get("iterations_run"))
     max_iterations = _int_value(orchestrator_state.get("max_iterations"))
@@ -191,6 +194,18 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
             )
             and not _source_class_gap_signal_present(recommendation)
         ),
+        provider_policy_reusable=bool(
+            orchestrator_state.get("provider_policy_reusable", True)
+        ),
+        provider_swap_required=bool(
+            orchestrator_state.get("provider_swap_required", False)
+        ),
+        search_depth_reusable=bool(
+            orchestrator_state.get("search_depth_reusable", True)
+        ),
+        search_depth_escalation_required=bool(
+            orchestrator_state.get("search_depth_escalation_required", False)
+        ),
         ordinary_continuation_path_active=(
             _ordinary_continuation_path_active(
                 ordinary_continuation=ordinary_continuation,
@@ -201,6 +216,11 @@ def build_authoritative_source_action_facts_from_orchestrator_state(
                 scout_fired=scout_fired,
             )
             and not _source_class_gap_signal_present(recommendation)
+        ),
+        conflict_resolution_owns_path=bool(
+            orchestrator_state.get("conflict_resolution_owns_path")
+            or conflict_resolution.get("active_conflict_resolution_used")
+            or conflict_resolution.get("active_conflict_resolution_eligible")
         ),
         query_redundancy_skipped="query_redundancy_skipped" in waste_flags,
         iteration_budget_hard_exhausted=(

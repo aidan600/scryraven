@@ -58,6 +58,7 @@ _HARD_BLOCKERS = frozenset(
         "blocked_by_search_depth_escalation_required",
         "blocked_by_terminal_stop",
         "blocked_by_weak_corpus_recovery",
+        "authority_lifecycle_execution_blocked",
         "budget_hard_exhausted",
         "conflict_resolution_owns_path",
         "terminal_stop_approved",
@@ -173,6 +174,15 @@ def build_official_canonical_recovery_execution_admission(
         prior_attempts=prior_attempts,
         max_attempts=max_attempts,
     )
+    weak_corpus_can_coexist = _official_or_legal_gap_can_coexist_with_weak_corpus(
+        unsatisfied_required_source_classes=unsatisfied_required,
+        recovery_queries=recovery_queries,
+    )
+    weak_corpus_coexistence_reason = _weak_corpus_coexistence_reason(
+        runtime_trace=trace,
+        blockers=blockers,
+        weak_corpus_can_coexist=weak_corpus_can_coexist,
+    )
     acquisition_path_visible = _official_canonical_acquisition_path_visible(
         base,
         trace,
@@ -210,6 +220,7 @@ def build_official_canonical_recovery_execution_admission(
             blockers=blockers,
         ),
         "admission_blockers": blockers,
+        "weak_corpus_coexistence_reason": weak_corpus_coexistence_reason,
         "admission_source": facts.obligation_source,
         "admission_acquisition_path_visible": acquisition_path_visible,
         "required_source_classes": allowed_required,
@@ -340,11 +351,6 @@ def _admission_blockers(
         runtime_trace.get("source_class_recovery_candidate_v2_blockers"),
     ):
         for item in _string_list(source):
-            if (
-                item in _TERMINAL_BLOCKERS
-                and authority_lifecycle_preserves_recovery
-            ):
-                continue
             if item in _WEAK_CORPUS_BLOCKERS and weak_corpus_can_coexist:
                 continue
             if (
@@ -356,7 +362,6 @@ def _admission_blockers(
                 _append_one(blockers, item)
     if (
         runtime_trace.get("terminal_stop_approved") is True
-        and not authority_lifecycle_preserves_recovery
     ):
         _append_one(blockers, "terminal_stop_approved")
     if (
@@ -373,9 +378,26 @@ def _admission_blockers(
         _append_one(blockers, "blocked_by_corpus_weak")
     if runtime_trace.get("conflict_resolution_owns_path") is True:
         _append_one(blockers, "conflict_resolution_owns_path")
+    _append_authority_lifecycle_execution_blocker(blockers, runtime_trace)
     if max_attempts <= 0 or prior_attempts >= max_attempts:
         _append_one(blockers, "budget_hard_exhausted")
     return blockers
+
+
+def _append_authority_lifecycle_execution_blocker(
+    blockers: list[str],
+    runtime_trace: Mapping[str, Any],
+) -> None:
+    if runtime_trace.get("authority_lifecycle_execution_blocked") is not True:
+        return
+    blocker = runtime_trace.get("authority_lifecycle_execution_blocker")
+    if isinstance(blocker, Mapping):
+        for key in ("kind", "reason"):
+            text = _clean_token(blocker.get(key))
+            if text in _HARD_BLOCKERS:
+                _append_one(blockers, text)
+                return
+    _append_one(blockers, "authority_lifecycle_execution_blocked")
 
 
 def _official_or_legal_gap_can_coexist_with_weak_corpus(
@@ -411,6 +433,24 @@ def _official_or_legal_recovery_query(query: Any) -> bool:
     ):
         return True
     return False
+
+
+def _weak_corpus_coexistence_reason(
+    *,
+    runtime_trace: Mapping[str, Any],
+    blockers: Iterable[str],
+    weak_corpus_can_coexist: bool,
+) -> str | None:
+    if not weak_corpus_can_coexist:
+        return None
+    if not (
+        runtime_trace.get("corpus_weak") is True
+        or runtime_trace.get("weak_corpus_recovery_used") is True
+    ):
+        return None
+    if any(item in _WEAK_CORPUS_BLOCKERS for item in blockers):
+        return None
+    return "unsatisfied_official_current_recovery_lane"
 
 
 def _recovery_queries(

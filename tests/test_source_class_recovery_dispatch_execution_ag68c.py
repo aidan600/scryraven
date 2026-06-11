@@ -267,7 +267,7 @@ def test_ag68c_canonical_doc_corridor_dispatches_when_admitted_and_unblocked() -
     assert captured_queries == list(_CANONICAL_QUERIES)
 
 
-def test_ag68c_terminal_stop_no_longer_preempts_required_recovery() -> None:
+def test_ag68c_terminal_stop_blocks_required_recovery_dispatch() -> None:
     _controller, result = _build_action(_facts(terminal_stop_approved=True))
     lifecycle = result.active_source_class_recovery_lifecycle
     admission = result.official_canonical_recovery_execution_admission_trace[
@@ -275,11 +275,11 @@ def test_ag68c_terminal_stop_no_longer_preempts_required_recovery() -> None:
     ]
     spine = _spine(lifecycle)
 
-    assert admission["admission_used"] is True
-    assert admission["admission_blockers"] == []
-    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert admission["admission_used"] is False
+    assert admission["admission_blockers"] == ["terminal_stop_approved"]
+    assert lifecycle["active_source_class_recovery_eligible"] is False
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert spine.authorized_dispatch is None
 
 
 def test_ag68c_weak_corpus_ownership_defers_to_required_recovery() -> None:
