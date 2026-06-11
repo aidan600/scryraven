@@ -16,6 +16,9 @@ from core.controller_recovery_decision import (
     REQUEST_PROVIDER_SEARCH_REVIEW,
     build_controller_recovery_decision,
 )
+from core.official_canonical_recovery_execution_admission import (
+    OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
+)
 from core.official_canonical_recovery_visibility_export import (
     NOT_OBSERVABLE,
     build_official_canonical_recovery_visibility_export,
@@ -34,6 +37,12 @@ _QUERY = (
 _CORE_TOPIC = "acceptable identification for domestic flights"
 _PRIMARY_ENTITY = "domestic flight identification requirements"
 _MISSING_CLASS = "official_current_rules"
+_ROLE_ONLY_QUERY = (
+    "At airport checkpoints, which identification documents are accepted "
+    "for domestic flights, and when did enforcement begin?"
+)
+_ROLE_ONLY_CORE_TOPIC = "airport checkpoint accepted identification for domestic flights"
+_ROLE_ONLY_PRIMARY_ENTITY = "domestic flight identification access rule"
 
 
 def _answer_contract_result() -> SimpleNamespace:
@@ -114,6 +123,10 @@ def _empty_recommendation() -> dict[str, Any]:
 def _orchestrator_state(
     *,
     recommendation: dict[str, Any],
+    query: str = _QUERY,
+    core_topic: str = _CORE_TOPIC,
+    primary_entity: str = _PRIMARY_ENTITY,
+    source_class_observability: dict[str, Any] | None = None,
     official_found: bool = False,
     corpus_weak: bool = True,
     weak_corpus_recovery_used: bool = False,
@@ -121,14 +134,18 @@ def _orchestrator_state(
     max_iterations: int = 1,
 ) -> dict[str, Any]:
     return {
-        "query": _QUERY,
+        "query": query,
         "intent": "general",
         "report_type": "general_research",
         "query_type": "other",
-        "core_topic": _CORE_TOPIC,
-        "primary_entity": _PRIMARY_ENTITY,
+        "core_topic": core_topic,
+        "primary_entity": primary_entity,
         "_source_class_recovery_lifecycle_recommendation": recommendation,
-        "_source_class_recovery_answer_contract_observability": _observability(),
+        "_source_class_recovery_answer_contract_observability": (
+            _observability()
+            if source_class_observability is None
+            else dict(source_class_observability)
+        ),
         "_source_tier_recovery_lifecycle": _secondary_signals(
             official_found=official_found
         ),
@@ -159,6 +176,10 @@ def _handoff(
     controller: RunController,
     *,
     recommendation: dict[str, Any],
+    query: str = _QUERY,
+    core_topic: str = _CORE_TOPIC,
+    primary_entity: str = _PRIMARY_ENTITY,
+    source_class_observability: dict[str, Any] | None = None,
     official_found: bool = False,
     corpus_weak: bool = True,
     weak_corpus_recovery_used: bool = False,
@@ -169,6 +190,10 @@ def _handoff(
         controller,
         orchestrator_state=_orchestrator_state(
             recommendation=recommendation,
+            query=query,
+            core_topic=core_topic,
+            primary_entity=primary_entity,
+            source_class_observability=source_class_observability,
             official_found=official_found,
             corpus_weak=corpus_weak,
             weak_corpus_recovery_used=weak_corpus_recovery_used,
@@ -181,7 +206,9 @@ def _handoff(
 def _visibility_export(handoff: Any, lifecycle: dict[str, Any]) -> dict[str, Any]:
     trace = dict(lifecycle)
     if handoff.official_canonical_recovery_execution_admission_trace:
-        trace.update(handoff.official_canonical_recovery_execution_admission_trace)
+        trace[OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY] = (
+            handoff.official_canonical_recovery_execution_admission_trace
+        )
     return build_official_canonical_recovery_visibility_export(trace)
 
 
@@ -257,6 +284,212 @@ def test_ag93e5_query_acquisition_for_bridge_obligation_skips_weak_corpus_block(
     ]
     assert export["source_class_recovery_eligible"] is True
     assert export["recovery_query_count"] > 0
+
+
+def test_ag93e7_role_only_access_id_obligation_reaches_weak_corpus_runtime() -> None:
+    controller = RunController()
+    handoff = _handoff(
+        controller,
+        recommendation=_empty_recommendation(),
+        query=_ROLE_ONLY_QUERY,
+        core_topic=_ROLE_ONLY_CORE_TOPIC,
+        primary_entity=_ROLE_ONLY_PRIMARY_ENTITY,
+        source_class_observability={},
+        official_found=False,
+        corpus_weak=True,
+    )
+    lifecycle = handoff.active_source_class_recovery_lifecycle
+    acquisition = handoff.official_canonical_recovery_query_acquisition_trace[
+        "OfficialCanonicalRecoveryQueryAcquisition"
+    ]
+    admission = handoff.official_canonical_recovery_execution_admission_trace[
+        "OfficialCanonicalRecoveryExecutionAdmission"
+    ]
+    export = _visibility_export(handoff, lifecycle)
+    controller_decision = build_controller_recovery_decision(lifecycle)
+    query_text = " ".join(handoff.recommendation["source_class_recovery_queries"]).casefold()
+
+    assert handoff.recommendation["source_class_recovery_recommended"] is True
+    assert handoff.recommendation["missing_expected_source_classes"] == [
+        _MISSING_CLASS
+    ]
+    assert acquisition["acquisition_repair_used"] is True
+    assert acquisition["required_source_classes"] == [_MISSING_CLASS]
+    assert "airport screening" in query_text
+    assert "accepted-id guidance" in query_text
+    assert "enforcement-date notice" in query_text
+    assert "transportation.gov" not in query_text
+    assert "source_class_recovery_official_domains" not in handoff.recommendation
+
+    assert admission["admission_eligible"] is True
+    assert admission["admission_used"] is True
+    assert admission["required_source_classes"] == [_MISSING_CLASS]
+    assert admission["unsatisfied_required_source_classes"] == [_MISSING_CLASS]
+    assert admission["recovery_query_count"] > 0
+
+    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert lifecycle["active_source_class_recovery_provider_role"] == (
+        "source_class_recovery"
+    )
+    assert lifecycle["active_source_class_recovery_queries"]
+    assert _MISSING_CLASS in lifecycle["active_source_class_recovery_missing_classes"]
+    assert "blocked_by_weak_corpus_recovery" not in lifecycle[
+        "active_source_class_recovery_blockers"
+    ]
+    assert "blocked_by_corpus_weak" not in lifecycle[
+        "active_source_class_recovery_blockers"
+    ]
+    assert lifecycle["active_source_class_recovery_action_envelope"][
+        "required_source_class"
+    ] == [_MISSING_CLASS]
+    assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
+    assert lifecycle["authority_lifecycle_weak_corpus_may_own_path"] is False
+
+    assert export["admission_eligible"] is True
+    assert export["source_class_recovery_eligible"] is True
+    assert export["recovery_query_count"] > 0
+    assert controller_decision.payload["source_obligation_status"] == (
+        "official_current_required_unmet"
+    )
+    assert controller_decision.payload["required_source_class"] == [_MISSING_CLASS]
+
+
+def test_ag93e7_role_only_controller_allocation_uses_recovery_provider_role() -> None:
+    controller = RunController()
+    handoff = _handoff(
+        controller,
+        recommendation=_empty_recommendation(),
+        query=_ROLE_ONLY_QUERY,
+        core_topic=_ROLE_ONLY_CORE_TOPIC,
+        primary_entity=_ROLE_ONLY_PRIMARY_ENTITY,
+        source_class_observability={},
+        official_found=False,
+        corpus_weak=True,
+    )
+    lifecycle = handoff.active_source_class_recovery_lifecycle
+    lifecycle.update(
+        {
+            "active_source_class_recovery_execution_attempted": True,
+            "active_source_class_recovery_used": True,
+            "active_source_class_recovery_result_count": 0,
+            "candidate_return_status": "zero_candidates",
+            "recovered_result_count": 0,
+            "recovery_slot_available": False,
+            "source_obligation_status": "official_current_required_unmet",
+            "required_source_classes": [_MISSING_CLASS],
+            "unsatisfied_required_source_classes": [_MISSING_CLASS],
+        }
+    )
+    decision = build_controller_recovery_decision(lifecycle)
+    captured: dict[str, Any] = {}
+
+    def fake_search(
+        queries: list[str],
+        _intent: str,
+        _complexity: str,
+        search_depth: str,
+        *_args: Any,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        captured["queries"] = list(queries)
+        captured["search_depth"] = search_depth
+        captured["provider_role"] = kwargs["provider_role"]
+        return [
+            {
+                "provider_name": "offline-fixture",
+                "title": "Official current access rule",
+                "url": "https://agency.example/current-access-rule",
+                "source_tier": "official",
+                "source_class": _MISSING_CLASS,
+                "currentness_signal": "current",
+            }
+        ]
+
+    result = run_source_class_recovery_dispatch(
+        SourceClassRecoveryRunnerContext(
+            controller=controller,
+            authorized_spine_action=None,
+            controller_recovery_decision=decision,
+            lifecycle_trace=lifecycle,
+            process_search_queries=fake_search,
+            all_passages=[],
+            intent="general",
+            complexity="medium",
+            results_per_query=5,
+            include_domains=[],
+            exclude_domains=[],
+            query_embedding=[],
+            seen_urls=set(),
+            collected_images=set(),
+            embed_provider="fixture",
+            embed_model="fixture",
+            local_url="http://localhost",
+            embed_texts=lambda *_args, **_kwargs: [],
+            compute_similarities=lambda *_args, **_kwargs: [],
+            status_container=object(),
+            search_providers=["offline-fixture"],
+            exa_domain_filter=None,
+            entity_hint=_ROLE_ONLY_PRIMARY_ENTITY,
+            provider_diagnostics=[],
+            retrieval_pass_records=[],
+        )
+    )
+    export = _visibility_export(handoff, lifecycle)
+    allocation = lifecycle[PROVIDER_SEARCH_ALLOCATION_TRACE_KEY]
+    allocation_execution = allocation[PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY]
+
+    assert decision.decision == REQUEST_PROVIDER_SEARCH_REVIEW
+    assert decision.payload["required_source_class"] == [_MISSING_CLASS]
+    assert result.provider_search_allocation is not None
+    assert result.provider_search_allocation.allocated is True
+    assert result.provider_search_allocation.executed is True
+    assert captured["provider_role"] == "source_class_recovery"
+    assert "airport screening" in " ".join(captured["queries"]).casefold()
+    assert allocation_execution["executed"] is True
+    assert allocation_execution["provider_role"] == "source_class_recovery"
+    assert allocation_execution["query_count"] > 0
+    assert export["provider_search_allocation_trace"] != NOT_OBSERVABLE
+    assert export["provider_search_allocation_execution_trace"] != NOT_OBSERVABLE
+    assert export["provider_search_allocation_execution_trace"]["query_count"] > 0
+
+
+def test_ag93e7_private_gym_id_explainer_does_not_create_official_recovery() -> None:
+    controller = RunController()
+    handoff = _handoff(
+        controller,
+        recommendation=_empty_recommendation(),
+        query=(
+            "Explain why private gyms ask for identification documents when "
+            "people sign up for membership."
+        ),
+        core_topic="private gym membership identification explainer",
+        primary_entity="private gym membership",
+        source_class_observability={},
+        official_found=False,
+        corpus_weak=True,
+    )
+    lifecycle = handoff.active_source_class_recovery_lifecycle
+    acquisition = handoff.official_canonical_recovery_query_acquisition_trace[
+        "OfficialCanonicalRecoveryQueryAcquisition"
+    ]
+    admission = handoff.official_canonical_recovery_execution_admission_trace[
+        "OfficialCanonicalRecoveryExecutionAdmission"
+    ]
+    decision = build_controller_recovery_decision(lifecycle)
+
+    assert handoff.recommendation["source_class_recovery_recommended"] is False
+    assert handoff.recommendation["missing_expected_source_classes"] == []
+    assert handoff.recommendation["source_class_recovery_queries"] == []
+    assert acquisition["acquisition_repair_used"] is False
+    assert acquisition["acquisition_repair_skip_reason"] == "obligation_not_required"
+    assert admission["admission_eligible"] is False
+    assert admission["required_source_classes"] == []
+    assert lifecycle["active_source_class_recovery_eligible"] is False
+    assert lifecycle["active_source_class_recovery_provider_role"] is None
+    assert decision.payload["required_source_class"] == []
+    assert decision.payload["source_obligation_status"] != (
+        "official_current_required_unmet"
+    )
 
 
 def test_ag93e5_runner_allocation_trace_visible_for_existing_bounded_path() -> None:

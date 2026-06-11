@@ -348,11 +348,15 @@ def test_ag93e6_acquired_queries_consume_venue_inference_with_domain_gating() ->
 
     recommendation = result.recommendation
     lifecycle, action = _record_lifecycle(recommendation)
+    query_text = " ".join(recommendation["source_class_recovery_queries"]).casefold()
 
     assert result.trace["OfficialCanonicalRecoveryQueryAcquisition"][
         "acquisition_repair_used"
     ] is True
     assert recommendation["source_class_recovery_queries"]
+    assert "airport screening" in query_text
+    assert "accepted-id guidance" in query_text
+    assert "enforcement-date notice" in query_text
     assert "transportation.gov" not in recommendation.get(
         "source_class_recovery_official_domains",
         (),

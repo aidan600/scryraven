@@ -32,6 +32,7 @@ from core.official_source_obligation_candidate_visibility import (
     OfficialSourceObligationCandidateVisibilityFacts,
 )
 from core.source_class_recovery import (
+    _infer_official_authority_venue,
     build_official_source_recovery_domain_constraints,
 )
 
@@ -253,6 +254,7 @@ def apply_official_canonical_recovery_query_acquisition(
         generation_intents,
         subject,
         existing_queries=[*visible_queries, *promoted_queries],
+        context_text=_context_text(base=base, trace=trace),
     )
     executable_queries = _dedupe([*promoted_queries, *added_queries])
     source_specific_terms_present = _source_specific_terms_present(executable_queries)
@@ -618,6 +620,7 @@ def _generic_queries_for_intents(
     subject: str,
     *,
     existing_queries: Iterable[str] = (),
+    context_text: str = "",
 ) -> tuple[str, ...]:
     queries: list[str] = []
     for intent in intents:
@@ -629,7 +632,9 @@ def _generic_queries_for_intents(
                 if len(queries) >= _MAX_ADDED_QUERIES:
                     break
         elif intent == "official_current_source":
-            queries.extend(_official_current_queries(subject))
+            queries.extend(
+                _official_current_queries(subject, context_text=context_text)
+            )
         if len(queries) >= _MAX_ADDED_QUERIES:
             break
     return tuple(_dedupe(_compact_text(query, limit=_CAP_QUERY) for query in queries))
@@ -664,16 +669,22 @@ def _year_terms(text: str) -> str:
     return " ".join(dict.fromkeys(years))
 
 
-def _official_current_queries(subject: str) -> list[str]:
+def _official_current_queries(subject: str, *, context_text: str = "") -> list[str]:
     """Return deterministic official/current query variants for numeric rules."""
     text = subject.casefold()
     year_text = _year_terms(subject)
+    role_only_hints = _official_current_role_only_venue_hints(
+        subject,
+        context_text,
+    )
     queries: list[str] = []
 
     def add(query: str) -> None:
         if query not in queries and len(queries) < _MAX_ADDED_QUERIES:
             queries.append(query)
 
+    if role_only_hints:
+        add(" ".join(("official current source", *role_only_hints, subject)))
     if "irs" in text or "internal revenue service" in text:
         if "mileage" in text or "standard mileage" in text:
             add(
@@ -736,6 +747,51 @@ def _official_current_queries(subject: str) -> list[str]:
     return queries
 
 
+def _official_current_role_only_venue_hints(*texts: str) -> tuple[str, ...]:
+    inferred = _infer_official_authority_venue(*texts)
+    text = " ".join(str(value or "") for value in texts).casefold()
+    hints: list[str] = []
+    priority = (
+        "airport screening",
+        "accepted-ID guidance",
+        "enforcement-date notice",
+        "official agency",
+        "official program guidance",
+        "agency FAQ",
+        "eligibility requirements",
+        "application instructions",
+        "access rules",
+        "checkpoint requirements",
+        "regulatory text",
+    )
+    available: list[str] = []
+    for candidate in inferred.candidates:
+        if candidate.constraint_strength != "role_only":
+            continue
+        if candidate.family_id == "government_program_eligibility_access_rule":
+            if not _has_access_identity_terms(text):
+                continue
+        elif candidate.family_id != "airport_screening_identity_access_rule":
+            continue
+        available.extend(candidate.search_hints)
+    for value in priority:
+        if value in available:
+            _append_one(hints, value)
+    for value in available:
+        _append_one(hints, value)
+    return tuple(hints[:4])
+
+
+def _has_access_identity_terms(text: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:credentials?|identification|identity|id\s+documents?|"
+            r"documents?|proof|access|entry|screening|checkpoint)\b",
+            text,
+        )
+    )
+
+
 def _official_current_specific_query_present(
     existing_queries: Iterable[str],
     *,
@@ -791,6 +847,7 @@ def _official_current_specific_query_present(
         marker in text
         for marker in (
             "official agency source",
+            "official current source",
             "official fact sheet",
             "government agency source",
             "primary source",
