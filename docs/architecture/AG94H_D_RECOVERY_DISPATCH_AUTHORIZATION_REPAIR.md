@@ -7,6 +7,15 @@ fixtures only. No live ScryRaven/proplex provider, model, search, retrieval,
 secret, `.env`, DB row, raw provider payload, raw prompt, private log, cache,
 full raw trace, local output packet, or private artifact access was used.
 
+> Status note, AG-95E: This document records historical
+> Controller/ControllerLoopSpine-era behavior. For current source-class recovery
+> dispatch, use AG-95C/AG-95D/AG-95E:
+> `SourceClassRecoveryRunner` dispatches from canonical
+> `authority_lifecycle.recovery_action`; `authorized_spine_action`,
+> ControllerLoopSpine, and ControllerRecoveryDecision are
+> diagnostic/compatibility surfaces for source-class dispatch, not runner
+> authority.
+
 ## Executive Verdict
 
 AG-94H-D repairs the dispatch authorization gap found by AG-94H-C. An

@@ -6,6 +6,15 @@ retrieval/ranking/filtering behavior, query wording, prompt behavior,
 citation/final-answer behavior, Author, Analyst, Economist, Scrutineer,
 follow-up, or legal-answer behavior was changed.
 
+> Status note, AG-95E: This document records historical
+> Controller/ControllerLoopSpine-era behavior. For current source-class recovery
+> dispatch, use AG-95C/AG-95D/AG-95E:
+> `SourceClassRecoveryRunner` dispatches from canonical
+> `authority_lifecycle.recovery_action`; `authorized_spine_action`,
+> ControllerLoopSpine, and ControllerRecoveryDecision are
+> diagnostic/compatibility surfaces for source-class dispatch, not runner
+> authority.
+
 ## Purpose
 
 AG-68E investigated why AG-68C offline dispatch tests passed while the AG-68D

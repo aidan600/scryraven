@@ -12,6 +12,15 @@ secrets, `.env`, API keys, DB rows, raw provider payloads, raw prompts, private
 logs, caches, full raw traces, local output packets, or private artifacts were
 inspected.
 
+> Status note, AG-95E: This document records historical
+> Controller/ControllerLoopSpine-era behavior. For current source-class recovery
+> dispatch, use AG-95C/AG-95D/AG-95E:
+> `SourceClassRecoveryRunner` dispatches from canonical
+> `authority_lifecycle.recovery_action`; `authorized_spine_action`,
+> ControllerLoopSpine, and ControllerRecoveryDecision are
+> diagnostic/compatibility surfaces for source-class dispatch, not runner
+> authority.
+
 ## Executive Verdict
 
 AG-94H-E is not a local ordering bug. It is a systemic control-plane truth-owner

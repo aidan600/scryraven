@@ -23,7 +23,10 @@ from core.pipeline_orchestrator import (
     _build_evidence_integration_snapshot_from_runtime,
 )
 from core.run_controller import RunController
-from core.source_class_recovery_executor import execute_source_class_recovery_action
+from core.source_class_recovery_runner import (
+    SourceClassRecoveryRunnerContext,
+    run_source_class_recovery_dispatch,
+)
 from tests.helpers.authoritative_source_forced_corridor import (
     canonical_doc_forced_corridor_fixture,
     official_current_forced_corridor_fixture,
@@ -264,11 +267,9 @@ def _refresh_checkpoint(
     )
 
 
-def _execute_product_callsite(
+def _run_product_callsite_dispatch(
     controller: RunController,
     lifecycle: dict[str, Any],
-    *,
-    authorized_spine_action: str | None,
 ) -> tuple[dict[str, int | bool], list[str], list[dict[str, Any]]]:
     captured_queries: list[str] = []
     all_passages: list[dict[str, Any]] = []
@@ -299,38 +300,38 @@ def _execute_product_callsite(
             }
         ]
 
-    if authorized_spine_action != RECOVER_MISSING_SOURCE_CLASS:
-        return {"attempted": False, "result_count": 0, "new_url_count": 0}, [], []
-
-    result = execute_source_class_recovery_action(
-        controller,
-        lifecycle_trace=lifecycle,
-        process_search_queries=fake_search,
-        all_passages=all_passages,
-        intent="general",
-        complexity="medium",
-        results_per_query=5,
-        include_domains=[],
-        exclude_domains=[],
-        query_embedding=[0.0],
-        seen_urls=set(),
-        collected_images=set(),
-        embed_provider="OpenAI",
-        embed_model="text-embedding-3-small",
-        local_url="http://localhost",
-        embed_texts=lambda *_args, **_kwargs: [],
-        compute_similarities=lambda *_args, **_kwargs: [],
-        status_container=object(),
-        search_providers=["offline-fixture"],
-        exa_domain_filter=None,
-        entity_hint="SSA",
-        provider_diagnostics=[],
-        retrieval_pass_records=[],
-    )
+    result = run_source_class_recovery_dispatch(
+        SourceClassRecoveryRunnerContext(
+            controller=controller,
+            controller_recovery_decision=None,
+            lifecycle_trace=lifecycle,
+            process_search_queries=fake_search,
+            all_passages=all_passages,
+            intent="general",
+            complexity="medium",
+            results_per_query=5,
+            include_domains=[],
+            exclude_domains=[],
+            query_embedding=[0.0],
+            seen_urls=set(),
+            collected_images=set(),
+            embed_provider="OpenAI",
+            embed_model="text-embedding-3-small",
+            local_url="http://localhost",
+            embed_texts=lambda *_args, **_kwargs: [],
+            compute_similarities=lambda *_args, **_kwargs: [],
+            status_container=object(),
+            search_providers=["offline-fixture"],
+            exa_domain_filter=None,
+            entity_hint="SSA",
+            provider_diagnostics=[],
+            retrieval_pass_records=[],
+        )
+    ).source_class_recovery_execution
     return result, captured_queries, all_passages
 
 
-def test_ag68g_ssa_fixture_reproduces_stale_checkpoint_callsite_gap() -> None:
+def test_ag68g_stale_checkpoint_spine_output_is_diagnostic_for_runner() -> None:
     controller = RunController()
     handoff = _handoff(controller)
     lifecycle = handoff.active_source_class_recovery_lifecycle
@@ -341,10 +342,9 @@ def test_ag68g_ssa_fixture_reproduces_stale_checkpoint_callsite_gap() -> None:
         checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
         source_class_lifecycle_trace=lifecycle,
     )
-    execution, captured_queries, _passages = _execute_product_callsite(
+    execution, captured_queries, _passages = _run_product_callsite_dispatch(
         controller,
         lifecycle,
-        authorized_spine_action=stale_spine.authorized_dispatch,
     )
 
     assert admission["admission_used"] is True
@@ -354,9 +354,15 @@ def test_ag68g_ssa_fixture_reproduces_stale_checkpoint_callsite_gap() -> None:
     )
     assert stale_spine.authorized_dispatch is None
     assert stale_spine.trace_packet["gate_reason"] == "alternate_action_not_promoted"
-    assert execution["attempted"] is False
-    assert lifecycle["active_source_class_recovery_execution_attempted"] is False
-    assert captured_queries == []
+    assert execution["attempted"] is True
+    assert lifecycle["source_class_recovery_dispatch_authority"] == (
+        "authority_lifecycle.recovery_action"
+    )
+    assert lifecycle["source_class_recovery_dispatch_reason"] == (
+        "canonical_authority_lifecycle_recovery_action"
+    )
+    assert lifecycle["active_source_class_recovery_execution_attempted"] is True
+    assert captured_queries == list(_SSA_RECOVERY_QUERIES)
 
 
 def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() -> None:
@@ -378,10 +384,9 @@ def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() ->
         checkpoint_trace=refreshed_checkpoint,
         source_class_lifecycle_trace=lifecycle,
     )
-    execution, captured_queries, all_passages = _execute_product_callsite(
+    execution, captured_queries, all_passages = _run_product_callsite_dispatch(
         controller,
         lifecycle,
-        authorized_spine_action=refreshed_spine.authorized_dispatch,
     )
 
     assert refreshed_checkpoint["recommended_action_name"] == (
@@ -389,6 +394,9 @@ def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() ->
     )
     assert refreshed_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert refreshed_spine.source_class_executor_dispatched is True
+    assert lifecycle["source_class_recovery_dispatch_authority"] == (
+        "authority_lifecycle.recovery_action"
+    )
     assert execution["attempted"] is True
     assert lifecycle["active_source_class_recovery_used"] is True
     assert lifecycle["active_source_class_recovery_execution_attempted"] is True
@@ -421,6 +429,16 @@ def test_ag68g_dispatch_ignores_projection_only_envelope() -> None:
             handoff.official_canonical_recovery_execution_admitted
         ),
         active_source_class_recovery_lifecycle=lifecycle,
+    )
+    execution, captured_queries, _passages = _run_product_callsite_dispatch(
+        controller,
+        lifecycle,
+    )
+
+    assert execution["attempted"] is True
+    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
+    assert lifecycle["source_class_recovery_dispatch_authority"] == (
+        "authority_lifecycle.recovery_action"
     )
 
 
@@ -527,6 +545,16 @@ def test_ag68g_aggregate_ordinary_status_no_longer_blocks_recovery_admission() -
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert spine.authorized_dispatch is None
     assert spine.source_class_executor_dispatched is False
+    execution, captured_queries, _passages = _run_product_callsite_dispatch(
+        controller,
+        lifecycle,
+    )
+
+    assert execution["attempted"] is True
+    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
+    assert lifecycle["source_class_recovery_dispatch_authority"] == (
+        "authority_lifecycle.recovery_action"
+    )
 
 
 def test_ag68g_query_strings_and_helper_shapes_are_preserved() -> None:

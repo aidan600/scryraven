@@ -19,6 +19,15 @@ Phase type: documentation-only playbook; no runtime behavior change; no live val
 > and safety-sensitive surfaces. `core/pipeline_orchestrator.py` is a
 > coordination shell with remaining authority debt, not a sacred surface.
 
+> **AG-95E source-class recovery dispatch note:** This legacy playbook does not
+> describe current source-class recovery runner authority. For that lane,
+> `SourceClassRecoveryRunner` consumes canonical
+> `authority_lifecycle.recovery_action`; `authorized_spine_action`,
+> ControllerLoopSpine source-class dispatch output, and
+> ControllerRecoveryDecision are diagnostic/compatibility surfaces, not runner
+> dispatch authority. Use AG-95C/AG-95D/AG-95E and the RunAuthority guide for
+> current source-class dispatch work.
+
 ## Purpose
 
 This playbook is legacy AG-80-era guidance for phases that explicitly select
@@ -36,6 +45,9 @@ phases through [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATIO
 and [CODEX_GUIDANCE_MAP.md](CODEX_GUIDANCE_MAP.md).
 
 ## Controller authority model
+
+This section is retained for explicitly selected legacy Controller-handoff
+maintenance. It is not current source-class recovery dispatch doctrine.
 
 The closed authority model is deliberately simple:
 

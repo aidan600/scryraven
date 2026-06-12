@@ -2,6 +2,15 @@
 
 Date: 2026-05-28
 
+> Status note, AG-95E: This document records historical
+> Controller/ControllerLoopSpine-era behavior. For current source-class recovery
+> dispatch, use AG-95C/AG-95D/AG-95E:
+> `SourceClassRecoveryRunner` dispatches from canonical
+> `authority_lifecycle.recovery_action`; `authorized_spine_action`,
+> ControllerLoopSpine, and ControllerRecoveryDecision are
+> diagnostic/compatibility surfaces for source-class dispatch, not runner
+> authority.
+
 ## Scope
 
 AG-74F is a recovery runner extraction / orchestrator dispatch compatibility

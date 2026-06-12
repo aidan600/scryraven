@@ -41,6 +41,14 @@ closed for scope safety; in orchestrator-strangulation phases, touching it can
 be the point. `core/pipeline_orchestrator.py` line delta `0` is a
 scope-control fact, not architecture success.
 
+For source-class recovery dispatch after AG-95C/AG-95E, the current runtime
+consumer is `SourceClassRecoveryRunner`, and it dispatches only from canonical
+`authority_lifecycle.recovery_action`. `ControllerLoopSpine` source-class
+dispatch fields, `authorized_spine_action`, official/canonical admission
+booleans, lifecycle eligibility booleans, reports, exports, and
+`ControllerRecoveryDecision` are diagnostic or compatibility surfaces for this
+lane. They must not be restored as source-class runner dispatch authority.
+
 ### No orchestrator brain
 
 The orchestrator should coordinate lifecycle flow and call bounded executors. It

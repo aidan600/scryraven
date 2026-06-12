@@ -1,5 +1,14 @@
 # AG-94H-F Authority Custody Semantics Repair And Simplification
 
+> Status note, AG-95E: This document records historical
+> Controller/ControllerLoopSpine-era behavior. For current source-class recovery
+> dispatch, use AG-95C/AG-95D/AG-95E:
+> `SourceClassRecoveryRunner` dispatches from canonical
+> `authority_lifecycle.recovery_action`; `authorized_spine_action`,
+> ControllerLoopSpine, and ControllerRecoveryDecision are
+> diagnostic/compatibility surfaces for source-class dispatch, not runner
+> authority.
+
 ## Executive Verdict
 
 AG-94H-F repairs the authority satisfaction rule for source-class recovery:

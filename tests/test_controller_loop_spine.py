@@ -744,7 +744,7 @@ def test_pipeline_orchestrator_does_not_recompute_spine_promotion_state() -> Non
     assert string_literals.isdisjoint(forbidden_trace_keys)
 
 
-def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> None:
+def test_pipeline_orchestrator_keeps_source_class_runner_dispatch_canonical() -> None:
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
     runner_source = _SOURCE_CLASS_RECOVERY_RUNNER_PATH.read_text(encoding="utf-8")
     orchestrator_tree = ast.parse(orchestrator_source)
@@ -831,6 +831,7 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
         in runner_source
     )
     assert "authorized_spine_action" not in runner_source
+    assert "authority_lifecycle.recovery_action" in runner_source
 
 
 def test_pipeline_orchestrator_does_not_authorize_retrieve_targeted_dispatch() -> None:
