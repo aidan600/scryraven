@@ -13,7 +13,6 @@ from core.controller_action_envelope import (
     RETRIEVE_TARGETED,
     STOP_INSUFFICIENT_WITH_CAVEAT,
 )
-from core.controller_loop_spine import build_controller_loop_spine_result
 from core.evidence_integration_checkpoint import (
     build_evidence_integration_checkpoint_trace,
     decide_evidence_integration_checkpoint,
@@ -331,17 +330,13 @@ def _run_product_callsite_dispatch(
     return result, captured_queries, all_passages
 
 
-def test_ag68g_stale_checkpoint_spine_output_is_diagnostic_for_runner() -> None:
+def test_ag68g_stale_checkpoint_output_is_diagnostic_for_runner() -> None:
     controller = RunController()
     handoff = _handoff(controller)
     lifecycle = handoff.active_source_class_recovery_lifecycle
     admission = handoff.official_canonical_recovery_execution_admission_trace[
         "OfficialCanonicalRecoveryExecutionAdmission"
     ]
-    stale_spine = build_controller_loop_spine_result(
-        checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
-        source_class_lifecycle_trace=lifecycle,
-    )
     execution, captured_queries, _passages = _run_product_callsite_dispatch(
         controller,
         lifecycle,
@@ -352,8 +347,6 @@ def test_ag68g_stale_checkpoint_spine_output_is_diagnostic_for_runner() -> None:
     assert lifecycle["active_source_class_recovery_queries"] == list(
         _SSA_RECOVERY_QUERIES
     )
-    assert stale_spine.authorized_dispatch is None
-    assert stale_spine.trace_packet["gate_reason"] == "alternate_action_not_promoted"
     assert execution["attempted"] is True
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
@@ -380,10 +373,6 @@ def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() ->
     )
 
     refreshed_checkpoint = _refresh_checkpoint(handoff=handoff, lifecycle=lifecycle)
-    refreshed_spine = build_controller_loop_spine_result(
-        checkpoint_trace=refreshed_checkpoint,
-        source_class_lifecycle_trace=lifecycle,
-    )
     execution, captured_queries, all_passages = _run_product_callsite_dispatch(
         controller,
         lifecycle,
@@ -392,8 +381,6 @@ def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() ->
     assert refreshed_checkpoint["recommended_action_name"] == (
         RECOVER_MISSING_SOURCE_CLASS
     )
-    assert refreshed_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert refreshed_spine.source_class_executor_dispatched is True
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
     )

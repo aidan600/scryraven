@@ -55,7 +55,9 @@ They must not be restored as source-class runner dispatch authority.
 AG-95G additionally removed the orchestrator's targeted-retrieval ownership read
 of `ControllerLoopSpineResult.source_class_executor_dispatched`; remaining
 ControllerLoopSpine source-class keys are compatibility diagnostics until their
-named trace/test consumers are retired.
+named trace/test consumers are retired. AG-95H moved the remaining AG68E/AG68G
+product-callsite old-key assertions into focused ControllerLoopSpine
+compatibility coverage.
 
 ### No orchestrator brain
 

@@ -17,12 +17,12 @@ from core.authoritative_source_action import (
     AuthoritativeSourceActionResult,
     build_authoritative_source_obligation_state_and_action,
 )
-from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
-    build_controller_loop_spine_result,
-)
+from core.controller_action_envelope import RECOVER_MISSING_SOURCE_CLASS
 from core.run_controller import RunController
-from core.source_class_recovery_executor import execute_source_class_recovery_action
+from core.source_class_recovery_runner import (
+    SourceClassRecoveryRunnerContext,
+    run_source_class_recovery_dispatch,
+)
 
 AUTHORITATIVE_SOURCE_FORCED_CORRIDOR_SCHEMA_VERSION = (
     "authoritative_source_forced_corridor_validation_ag67a_v1"
@@ -147,27 +147,14 @@ def run_forced_corridor_validation(
         controller,
         facts=_facts_for_fixture(fixture),
     )
-    spine = build_controller_loop_spine_result(
-        checkpoint_trace={
-            "available": True,
-            "decision": None,
-            "recommended_action_name": None,
-        },
-        source_class_lifecycle_trace=action_result.active_source_class_recovery_lifecycle,
-    )
     dispatch_trace = _dispatch_fixture(
         controller=controller,
         lifecycle=action_result.active_source_class_recovery_lifecycle,
         fixture=fixture,
-        dispatch_authorized=spine.authorized_dispatch
-        == RECOVER_MISSING_SOURCE_CLASS,
     )
     classification = _classification(
         fixture=fixture,
         action_result=action_result,
-        dispatch_authorized=spine.authorized_dispatch
-        == RECOVER_MISSING_SOURCE_CLASS,
-        spine_trace=spine.trace_packet,
         dispatch_trace=dispatch_trace,
     )
     return ForcedCorridorValidationResult(
@@ -255,16 +242,30 @@ def _payload(trace: Mapping[str, Any] | None, key: str) -> Mapping[str, Any]:
     return payload if isinstance(payload, Mapping) else {}
 
 
+def _lifecycle_dispatch_authorized(lifecycle: Mapping[str, Any]) -> bool:
+    authority = lifecycle.get("authority_lifecycle")
+    if not isinstance(authority, Mapping):
+        return False
+    action = authority.get("recovery_action")
+    if not isinstance(action, Mapping):
+        return False
+    return (
+        authority.get("recovery_needed") == "required"
+        and action.get("action_type") == RECOVER_MISSING_SOURCE_CLASS
+        and action.get("approved") is True
+    )
+
+
 def _dispatch_fixture(
     *,
     controller: RunController,
     lifecycle: dict[str, Any],
     fixture: ForcedCorridorFixture,
-    dispatch_authorized: bool,
 ) -> dict[str, Any]:
-    if not fixture.execute_dispatch_fixture or not dispatch_authorized:
+    if not fixture.execute_dispatch_fixture:
         return {
             "dispatch_fixture_attempted": False,
+            "dispatch_authorized": _lifecycle_dispatch_authorized(lifecycle),
             "executor_attempted": False,
             "result_count": 0,
             "new_url_count": 0,
@@ -294,33 +295,39 @@ def _dispatch_fixture(
             seen_urls.add(str(passage.get("url") or ""))
         return passages
 
-    result = execute_source_class_recovery_action(
-        controller,
-        lifecycle_trace=lifecycle,
-        process_search_queries=fake_search,
-        all_passages=all_passages,
-        intent="general",
-        complexity="medium",
-        results_per_query=5,
-        include_domains=[],
-        exclude_domains=[],
-        query_embedding=[0.0],
-        seen_urls=set(),
-        collected_images=set(),
-        embed_provider="OpenAI",
-        embed_model="text-embedding-3-small",
-        local_url="http://localhost",
-        embed_texts=lambda *_args, **_kwargs: [],
-        compute_similarities=lambda *_args, **_kwargs: [],
-        status_container=object(),
-        search_providers=["offline-fixture"],
-        exa_domain_filter=None,
-        entity_hint=fixture.primary_entity,
-        provider_diagnostics=[],
-        retrieval_pass_records=[],
-    )
+    result = run_source_class_recovery_dispatch(
+        SourceClassRecoveryRunnerContext(
+            controller=controller,
+            controller_recovery_decision=None,
+            lifecycle_trace=lifecycle,
+            process_search_queries=fake_search,
+            all_passages=all_passages,
+            intent="general",
+            complexity="medium",
+            results_per_query=5,
+            include_domains=[],
+            exclude_domains=[],
+            query_embedding=[0.0],
+            seen_urls=set(),
+            collected_images=set(),
+            embed_provider="OpenAI",
+            embed_model="text-embedding-3-small",
+            local_url="http://localhost",
+            embed_texts=lambda *_args, **_kwargs: [],
+            compute_similarities=lambda *_args, **_kwargs: [],
+            status_container=object(),
+            search_providers=["offline-fixture"],
+            exa_domain_filter=None,
+            entity_hint=fixture.primary_entity,
+            provider_diagnostics=[],
+            retrieval_pass_records=[],
+        )
+    ).source_class_recovery_execution
     return {
         "dispatch_fixture_attempted": True,
+        "dispatch_authorized": bool(
+            lifecycle.get("source_class_recovery_dispatch_authorized")
+        ),
         "executor_attempted": bool(result["attempted"]),
         "result_count": int(result["result_count"]),
         "new_url_count": int(result["new_url_count"]),
@@ -336,8 +343,6 @@ def _classification(
     *,
     fixture: ForcedCorridorFixture,
     action_result: AuthoritativeSourceActionResult,
-    dispatch_authorized: bool,
-    spine_trace: Mapping[str, Any],
     dispatch_trace: Mapping[str, Any],
 ) -> dict[str, Any]:
     bridge = _payload(
@@ -368,6 +373,7 @@ def _classification(
         action_result.official_canonical_recovery_execution_admitted
         or admission.get("admission_used")
     )
+    dispatch_authorized = bool(dispatch_trace.get("dispatch_authorized"))
     recovered_visible: bool | str
     if dispatch_trace.get("dispatch_fixture_attempted"):
         recovered_visible = bool(
@@ -390,7 +396,6 @@ def _classification(
         dispatch_trace=dispatch_trace,
         recovered_visible=recovered_visible,
         admission=admission,
-        spine_trace=spine_trace,
     )
     return {
         "schema_version": AUTHORITATIVE_SOURCE_FORCED_CORRIDOR_SCHEMA_VERSION,
@@ -448,7 +453,6 @@ def _next_failure_layer(
     dispatch_trace: Mapping[str, Any],
     recovered_visible: bool | str,
     admission: Mapping[str, Any],
-    spine_trace: Mapping[str, Any],
 ) -> str:
     if ordinary_present and not missing_forced:
         return "ordinary_authoritative_source_already_present"
@@ -463,7 +467,7 @@ def _next_failure_layer(
         skip_reason = lifecycle.get("active_source_class_recovery_skip_reason")
         return f"source_class_recovery_lifecycle_not_ready:{skip_reason or 'unknown'}"
     if not dispatch_authorized:
-        gate_reason = spine_trace.get("gate_reason")
+        gate_reason = lifecycle.get("source_class_recovery_dispatch_reason")
         return f"dispatch_not_authorized:{gate_reason or 'unknown'}"
     if not dispatch_trace.get("executor_attempted"):
         return "executor_not_attempted"

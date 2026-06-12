@@ -421,6 +421,71 @@ def test_official_canonical_admission_dispatches_when_checkpoint_actionless() ->
     assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
 
 
+def test_ag95h_remaining_source_class_old_keys_are_compatibility_trace_only() -> None:
+    lifecycle = _source_lifecycle(official_canonical_admitted=True)
+    synthetic_checkpoint_gap = build_controller_loop_spine_result(
+        checkpoint_trace={
+            "available": False,
+            "reason": "checkpoint_unavailable",
+            "decision": None,
+            "recommended_action_name": None,
+        },
+        source_class_lifecycle_trace=lifecycle,
+    )
+    product_checkpoint_gap_without_fact = build_controller_loop_spine_result(
+        checkpoint_trace={
+            "available": False,
+            "reason": "checkpoint_exception",
+            "decision": None,
+            "recommended_action_name": None,
+        },
+        source_class_lifecycle_trace=lifecycle,
+    )
+    product_checkpoint_gap_with_fact = build_controller_loop_spine_result(
+        checkpoint_trace={
+            "available": False,
+            "reason": "checkpoint_exception",
+            "official_canonical_checkpoint_exception_fallback_allowed": True,
+            "decision": None,
+            "recommended_action_name": None,
+        },
+        source_class_lifecycle_trace=lifecycle,
+    )
+    stale_checkpoint = build_controller_loop_spine_result(
+        checkpoint_trace=_checkpoint(_RETRIEVE_TARGETED),
+        source_class_lifecycle_trace=lifecycle,
+    )
+    refreshed_checkpoint = build_controller_loop_spine_result(
+        checkpoint_trace=_checkpoint(RECOVER_MISSING_SOURCE_CLASS),
+        source_class_lifecycle_trace=lifecycle,
+    )
+
+    assert synthetic_checkpoint_gap.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert product_checkpoint_gap_without_fact.authorized_dispatch is None
+    assert product_checkpoint_gap_without_fact.source_class_executor_dispatched is False
+    assert product_checkpoint_gap_with_fact.authorized_dispatch == (
+        RECOVER_MISSING_SOURCE_CLASS
+    )
+    assert product_checkpoint_gap_with_fact.trace_packet[
+        "official_canonical_dispatch_fallback"
+    ] is True
+    assert stale_checkpoint.authorized_dispatch is None
+    assert stale_checkpoint.trace_packet["gate_reason"] == (
+        "alternate_action_not_promoted"
+    )
+    assert refreshed_checkpoint.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert refreshed_checkpoint.source_class_executor_dispatched is True
+
+    for result in (
+        synthetic_checkpoint_gap,
+        product_checkpoint_gap_without_fact,
+        product_checkpoint_gap_with_fact,
+        stale_checkpoint,
+        refreshed_checkpoint,
+    ):
+        _assert_source_class_trace_demoted(result.trace_packet)
+
+
 @pytest.mark.parametrize(
     "action_name",
     [
