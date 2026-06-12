@@ -28,12 +28,18 @@ are repo files; use repo-visible files and the current phase prompt.
 - **Current source-class recovery dispatch doctrine:** use
   `docs/architecture/AG95C_CANONICAL_RECOVERY_PERMISSION_DISPATCH_CONSOLIDATION.md`,
   `docs/architecture/AG95D_RECOVERY_DISPATCH_SANITY_AUDIT_AND_CLEANUP_TARGET_SWEEP.md`,
-  and `docs/architecture/AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md`.
+  `docs/architecture/AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md`,
+  and `docs/architecture/AG95F_CONTROLLER_LOOP_SPINE_SOURCE_CLASS_TRACE_DEMOTION.md`.
   Current runner dispatch authority is canonical
   `authority_lifecycle.recovery_action` consumed by
   `SourceClassRecoveryRunner`; `authorized_spine_action`, ControllerLoopSpine
   source-class dispatch output, and ControllerRecoveryDecision are
-  diagnostic/compatibility surfaces for source-class dispatch.
+  diagnostic/compatibility surfaces for source-class dispatch. ControllerLoopSpine
+  source-class trace packets should carry
+  `source_class_spine_trace_role=diagnostic_compatibility`,
+  `source_class_spine_dispatch_authority=false`, and
+  `source_class_runner_dispatch_authority=authority_lifecycle.recovery_action`
+  while retaining old trace keys only for compatibility.
 - **Orchestrator strangulation and phase-boundary vocabulary:** read
   `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
   RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,

@@ -47,7 +47,11 @@ consumer is `SourceClassRecoveryRunner`, and it dispatches only from canonical
 dispatch fields, `authorized_spine_action`, official/canonical admission
 booleans, lifecycle eligibility booleans, reports, exports, and
 `ControllerRecoveryDecision` are diagnostic or compatibility surfaces for this
-lane. They must not be restored as source-class runner dispatch authority.
+lane. After AG-95F, ControllerLoopSpine source-class trace packets must declare
+`source_class_spine_trace_role=diagnostic_compatibility`,
+`source_class_spine_dispatch_authority=false`, and
+`source_class_runner_dispatch_authority=authority_lifecycle.recovery_action`.
+They must not be restored as source-class runner dispatch authority.
 
 ### No orchestrator brain
 

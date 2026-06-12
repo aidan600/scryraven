@@ -1,10 +1,12 @@
-"""Pure checkpoint promotion and dispatch authorization spine.
+"""Pure checkpoint promotion and compatibility dispatch authorization spine.
 
 This module owns the AG-33 through AG-37B control-plane arbitration around the
 evidence-integration checkpoint. It consumes compact, sanitized runtime facts
 and returns JSON-safe trace and authorization fields. It does not execute
 retrieval, choose providers, route depth, build prompts, persist data, or alter
-handoffs.
+handoffs. Source-class recovery dispatch is no longer owned here; source-class
+spine fields are diagnostic compatibility traces for the canonical
+AuthorityLifecycle.recovery_action -> SourceClassRecoveryRunner path.
 """
 
 from __future__ import annotations
@@ -25,6 +27,8 @@ RECOVER_WEAK_CORPUS = "recover_weak_corpus"
 RESOLVE_CONFLICT = "resolve_conflict"
 STOP_INSUFFICIENT_WITH_CAVEAT = "stop_insufficient_with_caveat"
 STOP_SUFFICIENT = "stop_sufficient"
+SOURCE_CLASS_SPINE_TRACE_ROLE = "diagnostic_compatibility"
+SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY = "authority_lifecycle.recovery_action"
 _TARGETED_RETRIEVAL_ACTION_NAME = "retrieve_targeted"
 _TARGETED_RUNTIME_DISPATCH_NOT_INVERTED = (
     "blocked_by_runtime_dispatch_not_inverted"
@@ -640,6 +644,11 @@ def _build_source_class_checkpoint_gate_trace(
 
     return {
         "controller_gate_active": True,
+        "source_class_spine_trace_role": SOURCE_CLASS_SPINE_TRACE_ROLE,
+        "source_class_spine_dispatch_authority": False,
+        "source_class_runner_dispatch_authority": (
+            SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY
+        ),
         "gated_action": RECOVER_MISSING_SOURCE_CLASS,
         "checkpoint_action_name": checkpoint_action_name,
         "lifecycle_eligible": lifecycle_eligible,
