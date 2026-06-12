@@ -186,23 +186,24 @@ def test_ag74d_unknown_or_contradictory_state_stops_for_architecture() -> None:
     assert contradictory["decision"] == STOP_FOR_ARCHITECTURE_DECISION
 
 
-def test_ag74d_visibility_export_exposes_controller_recovery_decision() -> None:
+def test_ag74d_visibility_export_reports_absent_runtime_decision_without_hydrating() -> None:
     packet = build_official_canonical_recovery_visibility_export(
         _trace(
             active_source_class_recovery_result_count=0,
             candidate_return_status="zero_candidates",
         )
     )
-    decision_trace = packet[CONTROLLER_RECOVERY_DECISION_TRACE_KEY]
 
-    assert packet["controller_recovery_decision"] == RETRY_RECOVERY
-    assert packet["controller_recovery_retry_allowed"] is True
-    assert decision_trace["ControllerRecoveryDecision"]["decision_owner"] == (
-        "ControllerEvidenceLedger"
+    assert packet["controller_recovery_decision_observed"] is False
+    assert packet["controller_recovery_decision_projection_source"] == (
+        "absent_from_runtime_trace"
     )
-    assert "source_class_recovery_executor_action_gate" in (
-        packet["controller_recovery_old_path_subordinated"]
+    assert packet["controller_recovery_decision_authority"] == (
+        "not_observed_diagnostic_only"
     )
+    assert CONTROLLER_RECOVERY_DECISION_TRACE_KEY not in packet
+    assert "controller_recovery_decision" not in packet
+    assert "controller_recovery_retry_allowed" not in packet
 
 
 def test_ag74d_executor_gate_is_subordinate_to_controller_decision() -> None:
@@ -278,7 +279,8 @@ def test_ag74d_static_guards_keep_provider_and_final_answer_surfaces_closed() ->
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
     visibility_source = _VISIBILITY_EXPORT_PATH.read_text(encoding="utf-8")
 
-    assert "controller_recovery_decision" in visibility_source
+    assert "controller_recovery_decision_observed" in visibility_source
+    assert "build_controller_recovery_decision" not in visibility_source
     assert "build_controller_recovery_decision" in executor_source
     assert "to_executor_trace_fields" in executor_source
     assert orchestrator_source.count("execute_source_class_recovery_action(") == 0

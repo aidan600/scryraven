@@ -389,3 +389,37 @@ For AG-95A:
   `core/official_canonical_recovery_visibility_export.py`.
 - Tests run: `py -m ruff check .`; `py -m pytest -q tests`.
 - Live validation run: no.
+
+## 9. AG-95B result note
+
+AG-95B removed the export-time `ControllerRecoveryDecision` hydration path from
+`core/official_canonical_recovery_visibility_export.py`.
+`build_official_canonical_recovery_visibility_export()` no longer imports or
+calls `build_controller_recovery_decision()` and no longer manufactures
+`controller_recovery_decision`, retry, stop, or provider-review fields when the
+runtime trace did not emit a `controller_recovery_decision_trace` or
+`recovery_decision_trace`.
+
+The visibility export now has only two postures:
+
+- observed runtime decision: copy the existing runtime-emitted decision trace and
+  mark `controller_recovery_decision_observed=true`;
+- absent runtime decision: mark
+  `controller_recovery_decision_projection_source=absent_from_runtime_trace` and
+  `controller_recovery_decision_authority=not_observed_diagnostic_only`.
+
+The demoted pseudo-owner was the report/export fallback that rebuilt a
+Controller-looking decision from lifecycle, ledger, candidate, and final-count
+diagnostics. Official-source survival projections were also marked
+`diagnostic_only` with aggregate count fields explicitly labeled as not custody
+or readiness proof.
+
+Still dirty: runtime recovery permission remains split across SearchJudgment,
+authoritative source action, authority lifecycle arbitration, official execution
+admission, source-class lifecycle, `ControllerRecoveryDecision`, and
+`ControllerLoopSpine`. Final citation custody still has a protected short-term
+survival guard outside `FinalAnswerPacket`.
+
+Next deletion target: make source-class recovery dispatch consume one canonical
+recovery permission, then demote `ControllerLoopSpine`/official admission flags
+from dispatch truth to passive diagnostics.

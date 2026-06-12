@@ -23,11 +23,7 @@ from core.controller_provider_search_allocation import (
     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
 )
-from core.controller_recovery_decision import (
-    CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
-    ControllerRecoveryDecision,
-    build_controller_recovery_decision,
-)
+from core.controller_recovery_decision import CONTROLLER_RECOVERY_DECISION_TRACE_KEY
 from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
 )
@@ -716,16 +712,7 @@ def build_official_canonical_recovery_visibility_export(
         "unknown_fields": [],
         "behavior_changed": False,
     }
-    controller_recovery_decision, decision_projection_source = (
-        _controller_recovery_decision_for_visibility(trace=trace, export=export)
-    )
-    export.update(controller_recovery_decision.to_trace_fields())
-    export["controller_recovery_decision_projection_source"] = (
-        decision_projection_source
-    )
-    export["controller_recovery_decision_authority"] = (
-        "compatibility_projection_observes_authoritative_runtime_state"
-    )
+    export.update(_controller_recovery_decision_observation_fields(trace=trace))
     export["unknown_fields"] = _unknown_fields(export)
     return export
 
@@ -1019,6 +1006,16 @@ def format_official_canonical_recovery_diagnostics_markdown(
             runtime_trace_or_export
         )
     lines = [f"## {OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE}"]
+    observed_decision = export.get("controller_recovery_decision_observed") is True
+    controller_decision_detail_fields = {
+        CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
+        "controller_recovery_decision",
+        "controller_recovery_decision_reason",
+        "controller_recovery_retry_allowed",
+        "controller_recovery_allowed_executor_action",
+        "controller_recovery_provider_search_review_requested",
+        "controller_recovery_old_path_subordinated",
+    }
     for key in (
         "official_canonical_recovery_visibility_status",
         "admission_considered",
@@ -1125,6 +1122,10 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "next_failure_layer",
         "next_failure_layer_custody_interpretation",
         "official_source_acquisition_quality_layer",
+        "controller_recovery_decision_observed",
+        "controller_recovery_decision_projection_source",
+        "controller_recovery_decision_authority",
+        "controller_recovery_decision_absent_reason",
         CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
         "controller_recovery_decision",
         "controller_recovery_decision_reason",
@@ -1132,8 +1133,6 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "controller_recovery_allowed_executor_action",
         "controller_recovery_provider_search_review_requested",
         "controller_recovery_old_path_subordinated",
-        "controller_recovery_decision_projection_source",
-        "controller_recovery_decision_authority",
         "provider_search_allocation_trace",
         "provider_search_allocation_execution_trace",
         "allocation_result_candidate_custody_available",
@@ -1147,6 +1146,8 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "unknown_fields",
         "behavior_changed",
     ):
+        if key in controller_decision_detail_fields and not observed_decision:
+            continue
         lines.append(f"- `{key}`: {_format_value(export.get(key, UNKNOWN))}")
     return "\n".join(lines)
 
@@ -1254,98 +1255,75 @@ def _source_obligation_custody_fields(
     }
 
 
-def _controller_recovery_decision_for_visibility(
+def _controller_recovery_decision_observation_fields(
     *,
     trace: Mapping[str, Any],
-    export: Mapping[str, Any],
-) -> tuple[ControllerRecoveryDecision, str]:
-    existing = _controller_recovery_decision_from_trace(trace)
-    if existing is not None:
-        return existing, "authoritative_runtime_decision_trace"
-    return (
-        build_controller_recovery_decision(
-            _controller_decision_visibility_input(trace=trace, export=export)
+) -> dict[str, Any]:
+    packet, payload = _controller_recovery_decision_from_trace(trace)
+    if payload:
+        safe_payload = _safe_mapping(payload)
+        safe_packet = _safe_mapping(packet)
+        safe_packet["ControllerRecoveryDecision"] = safe_payload
+        return {
+            CONTROLLER_RECOVERY_DECISION_TRACE_KEY: safe_packet,
+            "controller_recovery_decision": _optional_text(
+                safe_payload.get("decision")
+            ),
+            "controller_recovery_decision_reason": _optional_text(
+                safe_payload.get("decision_reason")
+            ),
+            "controller_recovery_retry_allowed": _bool_or_unknown(
+                safe_payload.get("retry_allowed")
+            ),
+            "controller_recovery_allowed_executor_action": _optional_text(
+                safe_payload.get("allowed_executor_action")
+            ),
+            "controller_recovery_provider_search_review_requested": (
+                _bool_or_unknown(
+                    safe_payload.get("provider_search_review_requested")
+                )
+            ),
+            "controller_recovery_old_path_subordinated": _safe_list(
+                safe_payload.get("old_path_subordinated")
+            ),
+            "controller_recovery_decision_observed": True,
+            "controller_recovery_decision_projection_source": (
+                "authoritative_runtime_decision_trace"
+            ),
+            "controller_recovery_decision_authority": "runtime_trace_observed",
+            "controller_recovery_decision_absent_reason": "none",
+        }
+    return {
+        "controller_recovery_decision_observed": False,
+        "controller_recovery_decision_projection_source": (
+            "absent_from_runtime_trace"
         ),
-        "hydrated_authoritative_lifecycle_projection",
-    )
+        "controller_recovery_decision_authority": (
+            "not_observed_diagnostic_only"
+        ),
+        "controller_recovery_decision_absent_reason": (
+            _controller_recovery_decision_absent_reason(trace)
+        ),
+    }
 
 
 def _controller_recovery_decision_from_trace(
     trace: Mapping[str, Any],
-) -> ControllerRecoveryDecision | None:
+) -> tuple[dict[str, Any], dict[str, Any]]:
     for key in (CONTROLLER_RECOVERY_DECISION_TRACE_KEY, "recovery_decision_trace"):
         packet = trace.get(key)
         if not isinstance(packet, Mapping):
             continue
         payload = packet.get("ControllerRecoveryDecision")
         if isinstance(payload, Mapping) and payload.get("decision"):
-            return ControllerRecoveryDecision(payload=_safe_mapping(payload))
-    return None
+            return _safe_mapping(packet), _safe_mapping(payload)
+    return {}, {}
 
 
-def _controller_decision_visibility_input(
-    *,
-    trace: Mapping[str, Any],
-    export: Mapping[str, Any],
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {}
-    for key in (
-        "requirement_id",
-        "required_source_class",
-        "required_source_classes",
-        "unsatisfied_required_source_classes",
-        "active_source_class_recovery_missing_classes",
-        "source_obligation_status",
-        "active_source_class_recovery_official_canonical_admitted",
-        "active_source_class_recovery_eligible",
-        "active_source_class_recovery_used",
-        "active_source_class_recovery_queries",
-        "active_source_class_recovery_action_envelope",
-        "source_class_recovery_eligible",
-        "admission_used",
-        "admission_blockers",
-        "authority_lifecycle",
-        "authority_lifecycle_required_recovery_allowed",
-        "authority_lifecycle_weak_corpus_may_own_path",
-        "authority_lifecycle_execution_attempted",
-        "authority_lifecycle_execution_blocked",
-        "recovery_slot_available",
-        "prior_recovery_attempt_count",
-        "active_source_class_recovery_attempt_count",
-        "max_recovery_attempts",
-        "admission_skip_reason",
-        "active_source_class_recovery_skip_reason",
-        "active_source_class_recovery_blockers",
-        "source_class_recovery_candidate_v2_blockers",
-        "candidate_acquisition_blockers",
-        "active_source_class_recovery_result_count",
-        "recovered_result_count",
-        "candidate_official_or_canonical_count",
-        "accepted_or_readable_official_or_canonical_count",
-        "recovered_candidate_selected_readable_count",
-        "recovered_candidate_rejection_reasons",
-        "recovered_candidate_source_fit_status",
-        "candidate_return_status",
-        "candidate_acquisition_considered",
-        "candidate_acquisition_eligible",
-        "candidate_acquisition_used",
-        "acquisition_attempted",
-        "final_selected_authority_evidence_count",
-        "final_evidence_official_or_canonical_count",
-        "final_citation_official_or_canonical_count",
-        "final_evidence_citation_custody",
-        "final_evidence_citation_custody_status",
-        "final_evidence_citation_custody_complete",
-        "ledger_legacy_gap_types",
-        CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
-    ):
-        if key == "prior_recovery_attempt_count":
-            value = trace.get(key)
-        else:
-            value = _first_present(export.get(key), trace.get(key))
-        if value is not None:
-            payload[key] = value
-    return payload
+def _controller_recovery_decision_absent_reason(trace: Mapping[str, Any]) -> str:
+    if any(key in trace for key in ("controller_recovery_decision", "recovery_decision")):
+        return "runtime_decision_trace_absent_flat_legacy_fields_ignored"
+    return "controller_recovery_decision_trace_absent_from_runtime_trace"
 
 
 def _admission_payload(trace: Mapping[str, Any]) -> dict[str, Any]:

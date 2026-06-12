@@ -43,7 +43,11 @@ def _projection(trace: dict[str, Any]) -> dict[str, Any]:
     packet = build_official_source_survival_projection_trace(runtime_trace=trace)
     assert packet["schema_version"] == OFFICIAL_SOURCE_SURVIVAL_PROJECTION_SCHEMA_VERSION
     assert packet["trace_mode"] == "passive_runtime_visibility"
-    return packet["OfficialSourceSurvivalProjection"]
+    projection = packet["OfficialSourceSurvivalProjection"]
+    assert projection["diagnostic_only"] is True
+    assert projection["aggregate_counts_are_not_custody"] is True
+    assert projection["aggregate_counts_are_not_readiness"] is True
+    return projection
 
 
 def test_ag49a_unknown_candidate_query_stays_unknown_not_zero() -> None:
@@ -133,6 +137,25 @@ def test_ag49a_clean_cited_source_bound_case_has_no_survival_failure() -> None:
     assert projection["recommended_next_lane"] == "no_action"
     assert projection["source_bound_value_present"] is True
     assert projection["behavior_changed"] is False
+
+
+def test_ag95b_aggregate_survival_counts_are_not_custody_or_readiness() -> None:
+    projection = _projection(
+        {
+            "query_type": "official_current_status",
+            "expected_source_classes_raw": ["official_current_rules"],
+            "active_source_class_recovery_queries": ["agency current fact sheet"],
+            "source_survival_final_evidence_official_or_canonical_count": 1,
+            "source_survival_final_citation_official_or_canonical_count": 1,
+            "answer_class": "complete_answer",
+        }
+    )
+
+    assert projection["final_evidence_official_or_canonical_count"] == 1
+    assert projection["final_citation_official_or_canonical_count"] == 1
+    assert projection["aggregate_count_custody_interpretation"] == (
+        "aggregate_survival_counts_are_not_custody_or_readiness_proof"
+    )
 
 
 def test_ag49a_redacts_protected_values_and_drops_sensitive_keys() -> None:

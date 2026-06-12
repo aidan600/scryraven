@@ -122,6 +122,9 @@ class OfficialSourceSurvivalClassification:
     """Diagnostic output. ``behavior_changed`` must remain false."""
 
     schema_version: str
+    diagnostic_only: bool
+    aggregate_counts_are_not_custody: bool
+    aggregate_counts_are_not_readiness: bool
     bottleneck_class: str
     source_survival_stage: str
     recommended_next_lane: str
@@ -265,6 +268,9 @@ def _result(
 ) -> OfficialSourceSurvivalClassification:
     return OfficialSourceSurvivalClassification(
         schema_version=SCHEMA_VERSION,
+        diagnostic_only=True,
+        aggregate_counts_are_not_custody=True,
+        aggregate_counts_are_not_readiness=True,
         bottleneck_class=bottleneck_class,
         source_survival_stage=source_survival_stage,
         recommended_next_lane=recommended_next_lane,

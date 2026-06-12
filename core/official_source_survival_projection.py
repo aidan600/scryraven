@@ -183,6 +183,12 @@ def build_official_source_survival_projection_trace(
 
     classification = _classify_projection(active_facts)
     projection = {
+        "diagnostic_only": True,
+        "aggregate_counts_are_not_custody": True,
+        "aggregate_counts_are_not_readiness": True,
+        "aggregate_count_custody_interpretation": (
+            "aggregate_survival_counts_are_not_custody_or_readiness_proof"
+        ),
         "question_type": active_facts.question_type,
         "required_source_obligation": active_facts.required_source_obligation,
         "source_obligation_required": active_facts.source_obligation_required,

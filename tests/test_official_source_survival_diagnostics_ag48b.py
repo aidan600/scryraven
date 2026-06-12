@@ -216,6 +216,9 @@ def test_ag48b_mapping_helpers_round_trip_sanitized_fields() -> None:
     assert diagnostic.to_dict()["candidate_query_count"] == 2
     assert diagnostic.to_dict()["metadata"] == {"case": "fixture"}
     assert classification.to_dict()["behavior_changed"] is False
+    assert classification.to_dict()["diagnostic_only"] is True
+    assert classification.to_dict()["aggregate_counts_are_not_custody"] is True
+    assert classification.to_dict()["aggregate_counts_are_not_readiness"] is True
 
 
 def test_ag48b_behavior_changed_is_always_false() -> None:
