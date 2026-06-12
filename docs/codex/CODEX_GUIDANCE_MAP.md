@@ -30,8 +30,9 @@ are repo files; use repo-visible files and the current phase prompt.
   `docs/architecture/AG95D_RECOVERY_DISPATCH_SANITY_AUDIT_AND_CLEANUP_TARGET_SWEEP.md`,
   `docs/architecture/AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md`,
   `docs/architecture/AG95F_CONTROLLER_LOOP_SPINE_SOURCE_CLASS_TRACE_DEMOTION.md`,
+  `docs/architecture/AG95G_SOURCE_CLASS_COMPATIBILITY_CONSUMER_AUDIT_AND_RETIREMENT.md`,
   and
-  `docs/architecture/AG95G_SOURCE_CLASS_COMPATIBILITY_CONSUMER_AUDIT_AND_RETIREMENT.md`.
+  `docs/architecture/AG95H_REMAINING_SOURCE_CLASS_COMPATIBILITY_TRACE_DIET.md`.
   Current runner dispatch authority is canonical
   `authority_lifecycle.recovery_action` consumed by
   `SourceClassRecoveryRunner`; `authorized_spine_action`, ControllerLoopSpine
@@ -39,7 +40,9 @@ are repo files; use repo-visible files and the current phase prompt.
   diagnostic/compatibility surfaces for source-class dispatch. AG-95F records
   the explicit ControllerLoopSpine trace demotion markers. AG-95G records the
   current compatibility consumer inventory and removes the orchestrator's
-  source-class old-key read.
+  source-class old-key read. AG-95H removes the remaining AG68E/AG68G
+  product-callsite old-key assertions and routes those checks to focused
+  ControllerLoopSpine compatibility coverage.
 - **Orchestrator strangulation and phase-boundary vocabulary:** read
   `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
   RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,

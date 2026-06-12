@@ -94,14 +94,14 @@ compatibility:
 
 Those remaining assertions are not used as source-class runner dispatch proof.
 
-## Recommended Next Deletion Target
+## AG-95H Follow-Up Result
 
-Consolidate the remaining AG68E/AG68G checkpoint-gap and stale/refreshed
-checkpoint compatibility assertions into focused ControllerLoopSpine
-compatibility coverage. After that, the AG-68/AG-69 product-callsite tests can
-avoid direct assertions on `authorized_dispatch`,
-`source_class_executor_dispatched`, and
-`official_canonical_dispatch_fallback` entirely.
+AG-95H completed the recommended next deletion target from this audit. The
+remaining AG68E/AG68G checkpoint-gap and stale/refreshed checkpoint assertions
+were moved into focused ControllerLoopSpine compatibility coverage, and the
+AG-68/AG-69 product-callsite tests no longer directly assert
+`authorized_dispatch`, `source_class_executor_dispatched`, or
+`official_canonical_dispatch_fallback`.
 
 ## Net LOC Impact
 

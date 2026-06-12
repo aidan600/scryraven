@@ -9,7 +9,6 @@ from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
 from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
     STOP_INSUFFICIENT_WITH_CAVEAT,
     build_controller_loop_spine_result,
 )
@@ -249,32 +248,6 @@ def _run_product_call_site_dispatch(
         )
     ).source_class_recovery_execution
     return execution, captured_queries
-
-
-def _legacy_ag68d_checkpoint_reason_allowed(reason: str) -> bool:
-    return reason == "checkpoint_unavailable"
-
-
-def test_ag68e_identifies_ag68c_synthetic_vs_product_checkpoint_gap() -> None:
-    assert _legacy_ag68d_checkpoint_reason_allowed("checkpoint_unavailable")
-    assert not _legacy_ag68d_checkpoint_reason_allowed("checkpoint_exception")
-
-    controller = RunController()
-    lifecycle = _handoff(controller).active_source_class_recovery_lifecycle
-    synthetic = _spine(lifecycle, checkpoint_trace=_checkpoint("checkpoint_unavailable"))
-    product_without_fact = _spine(
-        lifecycle,
-        checkpoint_trace=_checkpoint("checkpoint_exception"),
-    )
-    product = _spine(
-        lifecycle,
-        checkpoint_trace=_checkpoint("checkpoint_exception", fallback_allowed=True),
-    )
-
-    assert synthetic.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert product_without_fact.authorized_dispatch is None
-    assert product.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert product.trace_packet["official_canonical_dispatch_fallback"] is True
 
 
 def test_ag68e_live_equivalent_product_path_executes_after_exception_parity_repair() -> None:

@@ -9,6 +9,8 @@ output packet, or private artifact access was used.
 > `ControllerLoopSpineResult.source_class_executor_dispatched` while building
 > targeted-retrieval ownership. The remaining source-class spine keys are
 > preserved as diagnostic compatibility for named trace/test consumers.
+> AG-95H follow-up: AG68E/AG68G product-callsite tests no longer assert those
+> old keys directly; focused ControllerLoopSpine tests own that compatibility.
 
 ## Current Doctrine
 
