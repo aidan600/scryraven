@@ -24,6 +24,9 @@ from core.authoritative_source_obligations import (
     AuthorityRequirement,
     AuthorityStatus,
 )
+from core.authority_custody_satisfaction import (
+    authority_custody_satisfaction_for_source_class,
+)
 from core.official_source_obligation_candidate_visibility import (
     NOT_REQUIRED,
     PREFERRED,
@@ -1062,12 +1065,9 @@ def _kernel_satisfaction_for_required_classes(
                 source_class,
                 requirement=requirement,
                 authority_class=authority_class,
+                recommendation=recommendation,
+                runtime_trace=runtime_trace,
                 legacy_status=status_by_class.get(source_class),
-                strong_count_positive=_strong_count_positive(
-                    recommendation,
-                    runtime_trace,
-                    source_class,
-                ),
             )
         )
     state = AuthoritativeSourceObligationState.evaluate(
@@ -1104,14 +1104,21 @@ def _authority_evidence_fits_for_source_class(
     *,
     requirement: AuthorityRequirement,
     authority_class: str,
+    recommendation: Mapping[str, Any],
+    runtime_trace: Mapping[str, Any],
     legacy_status: str | None,
-    strong_count_positive: bool,
 ) -> tuple[AuthorityEvidenceFit, ...]:
-    if strong_count_positive or legacy_status == "satisfied_strong":
+    custody = authority_custody_satisfaction_for_source_class(
+        source_class,
+        runtime_trace,
+        recommendation,
+        authority_class=authority_class,
+    )
+    if custody.authority_satisfied:
         return (
             AuthorityEvidenceFit.authoritative(
                 requirement.requirement_id,
-                f"{source_class}:satisfied_strong",
+                custody.evidence_id or f"{source_class}:{custody.reason}",
                 authority_class,
             ),
         )
@@ -1137,23 +1144,6 @@ def _authority_evidence_fits_for_source_class(
             ),
         )
     return ()
-
-
-def _strong_count_positive(
-    recommendation: Mapping[str, Any],
-    runtime_trace: Mapping[str, Any],
-    source_class: str,
-) -> bool:
-    for source in (runtime_trace, recommendation):
-        counts = source.get("source_class_strong_satisfaction_counts")
-        if not isinstance(counts, Mapping):
-            continue
-        try:
-            if int(counts.get(source_class, 0) or 0) > 0:
-                return True
-        except (TypeError, ValueError):
-            continue
-    return False
 
 
 def _acquisition_blockers(

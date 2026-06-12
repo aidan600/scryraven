@@ -8,10 +8,11 @@ truth. Required authority is satisfied only by explicit custody-backed proof.
 
 The new shared predicate is
 `core/authority_custody_satisfaction.py::authority_custody_satisfaction_for_source_class`.
-Both opened runtime consumers now use it:
+All three local recovery-control satisfaction consumers now use it:
 
 - `core/authoritative_source_action.py::_evidence_fits_for_source_classes()`
 - `core/official_canonical_recovery_execution_admission.py::_authority_evidence_fits_for_source_class()`
+- `core/official_canonical_recovery_query_acquisition.py::_authority_evidence_fits_for_source_class()`
 
 ## AG-94H-E Finding Being Repaired
 
@@ -38,7 +39,8 @@ The repair removes control authority from aggregate-only fields:
 - any official/canonical count without candidate/passport/selected custody
 
 These fields can remain visible as diagnostics, but they no longer create
-authority-satisfying fits.
+authority-satisfying fits or cause recovery-control paths to skip as
+`existing_source_class_satisfied`.
 
 ## New Authority Satisfaction Rule
 
@@ -91,9 +93,12 @@ Trace-safe demotion reasons include:
 
 ## Why This Simplifies Authority
 
-Before AG-94H-F, two local consumers independently interpreted legacy aggregate
-fields as authority satisfaction. The new helper gives those consumers one
-custody-aware predicate and demotes the old status/count path to diagnostics.
+Before AG-94H-F, local recovery-control consumers independently interpreted
+legacy aggregate fields as authority satisfaction. The new helper gives
+`authoritative_source_action`,
+`official_canonical_recovery_execution_admission`, and
+`official_canonical_recovery_query_acquisition` one custody-aware predicate and
+demotes the old status/count path to diagnostics.
 
 The old aggregate path is not wrapped or force-overridden. It is removed from
 the authority-satisfying decision.
@@ -133,6 +138,7 @@ and the source-class recovery runner reach the executor entrypoint.
 Focused offline checks run during AG-94H-F:
 
 - `py -m pytest -q tests/test_ag94h_e_authority_lifecycle_source_class_parity_audit.py`
+- `py -m pytest -q tests/test_official_canonical_recovery_query_acquisition_ag50a.py`
 - `py -m pytest -q tests/test_official_canonical_recovery_execution_admission_ag50b.py`
 - `py -m pytest -q tests/test_ag94h_c_recovery_executor_dispatch_authorization_audit.py`
 - `py -m pytest -q tests/test_authority_lifecycle_execution_ag69c.py`

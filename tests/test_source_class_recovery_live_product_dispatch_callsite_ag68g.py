@@ -479,7 +479,7 @@ def test_ag68g_terminal_stop_and_invalid_envelope_remain_fail_closed() -> None:
     )
 
 
-def test_ag68g_checkpoint_exception_refresh_requires_official_canonical_admission() -> None:
+def test_ag68g_checkpoint_exception_refresh_allows_aggregate_gap_admission() -> None:
     controller = RunController()
     handoff = _handoff(
         controller,
@@ -491,21 +491,23 @@ def test_ag68g_checkpoint_exception_refresh_requires_official_canonical_admissio
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
-    assert handoff.official_canonical_recovery_execution_admitted is False
-    assert lifecycle["active_source_class_recovery_eligible"] is False
-    assert not _authoritative_source_checkpoint_refresh_allowed(
+    assert handoff.official_canonical_recovery_execution_admitted is True
+    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert _authoritative_source_checkpoint_refresh_allowed(
         checkpoint_trace={
             "available": False,
             "reason": "checkpoint_exception",
             "decision": None,
             "recommended_action_name": None,
         },
-        official_canonical_recovery_execution_admitted=False,
+        official_canonical_recovery_execution_admitted=(
+            handoff.official_canonical_recovery_execution_admitted
+        ),
         active_source_class_recovery_lifecycle=lifecycle,
     )
 
 
-def test_ag68g_ordinary_acquisition_remains_ordinary_only() -> None:
+def test_ag68g_aggregate_ordinary_status_no_longer_blocks_recovery_admission() -> None:
     controller = RunController()
     handoff = _handoff(
         controller,
@@ -521,9 +523,10 @@ def test_ag68g_ordinary_acquisition_remains_ordinary_only() -> None:
         source_class_lifecycle_trace=lifecycle,
     )
 
-    assert handoff.official_canonical_recovery_execution_admitted is False
-    assert lifecycle["active_source_class_recovery_eligible"] is False
+    assert handoff.official_canonical_recovery_execution_admitted is True
+    assert lifecycle["active_source_class_recovery_eligible"] is True
     assert spine.authorized_dispatch is None
+    assert spine.source_class_executor_dispatched is False
 
 
 def test_ag68g_query_strings_and_helper_shapes_are_preserved() -> None:

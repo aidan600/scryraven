@@ -364,10 +364,14 @@ def test_pipeline_attaches_anchor_packet_and_compact_researcher_context(
     assert harness.researcher_calls == 1
     assert harness.analyst_calls == 1
     assert harness.economist_calls == 0
-    assert len(harness.search_calls) == 1
+    assert len(harness.search_calls) == 2
     assert harness.search_calls[0]["search_depth"] == "basic"
     assert harness.search_calls[0]["complexity"] == "medium"
     assert harness.search_calls[0]["queries"] == trace["queries_per_iteration"]["1"]
+    assert harness.search_calls[1]["search_depth"] == "basic"
+    assert harness.search_calls[1]["queries"] == [
+        "official current source latest service ownership rule"
+    ]
     assert trace["weak_corpus_recovery_used"] is False
 
     researcher_prompt = harness.researcher_prompts[-1]
