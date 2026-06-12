@@ -458,12 +458,6 @@ def _aggregate_count_positive(sources: Sequence[Mapping[str, Any]]) -> bool:
     for source in sources:
         if any(_positive_int(source.get(key)) for key in _AGGREGATE_COUNT_KEYS):
             return True
-        survival = _mapping(source.get("official_source_survival_projection"))
-        if any(_positive_int(survival.get(key)) for key in _AGGREGATE_COUNT_KEYS):
-            return True
-        nested = _mapping(source.get("OfficialSourceSurvivalProjection"))
-        if any(_positive_int(nested.get(key)) for key in _AGGREGATE_COUNT_KEYS):
-            return True
     return False
 
 

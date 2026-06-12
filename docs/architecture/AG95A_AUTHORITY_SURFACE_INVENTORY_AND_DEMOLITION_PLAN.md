@@ -114,7 +114,7 @@ FinalAnswerPacket custody, not another standalone truth object.
 | `core/official_current_source_custody.py::OfficialCurrentSourceCustodyState` | Requirement/candidate custody projection for official/current classes. | ADAPTER | yes | yes as subordinate custody projection | EvidenceLedger, authority custody satisfaction | EvidenceLedger, bridge, tests | used by AG-94H-F satisfaction proof | Keep as subordinate projection; eventual EvidenceLedger internal detail. |
 | `core/legal_current_authority_fit.py::build_legal_current_primary_authority_fit` | Legal/current fit for provided facts. | ADAPTER | yes, fit classification | yes, bounded fit only | source-class fit, official/current custody | authoritative source action | source classification semantics sensitive | Keep; do not broaden. |
 | `core/final_evidence_citation_custody_projection.py::build_final_evidence_citation_custody_projection` | Projects final evidence/citation custody from packet and ledger. | DIAGNOSTIC | no runtime | no | FinalAnswerPacket, ControllerEvidenceLedger, final citation survival | tests, visibility/export | useful for audits; not runtime owner | Keep diagnostic; avoid control consumers. |
-| `core/official_source_survival_projection.py::build_official_source_survival_projection_trace` | Legacy official/canonical survival counts and classification. | DIAGNOSTIC | no runtime | no | final authority citation survival, visibility export | reports/tests | counts can sound like custody but are aggregates | Demote/rename later as aggregate diagnostic; not AG-95B first. |
+| `core/official_source_survival_projection.py::build_official_source_survival_projection_trace` | Deleted in AG-95B. Former legacy official/canonical survival counts and classification projection. | DELETED | no | no | final authority citation survival, visibility export | none after AG-95B | counts sounded like custody but were aggregates | Deleted; remaining consumers read direct sanitized survival-count fields or final citation survival custody. |
 | `core/official_source_survival_diagnostics.py::classify_official_source_survival` | Diagnostic classification of official source survival. | DIAGNOSTIC | no | no | official source survival projection, final citation survival | tests/report diagnostics | none | Keep diagnostic-only; do not feed runtime. |
 | `core/session_output_projection.py::build_execution_trace_projection` | Serializes execution trace/log entries and packet refs. | DIAGNOSTIC | no | no | runtime trace projection, final answer packet trace fragment | output packaging, tests | persistence/output shape sensitive | Keep; only projection cleanup later. |
 | `core/runtime_trace_projection_assembly.py::attach_passive_runtime_projection_traces` | Attaches passive projection traces, including old ControllerEvidenceLedger visibility. | DIAGNOSTIC | no | no | ControllerEvidenceLedger, final evidence/citation refs | post-author packaging, tests | output trace shape sensitive | Keep; later ensure all attached projections are marked diagnostic/passive. |
@@ -268,7 +268,6 @@ FinalAnswerPacket custody, not another standalone truth object.
 
 ### C. Keep for now, but rename/comment as diagnostic-only
 
-- `official_source_survival_projection.py`: aggregate survival only; not custody.
 - `official_source_survival_diagnostics.py`: classification only; not readiness.
 - `authority_candidate_passport_validation.py`: export classification only; not
   final authority satisfaction.
@@ -410,9 +409,13 @@ The visibility export now has only two postures:
 
 The demoted pseudo-owner was the report/export fallback that rebuilt a
 Controller-looking decision from lifecycle, ledger, candidate, and final-count
-diagnostics. Official-source survival projections were also marked
-`diagnostic_only` with aggregate count fields explicitly labeled as not custody
-or readiness proof.
+diagnostics. AG-95B also deleted
+`core/official_source_survival_projection.py`, removed its passive runtime trace
+attachment, removed visibility-export fallback reads from that projection, and
+removed the aggregate-count intake from `authority_custody_satisfaction`.
+Remaining consumers use direct sanitized `source_survival_final_*` counts as
+diagnostics only or the protected final authority citation survival guard for
+identity-backed custody.
 
 Still dirty: runtime recovery permission remains split across SearchJudgment,
 authoritative source action, authority lifecycle arbitration, official execution

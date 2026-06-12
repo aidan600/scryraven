@@ -21,10 +21,6 @@ from core.official_source_obligation_candidate_visibility import (
     UNKNOWN,
     build_official_source_obligation_candidate_visibility_traces,
 )
-from core.official_source_survival_projection import (
-    OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY,
-    build_official_source_survival_projection_trace,
-)
 from core.runtime_trace_projection_assembly import (
     attach_passive_runtime_projection_traces,
 )
@@ -250,7 +246,7 @@ def test_ag49b_acceptance_readability_uses_recovered_count_only_after_active_rec
     assert projection["accepted_or_readable_official_source_count"] == 1
 
 
-def test_ag49b_reuses_ag49a_final_survival_without_backfilling_candidates() -> None:
+def test_ag49b_uses_direct_final_survival_counts_without_backfilling_candidates() -> None:
     trace = {
         "query_preview": (
             "What are the 2026 vs 2025 COLA and federal payment amounts?"
@@ -261,15 +257,8 @@ def test_ag49b_reuses_ag49a_final_survival_without_backfilling_candidates() -> N
         "source_survival_final_citation_official_or_canonical_count": 1,
         "source_bound_value_count": 2,
     }
-    survival_trace = build_official_source_survival_projection_trace(
-        runtime_trace=trace
-    )
-    trace[OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY] = survival_trace
     projection = _candidate(trace)
-    survival_projection = survival_trace["OfficialSourceSurvivalProjection"]
 
-    assert survival_projection["final_evidence_official_or_canonical_count"] == 1
-    assert survival_projection["final_citation_official_or_canonical_count"] == 1
     assert projection["final_evidence_official_or_canonical_count"] == 1
     assert projection["final_citation_official_or_canonical_count"] == 1
     assert projection["candidate_query_count"] == UNKNOWN

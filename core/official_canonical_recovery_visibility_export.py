@@ -33,9 +33,6 @@ from core.official_canonical_recovery_query_acquisition import (
 from core.official_source_obligation_candidate_visibility import (
     OFFICIAL_SOURCE_CANDIDATE_VISIBILITY_TRACE_KEY,
 )
-from core.official_source_survival_projection import (
-    OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY,
-)
 from core.provider_result_represented_visibility import (
     PROVIDER_RESULT_REPRESENTED_VISIBILITY_TRACE_KEY,
 )
@@ -113,7 +110,6 @@ def build_official_canonical_recovery_visibility_export(
     acquisition = _query_acquisition_payload(trace)
     admission = _admission_payload(trace)
     candidate = _candidate_payload(trace)
-    survival = _survival_payload(trace)
     lifecycle_candidate_fit = _authority_lifecycle_candidate_fit(trace)
     authority_candidate_passport = _authority_candidate_passport_payload(trace)
     provider_result_bridge = _provider_result_bridge_payload(trace)
@@ -254,12 +250,10 @@ def build_official_canonical_recovery_visibility_export(
         _final_selected_authority_evidence_count(trace, lifecycle_candidate_fit)
     )
     final_evidence_count = _first_known_int(
-        trace.get("source_survival_final_evidence_official_or_canonical_count"),
-        survival.get("final_evidence_official_or_canonical_count"),
+        trace.get("source_survival_final_evidence_official_or_canonical_count")
     )
     final_citation_count = _first_known_int(
-        trace.get("source_survival_final_citation_official_or_canonical_count"),
-        survival.get("final_citation_official_or_canonical_count"),
+        trace.get("source_survival_final_citation_official_or_canonical_count")
     )
     final_evidence_observed = _count_observed(final_evidence_count)
     final_citation_observed = _count_observed(final_citation_count)
@@ -1339,15 +1333,6 @@ def _candidate_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
     packet = trace.get(OFFICIAL_SOURCE_CANDIDATE_VISIBILITY_TRACE_KEY)
     if isinstance(packet, Mapping):
         payload = packet.get("OfficialSourceCandidateVisibility")
-        if isinstance(payload, Mapping):
-            return _safe_mapping(payload)
-    return {}
-
-
-def _survival_payload(trace: Mapping[str, Any]) -> dict[str, Any]:
-    packet = trace.get(OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY)
-    if isinstance(packet, Mapping):
-        payload = packet.get("OfficialSourceSurvivalProjection")
         if isinstance(payload, Mapping):
             return _safe_mapping(payload)
     return {}
