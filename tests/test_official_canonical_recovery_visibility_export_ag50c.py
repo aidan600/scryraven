@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core.controller_recovery_decision import CONTROLLER_RECOVERY_DECISION_TRACE_KEY
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
 )
@@ -182,8 +183,82 @@ def test_ag50c_unknown_preservation_for_historical_records() -> None:
     assert packet["admission_considered"] == UNKNOWN
     assert packet["source_class_recovery_used"] == UNKNOWN
     assert packet["likely_next_failure_layer"] == NOT_OBSERVABLE
+    assert packet["controller_recovery_decision_observed"] is False
+    assert packet["controller_recovery_decision_projection_source"] == (
+        "absent_from_runtime_trace"
+    )
+    assert packet["controller_recovery_decision_authority"] == (
+        "not_observed_diagnostic_only"
+    )
+    assert packet["controller_recovery_decision_absent_reason"] == (
+        "controller_recovery_decision_trace_absent_from_runtime_trace"
+    )
+    assert CONTROLLER_RECOVERY_DECISION_TRACE_KEY not in packet
+    assert "controller_recovery_decision" not in packet
+    assert "controller_recovery_retry_allowed" not in packet
     assert "admission_considered" in packet["unknown_fields"]
     assert OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE in rendered
+
+
+def test_ag95b_visibility_export_does_not_hydrate_missing_runtime_decision() -> None:
+    packet = _export(
+        _trace(
+            active_source_class_recovery_result_count=0,
+            candidate_return_status="zero_candidates",
+        )
+    )
+    rendered = format_official_canonical_recovery_diagnostics_markdown(packet)
+
+    assert packet["controller_recovery_decision_observed"] is False
+    assert packet["controller_recovery_decision_projection_source"] == (
+        "absent_from_runtime_trace"
+    )
+    assert packet["controller_recovery_decision_authority"] == (
+        "not_observed_diagnostic_only"
+    )
+    assert packet["controller_recovery_decision_absent_reason"] == (
+        "controller_recovery_decision_trace_absent_from_runtime_trace"
+    )
+    assert CONTROLLER_RECOVERY_DECISION_TRACE_KEY not in packet
+    assert "controller_recovery_decision" not in packet
+    assert "controller_recovery_retry_allowed" not in packet
+    assert "`controller_recovery_decision_observed`: false" in rendered
+    assert "`controller_recovery_decision`:" not in rendered
+    assert "`controller_recovery_retry_allowed`:" not in rendered
+
+
+def test_ag95b_visibility_export_preserves_observed_runtime_decision_trace() -> None:
+    decision_trace = {
+        "schema_version": "controller_recovery_retry_stop_decision_ag74d_v1",
+        "trace_mode": "controller_owned_recovery_retry_stop_decision",
+        "ControllerRecoveryDecision": {
+            "decision": "retry_recovery",
+            "decision_reason": "runtime_fixture_decided",
+            "retry_allowed": True,
+            "allowed_executor_action": "execute_existing_recovery_action",
+            "provider_search_review_requested": False,
+            "old_path_subordinated": ["source_class_recovery_executor_action_gate"],
+        },
+    }
+    packet = _export(
+        _trace(
+            **{CONTROLLER_RECOVERY_DECISION_TRACE_KEY: decision_trace},
+        )
+    )
+    rendered = format_official_canonical_recovery_diagnostics_markdown(packet)
+
+    assert packet["controller_recovery_decision_observed"] is True
+    assert packet["controller_recovery_decision_projection_source"] == (
+        "authoritative_runtime_decision_trace"
+    )
+    assert packet["controller_recovery_decision_authority"] == (
+        "runtime_trace_observed"
+    )
+    assert packet["controller_recovery_decision_absent_reason"] == "none"
+    assert packet[CONTROLLER_RECOVERY_DECISION_TRACE_KEY] == decision_trace
+    assert packet["controller_recovery_decision"] == "retry_recovery"
+    assert packet["controller_recovery_retry_allowed"] is True
+    assert "`controller_recovery_decision`: retry_recovery" in rendered
 
 
 def test_ag50c_raw_artifact_guard_drops_or_redacts_private_fields() -> None:
@@ -334,6 +409,8 @@ def test_ag50c_static_protected_surface_guard() -> None:
     assert imported.isdisjoint(forbidden_modules)
     source = _MODULE_PATH.read_text(encoding="utf-8").casefold()
     forbidden_surface_markers = {
+        "build_controller_recovery_decision",
+        "hydrated_authoritative_lifecycle_projection",
         "process_search_queries",
         "choose_supplemental_search_depth",
         "select_providers",

@@ -13,7 +13,6 @@ from core.controller_loop_spine import (
     build_controller_loop_spine_result,
 )
 from core.controller_recovery_decision import (
-    CONTROLLER_RECOVERY_DECISION_TRACE_KEY,
     RETRY_RECOVERY,
     STOP_INSUFFICIENT,
     STOP_LEGACY_CUSTODY_GAP,
@@ -379,16 +378,15 @@ def test_ag94h_d_decision_subordinates_legacy_gap_only_for_bounded_attempt() -> 
 
 
 def test_ag94h_d_candidate_state_does_not_trust_legacy_final_counts() -> None:
-    export = build_official_canonical_recovery_visibility_export(
-        _approved_lifecycle(
-            **_ledger_gap(),
-            source_survival_final_evidence_official_or_canonical_count=1,
-            source_survival_final_citation_official_or_canonical_count=1,
-        )
+    lifecycle = _approved_lifecycle(
+        **_ledger_gap(),
+        source_survival_final_evidence_official_or_canonical_count=1,
+        source_survival_final_citation_official_or_canonical_count=1,
     )
-    decision = export[CONTROLLER_RECOVERY_DECISION_TRACE_KEY][
-        "ControllerRecoveryDecision"
-    ]
+    export = build_official_canonical_recovery_visibility_export(
+        lifecycle
+    )
+    decision = build_controller_recovery_decision(lifecycle).payload
 
     assert export["source_obligation_status"] == "official_current_required_unmet"
     assert export["source_class_recovery_execution_attempted"] is False
@@ -397,6 +395,11 @@ def test_ag94h_d_candidate_state_does_not_trust_legacy_final_counts() -> None:
     assert export["candidate_acquisition_eligible"] is False
     assert export["candidate_acquisition_used"] is False
     assert export["acquisition_attempted"] is False
+    assert export["controller_recovery_decision_observed"] is False
+    assert export["controller_recovery_decision_projection_source"] == (
+        "absent_from_runtime_trace"
+    )
+    assert "controller_recovery_decision" not in export
     assert decision["candidate_state_summary"] != (
         "selected_complete_official_current_evidence_exists"
     )

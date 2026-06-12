@@ -11,11 +11,6 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from core.official_source_survival_projection import (
-    OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY,
-    UNKNOWN,
-)
-
 OFFICIAL_SOURCE_OBLIGATION_TRACE_KEY = "official_source_obligation_trace"
 OFFICIAL_SOURCE_CANDIDATE_VISIBILITY_TRACE_KEY = (
     "official_source_candidate_visibility_trace"
@@ -24,6 +19,7 @@ OFFICIAL_SOURCE_OBLIGATION_CANDIDATE_SCHEMA_VERSION = (
     "official_source_obligation_candidate_visibility_ag49b_v1"
 )
 
+UNKNOWN = "unknown"
 REQUIRED = "required"
 PREFERRED = "preferred"
 NOT_REQUIRED = "not_required"
@@ -217,8 +213,7 @@ class OfficialSourceObligationCandidateVisibilityFacts:
         runtime_trace: Mapping[str, Any] | None,
     ) -> "OfficialSourceObligationCandidateVisibilityFacts":
         trace = _safe_mapping(runtime_trace)
-        survival = _survival_projection_payload(trace)
-        obligation = _obligation(trace, survival)
+        obligation = _obligation(trace)
         query_previews = _candidate_query_previews(trace)
         candidate_query_count = _candidate_query_count(trace, query_previews)
         candidate_source_count = _candidate_official_source_count(trace)
@@ -226,15 +221,11 @@ class OfficialSourceObligationCandidateVisibilityFacts:
         accepted_count = _accepted_or_readable_official_count(trace)
         final_evidence_count = _final_count(
             trace,
-            survival,
             "source_survival_final_evidence_official_or_canonical_count",
-            "final_evidence_official_or_canonical_count",
         )
         final_citation_count = _final_count(
             trace,
-            survival,
             "source_survival_final_citation_official_or_canonical_count",
-            "final_citation_official_or_canonical_count",
         )
         values = {
             "obligation_status": obligation["status"],
@@ -364,10 +355,9 @@ def build_official_source_obligation_candidate_visibility_traces(
             "local_output_quality_review_packet",
             "future_official_current_canonical_source_quality_validation",
             "ag48a_ag48b_classifiers",
-            "ag49a_ag49b_source_survival_projection_follow_up",
-            "future_repair_lane_selection",
+            "direct_source_survival_count_review",
         ],
-        "decision_enabled": [
+        "diagnostic_distinctions": [
             "distinguish_required_preferred_not_required_unknown_obligation",
             "distinguish_obligation_detection_gap_from_candidate_visibility_gap",
             "distinguish_candidate_query_unavailable_from_official_candidate_unavailable",
@@ -423,15 +413,9 @@ def _question_type(trace: Mapping[str, Any]) -> str:
 
 def _obligation(
     trace: Mapping[str, Any],
-    survival: Mapping[str, Any],
 ) -> dict[str, Any]:
     runtime_classes = _runtime_required_classes(trace)
-    survival_classes = tuple(
-        item
-        for item in _compact_tokens(survival.get("required_source_classes"))
-        if item in _OFFICIAL_OR_CANONICAL_CLASSES
-    )
-    classes = runtime_classes or survival_classes
+    classes = runtime_classes
     if classes:
         reason = (
             "official_agency_or_canonical_technical_behavior_request"
@@ -802,14 +786,10 @@ def _accepted_or_readable_official_count(trace: Mapping[str, Any]) -> int | str:
 
 def _final_count(
     trace: Mapping[str, Any],
-    survival: Mapping[str, Any],
     trace_key: str,
-    survival_key: str,
 ) -> int | str:
     if trace_key in trace:
         return _non_negative_int(trace.get(trace_key))
-    if survival_key in survival:
-        return _non_negative_int(survival.get(survival_key))
     return UNKNOWN
 
 
@@ -875,14 +855,6 @@ def _likely_visibility_gap(values: Mapping[str, Any]) -> str:
     if values.get("final_citation_official_or_canonical_count") == 0:
         return "final_citation_survival_gap"
     return "no_visibility_gap_visible"
-
-
-def _survival_projection_payload(trace: Mapping[str, Any]) -> Mapping[str, Any]:
-    projection_trace = trace.get(OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY)
-    if not isinstance(projection_trace, Mapping):
-        return {}
-    projection = projection_trace.get("OfficialSourceSurvivalProjection")
-    return projection if isinstance(projection, Mapping) else {}
 
 
 def _trace_text(trace: Mapping[str, Any]) -> str:

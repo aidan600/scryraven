@@ -36,10 +36,6 @@ from core.official_source_obligation_bridge import (
 from core.official_source_obligation_candidate_visibility import (
     build_official_source_obligation_candidate_visibility_traces,
 )
-from core.official_source_survival_projection import (
-    OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY,
-    build_official_source_survival_projection_trace,
-)
 from core.provider_result_represented_visibility import (
     PROVIDER_RESULT_REPRESENTED_VISIBILITY_TRACE_KEY,
     build_provider_result_represented_visibility_trace,
@@ -79,27 +75,6 @@ def attach_passive_runtime_projection_traces(
     except Exception as exc:
         active_logger.warning(
             "Non-fatal retrieval-batch passive projection omitted: %s",
-            exc,
-        )
-    try:
-        official_source_survival_projection_trace = (
-            build_official_source_survival_projection_trace(
-                runtime_trace=execution_trace
-            )
-        )
-        execution_trace[OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY] = (
-            official_source_survival_projection_trace
-        )
-        checkpoint_packet = execution_trace.get(
-            EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
-        )
-        if isinstance(checkpoint_packet, dict):
-            checkpoint_packet[OFFICIAL_SOURCE_SURVIVAL_PROJECTION_TRACE_KEY] = (
-                official_source_survival_projection_trace
-            )
-    except Exception as exc:
-        active_logger.warning(
-            "Non-fatal official-source survival projection omitted: %s",
             exc,
         )
     try:
