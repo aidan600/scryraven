@@ -8,6 +8,13 @@ AG-79C is an architecture review, static audit, and docs-only phase. It uses off
 
 No runtime behavior autonomy is licensed for this phase. This document classifies broad local domain decisions in `core/pipeline_orchestrator.py` and orchestrator-adjacent helpers; it does not repair, wire, or alter them.
 
+> Status note, AG-95E: This document is a historical Controller-era audit for
+> source-class recovery dispatch. Current source-class dispatch uses
+> `authority_lifecycle.recovery_action` consumed by
+> `SourceClassRecoveryRunner`; ControllerLoopSpine source-class dispatch output
+> and ControllerRecoveryDecision are diagnostic/compatibility surfaces, not
+> runner authority.
+
 ## Relationship to AG-79A and AG-79B
 
 AG-79A audited Controller-visible versus Controller-governing authority and identified provider/search/depth/query selection plus final evidence/citation/Author assembly as the first targeted repair area.

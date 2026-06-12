@@ -5,6 +5,12 @@ search, retrieval, secret, `.env`, DB row, raw provider payload, raw prompt,
 private log, cache, full raw trace, local output packet, or private artifact
 access was used.
 
+> AG-95E follow-up: The AG-68/AG-69 fixture debt ranked in this audit has been
+> modernized. Source-class dispatch assertions in those fixtures now route
+> through `run_source_class_recovery_dispatch()` and canonical
+> `authority_lifecycle.recovery_action`; checkpoint/spine assertions are kept as
+> diagnostic compatibility coverage.
+
 ## 1. Verdict
 
 PASS. AG-95C preserved source-class recovery dispatch behavior and clarified the
@@ -86,16 +92,14 @@ not change; only a stale diagnostic label and test-only fixture hooks changed.
 
 Blocker if no cleanup: not applicable.
 
-## 5. Recommended AG-95E
+## 5. AG-95E Follow-Up Result
 
-Recommended AG-95E: stale test/doc cleanup.
+AG-95E completed the stale test/doc cleanup recommended here.
 
-Reason: runtime source-class recovery dispatch now passes the offline matrix,
-but the AG-68/AG-69 fixture family still encodes pre-AG-95C
-`authorized_spine_action` executor gating. That is the highest-value next
-cleanup because it can mislead future phases into re-promoting ControllerLoopSpine
-as source-class dispatch authority. AG-95E should update or delete the exact
-fixtures named in rank 1, preserve the checkpoint-refresh behavior they protect,
-route actual dispatch assertions through the AG-95C runner, and add short
-supersession notes to the current-looking AG-94H/AG-95A docs that still describe
-the old ownership model.
+Result: the AG-68/AG-69 fixture family no longer gates source-class executor
+calls by `authorized_spine_action`. Source-class dispatch assertions route
+through `run_source_class_recovery_dispatch()` and canonical
+`authority_lifecycle.recovery_action`; checkpoint refresh and spine output
+remain as diagnostic compatibility coverage. Current-looking AG-68/AG-69,
+AG-74F, AG-79C/AG-79D, AG-94H, and AG-95A docs now carry supersession notes
+instead of silently presenting the old dispatch model as current doctrine.

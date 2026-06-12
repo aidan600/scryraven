@@ -162,7 +162,6 @@ def _live_contradiction_trace() -> dict[str, Any]:
 def _runner_context(
     *,
     lifecycle: dict[str, Any],
-    authorized_spine_action: str | None,
     controller_recovery_decision: Any,
     controller: RunController | None = None,
     process_search_queries: Any | None = None,
@@ -407,7 +406,6 @@ def test_ag94h_f_downstream_decision_spine_and_runner_dispatch_once() -> None:
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            authorized_spine_action=spine.authorized_dispatch,
             controller_recovery_decision=decision,
             controller=_controller_with_recovery_action(),
             process_search_queries=fake_search,

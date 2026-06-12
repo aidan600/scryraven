@@ -4,6 +4,13 @@ Date: 2026-06-03.
 
 Mode/scope: Architecture review / static audit / targeted fixture-guard phase. This phase was behavior-preserving and docs-only. It did not run live ScryRaven/proplex/scryraven product paths, provider calls, model calls, search calls, prompt changes, retrieval changes, citation changes, Author changes, Analyst changes, Scrutineer/remediation changes, synthesis-evaluator supplemental-search changes, Economist changes, DB/session/`RunOutcome` changes, cache changes, or a broad `core/pipeline_orchestrator.py` rewrite.
 
+> Status note, AG-95E: This document is a historical Controller-era closure for
+> source-class recovery dispatch. Current source-class dispatch uses
+> `authority_lifecycle.recovery_action` consumed by
+> `SourceClassRecoveryRunner`; ControllerLoopSpine source-class dispatch output
+> and ControllerRecoveryDecision are diagnostic/compatibility surfaces, not
+> runner authority.
+
 ## Executive verdict
 
 AG-79D closes the current Controller-authority transfer audit line at classification depth.

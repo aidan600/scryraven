@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-import core.source_class_recovery_executor as executor_module
+import core.source_class_recovery_runner as runner_module
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
@@ -24,6 +24,10 @@ from core.controller_loop_spine import (
     build_controller_loop_spine_result,
 )
 from core.run_controller import RunController
+from core.source_class_recovery_runner import (
+    SourceClassRecoveryRunnerContext,
+    run_source_class_recovery_dispatch,
+)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
@@ -193,11 +197,9 @@ def _spine(
     )
 
 
-def _product_handoff_execute(
+def _run_lifecycle_dispatch(
     controller: RunController,
     lifecycle: dict[str, Any],
-    *,
-    authorized_spine_action: str | None,
 ) -> tuple[dict[str, int | bool], list[str], list[dict[str, Any]]]:
     captured_queries: list[str] = []
     all_passages: list[dict[str, Any]] = []
@@ -228,39 +230,34 @@ def _product_handoff_execute(
             }
         ]
 
-    if authorized_spine_action != RECOVER_MISSING_SOURCE_CLASS:
-        executor_module.record_source_class_recovery_execution_blocked_if_needed(
-            lifecycle,
-            authorized_for_executor=False,
-            blocker_reason="source_class_recovery_executor_dispatch_not_authorized",
+    result = run_source_class_recovery_dispatch(
+        SourceClassRecoveryRunnerContext(
+            controller=controller,
+            controller_recovery_decision=None,
+            lifecycle_trace=lifecycle,
+            process_search_queries=fake_search,
+            all_passages=all_passages,
+            intent="general",
+            complexity="medium",
+            results_per_query=5,
+            include_domains=[],
+            exclude_domains=[],
+            query_embedding=[0.0],
+            seen_urls=set(),
+            collected_images=set(),
+            embed_provider="OpenAI",
+            embed_model="text-embedding-3-small",
+            local_url="http://localhost",
+            embed_texts=lambda *_args, **_kwargs: [],
+            compute_similarities=lambda *_args, **_kwargs: [],
+            status_container=object(),
+            search_providers=["offline-fixture"],
+            exa_domain_filter=None,
+            entity_hint="SSA",
+            provider_diagnostics=[],
+            retrieval_pass_records=[],
         )
-        return {"attempted": False, "result_count": 0, "new_url_count": 0}, [], []
-
-    result = executor_module.execute_source_class_recovery_action(
-        controller,
-        lifecycle_trace=lifecycle,
-        process_search_queries=fake_search,
-        all_passages=all_passages,
-        intent="general",
-        complexity="medium",
-        results_per_query=5,
-        include_domains=[],
-        exclude_domains=[],
-        query_embedding=[0.0],
-        seen_urls=set(),
-        collected_images=set(),
-        embed_provider="OpenAI",
-        embed_model="text-embedding-3-small",
-        local_url="http://localhost",
-        embed_texts=lambda *_args, **_kwargs: [],
-        compute_similarities=lambda *_args, **_kwargs: [],
-        status_container=object(),
-        search_providers=["offline-fixture"],
-        exa_domain_filter=None,
-        entity_hint="SSA",
-        provider_diagnostics=[],
-        retrieval_pass_records=[],
-    )
+    ).source_class_recovery_execution
     return result, captured_queries, all_passages
 
 
@@ -288,22 +285,24 @@ def test_ag69c_lifecycle_approved_recovery_reaches_existing_executor_entrypoint(
     lifecycle = handoff.active_source_class_recovery_lifecycle
     spine = _spine(lifecycle)
     calls: list[bool] = []
-    original = executor_module.execute_source_class_recovery_action
+    original = runner_module.execute_source_class_recovery_action
 
     def spy(*args: Any, **kwargs: Any) -> dict[str, int | bool]:
         calls.append(True)
         return original(*args, **kwargs)
 
-    monkeypatch.setattr(executor_module, "execute_source_class_recovery_action", spy)
-    execution, captured_queries, passages = _product_handoff_execute(
+    monkeypatch.setattr(runner_module, "execute_source_class_recovery_action", spy)
+    execution, captured_queries, passages = _run_lifecycle_dispatch(
         controller,
         lifecycle,
-        authorized_spine_action=spine.authorized_dispatch,
     )
 
     assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert calls == [True]
     assert execution["attempted"] is True
+    assert lifecycle["source_class_recovery_dispatch_authority"] == (
+        "authority_lifecycle.recovery_action"
+    )
     assert captured_queries == list(_RECOVERY_QUERIES)
     assert passages[0]["retrieval_stage"] == "source_class_recovery"
     assert lifecycle["authority_lifecycle"]["execution_state"]["state"] == "attempted"
@@ -323,12 +322,12 @@ def test_ag69c_legacy_execution_attempted_is_only_projected_after_entrypoint() -
     assert lifecycle["active_source_class_recovery_execution_attempted"] is False
 
     spine = _spine(lifecycle)
-    _product_handoff_execute(
+    _run_lifecycle_dispatch(
         controller,
         lifecycle,
-        authorized_spine_action=spine.authorized_dispatch,
     )
 
+    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert lifecycle["authority_lifecycle_execution_attempted"] is True
     assert lifecycle["active_source_class_recovery_execution_attempted"] is True
 
@@ -337,18 +336,34 @@ def test_ag69c_admitted_eligible_without_dispatch_records_structured_blocker() -
     controller = RunController()
     handoff = _handoff(controller)
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    execution, captured_queries, _passages = _product_handoff_execute(
+    blocked_lifecycle = {
+        **lifecycle,
+        "authority_lifecycle": {
+            **lifecycle["authority_lifecycle"],
+            "recovery_action": {
+                **lifecycle["authority_lifecycle"]["recovery_action"],
+                "approved": False,
+            },
+        },
+    }
+    execution, captured_queries, _passages = _run_lifecycle_dispatch(
         controller,
-        lifecycle,
-        authorized_spine_action=None,
+        blocked_lifecycle,
     )
 
     assert handoff.official_canonical_recovery_execution_admitted is True
     assert execution["attempted"] is False
     assert captured_queries == []
-    assert lifecycle["authority_lifecycle_execution_blocked"] is True
-    assert lifecycle["authority_lifecycle"]["execution_state"]["state"] == "blocked"
-    assert _execution_blocker(lifecycle)["requirement_id"] == "official_current_rules"
+    assert blocked_lifecycle["source_class_recovery_dispatch_reason"] == (
+        "canonical_recovery_action_not_approved"
+    )
+    assert blocked_lifecycle["authority_lifecycle_execution_blocked"] is True
+    assert blocked_lifecycle["authority_lifecycle"]["execution_state"]["state"] == (
+        "blocked"
+    )
+    assert _execution_blocker(blocked_lifecycle)["requirement_id"] == (
+        "official_current_rules"
+    )
 
 
 def test_ag69c_missing_executable_query_records_structured_execution_blocker() -> None:
@@ -403,12 +418,27 @@ def test_ag69c_hard_blocker_prevents_execution_only_when_requirement_bound() -> 
 
     wrong_spine = _spine(wrong.active_source_class_recovery_lifecycle)
     bound_spine = _spine(bound.active_source_class_recovery_lifecycle)
+    wrong_execution, wrong_queries, _wrong_passages = _run_lifecycle_dispatch(
+        wrong_controller,
+        wrong.active_source_class_recovery_lifecycle,
+    )
+    bound_execution, bound_queries, _bound_passages = _run_lifecycle_dispatch(
+        bound_controller,
+        bound.active_source_class_recovery_lifecycle,
+    )
 
     assert wrong_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert wrong_execution["attempted"] is True
+    assert wrong_queries == list(_RECOVERY_QUERIES)
     assert wrong.active_source_class_recovery_lifecycle[
         "authority_lifecycle_required_recovery_allowed"
     ] is True
     assert bound_spine.authorized_dispatch is None
+    assert bound_execution["attempted"] is False
+    assert bound_queries == []
+    assert bound.active_source_class_recovery_lifecycle[
+        "source_class_recovery_dispatch_reason"
+    ] == "canonical_recovery_execution_blocked"
     assert bound.active_source_class_recovery_lifecycle[
         "authority_lifecycle_execution_blocked"
     ] is True
@@ -454,6 +484,25 @@ def test_ag69c_terminal_stop_and_weak_corpus_do_not_become_execution_blockers() 
 
     assert terminal_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert weak_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    terminal_execution, terminal_queries, _terminal_passages = _run_lifecycle_dispatch(
+        terminal_controller,
+        terminal.active_source_class_recovery_lifecycle,
+    )
+    weak_execution, weak_queries, _weak_passages = _run_lifecycle_dispatch(
+        weak_controller,
+        weak.active_source_class_recovery_lifecycle,
+    )
+
+    assert terminal_execution["attempted"] is False
+    assert terminal_queries == []
+    assert terminal.active_source_class_recovery_lifecycle[
+        "source_class_recovery_dispatch_authorized"
+    ] is True
+    assert terminal.active_source_class_recovery_lifecycle[
+        "source_class_recovery_dispatch_reason"
+    ] == "canonical_authority_lifecycle_recovery_action"
+    assert weak_execution["attempted"] is True
+    assert weak_queries == list(_RECOVERY_QUERIES)
     assert terminal.active_source_class_recovery_lifecycle[
         "authority_lifecycle_execution_blocker"
     ] is None
@@ -466,12 +515,12 @@ def test_ag69c_execution_and_candidate_acquisition_states_remain_distinct() -> N
     controller = RunController()
     lifecycle = _handoff(controller).active_source_class_recovery_lifecycle
     spine = _spine(lifecycle)
-    execution, _captured_queries, _passages = _product_handoff_execute(
+    execution, _captured_queries, _passages = _run_lifecycle_dispatch(
         controller,
         lifecycle,
-        authorized_spine_action=spine.authorized_dispatch,
     )
 
+    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert execution["attempted"] is True
     assert lifecycle["authority_lifecycle_execution_attempted"] is True
     assert lifecycle["candidate_acquisition_considered"] is True

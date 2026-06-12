@@ -7,6 +7,15 @@ only. No live ScryRaven/proplex provider, model, search, retrieval, secret,
 `.env`, DB row, raw provider payload, raw prompt, private log, cache, full raw
 trace, local output packet, or private artifact access was used.
 
+> Status note, AG-95E: This inventory remains useful history and demolition
+> context, but AG-95C/AG-95D/AG-95E supersede its older source-class dispatch
+> path. Current source-class recovery dispatch is
+> `authority_lifecycle.recovery_action` -> `SourceClassRecoveryRunner` ->
+> `SourceClassRecoveryExecutor`; `authorized_spine_action`,
+> ControllerLoopSpine, and ControllerRecoveryDecision are
+> diagnostic/compatibility surfaces for source-class dispatch, not runner
+> authority.
+
 ## 1. Executive verdict
 
 Yes, the authority system is too sprawled.
