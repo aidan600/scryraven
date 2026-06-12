@@ -143,7 +143,7 @@ def test_ag95e_phase_record_exists_and_records_search_classification() -> None:
         ROOT
         / "docs"
         / "architecture"
-        / "AG95E_STALE_DISPATCH_DOCTRINE_FIXTURE_CLEANUP.md"
+        / "AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md"
     )
 
     assert "Search Classification" in text
