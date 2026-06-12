@@ -129,6 +129,14 @@ def _run(action_name: str, **overrides: Any) -> dict[str, Any]:
     return result.trace_packet
 
 
+def _assert_source_class_trace_demoted(packet: dict[str, Any]) -> None:
+    assert packet["source_class_spine_trace_role"] == SOURCE_CLASS_SPINE_TRACE_ROLE
+    assert packet["source_class_spine_dispatch_authority"] is False
+    assert packet["source_class_runner_dispatch_authority"] == (
+        SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY
+    )
+
+
 def test_checkpoint_action_name_extraction_prefers_decision() -> None:
     assert (
         checkpoint_action_name_from_trace(
@@ -273,19 +281,10 @@ def test_source_class_compatibility_trace_only_when_checkpoint_selects_it_and_li
         source=_source_lifecycle(eligible=False, reason="blocked_by_iteration_budget"),
     )
 
-    assert approved["source_class_spine_trace_role"] == (
-        SOURCE_CLASS_SPINE_TRACE_ROLE
-    )
-    assert approved["source_class_spine_dispatch_authority"] is False
-    assert approved["source_class_runner_dispatch_authority"] == (
-        SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY
-    )
+    _assert_source_class_trace_demoted(approved)
     assert approved["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert approved["executor_dispatched"] is True
-    assert blocked["source_class_spine_trace_role"] == (
-        SOURCE_CLASS_SPINE_TRACE_ROLE
-    )
-    assert blocked["source_class_spine_dispatch_authority"] is False
+    _assert_source_class_trace_demoted(blocked)
     assert blocked["executed_action_name"] is None
     assert blocked["gate_reason"] == "blocked_by_lifecycle"
     assert blocked["blocked_or_skipped_actions"][RECOVER_MISSING_SOURCE_CLASS] == (
@@ -309,13 +308,7 @@ def test_official_canonical_admission_remains_compatibility_trace_when_no_checkp
     assert packet["checkpoint_decision_count"] == 0
     assert packet["official_canonical_admitted"] is True
     assert packet["official_canonical_dispatch_fallback"] is True
-    assert packet["source_class_spine_trace_role"] == (
-        SOURCE_CLASS_SPINE_TRACE_ROLE
-    )
-    assert packet["source_class_spine_dispatch_authority"] is False
-    assert packet["source_class_runner_dispatch_authority"] == (
-        SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY
-    )
+    _assert_source_class_trace_demoted(packet)
     assert packet["source_class_executor_dispatched"] is True
     assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert result.dispatch_authorization.authorized_action_name == (

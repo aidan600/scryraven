@@ -10,10 +10,8 @@ access was used.
 > through `run_source_class_recovery_dispatch()` and canonical
 > `authority_lifecycle.recovery_action`; checkpoint/spine assertions are kept as
 > diagnostic compatibility coverage.
->
-> AG-95F follow-up: The ControllerLoopSpine source-class trace fields ranked
-> here now expose explicit diagnostic/compatibility demotion markers while
-> preserving old trace keys for compatibility.
+> AG-95F follow-up: ControllerLoopSpine source-class traces now carry explicit
+> diagnostic/compatibility demotion markers; old keys remain for compatibility.
 
 ## 1. Verdict
 

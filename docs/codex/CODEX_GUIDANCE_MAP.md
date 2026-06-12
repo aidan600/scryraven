@@ -34,12 +34,8 @@ are repo files; use repo-visible files and the current phase prompt.
   `authority_lifecycle.recovery_action` consumed by
   `SourceClassRecoveryRunner`; `authorized_spine_action`, ControllerLoopSpine
   source-class dispatch output, and ControllerRecoveryDecision are
-  diagnostic/compatibility surfaces for source-class dispatch. ControllerLoopSpine
-  source-class trace packets should carry
-  `source_class_spine_trace_role=diagnostic_compatibility`,
-  `source_class_spine_dispatch_authority=false`, and
-  `source_class_runner_dispatch_authority=authority_lifecycle.recovery_action`
-  while retaining old trace keys only for compatibility.
+  diagnostic/compatibility surfaces for source-class dispatch. AG-95F records
+  the explicit ControllerLoopSpine trace demotion markers.
 - **Orchestrator strangulation and phase-boundary vocabulary:** read
   `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
   RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,
