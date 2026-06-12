@@ -1298,9 +1298,17 @@ def _controller_decision_visibility_input(
         "source_obligation_status",
         "active_source_class_recovery_official_canonical_admitted",
         "active_source_class_recovery_eligible",
+        "active_source_class_recovery_used",
+        "active_source_class_recovery_queries",
+        "active_source_class_recovery_action_envelope",
         "source_class_recovery_eligible",
         "admission_used",
         "admission_blockers",
+        "authority_lifecycle",
+        "authority_lifecycle_required_recovery_allowed",
+        "authority_lifecycle_weak_corpus_may_own_path",
+        "authority_lifecycle_execution_attempted",
+        "authority_lifecycle_execution_blocked",
         "recovery_slot_available",
         "prior_recovery_attempt_count",
         "active_source_class_recovery_attempt_count",
@@ -1318,6 +1326,10 @@ def _controller_decision_visibility_input(
         "recovered_candidate_rejection_reasons",
         "recovered_candidate_source_fit_status",
         "candidate_return_status",
+        "candidate_acquisition_considered",
+        "candidate_acquisition_eligible",
+        "candidate_acquisition_used",
+        "acquisition_attempted",
         "final_selected_authority_evidence_count",
         "final_evidence_official_or_canonical_count",
         "final_citation_official_or_canonical_count",
@@ -1327,7 +1339,10 @@ def _controller_decision_visibility_input(
         "ledger_legacy_gap_types",
         CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
     ):
-        value = _first_present(export.get(key), trace.get(key))
+        if key == "prior_recovery_attempt_count":
+            value = trace.get(key)
+        else:
+            value = _first_present(export.get(key), trace.get(key))
         if value is not None:
             payload[key] = value
     return payload

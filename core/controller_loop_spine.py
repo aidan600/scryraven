@@ -35,6 +35,16 @@ _TERMINAL_STOP_ACTIONS = {
     STOP_SUFFICIENT,
 }
 
+_OFFICIAL_CURRENT_RECOVERY_SOURCE_CLASSES = frozenset(
+    {
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "current_primary_or_official",
+        "primary_source_documents",
+        "archival_primary_text",
+    }
+)
+
 
 @dataclass(frozen=True)
 class ControllerLoopActionCandidate:
@@ -581,6 +591,18 @@ def _build_source_class_checkpoint_gate_trace(
         )
         and (checkpoint_action_name is None or checkpoint_action_overridden)
     )
+    checkpointless_authority_lifecycle_dispatch = (
+        _authority_lifecycle_approved_checkpointless_source_class_dispatch(
+            checkpoint_trace=checkpoint_trace,
+            lifecycle_trace=lifecycle_trace,
+            lifecycle_eligible=lifecycle_eligible,
+            required_recovery_allowed=required_recovery_allowed,
+            envelope_approved=envelope_approved,
+            non_lifecycle_blocked=non_lifecycle_blocked,
+            authority_execution_blocked=authority_execution_blocked,
+            checkpoint_action_name=checkpoint_action_name,
+        )
+    )
     terminal_stop_blocks_source_class = (
         terminal_stop_approved and not required_recovery_allowed
     )
@@ -594,10 +616,13 @@ def _build_source_class_checkpoint_gate_trace(
                 and checkpoint_action_name == RECOVER_MISSING_SOURCE_CLASS
             )
             or official_canonical_fallback_dispatch
+            or checkpointless_authority_lifecycle_dispatch
         )
     )
     if executor_dispatched and checkpoint_action_name == RECOVER_MISSING_SOURCE_CLASS:
         gate_reason = "approved"
+    elif executor_dispatched and checkpointless_authority_lifecycle_dispatch:
+        gate_reason = "approved_by_authority_lifecycle_required_recovery"
     elif executor_dispatched:
         gate_reason = "approved_by_official_canonical_admission"
     elif terminal_stop_blocks_source_class:
@@ -620,6 +645,23 @@ def _build_source_class_checkpoint_gate_trace(
         "lifecycle_eligible": lifecycle_eligible,
         "official_canonical_admitted": official_canonical_admitted,
         "official_canonical_dispatch_fallback": official_canonical_fallback_dispatch,
+        "authority_lifecycle_checkpointless_dispatch": (
+            checkpointless_authority_lifecycle_dispatch
+        ),
+        "spine_authorization_source": (
+            "authority_lifecycle_required_recovery"
+            if executor_dispatched and checkpointless_authority_lifecycle_dispatch
+            else (
+                "official_canonical_admission"
+                if executor_dispatched and official_canonical_fallback_dispatch
+                else (
+                    "checkpoint_action"
+                    if executor_dispatched
+                    and checkpoint_action_name == RECOVER_MISSING_SOURCE_CLASS
+                    else None
+                )
+            )
+        ),
         "controller_action_envelope_approved": envelope_approved,
         "authority_lifecycle_required_recovery_allowed": (
             required_recovery_allowed
@@ -688,6 +730,122 @@ def _authority_lifecycle_recovery_action_approved(
     )
 
 
+def _authority_lifecycle_approved_checkpointless_source_class_dispatch(
+    *,
+    checkpoint_trace: Mapping[str, Any],
+    lifecycle_trace: Mapping[str, Any],
+    lifecycle_eligible: bool,
+    required_recovery_allowed: bool,
+    envelope_approved: bool,
+    non_lifecycle_blocked: bool,
+    authority_execution_blocked: bool,
+    checkpoint_action_name: str | None,
+) -> bool:
+    if checkpoint_trace.get("available") is True:
+        return False
+    if checkpoint_action_name is not None and not _authority_lifecycle_overrides_checkpoint_action(
+        checkpoint_action_name,
+        lifecycle_trace,
+    ):
+        return False
+    if not _authority_lifecycle_controls_recovery(lifecycle_trace):
+        return False
+    if not lifecycle_eligible:
+        return False
+    if not required_recovery_allowed:
+        return False
+    if not envelope_approved:
+        return False
+    if not _source_class_action_envelope_approved(lifecycle_trace):
+        return False
+    if non_lifecycle_blocked or authority_execution_blocked:
+        return False
+    if not _source_class_recovery_queries_available(lifecycle_trace):
+        return False
+    if not _source_obligation_unmet(lifecycle_trace):
+        return False
+    if not _supported_official_current_missing_class_present(lifecycle_trace):
+        return False
+    if not _source_class_recovery_slot_available(lifecycle_trace):
+        return False
+    if _source_class_recovery_already_attempted(lifecycle_trace):
+        return False
+    return True
+
+
+def _source_class_recovery_queries_available(
+    lifecycle_trace: Mapping[str, Any],
+) -> bool:
+    return bool(_string_list(lifecycle_trace.get("active_source_class_recovery_queries")))
+
+
+def _supported_official_current_missing_class_present(
+    lifecycle_trace: Mapping[str, Any],
+) -> bool:
+    classes: list[str] = []
+    for key in (
+        "active_source_class_recovery_missing_classes",
+        "unsatisfied_required_source_classes",
+        "required_source_classes",
+    ):
+        classes.extend(_string_list(lifecycle_trace.get(key)))
+    envelope = lifecycle_trace.get("active_source_class_recovery_action_envelope")
+    if isinstance(envelope, Mapping):
+        classes.extend(_string_list(envelope.get("required_source_class")))
+    return any(item in _OFFICIAL_CURRENT_RECOVERY_SOURCE_CLASSES for item in classes)
+
+
+def _source_obligation_unmet(lifecycle_trace: Mapping[str, Any]) -> bool:
+    status = str(lifecycle_trace.get("source_obligation_status") or "").strip()
+    if status.endswith("_unmet"):
+        return True
+    return bool(_string_list(lifecycle_trace.get("unsatisfied_required_source_classes")))
+
+
+def _source_class_recovery_slot_available(
+    lifecycle_trace: Mapping[str, Any],
+) -> bool:
+    slot = lifecycle_trace.get("recovery_slot_available")
+    if slot is not None:
+        return slot is True
+    prior = _int_or_none(
+        lifecycle_trace.get("prior_recovery_attempt_count"),
+        lifecycle_trace.get("active_source_class_recovery_attempt_count"),
+    )
+    maximum = _int_or_none(lifecycle_trace.get("max_recovery_attempts"))
+    if prior is not None and maximum is not None:
+        return prior < maximum
+    return True
+
+
+def _source_class_recovery_already_attempted(
+    lifecycle_trace: Mapping[str, Any],
+) -> bool:
+    if lifecycle_trace.get("active_source_class_recovery_used") is True:
+        return True
+    if lifecycle_trace.get("active_source_class_recovery_execution_attempted") is True:
+        return True
+    if lifecycle_trace.get("authority_lifecycle_execution_attempted") is True:
+        return True
+    if lifecycle_trace.get("acquisition_attempted") is True:
+        return True
+    if lifecycle_trace.get("candidate_acquisition_used") is True:
+        return True
+    if lifecycle_trace.get("candidate_return_status") not in {
+        None,
+        "",
+        "not_attempted",
+        "unknown",
+        "not_observable",
+    }:
+        return True
+    prior = _int_or_none(lifecycle_trace.get("prior_recovery_attempt_count"))
+    maximum = _int_or_none(lifecycle_trace.get("max_recovery_attempts"))
+    if prior is not None and maximum is not None and prior >= maximum:
+        return True
+    return False
+
+
 def _non_lifecycle_source_class_blocker_present(
     lifecycle_trace: Mapping[str, Any],
 ) -> bool:
@@ -738,6 +896,34 @@ def _official_canonical_unavailable_checkpoint_allows_fallback(
             )
         )
     )
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        values = list(value)
+    else:
+        values = []
+    out: list[str] = []
+    for item in values:
+        text = str(item or "").strip()
+        if text:
+            out.append(text)
+    return out
+
+
+def _int_or_none(*values: Any) -> int | None:
+    for value in values:
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int):
+            return max(0, value)
+        if isinstance(value, float):
+            return max(0, int(value))
+        if isinstance(value, str) and value.strip().isdigit():
+            return max(0, int(value.strip()))
+    return None
 
 
 def _build_weak_corpus_checkpoint_gate_trace(
