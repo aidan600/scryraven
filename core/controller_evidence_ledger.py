@@ -785,7 +785,10 @@ def _append_legacy_gap_events(
         for event in selected_events
         if not _selected_authority_event_cited(event, citation_events)
     ]
-    if final_citation_count > 0 and missing_selected_citations:
+    if (
+        missing_selected_citations
+        and (final_evidence_positive or _selected_authority_citation_eligible(export))
+    ):
         gap_events.append(
             _add_event(
                 events,
@@ -1163,6 +1166,10 @@ def _selected_authority_event_cited(
         if selected_identities & citation_identities:
             return True
     return False
+
+
+def _selected_authority_citation_eligible(export: Mapping[str, Any]) -> bool:
+    return _clean_token(export.get("citation_eligibility_state")) == "eligible"
 
 
 def _event_identities(

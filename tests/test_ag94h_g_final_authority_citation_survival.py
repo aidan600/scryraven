@@ -206,6 +206,17 @@ def test_ag94h_g_controller_ledger_requires_selected_authority_citation_identity
         final_top_evidence=[_official_source()],
         final_citations=[{"citation_id": "2", "source_id": "2", "url": _WEAK_URL}],
     )
+    uncited = build_controller_evidence_ledger(
+        runtime_trace={"active_source_class_recovery_missing_classes": [_REQUIREMENT]},
+        passport_projection=passport,
+        visibility_export={
+            "final_selected_authority_evidence_count": 1,
+            "final_evidence_official_or_canonical_count": 1,
+            "final_citation_official_or_canonical_count": 0,
+        },
+        final_top_evidence=[_official_source()],
+        final_citations=[],
+    )
     authority_cited = build_controller_evidence_ledger(
         runtime_trace={"active_source_class_recovery_missing_classes": [_REQUIREMENT]},
         passport_projection=passport,
@@ -222,13 +233,28 @@ def test_ag94h_g_controller_ledger_requires_selected_authority_citation_identity
         for event in weakly_cited["events"]
         if event["event_type"] == LEGACY_CUSTODY_GAP_OBSERVED
     }
+    uncited_gap_types = {
+        event["gap_type"]
+        for event in uncited["events"]
+        if event["event_type"] == LEGACY_CUSTODY_GAP_OBSERVED
+    }
 
     assert (
         "final_evidence_or_citation_selected_authority_evidence_not_cited"
         in gap_types
     )
+    assert (
+        "final_evidence_or_citation_selected_authority_evidence_not_cited"
+        in uncited_gap_types
+    )
     assert weakly_cited["final_evidence_citation_custody"]["status"] == (
         "legacy_gap_observed"
+    )
+    assert uncited["final_evidence_citation_custody"]["status"] == (
+        "legacy_gap_observed"
+    )
+    assert uncited["final_evidence_citation_custody"]["status"] != (
+        "controller_complete"
     )
     assert authority_cited["final_evidence_citation_custody"]["status"] == (
         "controller_complete"
