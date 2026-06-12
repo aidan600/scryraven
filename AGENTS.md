@@ -41,6 +41,39 @@ closed-surface changes, live validation, secrets/private data, destructive git,
 merge/rebase/force-push, broad scope expansion, or unresolved failing tests that
 imply a design decision.
 
+## Local Codex publication model
+
+The normal sandbox may keep `.git/` and GitHub authentication protected. Do
+implementation, tests, formatting, and self-review inside the normal sandbox.
+
+When a phase explicitly authorizes publication, request at most one final
+escalation for `git add`, `git commit`, `git push`, and `gh pr create`. If Git or
+GitHub authentication is blocked, stop and report the exact blocker plus the
+commands the user can run to clear it.
+
+## Long-phase and goal-mode workflow
+
+For multi-step phases, prefer `/goal` or maintain an explicit checklist. Continue
+until the phase goal is complete, tests hit a real blocker, or a stop condition
+is reached.
+
+Do not ask for permission for ordinary scoped repo inspection, in-scope edits,
+targeted tests, formatting fixes, or self-review. Ask for product choices,
+unlicensed surfaces, live calls, secrets/private data, destructive Git,
+merge/rebase/force-push, or final Git publication if escalation is required.
+
+## Clean as you cook
+
+Every implementation phase should attempt one adjacent cleanup near the touched
+surface. Acceptable cleanup includes deleting, demoting, or consolidating stale
+helpers, obsolete imports, misleading comments, duplicate fixtures, or superseded
+docs.
+
+Unacceptable cleanup includes adding a new abstraction, projection, lifecycle, or
+guard; broad unrelated refactors; or behavior changes outside scope. Final
+bundles should report whether cleanup was attempted, what changed, the net line
+impact when practical, and the blocker if no safe cleanup was available.
+
 ## AG-89+ authority-collapse rule
 
 For AG-89+ work, authority-collapse success requires the intended runtime
