@@ -10,6 +10,8 @@ from core.controller_loop_spine import (
     RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
     RESOLVE_CONFLICT,
+    SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY,
+    SOURCE_CLASS_SPINE_TRACE_ROLE,
     STOP_INSUFFICIENT_WITH_CAVEAT,
     STOP_SUFFICIENT,
     ControllerLoopActionCandidate,
@@ -125,6 +127,14 @@ def _run(action_name: str, **overrides: Any) -> dict[str, Any]:
         ),
     )
     return result.trace_packet
+
+
+def _assert_source_class_trace_demoted(packet: dict[str, Any]) -> None:
+    assert packet["source_class_spine_trace_role"] == SOURCE_CLASS_SPINE_TRACE_ROLE
+    assert packet["source_class_spine_dispatch_authority"] is False
+    assert packet["source_class_runner_dispatch_authority"] == (
+        SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY
+    )
 
 
 def test_checkpoint_action_name_extraction_prefers_decision() -> None:
@@ -264,15 +274,17 @@ def test_terminal_stop_blocks_bounded_executors(
     assert packet["targeted_retrieval_dispatch_authorized"] is False
 
 
-def test_source_class_dispatch_only_when_checkpoint_selects_it_and_lifecycle_is_eligible() -> None:
+def test_source_class_compatibility_trace_only_when_checkpoint_selects_it_and_lifecycle_is_eligible() -> None:
     approved = _run(RECOVER_MISSING_SOURCE_CLASS)
     blocked = _run(
         RECOVER_MISSING_SOURCE_CLASS,
         source=_source_lifecycle(eligible=False, reason="blocked_by_iteration_budget"),
     )
 
+    _assert_source_class_trace_demoted(approved)
     assert approved["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert approved["executor_dispatched"] is True
+    _assert_source_class_trace_demoted(blocked)
     assert blocked["executed_action_name"] is None
     assert blocked["gate_reason"] == "blocked_by_lifecycle"
     assert blocked["blocked_or_skipped_actions"][RECOVER_MISSING_SOURCE_CLASS] == (
@@ -280,7 +292,7 @@ def test_source_class_dispatch_only_when_checkpoint_selects_it_and_lifecycle_is_
     )
 
 
-def test_official_canonical_admission_dispatches_when_no_checkpoint_action_competes() -> None:
+def test_official_canonical_admission_remains_compatibility_trace_when_no_checkpoint_action_competes() -> None:
     result = build_controller_loop_spine_result(
         checkpoint_trace={
             "available": True,
@@ -296,6 +308,7 @@ def test_official_canonical_admission_dispatches_when_no_checkpoint_action_compe
     assert packet["checkpoint_decision_count"] == 0
     assert packet["official_canonical_admitted"] is True
     assert packet["official_canonical_dispatch_fallback"] is True
+    _assert_source_class_trace_demoted(packet)
     assert packet["source_class_executor_dispatched"] is True
     assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert result.dispatch_authorization.authorized_action_name == (

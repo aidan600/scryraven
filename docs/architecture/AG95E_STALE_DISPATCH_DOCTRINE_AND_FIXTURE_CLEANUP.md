@@ -5,6 +5,10 @@ No live ScryRaven/proplex provider, model, search, retrieval, secret, `.env`, DB
 row, raw provider payload, raw prompt, private log, cache, full raw trace, local
 output packet, or private artifact access was used.
 
+> AG-95F follow-up: ControllerLoopSpine source-class traces now carry
+> diagnostic/compatibility demotion markers. Old source-class spine keys remain
+> compatibility diagnostics, not runner dispatch authority.
+
 ## Current Doctrine
 
 The current authority chain remains:
