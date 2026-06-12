@@ -197,6 +197,8 @@ def record_source_class_recovery_lifecycle(
     search_depth_reusable: bool = True,
     search_depth_escalation_required: bool = False,
     retrieve_to_anchor_recommended: bool = False,
+    terminal_stop_approved: bool = False,
+    conflict_resolution_owns_path: bool = False,
     pre_analyst_phase: bool = True,
     author_phase: bool = False,
 ) -> dict[str, Any]:
@@ -224,6 +226,8 @@ def record_source_class_recovery_lifecycle(
         search_depth_reusable=search_depth_reusable,
         search_depth_escalation_required=search_depth_escalation_required,
         retrieve_to_anchor_recommended=retrieve_to_anchor_recommended,
+        terminal_stop_approved=terminal_stop_approved,
+        conflict_resolution_owns_path=conflict_resolution_owns_path,
         pre_analyst_phase=pre_analyst_phase,
         author_phase=author_phase,
     )

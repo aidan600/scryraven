@@ -56,6 +56,9 @@ from core.run_authority_search_judgment_consumers import (
     apply_search_judgment_to_source_class_recovery_recommendation,
 )
 from core.run_controller import RunController
+from core.source_class_authority_status_normalization import (
+    status_only_strong_authority_missing_classes,
+)
 from core.source_class_recovery import (
     apply_answer_contract_source_class_recovery_gap_trigger,
 )
@@ -373,7 +376,10 @@ def build_authoritative_source_obligation_state_and_action(
     )
     lifecycle = record_source_class_recovery_lifecycle(
         controller,
-        recommendation=recommendation,
+        recommendation=_recommendation_with_authority_status_observability(
+            recommendation,
+            observability,
+        ),
         recommendation_evaluated=True,
         source_class_evidence_signals=_safe_mapping(
             facts.source_class_evidence_signals
@@ -394,6 +400,8 @@ def build_authoritative_source_obligation_state_and_action(
         search_depth_reusable=facts.search_depth_reusable,
         search_depth_escalation_required=facts.search_depth_escalation_required,
         retrieve_to_anchor_recommended=False,
+        terminal_stop_approved=facts.terminal_stop_approved,
+        conflict_resolution_owns_path=facts.conflict_resolution_owns_path,
         pre_analyst_phase=facts.pre_analyst_phase,
         author_phase=facts.author_phase,
     )
@@ -704,6 +712,24 @@ def _source_class_lifecycle_corpus_facts(
     ):
         return CorpusState.HEALTHY.value, False, None
     return facts.corpus_state, bool(facts.corpus_weak), facts.weak_corpus_recovery_skip_reason
+
+
+def _recommendation_with_authority_status_observability(
+    recommendation: Mapping[str, Any],
+    observability: Mapping[str, Any],
+) -> dict[str, Any]:
+    out = dict(recommendation)
+    for key in (
+        "source_class_satisfaction_status",
+        "source_class_strong_satisfaction_counts",
+    ):
+        if not isinstance(observability.get(key), Mapping):
+            continue
+        existing = out.get(key)
+        if isinstance(existing, Mapping) and existing:
+            continue
+        out[key] = dict(observability[key])
+    return out
 
 
 def _runtime_trace(
@@ -1044,6 +1070,12 @@ def _required_source_classes(
                 token = _clean_token(item)
                 if token and token in _ALLOWED_SOURCE_CLASSES and token not in classes:
                     classes.append(token)
+    for item in status_only_strong_authority_missing_classes(
+        recommendation,
+        observability,
+    ):
+        if item in _ALLOWED_SOURCE_CLASSES and item not in classes:
+            classes.append(item)
     return tuple(classes)
 
 
