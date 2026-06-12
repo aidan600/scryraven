@@ -24,6 +24,9 @@ from core.authoritative_source_obligations import (
     AuthorityEvidenceFit,
     AuthorityRequirement,
 )
+from core.authority_custody_satisfaction import (
+    authority_custody_satisfaction_for_source_class,
+)
 from core.authority_lifecycle_contract import (
     AuthorityEvidenceFitState,
     AuthoritySatisfactionState,
@@ -307,12 +310,14 @@ def build_authoritative_source_obligation_state_and_action(
         facts=facts,
         preexisting_source_gap_signal=preexisting_source_gap_signal,
     )
+    custody_sources = (facts.obligation_facts, bridge_trace)
 
     authority_arbitration = _authority_runtime_arbitration(
         facts=facts,
         recommendation=recommendation,
         observability=observability,
         legal_projection=None,
+        custody_sources=custody_sources,
     )
     acquisition_trace: dict[str, Any] | None = None
     acquisition_runtime_trace = {
@@ -337,12 +342,14 @@ def build_authoritative_source_obligation_state_and_action(
         facts=facts,
         observability=observability,
         authority_arbitration=authority_arbitration,
+        custody_sources=custody_sources,
     )
     authority_arbitration = _authority_runtime_arbitration(
         facts=facts,
         recommendation=recommendation,
         observability=observability,
         legal_projection=None,
+        custody_sources=custody_sources,
     )
 
     admission_trace: dict[str, Any] | None = None
@@ -412,6 +419,7 @@ def build_authoritative_source_obligation_state_and_action(
         recommendation=recommendation,
         observability=observability,
         legal_projection=None,
+        custody_sources=custody_sources,
     )
     legal_projection = _build_legal_current_projection(facts)
     if legal_projection is not None:
@@ -419,6 +427,7 @@ def build_authoritative_source_obligation_state_and_action(
             recommendation=recommendation,
             observability=observability,
             legal_projection=legal_projection,
+            custody_sources=custody_sources,
         )
     trace_safe_projection = (
         project_authoritative_source_state_to_answer_contract_fields(
@@ -645,6 +654,7 @@ def _promote_official_canonical_acquisition_path_visibility(
     facts: AuthoritativeSourceActionFacts,
     observability: Mapping[str, Any],
     authority_arbitration: AuthorityRuntimeArbitration | None,
+    custody_sources: Sequence[Mapping[str, Any] | None] = (),
 ) -> dict[str, Any]:
     """Promote already-visible official/canonical recovery queries to control."""
 
@@ -662,6 +672,7 @@ def _promote_official_canonical_acquisition_path_visibility(
             recommendation=out,
             observability=observability,
             legal_projection=None,
+            custody_sources=custody_sources,
         ),
     ):
         return out
@@ -940,6 +951,7 @@ def _build_authoritative_obligation_state(
     recommendation: Mapping[str, Any],
     observability: Mapping[str, Any],
     legal_projection: Mapping[str, Any] | None,
+    custody_sources: Sequence[Mapping[str, Any] | None] = (),
 ) -> AuthoritativeSourceObligationState:
     source_classes = _required_source_classes(recommendation, observability)
     requirements = tuple(
@@ -947,7 +959,14 @@ def _build_authoritative_obligation_state(
         for source_class in source_classes
         if (requirement := _requirement_for_source_class(source_class)) is not None
     )
-    fits = list(_evidence_fits_for_source_classes(source_classes, observability))
+    fits = list(
+        _evidence_fits_for_source_classes(
+            source_classes,
+            observability,
+            recommendation=recommendation,
+            custody_sources=custody_sources,
+        )
+    )
     if legal_projection is not None:
         fits.extend(_legal_projection_fits(legal_projection))
     return AuthoritativeSourceObligationState.evaluate(requirements, fits)
@@ -959,11 +978,13 @@ def _authority_runtime_arbitration(
     recommendation: Mapping[str, Any],
     observability: Mapping[str, Any],
     legal_projection: Mapping[str, Any] | None,
+    custody_sources: Sequence[Mapping[str, Any] | None] = (),
 ) -> AuthorityRuntimeArbitration:
     obligation_state = _build_authoritative_obligation_state(
         recommendation=recommendation,
         observability=observability,
         legal_projection=legal_projection,
+        custody_sources=custody_sources,
     )
     missing = obligation_state.missing_authority_requirements()
     requirement = missing[0] if missing else None
@@ -1092,9 +1113,11 @@ def _requirement_for_source_class(source_class: str) -> AuthorityRequirement | N
 def _evidence_fits_for_source_classes(
     source_classes: Iterable[str],
     observability: Mapping[str, Any],
+    *,
+    recommendation: Mapping[str, Any] | None = None,
+    custody_sources: Sequence[Mapping[str, Any] | None] = (),
 ) -> tuple[AuthorityEvidenceFit, ...]:
     status_by_class = observability.get("source_class_satisfaction_status")
-    strong_counts = observability.get("source_class_strong_satisfaction_counts")
     fits: list[AuthorityEvidenceFit] = []
     for source_class in source_classes:
         requirement = _requirement_for_source_class(source_class)
@@ -1106,11 +1129,18 @@ def _evidence_fits_for_source_classes(
             if isinstance(status_by_class, Mapping)
             else None
         )
-        if _positive_count(strong_counts, source_class) or status == "satisfied_strong":
+        custody = authority_custody_satisfaction_for_source_class(
+            source_class,
+            observability,
+            recommendation,
+            *custody_sources,
+            authority_class=authority_class,
+        )
+        if custody.authority_satisfied:
             fits.append(
                 AuthorityEvidenceFit.authoritative(
                     requirement.requirement_id,
-                    f"{source_class}:satisfied_strong",
+                    custody.evidence_id or f"{source_class}:{custody.reason}",
                     authority_class,
                 )
             )
@@ -1320,15 +1350,6 @@ def _action_trace(
             ],
         }
     )
-
-
-def _positive_count(value: Any, key: str) -> bool:
-    if not isinstance(value, Mapping):
-        return False
-    try:
-        return int(value.get(key, 0) or 0) > 0
-    except (TypeError, ValueError):
-        return False
 
 
 def _string_tuple(value: Any) -> tuple[str, ...]:

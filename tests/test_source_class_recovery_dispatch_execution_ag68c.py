@@ -296,15 +296,15 @@ def test_ag68c_weak_corpus_ownership_defers_to_required_recovery() -> None:
     assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
 
-def test_ag68c_ordinary_authoritative_acquisition_stays_ordinary_only() -> None:
+def test_ag68c_aggregate_authoritative_status_does_not_block_recovery() -> None:
     _controller, result = _build_action(_facts(status="satisfied_strong"))
     lifecycle = result.active_source_class_recovery_lifecycle
     spine = _spine(lifecycle)
 
-    assert result.official_canonical_recovery_execution_admitted is False
-    assert result.action_decision.approved is False
-    assert lifecycle["active_source_class_recovery_eligible"] is False
-    assert spine.authorized_dispatch is None
+    assert result.official_canonical_recovery_execution_admitted is True
+    assert result.action_decision.approved is True
+    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
 
 def test_ag68c_query_strings_and_public_helper_shape_are_preserved() -> None:

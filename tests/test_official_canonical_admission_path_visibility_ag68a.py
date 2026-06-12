@@ -293,7 +293,7 @@ def test_forced_canonical_doc_visible_queries_reach_admission_lifecycle_and_disp
     assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
 
-def test_aggregate_only_ordinary_authoritative_success_remains_insufficient_custody() -> None:
+def test_aggregate_only_ordinary_authoritative_status_allows_recovery() -> None:
     _controller, result = _run_action(_facts(status="satisfied_strong"))
     spine = _spine(result.active_source_class_recovery_lifecycle)
     forced = run_forced_corridor_validation(
@@ -303,10 +303,9 @@ def test_aggregate_only_ordinary_authoritative_success_remains_insufficient_cust
         )
     ).classification
 
-    assert result.official_canonical_recovery_execution_admitted is False
-    assert result.action_decision.approved is False
-    assert spine.authorized_dispatch is None
-    assert forced["next_failure_layer"] == "recovery_query_not_created"
+    assert result.official_canonical_recovery_execution_admitted is True
+    assert result.action_decision.approved is True
+    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert forced["ordinary_acquisition_counted_as_recovery_success"] is False
     assert forced["missing_authoritative_source_state_forced"] is True
 
