@@ -394,7 +394,7 @@ def test_ag68e_weak_corpus_ownership_defers_to_authority_lifecycle() -> None:
     assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
 
-def test_ag68e_ordinary_authoritative_acquisition_remains_ordinary_only() -> None:
+def test_ag68e_aggregate_ordinary_status_no_longer_blocks_recovery_dispatch() -> None:
     controller = RunController()
     handoff = _handoff(
         controller,
@@ -417,9 +417,10 @@ def test_ag68e_ordinary_authoritative_acquisition_remains_ordinary_only() -> Non
         checkpoint_trace=_checkpoint("checkpoint_exception", fallback_allowed=True),
     )
 
-    assert handoff.official_canonical_recovery_execution_admitted is False
-    assert lifecycle["active_source_class_recovery_eligible"] is False
-    assert spine.authorized_dispatch is None
+    assert handoff.official_canonical_recovery_execution_admitted is True
+    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert spine.source_class_executor_dispatched is True
 
 
 def test_ag68e_public_forced_corridor_helper_shapes_are_preserved() -> None:

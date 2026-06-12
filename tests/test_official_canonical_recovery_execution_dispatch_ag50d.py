@@ -232,7 +232,7 @@ def test_preferred_and_unknown_obligations_do_not_force_execution() -> None:
     assert unknown.source_class_recovery_execution_admitted is False
 
 
-def test_already_satisfied_source_class_does_not_force_execution() -> None:
+def test_aggregate_satisfied_source_class_still_allows_execution() -> None:
     recommendation = _recommendation(missing=["primary_source_documents"])
 
     admitted = _admit(
@@ -245,7 +245,7 @@ def test_already_satisfied_source_class_does_not_force_execution() -> None:
         },
     )
 
-    assert admitted is False
+    assert admitted is True
 
 
 def test_terminal_weak_corpus_and_conflict_blockers_are_preserved() -> None:

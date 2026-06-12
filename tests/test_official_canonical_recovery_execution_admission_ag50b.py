@@ -12,6 +12,10 @@ from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
     build_official_canonical_recovery_execution_admission,
 )
+from core.official_current_source_custody import (
+    OfficialCurrentCustodyStatus,
+    OfficialCurrentSourceCustodyState,
+)
 from core.run_controller import RunController
 from core.runtime_trace_projection_assembly import (
     attach_passive_runtime_projection_traces,
@@ -108,6 +112,20 @@ def _controller_input(
     )
 
 
+def _accepted_custody(source_class: str) -> dict[str, Any]:
+    return (
+        OfficialCurrentSourceCustodyState()
+        .require(source_class)
+        .record_candidate_disposition(
+            f"official_current_source:{source_class}",
+            status=OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED,
+            candidate_id=f"https://docs.example/{source_class}",
+            reason="accepted_authority_custody",
+        )
+        .to_dict()
+    )
+
+
 def test_ag50b_canonical_positive_admits_recovery_with_ag50a_query() -> None:
     admitted, trace = _admission(
         {
@@ -180,7 +198,7 @@ def test_ag50b_unknown_obligation_does_not_admit_recovery() -> None:
     assert trace["admission_skip_reason"] == "obligation_unknown"
 
 
-def test_ag50b_satisfied_source_class_blocks_admission() -> None:
+def test_ag50b_aggregate_satisfied_source_class_does_not_block_admission() -> None:
     admitted, trace = _admission(
         {
             "query_preview": "Explain how database MVCC works.",
@@ -197,8 +215,30 @@ def test_ag50b_satisfied_source_class_blocks_admission() -> None:
         ),
     )
 
+    assert admitted is True
+    assert trace["admission_skip_reason"] is None
+    assert trace["unsatisfied_required_source_classes"] == [
+        "primary_source_documents"
+    ]
+
+
+def test_ag50b_custody_backed_source_class_still_blocks_admission() -> None:
+    admitted, trace = _admission(
+        {
+            "query_preview": "Explain how database MVCC works.",
+            "official_current_source_custody": _accepted_custody(
+                "primary_source_documents"
+            ),
+        },
+        _recommendation(
+            missing=["primary_source_documents"],
+            queries=["canonical documentation database MVCC"],
+        ),
+    )
+
     assert admitted is False
     assert trace["admission_skip_reason"] == "existing_source_class_satisfied"
+    assert trace["unsatisfied_required_source_classes"] == []
 
 
 def test_ag50b_prior_recovery_used_blocks_repeated_admission_unless_cap_allows() -> None:

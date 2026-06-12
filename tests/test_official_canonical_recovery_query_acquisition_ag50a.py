@@ -14,6 +14,10 @@ from core.official_canonical_recovery_query_acquisition import (
     OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_TRACE_KEY,
     apply_official_canonical_recovery_query_acquisition,
 )
+from core.official_current_source_custody import (
+    OfficialCurrentCustodyStatus,
+    OfficialCurrentSourceCustodyState,
+)
 from core.runtime_trace_projection_assembly import (
     attach_passive_runtime_projection_traces,
 )
@@ -45,6 +49,20 @@ def _acquisition(
     )
     assert packet["trace_mode"] == "recovery_query_acquisition_repair"
     return result.recommendation, packet["OfficialCanonicalRecoveryQueryAcquisition"]
+
+
+def _accepted_custody(source_class: str) -> dict[str, Any]:
+    return (
+        OfficialCurrentSourceCustodyState()
+        .require(source_class)
+        .record_candidate_disposition(
+            f"official_current_source:{source_class}",
+            status=OfficialCurrentCustodyStatus.CANDIDATE_ACCEPTED,
+            candidate_id=f"https://docs.example/{source_class}",
+            reason="accepted_authority_custody",
+        )
+        .to_dict()
+    )
 
 
 def test_ag50a_canonical_technical_obligation_adds_generic_documentation_query() -> None:
@@ -240,7 +258,7 @@ def test_ag50a_unknown_obligation_is_noop() -> None:
     assert recommendation == {"source_class_recovery_recommended": False}
 
 
-def test_ag50a_satisfied_required_class_blocks_query_addition() -> None:
+def test_ag50a_aggregate_satisfied_required_class_does_not_block_query_addition() -> None:
     recommendation, trace = _acquisition(
         {
             "query_preview": "Explain how a database library protocol works.",
@@ -258,8 +276,33 @@ def test_ag50a_satisfied_required_class_blocks_query_addition() -> None:
         },
     )
 
+    assert trace["acquisition_repair_used"] is True
+    assert trace["acquisition_repair_skip_reason"] is None
+    assert trace["required_source_classes"] == ["primary_source_documents"]
+    assert recommendation["source_class_recovery_queries"] == [
+        "official documentation Explain how a database library protocol works.",
+        "reference documentation Explain how a database library protocol works.",
+    ]
+
+
+def test_ag50a_custody_backed_required_class_blocks_query_addition() -> None:
+    recommendation, trace = _acquisition(
+        {
+            "query_preview": "Explain how a database library protocol works.",
+            "official_current_source_custody": _accepted_custody(
+                "primary_source_documents"
+            ),
+        },
+        {
+            "source_class_recovery_recommended": True,
+            "missing_expected_source_classes": ["primary_source_documents"],
+            "source_class_recovery_queries": [],
+        },
+    )
+
     assert trace["acquisition_repair_used"] is False
     assert trace["acquisition_repair_skip_reason"] == "existing_source_class_satisfied"
+    assert trace["required_source_classes"] == []
     assert recommendation["source_class_recovery_queries"] == []
 
 

@@ -215,7 +215,7 @@ def test_ag65d_bridge_output_shape_and_reason_codes_are_preserved() -> None:
     assert trace["bridge_added_missing_source_classes"] == ["official_current_rules"]
 
 
-def test_ag65d_query_acquisition_status_and_reason_codes_are_preserved() -> None:
+def test_ag65d_query_acquisition_demotes_aggregate_satisfied_status() -> None:
     recommendation, trace = _query_acquisition(
         {
             "query_preview": "Explain how database MVCC works.",
@@ -226,9 +226,17 @@ def test_ag65d_query_acquisition_status_and_reason_codes_are_preserved() -> None
         _official_recommendation("primary_source_documents"),
     )
 
-    assert recommendation == _official_recommendation("primary_source_documents")
-    assert trace["acquisition_repair_used"] is False
-    assert trace["acquisition_repair_skip_reason"] == "existing_source_class_satisfied"
+    assert trace["acquisition_repair_used"] is True
+    assert trace["acquisition_repair_skip_reason"] is None
+    assert trace["required_source_classes"] == ["primary_source_documents"]
+    assert recommendation["source_class_recovery_queries"] == [
+        "official documentation Explain how database MVCC works.",
+        "reference documentation Explain how database MVCC works.",
+    ]
+    assert recommendation["source_class_recovery_query_count"] == 2
+    assert recommendation["source_class_recovery_reason"] == (
+        "official_canonical_recovery_query_acquisition:primary_source_documents"
+    )
 
 
 def test_ag65d_admission_status_and_reason_codes_are_preserved() -> None:
