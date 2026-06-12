@@ -617,14 +617,12 @@ def source_class_recovery_context_from_scope(
         scope,
         (
             "_run_controller_mirror",
-            "authorized_spine_action",
             "active_source_class_recovery_lifecycle",
             *_RECOVERY_SCOPE_KEYS,
         ),
     )
     return SourceClassRecoveryRunnerContext(
         controller=values["_run_controller_mirror"],
-        authorized_spine_action=values["authorized_spine_action"],
         controller_recovery_decision=controller_recovery_decision,
         process_search_queries=values["process_search_queries"],
         error_type=error_type,

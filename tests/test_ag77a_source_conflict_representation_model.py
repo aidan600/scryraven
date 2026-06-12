@@ -374,6 +374,15 @@ def test_lane_distinction_static_guard_allows_bounded_orchestrator_projection_ex
         assert "terminal_stop_approved" in source_class_diff
         assert "conflict_resolution_owns_path" in source_class_diff
         distinct_lane_modules.remove("core/source_class_recovery_controller.py")
+    if "core/source_class_recovery_executor.py" in changed:
+        executor_diff = subprocess.check_output(
+            ["git", "diff", "HEAD", "--", "core/source_class_recovery_executor.py"],
+            cwd=ROOT,
+            text=True,
+        )
+        assert "build_controller_recovery_decision" in executor_diff
+        assert "controller_recovery_executor_allows_attempt" in executor_diff
+        distinct_lane_modules.remove("core/source_class_recovery_executor.py")
     assert changed.isdisjoint(distinct_lane_modules)
 
 

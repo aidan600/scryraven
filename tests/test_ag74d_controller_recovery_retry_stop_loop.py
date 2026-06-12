@@ -206,7 +206,7 @@ def test_ag74d_visibility_export_reports_absent_runtime_decision_without_hydrati
     assert "controller_recovery_retry_allowed" not in packet
 
 
-def test_ag74d_executor_gate_is_subordinate_to_controller_decision() -> None:
+def test_ag74d_executor_no_longer_owns_controller_recovery_decision() -> None:
     controller = RunController()
     controller.state.active_source_class_recovery_eligible = True
     controller.record_retrieval_action(
@@ -263,13 +263,11 @@ def test_ag74d_executor_gate_is_subordinate_to_controller_decision() -> None:
         retrieval_pass_records=[],
     )
 
-    assert result["attempted"] is False
-    assert captured_queries == []
-    assert lifecycle["recovery_decision"] == CONTINUE_DOWNSTREAM
+    assert result["attempted"] is True
+    assert captured_queries == ["official current fixture query"]
+    assert "recovery_decision" not in lifecycle
     assert "controller_recovery_decision" not in lifecycle
-    assert lifecycle["active_source_class_recovery_skip_reason"] == (
-        "controller_recovery_decision_denied_executor_action"
-    )
+    assert lifecycle.get("active_source_class_recovery_skip_reason") is None
 
 
 def test_ag74d_static_guards_keep_provider_and_final_answer_surfaces_closed() -> None:
@@ -281,8 +279,9 @@ def test_ag74d_static_guards_keep_provider_and_final_answer_surfaces_closed() ->
 
     assert "controller_recovery_decision_observed" in visibility_source
     assert "build_controller_recovery_decision" not in visibility_source
-    assert "build_controller_recovery_decision" in executor_source
-    assert "to_executor_trace_fields" in executor_source
+    assert "build_controller_recovery_decision" not in executor_source
+    assert "to_executor_trace_fields" not in executor_source
+    assert "to_executor_trace_fields" in runner_source
     assert orchestrator_source.count("execute_source_class_recovery_action(") == 0
     assert runner_source.count("execute_source_class_recovery_action(") == 1
     assert "run_source_class_recovery_dispatch(" in orchestrator_source

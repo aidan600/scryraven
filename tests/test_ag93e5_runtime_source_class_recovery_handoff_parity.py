@@ -408,7 +408,6 @@ def test_ag93e7_role_only_controller_allocation_uses_recovery_provider_role() ->
     result = run_source_class_recovery_dispatch(
         SourceClassRecoveryRunnerContext(
             controller=controller,
-            authorized_spine_action=None,
             controller_recovery_decision=decision,
             lifecycle_trace=lifecycle,
             process_search_queries=fake_search,
@@ -542,7 +541,6 @@ def test_ag93e5_runner_allocation_trace_visible_for_existing_bounded_path() -> N
     result = run_source_class_recovery_dispatch(
         SourceClassRecoveryRunnerContext(
             controller=controller,
-            authorized_spine_action=None,
             controller_recovery_decision=decision,
             lifecycle_trace=lifecycle,
             process_search_queries=fake_search,

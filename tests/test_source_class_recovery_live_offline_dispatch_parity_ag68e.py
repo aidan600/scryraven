@@ -448,7 +448,8 @@ def test_ag68e_pipeline_call_site_remains_single_tiny_executor_gate() -> None:
     assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in (
         pipeline_source
     )
-    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" in runner_source
+    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in runner_source
+    assert "authority_lifecycle.recovery_action" in runner_source
     assert (
         "official_canonical_checkpoint_exception_fallback_allowed"
         in pipeline_source

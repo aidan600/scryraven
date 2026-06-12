@@ -131,7 +131,6 @@ def _runner_context(
 
     return SourceClassRecoveryRunnerContext(
         controller=controller or RunController(),
-        authorized_spine_action=authorized_spine_action,
         controller_recovery_decision=controller_recovery_decision,
         lifecycle_trace=lifecycle,
         process_search_queries=process_search_queries or fail_search,
@@ -409,9 +408,14 @@ def test_ag94h_d_candidate_state_does_not_trust_legacy_final_counts() -> None:
     assert decision["legacy_gap_final_success_block_preserved"] is True
 
 
-def test_ag94h_d_runner_executes_only_with_recover_missing_source_class_spine() -> None:
+def test_ag94h_d_runner_dispatches_only_from_canonical_recovery_action() -> None:
     allowed_lifecycle = _approved_lifecycle()
-    blocked_lifecycle = _approved_lifecycle()
+    blocked_lifecycle = _approved_lifecycle(
+        authority_lifecycle_required_recovery_allowed=False,
+        authority_lifecycle=None,
+        active_source_class_recovery_official_canonical_admitted=True,
+        admission_used=True,
+    )
     decision = build_controller_recovery_decision(allowed_lifecycle)
     calls: list[dict[str, Any]] = []
 
@@ -427,14 +431,14 @@ def test_ag94h_d_runner_executes_only_with_recover_missing_source_class_spine() 
         allowed = run_source_class_recovery_dispatch(
             _runner_context(
                 lifecycle=allowed_lifecycle,
-                authorized_spine_action=RECOVER_MISSING_SOURCE_CLASS,
+                authorized_spine_action=None,
                 controller_recovery_decision=decision,
             )
         )
         blocked = run_source_class_recovery_dispatch(
             _runner_context(
                 lifecycle=blocked_lifecycle,
-                authorized_spine_action=None,
+                authorized_spine_action=RECOVER_MISSING_SOURCE_CLASS,
                 controller_recovery_decision=decision,
             )
         )
@@ -454,8 +458,49 @@ def test_ag94h_d_runner_executes_only_with_recover_missing_source_class_spine() 
     }
     assert len(calls) == 1
     assert blocked_lifecycle["active_source_class_recovery_skip_reason"] == (
-        _DISPATCH_NOT_AUTHORIZED
+        "canonical_authority_lifecycle_absent"
     )
+    assert blocked_lifecycle["source_class_recovery_dispatch_authority"] == (
+        "authority_lifecycle.recovery_action"
+    )
+
+
+def test_ag94h_d_canonical_permission_executes_without_demoted_diagnostics() -> None:
+    lifecycle = {
+        "authority_lifecycle": {
+            "requirement_id": "ag95c-canonical-only",
+            "recovery_needed": "required",
+            "recovery_action": {
+                "action_type": RECOVER_MISSING_SOURCE_CLASS,
+                "approved": True,
+            },
+            "execution_state": {"state": "approved_pending_execution"},
+            "explicit_blockers": [],
+        }
+    }
+    controller = _controller_with_recovery_action()
+    controller.state.active_source_class_recovery_eligible = False
+    calls: list[list[str]] = []
+
+    def fake_search(queries: list[str], *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        calls.append(list(queries))
+        return []
+
+    result = run_source_class_recovery_dispatch(
+        _runner_context(
+            lifecycle=lifecycle,
+            authorized_spine_action=None,
+            controller_recovery_decision=None,
+            controller=controller,
+            process_search_queries=fake_search,
+        )
+    )
+
+    assert result.source_class_recovery_execution["attempted"] is True
+    assert calls == [_RECOVERY_QUERIES]
+    assert lifecycle["source_class_recovery_dispatch_authorized"] is True
+    assert "active_source_class_recovery_eligible" not in lifecycle
+    assert "official_canonical_recovery_admitted" not in lifecycle
 
 
 @pytest.mark.parametrize(
@@ -634,7 +679,7 @@ def test_ag94h_d_executor_does_not_deny_positive_shape_for_legacy_gap() -> None:
     assert lifecycle["active_source_class_recovery_skip_reason"] is None
 
 
-def test_ag94h_d_executor_blocks_when_controller_decision_has_true_hard_blocker() -> None:
+def test_ag94h_d_controller_decision_diagnostic_cannot_veto_canonical_dispatch() -> None:
     lifecycle = _approved_lifecycle(
         **_ledger_gap(),
         active_source_class_recovery_blockers=[
@@ -658,12 +703,11 @@ def test_ag94h_d_executor_blocks_when_controller_decision_has_true_hard_blocker(
     )
 
     assert result.source_class_recovery_execution == {
-        "attempted": False,
+        "attempted": True,
         "result_count": 0,
         "new_url_count": 0,
     }
-    assert calls == []
+    assert calls == [_RECOVERY_QUERIES]
     assert lifecycle["recovery_decision"] == STOP_INSUFFICIENT
-    assert lifecycle["active_source_class_recovery_skip_reason"] == (
-        "controller_recovery_decision_denied_executor_action"
-    )
+    assert lifecycle["recovery_decision_diagnostic_only"] is True
+    assert lifecycle["active_source_class_recovery_skip_reason"] is None

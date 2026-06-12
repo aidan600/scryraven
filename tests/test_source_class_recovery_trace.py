@@ -561,7 +561,7 @@ def test_candidate_v2_trace_is_nested_and_active_fields_stay_unchanged(
     assert SOURCE_CLASS_RECOVERY_CANDIDATE_V2_KEY not in log_entry
 
 
-def test_issuer_company_materials_recovery_reuses_provider_depth_and_merges(
+def test_issuer_company_materials_without_canonical_permission_does_not_dispatch(
     tmp_path: Path,
 ) -> None:
     outcome, harness, _log_entry = _run_case(
@@ -580,30 +580,21 @@ def test_issuer_company_materials_recovery_reuses_provider_depth_and_merges(
     )
 
     trace = outcome.execution_trace
-    assert trace["active_source_class_recovery_used"] is True
+    assert trace["active_source_class_recovery_used"] is False
     assert trace["active_source_class_recovery_missing_classes"] == [
         "issuer_filings_or_company_materials"
     ]
-    assert trace["active_source_class_recovery_result_count"] == 1
-    assert trace["active_source_class_recovery_new_url_count"] == 1
-    assert len(harness.search_calls) == 2
-    assert harness.search_calls[1]["provider_role"] == "source_class_recovery"
-    assert harness.search_calls[1]["search_providers"] == trace["pass_providers"][-1]
-    assert harness.search_calls[1]["search_depth"] == trace[
-        "active_source_class_recovery_search_depth"
-    ]
-    assert harness.search_calls[1]["search_depth"] == "basic"
-    assert harness.search_calls[1]["linkup_depth_override"] is None
-    assert trace["provider_attempts_by_role"]["source_class_recovery"] == 1
+    assert trace["source_class_recovery_dispatch_authorized"] is False
+    assert trace["source_class_recovery_dispatch_reason"] == (
+        "canonical_recovery_not_required"
+    )
+    assert trace["active_source_class_recovery_result_count"] == 0
+    assert trace["active_source_class_recovery_new_url_count"] == 0
+    assert len(harness.search_calls) == 1
+    assert "source_class_recovery" not in trace["provider_attempts_by_role"]
 
     recovered = _recovered_passages(outcome.top_passages)
-    assert len(recovered) == 1
-    assert recovered[0]["source_tier"] == "official"
-    assert recovered[0]["score"] == 0.42
-    assert any(
-        passage.get("retrieval_stage") != "source_class_recovery"
-        for passage in outcome.top_passages
-    )
+    assert recovered == []
 
 
 def test_primary_source_documents_recovery_is_additive_without_boosting_or_pinning(
@@ -779,7 +770,7 @@ def test_source_class_recovery_controller_mirror_is_passive_and_trace_compatible
     assert_execution_trace_payload_contract(log_entry["execution_trace"])
 
 
-def test_polling_average_recovery_trace_runs_bounded_active_branch(
+def test_polling_average_recovery_recommendation_without_canonical_permission_does_not_dispatch(
     tmp_path: Path,
 ) -> None:
     outcome, harness, _log_entry = _run_case(
@@ -796,29 +787,24 @@ def test_polling_average_recovery_trace_runs_bounded_active_branch(
     )
 
     trace = outcome.execution_trace
-    assert trace["source_class_recovery_recommended"] is False
-    assert trace["missing_expected_source_classes"] == []
-    assert trace["source_class_recovery_queries"] == []
+    assert trace["source_class_recovery_recommended"] is True
+    assert trace["missing_expected_source_classes"] == ["polling_data_or_aggregator"]
+    assert trace["source_class_recovery_queries"]
     assert trace["active_source_class_recovery_considered"] is True
     assert trace["active_source_class_recovery_eligible"] is True
-    assert trace["active_source_class_recovery_used"] is True
+    assert trace["active_source_class_recovery_used"] is False
     assert trace["active_source_class_recovery_missing_classes"] == [
         "polling_data_or_aggregator"
     ]
-    assert trace["active_source_class_recovery_result_count"] == 1
-    assert trace["active_source_class_recovery_new_url_count"] == 1
-    assert trace["active_source_class_recovery_provider_role"] == (
-        "source_class_recovery"
+    assert trace["source_class_recovery_dispatch_authorized"] is False
+    assert trace["source_class_recovery_dispatch_reason"] == (
+        "canonical_recovery_not_required"
     )
-    assert len(harness.search_calls) == 2
+    assert trace["active_source_class_recovery_result_count"] == 0
+    assert trace["active_source_class_recovery_new_url_count"] == 0
+    assert len(harness.search_calls) == 1
     assert trace["queries_per_iteration"] == {"1": harness.search_calls[0]["queries"]}
-    assert set(trace["active_source_class_recovery_queries"]).isdisjoint(
-        harness.search_calls[0]["queries"]
-    )
-    assert harness.search_calls[1]["queries"] == trace[
-        "active_source_class_recovery_queries"
-    ]
-    assert harness.search_calls[1]["provider_role"] == "source_class_recovery"
+    assert "source_class_recovery" not in trace["provider_attempts_by_role"]
     assert trace["weak_corpus_recovery_used"] is False
     assert trace["supplemental_ran"] is False
     assert trace["iterations_run"] == 1

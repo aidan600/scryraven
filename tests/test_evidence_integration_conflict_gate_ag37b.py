@@ -234,10 +234,11 @@ def test_ag37b_resolve_conflict_checkpoint_dispatches_one_conflict_executor_pass
     assert trace["active_conflict_resolution_queries"] == list(_RESOLVING_QUERIES)
     assert trace["active_conflict_resolution_provider_role"] == "conflict_resolution"
     assert trace["active_conflict_resolution_search_depth"] == "basic"
-    assert trace["active_source_class_recovery_used"] is False
+    assert trace["active_source_class_recovery_used"] is True
     assert trace["weak_corpus_recovery_used"] is False
     assert _provider_roles_from_source_harness(harness) == [
         "main_retrieval",
+        "source_class_recovery",
         "conflict_resolution",
     ]
     assert_active_gate_packet_invariants(

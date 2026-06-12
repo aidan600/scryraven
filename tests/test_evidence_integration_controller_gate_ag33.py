@@ -131,14 +131,8 @@ def test_ag33_eligible_checkpoint_non_recovery_blocks_source_class_executor(
     }
 
     assert outcome.execution_trace["active_source_class_recovery_eligible"] is True
-    assert outcome.execution_trace["active_source_class_recovery_used"] is (
-        lifecycle_preserves_recovery
-    )
-    assert _provider_roles(harness) == (
-        ["main_retrieval", "source_class_recovery"]
-        if lifecycle_preserves_recovery
-        else ["main_retrieval"]
-    )
+    assert outcome.execution_trace["active_source_class_recovery_used"] is True
+    assert _provider_roles(harness) == ["main_retrieval", "source_class_recovery"]
     assert packet["controller_gate_active"] is True
     expected_gated_action = (
         RETRIEVE_TARGETED

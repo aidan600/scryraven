@@ -200,14 +200,8 @@ def test_ag34_unpromoted_non_stop_actions_do_not_dispatch_substitutes(
     lifecycle_preserves_recovery = action_name == RECOVER_WEAK_CORPUS
 
     assert outcome.execution_trace["active_source_class_recovery_eligible"] is True
-    assert outcome.execution_trace["active_source_class_recovery_used"] is (
-        lifecycle_preserves_recovery
-    )
-    assert _provider_roles(harness) == (
-        ["main_retrieval", "source_class_recovery"]
-        if lifecycle_preserves_recovery
-        else ["main_retrieval"]
-    )
+    assert outcome.execution_trace["active_source_class_recovery_used"] is True
+    assert _provider_roles(harness) == ["main_retrieval", "source_class_recovery"]
     assert packet["controller_stop_gate_active"] is True
     assert packet["checkpoint_action_name"] == action_name
     assert packet["terminal_stop_approved"] is False

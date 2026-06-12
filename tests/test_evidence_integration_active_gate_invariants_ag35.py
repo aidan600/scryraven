@@ -234,17 +234,11 @@ def test_ag35_unpromoted_checkpoint_actions_do_not_execute_substitutes(
     assert packet["terminal_stop_approved"] is False
     assert packet["executor_dispatch_blocked"] is (not lifecycle_preserves_recovery)
     assert packet["executor_dispatched"] is lifecycle_preserves_recovery
-    assert outcome.execution_trace["active_source_class_recovery_used"] is (
-        lifecycle_preserves_recovery
-    )
+    assert outcome.execution_trace["active_source_class_recovery_used"] is True
     assert outcome.execution_trace["weak_corpus_recovery_used"] is False
     assert outcome.execution_trace["scrutineer_ran"] is False
     assert harness.author_calls == 1
-    assert _provider_roles(harness) == (
-        ["main_retrieval", "source_class_recovery"]
-        if lifecycle_preserves_recovery
-        else ["main_retrieval"]
-    )
+    assert _provider_roles(harness) == ["main_retrieval", "source_class_recovery"]
 
 
 def test_ag35_active_gate_runtime_change_does_not_leak_to_passive_handoff(
