@@ -40,7 +40,7 @@ Checklist:
 | `core/pipeline_orchestrator.py::_build_targeted_retrieval_lifecycle_from_runtime` | `source_class_executor_dispatched` | rewrite to canonical runner/lifecycle authority | Removed the old-key read. Source-class path ownership now uses lifecycle use/eligibility and checkpoint action only. |
 | Current AG-95 static guards | `authorized_spine_action`, `source_class_executor_dispatched`, demotion markers | rewrite to canonical runner/lifecycle authority | Added an AG-95D guard preventing `pipeline_orchestrator.py` from reading `source_class_executor_dispatched`. |
 | Current controller-loop tests | all listed ControllerLoopSpine keys | preserve as diagnostic compatibility | Preserved. These tests cover the compatibility packet contract and non-source-class active-gate behavior. |
-| AG-68/AG-69 source-class runner tests | `authorized_dispatch`, `source_class_executor_dispatched`, `official_canonical_dispatch_fallback` | preserve as diagnostic compatibility | Preserved where they explicitly check checkpoint refresh or trace compatibility; dispatch proof remains canonical runner/lifecycle assertions. |
+| AG-68/AG-69 source-class runner tests | `authorized_dispatch`, `source_class_executor_dispatched`, `official_canonical_dispatch_fallback` | delete duplicate dispatch-authority assertions; preserve checkpoint compatibility | Second pass deleted duplicate old-key dispatch assertions where existing canonical runner/lifecycle assertions already covered execution. Remaining old-key assertions are checkpoint-gap or stale/refreshed checkpoint compatibility coverage. |
 | Historical AG-20 through AG-94 docs/tests | `executor_dispatched`, `executed_action_name`, `authorized_dispatch`, source-class executor fields | blocked pending later consumer-retirement phase | Preserved as historical or broad active-gate coverage. Bulk rewrite would exceed the source-class compatibility lane. |
 | AG-95D/E/F docs and current Codex guidance | demotion markers and old compatibility key references | preserve as diagnostic compatibility | Preserved because they document the migration history and current demotion contract. |
 
@@ -63,6 +63,12 @@ Checklist:
   `pipeline_orchestrator.py` no longer reads
   `ControllerLoopSpineResult.source_class_executor_dispatched` while building
   targeted-retrieval ownership.
+- Deleted from duplicate test consumption:
+  17 direct AG-68/AG-69 source-class assertions on `authorized_dispatch` and
+  `source_class_executor_dispatched` were removed where nearby canonical
+  assertions already prove `source_class_recovery_dispatch_authority`,
+  execution attempt state, captured recovery queries, or
+  `authority_lifecycle.execution_state`.
 - Demoted/preserved:
   `source_class_executor_dispatched`, `executor_dispatched`,
   `authorized_dispatch`, `executed_action_name`, and
@@ -76,24 +82,35 @@ Checklist:
 ## What Could Not Be Deleted
 
 The ControllerLoopSpine trace keys could not be deleted yet because
-controller-loop tests, AG-68/AG-69 compatibility fixtures, and the combined
-active-gate invariant machinery still validate the packet shape. The combiner
-also serves non-source-class lanes that remain out of scope for AG-95G.
+controller-loop tests and the combined active-gate invariant machinery still
+validate the packet shape. Seven direct old-key assertions also remain in AG68E
+and AG68G because they prove checkpoint-gap or stale/refreshed checkpoint
+compatibility:
+
+- AG68E keeps synthetic/product checkpoint-gap assertions for
+  `authorized_dispatch` and `official_canonical_dispatch_fallback`.
+- AG68G keeps stale checkpoint `authorized_dispatch is None` and refreshed
+  checkpoint source-class spine assertions.
+
+Those remaining assertions are not used as source-class runner dispatch proof.
 
 ## Recommended Next Deletion Target
 
-Retire direct source-class assertions on `authorized_dispatch` and
-`source_class_executor_dispatched` from AG-68/AG-69 compatibility tests after a
-dedicated trace-contract diet proves equivalent coverage through
-`source_class_recovery_dispatch_authority`,
-`source_class_recovery_dispatch_authorized`, and
-`authority_lifecycle.execution_state`.
+Consolidate the remaining AG68E/AG68G checkpoint-gap and stale/refreshed
+checkpoint compatibility assertions into focused ControllerLoopSpine
+compatibility coverage. After that, the AG-68/AG-69 product-callsite tests can
+avoid direct assertions on `authorized_dispatch`,
+`source_class_executor_dispatched`, and
+`official_canonical_dispatch_fallback` entirely.
 
 ## Net LOC Impact
 
 Runtime cleanup impact: -4 LOC in `core/pipeline_orchestrator.py`.
 
-Overall branch impact: +115/-6 LOC before formatting, for net +109 LOC. The net
-growth is the required AG-95G audit note and short guidance follow-ups; the code
-path itself shrank and no new abstraction, projection, lifecycle, or guard
-surface was added.
+Second-pass test cleanup impact: -77 LOC across AG68E, AG68G, and AG69C. This
+deleted 17 direct old-key assertions, removed AG69C's test-only spine helper,
+and added no replacement metadata or abstraction.
+
+Overall branch impact after the second pass: +133/-84 LOC before formatting, for
+net +49 LOC. The net growth is still the required AG-95G audit note and short
+guidance follow-ups; the runtime path and tests both shrank.

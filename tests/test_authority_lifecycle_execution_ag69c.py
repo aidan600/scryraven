@@ -15,14 +15,7 @@ from core.authority_lifecycle_execution import (
 from core.authority_lifecycle_runtime_arbitration import (
     build_authority_runtime_arbitration,
 )
-from core.controller_action_envelope import (
-    RECOVER_MISSING_SOURCE_CLASS,
-    STOP_INSUFFICIENT_WITH_CAVEAT,
-)
-from core.controller_loop_spine import (
-    RECOVER_WEAK_CORPUS,
-    build_controller_loop_spine_result,
-)
+from core.controller_action_envelope import STOP_INSUFFICIENT_WITH_CAVEAT
 from core.run_controller import RunController
 from core.source_class_recovery_runner import (
     SourceClassRecoveryRunnerContext,
@@ -183,20 +176,6 @@ def _handoff(
     )
 
 
-def _spine(
-    lifecycle: dict[str, Any],
-    *,
-    checkpoint: dict[str, Any] | None = None,
-    weak_lifecycle: dict[str, Any] | None = None,
-) -> Any:
-    return build_controller_loop_spine_result(
-        checkpoint_trace=checkpoint
-        or {"available": False, "reason": "checkpoint_unavailable"},
-        source_class_lifecycle_trace=lifecycle,
-        weak_corpus_lifecycle_trace=weak_lifecycle,
-    )
-
-
 def _run_lifecycle_dispatch(
     controller: RunController,
     lifecycle: dict[str, Any],
@@ -283,7 +262,6 @@ def test_ag69c_lifecycle_approved_recovery_reaches_existing_executor_entrypoint(
     controller = RunController()
     handoff = _handoff(controller)
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    spine = _spine(lifecycle)
     calls: list[bool] = []
     original = runner_module.execute_source_class_recovery_action
 
@@ -297,7 +275,6 @@ def test_ag69c_lifecycle_approved_recovery_reaches_existing_executor_entrypoint(
         lifecycle,
     )
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert calls == [True]
     assert execution["attempted"] is True
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
@@ -321,13 +298,11 @@ def test_ag69c_legacy_execution_attempted_is_only_projected_after_entrypoint() -
     )
     assert lifecycle["active_source_class_recovery_execution_attempted"] is False
 
-    spine = _spine(lifecycle)
     _run_lifecycle_dispatch(
         controller,
         lifecycle,
     )
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert lifecycle["authority_lifecycle_execution_attempted"] is True
     assert lifecycle["active_source_class_recovery_execution_attempted"] is True
 
@@ -416,8 +391,6 @@ def test_ag69c_hard_blocker_prevents_execution_only_when_requirement_bound() -> 
         ),
     )
 
-    wrong_spine = _spine(wrong.active_source_class_recovery_lifecycle)
-    bound_spine = _spine(bound.active_source_class_recovery_lifecycle)
     wrong_execution, wrong_queries, _wrong_passages = _run_lifecycle_dispatch(
         wrong_controller,
         wrong.active_source_class_recovery_lifecycle,
@@ -427,13 +400,11 @@ def test_ag69c_hard_blocker_prevents_execution_only_when_requirement_bound() -> 
         bound.active_source_class_recovery_lifecycle,
     )
 
-    assert wrong_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert wrong_execution["attempted"] is True
     assert wrong_queries == list(_RECOVERY_QUERIES)
     assert wrong.active_source_class_recovery_lifecycle[
         "authority_lifecycle_required_recovery_allowed"
     ] is True
-    assert bound_spine.authorized_dispatch is None
     assert bound_execution["attempted"] is False
     assert bound_queries == []
     assert bound.active_source_class_recovery_lifecycle[
@@ -464,26 +435,6 @@ def test_ag69c_terminal_stop_and_weak_corpus_do_not_become_execution_blockers() 
         ),
     )
 
-    terminal_spine = _spine(
-        terminal.active_source_class_recovery_lifecycle,
-        checkpoint={
-            "available": True,
-            "decision": {"action_name": STOP_INSUFFICIENT_WITH_CAVEAT},
-            "recommended_action_name": STOP_INSUFFICIENT_WITH_CAVEAT,
-        },
-    )
-    weak_spine = _spine(
-        weak.active_source_class_recovery_lifecycle,
-        checkpoint={
-            "available": True,
-            "decision": {"action_name": RECOVER_WEAK_CORPUS},
-            "recommended_action_name": RECOVER_WEAK_CORPUS,
-        },
-        weak_lifecycle={"approved": True, "reason": "weak_corpus", "blockers": []},
-    )
-
-    assert terminal_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert weak_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     terminal_execution, terminal_queries, _terminal_passages = _run_lifecycle_dispatch(
         terminal_controller,
         terminal.active_source_class_recovery_lifecycle,
@@ -514,13 +465,11 @@ def test_ag69c_terminal_stop_and_weak_corpus_do_not_become_execution_blockers() 
 def test_ag69c_execution_and_candidate_acquisition_states_remain_distinct() -> None:
     controller = RunController()
     lifecycle = _handoff(controller).active_source_class_recovery_lifecycle
-    spine = _spine(lifecycle)
     execution, _captured_queries, _passages = _run_lifecycle_dispatch(
         controller,
         lifecycle,
     )
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert execution["attempted"] is True
     assert lifecycle["authority_lifecycle_execution_attempted"] is True
     assert lifecycle["candidate_acquisition_considered"] is True

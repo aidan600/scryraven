@@ -536,15 +536,9 @@ def test_ag68g_aggregate_ordinary_status_no_longer_blocks_recovery_admission() -
         ),
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    spine = build_controller_loop_spine_result(
-        checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
-        source_class_lifecycle_trace=lifecycle,
-    )
 
     assert handoff.official_canonical_recovery_execution_admitted is True
     assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert spine.authorized_dispatch is None
-    assert spine.source_class_executor_dispatched is False
     execution, captured_queries, _passages = _run_product_callsite_dispatch(
         controller,
         lifecycle,
