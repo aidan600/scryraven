@@ -79,7 +79,7 @@ def _approved_lifecycle(**overrides: Any) -> dict[str, Any]:
         "active_source_class_recovery_queries": list(_RECOVERY_QUERIES),
         "active_source_class_recovery_provider_role": "source_class_recovery",
         "active_source_class_recovery_search_depth": "basic",
-        "active_source_class_recovery_attempt_count": 0,
+        "active_source_class_recovery_attempt_count": 1,
         "active_source_class_recovery_action_envelope": {
             "action_type": RECOVER_MISSING_SOURCE_CLASS,
             "required_source_class": [_LEGAL_PRIMARY, _OFFICIAL_CURRENT],
@@ -104,7 +104,6 @@ def _approved_lifecycle(**overrides: Any) -> dict[str, Any]:
             "final_posture": "pending_recovery",
         },
         "recovery_slot_available": True,
-        "prior_recovery_attempt_count": 0,
         "max_recovery_attempts": 1,
         "candidate_return_status": "not_attempted",
         "candidate_acquisition_considered": False,
@@ -213,6 +212,24 @@ def test_ag94h_d_synthetic_live_shape_dispatches_checkpointless_recovery() -> No
             source_class_lifecycle_trace=lifecycle,
         )
     )
+    pre_execution_shape = {
+        "active_source_class_recovery_attempt_count": (
+            lifecycle["active_source_class_recovery_attempt_count"]
+        ),
+        "max_recovery_attempts": lifecycle["max_recovery_attempts"],
+        "recovery_slot_available": lifecycle["recovery_slot_available"],
+        "active_source_class_recovery_execution_attempted": (
+            lifecycle["active_source_class_recovery_execution_attempted"]
+        ),
+        "active_source_class_recovery_used": (
+            lifecycle["active_source_class_recovery_used"]
+        ),
+        "authority_lifecycle_execution_attempted": (
+            lifecycle["authority_lifecycle_execution_attempted"]
+        ),
+        "candidate_return_status": lifecycle["candidate_return_status"],
+        "acquisition_attempted": lifecycle["acquisition_attempted"],
+    }
     search_calls: list[dict[str, Any]] = []
     all_passages: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
@@ -278,6 +295,16 @@ def test_ag94h_d_synthetic_live_shape_dispatches_checkpointless_recovery() -> No
 
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["source_obligation_status"] == "official_current_required_unmet"
+    assert pre_execution_shape == {
+        "active_source_class_recovery_attempt_count": 1,
+        "max_recovery_attempts": 1,
+        "recovery_slot_available": True,
+        "active_source_class_recovery_execution_attempted": False,
+        "active_source_class_recovery_used": False,
+        "authority_lifecycle_execution_attempted": False,
+        "candidate_return_status": "not_attempted",
+        "acquisition_attempted": False,
+    }
     assert lifecycle["active_source_class_recovery_missing_classes"] == [
         _LEGAL_PRIMARY,
         _OFFICIAL_CURRENT,
@@ -461,7 +488,20 @@ def test_ag94h_d_runner_executes_only_with_recover_missing_source_class_spine() 
                 "prior_recovery_attempt_count": 1,
                 "max_recovery_attempts": 1,
             },
+            STOP_INSUFFICIENT,
+        ),
+        (
+            "true prior recovery attempt",
+            {
+                "prior_recovery_attempt_count": 1,
+                "max_recovery_attempts": 1,
+            },
             STOP_LEGACY_CUSTODY_GAP,
+        ),
+        (
+            "already attempted blocker",
+            {"active_source_class_recovery_blockers": ["already_attempted"]},
+            STOP_INSUFFICIENT,
         ),
         (
             "no recovery queries",

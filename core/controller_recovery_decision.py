@@ -278,6 +278,12 @@ def _decide(
     if hard_blocker_state == "provider_policy_or_depth":
         return STOP_INSUFFICIENT, "provider_policy_or_depth_blocks_recovery"
     if (
+        budget_state == "exhausted"
+        and source_obligation_status.endswith("_unmet")
+        and candidate_state != "no_plausible_official_current_candidate_acquired"
+    ):
+        return STOP_INSUFFICIENT, "recovery_budget_exhausted_obligation_unmet"
+    if (
         ledger_status == "legacy_gap_observed" or legacy_gap_types
     ) and not legacy_gap_subordinated_for_recovery_attempt:
         return STOP_LEGACY_CUSTODY_GAP, "legacy_gap_observed_not_success"
@@ -540,11 +546,12 @@ def _recovery_already_attempted(trace: Mapping[str, Any]) -> bool:
         return True
     if trace.get("authority_lifecycle_execution_attempted") is True:
         return True
+    if trace.get("acquisition_attempted") is True:
+        return True
+    if trace.get("candidate_acquisition_used") is True:
+        return True
     prior = _int_or_unknown(
-        _first_present(
-            trace.get("prior_recovery_attempt_count"),
-            trace.get("active_source_class_recovery_attempt_count"),
-        )
+        trace.get("prior_recovery_attempt_count")
     )
     maximum = _int_or_unknown(trace.get("max_recovery_attempts"))
     return isinstance(prior, int) and isinstance(maximum, int) and prior >= maximum

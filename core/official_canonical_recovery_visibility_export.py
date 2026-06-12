@@ -1339,7 +1339,10 @@ def _controller_decision_visibility_input(
         "ledger_legacy_gap_types",
         CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY,
     ):
-        value = _first_present(export.get(key), trace.get(key))
+        if key == "prior_recovery_attempt_count":
+            value = trace.get(key)
+        else:
+            value = _first_present(export.get(key), trace.get(key))
         if value is not None:
             payload[key] = value
     return payload

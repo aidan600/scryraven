@@ -51,10 +51,20 @@ for authority-lifecycle-approved source-class recovery. It requires:
 - unmet source obligation;
 - existing source-class recovery queries;
 - available recovery slot;
-- no prior source-class/candidate acquisition attempt;
+- no prior executed source-class/candidate acquisition attempt;
 - no authority lifecycle execution blocker;
 - no non-lifecycle blocker such as conflict, provider policy, search-depth, or
   hard-cap ownership.
+
+`active_source_class_recovery_attempt_count` is not treated as proof that
+execution already happened when `recovery_slot_available=true`,
+`active_source_class_recovery_execution_attempted=false`,
+`active_source_class_recovery_used=false`,
+`authority_lifecycle_execution_attempted=false`,
+`candidate_return_status=not_attempted`, and `acquisition_attempted=false`.
+True prior attempts, explicit `recovery_slot_available=false`,
+`already_attempted` blockers, execution-attempted flags, and candidate
+acquisition-attempted flags still block dispatch/retry.
 
 When those predicates hold, the spine records
 `spine_authorization_source=authority_lifecycle_required_recovery` and returns
@@ -106,7 +116,8 @@ absent, preserving the existing dispatch contract.
 subordinated for a bounded recovery attempt. That predicate requires the unmet
 official/current obligation, available budget, supported missing classes,
 approved action envelope, lifecycle approval, existing recovery queries,
-not-attempted candidate acquisition, and no hard blocker.
+not-attempted candidate acquisition, no prior executed recovery attempt, and no
+hard blocker.
 
 If the predicate is false, `STOP_LEGACY_CUSTODY_GAP` remains the decision.
 

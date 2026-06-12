@@ -839,6 +839,10 @@ def _source_class_recovery_already_attempted(
         "not_observable",
     }:
         return True
+    prior = _int_or_none(lifecycle_trace.get("prior_recovery_attempt_count"))
+    maximum = _int_or_none(lifecycle_trace.get("max_recovery_attempts"))
+    if prior is not None and maximum is not None and prior >= maximum:
+        return True
     return False
 
 
