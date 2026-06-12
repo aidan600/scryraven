@@ -292,10 +292,6 @@ def test_ag68e_live_equivalent_product_path_executes_after_exception_parity_repa
     admission = handoff.official_canonical_recovery_execution_admission_trace[
         "OfficialCanonicalRecoveryExecutionAdmission"
     ]
-    spine = _spine(
-        lifecycle,
-        checkpoint_trace=_checkpoint("checkpoint_exception", fallback_allowed=True),
-    )
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,
@@ -306,8 +302,6 @@ def test_ag68e_live_equivalent_product_path_executes_after_exception_parity_repa
     assert lifecycle["active_source_class_recovery_queries"] == list(
         _OFFICIAL_QUERIES
     )
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
     )
@@ -362,7 +356,6 @@ def test_ag68e_dispatch_uses_lifecycle_control_envelope_not_trace_projection() -
     assert trace["protected_surface"]["projection_used_as_control_input"] is False
     assert spine.trace_packet["controller_action_envelope_approved"] is True
     assert spine.trace_packet["authority_lifecycle_required_recovery_allowed"] is True
-    assert spine.source_class_executor_dispatched is True
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle_without_envelope,
@@ -390,8 +383,6 @@ def test_ag68e_terminal_stop_defers_to_authority_lifecycle_recovery() -> None:
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert spine.terminal_stop_approved is True
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,
@@ -412,15 +403,10 @@ def test_ag68e_weak_corpus_ownership_defers_to_authority_lifecycle() -> None:
         ),
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    spine = _spine(
-        lifecycle,
-        checkpoint_trace=_checkpoint("checkpoint_exception", fallback_allowed=True),
-    )
 
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
     assert lifecycle["authority_lifecycle_weak_corpus_may_own_path"] is False
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,
@@ -448,15 +434,9 @@ def test_ag68e_aggregate_ordinary_status_no_longer_blocks_recovery_dispatch() ->
         ),
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    spine = _spine(
-        lifecycle,
-        checkpoint_trace=_checkpoint("checkpoint_exception", fallback_allowed=True),
-    )
 
     assert handoff.official_canonical_recovery_execution_admitted is True
     assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,

@@ -566,9 +566,6 @@ def _build_targeted_retrieval_lifecycle_from_runtime(
             active_source_class_recovery_lifecycle
         ),
     )
-    source_class_dispatched = bool(
-        controller_loop_spine_result.source_class_executor_dispatched
-    )
     weak_corpus_dispatched = bool(
         controller_loop_spine_result.weak_corpus_executor_dispatched
     )
@@ -584,7 +581,6 @@ def _build_targeted_retrieval_lifecycle_from_runtime(
             "active_source_class_recovery_eligible"
         )
         or checkpoint_action == RECOVER_MISSING_SOURCE_CLASS
-        or source_class_dispatched
     )
     weak_corpus_owns = bool(
         (weak_corpus_lifecycle_trace or {}).get("approved")
