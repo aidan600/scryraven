@@ -93,9 +93,16 @@ from core.failure_card import (
 from core.final_answer_packet_runtime import (
     execute_final_answer_packet_prepare_action_from_scope,
 )
+from core.final_authority_citation_survival import (
+    apply_authority_citation_survival_outcome_guard,
+    build_final_authority_citation_survival_projection,
+    ensure_selected_authority_evidence_visible_to_author,
+    final_authority_citation_survival_trace_fields,
+)
 from core.final_evidence_bundle_builder import (
     FinalEvidenceBundleInputs,
     attach_author_evidence,
+    build_author_evidence_block,
     build_final_evidence_bundle,
     build_final_source_telemetry_inputs,
 )
@@ -4204,6 +4211,20 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         final_evidence_bundle,
         precision_count=precision_count,
     )
+    authority_author_visibility = ensure_selected_authority_evidence_visible_to_author(
+        authority_lifecycle_trace=active_source_class_recovery_lifecycle,
+        final_evidence=final_top_evidence,
+        author_evidence=final_evidence_bundle.author_evidence,
+    )
+    final_evidence_bundle.author_evidence = list(
+        authority_author_visibility.author_evidence
+    )
+    final_evidence_bundle.author_evidence_block = build_author_evidence_block(
+        final_evidence_bundle.author_evidence
+    )
+    active_source_class_recovery_lifecycle[
+        "final_authority_author_evidence_visibility"
+    ] = dict(authority_author_visibility.diagnostics)
     author_evidence = final_evidence_bundle.author_evidence
     author_evidence_block = final_evidence_bundle.author_evidence_block
 
@@ -4358,6 +4379,23 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         report,
         economist_safety_telemetry,
     )
+    # Bound to the post-Author _final_answer_source_citation_telemetry surface.
+    final_authority_citation_survival_projection = (
+        build_final_authority_citation_survival_projection(
+            authority_lifecycle_trace=active_source_class_recovery_lifecycle,
+            final_evidence=final_top_evidence,
+            author_evidence=author_evidence,
+            final_answer_source_ids=final_answer_source_telemetry.get(
+                "final_answer_source_ids_used"
+            ),
+        )
+    )
+    final_answer_source_telemetry = {
+        **final_answer_source_telemetry,
+        **final_authority_citation_survival_trace_fields(
+            final_authority_citation_survival_projection
+        ),
+    }
 
     useful_content, useful_content_reason = evaluate_useful_content(
         report,
@@ -4424,6 +4462,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         synth_was_insufficient=bool(synth_was_insufficient),
         empty_entity=bool(empty_entity_flag),
     )
+    authority_citation_outcome_guard = apply_authority_citation_survival_outcome_guard(
+        projection=final_authority_citation_survival_projection,
+        useful_content=bool(useful_content),
+        useful_content_reason=useful_content_reason,
+        response_displayable=bool(response_displayable),
+        evidence_sufficient=bool(evidence_sufficient),
+        answer_class=answer_class,
+        failure_card_payload=failure_card_payload,
+    )
+    useful_content = authority_citation_outcome_guard["useful_content"]
+    useful_content_reason = authority_citation_outcome_guard["useful_content_reason"]
+    response_displayable = authority_citation_outcome_guard["response_displayable"]
+    evidence_sufficient = authority_citation_outcome_guard["evidence_sufficient"]
+    answer_class = authority_citation_outcome_guard["answer_class"]
+    failure_card_payload = authority_citation_outcome_guard["failure_card_payload"]
     weak_failure_gate_contract_state = build_weak_failure_gate_state(
         corpus_state=corpus_state,
         corpus_weak=corpus_weak,

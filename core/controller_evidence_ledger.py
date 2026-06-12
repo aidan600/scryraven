@@ -778,6 +778,40 @@ def _append_legacy_gap_events(
                 },
             )
         )
+    selected_events = _events_by_type(events, AUTHORITY_EVIDENCE_SELECTED)
+    citation_events = _events_by_type(events, FINAL_CITATION_OBSERVED)
+    missing_selected_citations = [
+        event
+        for event in selected_events
+        if not _selected_authority_event_cited(event, citation_events)
+    ]
+    if (
+        missing_selected_citations
+        and (final_evidence_positive or _selected_authority_citation_eligible(export))
+    ):
+        gap_events.append(
+            _add_event(
+                events,
+                LEGACY_CUSTODY_GAP_OBSERVED,
+                {
+                    "gap_type": (
+                        "final_evidence_or_citation_selected_authority_evidence_not_cited"
+                    ),
+                    "selected_authority_evidence_count": len(selected_events),
+                    "selected_authority_evidence_not_cited_count": len(
+                        missing_selected_citations
+                    ),
+                    "final_citation_observed_count": len(citation_events),
+                    "old_path_classification": (
+                        "final citation surface must cite selected authority evidence"
+                    ),
+                    "demolition_target": (
+                        "weak or aggregate final citations cannot satisfy selected "
+                        "authority evidence citation custody"
+                    ),
+                },
+            )
+        )
     aggregate_status = _clean_text(bridge.get("aggregate_reconciliation_status"))
     if aggregate_status and aggregate_status not in {"reconciled", UNKNOWN}:
         gap_events.append(
@@ -1089,7 +1123,11 @@ def _citation_record(citation: Mapping[str, Any] | str) -> dict[str, Any]:
         text = _clean_text(citation)
         if not text:
             return {}
-        return {"citation_id": text, "source_url": text if "://" in text else ""}
+        return {
+            "citation_id": text,
+            "source_id": text if "://" not in text else "",
+            "source_url": text if "://" in text else "",
+        }
     if not isinstance(citation, Mapping):
         return {}
     citation_id = _clean_text(
@@ -1102,9 +1140,54 @@ def _citation_record(citation: Mapping[str, Any] | str) -> dict[str, Any]:
         return {}
     return {
         "citation_id": citation_id,
+        "source_id": _clean_text(citation.get("source_id")),
         "source_url": _clean_text(citation.get("url") or citation.get("source_url")),
         "source_class": _clean_token(citation.get("source_class")) or UNKNOWN,
     }
+
+
+def _selected_authority_event_cited(
+    selected: Mapping[str, Any],
+    citations: Iterable[Mapping[str, Any]],
+) -> bool:
+    selected_identities = _event_identities(
+        selected,
+        id_keys=("candidate_id", "source_id", "evidence_id"),
+        url_keys=("source_url", "url"),
+    )
+    if not selected_identities:
+        return False
+    for citation in citations:
+        citation_identities = _event_identities(
+            citation,
+            id_keys=("citation_id", "source_id", "evidence_id"),
+            url_keys=("source_url", "url"),
+        )
+        if selected_identities & citation_identities:
+            return True
+    return False
+
+
+def _selected_authority_citation_eligible(export: Mapping[str, Any]) -> bool:
+    return _clean_token(export.get("citation_eligibility_state")) == "eligible"
+
+
+def _event_identities(
+    event: Mapping[str, Any],
+    *,
+    id_keys: Iterable[str],
+    url_keys: Iterable[str],
+) -> set[str]:
+    identities: set[str] = set()
+    for key in id_keys:
+        value = _clean_text(event.get(key))
+        if value:
+            identities.add(f"id:{value.casefold()}")
+    for key in url_keys:
+        value = _normalize_url(event.get(key))
+        if value:
+            identities.add(f"url:{value}")
+    return identities
 
 
 def _official_or_canonical(source: Mapping[str, Any]) -> bool:

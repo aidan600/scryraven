@@ -260,6 +260,10 @@ def attach_passive_runtime_projection_traces(
         ledger_trace = build_controller_evidence_ledger_trace(
             execution_trace,
             final_top_evidence=final_top_evidence,
+            final_citations=_final_citations_from_execution_trace(
+                execution_trace,
+                final_top_evidence=final_top_evidence,
+            ),
             surface_visibility=surface_visibility,
         )
         execution_trace[CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY] = ledger_trace
@@ -314,6 +318,60 @@ def attach_passive_runtime_projection_traces(
             exc,
         )
     return execution_trace
+
+
+def _final_citations_from_execution_trace(
+    execution_trace: Mapping[str, Any],
+    *,
+    final_top_evidence: Iterable[Mapping[str, Any]] | None,
+) -> tuple[dict[str, Any], ...]:
+    survival = execution_trace.get("final_authority_citation_survival")
+    if not isinstance(survival, Mapping) or not _positive_int(
+        survival.get("selected_authority_evidence_count")
+    ):
+        return ()
+
+    final_by_source_id: dict[str, Mapping[str, Any]] = {}
+    for source in final_top_evidence or ():
+        if not isinstance(source, Mapping):
+            continue
+        source_id = _clean_text(source.get("source_id"))
+        if source_id:
+            final_by_source_id.setdefault(source_id, source)
+
+    citations: list[dict[str, Any]] = []
+    source_ids = execution_trace.get("final_answer_source_ids_used")
+    if not isinstance(source_ids, (list, tuple, set)):
+        return ()
+    for source_id in source_ids:
+        clean_id = _clean_text(source_id)
+        if not clean_id:
+            continue
+        source = final_by_source_id.get(clean_id, {})
+        citations.append(
+            {
+                "citation_id": clean_id,
+                "source_id": clean_id,
+                "url": _clean_text(source.get("url")),
+                "source_url": _clean_text(source.get("url")),
+                "source_class": _clean_text(source.get("source_class")),
+                "source_tier": _clean_text(source.get("source_tier")),
+            }
+        )
+    return tuple(citations)
+
+
+def _positive_int(value: Any) -> bool:
+    try:
+        return int(value or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    return " ".join(str(value or "").strip().split())
 
 
 __all__ = ["attach_passive_runtime_projection_traces"]
