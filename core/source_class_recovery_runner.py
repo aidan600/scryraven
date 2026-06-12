@@ -1,4 +1,4 @@
-"""Mechanical runner for Controller-approved source-class recovery dispatch."""
+"""Mechanical runner for canonical source-class recovery dispatch."""
 
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ from core.source_class_recovery_executor import (
 @dataclass(frozen=True)
 class SourceClassRecoveryRunnerContext:
     controller: RunController
-    authorized_spine_action: str | None
     controller_recovery_decision: ControllerRecoveryDecision | None
     lifecycle_trace: dict[str, Any]
     process_search_queries: Any
@@ -55,6 +54,45 @@ class SourceClassRecoveryRunnerResult:
     total_urls_delta: int
     total_chunks_delta: int
     provider_search_allocation: ProviderSearchAllocationGateResult | None = None
+
+
+def _canonical_source_class_recovery_dispatch_authorized(
+    lifecycle_trace: dict[str, Any],
+) -> tuple[bool, str]:
+    if (
+        lifecycle_trace.get("active_source_class_recovery_used") is True
+        or lifecycle_trace.get("active_source_class_recovery_execution_attempted")
+        is True
+    ):
+        return False, "canonical_recovery_already_attempted"
+    authority = lifecycle_trace.get("authority_lifecycle")
+    if not isinstance(authority, dict) or not authority:
+        return False, "canonical_authority_lifecycle_absent"
+    action = authority.get("recovery_action")
+    execution = authority.get("execution_state")
+    action = action if isinstance(action, dict) else {}
+    execution = execution if isinstance(execution, dict) else {}
+    checks = (
+        (authority.get("recovery_needed") != "required", "canonical_recovery_not_required"),
+        (
+            action.get("action_type") != RECOVER_MISSING_SOURCE_CLASS,
+            "canonical_recovery_action_absent",
+        ),
+        (action.get("approved") is not True, "canonical_recovery_action_not_approved"),
+        (execution.get("state") == "blocked", "canonical_recovery_execution_blocked"),
+        (
+            execution.get("state") not in {"approved_pending_execution", None},
+            "canonical_recovery_execution_not_pending",
+        ),
+    )
+    for blocked, reason in checks:
+        if blocked:
+            return False, reason
+    return True, "canonical_authority_lifecycle_recovery_action"
+
+
+def _no_execution() -> dict[str, int | bool]:
+    return {"attempted": False, "result_count": 0, "new_url_count": 0}
 
 
 def _active_source_class_recovery_action(controller: RunController) -> Any | None:
@@ -134,71 +172,105 @@ def run_source_class_recovery_dispatch(
 ) -> SourceClassRecoveryRunnerResult:
     """Dispatch one source-class recovery action without making recovery decisions."""
 
-    provider_search_allocation = (
-        record_provider_search_allocation_if_controller_authorized(
-            context.lifecycle_trace,
-            context.controller_recovery_decision,
-            _provider_search_allocation_execution_context(context),
+    if context.controller_recovery_decision is not None:
+        context.lifecycle_trace.update(
+            context.controller_recovery_decision.to_executor_trace_fields()
         )
+        context.lifecycle_trace["recovery_decision_diagnostic_only"] = True
+
+    canonical_dispatch_authorized, dispatch_reason = (
+        _canonical_source_class_recovery_dispatch_authorized(context.lifecycle_trace)
     )
-    if provider_search_allocation.allocated:
-        source_class_recovery_execution = {
-            "attempted": False,
-            "result_count": 0,
-            "new_url_count": 0,
-        }
-    elif context.authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS:
-        source_class_recovery_execution = execute_source_class_recovery_action(
-            context.controller,
-            lifecycle_trace=context.lifecycle_trace,
-            process_search_queries=context.process_search_queries,
-            all_passages=context.all_passages,
-            intent=context.intent,
-            complexity=context.complexity,
-            results_per_query=context.results_per_query,
-            include_domains=context.include_domains,
-            exclude_domains=context.exclude_domains,
-            query_embedding=context.query_embedding,
-            seen_urls=context.seen_urls,
-            collected_images=context.collected_images,
-            embed_provider=context.embed_provider,
-            embed_model=context.embed_model,
-            local_url=context.local_url,
-            embed_texts=context.embed_texts,
-            compute_similarities=context.compute_similarities,
-            status_container=context.status_container,
-            search_providers=context.search_providers,
-            exa_domain_filter=context.exa_domain_filter,
-            entity_hint=context.entity_hint,
-            provider_diagnostics=context.provider_diagnostics,
-            retrieval_pass_records=context.retrieval_pass_records,
-            error_type=context.error_type,
+    context.lifecycle_trace["source_class_recovery_dispatch_authority"] = (
+        "authority_lifecycle.recovery_action"
+    )
+    context.lifecycle_trace["source_class_recovery_dispatch_authorized"] = (
+        canonical_dispatch_authorized
+    )
+    context.lifecycle_trace["source_class_recovery_dispatch_reason"] = dispatch_reason
+
+    provider_search_allocation: ProviderSearchAllocationGateResult | None = None
+    if canonical_dispatch_authorized:
+        blocker_reason = (
+            "missing_process_search_queries"
+            if not callable(context.process_search_queries)
+            else "missing_search_providers"
+            if not context.search_providers
+            else None
+        )
+        if blocker_reason is not None:
+            record_source_class_recovery_execution_blocked_if_needed(
+                context.lifecycle_trace,
+                authorized_for_executor=False,
+                blocker_reason=blocker_reason,
+            )
+            source_class_recovery_execution = _no_execution()
+        else:
+            source_class_recovery_execution = execute_source_class_recovery_action(
+                context.controller,
+                lifecycle_trace=context.lifecycle_trace,
+                process_search_queries=context.process_search_queries,
+                all_passages=context.all_passages,
+                intent=context.intent,
+                complexity=context.complexity,
+                results_per_query=context.results_per_query,
+                include_domains=context.include_domains,
+                exclude_domains=context.exclude_domains,
+                query_embedding=context.query_embedding,
+                seen_urls=context.seen_urls,
+                collected_images=context.collected_images,
+                embed_provider=context.embed_provider,
+                embed_model=context.embed_model,
+                local_url=context.local_url,
+                embed_texts=context.embed_texts,
+                compute_similarities=context.compute_similarities,
+                status_container=context.status_container,
+                search_providers=context.search_providers,
+                exa_domain_filter=context.exa_domain_filter,
+                entity_hint=context.entity_hint,
+                provider_diagnostics=context.provider_diagnostics,
+                retrieval_pass_records=context.retrieval_pass_records,
+                error_type=context.error_type,
+            )
+        provider_search_allocation = ProviderSearchAllocationGateResult(
+            allocated=False,
+            reason="canonical_source_class_recovery_permission_active",
         )
     else:
-        record_source_class_recovery_execution_blocked_if_needed(
-            context.lifecycle_trace,
-            authorized_for_executor=False,
-            blocker_reason="source_class_recovery_executor_dispatch_not_authorized",
+        provider_search_allocation = (
+            record_provider_search_allocation_if_controller_authorized(
+                context.lifecycle_trace,
+                context.controller_recovery_decision,
+                _provider_search_allocation_execution_context(context),
+            )
         )
-        source_class_recovery_execution = {
-            "attempted": False,
-            "result_count": 0,
-            "new_url_count": 0,
-        }
+        if provider_search_allocation.allocated:
+            source_class_recovery_execution = _no_execution()
+        else:
+            record_source_class_recovery_execution_blocked_if_needed(
+                context.lifecycle_trace,
+                authorized_for_executor=False,
+                blocker_reason=dispatch_reason,
+            )
+            context.lifecycle_trace["active_source_class_recovery_skip_reason"] = (
+                context.lifecycle_trace.get("active_source_class_recovery_skip_reason")
+                or dispatch_reason
+            )
+            blockers = list(
+                context.lifecycle_trace.get("active_source_class_recovery_blockers")
+                or []
+            )
+            if dispatch_reason not in blockers:
+                blockers.append(dispatch_reason)
+            context.lifecycle_trace["active_source_class_recovery_blockers"] = blockers
+            source_class_recovery_execution = _no_execution()
 
-    if not source_class_recovery_execution["attempted"]:
-        return SourceClassRecoveryRunnerResult(
-            source_class_recovery_execution=source_class_recovery_execution,
-            total_urls_delta=0,
-            total_chunks_delta=0,
-            provider_search_allocation=provider_search_allocation,
-        )
-
+    attempted = bool(source_class_recovery_execution["attempted"])
     return SourceClassRecoveryRunnerResult(
-        source_class_recovery_execution=source_class_recovery_execution,
-        total_urls_delta=int(source_class_recovery_execution["new_url_count"]),
-        total_chunks_delta=int(source_class_recovery_execution["result_count"]),
-        provider_search_allocation=provider_search_allocation,
+        source_class_recovery_execution,
+        int(source_class_recovery_execution["new_url_count"]) if attempted else 0,
+        int(source_class_recovery_execution["result_count"]) if attempted else 0,
+        provider_search_allocation,
     )
 
 

@@ -99,7 +99,6 @@ def _context(
 
     return SourceClassRecoveryRunnerContext(
         controller=controller or RunController(),
-        authorized_spine_action=authorized_spine_action,
         controller_recovery_decision=decision,
         lifecycle_trace=lifecycle,
         process_search_queries=process_search_queries or fail_search,

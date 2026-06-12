@@ -566,7 +566,8 @@ def test_ag68g_pipeline_change_is_tiny_and_protected_surfaces_remain_closed() ->
     assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in (
         pipeline_source
     )
-    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" in runner_source
+    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in runner_source
+    assert "authority_lifecycle.recovery_action" in runner_source
     assert len(refresh_calls) == 1
     helper_start = pipeline_source.index(
         "def _authoritative_source_checkpoint_refresh_allowed"

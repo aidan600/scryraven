@@ -83,7 +83,6 @@ def _context(
 ) -> SourceClassRecoveryRunnerContext:
     return SourceClassRecoveryRunnerContext(
         controller=_controller(),
-        authorized_spine_action=None,
         controller_recovery_decision=decision,
         lifecycle_trace=lifecycle,
         process_search_queries=process_search_queries,

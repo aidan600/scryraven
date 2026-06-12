@@ -479,7 +479,8 @@ def test_pipeline_runtime_handoff_trace_preserves_active_gate_visibility(
         "source_class_recovery",
     ]
     assert [call["provider_role"] for call in baseline_harness.search_calls] == [
-        "main_retrieval"
+        "main_retrieval",
+        "source_class_recovery",
     ]
     assert execution_jsonl_to_run_row(active_log) is not None
     assert set(execution_jsonl_to_run_row(active_log) or {}) == set(RUN_COLUMNS)

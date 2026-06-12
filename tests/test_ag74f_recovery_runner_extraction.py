@@ -30,6 +30,16 @@ def _lifecycle(**overrides: Any) -> dict[str, Any]:
         "source_obligation_status": "official_current_required_unmet",
         "active_source_class_recovery_eligible": True,
         "active_source_class_recovery_official_canonical_admitted": True,
+        "authority_lifecycle": {
+            "requirement_id": "ag74f-official-current",
+            "recovery_needed": "required",
+            "recovery_action": {
+                "action_type": RECOVER_MISSING_SOURCE_CLASS,
+                "approved": True,
+            },
+            "execution_state": {"state": "approved_pending_execution"},
+            "explicit_blockers": [],
+        },
         "recovery_slot_available": True,
     }
     trace.update(overrides)
@@ -62,7 +72,6 @@ def _controller_with_action() -> RunController:
 def _context(**overrides: Any) -> SourceClassRecoveryRunnerContext:
     values: dict[str, Any] = {
         "controller": _controller_with_action(),
-        "authorized_spine_action": RECOVER_MISSING_SOURCE_CLASS,
         "controller_recovery_decision": build_controller_recovery_decision(
             _lifecycle()
         ),
@@ -91,6 +100,7 @@ def _context(**overrides: Any) -> SourceClassRecoveryRunnerContext:
         "error_type": RuntimeError,
     }
     values.update(overrides)
+    values.pop("authorized_spine_action", None)
     return SourceClassRecoveryRunnerContext(**values)
 
 
@@ -115,7 +125,7 @@ def test_ag74f_pipeline_delegates_source_class_recovery_dispatch_to_runner() -> 
         runner_source.count(
             "record_source_class_recovery_execution_blocked_if_needed("
         )
-        == 1
+        == 2
     )
 
 
@@ -256,6 +266,7 @@ def test_ag74f_runner_actual_executor_path_preserves_dispatch_parity() -> None:
     assert all_passages[0]["retrieval_stage"] == "source_class_recovery"
     assert context.lifecycle_trace["recovery_decision"] == "retry_recovery"
     assert "recovery_decision_trace" in context.lifecycle_trace
+    assert context.lifecycle_trace["recovery_decision_diagnostic_only"] is True
     assert not [
         key for key in context.lifecycle_trace if key.startswith("controller_")
     ]
@@ -280,6 +291,7 @@ def test_ag74f_request_provider_search_review_spine_value_alone_does_not_search(
         _context(
             authorized_spine_action=REQUEST_PROVIDER_SEARCH_REVIEW,
             controller_recovery_decision=None,
+            lifecycle_trace=_lifecycle(authority_lifecycle=None),
             process_search_queries=fake_search,
         )
     )
@@ -303,8 +315,8 @@ def test_ag74f_controller_decision_ownership_and_protected_surfaces() -> None:
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
 
-    assert "build_controller_recovery_decision(" in executor_source
-    assert "controller_recovery_executor_allows_attempt(" in executor_source
+    assert "build_controller_recovery_decision(" not in executor_source
+    assert "controller_recovery_executor_allows_attempt(" not in executor_source
     assert "request_provider_search_review" in decision_source
     assert "request_provider_search_review" not in executor_source
     assert "request_provider_search_review" not in orchestrator_source
@@ -313,6 +325,10 @@ def test_ag74f_controller_decision_ownership_and_protected_surfaces() -> None:
     )
     assert "build_controller_recovery_decision(" not in runner_source
     assert "controller_recovery_executor_allows_attempt(" not in runner_source
+    assert "authority_lifecycle.recovery_action" in runner_source
+    assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in (
+        runner_source
+    )
 
     for source in (runner_source,):
         for forbidden in (

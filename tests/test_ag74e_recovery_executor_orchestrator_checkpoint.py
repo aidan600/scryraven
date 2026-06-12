@@ -5,7 +5,6 @@ from typing import Any
 
 from core.controller_recovery_decision import (
     REQUEST_PROVIDER_SEARCH_REVIEW,
-    RETRY_RECOVERY,
     build_controller_recovery_decision,
 )
 from core.run_controller import RetrievalAction, RunController
@@ -90,7 +89,7 @@ def _execute_with_defaults(
     )
 
 
-def test_ag74e_executor_parameter_gate_is_subordinate_to_controller_decision() -> None:
+def test_ag74e_executor_parameter_gate_is_mechanical_after_runner_authorization() -> None:
     lifecycle = _unmet_official_trace()
     controller = _controller_with_action(queries=[], search_depth=None)
     captured_queries: list[str] = []
@@ -103,9 +102,9 @@ def test_ag74e_executor_parameter_gate_is_subordinate_to_controller_decision() -
 
     assert result == {"attempted": False, "result_count": 0, "new_url_count": 0}
     assert captured_queries == []
-    assert lifecycle["recovery_decision"] == RETRY_RECOVERY
-    assert lifecycle["recovery_retry_allowed"] is True
-    assert "recovery_decision_trace" in lifecycle
+    assert "recovery_decision" not in lifecycle
+    assert "recovery_retry_allowed" not in lifecycle
+    assert "recovery_decision_trace" not in lifecycle
     assert "controller_recovery_decision" not in lifecycle
     assert lifecycle["active_source_class_recovery_skip_reason"] == (
         "controller_recovery_decision_allowed_but_executor_action_unexecutable"
@@ -139,16 +138,13 @@ def test_ag74e_provider_search_review_stays_out_of_executor_and_orchestrator() -
     )
 
 
-def test_ag74e_static_executor_consults_controller_before_parameter_skip() -> None:
+def test_ag74e_static_executor_parameter_skip_is_mechanical() -> None:
     source = _EXECUTOR_PATH.read_text(encoding="utf-8")
-    decision_index = source.index("build_controller_recovery_decision(")
     parameter_gate_index = source.index("if not queries or search_depth is None:")
     search_call_index = source.index("recovered_passages = process_search_queries(")
 
-    assert decision_index < parameter_gate_index < search_call_index
-    assert "source_class_recovery_executor_parameter_gate" in (
-        _DECISION_PATH.read_text(encoding="utf-8")
-    )
+    assert "build_controller_recovery_decision(" not in source
+    assert parameter_gate_index < search_call_index
 
 
 def test_ag74e_static_guard_keeps_closed_surfaces_unchanged() -> None:

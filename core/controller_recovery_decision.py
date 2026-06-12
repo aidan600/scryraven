@@ -232,17 +232,6 @@ def build_controller_recovery_decision(
     return ControllerRecoveryDecision(payload=payload)
 
 
-def controller_recovery_executor_allows_attempt(
-    decision: ControllerRecoveryDecision,
-) -> bool:
-    """Return whether the mechanical executor may spend the recovery action."""
-
-    payload = decision.payload
-    if payload.get("controller_gate_authoritative") is not True:
-        return True
-    return decision.retry_allowed
-
-
 def _decide(
     *,
     ledger_status: str,
@@ -750,5 +739,4 @@ __all__ = [
     "STOP_LEGACY_CUSTODY_GAP",
     "STOP_SUFFICIENT",
     "build_controller_recovery_decision",
-    "controller_recovery_executor_allows_attempt",
 ]

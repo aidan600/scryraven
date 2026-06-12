@@ -748,7 +748,6 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8")
     runner_source = _SOURCE_CLASS_RECOVERY_RUNNER_PATH.read_text(encoding="utf-8")
     orchestrator_tree = ast.parse(orchestrator_source)
-    runner_tree = ast.parse(runner_source)
 
     def parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST]:
         parent_by_node: dict[ast.AST, ast.AST] = {}
@@ -758,7 +757,6 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
         return parent_by_node
 
     orchestrator_parent_by_node = parent_map(orchestrator_tree)
-    runner_parent_by_node = parent_map(runner_tree)
 
     assert "execute_source_class_recovery_action(" not in orchestrator_source
     assert orchestrator_source.count("run_source_class_recovery_dispatch(") == 1
@@ -828,11 +826,11 @@ def test_pipeline_orchestrator_dispatches_only_from_spine_authorization() -> Non
         orchestrator_parent_by_node,
         {"execute_conflict_resolution_from_scope": "RESOLVE_CONFLICT"},
     ) == {"execute_conflict_resolution_from_scope": True}
-    assert guarded_calls_for(
-        runner_tree,
-        runner_parent_by_node,
-        {"execute_source_class_recovery_action": "RECOVER_MISSING_SOURCE_CLASS"},
-    ) == {"execute_source_class_recovery_action": True}
+    assert (
+        "_canonical_source_class_recovery_dispatch_authorized(context.lifecycle_trace)"
+        in runner_source
+    )
+    assert "authorized_spine_action" not in runner_source
 
 
 def test_pipeline_orchestrator_does_not_authorize_retrieve_targeted_dispatch() -> None:

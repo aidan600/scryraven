@@ -505,7 +505,7 @@ def test_ag69c_pipeline_change_remains_tiny_plumbing() -> None:
         runner_source.count(
             "record_source_class_recovery_execution_blocked_if_needed("
         )
-        == 1
+        == 2
     )
     assert "run_source_class_recovery_dispatch(" in pipeline_source
     call_index = runner_source.index(
