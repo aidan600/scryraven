@@ -684,3 +684,4 @@ def test_ag95d_pipeline_does_not_reintroduce_source_class_spine_policy_branch() 
 
     assert violations == []
     assert source.count("run_source_class_recovery_dispatch(") == 1
+    assert "source_class_executor_dispatched" not in source

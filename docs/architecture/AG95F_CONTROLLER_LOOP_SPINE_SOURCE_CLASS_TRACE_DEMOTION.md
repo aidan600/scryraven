@@ -5,6 +5,11 @@ ScryRaven/proplex provider, model, search, retrieval, secret, `.env`, DB row,
 raw provider payload, raw prompt, private log, cache, full raw trace, local
 output packet, or private artifact access was used.
 
+> AG-95G follow-up: the orchestrator no longer reads
+> `ControllerLoopSpineResult.source_class_executor_dispatched` while building
+> targeted-retrieval ownership. The remaining source-class spine keys are
+> preserved as diagnostic compatibility for named trace/test consumers.
+
 ## Current Doctrine
 
 Source-class recovery dispatch remains:
