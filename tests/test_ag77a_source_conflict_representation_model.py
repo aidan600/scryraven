@@ -364,6 +364,16 @@ def test_lane_distinction_static_guard_allows_bounded_orchestrator_projection_ex
         )
         assert "run_contract_source_hints_consumed" in router_diff
         distinct_lane_modules.remove("core/router_query_preparation_contract.py")
+    if "core/source_class_recovery_controller.py" in changed:
+        source_class_diff = subprocess.check_output(
+            ["git", "diff", "HEAD", "--", "core/source_class_recovery_controller.py"],
+            cwd=ROOT,
+            text=True,
+        )
+        assert "source_class_authority_status_normalization" in source_class_diff
+        assert "terminal_stop_approved" in source_class_diff
+        assert "conflict_resolution_owns_path" in source_class_diff
+        distinct_lane_modules.remove("core/source_class_recovery_controller.py")
     assert changed.isdisjoint(distinct_lane_modules)
 
 

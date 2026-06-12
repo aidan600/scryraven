@@ -12,6 +12,10 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping
 
+from core.source_class_authority_status_normalization import (
+    append_status_only_strong_authority_missing_classes,
+)
+
 SOURCE_CLASS_RECOVERY_PROVIDER_ROLE = "source_class_recovery"
 
 SOURCE_CLASS_CONTROLLER_EVIDENCE_SIGNAL_KEYS = (
@@ -32,6 +36,9 @@ _WEAK_CORPUS_STATES = {"OFF_TOPIC", "ESTIMATE_FROM_PRIORS"}
 _SKIP_REASON_PRIORITY = (
     "not_evaluated",
     "already_attempted",
+    "blocked_by_terminal_stop",
+    "conflict_resolution_owns_path",
+    "blocked_by_conflict_resolution",
     "blocked_by_author_phase",
     "blocked_by_post_analyst_phase",
     "blocked_by_weak_corpus_recovery",
@@ -133,6 +140,8 @@ class SourceClassRecoveryControllerInput:
     search_depth_reusable: bool = True
     search_depth_escalation_required: bool = False
     retrieve_to_anchor_recommended: bool = False
+    terminal_stop_approved: bool = False
+    conflict_resolution_owns_path: bool = False
     pre_analyst_phase: bool = True
     author_phase: bool = False
     prior_attempt_count: int = 0
@@ -168,6 +177,8 @@ class SourceClassRecoveryControllerInput:
             "search_depth_reusable": self.search_depth_reusable,
             "search_depth_escalation_required": self.search_depth_escalation_required,
             "retrieve_to_anchor_recommended": self.retrieve_to_anchor_recommended,
+            "terminal_stop_approved": self.terminal_stop_approved,
+            "conflict_resolution_owns_path": self.conflict_resolution_owns_path,
             "pre_analyst_phase": self.pre_analyst_phase,
             "author_phase": self.author_phase,
             "prior_attempt_count": self.prior_attempt_count,
@@ -458,17 +469,21 @@ def build_source_class_recovery_controller_input(
     search_depth_reusable: bool = True,
     search_depth_escalation_required: bool = False,
     retrieve_to_anchor_recommended: bool = False,
+    terminal_stop_approved: bool = False,
+    conflict_resolution_owns_path: bool = False,
     pre_analyst_phase: bool = True,
     author_phase: bool = False,
 ) -> SourceClassRecoveryControllerInput:
     """Build the compact controller input from existing retrieval facts."""
     telemetry = recommendation or {}
+    missing_classes = append_status_only_strong_authority_missing_classes(
+        _copy_string_list(telemetry.get("missing_expected_source_classes")),
+        telemetry,
+    )
     return SourceClassRecoveryControllerInput(
         recommendation_evaluated=bool(recommendation_evaluated),
         recommended=bool(telemetry.get("source_class_recovery_recommended")),
-        missing_expected_source_classes=_copy_string_list(
-            telemetry.get("missing_expected_source_classes")
-        ),
+        missing_expected_source_classes=missing_classes,
         recovery_queries=_copy_string_list(
             telemetry.get("source_class_recovery_queries"),
             cap=_MAX_ACTIVE_RECOVERY_QUERIES,
@@ -503,6 +518,8 @@ def build_source_class_recovery_controller_input(
         search_depth_reusable=bool(search_depth_reusable),
         search_depth_escalation_required=bool(search_depth_escalation_required),
         retrieve_to_anchor_recommended=bool(retrieve_to_anchor_recommended),
+        terminal_stop_approved=bool(terminal_stop_approved),
+        conflict_resolution_owns_path=bool(conflict_resolution_owns_path),
         pre_analyst_phase=bool(pre_analyst_phase),
         author_phase=bool(author_phase),
         prior_attempt_count=max(0, int(prior_attempt_count or 0)),
@@ -536,6 +553,10 @@ def decide_source_class_recovery(
         blockers.append("no_recovery_queries")
     if snapshot.prior_attempt_count > 0:
         blockers.append("already_attempted")
+    if snapshot.terminal_stop_approved:
+        blockers.append("blocked_by_terminal_stop")
+    if snapshot.conflict_resolution_owns_path:
+        blockers.append("conflict_resolution_owns_path")
 
     weak_recovery_owns_path = snapshot.weak_corpus_recovery_used or (
         snapshot.weak_corpus_recovery_considered
