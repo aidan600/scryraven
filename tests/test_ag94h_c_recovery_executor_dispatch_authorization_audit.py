@@ -117,7 +117,6 @@ def _approved_lifecycle(**overrides: Any) -> dict[str, Any]:
 def _runner_context(
     *,
     lifecycle: dict[str, Any],
-    authorized_spine_action: str | None,
     controller_recovery_decision: Any | None = None,
     controller: RunController | None = None,
     process_search_queries: Any | None = None,
@@ -282,7 +281,6 @@ def test_ag94h_d_synthetic_live_shape_dispatches_checkpointless_recovery() -> No
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            authorized_spine_action=spine.authorized_dispatch,
             controller_recovery_decision=decision,
             controller=_controller_with_recovery_action(),
             process_search_queries=fake_search,
@@ -431,14 +429,12 @@ def test_ag94h_d_runner_dispatches_only_from_canonical_recovery_action() -> None
         allowed = run_source_class_recovery_dispatch(
             _runner_context(
                 lifecycle=allowed_lifecycle,
-                authorized_spine_action=None,
                 controller_recovery_decision=decision,
             )
         )
         blocked = run_source_class_recovery_dispatch(
             _runner_context(
                 lifecycle=blocked_lifecycle,
-                authorized_spine_action=RECOVER_MISSING_SOURCE_CLASS,
                 controller_recovery_decision=decision,
             )
         )
@@ -489,7 +485,6 @@ def test_ag94h_d_canonical_permission_executes_without_demoted_diagnostics() -> 
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            authorized_spine_action=None,
             controller_recovery_decision=None,
             controller=controller,
             process_search_queries=fake_search,
@@ -666,7 +661,6 @@ def test_ag94h_d_executor_does_not_deny_positive_shape_for_legacy_gap() -> None:
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            authorized_spine_action=RECOVER_MISSING_SOURCE_CLASS,
             controller_recovery_decision=build_controller_recovery_decision(lifecycle),
             controller=_controller_with_recovery_action(),
             process_search_queries=fake_search,
@@ -695,7 +689,6 @@ def test_ag94h_d_controller_decision_diagnostic_cannot_veto_canonical_dispatch()
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            authorized_spine_action=RECOVER_MISSING_SOURCE_CLASS,
             controller_recovery_decision=build_controller_recovery_decision(lifecycle),
             controller=_controller_with_recovery_action(),
             process_search_queries=fake_search,

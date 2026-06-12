@@ -100,7 +100,6 @@ def _context(**overrides: Any) -> SourceClassRecoveryRunnerContext:
         "error_type": RuntimeError,
     }
     values.update(overrides)
-    values.pop("authorized_spine_action", None)
     return SourceClassRecoveryRunnerContext(**values)
 
 
@@ -289,7 +288,6 @@ def test_ag74f_request_provider_search_review_spine_value_alone_does_not_search(
 
     result = run_source_class_recovery_dispatch(
         _context(
-            authorized_spine_action=REQUEST_PROVIDER_SEARCH_REVIEW,
             controller_recovery_decision=None,
             lifecycle_trace=_lifecycle(authority_lifecycle=None),
             process_search_queries=fake_search,

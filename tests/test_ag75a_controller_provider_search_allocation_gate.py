@@ -86,7 +86,6 @@ def _context(
     *,
     lifecycle: dict[str, Any],
     decision: Any,
-    authorized_spine_action: str | None = None,
     controller: RunController | None = None,
     process_search_queries: Any | None = None,
     all_passages: list[dict[str, Any]] | None = None,
@@ -282,7 +281,6 @@ def test_ag75a_absent_controller_recovery_decision_does_not_allocate() -> None:
         _context(
             lifecycle=lifecycle,
             decision=None,
-            authorized_spine_action=REQUEST_PROVIDER_SEARCH_REVIEW,
             controller=_controller_with_existing_recovery_action(
                 queries=["official current fixture"],
             ),

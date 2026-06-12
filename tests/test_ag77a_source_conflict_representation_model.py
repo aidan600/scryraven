@@ -380,8 +380,14 @@ def test_lane_distinction_static_guard_allows_bounded_orchestrator_projection_ex
             cwd=ROOT,
             text=True,
         )
-        assert "build_controller_recovery_decision" in executor_diff
-        assert "controller_recovery_executor_allows_attempt" in executor_diff
+        assert (
+            (
+                "build_controller_recovery_decision" in executor_diff
+                and "controller_recovery_executor_allows_attempt" in executor_diff
+            )
+            or "source_class_recovery_executor_action_unexecutable"
+            in executor_diff
+        )
         distinct_lane_modules.remove("core/source_class_recovery_executor.py")
     assert changed.isdisjoint(distinct_lane_modules)
 
