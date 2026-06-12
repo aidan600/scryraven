@@ -237,7 +237,7 @@ def execute_source_class_recovery_action(
             blockers.append("missing_executor_search_depth")
         lifecycle_trace["active_source_class_recovery_blockers"] = blockers
         lifecycle_trace["active_source_class_recovery_skip_reason"] = (
-            "controller_recovery_decision_allowed_but_executor_action_unexecutable"
+            "source_class_recovery_executor_action_unexecutable"
         )
         return {"attempted": False, "result_count": 0, "new_url_count": 0}
 

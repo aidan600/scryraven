@@ -107,7 +107,7 @@ def test_ag74e_executor_parameter_gate_is_mechanical_after_runner_authorization(
     assert "recovery_decision_trace" not in lifecycle
     assert "controller_recovery_decision" not in lifecycle
     assert lifecycle["active_source_class_recovery_skip_reason"] == (
-        "controller_recovery_decision_allowed_but_executor_action_unexecutable"
+        "source_class_recovery_executor_action_unexecutable"
     )
     assert lifecycle["active_source_class_recovery_blockers"] == [
         "missing_executor_queries",
