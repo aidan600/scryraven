@@ -149,11 +149,29 @@ def build_controller_recovery_decision(
         source_classes=source_classes,
         source_obligation_status=source_obligation_status,
     )
+    legacy_gap_observed = ledger_status == "legacy_gap_observed" or bool(
+        legacy_gap_types
+    )
+    legacy_gap_subordinated_for_recovery_attempt = (
+        _legacy_gap_subordinated_for_bounded_recovery_attempt(
+            trace=trace,
+            legacy_gap_observed=legacy_gap_observed,
+            source_classes=source_classes,
+            source_obligation_status=source_obligation_status,
+            budget_state=budget_state,
+            candidate_state=candidate_state,
+            hard_blocker_state=hard_blocker_state,
+            gate_authoritative=gate_authoritative,
+        )
+    )
 
     decision, reason = _decide(
         ledger_status=ledger_status,
         custody_complete=custody_complete,
         legacy_gap_types=legacy_gap_types,
+        legacy_gap_subordinated_for_recovery_attempt=(
+            legacy_gap_subordinated_for_recovery_attempt
+        ),
         source_obligation_status=source_obligation_status,
         budget_state=budget_state,
         candidate_state=candidate_state,
@@ -182,11 +200,19 @@ def build_controller_recovery_decision(
         ),
         "retry_allowed": decision == RETRY_RECOVERY,
         "retry_reason": reason if decision == RETRY_RECOVERY else None,
+        "controller_recovery_retry_reason": (
+            reason if decision == RETRY_RECOVERY else None
+        ),
         "stop_reason": reason if decision.startswith("stop_") else None,
         "architecture_stop_reason": (
             reason if decision == STOP_FOR_ARCHITECTURE_DECISION else None
         ),
         "legacy_gap_types": legacy_gap_types,
+        "legacy_gap_observed": legacy_gap_observed,
+        "legacy_gap_subordinated_for_recovery_attempt": (
+            legacy_gap_subordinated_for_recovery_attempt
+        ),
+        "legacy_gap_final_success_block_preserved": legacy_gap_observed,
         "old_path_subordinated": [
             "source_class_recovery_executor_action_gate",
             "source_class_recovery_executor_parameter_gate",
@@ -222,6 +248,7 @@ def _decide(
     ledger_status: str,
     custody_complete: Any,
     legacy_gap_types: list[str],
+    legacy_gap_subordinated_for_recovery_attempt: bool,
     source_obligation_status: str,
     budget_state: str,
     candidate_state: str,
@@ -235,8 +262,6 @@ def _decide(
             STOP_FOR_ARCHITECTURE_DECISION,
             "contradictory_ledger_custody_status",
         )
-    if ledger_status == "legacy_gap_observed" or legacy_gap_types:
-        return STOP_LEGACY_CUSTODY_GAP, "legacy_gap_observed_not_success"
     if ledger_status == "missing_controller_disposition":
         return (
             STOP_FOR_ARCHITECTURE_DECISION,
@@ -252,6 +277,10 @@ def _decide(
         return STOP_INSUFFICIENT, "conflict_resolution_blocks_recovery"
     if hard_blocker_state == "provider_policy_or_depth":
         return STOP_INSUFFICIENT, "provider_policy_or_depth_blocks_recovery"
+    if (
+        ledger_status == "legacy_gap_observed" or legacy_gap_types
+    ) and not legacy_gap_subordinated_for_recovery_attempt:
+        return STOP_LEGACY_CUSTODY_GAP, "legacy_gap_observed_not_success"
     if candidate_state == "selected_complete_official_current_evidence_exists":
         return CONTINUE_DOWNSTREAM, "selected_official_current_evidence_exists"
     if candidate_state == "candidate_acquired_but_unreadable":
@@ -318,7 +347,10 @@ def _candidate_state_summary(trace: Mapping[str, Any]) -> str:
     final_citation = _int_or_unknown(
         trace.get("final_citation_official_or_canonical_count")
     )
-    if _positive(final_selected) or (_positive(final_evidence) and _positive(final_citation)):
+    if (
+        _positive(final_selected)
+        or (_positive(final_evidence) and _positive(final_citation))
+    ) and not _legacy_final_aggregate_counts_are_untrusted_for_retry(trace):
         return "selected_complete_official_current_evidence_exists"
 
     recovered_result = _int_or_unknown(
@@ -364,6 +396,158 @@ def _candidate_state_summary(trace: Mapping[str, Any]) -> str:
     if _positive(official_candidate):
         return "official_current_candidate_acquired"
     return _UNKNOWN
+
+
+def _legacy_final_aggregate_counts_are_untrusted_for_retry(
+    trace: Mapping[str, Any],
+) -> bool:
+    ledger_custody = _ledger_custody(trace)
+    ledger_status = _text(
+        _first_present(
+            trace.get("final_evidence_citation_custody_status"),
+            ledger_custody.get("status"),
+        )
+    )
+    legacy_gap_types = _string_list(
+        _first_present(
+            trace.get("ledger_legacy_gap_types"),
+            ledger_custody.get("legacy_gap_types"),
+        )
+    )
+    if ledger_status != "legacy_gap_observed" and not legacy_gap_types:
+        return False
+    source_obligation_status = _source_obligation_status(
+        trace,
+        _source_classes(trace),
+    )
+    if not source_obligation_status.endswith("_unmet"):
+        return False
+    return _candidate_acquisition_not_attempted(trace)
+
+
+def _legacy_gap_subordinated_for_bounded_recovery_attempt(
+    *,
+    trace: Mapping[str, Any],
+    legacy_gap_observed: bool,
+    source_classes: list[str],
+    source_obligation_status: str,
+    budget_state: str,
+    candidate_state: str,
+    hard_blocker_state: str,
+    gate_authoritative: bool,
+) -> bool:
+    if not legacy_gap_observed:
+        return False
+    if not gate_authoritative:
+        return False
+    if not source_obligation_status.endswith("_unmet"):
+        return False
+    if budget_state != "available":
+        return False
+    if hard_blocker_state != _UNKNOWN:
+        return False
+    if candidate_state != _UNKNOWN:
+        return False
+    if not _candidate_acquisition_not_attempted(trace):
+        return False
+    if not _supported_official_current_source_class_present(source_classes):
+        return False
+    if not _source_class_recovery_lifecycle_approved(trace):
+        return False
+    if not _recovery_queries_available(trace):
+        return False
+    if _recovery_already_attempted(trace):
+        return False
+    return True
+
+
+def _candidate_acquisition_not_attempted(trace: Mapping[str, Any]) -> bool:
+    candidate_status = _text(trace.get("candidate_return_status"))
+    if candidate_status not in {"not_attempted", _UNKNOWN, _NOT_OBSERVABLE}:
+        return False
+    for key in (
+        "candidate_acquisition_considered",
+        "candidate_acquisition_eligible",
+        "candidate_acquisition_used",
+        "acquisition_attempted",
+        "active_source_class_recovery_execution_attempted",
+        "active_source_class_recovery_used",
+        "authority_lifecycle_execution_attempted",
+    ):
+        if trace.get(key) is True:
+            return False
+    return True
+
+
+def _supported_official_current_source_class_present(source_classes: list[str]) -> bool:
+    return any(item in _OFFICIAL_CURRENT_CLASSES for item in source_classes)
+
+
+def _source_class_recovery_lifecycle_approved(trace: Mapping[str, Any]) -> bool:
+    eligible = (
+        trace.get("active_source_class_recovery_eligible") is True
+        or trace.get("source_class_recovery_eligible") is True
+    )
+    if not eligible:
+        return False
+    if trace.get("authority_lifecycle_execution_blocked") is True:
+        return False
+    if trace.get("authority_lifecycle_weak_corpus_may_own_path") is True:
+        return False
+    if not _source_class_action_envelope_approved(trace):
+        return False
+    return (
+        trace.get("authority_lifecycle_required_recovery_allowed") is True
+        or _authority_lifecycle_recovery_action_approved(trace)
+    )
+
+
+def _authority_lifecycle_recovery_action_approved(
+    trace: Mapping[str, Any],
+) -> bool:
+    authority = trace.get("authority_lifecycle")
+    if not isinstance(authority, Mapping):
+        return False
+    action = authority.get("recovery_action")
+    return bool(
+        isinstance(action, Mapping)
+        and action.get("action_type") == "recover_missing_source_class"
+        and action.get("approved") is True
+    )
+
+
+def _source_class_action_envelope_approved(trace: Mapping[str, Any]) -> bool:
+    envelope = trace.get("active_source_class_recovery_action_envelope")
+    if not isinstance(envelope, Mapping):
+        return False
+    required_classes = envelope.get("required_source_class")
+    return bool(
+        envelope.get("action_type") == "recover_missing_source_class"
+        and envelope.get("allowed_action") is True
+        and isinstance(required_classes, list)
+        and required_classes
+    )
+
+
+def _recovery_queries_available(trace: Mapping[str, Any]) -> bool:
+    return bool(_string_list(trace.get("active_source_class_recovery_queries")))
+
+
+def _recovery_already_attempted(trace: Mapping[str, Any]) -> bool:
+    if trace.get("active_source_class_recovery_used") is True:
+        return True
+    if trace.get("active_source_class_recovery_execution_attempted") is True:
+        return True
+    if trace.get("authority_lifecycle_execution_attempted") is True:
+        return True
+    prior = _int_or_unknown(
+        _first_present(
+            trace.get("prior_recovery_attempt_count"),
+            trace.get("active_source_class_recovery_attempt_count"),
+        )
+    )
+    maximum = _int_or_unknown(trace.get("max_recovery_attempts"))
+    return isinstance(prior, int) and isinstance(maximum, int) and prior >= maximum
 
 
 def _recovery_budget_state(trace: Mapping[str, Any]) -> str:
