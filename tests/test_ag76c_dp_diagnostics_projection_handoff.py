@@ -149,7 +149,9 @@ def test_ag76c_dp_static_orchestrator_no_longer_owns_handoff_block() -> None:
     post_author_source = (_ORCHESTRATOR_PATH.parent / "post_author_output_projection.py").read_text(encoding="utf-8")
     handoff_source = _HANDOFF_PATH.read_text(encoding="utf-8").casefold()
 
-    assert "build_post_final_source_class_projection_handoff(" in orchestrator_source
+    assert "execute_post_final_source_class_projection_from_scope(" in orchestrator_source
+    assert "build_post_final_source_class_projection_handoff(" not in orchestrator_source
+    assert "build_post_final_source_class_projection_handoff(" in handoff_source
     assert "build_source_class_recovery_projection_handoff(" not in orchestrator_source
     assert "source_class_recovery_passage_candidates(" not in orchestrator_source
     assert "build_recovery_source_quality_diagnostics(" not in orchestrator_source

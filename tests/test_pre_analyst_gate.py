@@ -17,7 +17,6 @@ from core.pipeline_orchestrator import (
     _economist_pre_analyst_skip_candidate_telemetry,
     _economist_skip_eligibility_shadow_telemetry,
     _economist_skip_shadow_alignment,
-    _final_answer_source_citation_telemetry,
     _format_analyst_quant_packet_section,
     _format_nutrition_partial_evidence_author_note,
     _nutrition_macro_per_unit_lookup,
@@ -27,6 +26,7 @@ from core.pipeline_orchestrator import (
     _scan_author_quant_source_telemetry,
     run_pipeline,
 )
+from core.post_author_output_projection import _final_answer_source_citation_telemetry
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
 from core.run_config import RunConfig, RunDeps
