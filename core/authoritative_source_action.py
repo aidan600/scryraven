@@ -1031,7 +1031,31 @@ def _official_authority_acquisition_plan(
 def _official_authority_plan_has_bounded_intent(plan: Mapping[str, Any]) -> bool:
     return bool(
         _string_tuple(plan.get("hard_domains"))
-        or _string_tuple(plan.get("role_hints"))
+        or _official_authority_plan_has_strong_role_hints(plan)
+    )
+
+
+def _official_authority_plan_has_strong_role_hints(
+    plan: Mapping[str, Any],
+) -> bool:
+    return any(
+        _official_authority_role_hint_is_strong(hint)
+        for hint in _string_tuple(plan.get("role_hints"))
+    )
+
+
+def _official_authority_role_hint_is_strong(hint: str) -> bool:
+    text = _clean_text(hint, limit=120).casefold()
+    return bool(
+        ".gov" in text
+        or ".mil" in text
+        or ".int" in text
+        or "federal register" in text
+        or "internal revenue bulletin" in text
+        or "revenue procedure" in text
+        or "policy manual" in text
+        or "fee schedule" in text
+        or "official tax guidance" in text
     )
 
 
