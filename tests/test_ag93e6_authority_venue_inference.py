@@ -224,17 +224,17 @@ def test_ag93e6_tax_immigration_labor_and_legal_current_venues_remain_mapped() -
             "fda.gov",
         ),
         (
-            "What is the current tax filing fee, form instruction, and rate rule?",
+            "What is the current IRS tax filing fee, form instruction, and rate rule?",
             "tax_rate_form_fee_rule",
             "irs.gov",
         ),
         (
-            "What is the current naturalization filing fee and service rule?",
+            "What is the current USCIS naturalization filing fee and service rule?",
             "immigration_naturalization_filing_rule",
             "uscis.gov",
         ),
         (
-            "What workplace wage compliance rule applies to the current minimum wage?",
+            "What Department of Labor workplace wage compliance rule applies?",
             "labor_workplace_wage_compliance_rule",
             "dol.gov",
         ),

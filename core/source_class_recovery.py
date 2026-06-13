@@ -329,8 +329,14 @@ def _foreign_jurisdiction_context(*texts: str) -> bool:
         (
             r"\b(?:non[-\s]?u\.s\.|outside\s+the\s+united\s+states|foreign\s+"
             r"jurisdiction)\b",
-            r"\b(?:canada|canadian|denmark|danish|eu|e\.u\.|european\s+"
-            r"union|european)\b",
+            r"\b(?:sold|used|marketed|offered|employers?|employees?|workers?|"
+            r"companies?|businesses?|consumers?|patients?|filings?|"
+            r"requirements?|rules?|regulations?|sources?)\s+in\s+"
+            r"(?!(?:the\s+)?(?:u\.s\.|us|united\s+states|federal)\b)"
+            r"[a-z][a-z-]+(?:\s+[a-z][a-z-]+){0,2}\b",
+            r"\b(?:official|legal|regulatory)\s+sources?\s+(?:in|for)\s+"
+            r"(?!(?:the\s+)?(?:u\.s\.|us|united\s+states|federal)\b)"
+            r"[a-z][a-z-]+(?:\s+[a-z][a-z-]+){0,2}\b",
         ),
     )
 
@@ -2008,7 +2014,6 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
     """Infer reusable official venue families from trace-safe public text."""
     text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
     candidates: list[_AuthorityVenueCandidate] = []
-    foreign_jurisdiction_context = _foreign_jurisdiction_context(text)
 
     def clean_tuple(values: Iterable[str], *, limit: int = 80) -> tuple[str, ...]:
         cleaned: list[str] = []
@@ -2092,7 +2097,7 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
     if (
         dot_agency_context
         or air_carrier_instrument_context
-        or (air_passenger_rights_context and not foreign_jurisdiction_context)
+        or (air_passenger_rights_context and _us_federal_authority_context(text))
     ):
         add_candidate(
             "travel_air_passenger_rights_rule",
@@ -2181,7 +2186,7 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
         )
         and _has_any(text, (r"\b(?:tax|taxes|irs|revenue)\b",))
     )
-    if tax_context:
+    if tax_context and _us_federal_authority_context(text):
         add_candidate(
             "tax_rate_form_fee_rule",
             roles=(
@@ -2205,7 +2210,7 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             reasons=("tax_rate_form_fee_signal",),
         )
 
-    if _has_any(
+    immigration_context = _has_any(
         text,
         (
             r"\b(?:immigration|naturalization|citizenship|visa|green\s+card|"
@@ -2213,7 +2218,12 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             r"\b(?:filing\s+fee|service\s+request|application\s+fee|"
             r"policy\s+manual|form\s+instructions?)\b",
         ),
-    ):
+    )
+    immigration_strong_authority_context = _has_any(
+        text,
+        (r"\b(?:uscis|n-400)\b",),
+    ) or _us_federal_authority_context(text)
+    if immigration_context and immigration_strong_authority_context:
         add_candidate(
             "immigration_naturalization_filing_rule",
             roles=(
@@ -2253,15 +2263,13 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             r"contribution\s+and\s+benefit\s+base)\b",
         ),
     )
-    if labor_context and (
-        not foreign_jurisdiction_context
-        or _has_any(
-            text,
-            (
-                r"\b(?:dol|department\s+of\s+labor|osha|occupational\s+safety"
-                r"\s+and\s+health|29\s+cfr\s+1910\.1200)\b",
-            ),
-        )
+    if labor_context and _has_any(
+        text,
+        (
+            r"\b(?:dol|department\s+of\s+labor|osha|occupational\s+safety"
+            r"\s+and\s+health|29\s+cfr\s+1910\.1200|federal\s+minimum\s+"
+            r"wage)\b",
+        ),
     ):
         labor_domains = ["dol.gov"]
         if _has_any(
@@ -2322,14 +2330,6 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             ),
         ):
             consumer_domain_constraints.append("ftc.gov")
-        elif not foreign_jurisdiction_context and _has_any(
-            text,
-            (
-                r"\bnon[-\s]?competes?\b",
-                r"\b(?:negative\s+option|click[-\s]?to[-\s]?cancel)\b",
-            ),
-        ):
-            consumer_domain_constraints.append("ftc.gov")
         add_candidate(
             "consumer_finance_regulator_rule",
             roles=(
@@ -2376,7 +2376,7 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
         (r"\b(?:securities\s+filings?|public\s+company\s+filings?)\b",),
     )
     sec_context = sec_explicit_context or (
-        sec_generic_context and not foreign_jurisdiction_context
+        sec_generic_context and _us_federal_authority_context(text)
     )
     if sec_context:
         add_candidate(
@@ -2471,7 +2471,7 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
         ),
     )
     if fda_explicit_context or (
-        fda_regulatory_context and not foreign_jurisdiction_context
+        fda_regulatory_context and _us_federal_authority_context(text)
     ):
         add_candidate(
             "health_product_regulator_rule",
@@ -2659,6 +2659,27 @@ def _authority_acquisition_decision_fields(
             "corridor_strength": "hard",
             "basis": ("explicit_us_legal_authority_signal",),
             "jurisdiction_disqualifiers": (),
+        }
+    if not jurisdiction_disqualifiers and _us_federal_authority_context(context_text):
+        return {
+            "decision_type": "hard_corridor",
+            "corridor_strength": "hard",
+            "basis": ("explicit_us_federal_authority_signal",),
+            "jurisdiction_disqualifiers": (),
+        }
+    if _eu_legal_authority_domain_context(context_text):
+        return {
+            "decision_type": "hard_corridor",
+            "corridor_strength": "hard",
+            "basis": ("explicit_eu_legal_authority_signal",),
+            "jurisdiction_disqualifiers": tuple(jurisdiction_disqualifiers),
+        }
+    if _uk_legal_authority_domain_context(context_text):
+        return {
+            "decision_type": "hard_corridor",
+            "corridor_strength": "hard",
+            "basis": ("explicit_uk_legal_authority_signal",),
+            "jurisdiction_disqualifiers": tuple(jurisdiction_disqualifiers),
         }
     if soft_domains:
         return {
@@ -2937,7 +2958,97 @@ def _append_domain(target: list[str], value: str) -> None:
         target.append(domain)
 
 
+def authority_acquisition_decision_allows_provider_domain_constraints(
+    value: Mapping[str, Any] | None,
+) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    decision = value.get("authority_acquisition_decision")
+    if not isinstance(decision, Mapping):
+        decision = value.get("source_class_recovery_authority_acquisition_decision")
+    if not isinstance(decision, Mapping):
+        return False
+    return bool(
+        decision.get("decision_type") == "hard_corridor"
+        and decision.get("provider_domain_constraints_allowed") is True
+    )
+
+
+def build_official_source_recovery_domain_constraint_policy(
+    *,
+    missing_expected_source_classes: Iterable[Any],
+    query: str,
+    core_topic: str = "",
+    primary_entity: str = "",
+    recovery_queries: Iterable[Any] = (),
+    official_authority_acquisition_plan: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    missing = tuple(
+        str(item or "").strip()
+        for item in missing_expected_source_classes or ()
+        if str(item or "").strip()
+    )
+    subject = _query_subject(
+        primary_entity=primary_entity,
+        core_topic=core_topic,
+        query=query,
+    )
+    context_text = " ".join(
+        part
+        for part in (query, core_topic, primary_entity)
+        if str(part or "").strip()
+    )
+    plan = (
+        dict(official_authority_acquisition_plan)
+        if isinstance(official_authority_acquisition_plan, Mapping)
+        else build_official_authority_acquisition_plan(
+            source_classes=missing,
+            subject=subject,
+            context_text=context_text,
+            max_query_variants=_MAX_RECOVERY_QUERIES,
+        )
+    )
+    decision = plan.get("authority_acquisition_decision")
+    if not isinstance(decision, Mapping):
+        decision = {}
+    domains = (
+        _hard_corridor_official_source_recovery_domain_constraints(
+            missing_expected_source_classes=missing,
+            query=query,
+            core_topic=core_topic,
+            primary_entity=primary_entity,
+            recovery_queries=recovery_queries,
+        )
+        if authority_acquisition_decision_allows_provider_domain_constraints(plan)
+        else []
+    )
+    return {
+        "official_domains": domains,
+        "authority_acquisition_decision": dict(decision),
+        "official_authority_acquisition_plan": plan,
+    }
+
+
 def build_official_source_recovery_domain_constraints(
+    *,
+    missing_expected_source_classes: Iterable[Any],
+    query: str,
+    core_topic: str = "",
+    primary_entity: str = "",
+    recovery_queries: Iterable[Any] = (),
+) -> list[str]:
+    """Return official-domain constraints allowed by the acquisition decision."""
+    policy = build_official_source_recovery_domain_constraint_policy(
+        missing_expected_source_classes=missing_expected_source_classes,
+        query=query,
+        core_topic=core_topic,
+        primary_entity=primary_entity,
+        recovery_queries=recovery_queries,
+    )
+    return list(policy["official_domains"])
+
+
+def _hard_corridor_official_source_recovery_domain_constraints(
     *,
     missing_expected_source_classes: Iterable[Any],
     query: str,
@@ -3219,6 +3330,53 @@ def _us_legal_authority_domain_context(*texts: str) -> bool:
     )
 
 
+def _eu_legal_authority_domain_context(*texts: str) -> bool:
+    text = " ".join(
+        _compact_text(value, limit=260) for value in texts if str(value or "").strip()
+    ).casefold()
+    if not text:
+        return False
+    return _has_any(
+        text,
+        (
+            r"\b(?:eu|e\.u\.|european\s+union|eur[-\s]?lex|eurlex)\b"
+            r".{0,120}"
+            r"\b(?:law|legal|regulation|regulatory|directive|act|"
+            r"obligations?|duties|text|requirements?)\b",
+            r"\b(?:law|legal|regulation|regulatory|directive|act|"
+            r"obligations?|duties|text|requirements?)\b"
+            r".{0,120}"
+            r"\b(?:eu|e\.u\.|european\s+union|eur[-\s]?lex|eurlex)\b",
+            r"\b(?:ai\s+act|gdpr|eprivacy|digital\s+services\s+act|"
+            r"digital\s+markets\s+act)\b",
+            r"\bregulation\s+\(eu\)\b",
+        ),
+    )
+
+
+def _uk_legal_authority_domain_context(*texts: str) -> bool:
+    text = " ".join(
+        _compact_text(value, limit=260) for value in texts if str(value or "").strip()
+    ).casefold()
+    if not text:
+        return False
+    return _has_any(
+        text,
+        (
+            r"\b(?:uk|u\.k\.|united\s+kingdom|british|legislation\.gov\.uk)\b"
+            r".{0,120}"
+            r"\b(?:law|legal|regulation|regulatory|act|statute|statutory|"
+            r"instrument|obligations?|duties|text|requirements?)\b",
+            r"\b(?:law|legal|regulation|regulatory|act|statute|statutory|"
+            r"instrument|obligations?|duties|text|requirements?)\b"
+            r".{0,120}"
+            r"\b(?:uk|u\.k\.|united\s+kingdom|british|legislation\.gov\.uk)\b",
+            r"\b(?:online\s+safety\s+act|data\s+protection\s+act|"
+            r"companies\s+act\s+2006)\b",
+        ),
+    )
+
+
 def _candidate_queries_for_bucket(
     bucket: str,
     subject: str,
@@ -3486,13 +3644,14 @@ def apply_answer_contract_source_class_recovery_gap_trigger(
             )
         )
     recovery_queries = _dedupe_cap_queries(queries)
-    official_domains = build_official_source_recovery_domain_constraints(
+    domain_policy = build_official_source_recovery_domain_constraint_policy(
         missing_expected_source_classes=missing,
         query=query,
         core_topic=core_topic,
         primary_entity=primary_entity,
         recovery_queries=recovery_queries,
     )
+    official_domains = list(domain_policy["official_domains"])
 
     trigger_fields = _copy_compact_list(
         base.get("source_class_recovery_trigger_fields")
@@ -3523,6 +3682,9 @@ def apply_answer_contract_source_class_recovery_gap_trigger(
         }
     )
     if official_domains:
+        base["source_class_recovery_authority_acquisition_decision"] = (
+            domain_policy["authority_acquisition_decision"]
+        )
         base["source_class_recovery_official_domains"] = official_domains
         base["source_class_recovery_domain_constraint_source"] = (
             "official_source_recovery_lane"
@@ -3920,13 +4082,14 @@ def build_source_class_recovery_recommendation(
             )
         )
     recovery_queries = _dedupe_cap_queries(query_candidates)
-    official_domains = build_official_source_recovery_domain_constraints(
+    domain_policy = build_official_source_recovery_domain_constraint_policy(
         missing_expected_source_classes=missing,
         query=query,
         core_topic=core_topic,
         primary_entity=primary_entity,
         recovery_queries=recovery_queries,
     )
+    official_domains = list(domain_policy["official_domains"])
 
     trigger_fields: list[str] = []
     if missing:
@@ -3949,6 +4112,9 @@ def build_source_class_recovery_recommendation(
         "source_class_recovery_trigger_fields": trigger_fields,
     }
     if official_domains:
+        payload["source_class_recovery_authority_acquisition_decision"] = (
+            domain_policy["authority_acquisition_decision"]
+        )
         payload["source_class_recovery_official_domains"] = official_domains
         payload["source_class_recovery_domain_constraint_source"] = (
             "official_source_recovery_lane"

@@ -5,10 +5,13 @@ import pytest
 from core.official_canonical_recovery_query_acquisition import (
     apply_official_canonical_recovery_query_acquisition,
 )
+from core.run_controller import RunController
 from core.source_class_recovery import (
     build_official_authority_acquisition_plan,
     build_official_source_recovery_domain_constraints,
+    build_source_class_recovery_recommendation,
 )
+from core.source_class_recovery_lifecycle import record_source_class_recovery_lifecycle
 
 _OFFICIAL_CURRENT = "official_current_rules"
 _LEGAL_TEXT = "legal_or_regulatory_text"
@@ -88,6 +91,39 @@ def _recovery_domains(
         core_topic=core_topic or query,
         primary_entity=primary_entity or query,
     )
+
+
+def _evidence_signals() -> dict[str, object]:
+    return {
+        "source_tier_counts": {"secondary": 3},
+        "source_domain_counts": {"news.example": 2, "analysis.example": 1},
+        "top_source_domains": [{"domain": "news.example", "count": 2}],
+        "unique_source_domain_count": 2,
+        "official_evidence_found": False,
+        "community_signal_found": False,
+        "low_trust_sources_found": False,
+        "pollution_detected": False,
+    }
+
+
+def _record_lifecycle(recommendation: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
+    controller = RunController()
+    lifecycle = record_source_class_recovery_lifecycle(
+        controller,
+        recommendation=recommendation,
+        recommendation_evaluated=True,
+        source_class_evidence_signals=_evidence_signals(),
+        corpus_state="HEALTHY",
+        corpus_weak=False,
+        weak_corpus_recovery_considered=False,
+        weak_corpus_recovery_used=False,
+        weak_corpus_recovery_skip_reason=None,
+        current_search_depth="basic",
+        iteration_budget_available=True,
+        official_canonical_source_class_slot_available=True,
+    )
+    action = controller.snapshot_ledger()["retrieval_actions"][0]
+    return lifecycle, action
 
 
 def _provenance_for(plan: dict[str, object], domain: str) -> dict[str, str]:
@@ -302,6 +338,10 @@ def test_ag96a2_off_list_foreign_legal_question_uses_discovery_posture() -> None
             "What current official source lists medical device regulatory "
             "requirements in Denmark?"
         ),
+        (
+            "What current official source lists workplace safety requirements "
+            "for employers in Singapore?"
+        ),
     ],
 )
 def test_ag96a2_near_list_foreign_topics_are_not_caged_in_us_domains(
@@ -314,6 +354,64 @@ def test_ag96a2_near_list_foreign_topics_are_not_caged_in_us_domains(
     assert set(plan["hard_domains"]).isdisjoint(_KNOWN_US_AUTHORITY_DOMAINS)
     assert decision["provider_domain_constraints_allowed"] is False
     assert recovery_domains.isdisjoint(_KNOWN_US_AUTHORITY_DOMAINS)
+
+
+def test_ag96a2_source_class_recommendation_attaches_consumed_decision() -> None:
+    recommendation = build_source_class_recovery_recommendation(
+        query="What is the IRS 2026 standard mileage rate for business use?",
+        current_date="2026-06-13",
+        intent="general",
+        report_type="general_research",
+        query_type="official_current_status",
+        core_topic="IRS 2026 standard mileage rate business",
+        primary_entity="IRS standard mileage rate",
+        anchor_packet=None,
+        source_tier_counts={"secondary": 2},
+        source_domain_counts={"news.example": 2},
+        top_source_domains=[{"domain": "news.example", "count": 2}],
+        official_evidence_found=False,
+    )
+    decision = recommendation["source_class_recovery_authority_acquisition_decision"]
+
+    assert decision["decision_type"] == "hard_corridor"
+    assert "irs.gov" in recommendation["source_class_recovery_official_domains"]
+
+
+def test_ag96a2_lifecycle_rejects_legacy_domains_without_decision() -> None:
+    recommendation = {
+        "source_class_recovery_recommended": True,
+        "source_class_recovery_shadow_mode": True,
+        "missing_expected_source_classes": [_OFFICIAL_CURRENT],
+        "source_class_recovery_queries": ["IRS official current rate"],
+        "source_class_recovery_query_count": 1,
+        "source_class_recovery_reason": "legacy_test",
+        "source_class_recovery_official_domains": ["irs.gov"],
+    }
+
+    _lifecycle, action = _record_lifecycle(recommendation)
+
+    assert "official_domain_constraints" not in action["metadata"]
+
+
+def test_ag96a2_lifecycle_consumes_decision_before_provider_constraints() -> None:
+    recommendation = build_source_class_recovery_recommendation(
+        query="What is the IRS 2026 standard mileage rate for business use?",
+        current_date="2026-06-13",
+        intent="general",
+        report_type="general_research",
+        query_type="official_current_status",
+        core_topic="IRS 2026 standard mileage rate business",
+        primary_entity="IRS standard mileage rate",
+        anchor_packet=None,
+        source_tier_counts={"secondary": 2},
+        source_domain_counts={"news.example": 2},
+        top_source_domains=[{"domain": "news.example", "count": 2}],
+        official_evidence_found=False,
+    )
+
+    _lifecycle, action = _record_lifecycle(recommendation)
+
+    assert "irs.gov" in action["metadata"]["official_domain_constraints"]
 
 
 def test_ag96a2_runtime_consumes_hard_corridor_for_provider_domain_constraints() -> None:
