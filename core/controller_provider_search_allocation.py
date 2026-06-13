@@ -1,4 +1,4 @@
-"""Controller-owned provider/search allocation review gate for AG-75A."""
+"""Compatibility provider/search allocation review gate for AG-75A."""
 
 from __future__ import annotations
 

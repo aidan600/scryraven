@@ -37,7 +37,10 @@ are repo files; use repo-visible files and the current phase prompt.
   followed by
   `docs/architecture/AG95J_K_ACTIVE_GATE_AND_LIFECYCLE_BOOLEAN_DIET.md`,
   followed by
-  `docs/architecture/AG95L_PIPELINE_PRODUCT_CALLSITE_COMPATIBILITY_READ_DIET.md`.
+  `docs/architecture/AG95L_PIPELINE_PRODUCT_CALLSITE_COMPATIBILITY_READ_DIET.md`,
+  `docs/architecture/AG95M_PIPELINE_ORCHESTRATOR_SOURCE_CLASS_AUTHORITY_HELPER_EXTRACTION.md`,
+  and
+  `docs/architecture/AG95N_O_P_FINAL_AUTHORITY_VISIBILITY_RECOVERY_DECISION_PROJECTION_BURNDOWN.md`.
   Current runner dispatch authority is canonical
   `authority_lifecycle.recovery_action` consumed by
   `SourceClassRecoveryRunner`; `authorized_spine_action`,
@@ -49,13 +52,15 @@ are repo files; use repo-visible files and the current phase prompt.
   targeted-retrieval coverage still needs it. AG-95J/K is the follow-on boolean
   diet: it removes source-class-adjacent shared active-gate assertions and
   rewrites redundant lifecycle/admission booleans to canonical
-  AuthorityLifecycle recovery-action or runner execution proof. AG-95L is the
-  current pipeline product-callsite read diet: it rewrites bounded stale
-  checkpoint refresh, ownership summary, and post-final custody reads to
-  canonical AuthorityLifecycle action/blocker state while preserving
-  high-custody Author/citation visibility behavior. AG-95F/G/H are historical
-  setup phases; use AG-95I through AG-95L for the current packet, lifecycle, and
-  pipeline product-callsite compatibility contract.
+  AuthorityLifecycle recovery-action or runner execution proof. AG-95L/M/N-O-P
+  are the current pipeline burn-down chain: L rewrites product callsite reads to
+  canonical AuthorityLifecycle action/blocker state, M extracts bounded
+  source-class authority reads, and N/O/P moves final visibility/citation handoff
+  to FinalEvidenceBundle/FinalAnswerPacket observation while leaving
+  ControllerRecoveryDecision only as diagnostic/provider-review compatibility.
+  AG-95F/G/H are historical setup phases; use AG-95I through AG-95N/O/P for the
+  current packet, lifecycle, and pipeline product-callsite compatibility
+  contract.
 - **Orchestrator strangulation and phase-boundary vocabulary:** read
   `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
   RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,

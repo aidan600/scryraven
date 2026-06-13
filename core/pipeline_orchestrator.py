@@ -92,14 +92,11 @@ from core.final_answer_packet_runtime import (
 )
 from core.final_authority_citation_survival import (
     apply_authority_citation_survival_outcome_guard,
-    build_final_authority_citation_survival_projection,
-    ensure_selected_authority_evidence_visible_to_author,
-    final_authority_citation_survival_trace_fields,
+    attach_selected_authority_evidence_to_final_bundle,
+    build_final_authority_citation_survival_observation_from_bundle,
 )
 from core.final_evidence_bundle_builder import (
     FinalEvidenceBundleInputs,
-    attach_author_evidence,
-    build_author_evidence_block,
     build_final_evidence_bundle,
     build_final_source_telemetry_inputs,
 )
@@ -117,9 +114,6 @@ from core.lifecycle_trace_projection import (
 )
 from core.nutrition_author_notes import (
     _format_nutrition_partial_evidence_author_note as _format_nutrition_partial_evidence_author_note,  # noqa: F401
-)
-from core.official_source_obligation_bridge import (
-    apply_official_source_obligation_bridge,
 )
 from core.ordinary_continuation_candidate import (
     ordinary_continuation_candidate_defaults,
@@ -279,7 +273,7 @@ from core.source_class_recovery_lifecycle import (
     source_class_recovery_lifecycle_defaults,
 )
 from core.source_class_recovery_projection_handoff import (
-    build_source_class_recovery_projection_handoff,
+    build_post_final_source_class_projection_handoff,
 )
 from core.source_class_recovery_runner import run_source_class_recovery_dispatch
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
@@ -4164,20 +4158,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _thin_body = (corpus_weak and not _efp_author) or _relevance_low
 
     precision_count = 4 if _thin_body else (10 if complexity == "high" else 8)
-    final_evidence_bundle = attach_author_evidence(
+    authority_author_visibility = attach_selected_authority_evidence_to_final_bundle(
         final_evidence_bundle,
         precision_count=precision_count,
-    )
-    authority_author_visibility = ensure_selected_authority_evidence_visible_to_author(
-        authority_lifecycle_trace=active_source_class_recovery_lifecycle,
-        final_evidence=final_top_evidence,
-        author_evidence=final_evidence_bundle.author_evidence,
-    )
-    final_evidence_bundle.author_evidence = list(
-        authority_author_visibility.author_evidence
-    )
-    final_evidence_bundle.author_evidence_block = build_author_evidence_block(
-        final_evidence_bundle.author_evidence
     )
     active_source_class_recovery_lifecycle[
         "final_authority_author_evidence_visibility"
@@ -4336,23 +4319,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         report,
         economist_safety_telemetry,
     )
-    # Bound to the post-Author _final_answer_source_citation_telemetry surface.
-    final_authority_citation_survival_projection = (
-        build_final_authority_citation_survival_projection(
-            authority_lifecycle_trace=active_source_class_recovery_lifecycle,
-            final_evidence=final_top_evidence,
-            author_evidence=author_evidence,
-            final_answer_source_ids=final_answer_source_telemetry.get(
-                "final_answer_source_ids_used"
-            ),
-        )
+    authority_citation_survival = build_final_authority_citation_survival_observation_from_bundle(
+        final_evidence_bundle,
+        final_answer_source_telemetry=final_answer_source_telemetry,
     )
-    final_answer_source_telemetry = {
-        **final_answer_source_telemetry,
-        **final_authority_citation_survival_trace_fields(
-            final_authority_citation_survival_projection
-        ),
-    }
+    final_authority_citation_survival_projection = authority_citation_survival.projection
+    final_answer_source_telemetry = authority_citation_survival.final_answer_source_telemetry
 
     useful_content, useful_content_reason = evaluate_useful_content(
         report,
@@ -4558,12 +4530,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if not weak_corpus_recovery_used and weak_corpus_recovery_skip_reason is None:
         weak_corpus_recovery_skip_reason = "not_weak_corpus"
     ts_utc = datetime.now(timezone.utc).isoformat()
-    _source_tier_exec = source_tier_telemetry(all_passages)
-    _source_domain_exec = source_domain_telemetry(
-        all_passages,
-        domain_anchor=primary_entity or core_topic,
-    )
-    source_class_recovery_telemetry = build_source_class_recovery_recommendation(
+    post_final_source_class_handoff = build_post_final_source_class_projection_handoff(
+        all_passages=all_passages,
+        final_evidence_bundle=final_evidence_bundle,
+        final_answer_source_ids=final_answer_source_telemetry.get(
+            "final_answer_source_ids_used"
+        ),
         query=query,
         current_date=current_date,
         intent=intent,
@@ -4572,73 +4544,26 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         core_topic=core_topic,
         primary_entity=primary_entity,
         anchor_packet=anchor_packet_telemetry,
-        source_tier_counts=_source_tier_exec["source_tier_counts"],
-        source_domain_counts=_source_domain_exec["source_domain_counts"],
-        top_source_domains=_source_domain_exec["top_source_domains"],
-        official_evidence_found=_source_tier_exec["official_evidence_found"],
+        active_source_class_recovery_lifecycle=active_source_class_recovery_lifecycle,
+        logger=logger,
     )
+    pf = post_final_source_class_handoff
+    _source_tier_exec = pf.source_tier_exec
+    _source_domain_exec = pf.source_domain_exec
+    source_class_recovery_telemetry = pf.source_class_recovery_telemetry
     source_class_evidence_bundle_observability_telemetry = (
-        build_source_class_observability_telemetry(
-            query=query,
-            intent=intent,
-            report_type=report_type,
-            query_type=query_type,
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            anchor_packet=anchor_packet_telemetry,
-            final_top_evidence=final_top_evidence,
-            final_answer_source_ids=None,
-        )
+        pf.source_class_evidence_bundle_observability_telemetry
     )
-    source_class_observability_telemetry = (
-        build_source_class_observability_telemetry(
-            query=query,
-            intent=intent,
-            report_type=report_type,
-            query_type=query_type,
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            anchor_packet=anchor_packet_telemetry,
-            final_top_evidence=final_top_evidence,
-            final_answer_source_ids=final_answer_source_telemetry.get(
-                "final_answer_source_ids_used"
-            ),
-        )
+    source_class_observability_telemetry = pf.source_class_observability_telemetry
+    official_source_obligation_bridge_trace = pf.official_source_obligation_bridge_trace
+    source_class_projection_handoff = pf.source_class_projection_handoff
+    runtime_source_class_recovery_telemetry = pf.runtime_source_class_recovery_telemetry
+    runtime_active_source_class_recovery_lifecycle = (
+        pf.runtime_active_source_class_recovery_lifecycle
     )
-    try:
-        _bridge_runtime_trace = {
-            "query_preview": (query or "")[:200],
-            "intent": intent,
-            "query_type": query_type,
-            "report_type": report_type,
-            **source_class_recovery_telemetry,
-            **source_class_observability_telemetry,
-        }
-        _bridge_result = apply_official_source_obligation_bridge(
-            recommendation=source_class_recovery_telemetry,
-            runtime_trace=_bridge_runtime_trace,
-            existing_blockers=source_class_recovery_authority_blocker_reasons(
-                active_source_class_recovery_lifecycle
-            ),
-        )
-        source_class_recovery_telemetry = _bridge_result.recommendation
-        official_source_obligation_bridge_trace = _bridge_result.trace
-    except Exception as exc:
-        logger.warning(
-            "Non-fatal official-source obligation bridge omitted: %s",
-            exc,
-        )
-    source_class_projection_handoff = build_source_class_recovery_projection_handoff(
-        all_passages=all_passages,
-        final_top_evidence=final_top_evidence,
-        final_source_class_counts=source_class_observability_telemetry.get(
-            "source_class_strong_satisfaction_counts"
-        ),
+    active_source_class_recovery_lifecycle.update(
+        source_class_projection_handoff.recovery_source_quality_diagnostics
     )
-    if source_class_projection_handoff.recovery_source_quality_diagnostics:
-        active_source_class_recovery_lifecycle.update(
-            source_class_projection_handoff.recovery_source_quality_diagnostics
-        )
     record_source_class_recovery_recommendation(
         _run_controller_mirror,
         source_class_recovery_telemetry=source_class_recovery_telemetry,
@@ -4659,32 +4584,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             "pollution_detected": _source_tier_exec["pollution_detected"],
         },
     )
-    runtime_source_class_recovery_telemetry = source_class_recovery_telemetry
-    runtime_active_source_class_recovery_lifecycle = (
-        active_source_class_recovery_lifecycle
-    )
-    if active_source_class_recovery_lifecycle.get("recovered_visibility_used") is True:
-        runtime_source_class_recovery_telemetry = {
-            **source_class_recovery_telemetry,
-            **source_class_observability_telemetry,
-        }
-        reserved_missing_class = active_source_class_recovery_lifecycle.get(
-            "recovered_visibility_missing_source_class"
-        )
-        if reserved_missing_class:
-            runtime_active_source_class_recovery_lifecycle = {
-                **active_source_class_recovery_lifecycle,
-                "active_source_class_recovery_missing_classes": [
-                    source_class
-                    for source_class in (
-                        source_class_recovery_authority_action(
-                            active_source_class_recovery_lifecycle
-                        ).get("required_source_classes")
-                        or []
-                    )
-                    if source_class != reserved_missing_class
-                ],
-            }
     evidence_ledger_projection = (
         reduce_post_final_source_obligations_into_evidence_ledger(
             run_kernel=run_kernel,

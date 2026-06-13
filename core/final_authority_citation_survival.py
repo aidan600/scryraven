@@ -72,6 +72,37 @@ class AuthorEvidenceVisibilityResult:
     diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class FinalAuthorityCitationSurvivalObservation:
+    """Packet/bundle-derived final authority citation-survival observation."""
+
+    projection: dict[str, Any]
+    final_answer_source_telemetry: dict[str, Any]
+
+
+def attach_selected_authority_evidence_to_final_bundle(
+    bundle: Any,
+    *,
+    precision_count: int,
+) -> AuthorEvidenceVisibilityResult:
+    """Attach Author evidence from bundle-owned authority visibility state."""
+
+    from core.final_evidence_bundle_builder import (
+        attach_author_evidence,
+        build_author_evidence_block,
+    )
+
+    attach_author_evidence(bundle, precision_count=precision_count)
+    visibility = ensure_selected_authority_evidence_visible_to_author(
+        authority_lifecycle_trace=bundle.authority_visibility_trace,
+        final_evidence=bundle.final_top_evidence,
+        author_evidence=bundle.author_evidence,
+    )
+    bundle.author_evidence = list(visibility.author_evidence)
+    bundle.author_evidence_block = build_author_evidence_block(bundle.author_evidence)
+    return visibility
+
+
 def ensure_selected_authority_evidence_visible_to_author(
     *,
     authority_lifecycle_trace: Mapping[str, Any] | None,
@@ -211,6 +242,30 @@ def build_final_authority_citation_survival_projection(
         "aggregate_counts_used_as_proof": False,
         "diagnostic_only": False,
     }
+
+
+def build_final_authority_citation_survival_observation_from_bundle(
+    bundle: Any,
+    *,
+    final_answer_source_telemetry: Mapping[str, Any],
+) -> FinalAuthorityCitationSurvivalObservation:
+    """Return citation-survival projection and flattened telemetry from bundle state."""
+
+    projection = build_final_authority_citation_survival_projection(
+        authority_lifecycle_trace=bundle.authority_visibility_trace,
+        final_evidence=bundle.final_top_evidence,
+        author_evidence=bundle.author_evidence,
+        final_answer_source_ids=final_answer_source_telemetry.get(
+            "final_answer_source_ids_used"
+        ),
+    )
+    return FinalAuthorityCitationSurvivalObservation(
+        projection=projection,
+        final_answer_source_telemetry={
+            **dict(final_answer_source_telemetry),
+            **final_authority_citation_survival_trace_fields(projection),
+        },
+    )
 
 
 def apply_authority_citation_survival_outcome_guard(
@@ -474,7 +529,10 @@ __all__ = [
     "STATUS_SELECTED_AUTHORITY_UNCITEABLE",
     "STATUS_SURVIVED",
     "AuthorEvidenceVisibilityResult",
+    "FinalAuthorityCitationSurvivalObservation",
     "apply_authority_citation_survival_outcome_guard",
+    "attach_selected_authority_evidence_to_final_bundle",
+    "build_final_authority_citation_survival_observation_from_bundle",
     "build_final_authority_citation_survival_projection",
     "ensure_selected_authority_evidence_visible_to_author",
     "final_authority_citation_survival_trace_fields",

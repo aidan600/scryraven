@@ -43,6 +43,14 @@ class FinalEvidenceSourceTelemetry:
     final_evidence_snapshot_payload: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class FinalEvidencePostFinalSourceClassHandoff:
+    """Post-final source-class observer values derived from bundle state."""
+
+    source_class_recovery_telemetry: dict[str, Any]
+    active_source_class_recovery_lifecycle: dict[str, Any]
+
+
 @dataclass(slots=True)
 class FinalEvidenceBundle:
     """Mechanical final evidence bundle consumed by the orchestrator."""
@@ -55,6 +63,8 @@ class FinalEvidenceBundle:
     author_evidence: list[Passage] = field(default_factory=list)
     author_evidence_block: str = ""
     final_source_telemetry: FinalEvidenceSourceTelemetry | None = None
+    authority_visibility_trace: dict[str, Any] = field(default_factory=dict)
+    recovered_visibility_trace: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -71,6 +81,83 @@ class FinalEvidenceBundleInputs:
     active_source_class_recovery_lifecycle: Mapping[str, Any] | None = None
     recovered_evidence_visibility: RecoveredEvidenceVisibility | None = None
     reserve_limit: int = 1
+
+
+_AUTHORITY_VISIBILITY_TRACE_KEYS = (
+    "authority_lifecycle",
+    "authority_lifecycle_selected_authority_evidence",
+    "citation_eligibility_state",
+    "selected_authority_evidence",
+)
+_RECOVERED_VISIBILITY_TRACE_KEYS = (
+    "recovered_visibility_considered",
+    "recovered_visibility_eligible",
+    "recovered_visibility_used",
+    "recovered_visibility_reason",
+    "recovered_visibility_blockers",
+    "recovered_visibility_missing_source_class",
+    "recovered_visibility_recovered_source_class",
+    "recovered_visibility_reserved_count",
+    "recovered_visibility_reserved_source_ids",
+    "recovered_visibility_reserved_source_classes",
+    "recovered_visibility_dropped_source_ids",
+    "recovered_visibility_drop_reason",
+    "recovered_visibility_source_fit_status",
+    "recovered_visibility_source_fit_candidate_count",
+    "recovered_visibility_source_fit_selected_count",
+    "recovered_visibility_source_fit_rejection_reasons",
+)
+
+
+def _trace_fields(
+    trace: Mapping[str, Any] | None,
+    keys: tuple[str, ...],
+) -> dict[str, Any]:
+    if not isinstance(trace, Mapping):
+        return {}
+    return {key: trace[key] for key in keys if key in trace}
+
+
+def _required_source_classes_from_bundle(bundle: FinalEvidenceBundle) -> tuple[str, ...]:
+    authority = bundle.authority_visibility_trace.get("authority_lifecycle")
+    if not isinstance(authority, Mapping):
+        return ()
+    action = authority.get("recovery_action")
+    if not isinstance(action, Mapping):
+        return ()
+    values = action.get("required_source_classes")
+    if not isinstance(values, (list, tuple)):
+        return ()
+    return tuple(str(item) for item in values if str(item or "").strip())
+
+
+def post_final_source_class_handoff_from_final_evidence_bundle(
+    bundle: FinalEvidenceBundle,
+    *,
+    source_class_recovery_telemetry: Mapping[str, Any],
+    source_class_observability_telemetry: Mapping[str, Any],
+    active_source_class_recovery_lifecycle: Mapping[str, Any],
+) -> FinalEvidencePostFinalSourceClassHandoff:
+    """Return post-final source-class observer values from bundle-owned visibility."""
+
+    visibility = bundle.recovered_visibility_trace
+    telemetry = dict(source_class_recovery_telemetry)
+    lifecycle = dict(active_source_class_recovery_lifecycle)
+    if visibility.get("recovered_visibility_used") is True:
+        telemetry.update(dict(source_class_observability_telemetry))
+        reserved_missing_class = visibility.get(
+            "recovered_visibility_missing_source_class"
+        )
+        if reserved_missing_class:
+            lifecycle["active_source_class_recovery_missing_classes"] = [
+                source_class
+                for source_class in _required_source_classes_from_bundle(bundle)
+                if source_class != reserved_missing_class
+            ]
+    return FinalEvidencePostFinalSourceClassHandoff(
+        source_class_recovery_telemetry=telemetry,
+        active_source_class_recovery_lifecycle=lifecycle,
+    )
 
 
 def assign_stable_source_ids(
@@ -237,12 +324,21 @@ def build_final_evidence_bundle(
             unique_source_urls=source_identity.unique_source_urls,
             ordered_sources=source_identity.ordered_sources,
         ),
+        authority_visibility_trace=_trace_fields(
+            inputs.active_source_class_recovery_lifecycle,
+            _AUTHORITY_VISIBILITY_TRACE_KEYS,
+        ),
+        recovered_visibility_trace=_trace_fields(
+            inputs.active_source_class_recovery_lifecycle,
+            _RECOVERED_VISIBILITY_TRACE_KEYS,
+        ),
     )
 
 
 __all__ = [
     "FinalEvidenceBundle",
     "FinalEvidenceBundleInputs",
+    "FinalEvidencePostFinalSourceClassHandoff",
     "FinalEvidenceSourceIdentity",
     "FinalEvidenceSourceTelemetry",
     "assign_stable_source_ids",
@@ -253,5 +349,6 @@ __all__ = [
     "build_final_evidence_bundle",
     "build_final_source_telemetry_inputs",
     "build_ordered_sources",
+    "post_final_source_class_handoff_from_final_evidence_bundle",
     "slice_author_evidence",
 ]

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from core.authority_custody_satisfaction import (
     CATEGORY_LEGACY_AGGREGATE_OBSERVABILITY,
     authority_custody_satisfaction_for_source_class,
@@ -14,6 +16,8 @@ from core.final_authority_citation_survival import (
     STATUS_SELECTED_AUTHORITY_UNCITEABLE,
     STATUS_SURVIVED,
     apply_authority_citation_survival_outcome_guard,
+    attach_selected_authority_evidence_to_final_bundle,
+    build_final_authority_citation_survival_observation_from_bundle,
     build_final_authority_citation_survival_projection,
     ensure_selected_authority_evidence_visible_to_author,
 )
@@ -118,6 +122,30 @@ def test_ag94h_g_selected_authority_evidence_reaches_author_payload_and_final_ci
     assert projection["final_cited_selected_authority_evidence_count"] == 1
     assert projection["final_citation_official_current_legal_count"] == 1
     assert projection["completion_blocked"] is False
+
+
+def test_ag95n_bundle_owned_visibility_and_citation_observation_match_direct_path() -> None:
+    bundle = SimpleNamespace(
+        final_top_evidence=[_weak_source(), _official_source()],
+        author_evidence=[],
+        author_evidence_block="",
+        authority_visibility_trace=_selected_lifecycle(),
+    )
+
+    visibility = attach_selected_authority_evidence_to_final_bundle(
+        bundle,
+        precision_count=1,
+    )
+    observation = build_final_authority_citation_survival_observation_from_bundle(
+        bundle,
+        final_answer_source_telemetry={"final_answer_source_ids_used": ["7"]},
+    )
+
+    assert visibility.appended_authority_evidence[0]["source_id"] == 7
+    assert observation.projection["status"] == STATUS_SURVIVED
+    assert observation.final_answer_source_telemetry[
+        "final_authority_citation_survival_status"
+    ] == STATUS_SURVIVED
 
 
 def test_ag94h_g_selected_authority_evidence_unciteable_blocks_completion() -> None:
