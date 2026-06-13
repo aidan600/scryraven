@@ -75,6 +75,15 @@ _LEGAL_AUTHORITY_DOMAINS = {
     "law.cornell.edu",
     "eur-lex.europa.eu",
 }
+_OFFICIAL_AUTHORITY_QUERY_PRIORITY_TERMS = (
+    "revenue procedure",
+    "internal revenue bulletin",
+    "official notice",
+    "official fee schedule",
+    "official contribution benefit base",
+    "official rule compliance guide",
+    "federal register final rule",
+)
 
 
 class SourceClassRecoveryControllerDecision(str, Enum):
@@ -316,6 +325,45 @@ def _copy_string_list(value: Any, *, cap: int | None = None) -> tuple[str, ...]:
     return tuple(out)
 
 
+def _authority_query_priority(query: str, telemetry: Mapping[str, Any]) -> int:
+    text = query.casefold()
+    for domain in _copy_string_list(
+        telemetry.get("source_class_recovery_official_domains")
+    ):
+        if domain.casefold() in text:
+            return 0
+    if any(term in text for term in _OFFICIAL_AUTHORITY_QUERY_PRIORITY_TERMS):
+        return 0
+    if any(
+        term in text
+        for term in (
+            "official current source",
+            "federal register",
+            "ecfr",
+            "govinfo",
+            "agency guidance",
+        )
+    ):
+        return 1
+    return 2
+
+
+def _recovery_queries_for_controller(telemetry: Mapping[str, Any]) -> tuple[str, ...]:
+    queries = _copy_string_list(telemetry.get("source_class_recovery_queries"))
+    missing = set(_copy_string_list(telemetry.get("missing_expected_source_classes")))
+    if not (
+        queries
+        and missing & _ANSWER_CONTRACT_OFFICIAL_OR_LEGAL_CLASSES
+        and telemetry.get("source_class_recovery_official_domains")
+    ):
+        return queries[:_MAX_ACTIVE_RECOVERY_QUERIES]
+    prioritized = sorted(
+        enumerate(queries),
+        key=lambda item: (_authority_query_priority(item[1], telemetry), item[0]),
+    )
+    return tuple(query for _index, query in prioritized[:_MAX_ACTIVE_RECOVERY_QUERIES])
+
+
 def _copy_evidence_signals(signals: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: deepcopy(signals[key])
@@ -484,10 +532,7 @@ def build_source_class_recovery_controller_input(
         recommendation_evaluated=bool(recommendation_evaluated),
         recommended=bool(telemetry.get("source_class_recovery_recommended")),
         missing_expected_source_classes=missing_classes,
-        recovery_queries=_copy_string_list(
-            telemetry.get("source_class_recovery_queries"),
-            cap=_MAX_ACTIVE_RECOVERY_QUERIES,
-        ),
+        recovery_queries=_recovery_queries_for_controller(telemetry),
         recommendation_reason=(
             None
             if telemetry.get("source_class_recovery_reason") is None
