@@ -182,6 +182,8 @@ class _AuthorityVenueCandidate:
     domain_candidates: tuple[str, ...] = ()
     domain_constraints: tuple[str, ...] = ()
     constraint_strength: str = "role_only"
+    constraint_provenance: str = "role_hint_only"
+    constraint_confidence: str = "low"
     reasons: tuple[str, ...] = ()
 
 
@@ -262,6 +264,11 @@ class _OfficialAuthorityAcquisitionPlan:
     hard_domains: tuple[str, ...] = ()
     soft_candidate_domains: tuple[str, ...] = ()
     role_hints: tuple[str, ...] = ()
+    domain_constraint_provenance: tuple[Mapping[str, str], ...] = ()
+    decision_type: str = "discovery_corridor"
+    corridor_strength: str = "discovery"
+    decision_basis: tuple[str, ...] = ()
+    jurisdiction_disqualifiers: tuple[str, ...] = ()
     avoid_source_tiers: tuple[str, ...] = ("news", "secondary")
     reason_codes: tuple[str, ...] = ()
     max_query_variants: int = 3
@@ -275,6 +282,22 @@ class _OfficialAuthorityAcquisitionPlan:
             "hard_domains": list(self.hard_domains),
             "soft_candidate_domains": list(self.soft_candidate_domains),
             "role_hints": list(self.role_hints),
+            "domain_constraint_provenance": [
+                dict(item) for item in self.domain_constraint_provenance
+            ],
+            "authority_acquisition_decision": {
+                "decision_type": self.decision_type,
+                "corridor_strength": self.corridor_strength,
+                "basis": list(self.decision_basis),
+                "jurisdiction_disqualifiers": list(self.jurisdiction_disqualifiers),
+                "provider_domain_constraints_allowed": (
+                    self.decision_type == "hard_corridor"
+                ),
+                "soft_candidates_are_discovery_hints": True,
+                "fallback_widening": (
+                    "bounded_soft_or_discovery_posture_if_hard_corridor_unsatisfied"
+                ),
+            },
             "avoid_source_tiers": list(self.avoid_source_tiers),
             "reason_codes": list(self.reason_codes),
             "bounded_attempt_metadata": {
@@ -293,6 +316,23 @@ def _compact_text(value: Any, *, limit: int = _CAP_TEXT) -> str:
 
 def _has_any(text: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _foreign_jurisdiction_context(*texts: str) -> bool:
+    text = " ".join(
+        _compact_text(value, limit=260) for value in texts if str(value or "").strip()
+    ).casefold()
+    if not text:
+        return False
+    return _has_any(
+        text,
+        (
+            r"\b(?:non[-\s]?u\.s\.|outside\s+the\s+united\s+states|foreign\s+"
+            r"jurisdiction)\b",
+            r"\b(?:canada|canadian|denmark|danish|eu|e\.u\.|european\s+"
+            r"union|european)\b",
+        ),
+    )
 
 
 def _anchor_payload(anchor_packet: dict[str, Any] | None) -> dict[str, Any]:
@@ -1968,6 +2008,7 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
     """Infer reusable official venue families from trace-safe public text."""
     text = " ".join(_compact_text(value, limit=240) for value in texts).casefold()
     candidates: list[_AuthorityVenueCandidate] = []
+    foreign_jurisdiction_context = _foreign_jurisdiction_context(text)
 
     def clean_tuple(values: Iterable[str], *, limit: int = 80) -> tuple[str, ...]:
         cleaned: list[str] = []
@@ -1985,6 +2026,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
         domain_candidates: tuple[str, ...] = (),
         domain_constraints: tuple[str, ...] = (),
         constraint_strength: str = "role_only",
+        constraint_provenance: str = "role_hint_only",
+        constraint_confidence: str = "low",
         reasons: tuple[str, ...] = (),
     ) -> None:
         if any(candidate.family_id == family_id for candidate in candidates):
@@ -1998,6 +2041,14 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
                 domain_constraints=clean_tuple(domain_constraints),
                 constraint_strength=_compact_text(
                     constraint_strength or "role_only",
+                    limit=40,
+                ),
+                constraint_provenance=_compact_text(
+                    constraint_provenance or "role_hint_only",
+                    limit=80,
+                ),
+                constraint_confidence=_compact_text(
+                    constraint_confidence or "low",
                     limit=40,
                 ),
                 reasons=clean_tuple(reasons),
@@ -2041,7 +2092,7 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
     if (
         dot_agency_context
         or air_carrier_instrument_context
-        or air_passenger_rights_context
+        or (air_passenger_rights_context and not foreign_jurisdiction_context)
     ):
         add_candidate(
             "travel_air_passenger_rights_rule",
@@ -2062,6 +2113,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             domain_candidates=("transportation.gov",),
             domain_constraints=("transportation.gov",),
             constraint_strength="hard_constraint",
+            constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
+            constraint_confidence="high",
             reasons=(
                 "transportation_agency_or_air_carrier_instrument",
                 "air_passenger_rights_context",
@@ -2147,6 +2200,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             domain_candidates=("irs.gov",),
             domain_constraints=("irs.gov",),
             constraint_strength="hard_constraint",
+            constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
+            constraint_confidence="high",
             reasons=("tax_rate_form_fee_signal",),
         )
 
@@ -2178,6 +2233,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             domain_candidates=("uscis.gov",),
             domain_constraints=("uscis.gov",),
             constraint_strength="hard_constraint",
+            constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
+            constraint_confidence="high",
             reasons=("immigration_naturalization_filing_signal",),
         )
 
@@ -2196,7 +2253,16 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             r"contribution\s+and\s+benefit\s+base)\b",
         ),
     )
-    if labor_context:
+    if labor_context and (
+        not foreign_jurisdiction_context
+        or _has_any(
+            text,
+            (
+                r"\b(?:dol|department\s+of\s+labor|osha|occupational\s+safety"
+                r"\s+and\s+health|29\s+cfr\s+1910\.1200)\b",
+            ),
+        )
+    ):
         labor_domains = ["dol.gov"]
         if _has_any(
             text,
@@ -2224,6 +2290,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             domain_candidates=tuple(labor_domains),
             domain_constraints=tuple(labor_domains),
             constraint_strength="hard_constraint",
+            constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
+            constraint_confidence="high",
             reasons=("labor_workplace_wage_compliance_signal",),
         )
 
@@ -2251,6 +2319,12 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             text,
             (
                 r"\b(?:ftc|federal\s+trade\s+commission|ftc\.gov)\b",
+            ),
+        ):
+            consumer_domain_constraints.append("ftc.gov")
+        elif not foreign_jurisdiction_context and _has_any(
+            text,
+            (
                 r"\bnon[-\s]?competes?\b",
                 r"\b(?:negative\s+option|click[-\s]?to[-\s]?cancel)\b",
             ),
@@ -2278,19 +2352,31 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
                 if consumer_domain_constraints
                 else "soft_domain_candidate"
             ),
+            constraint_provenance=(
+                "explicit_agency_domain_or_strong_authority_signal"
+                if consumer_domain_constraints
+                else "known_family_candidate"
+            ),
+            constraint_confidence="high" if consumer_domain_constraints else "medium",
             reasons=("consumer_finance_regulator_signal",),
         )
 
-    sec_context = _has_any(
+    sec_explicit_context = _has_any(
         text,
         (
             r"\b(?:securities\s+and\s+exchange\s+commission|issuer\s+"
-            r"filings?|edgar|10[-\s]?[qk]|form\s+10[-\s]?[qk]|"
-            r"securities\s+filings?|public\s+company\s+filings?)\b",
+            r"filings?|edgar|10[-\s]?[qk]|form\s+10[-\s]?[qk])\b",
         ),
     ) or (
         _has_any(text, (r"\bsec\b",))
         and _has_any(text, (r"\b(?:filings?|issuer|edgar|securities)\b",))
+    )
+    sec_generic_context = _has_any(
+        text,
+        (r"\b(?:securities\s+filings?|public\s+company\s+filings?)\b",),
+    )
+    sec_context = sec_explicit_context or (
+        sec_generic_context and not foreign_jurisdiction_context
     )
     if sec_context:
         add_candidate(
@@ -2306,6 +2392,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             domain_candidates=("sec.gov",),
             domain_constraints=("sec.gov",),
             constraint_strength="hard_constraint",
+            constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
+            constraint_confidence="high",
             reasons=("securities_issuer_filing_signal",),
         )
 
@@ -2368,13 +2456,22 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             reasons=("government_program_access_signal",),
         )
 
-    if _has_any(
+    fda_explicit_context = _has_any(
         text,
         (
-            r"\b(?:fda|food\s+and\s+drug\s+administration|laboratory\s+"
+            r"\b(?:fda|food\s+and\s+drug\s+administration|fda\.gov)\b",
+        ),
+    )
+    fda_regulatory_context = _has_any(
+        text,
+        (
+            r"\b(?:laboratory\s+"
             r"developed\s+tests?|ldts?|medical\s+devices?|enforcement\s+"
             r"discretion)\b",
         ),
+    )
+    if fda_explicit_context or (
+        fda_regulatory_context and not foreign_jurisdiction_context
     ):
         add_candidate(
             "health_product_regulator_rule",
@@ -2393,6 +2490,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             domain_candidates=("fda.gov",),
             domain_constraints=("fda.gov",),
             constraint_strength="hard_constraint",
+            constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
+            constraint_confidence="high",
             reasons=("health_product_regulator_signal",),
         )
 
@@ -2454,20 +2553,46 @@ def _official_authority_acquisition_plan(
     soft_domains: list[str] = []
     role_hints: list[str] = []
     reasons: list[str] = []
+    domain_constraint_provenance: list[dict[str, str]] = []
     soft_domain_candidates_by_family = _official_authority_soft_domain_candidates()
     for candidate in active_candidates:
         if candidate.constraint_strength == "hard_constraint":
             for domain in candidate.domain_constraints:
                 _append_domain(hard_domains, domain)
+                domain_constraint_provenance.append(
+                    {
+                        "domain": domain,
+                        "family_id": candidate.family_id,
+                        "constraint_strength": candidate.constraint_strength,
+                        "provenance": candidate.constraint_provenance,
+                        "confidence": candidate.constraint_confidence,
+                    }
+                )
         elif candidate.constraint_strength in {"soft_domain_candidate", "role_only"}:
             for domain in candidate.domain_candidates:
                 _append_domain(soft_domains, domain)
+                if candidate.constraint_strength == "soft_domain_candidate":
+                    domain_constraint_provenance.append(
+                        {
+                            "domain": domain,
+                            "family_id": candidate.family_id,
+                            "constraint_strength": candidate.constraint_strength,
+                            "provenance": candidate.constraint_provenance,
+                            "confidence": candidate.constraint_confidence,
+                        }
+                    )
             for domain in soft_domain_candidates_by_family.get(candidate.family_id, ()):
                 _append_domain(soft_domains, domain)
         for hint in candidate.search_hints:
             _append_unique(role_hints, hint)
         for reason in candidate.reasons:
             _append_unique(reasons, reason)
+    decision = _authority_acquisition_decision_fields(
+        hard_domains=tuple(hard_domains),
+        soft_domains=tuple(soft_domains),
+        role_hints=tuple(role_hints),
+        context_text=combined_context,
+    )
 
     queries = _official_authority_query_variants(
         source_classes=tuple(classes),
@@ -2488,6 +2613,11 @@ def _official_authority_acquisition_plan(
             domain for domain in soft_domains if domain not in hard_domains
         ),
         role_hints=tuple(role_hints),
+        domain_constraint_provenance=tuple(domain_constraint_provenance),
+        decision_type=decision["decision_type"],
+        corridor_strength=decision["corridor_strength"],
+        decision_basis=tuple(decision["basis"]),
+        jurisdiction_disqualifiers=tuple(decision["jurisdiction_disqualifiers"]),
         reason_codes=tuple(reasons),
         max_query_variants=max_query_variants,
     )
@@ -2501,6 +2631,54 @@ def _program_access_role_context(text: str) -> bool:
             r"documents?|proof|access|entry|screening|checkpoint)\b",
         ),
     )
+
+
+def _authority_acquisition_decision_fields(
+    *,
+    hard_domains: tuple[str, ...],
+    soft_domains: tuple[str, ...],
+    role_hints: tuple[str, ...],
+    context_text: str,
+) -> dict[str, tuple[str, ...] | str]:
+    jurisdiction_disqualifiers: list[str] = []
+    if _foreign_jurisdiction_context(context_text):
+        jurisdiction_disqualifiers.append("non_us_jurisdiction_signal")
+
+    if hard_domains:
+        return {
+            "decision_type": "hard_corridor",
+            "corridor_strength": "hard",
+            "basis": ("explicit_agency_domain_or_strong_authority_signal",),
+            "jurisdiction_disqualifiers": tuple(jurisdiction_disqualifiers),
+        }
+    if not jurisdiction_disqualifiers and _us_legal_authority_domain_context(
+        context_text,
+    ):
+        return {
+            "decision_type": "hard_corridor",
+            "corridor_strength": "hard",
+            "basis": ("explicit_us_legal_authority_signal",),
+            "jurisdiction_disqualifiers": (),
+        }
+    if soft_domains:
+        return {
+            "decision_type": "soft_corridor",
+            "corridor_strength": "soft",
+            "basis": ("known_family_candidate",),
+            "jurisdiction_disqualifiers": tuple(jurisdiction_disqualifiers),
+        }
+    if role_hints:
+        basis = ("role_hint_only",)
+    elif jurisdiction_disqualifiers:
+        basis = ("unknown_or_off_list_authority_discovery",)
+    else:
+        basis = ("generic_official_authority_discovery",)
+    return {
+        "decision_type": "discovery_corridor",
+        "corridor_strength": "discovery",
+        "basis": basis,
+        "jurisdiction_disqualifiers": tuple(jurisdiction_disqualifiers),
+    }
 
 
 def _official_authority_query_variants(
@@ -2793,6 +2971,7 @@ def build_official_source_recovery_domain_constraints(
     text = " ".join(
         value for value in (context_text, recovery_text) if value
     ).casefold()
+    foreign_jurisdiction_context = _foreign_jurisdiction_context(context_text)
 
     domains: list[str] = []
     official_or_legal_missing = bool(
@@ -2899,10 +3078,14 @@ def build_official_source_recovery_domain_constraints(
     us_agency_domains: list[str] = []
     for domain in inferred_venue.domain_constraints:
         _append_domain(us_agency_domains, domain)
-    if dot_context:
+    if dot_context and (
+        not foreign_jurisdiction_context or "transportation.gov" in us_agency_domains
+    ):
         _append_domain(us_agency_domains, "transportation.gov")
     for patterns, domain in agency_targets:
-        if _has_any(context_text, patterns):
+        if _has_any(context_text, patterns) and (
+            not foreign_jurisdiction_context or domain in us_agency_domains
+        ):
             _append_domain(us_agency_domains, domain)
 
     local_program_role_only_context = (
@@ -3013,6 +3196,25 @@ def _us_federal_authority_context(*texts: str) -> bool:
             r"\b(?:irs|internal\s+revenue\s+service|uscis|ssa|social\s+"
             r"security|department\s+of\s+labor|dol|ftc|fda|cfpb|sec|"
             r"department\s+of\s+transportation|transportation\s+department)\b",
+        ),
+    )
+
+
+def _us_legal_authority_domain_context(*texts: str) -> bool:
+    text = " ".join(
+        _compact_text(value, limit=260) for value in texts if str(value or "").strip()
+    ).casefold()
+    if not text:
+        return False
+    return _has_any(
+        text,
+        (
+            r"\b(?:u\.s\.|us|united\s+states|american)\b"
+            r".{0,100}"
+            r"\b(?:law|legal|regulation|regulatory|rule|rules|"
+            r"statute|agency|federal)\b",
+            r"\b(?:cfr|ecfr|code\s+of\s+federal\s+regulations|"
+            r"federal\s+register|govinfo|regulations\.gov)\b",
         ),
     )
 

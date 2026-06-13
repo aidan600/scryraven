@@ -334,6 +334,7 @@ def apply_official_canonical_recovery_query_acquisition(
             source_classes=acquisition_classes,
             base=base,
             trace=trace,
+            official_plan=official_plan,
             subject=subject,
             recovery_queries=merged_queries,
         )
@@ -709,6 +710,7 @@ def _official_domain_constraints_for_acquired_queries(
     source_classes: Iterable[str],
     base: Mapping[str, Any],
     trace: Mapping[str, Any],
+    official_plan: Mapping[str, Any] | None,
     subject: str,
     recovery_queries: Iterable[str],
 ) -> list[str]:
@@ -718,6 +720,16 @@ def _official_domain_constraints_for_acquired_queries(
         if source_class in _OFFICIAL_CURRENT_CLASSES
     ]
     if not official_classes:
+        return []
+    decision = official_plan.get("authority_acquisition_decision", {}) if isinstance(
+        official_plan,
+        Mapping,
+    ) else {}
+    if not (
+        isinstance(decision, Mapping)
+        and decision.get("decision_type") == "hard_corridor"
+        and decision.get("provider_domain_constraints_allowed") is True
+    ):
         return []
     return build_official_source_recovery_domain_constraints(
         missing_expected_source_classes=official_classes,
