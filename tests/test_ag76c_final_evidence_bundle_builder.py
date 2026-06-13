@@ -14,6 +14,7 @@ from core.final_evidence_bundle_builder import (
     build_cached_prefix,
     build_final_evidence_bundle,
     build_final_source_telemetry_inputs,
+    post_final_source_class_handoff_from_final_evidence_bundle,
 )
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -172,6 +173,57 @@ def test_build_final_evidence_bundle_matches_legacy_blocks_and_recovery_handoff(
     assert recovered_seen["reserve_limit"] == 1
 
 
+def test_bundle_owns_recovered_visibility_post_final_handoff() -> None:
+    all_passages = _bundle_fixture()
+    lifecycle = {
+        "authority_lifecycle": {
+            "recovery_action": {
+                "required_source_classes": [
+                    "official_current_rules",
+                    "legal_or_regulatory_text",
+                ]
+            }
+        }
+    }
+
+    def recovered_visibility(**kwargs: Any) -> list[dict[str, Any]]:
+        kwargs["lifecycle_trace"].update(
+            {
+                "recovered_visibility_used": True,
+                "recovered_visibility_missing_source_class": (
+                    "official_current_rules"
+                ),
+            }
+        )
+        return kwargs["final_top_evidence"]
+
+    bundle = build_final_evidence_bundle(
+        FinalEvidenceBundleInputs(
+            all_passages=all_passages,
+            top_chunks=3,
+            max_domain_chunks=3,
+            filter_top_evidence=_filter_top_evidence,
+            is_plausible_domain=_is_plausible_domain,
+            current_date="2026-05-28",
+            query="compare source IDs",
+            active_source_class_recovery_lifecycle=lifecycle,
+            recovered_evidence_visibility=recovered_visibility,
+        ),
+    )
+    handoff = post_final_source_class_handoff_from_final_evidence_bundle(
+        bundle,
+        source_class_recovery_telemetry={"recommendation": "base"},
+        source_class_observability_telemetry={"observed": True},
+        active_source_class_recovery_lifecycle=lifecycle,
+    )
+
+    assert bundle.recovered_visibility_trace["recovered_visibility_used"] is True
+    assert handoff.source_class_recovery_telemetry["observed"] is True
+    assert handoff.active_source_class_recovery_lifecycle[
+        "active_source_class_recovery_missing_classes"
+    ] == ["legal_or_regulatory_text"]
+
+
 def test_cached_prefix_supports_supplemental_and_remediation_linkup_rebuild_parity() -> None:
     all_passages = _bundle_fixture()
     initial = build_final_evidence_bundle(
@@ -288,8 +340,10 @@ def test_pipeline_orchestrator_no_longer_owns_final_source_id_assignment_loop() 
     assert "unique_source_urls = {}" not in orchestrator_source
     assert "p[\"source_id\"] = unique_source_urls[p[\"url\"]]" not in orchestrator_source
     assert "build_final_evidence_bundle(" in orchestrator_source
-    assert "attach_author_evidence(" in orchestrator_source
+    assert "attach_selected_authority_evidence_to_final_bundle(" in orchestrator_source
     assert "build_final_source_telemetry_inputs(" in orchestrator_source
+    assert "recovered_visibility_used" not in orchestrator_source
+    assert "recovered_visibility_missing_source_class" not in orchestrator_source
 
 
 def test_final_evidence_builder_does_not_import_or_call_protected_surfaces() -> None:

@@ -72,7 +72,7 @@ _SECRET_VALUE_PATTERNS = (
 def build_allocation_result_candidate_custody_trace(
     runtime_trace: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Build the trace envelope for Controller-authorized allocation custody."""
+    """Build the trace envelope for compatibility allocation custody."""
 
     return {
         "schema_version": ALLOCATION_RESULT_CANDIDATE_CUSTODY_SCHEMA_VERSION,
