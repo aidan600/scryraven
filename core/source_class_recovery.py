@@ -2992,7 +2992,8 @@ def _official_source_target_hints(*texts: str) -> list[str]:
         (
             r"\b(?:irs|internal\s+revenue\s+service)\b",
             r"\btax\s+credits?\b",
-            r"\b(?:forms?|instructions?)\b",
+            r"\b(?:tax|taxes|revenue)\b.{0,80}\b(?:forms?|instructions?)\b",
+            r"\b(?:forms?|instructions?)\b.{0,80}\b(?:tax|taxes|revenue)\b",
         ),
     ):
         add("irs.gov", "form", "instructions", "Internal Revenue Bulletin")
