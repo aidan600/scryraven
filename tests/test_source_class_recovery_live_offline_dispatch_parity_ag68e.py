@@ -26,6 +26,7 @@ from tests.helpers.authoritative_source_forced_corridor import (
 _ROOT = Path(__file__).resolve().parents[1]
 _SPINE_PATH = _ROOT / "core" / "controller_loop_spine.py"
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RETRIEVAL_AUTHORITY_STAGE_PATH = _ROOT / "core" / "retrieval_authority_stage.py"
 _RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 
 _LIVE_QUERY = (
@@ -432,6 +433,7 @@ def test_ag68e_public_forced_corridor_helper_shapes_are_preserved() -> None:
 
 def test_ag68e_pipeline_call_site_remains_single_tiny_executor_gate() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    stage_source = _RETRIEVAL_AUTHORITY_STAGE_PATH.read_text(encoding="utf-8")
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
 
     assert pipeline_source.count("execute_source_class_recovery_action(") == 0
@@ -444,7 +446,7 @@ def test_ag68e_pipeline_call_site_remains_single_tiny_executor_gate() -> None:
     assert "authority_lifecycle.recovery_action" in runner_source
     assert (
         "official_canonical_checkpoint_exception_fallback_allowed"
-        in pipeline_source
+        in stage_source
     )
 
 

@@ -29,6 +29,7 @@ from tests.test_targeted_retrieval_runtime_ag43b import _run_passive_case
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RETRIEVAL_AUTHORITY_STAGE_PATH = _ROOT / "core" / "retrieval_authority_stage.py"
 _RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 _SPINE_PATH = _ROOT / "core" / "controller_loop_spine.py"
 
@@ -366,6 +367,8 @@ def test_ag44b_static_guards_keep_retrieve_targeted_unpromoted() -> None:
 
 def test_ag44b_static_guard_ordinary_candidate_does_not_relabel_bounded_lanes() -> None:
     source = _PIPELINE_PATH.read_text(encoding="utf-8")
+    stage_source = _RETRIEVAL_AUTHORITY_STAGE_PATH.read_text(encoding="utf-8")
+    stage_and_pipeline_source = source + "\n" + stage_source
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
 
     assert "weak_corpus_recovery_queries = list(" in source
@@ -374,6 +377,9 @@ def test_ag44b_static_guard_ordinary_candidate_does_not_relabel_bounded_lanes() 
     helper_source = (Path(__file__).resolve().parents[1] / "core" / "retrieval_dispatch_runtime.py").read_text(encoding="utf-8")
     assert "execute_conflict_resolution_from_scope(" in source
     assert "execute_conflict_resolution_action(" in helper_source
-    assert "conflict_resolving_queries=conflict_resolving_queries" in source
-    assert "ordinary_next_queries=conflict_resolving_queries" not in source
-    assert "approved_ordinary_next_queries=conflict_resolving_queries" not in source
+    assert "conflict_resolving_queries=conflict_resolving_queries" in stage_source
+    assert "ordinary_next_queries=conflict_resolving_queries" not in stage_and_pipeline_source
+    assert (
+        "approved_ordinary_next_queries=conflict_resolving_queries"
+        not in stage_and_pipeline_source
+    )

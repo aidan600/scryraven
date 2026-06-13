@@ -2977,6 +2977,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         expander_continuation_spine_gate_trace=expander_continuation_spine_gate_trace,
         scout_continuation_spine_gate_trace=scout_continuation_spine_gate_trace,
         logger=run_log,
+        decide_checkpoint=decide_evidence_integration_checkpoint,
+        build_checkpoint_trace=build_evidence_integration_checkpoint_trace,
+        checkpoint_unavailable_trace=evidence_integration_checkpoint_unavailable_trace,
     )
     evidence_integration_checkpoint_trace = (
         _retrieval_authority_stage.evidence_integration_checkpoint_trace

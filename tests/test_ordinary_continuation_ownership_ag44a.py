@@ -28,6 +28,7 @@ from tests.test_weak_corpus_recovery import _run as _run_weak_corpus_case
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_RETRIEVAL_AUTHORITY_STAGE_PATH = _ROOT / "core" / "retrieval_authority_stage.py"
 
 _CLASSIFICATIONS = {
     "ordinary_continuation_legacy_owner",
@@ -178,7 +179,13 @@ ORDINARY_CONTINUATION_OWNERSHIP_MAP = (
 
 def _pipeline_source() -> str:
     legacy_stage = _ROOT / "core" / "legacy_review_runtime_stage.py"
-    return _PIPELINE_PATH.read_text(encoding="utf-8") + "\n" + legacy_stage.read_text(encoding="utf-8")
+    return "\n".join(
+        (
+            _PIPELINE_PATH.read_text(encoding="utf-8"),
+            _RETRIEVAL_AUTHORITY_STAGE_PATH.read_text(encoding="utf-8"),
+            legacy_stage.read_text(encoding="utf-8"),
+        )
+    )
 
 
 def _provider_roles(harness: Any) -> list[str | None]:

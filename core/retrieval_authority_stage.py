@@ -75,6 +75,9 @@ def build_retrieval_authority_stage(
     expander_continuation_spine_gate_trace: dict[str, Any] | None = None,
     scout_continuation_spine_gate_trace: dict[str, Any] | None = None,
     logger: Any | None = None,
+    decide_checkpoint: Any = decide_evidence_integration_checkpoint,
+    build_checkpoint_trace: Any = build_evidence_integration_checkpoint_trace,
+    checkpoint_unavailable_trace: Any = evidence_integration_checkpoint_unavailable_trace,
 ) -> RetrievalAuthorityStageResult:
     if (
         evidence_integration_checkpoint_decided
@@ -108,9 +111,9 @@ def build_retrieval_authority_stage(
                 iterations_run=iterations_run,
                 max_iterations=max_iterations,
             )
-            decision = decide_evidence_integration_checkpoint(snapshot)
+            decision = decide_checkpoint(snapshot)
             evidence_integration_checkpoint_trace = (
-                build_evidence_integration_checkpoint_trace(
+                build_checkpoint_trace(
                     snapshot=snapshot,
                     decision=decision,
                     legacy_runtime_branch="existing_source_class_lifecycle",
@@ -127,7 +130,7 @@ def build_retrieval_authority_stage(
                 exc,
             )
             evidence_integration_checkpoint_trace = (
-                evidence_integration_checkpoint_unavailable_trace(
+                checkpoint_unavailable_trace(
                     "checkpoint_exception"
                 )
             )
