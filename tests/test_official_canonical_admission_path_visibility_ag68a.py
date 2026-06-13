@@ -8,10 +8,7 @@ from core.authoritative_source_action import (
     AuthoritativeSourceActionFacts,
     build_authoritative_source_obligation_state_and_action,
 )
-from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
-    build_controller_loop_spine_result,
-)
+from core.controller_loop_spine import build_controller_loop_spine_result
 from core.official_canonical_recovery_execution_admission import (
     build_official_canonical_recovery_execution_admission,
 )
@@ -252,20 +249,19 @@ def test_forced_official_current_controller_spine_authorizes_dispatch() -> None:
     _controller, result = _run_action(_facts())
     spine = _spine(result.active_source_class_recovery_lifecycle)
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
-    assert spine.trace_packet["gate_reason"] == "approved_by_official_canonical_admission"
+    assert (
+        spine.trace_packet["gate_reason"]
+        == "approved_by_official_canonical_admission"
+    )
 
 
 def test_forced_official_current_dispatch_fixture_executes_existing_executor() -> None:
     controller, result = _run_action(_facts())
-    spine = _spine(result.active_source_class_recovery_lifecycle)
     dispatch_result, captured_queries = _execute_fixture(
         controller,
         result.active_source_class_recovery_lifecycle,
     )
 
-    assert spine.source_class_executor_dispatched is True
     assert dispatch_result["attempted"] is True
     assert captured_queries == list(_OFFICIAL_QUERIES)
     action = controller.snapshot_ledger()["retrieval_actions"][0]
@@ -290,12 +286,14 @@ def test_forced_canonical_doc_visible_queries_reach_admission_lifecycle_and_disp
     assert result.active_source_class_recovery_lifecycle[
         "active_source_class_recovery_eligible"
     ] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert (
+        spine.trace_packet["gate_reason"]
+        == "approved_by_official_canonical_admission"
+    )
 
 
 def test_aggregate_only_ordinary_authoritative_status_allows_recovery() -> None:
     _controller, result = _run_action(_facts(status="satisfied_strong"))
-    spine = _spine(result.active_source_class_recovery_lifecycle)
     forced = run_forced_corridor_validation(
         official_current_forced_corridor_fixture(
             ordinary_evidence_status="satisfied_strong",
@@ -305,7 +303,6 @@ def test_aggregate_only_ordinary_authoritative_status_allows_recovery() -> None:
 
     assert result.official_canonical_recovery_execution_admitted is True
     assert result.action_decision.approved is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert forced["ordinary_acquisition_counted_as_recovery_success"] is False
     assert forced["missing_authoritative_source_state_forced"] is True
 
@@ -315,7 +312,6 @@ def test_terminal_stop_blocks_required_recovery_admission() -> None:
     payload = result.official_canonical_recovery_execution_admission_trace[
         "OfficialCanonicalRecoveryExecutionAdmission"
     ]
-    spine = _spine(result.active_source_class_recovery_lifecycle)
 
     assert payload["admission_used"] is False
     assert payload["admission_skip_reason"] == "existing_runtime_blocker"
@@ -323,7 +319,6 @@ def test_terminal_stop_blocks_required_recovery_admission() -> None:
     assert result.active_source_class_recovery_lifecycle[
         "authority_lifecycle_required_recovery_allowed"
     ] is True
-    assert spine.authorized_dispatch is None
 
 
 def test_weak_corpus_cannot_preempt_required_recovery_without_blocker() -> None:

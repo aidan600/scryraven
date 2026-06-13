@@ -301,8 +301,7 @@ def test_ag95d_canonical_permission_absence_blocks_demoted_authorizers() -> None
     )
 
     assert decision.decision == RETRY_RECOVERY
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
+    assert spine.source_class_checkpoint_gate_trace["gate_reason"] == "approved"
     assert result.source_class_recovery_execution == {
         "attempted": False,
         "result_count": 0,

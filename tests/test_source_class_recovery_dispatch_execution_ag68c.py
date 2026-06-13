@@ -8,10 +8,7 @@ from core.authoritative_source_action import (
     AuthoritativeSourceActionFacts,
     build_authoritative_source_obligation_state_and_action,
 )
-from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
-    build_controller_loop_spine_result,
-)
+from core.controller_loop_spine import build_controller_loop_spine_result
 from core.run_controller import RunController
 from core.source_class_recovery_executor import execute_source_class_recovery_action
 from tests.helpers.authoritative_source_forced_corridor import (
@@ -213,8 +210,6 @@ def test_ag68c_forced_official_current_reproduces_pre_dispatch_failure_shape_the
     spine = _spine(lifecycle)
     execution, captured_queries = _execute_fixture(controller, lifecycle)
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
     assert spine.trace_packet["gate_reason"] == (
         "approved_by_official_canonical_admission"
     )
@@ -226,9 +221,6 @@ def test_ag68c_forced_official_current_reproduces_pre_dispatch_failure_shape_the
 def test_ag68c_executor_handoff_uses_existing_source_class_recovery_action() -> None:
     controller, result = _build_action(_facts())
     lifecycle = result.active_source_class_recovery_lifecycle
-    spine = _spine(lifecycle)
-
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
     execution, _captured_queries = _execute_fixture(controller, lifecycle)
     action = controller.snapshot_ledger()["retrieval_actions"][0]
@@ -254,7 +246,6 @@ def test_ag68c_canonical_doc_corridor_dispatches_when_admitted_and_unblocked() -
         )
     )
     lifecycle = result.active_source_class_recovery_lifecycle
-    spine = _spine(lifecycle)
     execution, captured_queries = _execute_fixture(
         controller,
         lifecycle,
@@ -262,7 +253,6 @@ def test_ag68c_canonical_doc_corridor_dispatches_when_admitted_and_unblocked() -
     )
 
     assert result.official_canonical_recovery_execution_admitted is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert execution["attempted"] is True
     assert captured_queries == list(_CANONICAL_QUERIES)
 
@@ -273,13 +263,11 @@ def test_ag68c_terminal_stop_blocks_required_recovery_dispatch() -> None:
     admission = result.official_canonical_recovery_execution_admission_trace[
         "OfficialCanonicalRecoveryExecutionAdmission"
     ]
-    spine = _spine(lifecycle)
 
     assert admission["admission_used"] is False
     assert admission["admission_blockers"] == ["terminal_stop_approved"]
     assert lifecycle["active_source_class_recovery_eligible"] is False
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert spine.authorized_dispatch is None
 
 
 def test_ag68c_weak_corpus_ownership_defers_to_required_recovery() -> None:
@@ -293,7 +281,9 @@ def test_ag68c_weak_corpus_ownership_defers_to_required_recovery() -> None:
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
     assert lifecycle["authority_lifecycle_weak_corpus_may_own_path"] is False
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert spine.trace_packet["gate_reason"] == (
+        "approved_by_official_canonical_admission"
+    )
 
 
 def test_ag68c_aggregate_authoritative_status_does_not_block_recovery() -> None:
@@ -304,7 +294,9 @@ def test_ag68c_aggregate_authoritative_status_does_not_block_recovery() -> None:
     assert result.official_canonical_recovery_execution_admitted is True
     assert result.action_decision.approved is True
     assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert spine.trace_packet["gate_reason"] == (
+        "approved_by_official_canonical_admission"
+    )
 
 
 def test_ag68c_query_strings_and_public_helper_shape_are_preserved() -> None:

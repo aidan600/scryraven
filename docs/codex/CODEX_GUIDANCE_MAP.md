@@ -31,18 +31,19 @@ are repo files; use repo-visible files and the current phase prompt.
   `docs/architecture/AG95E_STALE_DISPATCH_DOCTRINE_AND_FIXTURE_CLEANUP.md`,
   `docs/architecture/AG95F_CONTROLLER_LOOP_SPINE_SOURCE_CLASS_TRACE_DEMOTION.md`,
   `docs/architecture/AG95G_SOURCE_CLASS_COMPATIBILITY_CONSUMER_AUDIT_AND_RETIREMENT.md`,
+  `docs/architecture/AG95H_REMAINING_SOURCE_CLASS_COMPATIBILITY_TRACE_DIET.md`,
   and
-  `docs/architecture/AG95H_REMAINING_SOURCE_CLASS_COMPATIBILITY_TRACE_DIET.md`.
+  `docs/architecture/AG95I_CONTROLLER_LOOP_SPINE_PACKET_FIELD_DIET.md`.
   Current runner dispatch authority is canonical
   `authority_lifecycle.recovery_action` consumed by
-  `SourceClassRecoveryRunner`; `authorized_spine_action`, ControllerLoopSpine
-  source-class dispatch output, and ControllerRecoveryDecision are
-  diagnostic/compatibility surfaces for source-class dispatch. AG-95F records
-  the explicit ControllerLoopSpine trace demotion markers. AG-95G records the
-  current compatibility consumer inventory and removes the orchestrator's
-  source-class old-key read. AG-95H removes the remaining AG68E/AG68G
-  product-callsite old-key assertions and routes those checks to focused
-  ControllerLoopSpine compatibility coverage.
+  `SourceClassRecoveryRunner`; `authorized_spine_action`,
+  ControllerRecoveryDecision, and ControllerLoopSpine shared active-gate fields
+  are diagnostic/compatibility surfaces for source-class dispatch. AG-95I is
+  the current ControllerLoopSpine packet-field diet: it retires the
+  source-class-specific packet aliases/markers and leaves only shared
+  active-gate compatibility where weak-corpus, conflict, terminal-stop, or
+  targeted-retrieval coverage still needs it. AG-95F/G/H are historical setup
+  phases; use AG-95I for the current packet contract.
 - **Orchestrator strangulation and phase-boundary vocabulary:** read
   `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
   RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,

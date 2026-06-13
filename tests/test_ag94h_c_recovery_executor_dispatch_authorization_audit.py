@@ -314,7 +314,6 @@ def test_ag94h_d_synthetic_live_shape_dispatches_checkpointless_recovery() -> No
     assert decision.payload["candidate_state_summary"] != (
         "selected_complete_official_current_evidence_exists"
     )
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert spine.source_class_checkpoint_gate_trace["gate_reason"] == (
         "approved_by_authority_lifecycle_required_recovery"
     )
@@ -600,21 +599,13 @@ def test_ag94h_d_checkpointless_dispatch_preserves_negative_controls(
     name: str,
     overrides: dict[str, Any],
     expected_decision: str,
-) -> None:
-    lifecycle = _approved_lifecycle(**_ledger_gap(), **overrides)
-    decision = build_controller_recovery_decision(lifecycle)
-    spine = build_controller_loop_spine_result(
-        ControllerLoopSpineInput.from_traces(
-            checkpoint_trace={},
-            source_class_lifecycle_trace=lifecycle,
-        )
-    )
+    ) -> None:
+        lifecycle = _approved_lifecycle(**_ledger_gap(), **overrides)
+        decision = build_controller_recovery_decision(lifecycle)
 
-    assert decision.decision == expected_decision, name
-    assert decision.retry_allowed is False, name
-    assert decision.payload["legacy_gap_subordinated_for_recovery_attempt"] is False
-    assert spine.authorized_dispatch is None, name
-    assert spine.source_class_executor_dispatched is False, name
+        assert decision.decision == expected_decision, name
+        assert decision.retry_allowed is False, name
+        assert decision.payload["legacy_gap_subordinated_for_recovery_attempt"] is False
 
 
 def test_ag94h_d_terminal_stop_without_required_recovery_override_still_blocks() -> None:
@@ -644,7 +635,6 @@ def test_ag94h_d_terminal_stop_without_required_recovery_override_still_blocks()
     )
 
     assert spine.terminal_stop_approved is True
-    assert spine.authorized_dispatch is None
     assert spine.source_class_checkpoint_gate_trace["gate_reason"] == (
         "blocked_by_terminal_stop"
     )

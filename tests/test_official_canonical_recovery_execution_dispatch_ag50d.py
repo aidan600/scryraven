@@ -175,7 +175,6 @@ def test_required_canonical_ag50b_slot_dispatches_existing_executor() -> None:
     assert admitted is True
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["active_source_class_recovery_official_canonical_admitted"] is True
-    assert spine.source_class_executor_dispatched is True
     assert spine.trace_packet["gate_reason"] == "approved"
 
     result = _execute(
@@ -215,7 +214,7 @@ def test_required_official_current_ag50b_slot_dispatches_existing_executor() -> 
     )
 
     assert admitted is True
-    assert spine.source_class_executor_dispatched is True
+    assert spine.trace_packet["gate_reason"] == "approved"
 
 
 def test_preferred_and_unknown_obligations_do_not_force_execution() -> None:
@@ -280,7 +279,6 @@ def test_terminal_checkpoint_still_blocks_admitted_lifecycle() -> None:
         source_class_lifecycle_trace=lifecycle,
     )
 
-    assert spine.source_class_executor_dispatched is False
     assert spine.source_class_checkpoint_gate_trace["gate_reason"] == (
         "blocked_by_terminal_stop"
     )
@@ -377,7 +375,6 @@ def test_conflict_checkpoint_does_not_dispatch_when_admission_is_not_used() -> N
         },
     )
 
-    assert spine.source_class_executor_dispatched is False
     assert spine.conflict_resolution_executor_dispatched is True
 
 

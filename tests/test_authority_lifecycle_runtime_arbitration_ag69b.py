@@ -168,8 +168,10 @@ def test_ag69b_terminal_stop_blocks_required_recovery_admission() -> None:
     assert admission["admission_blockers"] == ["terminal_stop_approved"]
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
     assert lifecycle["authority_lifecycle_terminal_stop_may_preempt"] is False
-    assert spine.authorized_dispatch is None
     assert spine.terminal_stop_approved is True
+    assert spine.trace_packet["blocked_or_skipped_actions"][
+        RECOVER_MISSING_SOURCE_CLASS
+    ] == "blocked_by_terminal_stop"
 
 
 def test_ag69b_weak_corpus_cannot_own_path_while_recovery_allowed() -> None:
@@ -187,7 +189,6 @@ def test_ag69b_weak_corpus_cannot_own_path_while_recovery_allowed() -> None:
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
     assert lifecycle["authority_lifecycle_weak_corpus_may_own_path"] is False
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert spine.weak_corpus_executor_dispatched is False
     assert spine.trace_packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
         "blocked_by_authority_lifecycle_required_recovery"
@@ -208,8 +209,10 @@ def test_ag69b_required_recovery_permission_survives_weak_local_gate_only() -> N
         weak_lifecycle=_weak_lifecycle(),
     )
 
-    assert terminal_spine.authorized_dispatch is None
-    assert weak_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert terminal_spine.terminal_stop_approved is True
+    assert weak_spine.trace_packet["blocked_or_skipped_actions"][
+        RECOVER_WEAK_CORPUS
+    ] == "blocked_by_authority_lifecycle_required_recovery"
 
 
 def test_ag69b_controller_hard_blocker_projection_is_requirement_bound() -> None:
@@ -266,7 +269,7 @@ def test_ag69b_insufficient_partial_posture_is_explicit_when_recovery_not_execut
     assert lifecycle["authority_lifecycle"]["final_posture"] == (
         "insufficient_partial"
     )
-    assert spine.authorized_dispatch is None
+    assert spine.terminal_stop_approved is True
 
 
 def test_ag69b_projection_fields_do_not_control_arbitration() -> None:
@@ -283,7 +286,7 @@ def test_ag69b_projection_fields_do_not_control_arbitration() -> None:
 
     assert lifecycle["authority_lifecycle_projection_used_as_control_input"] is False
     assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert spine.authorized_dispatch is None
+    assert spine.terminal_stop_approved is True
 
 
 def test_ag69b_no_broad_pipeline_domain_logic_added() -> None:

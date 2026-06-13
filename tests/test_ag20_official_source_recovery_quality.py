@@ -216,7 +216,6 @@ def test_ag20_weak_corpus_current_legal_gap_checkpoint_preserves_authority_recov
     assert trace["authority_lifecycle_required_recovery_allowed"] is True
     assert packet["checkpoint_action_name"] == RECOVER_WEAK_CORPUS
     assert packet["promoted_action_name"] == RECOVER_MISSING_SOURCE_CLASS
-    assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
         "blocked_by_authority_lifecycle_required_recovery"
     )
@@ -254,7 +253,6 @@ def test_ag20_weak_corpus_current_legal_gap_checkpoint_source_class_skips_weak(
     assert trace["active_source_class_recovery_skip_reason"] is None
     assert packet["checkpoint_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert packet["promoted_action_name"] == RECOVER_MISSING_SOURCE_CLASS
-    assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
         "checkpoint_action_not_approved"
     )

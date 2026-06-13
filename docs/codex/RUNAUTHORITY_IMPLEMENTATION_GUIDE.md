@@ -47,17 +47,11 @@ consumer is `SourceClassRecoveryRunner`, and it dispatches only from canonical
 dispatch fields, `authorized_spine_action`, official/canonical admission
 booleans, lifecycle eligibility booleans, reports, exports, and
 `ControllerRecoveryDecision` are diagnostic or compatibility surfaces for this
-lane. After AG-95F, ControllerLoopSpine source-class trace packets must declare
-`source_class_spine_trace_role=diagnostic_compatibility`,
-`source_class_spine_dispatch_authority=false`, and
-`source_class_runner_dispatch_authority=authority_lifecycle.recovery_action`.
-They must not be restored as source-class runner dispatch authority.
-AG-95G additionally removed the orchestrator's targeted-retrieval ownership read
-of `ControllerLoopSpineResult.source_class_executor_dispatched`; remaining
-ControllerLoopSpine source-class keys are compatibility diagnostics until their
-named trace/test consumers are retired. AG-95H moved the remaining AG68E/AG68G
-product-callsite old-key assertions into focused ControllerLoopSpine
-compatibility coverage.
+lane. AG-95I retires the remaining source-class-specific ControllerLoopSpine
+packet aliases and AG-95F demotion markers; shared active-gate fields such as
+`executor_dispatched` and `executed_action_name` remain compatibility surfaces
+only where non-source-class arbitration coverage still needs them. They must not
+be restored as source-class runner dispatch authority.
 
 ### No orchestrator brain
 
