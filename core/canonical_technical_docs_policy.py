@@ -99,6 +99,14 @@ _BEHAVIOR_TERMS = (
     "tradeoffs",
     "works",
 )
+_OFFICIAL_RATE_OR_RULE_RE = re.compile(
+    r"\b("
+    r"official|current|agency|government|legal|regulatory|rule|rules|"
+    r"requirements?|rates?|fees?|thresholds?|limits?|maximum|minimum|"
+    r"mileage|wage|tax|filing"
+    r")\b",
+    re.IGNORECASE,
+)
 
 
 def is_explicit_academic_literature_request(*texts: Any) -> bool:
@@ -133,7 +141,12 @@ def is_canonical_technical_documentation_context(
         source_classes & CANONICAL_TECHNICAL_DOC_SOURCE_CLASSES
     )
     has_doc_cue = _has_any_term(policy_text, _DOC_TERMS)
-    has_technical_cue = _has_any_term(policy_text, _TECHNICAL_TERMS)
+    technical_terms = _matched_terms(policy_text, _TECHNICAL_TERMS)
+    if technical_terms == {"standard"} and _OFFICIAL_RATE_OR_RULE_RE.search(
+        policy_text
+    ):
+        return False
+    has_technical_cue = bool(technical_terms)
     has_behavior_cue = _has_any_term(policy_text, _BEHAVIOR_TERMS)
     return bool(
         has_doc_cue
@@ -153,6 +166,11 @@ def _policy_text(*texts: Any) -> str:
 def _has_any_term(text: str, terms: Iterable[str]) -> bool:
     padded = f" {text.replace('-', ' ')} "
     return any(f" {term.replace('-', ' ')} " in padded for term in terms)
+
+
+def _matched_terms(text: str, terms: Iterable[str]) -> set[str]:
+    padded = f" {text.replace('-', ' ')} "
+    return {term for term in terms if f" {term.replace('-', ' ')} " in padded}
 
 
 def _token_set(values: Iterable[Any] | None) -> set[str]:

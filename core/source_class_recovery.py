@@ -2176,7 +2176,8 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
         (
             r"\b(?:tax|taxes|irs|internal\s+revenue\s+service|revenue\s+"
             r"procedure|internal\s+revenue\s+bulletin)\b",
-            r"\b(?:standard\s+mileage\s+rate|mileage\s+rate|tax\s+"
+            r"\b(?:standard\s+mileage\s+rates?|mileage\s+rates?|business\s+"
+            r"standard\s+mileage\s+rates?|tax\s+"
             r"credits?|deductions?|tax\s+return)\b",
         ),
     ) or (
@@ -2208,6 +2209,37 @@ def _infer_official_authority_venue(*texts: str) -> _AuthorityVenueInference:
             constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
             constraint_confidence="high",
             reasons=("tax_rate_form_fee_signal",),
+        )
+
+    social_security_contribution_context = _has_any(
+        text,
+        (
+            r"\b(?:ssa|social\s+security\s+administration|social\s+security)\b",
+            r"\b(?:taxable\s+maximum|wage\s+base|contribution\s+and\s+"
+            r"benefit\s+base)\b",
+        ),
+    )
+    if social_security_contribution_context and _us_federal_authority_context(text):
+        add_candidate(
+            "social_security_contribution_benefit_rule",
+            roles=(
+                "official_agency_guidance",
+                "contribution_benefit_base",
+                "rate_notice",
+            ),
+            hints=(
+                "ssa.gov",
+                "Social Security",
+                "contribution and benefit base",
+                "taxable maximum",
+                "wage base",
+            ),
+            domain_candidates=("ssa.gov",),
+            domain_constraints=("ssa.gov",),
+            constraint_strength="hard_constraint",
+            constraint_provenance="explicit_agency_domain_or_strong_authority_signal",
+            constraint_confidence="high",
+            reasons=("social_security_contribution_benefit_signal",),
         )
 
     immigration_context = _has_any(
@@ -2587,6 +2619,62 @@ def _official_authority_acquisition_plan(
             _append_unique(role_hints, hint)
         for reason in candidate.reasons:
             _append_unique(reasons, reason)
+    if (
+        hard_domains
+        and not _foreign_jurisdiction_context(combined_context)
+        and _us_federal_authority_context(combined_context)
+    ):
+        existing_hard_domains = list(hard_domains)
+        hard_domains.clear()
+        for domain in OFFICIAL_SOURCE_US_AUTHORITY_DOMAINS:
+            _append_domain(hard_domains, domain)
+            domain_constraint_provenance.append(
+                {
+                    "domain": domain,
+                    "family_id": "us_federal_legal_authority_companion",
+                    "constraint_strength": "hard_constraint",
+                    "provenance": "explicit_us_federal_authority_signal",
+                    "confidence": "medium",
+                }
+            )
+        for domain in existing_hard_domains:
+            _append_domain(hard_domains, domain)
+    if not hard_domains and _us_legal_authority_domain_context(combined_context):
+        for domain in OFFICIAL_SOURCE_US_AUTHORITY_DOMAINS:
+            _append_domain(hard_domains, domain)
+            domain_constraint_provenance.append(
+                {
+                    "domain": domain,
+                    "family_id": "us_legal_authority_domain",
+                    "constraint_strength": "hard_constraint",
+                    "provenance": "explicit_us_legal_authority_signal",
+                    "confidence": "high",
+                }
+            )
+    if not hard_domains and _eu_legal_authority_domain_context(combined_context):
+        for domain in OFFICIAL_SOURCE_EU_AUTHORITY_DOMAINS:
+            _append_domain(hard_domains, domain)
+            domain_constraint_provenance.append(
+                {
+                    "domain": domain,
+                    "family_id": "eu_legal_authority_domain",
+                    "constraint_strength": "hard_constraint",
+                    "provenance": "explicit_eu_legal_authority_signal",
+                    "confidence": "high",
+                }
+            )
+    if not hard_domains and _uk_legal_authority_domain_context(combined_context):
+        for domain in OFFICIAL_SOURCE_UK_AUTHORITY_DOMAINS:
+            _append_domain(hard_domains, domain)
+            domain_constraint_provenance.append(
+                {
+                    "domain": domain,
+                    "family_id": "uk_legal_authority_domain",
+                    "constraint_strength": "hard_constraint",
+                    "provenance": "explicit_uk_legal_authority_signal",
+                    "confidence": "high",
+                }
+            )
     decision = _authority_acquisition_decision_fields(
         hard_domains=tuple(hard_domains),
         soft_domains=tuple(soft_domains),
@@ -2658,13 +2746,6 @@ def _authority_acquisition_decision_fields(
             "decision_type": "hard_corridor",
             "corridor_strength": "hard",
             "basis": ("explicit_us_legal_authority_signal",),
-            "jurisdiction_disqualifiers": (),
-        }
-    if not jurisdiction_disqualifiers and _us_federal_authority_context(context_text):
-        return {
-            "decision_type": "hard_corridor",
-            "corridor_strength": "hard",
-            "basis": ("explicit_us_federal_authority_signal",),
             "jurisdiction_disqualifiers": (),
         }
     if _eu_legal_authority_domain_context(context_text):
@@ -2740,6 +2821,12 @@ def _official_authority_query_variants(
                 "official tax guidance form instructions Internal Revenue Bulletin",
                 subject,
             )
+    if "social_security_contribution_benefit_rule" in families:
+        add(
+            "SSA",
+            years,
+            "Social Security taxable maximum wage base official contribution benefit base",
+        )
     if "immigration_naturalization_filing_rule" in families:
         add(
             "USCIS Form N-400 naturalization filing fee official current fee schedule",
@@ -3012,13 +3099,14 @@ def build_official_source_recovery_domain_constraint_policy(
     if not isinstance(decision, Mapping):
         decision = {}
     domains = (
-        _hard_corridor_official_source_recovery_domain_constraints(
-            missing_expected_source_classes=missing,
-            query=query,
-            core_topic=core_topic,
-            primary_entity=primary_entity,
-            recovery_queries=recovery_queries,
-        )
+        [
+            domain
+            for domain in (
+                _normalize_recovery_domain(item)
+                for item in (plan.get("hard_domains") or ())
+            )
+            if domain
+        ]
         if authority_acquisition_decision_allows_provider_domain_constraints(plan)
         else []
     )
@@ -3046,239 +3134,6 @@ def build_official_source_recovery_domain_constraints(
         recovery_queries=recovery_queries,
     )
     return list(policy["official_domains"])
-
-
-def _hard_corridor_official_source_recovery_domain_constraints(
-    *,
-    missing_expected_source_classes: Iterable[Any],
-    query: str,
-    core_topic: str = "",
-    primary_entity: str = "",
-    recovery_queries: Iterable[Any] = (),
-) -> list[str]:
-    """Return deterministic official-domain constraints for source recovery."""
-    missing = {
-        str(item or "").strip()
-        for item in missing_expected_source_classes or ()
-        if str(item or "").strip()
-    }
-    if not (missing & OFFICIAL_SOURCE_DOMAIN_CONSTRAINT_CLASSES):
-        return []
-
-    context_text = " ".join(
-        _compact_text(value, limit=240)
-        for value in (
-            query,
-            core_topic,
-            primary_entity,
-        )
-        if str(value or "").strip()
-    ).casefold()
-    recovery_text = " ".join(
-        _compact_text(item, limit=120)
-        for item in (recovery_queries or ())
-        if str(item or "").strip()
-    ).casefold()
-    text = " ".join(
-        value for value in (context_text, recovery_text) if value
-    ).casefold()
-    foreign_jurisdiction_context = _foreign_jurisdiction_context(context_text)
-
-    domains: list[str] = []
-    official_or_legal_missing = bool(
-        missing & {"official_current_rules", "legal_or_regulatory_text"}
-    )
-    inferred_venue = _infer_official_authority_venue(context_text)
-
-    dot_context = _has_any(
-        context_text,
-        (
-            r"\b(?:department\s+of\s+transportation|transportation\s+department)\b",
-            r"\bair\s+carrier\s+access\s+act\b",
-            r"\b(?:airlines?|airline\s+passengers?|passengers?\s+with\s+disabilities)\b",
-        ),
-    ) or (
-        _has_any(context_text, (r"\bdot\b",))
-        and _has_any(
-            context_text,
-            (
-                r"\b(?:airlines?|transportation|carrier|passengers?|"
-                r"wheelchairs?|regulations?|rules?)\b",
-            ),
-        )
-    )
-
-    agency_targets: tuple[tuple[tuple[str, ...], str], ...] = (
-        (
-            (
-                r"\b(?:ftc|federal\s+trade\s+commission)\b",
-                r"\bnon[-\s]?competes?\b",
-                r"\b(?:negative\s+option|click[-\s]?to[-\s]?cancel)\b",
-            ),
-            "ftc.gov",
-        ),
-        (
-            (
-                r"\b(?:fda|food\s+and\s+drug\s+administration)\b",
-                r"\blaboratory\s+developed\s+tests?\b",
-                r"\bldts?\b",
-                r"\bmedical\s+devices?\b",
-                r"\benforcement\s+discretion\b",
-            ),
-            "fda.gov",
-        ),
-        (
-            (
-                r"\b(?:osha|occupational\s+safety\s+and\s+health)\b",
-                r"\bhazard\s+communication\b",
-                r"\b29\s+cfr\s+1910\.1200\b",
-            ),
-            "osha.gov",
-        ),
-        (
-            (
-                r"\b(?:irs|internal\s+revenue\s+service)\b",
-                r"\btax\s+credits?\b",
-                r"\bstandard\s+mileage\s+rate\b",
-                r"\bmileage\s+rate\b",
-            ),
-            "irs.gov",
-        ),
-        (
-            (
-                r"\b(?:ssa|social\s+security\s+administration)\b",
-                r"\bsocial\s+security\b",
-                r"\btaxable\s+maximum\b",
-                r"\bwage\s+base\b",
-                r"\bcontribution\s+and\s+benefit\s+base\b",
-            ),
-            "ssa.gov",
-        ),
-        (
-            (
-                r"\b(?:dol|department\s+of\s+labor)\b",
-                r"\bfederal\s+minimum\s+wage\b",
-                r"\bminimum\s+wage\b",
-            ),
-            "dol.gov",
-        ),
-        (
-            (
-                r"\buscis\b",
-                r"\bn-400\b",
-                r"\bnaturalization\b",
-                r"\bfiling\s+fee\b",
-            ),
-            "uscis.gov",
-        ),
-        (
-            (
-                r"\b(?:cfpb|consumer\s+financial\s+protection\s+bureau)\b",
-                r"\bconsumerfinance\.gov\b",
-            ),
-            "consumerfinance.gov",
-        ),
-        (
-            (
-                r"\b(?:sec|securities\s+and\s+exchange\s+commission)\b",
-                r"\b(?:issuer\s+filings?|edgar|10[-\s]?[qk]|form\s+10[-\s]?[qk])\b",
-            ),
-            "sec.gov",
-        ),
-    )
-    us_agency_domains: list[str] = []
-    for domain in inferred_venue.domain_constraints:
-        _append_domain(us_agency_domains, domain)
-    if dot_context and (
-        not foreign_jurisdiction_context or "transportation.gov" in us_agency_domains
-    ):
-        _append_domain(us_agency_domains, "transportation.gov")
-    for patterns, domain in agency_targets:
-        if _has_any(context_text, patterns) and (
-            not foreign_jurisdiction_context or domain in us_agency_domains
-        ):
-            _append_domain(us_agency_domains, domain)
-
-    local_program_role_only_context = (
-        "government_program_eligibility_access_rule" in inferred_venue.family_ids
-        and not inferred_venue.domain_constraints
-        and _has_any(
-            context_text,
-            (r"\b(?:state|county|municipal|local|provincial)\b",),
-        )
-        and not _has_any(
-            context_text,
-            (
-                r"\b(?:federal|u\.s\.|us|united\s+states|american)\b",
-                r"\b(?:irs|uscis|ssa|social\s+security|dol|department\s+of\s+"
-                r"labor|ftc|fda|cfpb|sec|department\s+of\s+transportation|"
-                r"transportation\s+department)\b",
-            ),
-        )
-    )
-
-    us_legal_context = (
-        bool(us_agency_domains)
-        or (
-            not local_program_role_only_context
-            and _has_any(
-                text,
-                (
-                    r"\b(?:u\.s\.|us|united\s+states|american)\b"
-                    r".{0,100}"
-                    r"\b(?:law|legal|regulation|regulatory|rule|rules|"
-                    r"statute|agency|federal)\b",
-                    r"\b(?:cfr|ecfr|code\s+of\s+federal\s+regulations|"
-                    r"federal\s+register|govinfo|regulations\.gov)\b",
-                ),
-            )
-        )
-    )
-    eu_legal_context = _has_any(
-        text,
-        (
-            r"\b(?:eu|e\.u\.|european\s+union|eur[-\s]?lex|eurlex)\b"
-            r".{0,120}"
-            r"\b(?:law|legal|regulation|regulatory|directive|act|"
-            r"obligations?|duties|text|requirements?)\b",
-            r"\b(?:law|legal|regulation|regulatory|directive|act|"
-            r"obligations?|duties|text|requirements?)\b"
-            r".{0,120}"
-            r"\b(?:eu|e\.u\.|european\s+union|eur[-\s]?lex|eurlex)\b",
-            r"\b(?:ai\s+act|gdpr|eprivacy|digital\s+services\s+act|"
-            r"digital\s+markets\s+act)\b",
-            r"\bregulation\s+\(eu\)\b",
-        ),
-    )
-    uk_legal_context = _has_any(
-        text,
-        (
-            r"\b(?:uk|u\.k\.|united\s+kingdom|british|legislation\.gov\.uk)\b"
-            r".{0,120}"
-            r"\b(?:law|legal|regulation|regulatory|act|statute|statutory|"
-            r"instrument|obligations?|duties|text|requirements?)\b",
-            r"\b(?:law|legal|regulation|regulatory|act|statute|statutory|"
-            r"instrument|obligations?|duties|text|requirements?)\b"
-            r".{0,120}"
-            r"\b(?:uk|u\.k\.|united\s+kingdom|british|legislation\.gov\.uk)\b",
-            r"\b(?:online\s+safety\s+act|data\s+protection\s+act|"
-            r"companies\s+act\s+2006)\b",
-        ),
-    )
-
-    if official_or_legal_missing and us_legal_context:
-        for domain in OFFICIAL_SOURCE_US_AUTHORITY_DOMAINS:
-            _append_domain(domains, domain)
-    for domain in us_agency_domains:
-        _append_domain(domains, domain)
-    if official_or_legal_missing and eu_legal_context:
-        for domain in OFFICIAL_SOURCE_EU_AUTHORITY_DOMAINS:
-            _append_domain(domains, domain)
-    if official_or_legal_missing and uk_legal_context:
-        for domain in OFFICIAL_SOURCE_UK_AUTHORITY_DOMAINS:
-            _append_domain(domains, domain)
-
-    return domains
 
 
 def _hint_text(hints: list[str]) -> str:
@@ -3320,7 +3175,8 @@ def _us_legal_authority_domain_context(*texts: str) -> bool:
     return _has_any(
         text,
         (
-            r"\b(?:u\.s\.|us|united\s+states|american)\b"
+            r"(?:(?<![a-z0-9])u\.s\.(?![a-z0-9])|"
+            r"\b(?:us|united\s+states|american)\b)"
             r".{0,100}"
             r"\b(?:law|legal|regulation|regulatory|rule|rules|"
             r"statute|agency|federal)\b",

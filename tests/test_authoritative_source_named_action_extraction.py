@@ -386,12 +386,17 @@ def test_ag96a1_fast_budget_preserves_official_authority_slot_and_plan_dispatch(
     ]
     lifecycle = result.active_source_class_recovery_lifecycle
 
-    assert acquisition["official_authority_acquisition_plan"]["hard_domains"] == [
-        "irs.gov"
-    ]
+    plan = acquisition["official_authority_acquisition_plan"]
+    assert "irs.gov" in plan["hard_domains"]
+    assert "federalregister.gov" in plan["hard_domains"]
+    assert plan["authority_acquisition_decision"]["decision_type"] == "hard_corridor"
+    assert (
+        plan["authority_acquisition_decision"]["provider_domain_constraints_allowed"]
+        is True
+    )
     assert (
         "IRS 2026 standard mileage rate business official notice revenue procedure"
-        in acquisition["official_authority_acquisition_plan"]["query_variants"]
+        in plan["query_variants"]
     )
     assert admission["admission_used"] is True
     assert admission["admission_blockers"] == []
