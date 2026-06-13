@@ -11,6 +11,7 @@ from core.controller_provider_search_allocation import (
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
     PROVIDER_SEARCH_REVIEW_REQUEST,
 )
+from core.cost_accounting import CostAccumulator
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
 )
@@ -384,19 +385,24 @@ def test_ag50c_report_output_section_contains_visible_fields() -> None:
 
 
 def test_ag96a0_dogfood_cost_search_metrics_derive_sanitized_counts() -> None:
+    accumulator = CostAccumulator()
+    accumulator.record_model_call(
+        phase="model",
+        model="gpt-5.4-mini",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+    )
+    accumulator.record_embedding_call(
+        phase="embedding",
+        model="text-embedding-3-small",
+        input_tokens=1_000_000,
+    )
+    accumulator.record_search_call(phase="retrieval", provider="tavily", calls=2)
+
     trace = _trace(
         mode="Balanced",
         latency_seconds=12.34,
-        cost={
-            "total_cost_usd": 0.15,
-            "cost_by_phase": {
-                "model": 0.11,
-                "embedding": 0.02,
-                "retrieval": 0.0,
-            },
-            "calls_by_phase": {"model": 4, "embedding": 1, "retrieval": 2},
-            "total_calls": 7,
-        },
+        cost=accumulator.snapshot(),
         provider_diagnostics=[
             {
                 "provider": "tavily",
@@ -428,8 +434,8 @@ def test_ag96a0_dogfood_cost_search_metrics_derive_sanitized_counts() -> None:
         "interpretation": "observed_from_execution_trace",
     }
     assert metrics["wall_time_seconds"]["value"] == 12.34
-    assert metrics["total_llm_model_calls"]["value"] == 5
-    assert metrics["total_llm_model_cost_usd"]["value"] == 0.13
+    assert metrics["total_llm_model_calls"]["value"] == 2
+    assert metrics["total_llm_model_cost_usd"]["value"] == 1.27
     assert metrics["search_provider_cost_usd"] == {
         "value": "unavailable",
         "source": "unavailable",
