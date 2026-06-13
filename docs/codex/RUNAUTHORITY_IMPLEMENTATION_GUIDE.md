@@ -58,7 +58,12 @@ fields must not be restored as source-class runner dispatch authority.
 AG-95L continues that cleanup at the pipeline product callsites by replacing
 stale checkpoint refresh, ownership summary, and post-final custody reads with
 canonical AuthorityLifecycle action/blocker state while preserving high-custody
-Author/citation visibility behavior.
+Author/citation visibility behavior. AG-95Q moves bounded provider-review
+allocation from ControllerRecoveryDecision compatibility to a canonical
+RunAuthority/SearchJudgment-fed lifecycle request consumed by
+`SourceClassRecoveryRunner` and `controller_provider_search_allocation`;
+ControllerRecoveryDecision must remain diagnostic/export-only for this lane
+unless a later phase deletes those projections.
 
 ### No orchestrator brain
 

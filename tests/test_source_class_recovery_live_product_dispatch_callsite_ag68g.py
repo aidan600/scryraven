@@ -323,7 +323,6 @@ def _run_product_callsite_dispatch(
     result = run_source_class_recovery_dispatch(
         SourceClassRecoveryRunnerContext(
             controller=controller,
-            controller_recovery_decision=None,
             lifecycle_trace=lifecycle,
             process_search_queries=fake_search,
             all_passages=all_passages,

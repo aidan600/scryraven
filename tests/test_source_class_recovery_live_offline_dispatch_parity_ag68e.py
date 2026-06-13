@@ -230,7 +230,6 @@ def _run_product_call_site_dispatch(
     execution = run_source_class_recovery_dispatch(
         SourceClassRecoveryRunnerContext(
             controller,
-            controller_recovery_decision=None,
             lifecycle_trace=lifecycle,
             process_search_queries=fake_search,
             all_passages=[],

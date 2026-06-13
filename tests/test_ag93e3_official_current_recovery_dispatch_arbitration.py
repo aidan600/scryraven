@@ -107,12 +107,10 @@ def _runner_context(
     *,
     controller: RunController,
     lifecycle: dict[str, Any],
-    decision: Any,
     process_search_queries: Any,
 ) -> SourceClassRecoveryRunnerContext:
     return SourceClassRecoveryRunnerContext(
         controller=controller,
-        controller_recovery_decision=decision,
         lifecycle_trace=lifecycle,
         process_search_queries=process_search_queries,
         all_passages=[],
@@ -179,7 +177,6 @@ def test_ag93e3_request_provider_search_review_executes_bounded_allocation() -> 
         _runner_context(
             controller=controller,
             lifecycle=lifecycle,
-            decision=decision,
             process_search_queries=fake_search,
         )
     )
@@ -334,13 +331,10 @@ def test_ag93e3_ordinary_explainer_does_not_trigger_official_allocation() -> Non
         current_search_depth="basic",
         iteration_budget_available=True,
     )
-    decision = build_controller_recovery_decision(lifecycle)
-
     result = run_source_class_recovery_dispatch(
         _runner_context(
             controller=controller,
             lifecycle=lifecycle,
-            decision=decision,
             process_search_queries=lambda *_args, **_kwargs: [],
         )
     )

@@ -281,7 +281,7 @@ def test_ag74d_static_guards_keep_provider_and_final_answer_surfaces_closed() ->
     assert "build_controller_recovery_decision" not in visibility_source
     assert "build_controller_recovery_decision" not in executor_source
     assert "to_executor_trace_fields" not in executor_source
-    assert "to_executor_trace_fields" in runner_source
+    assert "to_executor_trace_fields" not in runner_source
     assert orchestrator_source.count("execute_source_class_recovery_action(") == 0
     assert runner_source.count("execute_source_class_recovery_action(") == 1
     assert "run_source_class_recovery_dispatch(" in orchestrator_source

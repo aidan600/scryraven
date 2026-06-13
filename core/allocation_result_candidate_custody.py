@@ -1,6 +1,6 @@
-"""AG-75A-Y allocation-result admission into candidate custody.
+"""Allocation-result admission into candidate custody.
 
-This helper consumes already-sanitized AG-75A-X allocation execution summaries
+This helper consumes already-sanitized provider-review allocation summaries
 and exposes them as inputs for the existing passport, provider-result bridge,
 and ControllerEvidenceLedger projections. It does not retrieve, route, rank,
 classify, fit, cite, prompt, or alter final-answer behavior.
@@ -18,13 +18,14 @@ from core.controller_provider_search_allocation import (
     BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE,
     PROVIDER_SEARCH_ALLOCATION_ACTION,
     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
+    PROVIDER_SEARCH_ALLOCATION_OWNER,
     PROVIDER_SEARCH_ALLOCATION_RESULT_SUMMARIES_KEY,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
+    PROVIDER_SEARCH_REVIEW_REQUEST,
 )
-from core.controller_recovery_decision import REQUEST_PROVIDER_SEARCH_REVIEW
 
 ALLOCATION_RESULT_CANDIDATE_CUSTODY_SCHEMA_VERSION = (
-    "allocation_result_candidate_custody_ag75a_y_v1"
+    "allocation_result_candidate_custody_ag95q_v1"
 )
 ALLOCATION_RESULT_CANDIDATE_CUSTODY_TRACE_KEY = (
     "allocation_result_candidate_custody"
@@ -72,7 +73,7 @@ _SECRET_VALUE_PATTERNS = (
 def build_allocation_result_candidate_custody_trace(
     runtime_trace: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    """Build the trace envelope for compatibility allocation custody."""
+    """Build the trace envelope for provider-review allocation custody."""
 
     return {
         "schema_version": ALLOCATION_RESULT_CANDIDATE_CUSTODY_SCHEMA_VERSION,
@@ -80,7 +81,7 @@ def build_allocation_result_candidate_custody_trace(
         "run_kernel_compatibility_status": (
             ALLOCATION_RESULT_CANDIDATE_CUSTODY_COMPATIBILITY_STATUS
         ),
-        "trace_mode": "controller_authorized_allocation_result_candidate_custody",
+        "trace_mode": "canonical_provider_review_allocation_result_candidate_custody",
         "diagnostic_only": False,
         "sanitized": True,
         "behavior_changed": False,
@@ -135,12 +136,12 @@ def build_allocation_result_candidate_custody_projection(
             ALLOCATION_RESULT_CANDIDATE_CUSTODY_COMPATIBILITY_STATUS
         ),
         "admission_owner": "ControllerEvidenceLedger",
-        "allocation_owner": "ControllerRecoveryDecision",
+        "allocation_owner": PROVIDER_SEARCH_ALLOCATION_OWNER,
         "allocation_trace_present": bool(trace.get(PROVIDER_SEARCH_ALLOCATION_TRACE_KEY)),
         "allocation_execution_authorized": blocker
         not in {
             "missing_provider_search_allocation_execution_trace",
-            "allocation_execution_not_controller_authorized",
+            "allocation_execution_not_canonical_provider_review_authorized",
         },
         "allocation_execution_executed": execution.get("executed") is True,
         "allocation_execution_attempted": execution.get("execution_attempted") is True,
@@ -223,7 +224,7 @@ def _admission_blocker(
     if not execution:
         return "missing_provider_search_allocation_execution_trace"
     if not _execution_authorized(execution):
-        return "allocation_execution_not_controller_authorized"
+        return "allocation_execution_not_canonical_provider_review_authorized"
     if execution.get("execution_attempted") is not True:
         if execution.get("executed") is not True:
             return _text(execution.get("unexecutable_reason")) or (
@@ -243,8 +244,8 @@ def _admission_blocker(
 
 def _execution_authorized(execution: Mapping[str, Any]) -> bool:
     return (
-        execution.get("allocation_owner") == "ControllerRecoveryDecision"
-        and execution.get("authorized_decision") == REQUEST_PROVIDER_SEARCH_REVIEW
+        execution.get("allocation_owner") == PROVIDER_SEARCH_ALLOCATION_OWNER
+        and execution.get("authorized_decision") == PROVIDER_SEARCH_REVIEW_REQUEST
         and execution.get("authorized_executor_action")
         == PROVIDER_SEARCH_ALLOCATION_ACTION
         and execution.get("bounded_profile")
@@ -309,7 +310,7 @@ def _represent_result(
         "provider_role": _text(result.get("provider_role"), limit=80)
         or "source_class_recovery",
         "retrieval_pass_id": _text(result.get("retrieval_pass_id"), limit=80)
-        or "controller_authorized_allocation_result",
+        or "canonical_provider_review_allocation_result",
         "query_preview": _text(result.get("query_preview"), limit=140) or UNKNOWN,
         "provider_rank_or_position": _int(result.get("provider_rank_or_position")),
         "source_url": source_url,

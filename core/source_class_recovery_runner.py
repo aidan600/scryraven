@@ -9,9 +9,8 @@ from core.controller_action_envelope import RECOVER_MISSING_SOURCE_CLASS
 from core.controller_provider_search_allocation import (
     ProviderSearchAllocationExecutionContext,
     ProviderSearchAllocationGateResult,
-    record_provider_search_allocation_if_controller_authorized,
+    record_provider_search_allocation_if_authority_authorized,
 )
-from core.controller_recovery_decision import ControllerRecoveryDecision
 from core.run_controller import RunController
 from core.source_class_recovery_executor import (
     execute_source_class_recovery_action,
@@ -22,7 +21,6 @@ from core.source_class_recovery_executor import (
 @dataclass(frozen=True)
 class SourceClassRecoveryRunnerContext:
     controller: RunController
-    controller_recovery_decision: ControllerRecoveryDecision | None
     lifecycle_trace: dict[str, Any]
     process_search_queries: Any
     all_passages: list[dict[str, Any]]
@@ -172,12 +170,6 @@ def run_source_class_recovery_dispatch(
 ) -> SourceClassRecoveryRunnerResult:
     """Dispatch one source-class recovery action without making recovery decisions."""
 
-    if context.controller_recovery_decision is not None:
-        context.lifecycle_trace.update(
-            context.controller_recovery_decision.to_executor_trace_fields()
-        )
-        context.lifecycle_trace["recovery_decision_diagnostic_only"] = True
-
     canonical_dispatch_authorized, dispatch_reason = (
         _canonical_source_class_recovery_dispatch_authorized(context.lifecycle_trace)
     )
@@ -238,9 +230,8 @@ def run_source_class_recovery_dispatch(
         )
     else:
         provider_search_allocation = (
-            record_provider_search_allocation_if_controller_authorized(
+            record_provider_search_allocation_if_authority_authorized(
                 context.lifecycle_trace,
-                context.controller_recovery_decision,
                 _provider_search_allocation_execution_context(context),
             )
         )

@@ -117,7 +117,6 @@ def _approved_lifecycle(**overrides: Any) -> dict[str, Any]:
 def _runner_context(
     *,
     lifecycle: dict[str, Any],
-    controller_recovery_decision: Any | None = None,
     controller: RunController | None = None,
     process_search_queries: Any | None = None,
     all_passages: list[dict[str, Any]] | None = None,
@@ -130,7 +129,6 @@ def _runner_context(
 
     return SourceClassRecoveryRunnerContext(
         controller=controller or RunController(),
-        controller_recovery_decision=controller_recovery_decision,
         lifecycle_trace=lifecycle,
         process_search_queries=process_search_queries or fail_search,
         all_passages=all_passages if all_passages is not None else [],
@@ -281,7 +279,6 @@ def test_ag94h_d_synthetic_live_shape_dispatches_checkpointless_recovery() -> No
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            controller_recovery_decision=decision,
             controller=_controller_with_recovery_action(),
             process_search_queries=fake_search,
             all_passages=all_passages,
@@ -428,13 +425,11 @@ def test_ag94h_d_runner_dispatches_only_from_canonical_recovery_action() -> None
         allowed = run_source_class_recovery_dispatch(
             _runner_context(
                 lifecycle=allowed_lifecycle,
-                controller_recovery_decision=decision,
             )
         )
         blocked = run_source_class_recovery_dispatch(
             _runner_context(
                 lifecycle=blocked_lifecycle,
-                controller_recovery_decision=decision,
             )
         )
 
@@ -484,7 +479,6 @@ def test_ag94h_d_canonical_permission_executes_without_demoted_diagnostics() -> 
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            controller_recovery_decision=None,
             controller=controller,
             process_search_queries=fake_search,
         )
@@ -599,13 +593,13 @@ def test_ag94h_d_checkpointless_dispatch_preserves_negative_controls(
     name: str,
     overrides: dict[str, Any],
     expected_decision: str,
-    ) -> None:
-        lifecycle = _approved_lifecycle(**_ledger_gap(), **overrides)
-        decision = build_controller_recovery_decision(lifecycle)
+) -> None:
+    lifecycle = _approved_lifecycle(**_ledger_gap(), **overrides)
+    decision = build_controller_recovery_decision(lifecycle)
 
-        assert decision.decision == expected_decision, name
-        assert decision.retry_allowed is False, name
-        assert decision.payload["legacy_gap_subordinated_for_recovery_attempt"] is False
+    assert decision.decision == expected_decision, name
+    assert decision.retry_allowed is False, name
+    assert decision.payload["legacy_gap_subordinated_for_recovery_attempt"] is False
 
 
 def test_ag94h_d_terminal_stop_without_required_recovery_override_still_blocks() -> None:
@@ -642,6 +636,7 @@ def test_ag94h_d_terminal_stop_without_required_recovery_override_still_blocks()
 
 def test_ag94h_d_executor_does_not_deny_positive_shape_for_legacy_gap() -> None:
     lifecycle = _approved_lifecycle(**_ledger_gap())
+    decision = build_controller_recovery_decision(lifecycle)
     calls: list[list[str]] = []
 
     def fake_search(queries: list[str], *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
@@ -651,7 +646,6 @@ def test_ag94h_d_executor_does_not_deny_positive_shape_for_legacy_gap() -> None:
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            controller_recovery_decision=build_controller_recovery_decision(lifecycle),
             controller=_controller_with_recovery_action(),
             process_search_queries=fake_search,
         )
@@ -659,7 +653,8 @@ def test_ag94h_d_executor_does_not_deny_positive_shape_for_legacy_gap() -> None:
 
     assert result.source_class_recovery_execution["attempted"] is True
     assert calls == [_RECOVERY_QUERIES]
-    assert lifecycle["recovery_decision"] == RETRY_RECOVERY
+    assert decision.decision == RETRY_RECOVERY
+    assert "recovery_decision" not in lifecycle
     assert lifecycle["active_source_class_recovery_skip_reason"] is None
 
 
@@ -676,10 +671,10 @@ def test_ag94h_d_controller_decision_diagnostic_cannot_veto_canonical_dispatch()
         calls.append(queries)
         return []
 
+    decision = build_controller_recovery_decision(lifecycle)
     result = run_source_class_recovery_dispatch(
         _runner_context(
             lifecycle=lifecycle,
-            controller_recovery_decision=build_controller_recovery_decision(lifecycle),
             controller=_controller_with_recovery_action(),
             process_search_queries=fake_search,
         )
@@ -691,6 +686,6 @@ def test_ag94h_d_controller_decision_diagnostic_cannot_veto_canonical_dispatch()
         "new_url_count": 0,
     }
     assert calls == [_RECOVERY_QUERIES]
-    assert lifecycle["recovery_decision"] == STOP_INSUFFICIENT
-    assert lifecycle["recovery_decision_diagnostic_only"] is True
+    assert decision.decision == STOP_INSUFFICIENT
+    assert "recovery_decision_diagnostic_only" not in lifecycle
     assert lifecycle["active_source_class_recovery_skip_reason"] is None

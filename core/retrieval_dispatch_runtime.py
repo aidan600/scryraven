@@ -608,7 +608,6 @@ def _recovery_dispatch_kwargs(values: dict[str, Any], *, lifecycle_key: str) -> 
 def source_class_recovery_context_from_scope(
     scope: dict[str, Any],
     *,
-    controller_recovery_decision: Any,
     error_type: type[Exception],
 ) -> Any:
     from core.source_class_recovery_runner import SourceClassRecoveryRunnerContext
@@ -623,7 +622,6 @@ def source_class_recovery_context_from_scope(
     )
     return SourceClassRecoveryRunnerContext(
         controller=values["_run_controller_mirror"],
-        controller_recovery_decision=controller_recovery_decision,
         process_search_queries=values["process_search_queries"],
         error_type=error_type,
         **_recovery_dispatch_kwargs(values, lifecycle_key="active_source_class_recovery_lifecycle"),

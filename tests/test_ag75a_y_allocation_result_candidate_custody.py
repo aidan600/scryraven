@@ -14,9 +14,10 @@ from core.controller_evidence_ledger import CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY
 from core.controller_provider_search_allocation import (
     PROVIDER_SEARCH_ALLOCATION_ACTION,
     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
+    PROVIDER_SEARCH_ALLOCATION_OWNER,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
+    PROVIDER_SEARCH_REVIEW_REQUEST,
 )
-from core.controller_recovery_decision import build_controller_recovery_decision
 from core.official_canonical_recovery_visibility_export import (
     build_official_canonical_recovery_visibility_export,
 )
@@ -78,12 +79,10 @@ def _controller() -> RunController:
 def _context(
     *,
     lifecycle: dict[str, Any],
-    decision: Any,
     process_search_queries: Any,
 ) -> SourceClassRecoveryRunnerContext:
     return SourceClassRecoveryRunnerContext(
         controller=_controller(),
-        controller_recovery_decision=decision,
         lifecycle_trace=lifecycle,
         process_search_queries=process_search_queries,
         all_passages=[],
@@ -111,7 +110,6 @@ def _context(
 
 def _run_authorized_allocation(result: dict[str, Any]) -> dict[str, Any]:
     lifecycle = _allocation_trace()
-    decision = build_controller_recovery_decision(lifecycle)
 
     def fake_search(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
         return [result]
@@ -119,7 +117,6 @@ def _run_authorized_allocation(result: dict[str, Any]) -> dict[str, Any]:
     run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            decision=decision,
             process_search_queries=fake_search,
         )
     )
@@ -218,7 +215,7 @@ def test_ag75a_y_authorized_allocation_result_enters_existing_custody_path() -> 
                     },
                     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY: {
                         "allocation_owner": "local_orchestrator_state",
-                        "authorized_decision": "request_provider_search_review",
+                        "authorized_decision": PROVIDER_SEARCH_REVIEW_REQUEST,
                         "authorized_executor_action": PROVIDER_SEARCH_ALLOCATION_ACTION,
                         "bounded_profile": (
                             "bounded_existing_source_class_recovery_profile_v1"
@@ -232,14 +229,14 @@ def test_ag75a_y_authorized_allocation_result_enters_existing_custody_path() -> 
                     },
                 }
             },
-            "allocation_execution_not_controller_authorized",
+            "allocation_execution_not_canonical_provider_review_authorized",
         ),
         (
             {
                 PROVIDER_SEARCH_ALLOCATION_TRACE_KEY: {
                     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY: {
-                        "allocation_owner": "ControllerRecoveryDecision",
-                        "authorized_decision": "request_provider_search_review",
+                        "allocation_owner": PROVIDER_SEARCH_ALLOCATION_OWNER,
+                        "authorized_decision": PROVIDER_SEARCH_REVIEW_REQUEST,
                         "authorized_executor_action": PROVIDER_SEARCH_ALLOCATION_ACTION,
                         "bounded_profile": (
                             "bounded_existing_source_class_recovery_profile_v1"
@@ -257,8 +254,8 @@ def test_ag75a_y_authorized_allocation_result_enters_existing_custody_path() -> 
             {
                 PROVIDER_SEARCH_ALLOCATION_TRACE_KEY: {
                     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY: {
-                        "allocation_owner": "ControllerRecoveryDecision",
-                        "authorized_decision": "request_provider_search_review",
+                        "allocation_owner": PROVIDER_SEARCH_ALLOCATION_OWNER,
+                        "authorized_decision": PROVIDER_SEARCH_REVIEW_REQUEST,
                         "authorized_executor_action": PROVIDER_SEARCH_ALLOCATION_ACTION,
                         "bounded_profile": (
                             "bounded_existing_source_class_recovery_profile_v1"
@@ -288,8 +285,8 @@ def test_ag75a_y_non_admission_states_do_not_enter_custody(
     assert projection["final_citation_changed"] is False
 
 
-def test_ag75a_y_absent_controller_decision_does_not_create_custody_inputs() -> None:
-    lifecycle = _allocation_trace()
+def test_ag75a_y_absent_canonical_request_does_not_create_custody_inputs() -> None:
+    lifecycle = _allocation_trace(recovery_slot_available=True)
     captured_queries: list[str] = []
 
     def fake_search(queries: list[str], *_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
@@ -299,7 +296,6 @@ def test_ag75a_y_absent_controller_decision_does_not_create_custody_inputs() -> 
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            decision=None,
             process_search_queries=fake_search,
         )
     )

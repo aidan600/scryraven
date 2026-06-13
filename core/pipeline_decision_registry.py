@@ -250,8 +250,8 @@ PIPELINE_DECISION_REGISTRY: tuple[PipelineDecisionRegistryEntry, ...] = (
             "core/controller_provider_search_allocation.py and "
             "core/source_class_recovery_runner.py"
         ),
-        current_owner="ControllerRecoveryDecision",
-        target_owner="ControllerRecoveryDecision with bounded runner execution",
+        current_owner="RunAuthorityProviderReviewAllocation",
+        target_owner="canonical provider-review allocation request",
         executor_helper="source_class_recovery_runner",
         observer_export_surface="allocation custody and visibility export projections",
         protected_surface_risk=("provider_routing", "provider_selection", "provider_depth"),
@@ -259,8 +259,8 @@ PIPELINE_DECISION_REGISTRY: tuple[PipelineDecisionRegistryEntry, ...] = (
             "tests/test_ag75a_controller_provider_search_allocation_gate.py",
             "tests/test_ag75a_y_allocation_result_candidate_custody.py",
         ),
-        deletion_or_extraction_status="already_controller_authorized",
-        next_action="No AG-76B change.",
+        deletion_or_extraction_status="canonicalized_ag95q",
+        next_action="Keep bounded execution behavior unchanged; retire stale docs/tests.",
         priority="P2",
     ),
     PipelineDecisionRegistryEntry(
@@ -285,17 +285,17 @@ PIPELINE_DECISION_REGISTRY: tuple[PipelineDecisionRegistryEntry, ...] = (
     PipelineDecisionRegistryEntry(
         decision_name="recovery_retry_stop_provider_review_decision",
         current_location="core/controller_recovery_decision.py",
-        current_owner="ControllerRecoveryDecision",
-        target_owner="ControllerRecoveryDecision",
-        executor_helper="source_class_recovery_runner executes approved actions",
-        observer_export_surface="runtime trace projection assembly",
+        current_owner="ControllerRecoveryDecision diagnostic decision table",
+        target_owner="RunAuthority lifecycle and provider-review allocation request",
+        executor_helper="diagnostic/export observer only",
+        observer_export_surface="official/canonical visibility export",
         protected_surface_risk=("provider_routing", "query_generation", "follow_up_behavior"),
         current_test_coverage=(
             "tests/test_ag74d_controller_recovery_retry_stop_loop.py",
             "tests/test_ag74f_recovery_runner_extraction.py",
         ),
-        deletion_or_extraction_status="controller_owned",
-        next_action="No AG-76B change.",
+        deletion_or_extraction_status="runtime_allocation_bypassed_ag95q",
+        next_action="Delete or demote remaining provider-review diagnostic fields after export coverage moves.",
         priority="P2",
     ),
     PipelineDecisionRegistryEntry(
@@ -771,7 +771,7 @@ AG76C_BD_SELECTED_NEXT_PHASE = OrchestratorBurnDownNextPhase(
 FINAL_EVIDENCE_OWNERSHIP_BLUEPRINT: tuple[FinalEvidenceOwnershipResponsibility, ...] = (
     FinalEvidenceOwnershipResponsibility(
         responsibility="Final evidence source collection",
-        decision_owner="ControllerEvidenceLedger and Controller-approved recovery/allocation state",
+        decision_owner="ControllerEvidenceLedger and canonical recovery/allocation state",
         mechanical_builder="core.final_evidence_bundle_builder",
         observer_export_surface="runtime trace projection assembly",
         author_citation_consumer="Author receives packaged evidence only",
@@ -787,7 +787,7 @@ FINAL_EVIDENCE_OWNERSHIP_BLUEPRINT: tuple[FinalEvidenceOwnershipResponsibility, 
     ),
     FinalEvidenceOwnershipResponsibility(
         responsibility="Recovered/Controller-selected evidence insertion",
-        decision_owner="ControllerRecoveryDecision and recovered evidence visibility helper",
+        decision_owner="canonical allocation custody and recovered evidence visibility helper",
         mechanical_builder="core.final_evidence_bundle_builder calls existing helper",
         observer_export_surface="AuthorityLifecycle candidate fit and ControllerEvidenceLedger",
         author_citation_consumer="Author sees only final packaged result",

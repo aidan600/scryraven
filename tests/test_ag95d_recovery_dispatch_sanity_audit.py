@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ast
-from copy import deepcopy
 from dataclasses import fields
 from pathlib import Path
 from typing import Any
@@ -13,12 +12,7 @@ from core.controller_loop_spine import build_controller_loop_spine_result
 from core.controller_provider_search_allocation import (
     PROVIDER_SEARCH_ALLOCATION_ACTION,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
-)
-from core.controller_recovery_decision import (
-    REQUEST_PROVIDER_SEARCH_REVIEW,
-    RETRY_RECOVERY,
-    STOP_INSUFFICIENT,
-    build_controller_recovery_decision,
+    PROVIDER_SEARCH_REVIEW_REQUEST,
 )
 from core.run_controller import RetrievalAction, RunController
 from core.source_class_recovery_runner import (
@@ -134,7 +128,6 @@ def _context(
     *,
     lifecycle: dict[str, Any],
     controller: RunController | None = None,
-    controller_recovery_decision: Any | None = None,
     process_search_queries: Any = None,
     search_providers: list[str] | None = None,
     all_passages: list[dict[str, Any]] | None = None,
@@ -147,7 +140,6 @@ def _context(
 
     return SourceClassRecoveryRunnerContext(
         controller=controller or _controller_with_action(),
-        controller_recovery_decision=controller_recovery_decision,
         lifecycle_trace=lifecycle,
         process_search_queries=(
             fail_search if process_search_queries is None else process_search_queries
@@ -281,7 +273,6 @@ def test_ag95d_positive_canonical_recovery_dispatches_exactly_once() -> None:
 
 def test_ag95d_canonical_permission_absence_blocks_demoted_authorizers() -> None:
     lifecycle = _without_canonical_permission()
-    decision = build_controller_recovery_decision(lifecycle)
     spine = build_controller_loop_spine_result(
         checkpoint_trace={
             "available": True,
@@ -295,12 +286,10 @@ def test_ag95d_canonical_permission_absence_blocks_demoted_authorizers() -> None
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            controller_recovery_decision=decision,
             process_search_queries=_search_recorder(calls),
         )
     )
 
-    assert decision.decision == RETRY_RECOVERY
     assert spine.source_class_checkpoint_gate_trace["gate_reason"] == "approved"
     assert result.source_class_recovery_execution == {
         "attempted": False,
@@ -310,8 +299,7 @@ def test_ag95d_canonical_permission_absence_blocks_demoted_authorizers() -> None
     assert result.provider_search_allocation is not None
     assert result.provider_search_allocation.allocated is False
     assert calls == []
-    assert lifecycle["recovery_decision"] == RETRY_RECOVERY
-    assert lifecycle["recovery_decision_diagnostic_only"] is True
+    assert "recovery_decision_diagnostic_only" not in lifecycle
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
     )
@@ -512,7 +500,7 @@ def test_ag95d_invalid_executor_action_shapes_fail_mechanically(
                 "source_class_recovery_used": True,
                 "source_survival_final_evidence_official_or_canonical_count": 1,
                 "source_survival_final_citation_official_or_canonical_count": 1,
-                "controller_recovery_decision": RETRY_RECOVERY,
+                "recovery_decision": "retry_recovery",
             },
         ),
     ],
@@ -537,51 +525,46 @@ def test_ag95d_demoted_fields_cannot_authorize_without_canonical_action(
     ), name
 
 
-def test_ag95d_controller_recovery_decision_cannot_veto_canonical_action() -> None:
+def test_ag95d_stale_recovery_decision_field_cannot_veto_canonical_action() -> None:
     lifecycle = _canonical_lifecycle(
         active_source_class_recovery_blockers=[
             "blocked_by_provider_policy_change_required"
-        ]
+        ],
+        recovery_decision="stop_insufficient",
     )
-    decision = build_controller_recovery_decision(deepcopy(lifecycle))
     calls: list[list[str]] = []
 
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            controller_recovery_decision=decision,
             process_search_queries=_search_recorder(calls),
         )
     )
 
-    assert decision.decision == STOP_INSUFFICIENT
     assert result.source_class_recovery_execution["attempted"] is True
     assert calls == [list(_RECOVERY_QUERIES)]
-    assert lifecycle["recovery_decision"] == STOP_INSUFFICIENT
-    assert lifecycle["recovery_decision_diagnostic_only"] is True
+    assert lifecycle["recovery_decision"] == "stop_insufficient"
+    assert "recovery_decision_diagnostic_only" not in lifecycle
     assert lifecycle["source_class_recovery_dispatch_authorized"] is True
 
 
-def test_ag95d_provider_review_path_remains_protected_without_canonical_action() -> None:
+def test_ag95d_provider_review_path_consumes_canonical_lifecycle_without_crd() -> None:
     lifecycle = _without_canonical_permission(
         active_source_class_recovery_execution_attempted=True,
         active_source_class_recovery_result_count=0,
         candidate_return_status="zero_candidates",
         recovery_slot_available=False,
     )
-    decision = build_controller_recovery_decision(lifecycle)
     calls: list[list[str]] = []
 
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
             controller=_controller_with_action(queries=["official current fixture"]),
-            controller_recovery_decision=decision,
             process_search_queries=_search_recorder(calls),
         )
     )
 
-    assert decision.decision == REQUEST_PROVIDER_SEARCH_REVIEW
     assert result.source_class_recovery_execution == {
         "attempted": False,
         "result_count": 0,
@@ -590,6 +573,9 @@ def test_ag95d_provider_review_path_remains_protected_without_canonical_action()
     assert result.provider_search_allocation is not None
     assert result.provider_search_allocation.allocated is True
     assert result.provider_search_allocation.reason == PROVIDER_SEARCH_ALLOCATION_ACTION
+    assert lifecycle["provider_review_allocation_request"] == (
+        PROVIDER_SEARCH_REVIEW_REQUEST
+    )
     assert PROVIDER_SEARCH_ALLOCATION_TRACE_KEY in lifecycle
     assert calls == [["official current fixture"]]
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
@@ -604,12 +590,13 @@ def test_ag95d_static_dispatch_ownership_guards() -> None:
 
     assert {
         field.name for field in fields(SourceClassRecoveryRunnerContext)
-    }.isdisjoint({"authorized_spine_action"})
+    }.isdisjoint({"authorized_spine_action", "controller_recovery_decision"})
     assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in (
         runner_source
     )
     assert "authorized_spine_action" not in runner_source
     assert "build_controller_recovery_decision" not in executor_source
+    assert "controller_recovery_decision" not in runner_source
     assert "controller_recovery_executor_allows_attempt" not in executor_source
     assert "authority_lifecycle.recovery_action" in runner_source
 

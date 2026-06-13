@@ -39,8 +39,9 @@ are repo files; use repo-visible files and the current phase prompt.
   followed by
   `docs/architecture/AG95L_PIPELINE_PRODUCT_CALLSITE_COMPATIBILITY_READ_DIET.md`,
   `docs/architecture/AG95M_PIPELINE_ORCHESTRATOR_SOURCE_CLASS_AUTHORITY_HELPER_EXTRACTION.md`,
+  `docs/architecture/AG95N_O_P_FINAL_AUTHORITY_VISIBILITY_RECOVERY_DECISION_PROJECTION_BURNDOWN.md`,
   and
-  `docs/architecture/AG95N_O_P_FINAL_AUTHORITY_VISIBILITY_RECOVERY_DECISION_PROJECTION_BURNDOWN.md`.
+  `docs/architecture/AG95Q_PROVIDER_REVIEW_ALLOCATION_BURNDOWN.md`.
   Current runner dispatch authority is canonical
   `authority_lifecycle.recovery_action` consumed by
   `SourceClassRecoveryRunner`; `authorized_spine_action`,
@@ -55,12 +56,15 @@ are repo files; use repo-visible files and the current phase prompt.
   AuthorityLifecycle recovery-action or runner execution proof. AG-95L/M/N-O-P
   are the current pipeline burn-down chain: L rewrites product callsite reads to
   canonical AuthorityLifecycle action/blocker state, M extracts bounded
-  source-class authority reads, and N/O/P moves final visibility/citation handoff
-  to FinalEvidenceBundle/FinalAnswerPacket observation while leaving
-  ControllerRecoveryDecision only as diagnostic/provider-review compatibility.
-  AG-95F/G/H are historical setup phases; use AG-95I through AG-95N/O/P for the
-  current packet, lifecycle, and pipeline product-callsite compatibility
-  contract.
+  source-class authority reads, N/O/P moves final visibility/citation handoff
+  to FinalEvidenceBundle/FinalAnswerPacket observation, and AG-95Q moves
+  provider-review allocation runtime ownership to canonical
+  RunAuthority/SearchJudgment-fed lifecycle state consumed by the provider
+  allocation helper. ControllerRecoveryDecision remains diagnostic/export
+  compatibility only where older projection coverage still needs it. AG-95F/G/H
+  are historical setup phases; use AG-95I through AG-95Q for the current packet,
+  lifecycle, provider-review allocation, and pipeline product-callsite
+  compatibility contract.
 - **Orchestrator strangulation and phase-boundary vocabulary:** read
   `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
   RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,
