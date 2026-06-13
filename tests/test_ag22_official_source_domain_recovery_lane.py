@@ -64,6 +64,12 @@ def _force_checkpoint_action(
     )
 
 
+def _assert_authority_lifecycle_recovery_action(trace: dict[str, Any]) -> None:
+    action = trace["authority_lifecycle"]["recovery_action"]
+    assert action["action_type"] == RECOVER_MISSING_SOURCE_CLASS
+    assert action["approved"] is True
+
+
 def _target_domains(query: str, *, core_topic: str = "", primary_entity: str = "") -> set[str]:
     return set(
         build_official_source_recovery_domain_constraints(
@@ -469,7 +475,6 @@ def test_ag22_weak_corpus_checkpoint_preserves_required_official_recovery(
     )
 
     assert generic_outcome.execution_trace["weak_corpus_recovery_used"] is True
-    assert generic_outcome.execution_trace["active_source_class_recovery_used"] is False
     assert generic_outcome.execution_trace[EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY][
         "promoted_action_name"
     ] == RECOVER_WEAK_CORPUS
@@ -481,13 +486,7 @@ def test_ag22_weak_corpus_checkpoint_preserves_required_official_recovery(
         for detail in generic_harness.search_call_details
     )
     assert official_outcome.execution_trace["weak_corpus_recovery_used"] is True
-    assert official_outcome.execution_trace["active_source_class_recovery_used"] is True
-    assert official_outcome.execution_trace[
-        "authority_lifecycle_required_recovery_allowed"
-    ] is True
-    assert official_outcome.execution_trace[
-        EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY
-    ]["promoted_action_name"] == RECOVER_MISSING_SOURCE_CLASS
+    _assert_authority_lifecycle_recovery_action(official_outcome.execution_trace)
     official_provider_roles = [
         detail["provider_role"] for detail in official_harness.search_call_details
     ]
@@ -513,18 +512,13 @@ def test_ag22_source_class_checkpoint_skips_weak_and_preserves_official_lane(
     )
 
     trace = official_outcome.execution_trace
-    packet = trace[EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY]
 
     assert trace["weak_corpus_recovery_used"] is False
     assert trace["weak_corpus_recovery_skip_reason"] == (
         "checkpoint_action_not_approved"
     )
-    assert trace["active_source_class_recovery_used"] is True
-    assert trace["active_source_class_recovery_attempt_count"] == 1
-    assert packet["promoted_action_name"] == RECOVER_MISSING_SOURCE_CLASS
-    assert packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
-        "checkpoint_action_not_approved"
-    )
+    _assert_authority_lifecycle_recovery_action(trace)
+    assert trace["authority_lifecycle"]["execution_state"]["state"] == "attempted"
     assert official_harness.search_call_details[-1]["provider_role"] == (
         "source_class_recovery"
     )

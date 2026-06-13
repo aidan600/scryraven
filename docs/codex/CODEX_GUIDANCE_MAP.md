@@ -33,7 +33,9 @@ are repo files; use repo-visible files and the current phase prompt.
   `docs/architecture/AG95G_SOURCE_CLASS_COMPATIBILITY_CONSUMER_AUDIT_AND_RETIREMENT.md`,
   `docs/architecture/AG95H_REMAINING_SOURCE_CLASS_COMPATIBILITY_TRACE_DIET.md`,
   and
-  `docs/architecture/AG95I_CONTROLLER_LOOP_SPINE_PACKET_FIELD_DIET.md`.
+  `docs/architecture/AG95I_CONTROLLER_LOOP_SPINE_PACKET_FIELD_DIET.md`,
+  followed by
+  `docs/architecture/AG95J_K_ACTIVE_GATE_AND_LIFECYCLE_BOOLEAN_DIET.md`.
   Current runner dispatch authority is canonical
   `authority_lifecycle.recovery_action` consumed by
   `SourceClassRecoveryRunner`; `authorized_spine_action`,
@@ -42,8 +44,12 @@ are repo files; use repo-visible files and the current phase prompt.
   the current ControllerLoopSpine packet-field diet: it retires the
   source-class-specific packet aliases/markers and leaves only shared
   active-gate compatibility where weak-corpus, conflict, terminal-stop, or
-  targeted-retrieval coverage still needs it. AG-95F/G/H are historical setup
-  phases; use AG-95I for the current packet contract.
+  targeted-retrieval coverage still needs it. AG-95J/K is the follow-on boolean
+  diet: it removes source-class-adjacent shared active-gate assertions and
+  rewrites redundant lifecycle/admission booleans to canonical
+  AuthorityLifecycle recovery-action or runner execution proof. AG-95F/G/H are
+  historical setup phases; use AG-95I plus AG-95J/K for the current packet and
+  lifecycle compatibility contract.
 - **Orchestrator strangulation and phase-boundary vocabulary:** read
   `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md` after the
   RunAuthority guide when a phase touches `core/pipeline_orchestrator.py`,

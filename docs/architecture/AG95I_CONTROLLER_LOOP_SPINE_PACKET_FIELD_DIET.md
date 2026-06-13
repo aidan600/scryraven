@@ -90,9 +90,8 @@ Total LOC: +310/-497, net -187.
 
 ## Next Cleanup Phase
 
-The next safe cleanup phase should target shared active-gate compatibility:
-inventory `executed_action_name`, `executor_dispatched`, and
-`authorized_dispatch` across AG35-AG47-style weak-corpus, conflict,
-terminal-stop, targeted-retrieval, and retrieval-batch projection tests. That
-phase should either narrow those fields to non-source-class contracts or move
-remaining shared active-gate assertions to a smaller canonical packet contract.
+AG-95J/K consumes the immediate follow-up: it inventories shared active-gate
+compatibility and old source-class lifecycle/admission booleans, removes
+source-class-adjacent duplicate assertions, and preserves only active-gate
+coverage that still belongs to weak-corpus, conflict, terminal-stop, targeted
+retrieval, or retrieval-batch projection contracts.
