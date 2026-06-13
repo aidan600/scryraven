@@ -18,10 +18,12 @@ from core.evidence_integration_checkpoint import (
     decide_evidence_integration_checkpoint,
 )
 from core.pipeline_orchestrator import (
-    _authoritative_source_checkpoint_refresh_allowed,
     _build_evidence_integration_snapshot_from_runtime,
 )
 from core.run_controller import RunController
+from core.source_class_authority_runtime_adapter import (
+    source_class_recovery_checkpoint_refresh_allowed,
+)
 from core.source_class_recovery_runner import (
     SourceClassRecoveryRunnerContext,
     run_source_class_recovery_dispatch,
@@ -35,6 +37,17 @@ from tests.helpers.authoritative_source_forced_corridor import (
 _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
 _RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
+_ADAPTER_PATH = _ROOT / "core" / "source_class_authority_runtime_adapter.py"
+_PIPELINE_LOCAL_SOURCE_CLASS_AUTHORITY_HELPERS = {
+    "_source_class_recovery_authority_projection",
+    "_source_class_recovery_authority_action",
+    "_source_class_recovery_execution_state",
+    "_source_class_recovery_action_approved",
+    "_source_class_recovery_action_pending",
+    "_source_class_recovery_action_attempted",
+    "_source_class_recovery_authority_blocker_reasons",
+    "_authoritative_source_checkpoint_refresh_allowed",
+}
 
 _SSA_QUERY = (
     "What is the current Social Security taxable maximum wage base for 2026, "
@@ -365,7 +378,7 @@ def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() ->
     lifecycle = handoff.active_source_class_recovery_lifecycle
     stale_checkpoint = _checkpoint(RETRIEVE_TARGETED)
 
-    assert _authoritative_source_checkpoint_refresh_allowed(
+    assert source_class_recovery_checkpoint_refresh_allowed(
         checkpoint_trace=stale_checkpoint,
         active_source_class_recovery_lifecycle=lifecycle,
     )
@@ -415,7 +428,7 @@ def test_ag68g_dispatch_ignores_projection_only_legacy_envelope() -> None:
     assert projection["active_source_class_recovery_action_envelope"][
         "allowed_action"
     ] is True
-    assert not _authoritative_source_checkpoint_refresh_allowed(
+    assert not source_class_recovery_checkpoint_refresh_allowed(
         checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
         active_source_class_recovery_lifecycle=lifecycle,
     )
@@ -446,7 +459,7 @@ def test_ag68g_irs_weak_corpus_ownership_defers_to_authority_lifecycle() -> None
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
     _assert_canonical_recovery_action(lifecycle)
-    assert _authoritative_source_checkpoint_refresh_allowed(
+    assert source_class_recovery_checkpoint_refresh_allowed(
         checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
         active_source_class_recovery_lifecycle=lifecycle,
     )
@@ -468,12 +481,12 @@ def test_ag68g_terminal_stop_and_invalid_envelope_remain_fail_closed() -> None:
         },
     }
 
-    assert not _authoritative_source_checkpoint_refresh_allowed(
+    assert not source_class_recovery_checkpoint_refresh_allowed(
         checkpoint_trace=terminal_checkpoint,
         active_source_class_recovery_lifecycle=lifecycle,
     )
 
-    assert not _authoritative_source_checkpoint_refresh_allowed(
+    assert not source_class_recovery_checkpoint_refresh_allowed(
         checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
         active_source_class_recovery_lifecycle=invalid_lifecycle,
     )
@@ -492,7 +505,7 @@ def test_ag68g_checkpoint_exception_refresh_allows_aggregate_gap_admission() -> 
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
     _assert_canonical_recovery_action(lifecycle)
-    assert _authoritative_source_checkpoint_refresh_allowed(
+    assert source_class_recovery_checkpoint_refresh_allowed(
         checkpoint_trace={
             "available": False,
             "reason": "checkpoint_exception",
@@ -546,18 +559,35 @@ def test_ag68g_query_strings_and_helper_shapes_are_preserved() -> None:
     assert set(official.classification) == set(canonical.classification)
 
 
-def test_ag68g_pipeline_change_is_tiny_and_protected_surfaces_remain_closed() -> None:
+def test_ag68g_pipeline_change_is_tiny_and_closed_surfaces_remain_closed() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
+    adapter_source = _ADAPTER_PATH.read_text(encoding="utf-8")
     tree = ast.parse(pipeline_source)
+    adapter_tree = ast.parse(adapter_source)
     refresh_calls = [
         node
         for node in ast.walk(tree)
         if isinstance(node, ast.Call)
         and getattr(node.func, "id", "") == (
-            "_authoritative_source_checkpoint_refresh_allowed"
+            "source_class_recovery_checkpoint_refresh_allowed"
         )
     ]
+    pipeline_functions = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    adapter_functions = {
+        node.name
+        for node in ast.walk(adapter_tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    }
+    adapter_imports = {
+        node.module
+        for node in ast.walk(adapter_tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
 
     assert pipeline_source.count("execute_source_class_recovery_action(") == 0
     assert runner_source.count("execute_source_class_recovery_action(") == 1
@@ -568,14 +598,20 @@ def test_ag68g_pipeline_change_is_tiny_and_protected_surfaces_remain_closed() ->
     assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in runner_source
     assert "authority_lifecycle.recovery_action" in runner_source
     assert len(refresh_calls) == 1
-    helper_start = pipeline_source.index(
-        "def _authoritative_source_checkpoint_refresh_allowed"
+    assert not (
+        _PIPELINE_LOCAL_SOURCE_CLASS_AUTHORITY_HELPERS & pipeline_functions
     )
-    helper_end = pipeline_source.index(
-        "\ndef _build_conflict_resolution_lifecycle_from_runtime_answer_contract",
-        helper_start,
-    )
-    helper_source = pipeline_source[helper_start:helper_end].casefold()
+    assert "source_class_authority_runtime_adapter" in pipeline_source
+    assert "source_class_recovery_checkpoint_refresh_allowed" in adapter_functions
+    assert not adapter_imports & {
+        "core.author_execution_runtime",
+        "core.final_authority_citation_survival",
+        "core.final_answer_packet_runtime",
+        "core.prompts",
+        "core.query_production_runtime",
+        "core.routing",
+    }
+    helper_source = adapter_source.casefold()
     for forbidden in (
         "select_providers(",
         "choose_supplemental_search_depth(",
