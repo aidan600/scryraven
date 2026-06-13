@@ -64,6 +64,7 @@ from core.source_class_authority_status_normalization import (
 )
 from core.source_class_recovery import (
     apply_answer_contract_source_class_recovery_gap_trigger,
+    build_official_authority_acquisition_plan,
 )
 from core.source_class_recovery_lifecycle import (
     record_source_class_recovery_lifecycle,
@@ -330,6 +331,7 @@ def build_authoritative_source_obligation_state_and_action(
         obligation_facts=facts.obligation_facts,
         existing_blockers=_acquisition_blockers(
             facts,
+            recommendation=recommendation,
             authority_arbitration=authority_arbitration,
         ),
         logger=logger,
@@ -343,6 +345,7 @@ def build_authoritative_source_obligation_state_and_action(
         observability=observability,
         authority_arbitration=authority_arbitration,
         custody_sources=custody_sources,
+        acquisition_trace=acquisition_trace,
     )
     authority_arbitration = _authority_runtime_arbitration(
         facts=facts,
@@ -364,7 +367,9 @@ def build_authoritative_source_obligation_state_and_action(
         obligation_facts=facts.obligation_facts,
         existing_blockers=_admission_blockers(
             facts,
+            recommendation=recommendation,
             authority_arbitration=authority_arbitration,
+            acquisition_trace=acquisition_trace,
         ),
         prior_recovery_attempt_count=facts.prior_recovery_attempt_count,
         max_recovery_attempts=facts.max_recovery_attempts,
@@ -655,6 +660,7 @@ def _promote_official_canonical_acquisition_path_visibility(
     observability: Mapping[str, Any],
     authority_arbitration: AuthorityRuntimeArbitration | None,
     custody_sources: Sequence[Mapping[str, Any] | None] = (),
+    acquisition_trace: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Promote already-visible official/canonical recovery queries to control."""
 
@@ -663,9 +669,11 @@ def _promote_official_canonical_acquisition_path_visibility(
         return out
     if _acquisition_blockers(
         facts,
+        recommendation=out,
         authority_arbitration=authority_arbitration,
     ) or _admission_blockers(
         facts,
+        recommendation=out,
         authority_arbitration=authority_arbitration
         or _authority_runtime_arbitration(
             facts=facts,
@@ -674,6 +682,7 @@ def _promote_official_canonical_acquisition_path_visibility(
             legal_projection=None,
             custody_sources=custody_sources,
         ),
+        acquisition_trace=acquisition_trace,
     ):
         return out
     reason = str(out.get("source_class_recovery_reason") or "")
@@ -800,6 +809,7 @@ def _search_judgment_trace_ref(
 def _acquisition_blockers(
     facts: AuthoritativeSourceActionFacts,
     *,
+    recommendation: Mapping[str, Any],
     authority_arbitration: AuthorityRuntimeArbitration | None,
 ) -> tuple[str, ...]:
     weak_corpus_query_acquisition_allowed = (
@@ -835,7 +845,13 @@ def _acquisition_blockers(
         or facts.search_depth_escalation_required
     ):
         out.append("blocked_by_search_depth_escalation_required")
-    if facts.iteration_budget_hard_exhausted:
+    if (
+        facts.iteration_budget_hard_exhausted
+        and not _official_authority_acquisition_slot_available(
+            facts,
+            recommendation=recommendation,
+        )
+    ):
         out.append("blocked_by_iteration_budget")
     if facts.query_redundancy_skipped:
         out.append("blocked_by_redundant_query")
@@ -851,7 +867,9 @@ def _acquisition_blockers(
 def _admission_blockers(
     facts: AuthoritativeSourceActionFacts,
     *,
+    recommendation: Mapping[str, Any],
     authority_arbitration: AuthorityRuntimeArbitration | None,
+    acquisition_trace: Mapping[str, Any] | None = None,
 ) -> tuple[str, ...]:
     blockers = _string_tuple(facts.existing_admission_blockers)
     if blockers:
@@ -872,7 +890,14 @@ def _admission_blockers(
         out.append("conflict_resolution_owns_path")
     if facts.terminal_stop_approved:
         out.append("terminal_stop_approved")
-    if facts.iteration_budget_hard_exhausted:
+    if (
+        facts.iteration_budget_hard_exhausted
+        and not _official_authority_acquisition_slot_available(
+            facts,
+            recommendation=recommendation,
+            acquisition_trace=acquisition_trace,
+        )
+    ):
         out.append("budget_hard_exhausted")
     if not facts.provider_policy_reusable or facts.provider_swap_required:
         out.append("blocked_by_provider_policy_change_required")
@@ -943,6 +968,70 @@ def _weak_corpus_query_acquisition_allowed(
         recovery_needed == "required"
         and required_authority in _OFFICIAL_CURRENT_SOURCE_CLASSES
         and recovery_query_count <= 0
+    )
+
+
+def _official_authority_acquisition_slot_available(
+    facts: AuthoritativeSourceActionFacts,
+    *,
+    recommendation: Mapping[str, Any],
+    acquisition_trace: Mapping[str, Any] | None = None,
+) -> bool:
+    if facts.max_recovery_attempts <= 0:
+        return False
+    if facts.prior_recovery_attempt_count >= facts.max_recovery_attempts:
+        return False
+    missing = {
+        _clean_token(item)
+        for item in _string_tuple(recommendation.get("missing_expected_source_classes"))
+    }
+    if not missing & _OFFICIAL_CURRENT_SOURCE_CLASSES:
+        return False
+    plan = _official_authority_acquisition_plan(
+        facts,
+        recommendation=recommendation,
+        acquisition_trace=acquisition_trace,
+    )
+    return _official_authority_plan_has_bounded_intent(plan)
+
+
+def _official_authority_acquisition_plan(
+    facts: AuthoritativeSourceActionFacts,
+    *,
+    recommendation: Mapping[str, Any],
+    acquisition_trace: Mapping[str, Any] | None,
+) -> Mapping[str, Any]:
+    trace_payload = _safe_mapping(acquisition_trace)
+    packet = trace_payload.get("OfficialCanonicalRecoveryQueryAcquisition")
+    if isinstance(packet, Mapping):
+        plan = packet.get("official_authority_acquisition_plan")
+        if isinstance(plan, Mapping):
+            return plan
+    missing = _string_tuple(recommendation.get("missing_expected_source_classes"))
+    subject = _clean_text(facts.primary_entity, limit=120) or _clean_text(
+        facts.core_topic,
+        limit=120,
+    ) or _clean_text(facts.query, limit=120)
+    context_text = " ".join(
+        item
+        for item in (
+            _clean_text(facts.query, limit=220),
+            _clean_text(facts.core_topic, limit=160),
+            _clean_text(facts.primary_entity, limit=120),
+        )
+        if item
+    )
+    return build_official_authority_acquisition_plan(
+        source_classes=missing,
+        subject=subject or "official source topic",
+        context_text=context_text,
+    )
+
+
+def _official_authority_plan_has_bounded_intent(plan: Mapping[str, Any]) -> bool:
+    return bool(
+        _string_tuple(plan.get("hard_domains"))
+        or _string_tuple(plan.get("role_hints"))
     )
 
 
@@ -1310,13 +1399,16 @@ def _action_trace(
                 "acquisition": list(
                     _acquisition_blockers(
                         facts,
+                        recommendation=recommendation,
                         authority_arbitration=authority_arbitration,
                     )
                 ),
                 "admission": list(
                     _admission_blockers(
                         facts,
+                        recommendation=recommendation,
                         authority_arbitration=authority_arbitration,
+                        acquisition_trace=acquisition_trace,
                     )
                 ),
             },

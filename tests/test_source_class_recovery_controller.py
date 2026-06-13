@@ -53,6 +53,7 @@ def _input(
     prior_attempt_count: int = 0,
     iteration_budget_available: bool = True,
     answer_contract_source_class_slot_available: bool = False,
+    official_canonical_source_class_slot_available: bool = False,
 ) -> Any:
     return build_source_class_recovery_controller_input(
         recommendation=recommendation if recommendation is not None else _recommendation(),
@@ -76,6 +77,9 @@ def _input(
         prior_attempt_count=prior_attempt_count,
         answer_contract_source_class_slot_available=(
             answer_contract_source_class_slot_available
+        ),
+        official_canonical_source_class_slot_available=(
+            official_canonical_source_class_slot_available
         ),
     )
 
@@ -213,6 +217,35 @@ def test_answer_contract_budget_exhaustion_still_blocks_without_recovery_slot() 
     )
     assert decision.reason == "blocked_by_iteration_budget"
     assert "blocked_by_iteration_budget" in decision.blockers
+
+
+def test_official_authority_queries_survive_active_recovery_query_cap() -> None:
+    decision = decide_source_class_recovery(
+        _input(
+            recommendation=_recommendation(
+                queries=[
+                    "IRS standard mileage rate official documentation reference manual",
+                    "IRS standard mileage rate official current source",
+                    (
+                        "IRS 2026 standard mileage rate business official notice "
+                        "revenue procedure"
+                    ),
+                ],
+            )
+            | {"source_class_recovery_official_domains": ["irs.gov"]},
+            iteration_budget_available=False,
+            official_canonical_source_class_slot_available=True,
+        )
+    )
+
+    assert decision.decision is (
+        SourceClassRecoveryControllerDecision.RUN_SOURCE_CLASS_RECOVERY
+    )
+    assert decision.queries[0] == (
+        "IRS 2026 standard mileage rate business official notice revenue procedure"
+    )
+    assert len(decision.queries) == 2
+    assert "blocked_by_iteration_budget" not in decision.blockers
 
 
 def test_generic_source_class_gap_cannot_use_answer_contract_slot() -> None:

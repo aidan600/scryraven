@@ -32,6 +32,10 @@ from core.official_canonical_recovery_query_acquisition import (
 )
 from core.run_controller import RunController
 from core.source_class_recovery_lifecycle import record_source_class_recovery_lifecycle
+from core.source_class_recovery_runner import (
+    SourceClassRecoveryRunnerContext,
+    run_source_class_recovery_dispatch,
+)
 
 _ROOT = Path(__file__).resolve().parents[1]
 _HELPER_PATH = _ROOT / "core" / "authoritative_source_action.py"
@@ -365,6 +369,129 @@ def test_query_acquisition_and_execution_admission_outputs_remain_unchanged() ->
         expected_recommendation["source_class_recovery_queries"]
     )
     assert result.official_canonical_recovery_execution_admitted is expected_admitted
+
+
+def test_ag96a1_fast_budget_preserves_official_authority_slot_and_plan_dispatch() -> None:
+    controller = RunController()
+    facts = _facts(iteration_budget_hard_exhausted=True)
+    result = build_authoritative_source_obligation_state_and_action(
+        controller,
+        facts=facts,
+    )
+    acquisition = result.official_canonical_recovery_query_acquisition_trace[
+        "OfficialCanonicalRecoveryQueryAcquisition"
+    ]
+    admission = result.official_canonical_recovery_execution_admission_trace[
+        "OfficialCanonicalRecoveryExecutionAdmission"
+    ]
+    lifecycle = result.active_source_class_recovery_lifecycle
+
+    assert acquisition["official_authority_acquisition_plan"]["hard_domains"] == [
+        "irs.gov"
+    ]
+    assert (
+        "IRS 2026 standard mileage rate business official notice revenue procedure"
+        in acquisition["official_authority_acquisition_plan"]["query_variants"]
+    )
+    assert admission["admission_used"] is True
+    assert admission["admission_blockers"] == []
+    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert lifecycle["active_source_class_recovery_skip_reason"] is None
+    assert "budget_hard_exhausted" not in result.trace["existing_blockers"][
+        "admission"
+    ]
+    assert "blocked_by_iteration_budget" not in lifecycle[
+        "active_source_class_recovery_blockers"
+    ]
+
+    captured: dict[str, Any] = {}
+    provider_diagnostics: list[dict[str, Any]] = []
+    retrieval_pass_records: list[dict[str, Any]] = []
+
+    def fake_search(
+        queries: list[str],
+        _intent: str,
+        _complexity: str,
+        search_depth: str,
+        _results_per_query: int,
+        include_domains: list[str],
+        _exclude_domains: list[str],
+        _query_embedding: Any,
+        seen_urls: set[str],
+        _collected_images: set[str],
+        *_args: Any,
+        **kwargs: Any,
+    ) -> list[dict[str, Any]]:
+        captured.update(
+            {
+                "queries": list(queries),
+                "search_depth": search_depth,
+                "include_domains": list(include_domains),
+                "exa_domain_filter": list(kwargs.get("exa_domain_filter") or []),
+                "search_providers": list(kwargs.get("search_providers") or []),
+                "provider_role": kwargs.get("provider_role"),
+            }
+        )
+        seen_urls.add("https://www.irs.gov/ag96a1-official-rate")
+        provider_diagnostics.append(
+            {
+                "provider": "tavily",
+                "provider_role": kwargs.get("provider_role"),
+                "logical_attempt_count": 1,
+                "result_count": 1,
+                "accepted_url_count": 1,
+                "success": True,
+            }
+        )
+        return [
+            {
+                "url": "https://www.irs.gov/ag96a1-official-rate",
+                "title": "IRS 2026 standard mileage rates",
+                "text": "Official IRS guidance states the 2026 business rate.",
+                "source_tier": "official",
+                "source_class": "official_current_rules",
+            }
+        ]
+
+    dispatch = run_source_class_recovery_dispatch(
+        SourceClassRecoveryRunnerContext(
+            controller=controller,
+            lifecycle_trace=lifecycle,
+            process_search_queries=fake_search,
+            all_passages=[],
+            intent="general",
+            complexity="medium",
+            results_per_query=5,
+            include_domains=[],
+            exclude_domains=[],
+            query_embedding=[0.0],
+            seen_urls=set(),
+            collected_images=set(),
+            embed_provider="OpenAI",
+            embed_model="text-embedding-3-small",
+            local_url="http://localhost",
+            embed_texts=lambda *_args, **_kwargs: [],
+            compute_similarities=lambda *_args, **_kwargs: [],
+            status_container=object(),
+            search_providers=["tavily"],
+            exa_domain_filter=None,
+            entity_hint="IRS",
+            provider_diagnostics=provider_diagnostics,
+            retrieval_pass_records=retrieval_pass_records,
+        )
+    )
+
+    assert dispatch.source_class_recovery_execution["attempted"] is True
+    assert captured["provider_role"] == "source_class_recovery"
+    assert captured["search_providers"] == ["tavily"]
+    assert captured["search_depth"] == "basic"
+    assert captured["queries"][0] == (
+        "IRS 2026 standard mileage rate business official notice revenue procedure"
+    )
+    assert "irs.gov" in captured["include_domains"]
+    assert "irs.gov" in captured["exa_domain_filter"]
+    assert provider_diagnostics[0]["provider"] == "tavily"
+    assert lifecycle["active_source_class_recovery_result_count"] == 1
 
 
 def test_source_class_recovery_lifecycle_handoff_remains_unchanged() -> None:
