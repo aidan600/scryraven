@@ -16,7 +16,7 @@ from core.recovered_evidence_visibility import (
 )
 from core.run_controller import RunController
 from core.source_class_recovery import (
-    build_official_source_recovery_domain_constraints,
+    build_official_source_recovery_domain_constraint_policy,
 )
 from core.source_class_recovery_executor import execute_source_class_recovery_action
 from core.source_class_recovery_lifecycle import record_source_class_recovery_lifecycle
@@ -33,7 +33,7 @@ _ORDINARY_SECONDARY_CORRIDOR = ["taxfoundation.org", "hrblock.com", "shrm.org"]
 
 
 def _recommendation() -> dict[str, Any]:
-    official_domains = build_official_source_recovery_domain_constraints(
+    domain_policy = build_official_source_recovery_domain_constraint_policy(
         missing_expected_source_classes=["official_current_rules"],
         query=_IRS_QUERY,
         core_topic="IRS 2026 standard mileage rate business",
@@ -53,7 +53,10 @@ def _recommendation() -> dict[str, Any]:
         "source_class_recovery_trigger_fields": [
             "official_canonical_recovery_query_acquisition"
         ],
-        "source_class_recovery_official_domains": official_domains,
+        "source_class_recovery_authority_acquisition_decision": (
+            domain_policy["authority_acquisition_decision"]
+        ),
+        "source_class_recovery_official_domains": domain_policy["official_domains"],
         "source_class_recovery_domain_constraint_source": (
             "official_source_recovery_lane"
         ),

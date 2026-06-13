@@ -37,7 +37,7 @@ from core.official_source_obligation_candidate_visibility import (
 from core.source_class_recovery import (
     _infer_official_authority_venue,
     build_official_authority_acquisition_plan,
-    build_official_source_recovery_domain_constraints,
+    build_official_source_recovery_domain_constraint_policy,
 )
 
 OFFICIAL_CANONICAL_RECOVERY_QUERY_ACQUISITION_TRACE_KEY = (
@@ -334,10 +334,14 @@ def apply_official_canonical_recovery_query_acquisition(
             source_classes=acquisition_classes,
             base=base,
             trace=trace,
+            official_plan=official_plan,
             subject=subject,
             recovery_queries=merged_queries,
         )
         if official_domains:
+            recommendation_out[
+                "source_class_recovery_authority_acquisition_decision"
+            ] = official_plan.get("authority_acquisition_decision", {})
             recommendation_out["source_class_recovery_official_domains"] = (
                 official_domains
             )
@@ -709,6 +713,7 @@ def _official_domain_constraints_for_acquired_queries(
     source_classes: Iterable[str],
     base: Mapping[str, Any],
     trace: Mapping[str, Any],
+    official_plan: Mapping[str, Any] | None,
     subject: str,
     recovery_queries: Iterable[str],
 ) -> list[str]:
@@ -719,13 +724,15 @@ def _official_domain_constraints_for_acquired_queries(
     ]
     if not official_classes:
         return []
-    return build_official_source_recovery_domain_constraints(
+    policy = build_official_source_recovery_domain_constraint_policy(
         missing_expected_source_classes=official_classes,
         query=_context_value("query_preview", base=base, trace=trace) or subject,
         core_topic=_context_value("core_topic", base=base, trace=trace),
         primary_entity=_context_value("primary_entity", base=base, trace=trace),
         recovery_queries=recovery_queries,
+        official_authority_acquisition_plan=official_plan,
     )
+    return list(policy["official_domains"])
 
 
 def _year_terms(text: str) -> str:

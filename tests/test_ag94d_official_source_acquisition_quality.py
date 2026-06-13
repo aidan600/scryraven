@@ -375,12 +375,20 @@ def test_role_only_airport_id_plan_exposes_tsa_dhs_soft_candidate_domains() -> N
 
 
 def test_hard_official_domains_forward_to_supported_provider_include_domain_arguments_when_present() -> None:
+    plan = build_official_authority_acquisition_plan(
+        source_classes=(_OFFICIAL_CURRENT,),
+        subject="IRS standard mileage rate",
+        context_text="IRS standard mileage rate official notice",
+    )
     recommendation = {
         "source_class_recovery_recommended": True,
         "missing_expected_source_classes": [_OFFICIAL_CURRENT],
         "source_class_recovery_queries": ["IRS standard mileage rate official notice"],
         "source_class_recovery_query_count": 1,
         "source_class_recovery_reason": "answer_contract_official_gap",
+        "source_class_recovery_authority_acquisition_decision": plan[
+            "authority_acquisition_decision"
+        ],
         "source_class_recovery_official_domains": ["irs.gov"],
     }
     controller = RunController()

@@ -15,7 +15,10 @@ from core.official_canonical_recovery_candidate_acquisition import (
 )
 from core.recovered_evidence_visibility import recovered_evidence_visibility_defaults
 from core.run_controller import ControllerDecision, RetrievalAction, RunController
-from core.source_class_recovery import recovery_source_quality_defaults
+from core.source_class_recovery import (
+    authority_acquisition_decision_allows_provider_domain_constraints,
+    recovery_source_quality_defaults,
+)
 from core.source_class_recovery_controller import (
     SOURCE_CLASS_CONTROLLER_EVIDENCE_SIGNAL_KEYS,
     SourceClassRecoveryControllerDecision,
@@ -237,9 +240,13 @@ def record_source_class_recovery_lifecycle(
     missing_classes = list(controller_decision.missing_expected_source_classes)
     queries = list(controller_decision.queries)
     blockers = list(controller_decision.blockers)
-    official_domains = _copy_domain_constraints(
-        (recommendation or {}).get("source_class_recovery_official_domains")
-    )
+    official_domains = []
+    if authority_acquisition_decision_allows_provider_domain_constraints(
+        recommendation,
+    ):
+        official_domains = _copy_domain_constraints(
+            (recommendation or {}).get("source_class_recovery_official_domains")
+        )
     attempt_count = controller_decision.attempt_count
     provider_role = controller_decision.provider_role
     search_depth = controller_decision.search_depth
