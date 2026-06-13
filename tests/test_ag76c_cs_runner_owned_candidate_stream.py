@@ -11,9 +11,10 @@ from core.controller_provider_search_allocation import (
     BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE,
     PROVIDER_SEARCH_ALLOCATION_ACTION,
     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
+    PROVIDER_SEARCH_ALLOCATION_OWNER,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
+    PROVIDER_SEARCH_REVIEW_REQUEST,
 )
-from core.controller_recovery_decision import REQUEST_PROVIDER_SEARCH_REVIEW
 from core.final_evidence_bundle_builder import (
     FinalEvidenceBundleInputs,
     build_final_evidence_bundle,
@@ -69,7 +70,7 @@ def _controller_trace(
     *,
     authorized: bool = True,
 ) -> dict[str, Any]:
-    owner = "ControllerRecoveryDecision" if authorized else "local_orchestrator_state"
+    owner = PROVIDER_SEARCH_ALLOCATION_OWNER if authorized else "local_orchestrator_state"
     return {
         "active_source_class_recovery_used": True,
         "active_source_class_recovery_official_canonical_admitted": True,
@@ -89,7 +90,7 @@ def _controller_trace(
             PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY: {
                 "allocation_owner": owner,
                 "authorized_decision": (
-                    REQUEST_PROVIDER_SEARCH_REVIEW if authorized else "continue_downstream"
+                    PROVIDER_SEARCH_REVIEW_REQUEST if authorized else "continue_downstream"
                 ),
                 "authorized_executor_action": PROVIDER_SEARCH_ALLOCATION_ACTION,
                 "bounded_profile": BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE,

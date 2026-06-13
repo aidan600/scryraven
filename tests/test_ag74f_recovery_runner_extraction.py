@@ -72,9 +72,6 @@ def _controller_with_action() -> RunController:
 def _context(**overrides: Any) -> SourceClassRecoveryRunnerContext:
     values: dict[str, Any] = {
         "controller": _controller_with_action(),
-        "controller_recovery_decision": build_controller_recovery_decision(
-            _lifecycle()
-        ),
         "lifecycle_trace": _lifecycle(),
         "process_search_queries": lambda *_args, **_kwargs: [],
         "all_passages": [],
@@ -263,9 +260,9 @@ def test_ag74f_runner_actual_executor_path_preserves_dispatch_parity() -> None:
         }
     ]
     assert all_passages[0]["retrieval_stage"] == "source_class_recovery"
-    assert context.lifecycle_trace["recovery_decision"] == "retry_recovery"
-    assert "recovery_decision_trace" in context.lifecycle_trace
-    assert context.lifecycle_trace["recovery_decision_diagnostic_only"] is True
+    assert "recovery_decision" not in context.lifecycle_trace
+    assert "recovery_decision_trace" not in context.lifecycle_trace
+    assert "recovery_decision_diagnostic_only" not in context.lifecycle_trace
     assert not [
         key for key in context.lifecycle_trace if key.startswith("controller_")
     ]
@@ -288,7 +285,6 @@ def test_ag74f_request_provider_search_review_spine_value_alone_does_not_search(
 
     result = run_source_class_recovery_dispatch(
         _context(
-            controller_recovery_decision=None,
             lifecycle_trace=_lifecycle(authority_lifecycle=None),
             process_search_queries=fake_search,
         )
@@ -318,10 +314,11 @@ def test_ag74f_controller_decision_ownership_and_protected_surfaces() -> None:
     assert "request_provider_search_review" in decision_source
     assert "request_provider_search_review" not in executor_source
     assert "request_provider_search_review" not in orchestrator_source
-    assert "record_provider_search_allocation_if_controller_authorized(" in (
+    assert "record_provider_search_allocation_if_authority_authorized(" in (
         runner_source
     )
     assert "build_controller_recovery_decision(" not in runner_source
+    assert "controller_recovery_decision" not in runner_source
     assert "controller_recovery_executor_allows_attempt(" not in runner_source
     assert "authority_lifecycle.recovery_action" in runner_source
     assert "authorized_spine_action == RECOVER_MISSING_SOURCE_CLASS" not in (

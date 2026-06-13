@@ -7,18 +7,11 @@ from core.controller_provider_search_allocation import (
     BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE,
     PROVIDER_SEARCH_ALLOCATION_ACTION,
     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
+    PROVIDER_SEARCH_ALLOCATION_OWNER,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
+    PROVIDER_SEARCH_REVIEW_REQUEST,
+    build_provider_review_allocation_request,
     build_provider_search_allocation_record,
-)
-from core.controller_recovery_decision import (
-    CONTINUE_DOWNSTREAM,
-    REQUEST_PROVIDER_SEARCH_REVIEW,
-    RETRY_RECOVERY,
-    STOP_FOR_ARCHITECTURE_DECISION,
-    STOP_INSUFFICIENT,
-    STOP_LEGACY_CUSTODY_GAP,
-    STOP_SUFFICIENT,
-    build_controller_recovery_decision,
 )
 from core.official_canonical_recovery_visibility_export import (
     build_official_canonical_recovery_visibility_export,
@@ -53,13 +46,14 @@ def _base_trace(**overrides: Any) -> dict[str, Any]:
 
 
 def _allocation_trace(**overrides: Any) -> dict[str, Any]:
-    return _base_trace(
+    trace = _base_trace(
         active_source_class_recovery_execution_attempted=True,
         active_source_class_recovery_result_count=0,
         candidate_return_status="zero_candidates",
         recovery_slot_available=False,
-        **overrides,
     )
+    trace.update(overrides)
+    return trace
 
 
 def _ledger(
@@ -85,7 +79,6 @@ def _ledger(
 def _context(
     *,
     lifecycle: dict[str, Any],
-    decision: Any,
     controller: RunController | None = None,
     process_search_queries: Any | None = None,
     all_passages: list[dict[str, Any]] | None = None,
@@ -98,7 +91,6 @@ def _context(
 
     return SourceClassRecoveryRunnerContext(
         controller=controller or RunController(),
-        controller_recovery_decision=decision,
         lifecycle_trace=lifecycle,
         process_search_queries=process_search_queries or fail_search,
         all_passages=all_passages if all_passages is not None else [],
@@ -162,7 +154,6 @@ def test_ag75x_controller_decision_executes_bounded_provider_search_allocation()
         active_source_class_recovery_provider_role="source_class_recovery",
         active_source_class_recovery_search_depth="basic",
     )
-    decision = build_controller_recovery_decision(lifecycle)
     provider_diagnostics: list[dict[str, Any]] = []
     retrieval_pass_records: list[dict[str, Any]] = []
     all_passages: list[dict[str, Any]] = []
@@ -197,7 +188,6 @@ def test_ag75x_controller_decision_executes_bounded_provider_search_allocation()
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            decision=decision,
             controller=_controller_with_existing_recovery_action(
                 queries=["official current fixture"],
                 search_depth="basic",
@@ -210,7 +200,9 @@ def test_ag75x_controller_decision_executes_bounded_provider_search_allocation()
         )
     )
 
-    assert decision.decision == REQUEST_PROVIDER_SEARCH_REVIEW
+    request = build_provider_review_allocation_request(lifecycle)
+    assert request is not None
+    assert request.decision == PROVIDER_SEARCH_REVIEW_REQUEST
     assert result.source_class_recovery_execution == {
         "attempted": False,
         "result_count": 0,
@@ -232,9 +224,14 @@ def test_ag75x_controller_decision_executes_bounded_provider_search_allocation()
     assert retrieval_pass_records == []
     assert all_passages == []
     assert seen_urls == {"https://agency.gov/already-seen"}
-    assert lifecycle["recovery_decision"] == REQUEST_PROVIDER_SEARCH_REVIEW
+    assert lifecycle["provider_review_allocation_request"] == (
+        PROVIDER_SEARCH_REVIEW_REQUEST
+    )
+    assert lifecycle["provider_review_allocation_owner"] == (
+        PROVIDER_SEARCH_ALLOCATION_OWNER
+    )
     assert lifecycle["active_source_class_recovery_skip_reason"] == (
-        "controller_recovery_decision_requested_provider_search_review"
+        "canonical_provider_review_allocation_requested"
     )
     packet = lifecycle[PROVIDER_SEARCH_ALLOCATION_TRACE_KEY]
     record = packet["ProviderSearchAllocation"]
@@ -243,6 +240,7 @@ def test_ag75x_controller_decision_executes_bounded_provider_search_allocation()
         "record_plus_optional_bounded_existing_provider_call"
     )
     execution = packet[PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY]
+    assert record["allocation_owner"] == PROVIDER_SEARCH_ALLOCATION_OWNER
     assert execution["bounded_profile"] == BOUNDED_EXISTING_SOURCE_CLASS_RECOVERY_PROFILE
     assert execution["executed"] is True
     assert execution["execution_attempted"] is True
@@ -265,11 +263,12 @@ def test_ag75x_controller_decision_executes_bounded_provider_search_allocation()
     assert_execution_trace_payload_contract(lifecycle)
 
 
-def test_ag75a_absent_controller_recovery_decision_does_not_allocate() -> None:
+def test_ag75a_absent_canonical_provider_review_request_does_not_allocate() -> None:
     lifecycle = _allocation_trace(
         active_source_class_recovery_queries=["official current fixture"],
         active_source_class_recovery_provider_role="source_class_recovery",
         active_source_class_recovery_search_depth="basic",
+        recovery_slot_available=True,
     )
     captured_queries: list[str] = []
 
@@ -280,7 +279,6 @@ def test_ag75a_absent_controller_recovery_decision_does_not_allocate() -> None:
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            decision=None,
             controller=_controller_with_existing_recovery_action(
                 queries=["official current fixture"],
             ),
@@ -292,22 +290,18 @@ def test_ag75a_absent_controller_recovery_decision_does_not_allocate() -> None:
     assert result.provider_search_allocation.allocated is False
     assert result.provider_search_allocation.executed is False
     assert PROVIDER_SEARCH_ALLOCATION_TRACE_KEY not in lifecycle
-    assert "recovery_decision" not in lifecycle
+    assert "provider_review_allocation_request" not in lifecycle
     assert captured_queries == []
 
 
-def test_ag75x_wrong_allowed_executor_action_does_not_execute_allocation() -> None:
+def test_ag75x_stale_controller_fields_do_not_execute_allocation() -> None:
     lifecycle = _allocation_trace(
         active_source_class_recovery_queries=["official current fixture"],
         active_source_class_recovery_provider_role="source_class_recovery",
         active_source_class_recovery_search_depth="basic",
-    )
-    decision = build_controller_recovery_decision(lifecycle)
-    bad_decision = type(decision)(
-        payload={
-            **decision.payload,
-            "allowed_executor_action": "execute_existing_recovery_action",
-        }
+        recovery_slot_available=True,
+        recovery_decision=PROVIDER_SEARCH_REVIEW_REQUEST,
+        recovery_allowed_executor_action=PROVIDER_SEARCH_ALLOCATION_ACTION,
     )
     captured_queries: list[str] = []
 
@@ -318,7 +312,6 @@ def test_ag75x_wrong_allowed_executor_action_does_not_execute_allocation() -> No
     result = run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            decision=bad_decision,
             controller=_controller_with_existing_recovery_action(
                 queries=["official current fixture"],
             ),
@@ -326,9 +319,8 @@ def test_ag75x_wrong_allowed_executor_action_does_not_execute_allocation() -> No
         )
     )
 
-    assert bad_decision.decision == REQUEST_PROVIDER_SEARCH_REVIEW
-    assert bad_decision.provider_search_review_requested is True
-    assert build_provider_search_allocation_record(bad_decision) is None
+    assert build_provider_review_allocation_request(lifecycle) is None
+    assert build_provider_search_allocation_record(None) is None
     assert result.provider_search_allocation is not None
     assert result.provider_search_allocation.allocated is False
     assert PROVIDER_SEARCH_ALLOCATION_TRACE_KEY not in lifecycle
@@ -337,10 +329,9 @@ def test_ag75x_wrong_allowed_executor_action_does_not_execute_allocation() -> No
 
 def test_ag75x_authorized_allocation_records_unexecutable_existing_profile() -> None:
     lifecycle = _allocation_trace()
-    decision = build_controller_recovery_decision(lifecycle)
 
     result = run_source_class_recovery_dispatch(
-        _context(lifecycle=lifecycle, decision=decision)
+        _context(lifecycle=lifecycle)
     )
 
     assert result.provider_search_allocation is not None
@@ -360,7 +351,7 @@ def test_ag75x_authorized_allocation_records_unexecutable_existing_profile() -> 
 
 
 def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
-    cases: list[tuple[str, dict[str, Any], str]] = [
+    cases: list[tuple[str, dict[str, Any]]] = [
         (
             "controller_complete final evidence/citation custody",
             _base_trace(
@@ -368,12 +359,10 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 final_evidence_official_or_canonical_count=1,
                 final_citation_official_or_canonical_count=1,
             ),
-            CONTINUE_DOWNSTREAM,
         ),
         (
             "continue_downstream selected official/current evidence",
             _base_trace(final_selected_authority_evidence_count=1),
-            CONTINUE_DOWNSTREAM,
         ),
         (
             "stop_sufficient satisfied obligation",
@@ -381,7 +370,6 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 "source_obligation_status": "not_required_or_satisfied",
                 "admission_used": False,
             },
-            STOP_SUFFICIENT,
         ),
         (
             "stop_legacy_custody_gap",
@@ -392,7 +380,6 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                     legacy_gap_types=["final_evidence_without_candidate_passport"],
                 )
             ),
-            STOP_LEGACY_CUSTODY_GAP,
         ),
         (
             "missing_controller_disposition architecture stop",
@@ -402,7 +389,6 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                     custody_complete=False,
                 )
             ),
-            STOP_FOR_ARCHITECTURE_DECISION,
         ),
         (
             "candidate acquired but unreadable",
@@ -412,7 +398,6 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 accepted_or_readable_official_or_canonical_count=0,
                 recovered_candidate_rejection_reasons=["unreadable_pdf"],
             ),
-            STOP_INSUFFICIENT,
         ),
         (
             "candidate readable but misclassified",
@@ -420,7 +405,6 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 active_source_class_recovery_result_count=2,
                 candidate_official_or_canonical_count=0,
             ),
-            STOP_INSUFFICIENT,
         ),
         (
             "candidate classified but fit/currentness rejected",
@@ -431,12 +415,10 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 recovered_candidate_selected_readable_count=0,
                 recovered_candidate_rejection_reasons=["currentness_fit_rejected"],
             ),
-            STOP_INSUFFICIENT,
         ),
         (
             "exhausted budget with stop_insufficient",
             _base_trace(recovery_slot_available=False),
-            STOP_INSUFFICIENT,
         ),
         (
             "context exposure failure",
@@ -447,7 +429,6 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 accepted_or_readable_official_or_canonical_count=1,
                 recovered_candidate_selected_readable_count=1,
             ),
-            RETRY_RECOVERY,
         ),
         (
             "Analyst/Author/citation-surface failure",
@@ -457,7 +438,6 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 final_citation_official_or_canonical_count=0,
                 analyst_author_citation_surface_failure=True,
             ),
-            CONTINUE_DOWNSTREAM,
         ),
         (
             "final answer/citation behavior issue",
@@ -467,20 +447,17 @@ def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
                 "final_answer_value_mismatch": True,
                 "final_citation_official_or_canonical_count": 0,
             },
-            STOP_SUFFICIENT,
         ),
     ]
 
-    for name, trace, expected_decision in cases:
+    for name, trace in cases:
         lifecycle = dict(trace)
-        decision = build_controller_recovery_decision(lifecycle)
 
         result = run_source_class_recovery_dispatch(
-            _context(lifecycle=lifecycle, decision=decision)
+            _context(lifecycle=lifecycle)
         )
 
-        assert decision.decision == expected_decision, name
-        assert build_provider_search_allocation_record(decision) is None, name
+        assert build_provider_review_allocation_request(lifecycle) is None, name
         assert result.provider_search_allocation is not None
         assert result.provider_search_allocation.allocated is False, name
         assert PROVIDER_SEARCH_ALLOCATION_TRACE_KEY not in lifecycle, name
@@ -492,12 +469,10 @@ def test_ag75a_visibility_export_surfaces_sanitized_record_only_trace() -> None:
         active_source_class_recovery_provider_role="source_class_recovery",
         active_source_class_recovery_search_depth="basic",
     )
-    decision = build_controller_recovery_decision(lifecycle)
 
     run_source_class_recovery_dispatch(
         _context(
             lifecycle=lifecycle,
-            decision=decision,
             controller=_controller_with_existing_recovery_action(
                 queries=["official current fixture"],
                 search_depth="basic",
@@ -511,7 +486,7 @@ def test_ag75a_visibility_export_surfaces_sanitized_record_only_trace() -> None:
 
     exported = export["provider_search_allocation_trace"]
     execution = export["provider_search_allocation_execution_trace"]
-    assert exported["allocation_owner"] == "ControllerRecoveryDecision"
+    assert exported["allocation_owner"] == PROVIDER_SEARCH_ALLOCATION_OWNER
     assert exported["mechanical_owner"] == "source_class_recovery_runner"
     assert exported["allocation_action"] == PROVIDER_SEARCH_ALLOCATION_ACTION
     assert exported["execution_mode"] == (
@@ -537,11 +512,12 @@ def test_ag75a_static_guards_keep_allocation_out_of_orchestrator_and_executor() 
     helper_source = _HELPER_PATH.read_text(encoding="utf-8").casefold()
     executor_source = _EXECUTOR_PATH.read_text(encoding="utf-8").casefold()
 
-    assert "record_provider_search_allocation_if_controller_authorized(" in runner_source
+    assert "record_provider_search_allocation_if_authority_authorized(" in runner_source
+    assert "controller_recovery_decision" not in runner_source
     assert "process_search_queries(" in helper_source
     assert "core.search_providers" not in helper_source
     assert "provider_search_allocation_trace" not in orchestrator_source
-    assert "record_provider_search_allocation_if_controller_authorized(" not in (
+    assert "record_provider_search_allocation_if_authority_authorized(" not in (
         orchestrator_source
     )
     assert "provider_search_allocation_trace" not in executor_source

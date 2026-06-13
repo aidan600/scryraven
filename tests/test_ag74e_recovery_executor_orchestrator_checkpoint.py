@@ -133,7 +133,7 @@ def test_ag74e_provider_search_review_stays_out_of_executor_and_orchestrator() -
     assert decision["allowed_executor_action"] == "record_provider_search_review_request"
     assert "request_provider_search_review" not in executor_source
     assert "request_provider_search_review" not in orchestrator_source
-    assert "record_provider_search_allocation_if_controller_authorized(" in (
+    assert "record_provider_search_allocation_if_authority_authorized(" in (
         runner_source
     )
 
