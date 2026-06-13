@@ -38,6 +38,8 @@ rows, caches, local output packets, raw prompts, or raw provider payloads.
 - No provider routing, provider choice, query text, ranking/filtering, search
   depth, Author prose, citation policy, final-answer posture, persistence shape,
   or live behavior was intentionally changed.
+- Behavior parity for the legacy provider-review decision slice is guarded in
+  `tests/test_ag75a_controller_provider_search_allocation_gate.py`.
 - Bounded provider-review execution still uses existing source-class recovery
   queries/provider role/depth and sanitized result summaries.
 - Allocation custody still does not satisfy official/current obligations or

@@ -13,6 +13,7 @@ from core.controller_provider_search_allocation import (
     build_provider_review_allocation_request,
     build_provider_search_allocation_record,
 )
+from core.controller_recovery_decision import build_controller_recovery_decision
 from core.official_canonical_recovery_visibility_export import (
     build_official_canonical_recovery_visibility_export,
 )
@@ -146,6 +147,143 @@ def _controller_with_existing_recovery_action(
         )
     )
     return controller
+
+
+def _non_allocation_cases() -> list[tuple[str, dict[str, Any]]]:
+    return [
+        (
+            "controller_complete final evidence/citation custody",
+            _base_trace(
+                **_ledger(status="controller_complete", custody_complete=True),
+                final_evidence_official_or_canonical_count=1,
+                final_citation_official_or_canonical_count=1,
+            ),
+        ),
+        (
+            "continue_downstream selected official/current evidence",
+            _base_trace(final_selected_authority_evidence_count=1),
+        ),
+        (
+            "stop_sufficient satisfied obligation",
+            {
+                "source_obligation_status": "not_required_or_satisfied",
+                "admission_used": False,
+            },
+        ),
+        (
+            "stop_legacy_custody_gap",
+            _base_trace(
+                **_ledger(
+                    status="legacy_gap_observed",
+                    custody_complete=False,
+                    legacy_gap_types=["final_evidence_without_candidate_passport"],
+                )
+            ),
+        ),
+        (
+            "missing_controller_disposition architecture stop",
+            _base_trace(
+                **_ledger(
+                    status="missing_controller_disposition",
+                    custody_complete=False,
+                )
+            ),
+        ),
+        (
+            "candidate acquired but unreadable",
+            _base_trace(
+                active_source_class_recovery_result_count=2,
+                candidate_official_or_canonical_count=1,
+                accepted_or_readable_official_or_canonical_count=0,
+                recovered_candidate_rejection_reasons=["unreadable_pdf"],
+            ),
+        ),
+        (
+            "candidate readable but misclassified",
+            _base_trace(
+                active_source_class_recovery_result_count=2,
+                candidate_official_or_canonical_count=0,
+            ),
+        ),
+        (
+            "candidate classified but fit/currentness rejected",
+            _base_trace(
+                active_source_class_recovery_result_count=2,
+                candidate_official_or_canonical_count=1,
+                accepted_or_readable_official_or_canonical_count=1,
+                recovered_candidate_selected_readable_count=0,
+                recovered_candidate_rejection_reasons=["currentness_fit_rejected"],
+            ),
+        ),
+        (
+            "exhausted budget with stop_insufficient",
+            _base_trace(recovery_slot_available=False),
+        ),
+        (
+            "context exposure failure",
+            _base_trace(
+                context_exposure_failure=True,
+                active_source_class_recovery_result_count=1,
+                candidate_official_or_canonical_count=1,
+                accepted_or_readable_official_or_canonical_count=1,
+                recovered_candidate_selected_readable_count=1,
+            ),
+        ),
+        (
+            "Analyst/Author/citation-surface failure",
+            _base_trace(
+                final_selected_authority_evidence_count=1,
+                final_evidence_official_or_canonical_count=1,
+                final_citation_official_or_canonical_count=0,
+                analyst_author_citation_surface_failure=True,
+            ),
+        ),
+        (
+            "final answer/citation behavior issue",
+            {
+                "source_obligation_status": "not_required_or_satisfied",
+                "admission_used": False,
+                "final_answer_value_mismatch": True,
+                "final_citation_official_or_canonical_count": 0,
+            },
+        ),
+    ]
+
+
+def test_ag75a_canonical_provider_review_request_preserves_legacy_slice() -> None:
+    cases = [
+        (
+            "provider review allocation after zero-candidate recovery",
+            _allocation_trace(
+                active_source_class_recovery_queries=["official current fixture"],
+                active_source_class_recovery_provider_role="source_class_recovery",
+                active_source_class_recovery_search_depth="basic",
+            ),
+        ),
+        (
+            "retry still available",
+            _allocation_trace(recovery_slot_available=True),
+        ),
+        (
+            "stale controller fields do not allocate",
+            _allocation_trace(
+                recovery_slot_available=True,
+                recovery_decision=PROVIDER_SEARCH_REVIEW_REQUEST,
+                recovery_allowed_executor_action=PROVIDER_SEARCH_ALLOCATION_ACTION,
+            ),
+        ),
+        *_non_allocation_cases(),
+    ]
+
+    for name, lifecycle in cases:
+        old_decision = build_controller_recovery_decision(lifecycle).decision
+        request = build_provider_review_allocation_request(lifecycle)
+
+        if old_decision == PROVIDER_SEARCH_REVIEW_REQUEST:
+            assert request is not None, name
+            assert request.decision == PROVIDER_SEARCH_REVIEW_REQUEST, name
+        else:
+            assert request is None, name
 
 
 def test_ag75x_controller_decision_executes_bounded_provider_search_allocation() -> None:
@@ -351,106 +489,7 @@ def test_ag75x_authorized_allocation_records_unexecutable_existing_profile() -> 
 
 
 def test_ag75a_non_acquisition_failure_states_do_not_allocate() -> None:
-    cases: list[tuple[str, dict[str, Any]]] = [
-        (
-            "controller_complete final evidence/citation custody",
-            _base_trace(
-                **_ledger(status="controller_complete", custody_complete=True),
-                final_evidence_official_or_canonical_count=1,
-                final_citation_official_or_canonical_count=1,
-            ),
-        ),
-        (
-            "continue_downstream selected official/current evidence",
-            _base_trace(final_selected_authority_evidence_count=1),
-        ),
-        (
-            "stop_sufficient satisfied obligation",
-            {
-                "source_obligation_status": "not_required_or_satisfied",
-                "admission_used": False,
-            },
-        ),
-        (
-            "stop_legacy_custody_gap",
-            _base_trace(
-                **_ledger(
-                    status="legacy_gap_observed",
-                    custody_complete=False,
-                    legacy_gap_types=["final_evidence_without_candidate_passport"],
-                )
-            ),
-        ),
-        (
-            "missing_controller_disposition architecture stop",
-            _base_trace(
-                **_ledger(
-                    status="missing_controller_disposition",
-                    custody_complete=False,
-                )
-            ),
-        ),
-        (
-            "candidate acquired but unreadable",
-            _base_trace(
-                active_source_class_recovery_result_count=2,
-                candidate_official_or_canonical_count=1,
-                accepted_or_readable_official_or_canonical_count=0,
-                recovered_candidate_rejection_reasons=["unreadable_pdf"],
-            ),
-        ),
-        (
-            "candidate readable but misclassified",
-            _base_trace(
-                active_source_class_recovery_result_count=2,
-                candidate_official_or_canonical_count=0,
-            ),
-        ),
-        (
-            "candidate classified but fit/currentness rejected",
-            _base_trace(
-                active_source_class_recovery_result_count=2,
-                candidate_official_or_canonical_count=1,
-                accepted_or_readable_official_or_canonical_count=1,
-                recovered_candidate_selected_readable_count=0,
-                recovered_candidate_rejection_reasons=["currentness_fit_rejected"],
-            ),
-        ),
-        (
-            "exhausted budget with stop_insufficient",
-            _base_trace(recovery_slot_available=False),
-        ),
-        (
-            "context exposure failure",
-            _base_trace(
-                context_exposure_failure=True,
-                active_source_class_recovery_result_count=1,
-                candidate_official_or_canonical_count=1,
-                accepted_or_readable_official_or_canonical_count=1,
-                recovered_candidate_selected_readable_count=1,
-            ),
-        ),
-        (
-            "Analyst/Author/citation-surface failure",
-            _base_trace(
-                final_selected_authority_evidence_count=1,
-                final_evidence_official_or_canonical_count=1,
-                final_citation_official_or_canonical_count=0,
-                analyst_author_citation_surface_failure=True,
-            ),
-        ),
-        (
-            "final answer/citation behavior issue",
-            {
-                "source_obligation_status": "not_required_or_satisfied",
-                "admission_used": False,
-                "final_answer_value_mismatch": True,
-                "final_citation_official_or_canonical_count": 0,
-            },
-        ),
-    ]
-
-    for name, trace in cases:
+    for name, trace in _non_allocation_cases():
         lifecycle = dict(trace)
 
         result = run_source_class_recovery_dispatch(
