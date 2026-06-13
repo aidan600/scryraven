@@ -1,9 +1,10 @@
-"""AG-74D Controller-owned official/current recovery retry/stop decision table.
+"""Historical ControllerRecoveryDecision diagnostic parity table.
 
-The helper is pure decision glue. It observes ledger/source-obligation facts and
-returns the Controller-owned retry/stop posture for the existing recovery
-executor; it does not route providers, change search depth, alter queries, rank
-sources, classify sources, or affect final answer behavior.
+The helper is pure offline decision glue retained for older parity tests and
+historical diagnostics. Runtime provider-review allocation now comes from
+canonical RunAuthority lifecycle state; this module must not route providers,
+change search depth, alter queries, rank sources, classify sources, or affect
+final answer behavior.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from typing import Any
 
 from core.controller_evidence_ledger import CONTROLLER_EVIDENCE_LEDGER_TRACE_KEY
 
-CONTROLLER_RECOVERY_DECISION_TRACE_KEY = "controller_recovery_decision_trace"
 CONTROLLER_RECOVERY_DECISION_SCHEMA_VERSION = (
     "controller_recovery_retry_stop_decision_ag74d_v1"
 )
@@ -53,7 +53,7 @@ _DECISIONS = frozenset(
 
 @dataclass(frozen=True)
 class ControllerRecoveryDecision:
-    """Controller-owned recovery decision record."""
+    """Historical diagnostic recovery decision record."""
 
     payload: dict[str, Any]
 
@@ -72,28 +72,10 @@ class ControllerRecoveryDecision:
     def to_trace(self) -> dict[str, Any]:
         return {
             "schema_version": CONTROLLER_RECOVERY_DECISION_SCHEMA_VERSION,
-            "trace_mode": "controller_owned_recovery_retry_stop_decision",
+            "trace_mode": "historical_controller_recovery_diagnostic",
             "ControllerRecoveryDecision": dict(self.payload),
         }
 
-    def to_trace_fields(self) -> dict[str, Any]:
-        return {
-            CONTROLLER_RECOVERY_DECISION_TRACE_KEY: self.to_trace(),
-            "controller_recovery_decision": self.decision,
-            "controller_recovery_decision_reason": self.payload[
-                "decision_reason"
-            ],
-            "controller_recovery_retry_allowed": self.retry_allowed,
-            "controller_recovery_allowed_executor_action": self.payload[
-                "allowed_executor_action"
-            ],
-            "controller_recovery_provider_search_review_requested": (
-                self.provider_search_review_requested
-            ),
-            "controller_recovery_old_path_subordinated": self.payload[
-                "old_path_subordinated"
-            ],
-        }
 
 def build_controller_recovery_decision(
     runtime_trace: Mapping[str, Any] | None,
@@ -166,7 +148,7 @@ def build_controller_recovery_decision(
 
     payload = {
         "schema_version": CONTROLLER_RECOVERY_DECISION_SCHEMA_VERSION,
-        "decision_owner": "ControllerEvidenceLedger",
+        "decision_owner": "historical_controller_recovery_diagnostic",
         "requirement_id": _text(trace.get("requirement_id")),
         "required_source_class": source_classes,
         "ledger_custody_status": ledger_status,
@@ -707,18 +689,3 @@ def _positive(value: Any) -> bool:
 
 def _zero(value: Any) -> bool:
     return isinstance(value, int) and value == 0
-
-
-__all__ = [
-    "CONTINUE_DOWNSTREAM",
-    "CONTROLLER_RECOVERY_DECISION_SCHEMA_VERSION",
-    "CONTROLLER_RECOVERY_DECISION_TRACE_KEY",
-    "ControllerRecoveryDecision",
-    "REQUEST_PROVIDER_SEARCH_REVIEW",
-    "RETRY_RECOVERY",
-    "STOP_FOR_ARCHITECTURE_DECISION",
-    "STOP_INSUFFICIENT",
-    "STOP_LEGACY_CUSTODY_GAP",
-    "STOP_SUFFICIENT",
-    "build_controller_recovery_decision",
-]

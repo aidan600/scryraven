@@ -61,9 +61,10 @@ canonical AuthorityLifecycle action/blocker state while preserving high-custody
 Author/citation visibility behavior. AG-95Q moves bounded provider-review
 allocation from ControllerRecoveryDecision compatibility to a canonical
 RunAuthority/SearchJudgment-fed lifecycle request consumed by
-`SourceClassRecoveryRunner` and `controller_provider_search_allocation`;
-ControllerRecoveryDecision must remain diagnostic/export-only for this lane
-unless a later phase deletes those projections.
+`SourceClassRecoveryRunner` and `controller_provider_search_allocation`.
+AG-95R/S/T retires the old decision from active visibility export;
+ControllerRecoveryDecision is historical/offline diagnostic parity only for this
+lane.
 
 ### No orchestrator brain
 

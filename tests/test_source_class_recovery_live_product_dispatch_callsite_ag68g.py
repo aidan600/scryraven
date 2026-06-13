@@ -38,6 +38,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
 _RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
 _ADAPTER_PATH = _ROOT / "core" / "source_class_authority_runtime_adapter.py"
+_RETRIEVAL_AUTHORITY_STAGE_PATH = _ROOT / "core" / "retrieval_authority_stage.py"
 _PIPELINE_LOCAL_SOURCE_CLASS_AUTHORITY_HELPERS = {
     "_source_class_recovery_authority_projection",
     "_source_class_recovery_authority_action",
@@ -562,11 +563,13 @@ def test_ag68g_pipeline_change_is_tiny_and_closed_surfaces_remain_closed() -> No
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8")
     adapter_source = _ADAPTER_PATH.read_text(encoding="utf-8")
+    stage_source = _RETRIEVAL_AUTHORITY_STAGE_PATH.read_text(encoding="utf-8")
     tree = ast.parse(pipeline_source)
     adapter_tree = ast.parse(adapter_source)
+    stage_tree = ast.parse(stage_source)
     refresh_calls = [
         node
-        for node in ast.walk(tree)
+        for node in ast.walk(stage_tree)
         if isinstance(node, ast.Call)
         and getattr(node.func, "id", "") == (
             "source_class_recovery_checkpoint_refresh_allowed"
@@ -600,7 +603,7 @@ def test_ag68g_pipeline_change_is_tiny_and_closed_surfaces_remain_closed() -> No
     assert not (
         _PIPELINE_LOCAL_SOURCE_CLASS_AUTHORITY_HELPERS & pipeline_functions
     )
-    assert "source_class_authority_runtime_adapter" in pipeline_source
+    assert "source_class_authority_runtime_adapter" in stage_source
     assert "source_class_recovery_checkpoint_refresh_allowed" in adapter_functions
     assert not adapter_imports & {
         "core.author_execution_runtime",

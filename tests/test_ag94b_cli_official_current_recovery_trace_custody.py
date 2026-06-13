@@ -113,13 +113,7 @@ def test_ag94b_cli_shaped_custody_preserves_official_current_recovery_lane() -> 
     assert export["required_source_classes"] == [_OFFICIAL_CURRENT]
     assert export["unsatisfied_required_source_classes"] == [_OFFICIAL_CURRENT]
     assert export["source_obligation_status"] == "official_current_required_unmet"
-    assert export["controller_recovery_decision_observed"] is False
-    assert export["controller_recovery_decision_projection_source"] == (
-        "absent_from_runtime_trace"
-    )
-    assert export["controller_recovery_decision_authority"] == (
-        "not_observed_diagnostic_only"
-    )
+    assert "controller_recovery_decision_observed" not in export
     assert "controller_recovery_decision" not in export
     assert "controller_recovery_retry_allowed" not in export
     assert export["admission_used"] is True
@@ -143,16 +137,7 @@ def test_ag94b_final_diagnostics_reports_absent_runtime_decision() -> None:
     assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["active_source_class_recovery_execution_attempted"] is False
     assert export["source_obligation_status"] == "official_current_required_unmet"
-    assert export["controller_recovery_decision_observed"] is False
-    assert export["controller_recovery_decision_projection_source"] == (
-        "absent_from_runtime_trace"
-    )
-    assert export["controller_recovery_decision_authority"] == (
-        "not_observed_diagnostic_only"
-    )
-    assert export["controller_recovery_decision_absent_reason"] == (
-        "controller_recovery_decision_trace_absent_from_runtime_trace"
-    )
+    assert "controller_recovery_decision_observed" not in export
     assert "controller_recovery_decision" not in export
 
 
@@ -182,7 +167,7 @@ def test_ag94b_private_gym_negative_control_has_no_official_current_action() -> 
     assert export["source_obligation_status"] == "not_required_or_satisfied"
     assert export["acquisition_repair_used"] is False
     assert export["admission_used"] is False
-    assert export["controller_recovery_decision_observed"] is False
+    assert "controller_recovery_decision_observed" not in export
     assert "controller_recovery_decision" not in export
     assert _WEAK_CORPUS_BLOCKERS & set(
         execution_trace["active_source_class_recovery_blockers"]
@@ -236,13 +221,7 @@ def test_ag94b_hard_blockers_remain_blocking_in_final_diagnostics() -> None:
 
         assert export["admission_used"] is False, name
         assert blocker in export["admission_blockers"], name
-        assert export["controller_recovery_decision_observed"] is False, name
-        assert export["controller_recovery_decision_projection_source"] == (
-            "absent_from_runtime_trace"
-        ), name
-        assert export["controller_recovery_decision_authority"] == (
-            "not_observed_diagnostic_only"
-        ), name
+        assert "controller_recovery_decision_observed" not in export, name
         assert "controller_recovery_decision" not in export, name
 
 
