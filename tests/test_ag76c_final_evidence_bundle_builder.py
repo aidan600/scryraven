@@ -339,9 +339,9 @@ def test_pipeline_orchestrator_no_longer_owns_final_source_id_assignment_loop() 
     assert "next_source_id" not in orchestrator_source
     assert "unique_source_urls = {}" not in orchestrator_source
     assert "p[\"source_id\"] = unique_source_urls[p[\"url\"]]" not in orchestrator_source
-    assert "build_final_evidence_bundle(" in orchestrator_source
-    assert "attach_selected_authority_evidence_to_final_bundle(" in orchestrator_source
-    assert "build_final_source_telemetry_inputs(" in orchestrator_source
+    assert "build_final_evidence_runtime_handoff_from_scope(" in orchestrator_source
+    assert "attach_selected_authority_evidence_handoff(" in orchestrator_source
+    assert "build_final_handoff_output_packaging_from_scope(" in orchestrator_source
     assert "recovered_visibility_used" not in orchestrator_source
     assert "recovered_visibility_missing_source_class" not in orchestrator_source
 

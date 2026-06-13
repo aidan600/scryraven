@@ -35,7 +35,7 @@ from core.answer_contract_runtime_handoff import (
     build_runtime_answer_contract_handoff,
 )
 from core.answer_outcome import classify_answer_outcome
-from core.author_execution_runtime import execute_author_action
+from core.author_execution_runtime import execute_author_handoff_from_scope
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
@@ -73,8 +73,6 @@ from core.evidence_integration_checkpoint import (
     evidence_integration_checkpoint_unavailable_trace,
 )
 from core.evidence_ledger_lifecycle import (
-    reduce_final_evidence_bundle_into_evidence_ledger,
-    reduce_post_final_source_obligations_into_evidence_ledger,
     reduce_pre_recovery_source_obligations_into_evidence_ledger,
     reduce_run_contract_requirements_into_evidence_ledger,
 )
@@ -85,17 +83,18 @@ from core.failure_card import (
     normalize_force_corpus_state,
 )
 from core.final_answer_packet_runtime import (
-    execute_final_answer_packet_prepare_action_from_scope,
+    prepare_final_answer_packet_author_handoff_from_scope,
 )
 from core.final_authority_citation_survival import (
     apply_authority_citation_survival_outcome_guard,
-    attach_selected_authority_evidence_to_final_bundle,
-    build_final_authority_citation_survival_observation_from_bundle,
+    attach_selected_authority_evidence_handoff,
+    build_post_author_citation_survival_handoff,
 )
 from core.final_evidence_bundle_builder import (
-    FinalEvidenceBundleInputs,
     build_final_evidence_bundle,
-    build_final_source_telemetry_inputs,
+    build_final_evidence_runtime_handoff_from_scope,
+    final_evidence_bundle_inputs_from_scope,
+    final_evidence_handoff_from_legacy_review,
 )
 from core.kb_review_persistence_context import build_kb_review_persistence_context
 
@@ -135,10 +134,6 @@ from core.ordinary_continuation_spine_gate import (
     scout_continuation_spine_gate_defaults,
     scout_continuation_spine_gate_exception_trace,
 )
-from core.outcome_persistence_packaging import (
-    build_pipeline_config,
-    build_session_payload,
-)
 from core.persistence_side_effects import execute_persistence_side_effects
 from core.pipeline import (
     _quant_retrieval_sufficiency_shadow_telemetry,
@@ -151,7 +146,7 @@ from core.pipeline import (
 from core.policy import apply_policy_to_run_config, load_policy_state
 from core.post_author_output_projection import (
     _build_runtime_conflict_state_projection,
-    _final_answer_source_citation_telemetry,
+    build_final_handoff_output_packaging_from_scope,
     build_post_author_output_packaging_from_scope,
     build_post_author_trace_packaging_from_scope,
     build_run_outcome_from_scope,
@@ -187,7 +182,6 @@ from core.retrieval_dispatch_runtime import (
     execute_main_retrieval_pass_from_scope,
     source_class_recovery_context_from_scope,
 )
-from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
 from core.retrieval_quality import (
     DEFAULT_UTILIZATION_THRESHOLD,
     VERBOSITY_GATE_UTILIZATION_THRESHOLD,
@@ -229,11 +223,8 @@ from core.run_authority_search_judgment_adapter import (
 from core.run_authority_search_judgment_runtime import (
     execute_run_authority_search_judgment_action,
 )
-from core.run_authority_sufficiency_adapter import (
-    build_sufficiency_judgment_input_from_runtime,
-)
 from core.run_authority_sufficiency_runtime import (
-    execute_run_authority_sufficiency_judgment_action,
+    execute_sufficiency_judgment_handoff_from_scope,
 )
 from core.run_config import RunConfig, RunDeps, RunOutcome
 from core.run_controller import RunController
@@ -262,7 +253,7 @@ from core.source_class_recovery_lifecycle import (
     source_class_recovery_lifecycle_defaults,
 )
 from core.source_class_recovery_projection_handoff import (
-    build_post_final_source_class_projection_handoff,
+    execute_post_final_source_class_projection_from_scope,
 )
 from core.source_class_recovery_runner import run_source_class_recovery_dispatch
 from core.source_classifier import source_domain_telemetry, source_tier_telemetry
@@ -3029,43 +3020,21 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         total_urls_fetched += int(conflict_resolution_execution["new_url_count"])
         total_chunks_embedded += int(conflict_resolution_execution["result_count"])
 
-    max_domain_chunks = 4 if complexity == "high" else (3 if complexity == "medium" else 2)
-
-    def _final_evidence_bundle_inputs() -> FinalEvidenceBundleInputs:
-        return FinalEvidenceBundleInputs(
-            all_passages=all_passages,
-            top_chunks=top_chunks,
-            max_domain_chunks=max_domain_chunks,
-            filter_top_evidence=deps.filter_top_evidence,
-            is_plausible_domain=deps.is_plausible_domain,
-            current_date=current_date,
-            query=query,
-            active_source_class_recovery_lifecycle=active_source_class_recovery_lifecycle,
-            recovered_evidence_visibility=apply_controller_recovered_evidence_visibility,
-        )
-
-    final_evidence_bundle = build_final_evidence_bundle(_final_evidence_bundle_inputs())
-    final_top_evidence = final_evidence_bundle.final_top_evidence
-    unique_source_urls = final_evidence_bundle.unique_source_urls
-    ordered_sources = final_evidence_bundle.ordered_sources
-    evidence_ledger_projection = reduce_run_contract_requirements_into_evidence_ledger(
-        run_kernel=run_kernel,
-        run_id=run_id,
-        run_contract_projection=run_contract_projection,
-        observation_id_suffix="run-contract",
-        authorization_observation_source="run_authority_contract",
+    final_evidence_handoff = build_final_evidence_runtime_handoff_from_scope(
+        locals(),
+        filter_top_evidence=deps.filter_top_evidence,
+        is_plausible_domain=deps.is_plausible_domain,
+        recovered_evidence_visibility=apply_controller_recovered_evidence_visibility,
     )
-    evidence_ledger_projection = (
-        reduce_final_evidence_bundle_into_evidence_ledger(
-            run_kernel=run_kernel,
-            run_id=run_id,
-            final_top_evidence=final_top_evidence,
-        )
-    )
+    final_evidence_bundle = final_evidence_handoff.bundle
+    final_top_evidence = final_evidence_handoff.final_top_evidence
+    unique_source_urls = final_evidence_handoff.unique_source_urls
+    ordered_sources = final_evidence_handoff.ordered_sources
+    evidence_ledger_projection = final_evidence_handoff.evidence_ledger_projection
 
     status.step("--- **Final Synthesis & Reporting** ---")
-    evidence_block = final_evidence_bundle.evidence_block
-    cached_prefix = final_evidence_bundle.cached_prefix
+    evidence_block = final_evidence_handoff.evidence_block
+    cached_prefix = final_evidence_handoff.cached_prefix
     author_notes = ""
 
     # --- LINKUP (high tier) + QUANTITATIVE COMPONENT ---
@@ -3398,7 +3367,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         measure_context_stage=_measure_context_stage,
         record_analyst_model_call=_record_analyst_model_call,
         build_final_evidence_bundle=build_final_evidence_bundle,
-        final_evidence_bundle_inputs=_final_evidence_bundle_inputs,
+        final_evidence_bundle_inputs=lambda: final_evidence_bundle_inputs_from_scope(
+            locals(),
+            filter_top_evidence=deps.filter_top_evidence,
+            is_plausible_domain=deps.is_plausible_domain,
+            recovered_evidence_visibility=apply_controller_recovered_evidence_visibility,
+        ),
         build_analyst_cached_prefix=_build_analyst_cached_prefix,
         evidence_slice_for_analyst=_evidence_slice_for_analyst,
         select_providers=select_providers,
@@ -3408,12 +3382,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         locals(), deps=legacy_review_deps, default_system=DEFAULT_SYSTEM
     )
     analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency, supplemental_ran, delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds, scrutineer_ran, scrutineer_seconds, scrutineer_flags, scrutineer_high_count, scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role, scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override, scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls = legacy_review_outcome.orchestrator_values()
-    if legacy_review_outcome.ordered_sources is not None:
-        ordered_sources = legacy_review_outcome.ordered_sources
-    if legacy_review_outcome.evidence_block is not None:
-        evidence_block = legacy_review_outcome.evidence_block
-    if legacy_review_outcome.cached_prefix is not None:
-        cached_prefix = legacy_review_outcome.cached_prefix
+    final_evidence_handoff = final_evidence_handoff_from_legacy_review(
+        final_evidence_handoff,
+        legacy_review_outcome,
+    )
+    final_top_evidence = final_evidence_handoff.final_top_evidence
+    unique_source_urls = final_evidence_handoff.unique_source_urls
+    ordered_sources = final_evidence_handoff.ordered_sources
+    evidence_block = final_evidence_handoff.evidence_block
+    cached_prefix = final_evidence_handoff.cached_prefix
 
     # ------------------------------------------------------------------
     # Build author prompt and generate final report
@@ -3443,62 +3420,22 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     _thin_body = (corpus_weak and not _efp_author) or _relevance_low
 
     precision_count = 4 if _thin_body else (10 if complexity == "high" else 8)
-    authority_author_visibility = attach_selected_authority_evidence_to_final_bundle(
+    authority_author_evidence = attach_selected_authority_evidence_handoff(
         final_evidence_bundle,
         precision_count=precision_count,
+        active_source_class_recovery_lifecycle=active_source_class_recovery_lifecycle,
     )
-    active_source_class_recovery_lifecycle[
-        "final_authority_author_evidence_visibility"
-    ] = dict(authority_author_visibility.diagnostics)
-    author_evidence = final_evidence_bundle.author_evidence
-    author_evidence_block = final_evidence_bundle.author_evidence_block
+    author_evidence = authority_author_evidence.author_evidence
+    author_evidence_block = authority_author_evidence.author_evidence_block
 
     author_prompt_assembly = build_author_prompt_from_scope(locals())
     author_prompt = author_prompt_assembly.prompt
     author_notes = author_prompt_assembly.author_notes
 
     status.step("Judging final answer sufficiency...")
-    sufficiency_input = build_sufficiency_judgment_input_from_runtime(
-        contract_projection=run_contract_projection,
-        evidence_ledger_projection=evidence_ledger_projection,
-        search_judgment_projection=search_judgment_projection,
-        search_judgment_history=run_kernel.state.search_judgment_history,
-        answer_contract_projection=answer_contract_projection,
-        final_evidence_count=len(final_top_evidence),
-        author_evidence_count=len(author_evidence),
-        citation_eligible_candidate_count=len(unique_source_urls),
-        conflicts_present=bool(scrutineer_flags),
-        scrutineer_flag_count=len(scrutineer_flags),
-        corpus_weak=bool(corpus_weak),
-        weak_corpus_reason=(
-            weak_corpus_recovery_skip_reason or corpus_state
-            if corpus_weak
-            else None
-        ),
-        synth_was_insufficient=bool(synth_was_insufficient),
-        failure_card_show=_pre_gate_failure_card_show,
-        failure_card_reason=_pre_gate_failure_card_reason,
-        iterations_run=iterations_run,
-        max_iterations=max_iterations,
-        recovery_attempt_count=(
-            _run_controller_mirror.state.active_source_class_recovery_attempt_count
-        ),
-    )
-    sufficiency_action = run_kernel.authorize_sufficiency_judgment(
-        inputs={
-            "contract_id": run_contract_projection.get("contract_id"),
-            "candidate_count": evidence_ledger_projection.get("candidate_count"),
-            "requirement_count": evidence_ledger_projection.get(
-                "requirement_count"
-            ),
-            "search_judgment_decision": search_judgment_projection.get("decision"),
-            "final_evidence_count": len(final_top_evidence),
-            "smart_model_enabled": bool(run_authority_sufficiency_smart_model),
-        }
-    )
-    sufficiency_result = execute_run_authority_sufficiency_judgment_action(
-        sufficiency_action,
-        judgment_input=sufficiency_input,
+    sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
+        run_kernel,
+        locals(),
         ask_model=ask_model if run_authority_sufficiency_smart_model else None,
         clean_json_response=deps.clean_json_response,
         smart_model_enabled=run_authority_sufficiency_smart_model,
@@ -3510,42 +3447,24 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         use_reasoning=use_reasoning,
         measure_context_stage=_measure_context_stage,
     )
-    run_kernel.reduce(sufficiency_result.observation)
-    sufficiency_judgment_projection = dict(
-        run_kernel.state.sufficiency_judgment_projection
-    )
+    sufficiency_judgment_projection = sufficiency_handoff.projection
 
     status.update("Writing final report...")
 
-    final_answer_packet_action = run_kernel.authorize_final_answer_packet_prepare(
-        inputs={
-            "candidate_count": len(final_top_evidence),
-            "author_evidence_count": len(author_evidence),
-            "evidence_ledger_available": bool(evidence_ledger_projection),
-            "run_contract_available": bool(run_contract_projection),
-            "run_contract_id": run_contract_projection.get("contract_id"),
-            "sufficiency_judgment_available": bool(
-                sufficiency_judgment_projection
-            ),
-            "sufficiency_decision": sufficiency_judgment_projection.get(
-                "decision"
-            ),
-        }
-    )
-    final_answer_author_runtime = execute_final_answer_packet_prepare_action_from_scope(
-        final_answer_packet_action,
+    final_answer_packet_handoff = prepare_final_answer_packet_author_handoff_from_scope(
+        run_kernel,
         locals(),
         default_system=DEFAULT_SYSTEM,
     )
-    run_kernel.reduce(final_answer_author_runtime.observation)
-    final_answer_packet = final_answer_author_runtime.packet
-    final_answer_author_payload = final_answer_author_runtime.author_payload
-    author_prompt = final_answer_author_payload.prompt
-    author_system_prompt_key = final_answer_author_payload.author_system_prompt_key
-    _author_effort = final_answer_author_payload.author_effort
-    _author_provider = final_answer_author_payload.author_provider
-    _author_model = final_answer_author_payload.author_model
-    _author_system = final_answer_author_runtime.author_system_prompt
+    final_answer_packet_action = final_answer_packet_handoff.action
+    final_answer_packet = final_answer_packet_handoff.packet
+    final_answer_author_payload = final_answer_packet_handoff.author_payload
+    author_prompt = final_answer_packet_handoff.author_prompt
+    author_system_prompt_key = final_answer_packet_handoff.author_system_prompt_key
+    _author_effort = final_answer_packet_handoff.author_effort
+    _author_provider = final_answer_packet_handoff.author_provider
+    _author_model = final_answer_packet_handoff.author_model
+    _author_system = final_answer_packet_handoff.author_system_prompt
 
     # AG-90G: build_analyst_author_handoff_state / execute_analyst_author_handoff
     # packaging moved to the bounded post-Analyst handoff helper;
@@ -3572,41 +3491,27 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         evidence_passages=author_evidence,
     )
 
-    author_action = run_kernel.authorize_author_execution(
-        inputs={
-            "packet_action_id": final_answer_packet_action.action_id,
-        }
-    )
-    author_execution = execute_author_action(
-        author_action,
-        author_payload=final_answer_author_payload,
+    author_execution_handoff = execute_author_handoff_from_scope(
+        run_kernel,
+        locals(),
         ask_model=ask_model,
         system_prompt_registry=DEFAULT_SYSTEM,
         base_url=local_url,
         api_key=or_api_key,
-        query=query,
-        quantitative_packet=economist_safety_telemetry.get("quantitative_packet"),
-        calculation_results=economist_safety_telemetry.get("calculation_results"),
         stream_display=config.author_stream_display,
     )
-    run_kernel.reduce(author_execution.observation)
-    report = author_execution.report
-    author_seconds = author_execution.author_seconds
-    synthesis_seconds = author_seconds  # noqa: F841
-    quantitative_guard_stream_buffered = author_execution.stream_buffered
-    quantitative_consistency_telemetry = (
-        author_execution.quantitative_consistency_telemetry
-    )
+    report = author_execution_handoff.report
+    author_seconds = author_execution_handoff.author_seconds
+    synthesis_seconds = author_execution_handoff.synthesis_seconds  # noqa: F841
+    quantitative_guard_stream_buffered = author_execution_handoff.quantitative_guard_stream_buffered
+    quantitative_consistency_telemetry = author_execution_handoff.quantitative_consistency_telemetry
     quantitative_consistency_guard_telemetry = (
-        author_execution.quantitative_consistency_guard_telemetry
+        author_execution_handoff.quantitative_consistency_guard_telemetry
     )
-    final_answer_source_telemetry = _final_answer_source_citation_telemetry(
-        report,
-        economist_safety_telemetry,
-    )
-    authority_citation_survival = build_final_authority_citation_survival_observation_from_bundle(
-        final_evidence_bundle,
-        final_answer_source_telemetry=final_answer_source_telemetry,
+    authority_citation_survival = build_post_author_citation_survival_handoff(
+        report=report,
+        economist_safety_telemetry=economist_safety_telemetry,
+        final_evidence_bundle=final_evidence_bundle,
     )
     final_authority_citation_survival_projection = authority_citation_survival.projection
     final_answer_source_telemetry = authority_citation_survival.final_answer_source_telemetry
@@ -3730,108 +3635,28 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     answer_class = weak_failure_gate_handoff.answer_class
     synth_sufficient_first_pass = bool(synth_sufficient_first_pass_raw and evidence_sufficient)
 
-    run_history_out = list(prior_run_history)
-    if prior_snapshot_for_history:
-        run_history_out = run_history_out + [prior_snapshot_for_history]
-
     status.done()
-    final_source_telemetry_inputs = build_final_source_telemetry_inputs(
-        final_top_evidence=final_top_evidence,
-        unique_source_urls=unique_source_urls,
-        ordered_sources=ordered_sources,
-        seen_urls=list(seen_urls),
-        collected_images=list(collected_images),
-        final_answer_source_telemetry=final_answer_source_telemetry,
+    final_handoff_output = build_final_handoff_output_packaging_from_scope(
+        locals(),
+        metadata_recorder=record_run_metadata_snapshot,
+        final_evidence_snapshot_recorder=record_final_evidence_snapshot,
+        stage_ledger_recorder=record_stage_ledger_query_provider_facts,
     )
-
-    record_run_metadata_snapshot(
-        _run_controller_mirror,
-        session_id=session_id,
-        run_id=run_id,
-        query=query,
-        mode=strategy,
-        current_date=current_date,
-        core_topic=core_topic,
-        intent=intent,
-        complexity=complexity,
-    )
-    _run_controller_mirror.state.route_fields["router_query_preparation_contract"] = (
-        router_query_preparation_contract.to_controller_state()
-    )
-    if retrieval_loop_contract_state is not None:
-        _run_controller_mirror.state.route_fields[RETRIEVAL_LOOP_TRACE_KEY] = (
-            retrieval_loop_contract_state.to_controller_state()
-        )
-    _run_controller_mirror.state.trace_fields.update(
-        router_query_preparation_contract.to_trace_fragment()
-    )
-    _run_controller_mirror.state.trace_fields.update(query_authority.to_trace_fragment())
-    _run_controller_mirror.state.trace_fields.update(run_kernel.to_trace_fragment())
-    if retrieval_loop_contract_state is not None:
-        _run_controller_mirror.state.trace_fields.update(
-            retrieval_loop_contract_state.to_trace_fragment()
-        )
-    record_final_evidence_snapshot(
-        _run_controller_mirror,
-        **final_source_telemetry_inputs.final_evidence_snapshot_payload,
-    )
-
-    pipeline_config_payload = build_pipeline_config(
-        intent=intent,
-        complexity=complexity,
-        search_depth=search_depth,
-        mode=strategy,
-    )
-    new_session: dict[str, Any] = build_session_payload(
-        session_id=session_id,
-        run_id=run_id,
-        session_title=session_title,
-        current_date=current_date,
-        query=query,
-        core_topic=core_topic,
-        report=report,
-        final_top_evidence=final_top_evidence,
-        seen_urls=list(seen_urls),
-        collected_images=list(collected_images),
-        mode=strategy,
-        pipeline_config=pipeline_config_payload,
-        run_history_out=run_history_out,
-        failure_card_payload=failure_card_payload,
-    )
-
-    queries_by_iteration = query_authority.queries_by_iteration()
-    queries_per_iter = {str(k): v for k, v in (queries_by_iteration or {}).items()}
-    disambiguation_queries_per_iter = {
-        str(k): v for k, v in (disambiguation_queries_by_iteration or {}).items()
-    }
-    record_stage_ledger_query_provider_facts(
-        _run_controller_mirror,
-        queries_by_iteration=queries_by_iteration,
-        disambiguation_queries_by_iteration=disambiguation_queries_by_iteration,
-        providers_by_iteration=providers_by_iteration,
-        provider_diagnostics=provider_diagnostics,
-        retrieval_pass_records=retrieval_pass_records,
-    )
+    final_source_telemetry_inputs = final_handoff_output.final_source_telemetry_inputs
+    pipeline_config_payload = final_handoff_output.pipeline_config_payload
+    new_session: dict[str, Any] = final_handoff_output.new_session
+    queries_by_iteration = final_handoff_output.queries_by_iteration
+    queries_per_iter = final_handoff_output.queries_per_iter
+    disambiguation_queries_per_iter = final_handoff_output.disambiguation_queries_per_iter
     if not weak_corpus_recovery_used and weak_corpus_recovery_skip_reason is None:
         weak_corpus_recovery_skip_reason = "not_weak_corpus"
     ts_utc = datetime.now(timezone.utc).isoformat()
-    post_final_source_class_handoff = build_post_final_source_class_projection_handoff(
-        all_passages=all_passages,
-        final_evidence_bundle=final_evidence_bundle,
-        final_answer_source_ids=final_answer_source_telemetry.get(
-            "final_answer_source_ids_used"
-        ),
-        query=query,
-        current_date=current_date,
-        intent=intent,
-        report_type=report_type,
-        query_type=query_type,
-        core_topic=core_topic,
-        primary_entity=primary_entity,
-        anchor_packet=anchor_packet_telemetry,
-        active_source_class_recovery_lifecycle=active_source_class_recovery_lifecycle,
+    post_final_source_class_projection = execute_post_final_source_class_projection_from_scope(
+        locals(),
         logger=logger,
+        recommendation_recorder=record_source_class_recovery_recommendation,
     )
+    post_final_source_class_handoff = post_final_source_class_projection.handoff
     pf = post_final_source_class_handoff
     _source_tier_exec = pf.source_tier_exec
     _source_domain_exec = pf.source_domain_exec
@@ -3846,40 +3671,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     runtime_active_source_class_recovery_lifecycle = (
         pf.runtime_active_source_class_recovery_lifecycle
     )
-    active_source_class_recovery_lifecycle.update(
-        source_class_projection_handoff.recovery_source_quality_diagnostics
-    )
-    record_source_class_recovery_recommendation(
-        _run_controller_mirror,
-        source_class_recovery_telemetry=source_class_recovery_telemetry,
-        source_class_evidence_signals={
-            "source_tier_counts": _source_tier_exec["source_tier_counts"],
-            "source_domain_counts": _source_domain_exec["source_domain_counts"],
-            "top_source_domains": _source_domain_exec["top_source_domains"],
-            "unique_source_domain_count": _source_domain_exec[
-                "unique_source_domain_count"
-            ],
-            "on_domain_source_count": _source_domain_exec["on_domain_source_count"],
-            "off_domain_source_count": _source_domain_exec[
-                "off_domain_source_count"
-            ],
-            "official_evidence_found": _source_tier_exec["official_evidence_found"],
-            "community_signal_found": _source_tier_exec["community_signal_found"],
-            "low_trust_sources_found": _source_tier_exec["low_trust_sources_found"],
-            "pollution_detected": _source_tier_exec["pollution_detected"],
-        },
-    )
-    evidence_ledger_projection = (
-        reduce_post_final_source_obligations_into_evidence_ledger(
-            run_kernel=run_kernel,
-            run_id=run_id,
-            source_class_recovery_telemetry={
-                **runtime_source_class_recovery_telemetry,
-                **source_class_observability_telemetry,
-            },
-            final_top_evidence=final_top_evidence,
-        )
-    )
+    evidence_ledger_projection = post_final_source_class_projection.evidence_ledger_projection
     # Post-Author citation assembly is delegated; helper calls assemble_final_answer_citation_runtime_from_scope(...).
     post_author_trace_packaging = build_post_author_trace_packaging_from_scope(
         locals(),

@@ -34,6 +34,22 @@ class FinalAnswerPacketPreparationResult:
     author_model: str | None
 
 
+@dataclass(frozen=True, slots=True)
+class FinalAnswerPacketAuthorHandoff:
+    """RunKernel-reduced FinalAnswerPacket and packet-derived Author payload."""
+
+    action: AuthorizedAction
+    preparation: FinalAnswerPacketPreparationResult
+    packet: FinalAnswerPacket
+    author_payload: FinalAnswerAuthorInputPayload
+    author_prompt: str
+    author_system_prompt_key: str
+    author_effort: str
+    author_provider: str | None
+    author_model: str | None
+    author_system_prompt: str
+
+
 def _author_effort(
     *,
     analyst_effort: str,
@@ -254,8 +270,58 @@ def execute_final_answer_packet_prepare_action_from_scope(
     )
 
 
+def prepare_final_answer_packet_author_handoff_from_scope(
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    *,
+    default_system: Mapping[str, str],
+) -> FinalAnswerPacketAuthorHandoff:
+    """Authorize, execute, and reduce the FinalAnswerPacket Author handoff."""
+
+    action = run_kernel.authorize_final_answer_packet_prepare(
+        inputs={
+            "candidate_count": len(runtime_scope["final_top_evidence"]),
+            "author_evidence_count": len(runtime_scope["author_evidence"]),
+            "evidence_ledger_available": bool(
+                runtime_scope.get("evidence_ledger_projection")
+            ),
+            "run_contract_available": bool(runtime_scope.get("run_contract_projection")),
+            "run_contract_id": runtime_scope["run_contract_projection"].get(
+                "contract_id"
+            ),
+            "sufficiency_judgment_available": bool(
+                runtime_scope.get("sufficiency_judgment_projection")
+            ),
+            "sufficiency_decision": runtime_scope[
+                "sufficiency_judgment_projection"
+            ].get("decision"),
+        }
+    )
+    preparation = execute_final_answer_packet_prepare_action_from_scope(
+        action,
+        runtime_scope,
+        default_system=default_system,
+    )
+    run_kernel.reduce(preparation.observation)
+    payload = preparation.author_payload
+    return FinalAnswerPacketAuthorHandoff(
+        action=action,
+        preparation=preparation,
+        packet=preparation.packet,
+        author_payload=payload,
+        author_prompt=payload.prompt,
+        author_system_prompt_key=payload.author_system_prompt_key,
+        author_effort=payload.author_effort,
+        author_provider=payload.author_provider,
+        author_model=payload.author_model,
+        author_system_prompt=preparation.author_system_prompt,
+    )
+
+
 __all__ = [
+    "FinalAnswerPacketAuthorHandoff",
     "FinalAnswerPacketPreparationResult",
     "execute_final_answer_packet_prepare_action",
     "execute_final_answer_packet_prepare_action_from_scope",
+    "prepare_final_answer_packet_author_handoff_from_scope",
 ]

@@ -42,6 +42,14 @@ class RunSufficiencyJudgmentResult:
     prompt_length: int = 0
 
 
+@dataclass(frozen=True, slots=True)
+class RunSufficiencyJudgmentHandoff:
+    """RunKernel-reduced sufficiency judgment projection."""
+
+    result: RunSufficiencyJudgmentResult
+    projection: dict[str, Any]
+
+
 def _parse_model_judgment(
     raw: Any,
     *,
@@ -184,7 +192,96 @@ def execute_run_authority_sufficiency_judgment_action(
     )
 
 
+def execute_sufficiency_judgment_handoff_from_scope(
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    *,
+    ask_model: Callable[..., Any] | None = None,
+    clean_json_response: Callable[[str], str] | None = None,
+    smart_model_enabled: bool = False,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    effort: str = "high",
+    use_reasoning: bool = True,
+    measure_context_stage: Callable[..., Any] | None = None,
+) -> RunSufficiencyJudgmentHandoff:
+    """Build, authorize, execute, and reduce final-answer sufficiency judgment."""
+
+    from core.run_authority_sufficiency_adapter import (
+        build_sufficiency_judgment_input_from_runtime,
+    )
+
+    evidence_ledger_projection = runtime_scope["evidence_ledger_projection"]
+    search_judgment_projection = runtime_scope["search_judgment_projection"]
+    run_contract_projection = runtime_scope["run_contract_projection"]
+    final_top_evidence = runtime_scope["final_top_evidence"]
+    scrutineer_flags = runtime_scope["scrutineer_flags"]
+    corpus_weak = bool(runtime_scope["corpus_weak"])
+    judgment_input = build_sufficiency_judgment_input_from_runtime(
+        contract_projection=run_contract_projection,
+        evidence_ledger_projection=evidence_ledger_projection,
+        search_judgment_projection=search_judgment_projection,
+        search_judgment_history=run_kernel.state.search_judgment_history,
+        answer_contract_projection=runtime_scope["answer_contract_projection"],
+        final_evidence_count=len(final_top_evidence),
+        author_evidence_count=len(runtime_scope["author_evidence"]),
+        citation_eligible_candidate_count=len(runtime_scope["unique_source_urls"]),
+        conflicts_present=bool(scrutineer_flags),
+        scrutineer_flag_count=len(scrutineer_flags),
+        corpus_weak=corpus_weak,
+        weak_corpus_reason=(
+            runtime_scope["weak_corpus_recovery_skip_reason"]
+            or runtime_scope["corpus_state"]
+            if corpus_weak
+            else None
+        ),
+        synth_was_insufficient=bool(runtime_scope["synth_was_insufficient"]),
+        failure_card_show=runtime_scope["_pre_gate_failure_card_show"],
+        failure_card_reason=runtime_scope["_pre_gate_failure_card_reason"],
+        iterations_run=runtime_scope["iterations_run"],
+        max_iterations=runtime_scope["max_iterations"],
+        recovery_attempt_count=(
+            runtime_scope["_run_controller_mirror"].state.active_source_class_recovery_attempt_count
+        ),
+    )
+    action = run_kernel.authorize_sufficiency_judgment(
+        inputs={
+            "contract_id": run_contract_projection.get("contract_id"),
+            "candidate_count": evidence_ledger_projection.get("candidate_count"),
+            "requirement_count": evidence_ledger_projection.get(
+                "requirement_count"
+            ),
+            "search_judgment_decision": search_judgment_projection.get("decision"),
+            "final_evidence_count": len(final_top_evidence),
+            "smart_model_enabled": bool(smart_model_enabled),
+        }
+    )
+    result = execute_run_authority_sufficiency_judgment_action(
+        action,
+        judgment_input=judgment_input,
+        ask_model=ask_model if smart_model_enabled else None,
+        clean_json_response=clean_json_response,
+        smart_model_enabled=smart_model_enabled,
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        api_key=api_key,
+        effort=effort,
+        use_reasoning=use_reasoning,
+        measure_context_stage=measure_context_stage,
+    )
+    run_kernel.reduce(result.observation)
+    return RunSufficiencyJudgmentHandoff(
+        result=result,
+        projection=dict(run_kernel.state.sufficiency_judgment_projection),
+    )
+
+
 __all__ = [
+    "RunSufficiencyJudgmentHandoff",
     "RunSufficiencyJudgmentResult",
     "execute_run_authority_sufficiency_judgment_action",
+    "execute_sufficiency_judgment_handoff_from_scope",
 ]

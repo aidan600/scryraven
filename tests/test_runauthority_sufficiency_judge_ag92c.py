@@ -663,9 +663,10 @@ def test_static_guards_keep_sufficiency_brain_out_of_pipeline_orchestrator() -> 
     assert "SUFFICIENCY_JUDGMENT_DECIDE" in run_kernel
     assert "SUFFICIENCY_JUDGMENT_DECIDED" in run_kernel
     assert "sufficiency_judgment_projection" in run_kernel
-    assert "run_kernel.authorize_sufficiency_judgment(" in pipeline
-    assert "execute_run_authority_sufficiency_judgment_action(" in pipeline
-    assert "run_kernel.reduce(sufficiency_result.observation)" in pipeline
+    assert "execute_sufficiency_judgment_handoff_from_scope(" in pipeline
+    assert "run_kernel.authorize_sufficiency_judgment(" in runtime
+    assert "execute_run_authority_sufficiency_judgment_action(" in runtime
+    assert "run_kernel.reduce(result.observation)" in runtime
     assert "build_run_authority_sufficiency_prompt" not in pipeline
     assert "build_deterministic_sufficiency_judgment" not in pipeline
     assert "validate_or_repair_sufficiency_judgment" not in pipeline

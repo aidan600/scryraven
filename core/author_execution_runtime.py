@@ -46,6 +46,19 @@ class AuthorExecutionResult:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class AuthorExecutionHandoff:
+    """RunKernel-reduced AuthorExecutor result with legacy local values."""
+
+    result: AuthorExecutionResult
+    report: str
+    author_seconds: float
+    synthesis_seconds: float
+    quantitative_guard_stream_buffered: bool
+    quantitative_consistency_telemetry: Mapping[str, Any]
+    quantitative_consistency_guard_telemetry: Mapping[str, Any]
+
+
 def _hash_text(value: str) -> str:
     return sha256(str(value or "").encode("utf-8")).hexdigest()
 
@@ -213,7 +226,53 @@ def execute_author_action(
     )
 
 
+def execute_author_handoff_from_scope(
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+    *,
+    ask_model: AskModel,
+    system_prompt_registry: Mapping[str, str],
+    base_url: str | None,
+    api_key: str | None,
+    stream_display: StreamDisplay | None = None,
+) -> AuthorExecutionHandoff:
+    """Authorize, execute, and reduce the packet-derived AuthorExecutor handoff."""
+
+    action = run_kernel.authorize_author_execution(
+        inputs={
+            "packet_action_id": runtime_scope["final_answer_packet_action"].action_id,
+        }
+    )
+    economist_safety_telemetry = runtime_scope.get("economist_safety_telemetry") or {}
+    execution = execute_author_action(
+        action,
+        author_payload=runtime_scope["final_answer_author_payload"],
+        ask_model=ask_model,
+        system_prompt_registry=system_prompt_registry,
+        base_url=base_url,
+        api_key=api_key,
+        query=runtime_scope["query"],
+        quantitative_packet=economist_safety_telemetry.get("quantitative_packet"),
+        calculation_results=economist_safety_telemetry.get("calculation_results"),
+        stream_display=stream_display,
+    )
+    run_kernel.reduce(execution.observation)
+    return AuthorExecutionHandoff(
+        result=execution,
+        report=execution.report,
+        author_seconds=execution.author_seconds,
+        synthesis_seconds=execution.author_seconds,
+        quantitative_guard_stream_buffered=execution.stream_buffered,
+        quantitative_consistency_telemetry=execution.quantitative_consistency_telemetry,
+        quantitative_consistency_guard_telemetry=(
+            execution.quantitative_consistency_guard_telemetry
+        ),
+    )
+
+
 __all__ = [
+    "AuthorExecutionHandoff",
     "AuthorExecutionResult",
     "execute_author_action",
+    "execute_author_handoff_from_scope",
 ]

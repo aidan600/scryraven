@@ -55,6 +55,14 @@ class PostFinalSourceClassProjectionHandoff:
     runtime_active_source_class_recovery_lifecycle: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class PostFinalSourceClassRuntimeProjection:
+    """Post-final projection values plus reduced EvidenceLedger projection."""
+
+    handoff: PostFinalSourceClassProjectionHandoff
+    evidence_ledger_projection: dict[str, Any]
+
+
 def build_source_class_recovery_projection_handoff(
     *,
     all_passages: Iterable[Mapping[str, Any]] | None,
@@ -201,9 +209,78 @@ def build_post_final_source_class_projection_handoff(
     )
 
 
+def execute_post_final_source_class_projection_from_scope(
+    runtime_scope: Mapping[str, Any],
+    *,
+    logger: Any | None = None,
+    recommendation_recorder: Any,
+) -> PostFinalSourceClassRuntimeProjection:
+    """Build post-final projection, mirror it, and reduce observer facts."""
+
+    from core.evidence_ledger_lifecycle import (
+        reduce_post_final_source_obligations_into_evidence_ledger,
+    )
+
+    handoff = build_post_final_source_class_projection_handoff(
+        all_passages=runtime_scope["all_passages"],
+        final_evidence_bundle=runtime_scope["final_evidence_bundle"],
+        final_answer_source_ids=runtime_scope["final_answer_source_telemetry"].get(
+            "final_answer_source_ids_used"
+        ),
+        query=runtime_scope["query"],
+        current_date=runtime_scope["current_date"],
+        intent=runtime_scope["intent"],
+        report_type=runtime_scope["report_type"],
+        query_type=runtime_scope["query_type"],
+        core_topic=runtime_scope["core_topic"],
+        primary_entity=runtime_scope["primary_entity"],
+        anchor_packet=runtime_scope["anchor_packet_telemetry"],
+        active_source_class_recovery_lifecycle=runtime_scope[
+            "active_source_class_recovery_lifecycle"
+        ],
+        logger=logger,
+    )
+    runtime_scope["active_source_class_recovery_lifecycle"].update(
+        handoff.source_class_projection_handoff.recovery_source_quality_diagnostics
+    )
+    source_tier_exec = handoff.source_tier_exec
+    source_domain_exec = handoff.source_domain_exec
+    recommendation_recorder(
+        runtime_scope["_run_controller_mirror"],
+        source_class_recovery_telemetry=handoff.source_class_recovery_telemetry,
+        source_class_evidence_signals={
+            "source_tier_counts": source_tier_exec["source_tier_counts"],
+            "source_domain_counts": source_domain_exec["source_domain_counts"],
+            "top_source_domains": source_domain_exec["top_source_domains"],
+            "unique_source_domain_count": source_domain_exec["unique_source_domain_count"],
+            "on_domain_source_count": source_domain_exec["on_domain_source_count"],
+            "off_domain_source_count": source_domain_exec["off_domain_source_count"],
+            "official_evidence_found": source_tier_exec["official_evidence_found"],
+            "community_signal_found": source_tier_exec["community_signal_found"],
+            "low_trust_sources_found": source_tier_exec["low_trust_sources_found"],
+            "pollution_detected": source_tier_exec["pollution_detected"],
+        },
+    )
+    evidence_ledger_projection = reduce_post_final_source_obligations_into_evidence_ledger(
+        run_kernel=runtime_scope["run_kernel"],
+        run_id=runtime_scope["run_id"],
+        source_class_recovery_telemetry={
+            **handoff.runtime_source_class_recovery_telemetry,
+            **handoff.source_class_observability_telemetry,
+        },
+        final_top_evidence=runtime_scope["final_top_evidence"],
+    )
+    return PostFinalSourceClassRuntimeProjection(
+        handoff=handoff,
+        evidence_ledger_projection=evidence_ledger_projection,
+    )
+
+
 __all__ = [
     "PostFinalSourceClassProjectionHandoff",
+    "PostFinalSourceClassRuntimeProjection",
     "SourceClassRecoveryProjectionHandoff",
     "build_post_final_source_class_projection_handoff",
+    "execute_post_final_source_class_projection_from_scope",
     "build_source_class_recovery_projection_handoff",
 ]

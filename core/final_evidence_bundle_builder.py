@@ -67,6 +67,19 @@ class FinalEvidenceBundle:
     recovered_visibility_trace: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class FinalEvidenceRuntimeHandoff:
+    """FinalEvidenceBundle plus compatibility locals consumed downstream."""
+
+    bundle: FinalEvidenceBundle
+    final_top_evidence: list[Passage]
+    unique_source_urls: dict[str, int]
+    ordered_sources: list[str]
+    evidence_block: str
+    cached_prefix: str
+    evidence_ledger_projection: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class FinalEvidenceBundleInputs:
     """Inputs for rebuilding the final evidence bundle without policy decisions."""
@@ -279,6 +292,119 @@ def build_final_source_telemetry_inputs(
     )
 
 
+def final_evidence_bundle_inputs_from_scope(
+    runtime_scope: Mapping[str, Any],
+    *,
+    filter_top_evidence: FilterTopEvidence,
+    is_plausible_domain: PlausibleDomainPredicate,
+    recovered_evidence_visibility: RecoveredEvidenceVisibility | None = None,
+) -> FinalEvidenceBundleInputs:
+    """Build final bundle inputs from the whitelisted pipeline scope."""
+
+    complexity = runtime_scope["complexity"]
+    max_domain_chunks = 4 if complexity == "high" else (3 if complexity == "medium" else 2)
+    return FinalEvidenceBundleInputs(
+        all_passages=runtime_scope["all_passages"],
+        top_chunks=runtime_scope["top_chunks"],
+        max_domain_chunks=max_domain_chunks,
+        filter_top_evidence=filter_top_evidence,
+        is_plausible_domain=is_plausible_domain,
+        current_date=runtime_scope["current_date"],
+        query=runtime_scope["query"],
+        active_source_class_recovery_lifecycle=runtime_scope.get(
+            "active_source_class_recovery_lifecycle"
+        ),
+        recovered_evidence_visibility=recovered_evidence_visibility,
+    )
+
+
+def _runtime_handoff(
+    bundle: FinalEvidenceBundle,
+    *,
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
+) -> FinalEvidenceRuntimeHandoff:
+    return FinalEvidenceRuntimeHandoff(
+        bundle=bundle,
+        final_top_evidence=bundle.final_top_evidence,
+        unique_source_urls=bundle.unique_source_urls,
+        ordered_sources=bundle.ordered_sources,
+        evidence_block=bundle.evidence_block,
+        cached_prefix=bundle.cached_prefix,
+        evidence_ledger_projection=dict(evidence_ledger_projection or {}),
+    )
+
+
+def build_final_evidence_runtime_handoff_from_scope(
+    runtime_scope: Mapping[str, Any],
+    *,
+    filter_top_evidence: FilterTopEvidence,
+    is_plausible_domain: PlausibleDomainPredicate,
+    recovered_evidence_visibility: RecoveredEvidenceVisibility | None = None,
+) -> FinalEvidenceRuntimeHandoff:
+    """Build the final bundle and reduce final-evidence custody into EvidenceLedger."""
+
+    from core.evidence_ledger_lifecycle import (
+        reduce_final_evidence_bundle_into_evidence_ledger,
+        reduce_run_contract_requirements_into_evidence_ledger,
+    )
+
+    bundle = build_final_evidence_bundle(
+        final_evidence_bundle_inputs_from_scope(
+            runtime_scope,
+            filter_top_evidence=filter_top_evidence,
+            is_plausible_domain=is_plausible_domain,
+            recovered_evidence_visibility=recovered_evidence_visibility,
+        )
+    )
+    run_kernel = runtime_scope["run_kernel"]
+    run_id = runtime_scope["run_id"]
+    reduce_run_contract_requirements_into_evidence_ledger(
+        run_kernel=run_kernel,
+        run_id=run_id,
+        run_contract_projection=runtime_scope["run_contract_projection"],
+        observation_id_suffix="run-contract",
+        authorization_observation_source="run_authority_contract",
+    )
+    evidence_ledger_projection = reduce_final_evidence_bundle_into_evidence_ledger(
+        run_kernel=run_kernel,
+        run_id=run_id,
+        final_top_evidence=bundle.final_top_evidence,
+    )
+    return _runtime_handoff(
+        bundle,
+        evidence_ledger_projection=evidence_ledger_projection,
+    )
+
+
+def final_evidence_handoff_from_legacy_review(
+    handoff: FinalEvidenceRuntimeHandoff,
+    legacy_review_outcome: Any,
+) -> FinalEvidenceRuntimeHandoff:
+    """Preserve legacy-review rebinding of local final-evidence variables."""
+
+    return FinalEvidenceRuntimeHandoff(
+        bundle=handoff.bundle,
+        final_top_evidence=legacy_review_outcome.final_top_evidence,
+        unique_source_urls=legacy_review_outcome.unique_source_urls,
+        ordered_sources=(
+            legacy_review_outcome.ordered_sources
+            if legacy_review_outcome.ordered_sources is not None
+            else handoff.ordered_sources
+        ),
+        evidence_block=(
+            legacy_review_outcome.evidence_block
+            if legacy_review_outcome.evidence_block is not None
+            else handoff.evidence_block
+        ),
+        cached_prefix=(
+            legacy_review_outcome.cached_prefix
+            if legacy_review_outcome.cached_prefix is not None
+            else handoff.cached_prefix
+        ),
+        evidence_ledger_projection=handoff.evidence_ledger_projection,
+    )
+
+
 def build_final_evidence_bundle(
     inputs: FinalEvidenceBundleInputs,
     *,
@@ -338,6 +464,7 @@ def build_final_evidence_bundle(
 __all__ = [
     "FinalEvidenceBundle",
     "FinalEvidenceBundleInputs",
+    "FinalEvidenceRuntimeHandoff",
     "FinalEvidencePostFinalSourceClassHandoff",
     "FinalEvidenceSourceIdentity",
     "FinalEvidenceSourceTelemetry",
@@ -347,8 +474,11 @@ __all__ = [
     "build_cached_prefix",
     "build_evidence_block",
     "build_final_evidence_bundle",
+    "build_final_evidence_runtime_handoff_from_scope",
     "build_final_source_telemetry_inputs",
     "build_ordered_sources",
+    "final_evidence_bundle_inputs_from_scope",
+    "final_evidence_handoff_from_legacy_review",
     "post_final_source_class_handoff_from_final_evidence_bundle",
     "slice_author_evidence",
 ]

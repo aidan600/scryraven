@@ -80,6 +80,15 @@ class FinalAuthorityCitationSurvivalObservation:
     final_answer_source_telemetry: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class FinalAuthorityAuthorEvidenceHandoff:
+    """Author evidence values after selected-authority visibility repair."""
+
+    author_evidence: list[dict[str, Any]]
+    author_evidence_block: str
+    diagnostics: dict[str, Any]
+
+
 def attach_selected_authority_evidence_to_final_bundle(
     bundle: Any,
     *,
@@ -101,6 +110,28 @@ def attach_selected_authority_evidence_to_final_bundle(
     bundle.author_evidence = list(visibility.author_evidence)
     bundle.author_evidence_block = build_author_evidence_block(bundle.author_evidence)
     return visibility
+
+
+def attach_selected_authority_evidence_handoff(
+    bundle: Any,
+    *,
+    precision_count: int,
+    active_source_class_recovery_lifecycle: dict[str, Any],
+) -> FinalAuthorityAuthorEvidenceHandoff:
+    """Attach selected authority evidence and record the existing lifecycle trace."""
+
+    visibility = attach_selected_authority_evidence_to_final_bundle(
+        bundle,
+        precision_count=precision_count,
+    )
+    active_source_class_recovery_lifecycle[
+        "final_authority_author_evidence_visibility"
+    ] = dict(visibility.diagnostics)
+    return FinalAuthorityAuthorEvidenceHandoff(
+        author_evidence=list(bundle.author_evidence),
+        author_evidence_block=str(bundle.author_evidence_block or ""),
+        diagnostics=dict(visibility.diagnostics),
+    )
 
 
 def ensure_selected_authority_evidence_visible_to_author(
@@ -140,6 +171,26 @@ def ensure_selected_authority_evidence_visible_to_author(
         author_evidence=tuple(existing),
         appended_authority_evidence=tuple(appended),
         diagnostics=diagnostics,
+    )
+
+
+def build_post_author_citation_survival_handoff(
+    *,
+    report: str,
+    economist_safety_telemetry: Mapping[str, Any] | None,
+    final_evidence_bundle: Any,
+) -> FinalAuthorityCitationSurvivalObservation:
+    """Build final-answer source telemetry and selected-authority survival facts."""
+
+    from core.post_author_output_projection import _final_answer_source_citation_telemetry
+
+    final_answer_source_telemetry = _final_answer_source_citation_telemetry(
+        report,
+        dict(economist_safety_telemetry or {}),
+    )
+    return build_final_authority_citation_survival_observation_from_bundle(
+        final_evidence_bundle,
+        final_answer_source_telemetry=final_answer_source_telemetry,
     )
 
 
@@ -529,11 +580,14 @@ __all__ = [
     "STATUS_SELECTED_AUTHORITY_UNCITEABLE",
     "STATUS_SURVIVED",
     "AuthorEvidenceVisibilityResult",
+    "FinalAuthorityAuthorEvidenceHandoff",
     "FinalAuthorityCitationSurvivalObservation",
     "apply_authority_citation_survival_outcome_guard",
+    "attach_selected_authority_evidence_handoff",
     "attach_selected_authority_evidence_to_final_bundle",
     "build_final_authority_citation_survival_observation_from_bundle",
     "build_final_authority_citation_survival_projection",
+    "build_post_author_citation_survival_handoff",
     "ensure_selected_authority_evidence_visible_to_author",
     "final_authority_citation_survival_trace_fields",
 ]
