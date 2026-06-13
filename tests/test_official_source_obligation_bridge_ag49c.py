@@ -20,6 +20,7 @@ from core.runtime_trace_projection_assembly import (
 _ROOT = Path(__file__).resolve().parents[1]
 _MODULE_PATH = _ROOT / "core" / "official_source_obligation_bridge.py"
 _PIPELINE_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
+_PROJECTION_HANDOFF_PATH = _ROOT / "core" / "source_class_recovery_projection_handoff.py"
 
 
 def _bridge(
@@ -321,4 +322,7 @@ def test_ag49c_static_guards_keep_protected_surfaces_out() -> None:
     }
     assert forbidden_surface_markers.isdisjoint(source.casefold().split())
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
-    assert "apply_official_source_obligation_bridge" in pipeline_source
+    projection_handoff_source = _PROJECTION_HANDOFF_PATH.read_text(encoding="utf-8")
+    assert "apply_official_source_obligation_bridge" not in pipeline_source
+    assert "build_post_final_source_class_projection_handoff" in pipeline_source
+    assert "apply_official_source_obligation_bridge" in projection_handoff_source

@@ -2,6 +2,10 @@
 
 Status: superseded historical inventory.
 
+Status note, AG-95E: source-class dispatch authority is
+`authority_lifecycle.recovery_action`; this file is historical doctrine, not
+runner authority.
+
 AG-95A was the broad demolition map for source-class recovery and final-custody
 authority debt after AG-94H. Its useful current guidance has been absorbed into
 the RunAuthority guide, AG-95C through AG-95M, and the compact AG-95N/O/P
