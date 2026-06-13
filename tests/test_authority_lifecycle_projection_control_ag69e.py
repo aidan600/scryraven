@@ -316,7 +316,8 @@ def test_ag69e_static_guard_keeps_projection_control_out_of_runtime_authority() 
     assert "recovered_evidence_visibility=apply_controller_recovered_evidence_visibility" in (
         pipeline_source
     )
-    assert "build_final_evidence_bundle(" in pipeline_source
+    assert "build_final_evidence_runtime_handoff_from_scope(" in pipeline_source
+    assert "build_final_evidence_bundle(" not in pipeline_source
     assert "authority_lifecycle_compatibility_fields" not in pipeline_source
     assert "standard mileage rate" not in pipeline_source.casefold()
     assert "taxable maximum" not in pipeline_source.casefold()

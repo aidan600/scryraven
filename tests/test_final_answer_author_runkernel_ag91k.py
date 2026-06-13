@@ -330,19 +330,19 @@ def test_static_guards_for_ag91k_final_answer_authority_migration() -> None:
     assert "ask_model(" in author_runtime
     assert "author_payload.prompt" in author_runtime
 
-    assert "run_kernel.authorize_final_answer_packet_prepare(" in pipeline
-    assert "execute_final_answer_packet_prepare_action_from_scope(" in pipeline
-    assert "run_kernel.reduce(final_answer_author_runtime.observation)" in pipeline
-    assert "run_kernel.authorize_author_execution(" in pipeline
-    assert "execute_author_action(" in pipeline
-    assert "run_kernel.reduce(author_execution.observation)" in pipeline
+    assert "prepare_final_answer_packet_author_handoff_from_scope(" in pipeline
+    assert "run_kernel.authorize_final_answer_packet_prepare(" in packet_runtime
+    assert "run_kernel.reduce(preparation.observation)" in packet_runtime
+    assert "execute_author_handoff_from_scope(" in pipeline
+    assert "run_kernel.authorize_author_execution(" in author_runtime
+    assert "run_kernel.reduce(execution.observation)" in author_runtime
     assert "ask_model(\n        author_prompt, _author_system," not in pipeline
     assert "select_author_system_prompt(" not in pipeline
     assert "_post_analyst_author_system_prompt_key" in pipeline
 
     author_region = pipeline[
-        pipeline.index("final_answer_packet_action =")
-        : pipeline.index("final_answer_source_telemetry =")
+        pipeline.index("final_answer_packet_handoff =")
+        : pipeline.index("authority_citation_survival =")
     ]
     assert "ask_model(" not in author_region
     assert "if strategy in (\"Fast\", \"Balanced\")" not in author_region

@@ -298,6 +298,7 @@ def test_static_protected_import_guard_for_citation_source_contract():
 
 def test_orchestrator_authority_guard_wires_citation_contract_additively():
     pipeline = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
+    post_author = (ROOT / "core" / "post_author_output_projection.py").read_text()
     helper = (ROOT / "core" / "final_answer_runtime_assembly.py").read_text()
     contract = CONTRACT.read_text()
 
@@ -307,7 +308,7 @@ def test_orchestrator_authority_guard_wires_citation_contract_additively():
     assert "citation_source_handoff_trace_fragment" in pipeline
     assert "build_evidence_block(" not in pipeline
     assert "next_source_id" not in pipeline
-    assert "final_answer_source_ids_used" in pipeline
+    assert "final_answer_source_ids_used" in post_author
     assert "ask_model(" not in contract
     assert "DEFAULT_SYSTEM" not in contract
 
@@ -315,6 +316,7 @@ def test_orchestrator_authority_guard_wires_citation_contract_additively():
 def test_protected_surface_guard_and_no_live_product_path_guard():
     contract = CONTRACT.read_text()
     pipeline = PIPELINE.read_text()
+    post_author = (ROOT / "core" / "post_author_output_projection.py").read_text()
 
     forbidden_contract_calls = (
         "ask_model(",
@@ -329,7 +331,8 @@ def test_protected_surface_guard_and_no_live_product_path_guard():
     )
     assert [call for call in forbidden_contract_calls if call in contract] == []
     helper = (ROOT / "core" / "final_answer_runtime_assembly.py").read_text()
-    assert "_final_answer_source_citation_telemetry" in pipeline
+    assert "_final_answer_source_citation_telemetry" not in pipeline
+    assert "_final_answer_source_citation_telemetry" in post_author
     assert "build_packet_derived_citation_source_handoff_state" in helper
     assert "build_citation_source_handoff_state" not in pipeline
 

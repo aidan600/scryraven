@@ -409,11 +409,15 @@ def test_final_adapter_uses_canonical_sufficiency_over_legacy_readiness_fields()
 
 def test_pipeline_orchestrator_static_guards_for_ag92e_extraction() -> None:
     pipeline = (ROOT / "core" / "pipeline_orchestrator.py").read_text()
+    final_evidence = (ROOT / "core" / "final_evidence_bundle_builder.py").read_text()
+    sufficiency_runtime = (ROOT / "core" / "run_authority_sufficiency_runtime.py").read_text()
 
     assert "build_search_judgment_input_from_runtime(" in pipeline
-    assert "build_sufficiency_judgment_input_from_runtime(" in pipeline
+    assert "execute_sufficiency_judgment_handoff_from_scope(" in pipeline
+    assert "build_sufficiency_judgment_input_from_runtime(" in sufficiency_runtime
     assert "reduce_run_contract_requirements_into_evidence_ledger(" in pipeline
-    assert "reduce_final_evidence_bundle_into_evidence_ledger(" in pipeline
+    assert "reduce_final_evidence_bundle_into_evidence_ledger(" not in pipeline
+    assert "reduce_final_evidence_bundle_into_evidence_ledger(" in final_evidence
     assert "RunSearchJudgmentInput(" not in pipeline
     assert "RunSufficiencyJudgmentInput(" not in pipeline
     assert "build_evidence_ledger_observation_from_runtime" not in pipeline

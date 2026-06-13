@@ -281,7 +281,8 @@ def test_ag76c_op_orchestrator_delegates_packaging_and_rt_attachment() -> None:
     session_output_helper_source = SESSION_OUTPUT_HELPER_PATH.read_text(encoding="utf-8")
     pe_helper_source = PE_HELPER_PATH.read_text(encoding="utf-8")
 
-    assert "build_session_payload(" in source
+    assert "build_final_handoff_output_packaging_from_scope(" in source
+    assert "build_session_payload(" in post_author_source
     assert "build_execution_log_entry_projection(" in post_author_source
     assert "build_execution_log_entry(" in session_output_helper_source
     assert "build_sqlite_row_payload(" not in source

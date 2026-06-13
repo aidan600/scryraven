@@ -16,8 +16,15 @@ from core.conflict_state_producer import (
 )
 from core.economist_handoff_contract import build_economist_handoff_state
 from core.final_answer_runtime_assembly import assemble_final_answer_citation_runtime_from_scope
-from core.outcome_persistence_packaging import build_final_output_metadata, build_run_outcome
+from core.final_evidence_bundle_builder import build_final_source_telemetry_inputs
+from core.outcome_persistence_packaging import (
+    build_final_output_metadata,
+    build_pipeline_config,
+    build_run_outcome,
+    build_session_payload,
+)
 from core.provider_diagnostics import provider_diagnostics_payload
+from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
 from core.run_logging import current_code_version_metadata
 from core.runtime_trace_export_attachment import attach_runtime_trace_export_compatibility_payloads
 from core.scrutineer_remediation_runtime_handoff import (
@@ -66,6 +73,15 @@ class PostAuthorOutputPackaging:
     execution_trace: dict[str, Any]
     output_word_count: int
     execution_log_entry: dict[str, Any]
+
+@dataclass(frozen=True, slots=True)
+class FinalHandoffOutputPackaging:
+    final_source_telemetry_inputs: Any
+    pipeline_config_payload: dict[str, Any]
+    new_session: dict[str, Any]
+    queries_by_iteration: Mapping[int, Sequence[str]]
+    queries_per_iter: dict[str, Sequence[str]]
+    disambiguation_queries_per_iter: dict[str, Sequence[str]]
 
 
 def _extract_final_answer_source_ids(report: str) -> list[str]:
@@ -244,6 +260,102 @@ def _answer_contract_compatibility_ledger_projection(
         ] = True
         filtered["compatibility"] = compatibility
     return filtered
+
+
+def build_final_handoff_output_packaging_from_scope(
+    runtime_values: Mapping[str, Any],
+    *,
+    metadata_recorder: Any,
+    final_evidence_snapshot_recorder: Any,
+    stage_ledger_recorder: Any,
+) -> FinalHandoffOutputPackaging:
+    """Package final source telemetry, session payload, and ledger mirror facts."""
+
+    v = runtime_values
+    final_source_telemetry_inputs = build_final_source_telemetry_inputs(
+        final_top_evidence=v["final_top_evidence"],
+        unique_source_urls=v["unique_source_urls"],
+        ordered_sources=v["ordered_sources"],
+        seen_urls=list(v["seen_urls"]),
+        collected_images=list(v["collected_images"]),
+        final_answer_source_telemetry=v["final_answer_source_telemetry"],
+    )
+    metadata_recorder(
+        v["_run_controller_mirror"],
+        session_id=v["session_id"],
+        run_id=v["run_id"],
+        query=v["query"],
+        mode=v["strategy"],
+        current_date=v["current_date"],
+        core_topic=v["core_topic"],
+        intent=v["intent"],
+        complexity=v["complexity"],
+    )
+    mirror = v["_run_controller_mirror"]
+    retrieval_loop_contract_state = v["retrieval_loop_contract_state"]
+    router_query_preparation_contract = v["router_query_preparation_contract"]
+    mirror.state.route_fields["router_query_preparation_contract"] = (
+        router_query_preparation_contract.to_controller_state()
+    )
+    if retrieval_loop_contract_state is not None:
+        mirror.state.route_fields[RETRIEVAL_LOOP_TRACE_KEY] = (
+            retrieval_loop_contract_state.to_controller_state()
+        )
+    mirror.state.trace_fields.update(router_query_preparation_contract.to_trace_fragment())
+    mirror.state.trace_fields.update(v["query_authority"].to_trace_fragment())
+    mirror.state.trace_fields.update(v["run_kernel"].to_trace_fragment())
+    if retrieval_loop_contract_state is not None:
+        mirror.state.trace_fields.update(retrieval_loop_contract_state.to_trace_fragment())
+    final_evidence_snapshot_recorder(
+        mirror,
+        **final_source_telemetry_inputs.final_evidence_snapshot_payload,
+    )
+    pipeline_config_payload = build_pipeline_config(
+        intent=v["intent"],
+        complexity=v["complexity"],
+        search_depth=v["search_depth"],
+        mode=v["strategy"],
+    )
+    run_history_out = list(v["prior_run_history"])
+    if v["prior_snapshot_for_history"]:
+        run_history_out = run_history_out + [v["prior_snapshot_for_history"]]
+    new_session = build_session_payload(
+        session_id=v["session_id"],
+        run_id=v["run_id"],
+        session_title=v["session_title"],
+        current_date=v["current_date"],
+        query=v["query"],
+        core_topic=v["core_topic"],
+        report=v["report"],
+        final_top_evidence=v["final_top_evidence"],
+        seen_urls=list(v["seen_urls"]),
+        collected_images=list(v["collected_images"]),
+        mode=v["strategy"],
+        pipeline_config=pipeline_config_payload,
+        run_history_out=run_history_out,
+        failure_card_payload=v["failure_card_payload"],
+    )
+    queries_by_iteration = v["query_authority"].queries_by_iteration()
+    queries_per_iter = {str(k): item for k, item in (queries_by_iteration or {}).items()}
+    disambiguation_queries_per_iter = {
+        str(k): item for k, item in (v["disambiguation_queries_by_iteration"] or {}).items()
+    }
+    stage_ledger_recorder(
+        mirror,
+        queries_by_iteration=queries_by_iteration,
+        disambiguation_queries_by_iteration=v["disambiguation_queries_by_iteration"],
+        providers_by_iteration=v["providers_by_iteration"],
+        provider_diagnostics=v["provider_diagnostics"],
+        retrieval_pass_records=v["retrieval_pass_records"],
+    )
+    return FinalHandoffOutputPackaging(
+        final_source_telemetry_inputs=final_source_telemetry_inputs,
+        pipeline_config_payload=pipeline_config_payload,
+        new_session=new_session,
+        queries_by_iteration=queries_by_iteration,
+        queries_per_iter=queries_per_iter,
+        disambiguation_queries_per_iter=disambiguation_queries_per_iter,
+    )
 
 
 def build_post_author_trace_packaging_from_scope(

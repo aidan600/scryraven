@@ -442,7 +442,8 @@ def test_ag69d_static_guard_keeps_pipeline_and_protected_surfaces_closed() -> No
     assert "recovered_evidence_visibility=apply_controller_recovered_evidence_visibility" in (
         pipeline_source
     )
-    assert "build_final_evidence_bundle(" in pipeline_source
+    assert "build_final_evidence_runtime_handoff_from_scope(" in pipeline_source
+    assert "build_final_evidence_bundle(" not in pipeline_source
     assert "authority_lifecycle_candidate_visibility" not in pipeline_source
     assert "standard mileage rate" not in pipeline_source.casefold()
     assert "taxable maximum" not in pipeline_source.casefold()

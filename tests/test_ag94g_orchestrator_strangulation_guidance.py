@@ -2,9 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.pipeline_orchestrator import (
-    _final_answer_source_citation_telemetry as orchestrator_source_telemetry,
-)
 from core.post_author_output_projection import (
     _final_answer_source_citation_telemetry as projection_source_telemetry,
 )
@@ -89,9 +86,7 @@ def test_current_state_is_redirect_stub_and_history_is_preserved() -> None:
     assert "Controller decides, orchestrator executes" in historical
 
 
-def test_final_answer_source_telemetry_extraction_preserves_compat_alias() -> None:
-    assert orchestrator_source_telemetry is projection_source_telemetry
-
+def test_final_answer_source_telemetry_extraction_owner_preserves_behavior() -> None:
     telemetry = projection_source_telemetry(
         "Alpha [[9]](https://example.test/a) and beta [[2]](https://example.test/b).",
         {"quantitative_packet": {"source_ids_used": ["2", "8"]}},

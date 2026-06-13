@@ -324,5 +324,6 @@ def test_ag49c_static_guards_keep_protected_surfaces_out() -> None:
     pipeline_source = _PIPELINE_PATH.read_text(encoding="utf-8")
     projection_handoff_source = _PROJECTION_HANDOFF_PATH.read_text(encoding="utf-8")
     assert "apply_official_source_obligation_bridge" not in pipeline_source
-    assert "build_post_final_source_class_projection_handoff" in pipeline_source
+    assert "execute_post_final_source_class_projection_from_scope" in pipeline_source
+    assert "build_post_final_source_class_projection_handoff" in projection_handoff_source
     assert "apply_official_source_obligation_bridge" in projection_handoff_source

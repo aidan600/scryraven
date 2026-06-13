@@ -555,6 +555,7 @@ def test_kernel_trace_projection_derives_from_run_state() -> None:
 
 def test_pipeline_orchestrator_consumes_run_kernel_for_migrated_stages() -> None:
     source = PIPELINE.read_text()
+    post_author_source = (ROOT / "core" / "post_author_output_projection.py").read_text()
     assert "from core.run_kernel import QUERY_PRODUCTION_STAGE, RunKernel" in source
     assert "run_kernel = RunKernel.start(" in source
     assert "run_kernel.authorize_route_request(" in source
@@ -573,7 +574,7 @@ def test_pipeline_orchestrator_consumes_run_kernel_for_migrated_stages() -> None
     assert "run_kernel.reduce(main_retrieval_outcome.observation)" in source
     assert "run_kernel.authorize_retrieval_stop_checkpoint(" in source
     assert "decide_retrieval_stop_with_kernel_action(" in source
-    assert "run_kernel.to_trace_fragment()" in source
+    assert 'v["run_kernel"].to_trace_fragment()' in post_author_source
 
 
 def test_migrated_stages_are_not_purely_orchestrator_local() -> None:

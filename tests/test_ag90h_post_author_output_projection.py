@@ -271,16 +271,18 @@ def test_ag90h_static_seam_guard_for_post_author_helper():
         "core.search_providers",
         "core.prompts",
         "core.retrieval_dispatch_runtime",
-        "core.final_evidence_bundle_builder",
         "core.persistence_side_effects",
     )
     for import_name in forbidden_imports:
         assert import_name not in source
+    assert "build_final_source_telemetry_inputs(" in source
+    assert "build_final_evidence_bundle(" not in source
 
 
 def test_ag90h_orchestrator_uses_bounded_post_author_projection_seam():
     source = ORCHESTRATOR.read_text()
     assert "build_post_author_trace_packaging_from_scope" in source
     assert "build_post_author_output_packaging_from_scope" in source
+    assert "build_final_handoff_output_packaging_from_scope" in source
     assert "return build_run_outcome_from_scope(locals())" in source
     assert "{**globals(), **locals()}" not in source

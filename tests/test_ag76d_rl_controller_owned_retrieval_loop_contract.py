@@ -244,6 +244,7 @@ def test_pass_result_summary_is_additive_controller_visible_trace():
 def test_orchestrator_handoff_static_guard():
     text = PIPELINE.read_text()
     loop_section = text[text.index("# Main retrieval loop") : text.index("if iteration == 1:", text.index("# Main retrieval loop"))]
+    session_projection_text = SESSION_OUTPUT_PROJECTION.read_text()
 
     helper_text = (ROOT / "core" / "retrieval_dispatch_runtime.py").read_text()
     assert "execute_main_retrieval_pass_from_scope" in loop_section
@@ -256,7 +257,7 @@ def test_orchestrator_handoff_static_guard():
     assert "provider_plan.record_main_retrieval" not in loop_section
     assert "provider_plan.record_main_retrieval" in (ROOT / "core" / "retrieval_scheduler.py").read_text()
     assert "process_search_queries(" not in loop_section
-    assert "retrieval_loop_contract_state.to_trace_fragment()" in text
+    assert "retrieval_loop_contract_state.to_trace_fragment()" in session_projection_text
 
 
 def test_protected_surface_guard_no_live_or_prompt_surfaces_opened():
@@ -282,17 +283,18 @@ def test_protected_surface_guard_no_live_or_prompt_surfaces_opened():
 
 def test_trace_compatibility_adds_contract_without_removing_existing_fields():
     text = PIPELINE.read_text() + SESSION_OUTPUT_PROJECTION.read_text()
+    session_projection_text = SESSION_OUTPUT_PROJECTION.read_text()
 
     for existing in [
         '"pass_providers"',
         '"queries_per_iteration"',
         "RETRIEVAL_BATCH_DISPATCH_TRACE_KEY",
-        "router_query_preparation_contract.to_trace_fragment()",
+        'v["router_query_preparation_contract"].to_trace_fragment()',
         "retrieval_stop_active_telemetry",
         "retrieval_stop_shadow_telemetry",
     ]:
         assert existing in text
-    assert "retrieval_loop_contract_state.to_trace_fragment()" in text
+    assert "retrieval_loop_contract_state.to_trace_fragment()" in session_projection_text
     trace = _state().to_trace_fragment()[RETRIEVAL_LOOP_TRACE_KEY]
     assert trace["final_answer_behavior_unchanged"] is True
     assert trace["mechanical_runner_boundary"] is True
