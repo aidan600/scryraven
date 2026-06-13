@@ -6,6 +6,7 @@ ranking, prompts, models, persistence, or orchestration code.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any
@@ -58,6 +59,28 @@ LOWER_PRIORITY_PROTECTED_CLASSES = frozenset(
 )
 DISQUALIFYING_QUALITY_STATUSES = frozenset(
     {"secondary_only", "no_relevant_sources", "classification_mismatch"}
+)
+_ANSWER_BEARING_OBLIGATION_PATTERNS = (
+    r"\b(?:filing\s+fee|fee\s+schedule|application\s+fee|fees?)\b",
+    r"\b(?:rate|rates|standard\s+mileage)\b",
+    r"\b(?:taxable\s+maximum|wage\s+base|contribution\s+and\s+benefit\s+base)\b",
+    r"\b(?:threshold|limit|maximum)\b",
+    r"\b(?:form\s+[a-z]{1,4}[-\s]?\d{2,5}[a-z]?|"
+    r"[a-z]{1,4}-\d{2,5}[a-z]?)\b",
+)
+_FEE_PATTERNS = (
+    r"\b(?:filing\s+fee|fee\s+schedule|application\s+fee|fees?)\b",
+)
+_RATE_PATTERNS = (
+    r"\b(?:rate|rates|standard\s+mileage)\b",
+)
+_THRESHOLD_PATTERNS = (
+    r"\b(?:taxable\s+maximum|wage\s+base|contribution\s+and\s+benefit\s+base|"
+    r"threshold|limit|maximum)\b",
+)
+_FORM_ID_RE = re.compile(
+    r"\b(?:form\s+([a-z]{1,4})[-\s]?(\d{2,5}[a-z]?)|"
+    r"([a-z]{1,4})-(\d{2,5}[a-z]?))\b"
 )
 
 
@@ -264,6 +287,120 @@ def _historical_or_archival_blocks_current_gap(
     return any(marker in text for marker in historical_markers) and not any(
         marker in text for marker in current_markers
     )
+
+
+def _lifecycle_obligation_text(lifecycle_trace: Mapping[str, Any]) -> str:
+    values: list[str] = []
+    for key in (
+        "active_source_class_recovery_queries",
+        "query",
+        "query_preview",
+        "core_topic",
+        "primary_entity",
+    ):
+        value = lifecycle_trace.get(key)
+        if isinstance(value, (list, tuple, set)):
+            values.extend(_compact_text(item) for item in value)
+        else:
+            values.append(_compact_text(value))
+    authority = _authority_lifecycle(lifecycle_trace)
+    if authority is not None:
+        action = authority.get("recovery_action")
+        if isinstance(action, Mapping):
+            queries = action.get("queries")
+            if isinstance(queries, (list, tuple, set)):
+                values.extend(_compact_text(item) for item in queries)
+    return " ".join(value for value in values if value).casefold()
+
+
+def _source_search_text(source: Mapping[str, Any]) -> str:
+    return " ".join(
+        _compact_text(source.get(key))
+        for key in ("url", "title", "text", "snippet")
+        if _compact_text(source.get(key))
+    ).casefold()
+
+
+def _matches_any_pattern(text: str, patterns: Iterable[str]) -> bool:
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def _normalized_form_ids(text: str) -> tuple[str, ...]:
+    out: list[str] = []
+    for explicit_prefix, explicit_number, hyphen_prefix, hyphen_number in (
+        _FORM_ID_RE.findall(text)
+    ):
+        prefix = explicit_prefix or hyphen_prefix
+        number = explicit_number or hyphen_number
+        form_id = f"{prefix}-{number}".casefold()
+        if form_id not in out:
+            out.append(form_id)
+    return tuple(out)
+
+
+def _contains_form_id(text: str, form_id: str) -> bool:
+    prefix, _, number = form_id.partition("-")
+    if not prefix or not number:
+        return False
+    return bool(
+        re.search(
+            rf"\b(?:form\s+)?{re.escape(prefix)}[-\s]?{re.escape(number)}\b",
+            text,
+        )
+    )
+
+
+def _specific_answer_bearing_required(
+    *,
+    lifecycle_trace: Mapping[str, Any],
+    missing_source_class: str | None,
+) -> bool:
+    specific_classes = CURRENT_SOURCE_CLASS_GAPS | {"legal_or_regulatory_text"}
+    if missing_source_class not in specific_classes:
+        return False
+    obligation_text = _lifecycle_obligation_text(lifecycle_trace)
+    return _matches_any_pattern(obligation_text, _ANSWER_BEARING_OBLIGATION_PATTERNS)
+
+
+def _source_is_answer_bearing_for_obligation(
+    source: Mapping[str, Any],
+    *,
+    lifecycle_trace: Mapping[str, Any],
+    missing_source_class: str | None,
+) -> bool:
+    if not _specific_answer_bearing_required(
+        lifecycle_trace=lifecycle_trace,
+        missing_source_class=missing_source_class,
+    ):
+        return True
+    if (
+        source.get("answer_bearing") is True
+        or source.get("satisfies_authority") is True
+    ):
+        return True
+
+    obligation_text = _lifecycle_obligation_text(lifecycle_trace)
+    source_text = _source_search_text(source)
+    if not source_text:
+        return False
+
+    form_ids = _normalized_form_ids(obligation_text)
+    fee_required = _matches_any_pattern(obligation_text, _FEE_PATTERNS)
+    rate_required = _matches_any_pattern(obligation_text, _RATE_PATTERNS)
+    threshold_required = _matches_any_pattern(obligation_text, _THRESHOLD_PATTERNS)
+
+    form_ok = not form_ids or any(
+        _contains_form_id(source_text, form_id) for form_id in form_ids
+    )
+    fee_ok = not fee_required or _matches_any_pattern(source_text, _FEE_PATTERNS)
+    rate_ok = not rate_required or _matches_any_pattern(source_text, _RATE_PATTERNS)
+    threshold_ok = not threshold_required or _matches_any_pattern(
+        source_text,
+        _THRESHOLD_PATTERNS,
+    )
+    if form_ids and fee_required:
+        return form_ok and fee_ok
+    return form_ok and fee_ok and rate_ok and threshold_ok
 
 
 def _visible_identity_keys(sources: Iterable[Mapping[str, Any]]) -> set[str]:
@@ -704,6 +841,16 @@ def apply_recovered_evidence_visibility_boundary(
             if identity:
                 dropped.append(identity)
             drop_reasons.append("historical_or_archival_not_current")
+            continue
+
+        if not _source_is_answer_bearing_for_obligation(
+            source,
+            lifecycle_trace=lifecycle_trace,
+            missing_source_class=missing_source_class,
+        ):
+            if identity:
+                dropped.append(identity)
+            drop_reasons.append("official_candidate_not_answer_bearing")
             continue
 
         candidates.append(

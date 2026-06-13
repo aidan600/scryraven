@@ -198,6 +198,39 @@ _CANONICAL_DOCUMENTATION_QUERY_VARIANTS = (
         ),
     ),
 )
+_AUTHORITY_FAMILY_QUERY_MARKERS_BY_DOMAIN = {
+    "irs.gov": (
+        "irs",
+        "internal revenue service",
+        "revenue procedure",
+        "internal revenue bulletin",
+    ),
+    "ssa.gov": (
+        "ssa",
+        "social security",
+        "taxable maximum",
+        "wage base",
+        "contribution and benefit base",
+    ),
+    "uscis.gov": (
+        "uscis",
+        "n-400",
+        "naturalization",
+        "immigration",
+    ),
+    "dol.gov": ("department of labor", "dol", "minimum wage"),
+    "osha.gov": ("osha", "occupational safety", "29 cfr 1910.1200"),
+    "transportation.gov": (
+        "dot",
+        "department of transportation",
+        "air carrier access act",
+        "14 cfr part 382",
+    ),
+    "consumerfinance.gov": ("cfpb", "consumer financial protection bureau"),
+    "ftc.gov": ("ftc", "federal trade commission"),
+    "sec.gov": ("sec", "edgar", "form 10-k", "form 10-q"),
+    "fda.gov": ("fda", "food and drug administration"),
+}
 
 
 @dataclass(frozen=True)
@@ -222,16 +255,6 @@ def apply_official_canonical_recovery_query_acquisition(
     trace = _safe_mapping(runtime_trace)
     facts = _coerce_facts(obligation_facts, runtime_trace={**trace, **base})
 
-    existing_queries = _string_list(base.get("source_class_recovery_queries"))
-    upstream_query_candidates = _dedupe(_string_list(facts.candidate_query_previews))
-    visible_queries = _dedupe(
-        [
-            *existing_queries,
-            *_string_list(trace.get("active_source_class_recovery_queries")),
-            *_string_list(trace.get("source_class_recovery_queries")),
-            *upstream_query_candidates,
-        ]
-    )
     required_classes = _class_list(facts.required_source_classes)
     allowed_required = [
         item for item in required_classes if item in _ALLOWED_REQUIRED_SOURCE_CLASSES
@@ -257,6 +280,27 @@ def apply_official_canonical_recovery_query_acquisition(
         subject=subject,
         context_text=context_text,
         max_query_variants=_MAX_ADDED_QUERIES,
+    )
+    existing_queries = _filter_queries_for_official_plan(
+        _string_list(base.get("source_class_recovery_queries")),
+        official_plan=official_plan,
+    )
+    upstream_query_candidates = _dedupe(
+        _filter_queries_for_official_plan(
+            _string_list(facts.candidate_query_previews),
+            official_plan=official_plan,
+        )
+    )
+    visible_queries = _dedupe(
+        _filter_queries_for_official_plan(
+            [
+                *existing_queries,
+                *_string_list(trace.get("active_source_class_recovery_queries")),
+                *_string_list(trace.get("source_class_recovery_queries")),
+                *upstream_query_candidates,
+            ],
+            official_plan=official_plan,
+        )
     )
     needed_intents = _needed_intents(
         source_classes=acquisition_classes,
@@ -373,6 +417,15 @@ def apply_official_canonical_recovery_query_acquisition(
         "acquisition_repair_source": facts.obligation_source,
         "required_source_classes": acquisition_classes,
         "existing_recovery_query_count": len(visible_queries),
+        "stale_cross_family_query_count": _stale_cross_family_query_count(
+            [
+                *_string_list(base.get("source_class_recovery_queries")),
+                *_string_list(trace.get("active_source_class_recovery_queries")),
+                *_string_list(trace.get("source_class_recovery_queries")),
+                *_string_list(facts.candidate_query_previews),
+            ],
+            official_plan=official_plan,
+        ),
         "promoted_recovery_query_count": len(promoted_queries) if used else 0,
         "promoted_recovery_query_previews": list(promoted_queries if used else ()),
         "added_recovery_query_count": len(added_queries) if used else 0,
@@ -1033,6 +1086,70 @@ def _combined_entity_topic_subject(source: Mapping[str, Any]) -> str:
 
 def _source_specific_terms_present(queries: Iterable[str]) -> bool:
     return any(_DOMAIN_LIKE_RE.search(str(query or "")) for query in queries)
+
+
+def _filter_queries_for_official_plan(
+    queries: Iterable[str],
+    *,
+    official_plan: Mapping[str, Any],
+) -> list[str]:
+    return [
+        query
+        for query in _dedupe(queries)
+        if not _query_conflicts_with_official_plan(
+            query,
+            official_plan=official_plan,
+        )
+    ]
+
+
+def _stale_cross_family_query_count(
+    queries: Iterable[str],
+    *,
+    official_plan: Mapping[str, Any],
+) -> int:
+    return sum(
+        1
+        for query in _dedupe(queries)
+        if _query_conflicts_with_official_plan(
+            query,
+            official_plan=official_plan,
+        )
+    )
+
+
+def _query_conflicts_with_official_plan(
+    query: str,
+    *,
+    official_plan: Mapping[str, Any],
+) -> bool:
+    hard_domains = {
+        str(domain or "").casefold()
+        for domain in official_plan.get("hard_domains", ())
+        if str(domain or "").strip()
+    }
+    if not hard_domains:
+        return False
+    text = str(query or "").casefold()
+    if not text:
+        return False
+    for domain, markers in _AUTHORITY_FAMILY_QUERY_MARKERS_BY_DOMAIN.items():
+        if domain in hard_domains:
+            continue
+        if domain in text or any(
+            _authority_marker_present(text, marker) for marker in markers
+        ):
+            return True
+    return False
+
+
+def _authority_marker_present(text: str, marker: str) -> bool:
+    marker_text = marker.casefold()
+    if not marker_text:
+        return False
+    if re.fullmatch(r"[a-z0-9]{2,4}", marker_text):
+        return bool(re.search(rf"\b{re.escape(marker_text)}\b", text))
+    return marker_text in text
 
 
 def _status_by_class(
