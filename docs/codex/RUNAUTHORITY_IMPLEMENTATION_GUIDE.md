@@ -55,6 +55,10 @@ continues that diet by pruning source-class-adjacent active-gate assertions and
 rewriting redundant lifecycle/admission booleans to canonical
 AuthorityLifecycle recovery-action or runner execution state. These compatibility
 fields must not be restored as source-class runner dispatch authority.
+AG-95L continues that cleanup at the pipeline product callsites by replacing
+stale checkpoint refresh, ownership summary, and post-final custody reads with
+canonical AuthorityLifecycle action/blocker state while preserving high-custody
+Author/citation visibility behavior.
 
 ### No orchestrator brain
 

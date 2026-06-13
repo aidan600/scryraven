@@ -176,6 +176,14 @@ def _handoff(
     )
 
 
+def _assert_canonical_recovery_action(lifecycle: dict[str, Any]) -> None:
+    action = lifecycle["authority_lifecycle"]["recovery_action"]
+    assert action["action_type"] == "recover_missing_source_class"
+    assert action["approved"] is True
+    assert action["required_source_classes"] == ["official_current_rules"]
+    assert action["recovery_query_count"] == len(_OFFICIAL_QUERIES)
+
+
 def _spine(
     lifecycle: dict[str, Any],
     *,
@@ -262,24 +270,17 @@ def test_ag68e_live_equivalent_product_path_executes_after_exception_parity_repa
         ),
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    admission = handoff.official_canonical_recovery_execution_admission_trace[
-        "OfficialCanonicalRecoveryExecutionAdmission"
-    ]
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,
     )
 
-    assert admission["admission_used"] is True
-    assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert lifecycle["active_source_class_recovery_queries"] == list(
-        _OFFICIAL_QUERIES
-    )
+    _assert_canonical_recovery_action(lifecycle)
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
     )
     assert execution["attempted"] is True
-    assert lifecycle["active_source_class_recovery_execution_attempted"] is True
+    assert lifecycle["authority_lifecycle"]["execution_state"]["state"] == "attempted"
     assert captured_queries == list(_OFFICIAL_QUERIES)
 
 
@@ -299,14 +300,10 @@ def test_ag68e_product_call_site_does_not_execute_without_canonical_action() -> 
     assert blocked_lifecycle["source_class_recovery_dispatch_reason"] == (
         "canonical_authority_lifecycle_absent"
     )
-    assert (
-        blocked_lifecycle["active_source_class_recovery_execution_attempted"]
-        is False
-    )
     assert captured_queries == []
 
 
-def test_ag68e_dispatch_uses_lifecycle_control_envelope_not_trace_projection() -> None:
+def test_ag68e_dispatch_uses_canonical_action_not_trace_projection() -> None:
     controller = RunController()
     handoff = _handoff(controller)
     lifecycle = handoff.active_source_class_recovery_lifecycle
@@ -317,27 +314,31 @@ def test_ag68e_dispatch_uses_lifecycle_control_envelope_not_trace_projection() -
         "required_source_class": ["official_current_rules"],
         "allowed_action": True,
     }
-    lifecycle_without_envelope = {
+    lifecycle_without_action = {
         **lifecycle,
-        "active_source_class_recovery_action_envelope": {},
+        "authority_lifecycle": {
+            **lifecycle["authority_lifecycle"],
+            "recovery_action": None,
+        },
+        "active_source_class_recovery_action_envelope": {
+            "action_type": "recover_missing_source_class",
+            "required_source_class": ["official_current_rules"],
+            "allowed_action": True,
+        },
     }
-    spine = _spine(
-        lifecycle_without_envelope,
-        checkpoint_trace=_checkpoint("checkpoint_exception", fallback_allowed=True),
-    )
-
     assert trace["protected_surface"]["projection_used_as_control_input"] is False
-    assert spine.trace_packet["controller_action_envelope_approved"] is True
-    assert spine.trace_packet["authority_lifecycle_required_recovery_allowed"] is True
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
-        lifecycle_without_envelope,
+        lifecycle_without_action,
     )
 
-    assert execution["attempted"] is True
-    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
-    assert lifecycle_without_envelope["source_class_recovery_dispatch_authority"] == (
+    assert execution["attempted"] is False
+    assert captured_queries == []
+    assert lifecycle_without_action["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
+    )
+    assert lifecycle_without_action["source_class_recovery_dispatch_reason"] == (
+        "canonical_recovery_action_absent"
     )
 
 
@@ -353,16 +354,15 @@ def test_ag68e_terminal_stop_defers_to_authority_lifecycle_recovery() -> None:
         },
     )
 
-    assert lifecycle["active_source_class_recovery_eligible"] is True
+    _assert_canonical_recovery_action(lifecycle)
     assert spine.terminal_stop_approved is True
-    assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,
     )
 
     assert execution["attempted"] is True
-    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
+    assert captured_queries == controller.state.recovery_action_records[0].queries
 
 
 def test_ag68e_weak_corpus_ownership_defers_to_authority_lifecycle() -> None:
@@ -377,16 +377,14 @@ def test_ag68e_weak_corpus_ownership_defers_to_authority_lifecycle() -> None:
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
-    assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert lifecycle["authority_lifecycle_weak_corpus_may_own_path"] is False
+    _assert_canonical_recovery_action(lifecycle)
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,
     )
 
     assert execution["attempted"] is True
-    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
+    assert captured_queries == controller.state.recovery_action_records[0].queries
 
 
 def test_ag68e_aggregate_ordinary_status_no_longer_blocks_recovery_dispatch() -> None:
@@ -408,15 +406,14 @@ def test_ag68e_aggregate_ordinary_status_no_longer_blocks_recovery_dispatch() ->
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
-    assert handoff.official_canonical_recovery_execution_admitted is True
-    assert lifecycle["active_source_class_recovery_eligible"] is True
+    _assert_canonical_recovery_action(lifecycle)
     execution, captured_queries = _run_product_call_site_dispatch(
         controller,
         lifecycle,
     )
 
     assert execution["attempted"] is True
-    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
+    assert captured_queries == controller.state.recovery_action_records[0].queries
 
 
 def test_ag68e_public_forced_corridor_helper_shapes_are_preserved() -> None:

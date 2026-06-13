@@ -36,7 +36,7 @@ _TERMINAL_STOP_APPROVED_KEY = "terminal_stop" + "_approved"
 
 @dataclass(frozen=True)
 class AuthoritativeSourceActionOrchestratorHandoff:
-    """Legacy runtime values produced by the authoritative-source action seam."""
+    """Compatibility runtime values produced by the lifecycle adapter seam."""
 
     action_result: AuthoritativeSourceActionResult
 
@@ -72,7 +72,7 @@ class AuthoritativeSourceActionOrchestratorHandoff:
     def authoritative_source_action_trace(self) -> dict[str, Any]:
         return self.action_result.trace
 
-    def legacy_runtime_values(
+    def compatibility_runtime_values(
         self,
     ) -> tuple[
         dict[str, Any],
@@ -92,6 +92,19 @@ class AuthoritativeSourceActionOrchestratorHandoff:
             self.official_canonical_recovery_execution_admission_trace,
             self.authoritative_source_action_trace,
         )
+
+    def legacy_runtime_values(
+        self,
+    ) -> tuple[
+        dict[str, Any],
+        dict[str, Any],
+        bool,
+        dict[str, Any] | None,
+        dict[str, Any] | None,
+        dict[str, Any] | None,
+        dict[str, Any],
+    ]:
+        return self.compatibility_runtime_values()
 
 
 def build_authoritative_source_action_facts_from_orchestrator_state(

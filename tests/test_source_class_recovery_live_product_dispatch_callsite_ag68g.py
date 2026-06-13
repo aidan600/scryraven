@@ -227,6 +227,14 @@ def _handoff(
     )
 
 
+def _assert_canonical_recovery_action(lifecycle: dict[str, Any]) -> None:
+    action = lifecycle["authority_lifecycle"]["recovery_action"]
+    assert action["action_type"] == RECOVER_MISSING_SOURCE_CLASS
+    assert action["approved"] is True
+    assert action["required_source_classes"] == ["official_current_rules"]
+    assert action["recovery_query_count"] == len(_SSA_RECOVERY_QUERIES)
+
+
 def _checkpoint(action_name: str) -> dict[str, Any]:
     return {
         "available": True,
@@ -334,19 +342,12 @@ def test_ag68g_stale_checkpoint_output_is_diagnostic_for_runner() -> None:
     controller = RunController()
     handoff = _handoff(controller)
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    admission = handoff.official_canonical_recovery_execution_admission_trace[
-        "OfficialCanonicalRecoveryExecutionAdmission"
-    ]
     execution, captured_queries, _passages = _run_product_callsite_dispatch(
         controller,
         lifecycle,
     )
 
-    assert admission["admission_used"] is True
-    assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert lifecycle["active_source_class_recovery_queries"] == list(
-        _SSA_RECOVERY_QUERIES
-    )
+    _assert_canonical_recovery_action(lifecycle)
     assert execution["attempted"] is True
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
@@ -354,7 +355,7 @@ def test_ag68g_stale_checkpoint_output_is_diagnostic_for_runner() -> None:
     assert lifecycle["source_class_recovery_dispatch_reason"] == (
         "canonical_authority_lifecycle_recovery_action"
     )
-    assert lifecycle["active_source_class_recovery_execution_attempted"] is True
+    assert lifecycle["authority_lifecycle"]["execution_state"]["state"] == "attempted"
     assert captured_queries == list(_SSA_RECOVERY_QUERIES)
 
 
@@ -366,9 +367,6 @@ def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() ->
 
     assert _authoritative_source_checkpoint_refresh_allowed(
         checkpoint_trace=stale_checkpoint,
-        official_canonical_recovery_execution_admitted=(
-            handoff.official_canonical_recovery_execution_admitted
-        ),
         active_source_class_recovery_lifecycle=lifecycle,
     )
 
@@ -385,18 +383,25 @@ def test_ag68g_refreshes_stale_checkpoint_and_product_callsite_executes_ssa() ->
         "authority_lifecycle.recovery_action"
     )
     assert execution["attempted"] is True
-    assert lifecycle["active_source_class_recovery_used"] is True
-    assert lifecycle["active_source_class_recovery_execution_attempted"] is True
+    assert lifecycle["authority_lifecycle"]["execution_state"]["state"] == "attempted"
     assert captured_queries == list(_SSA_RECOVERY_QUERIES)
     assert all_passages[0]["retrieval_stage"] == "source_class_recovery"
 
 
-def test_ag68g_dispatch_ignores_projection_only_envelope() -> None:
+def test_ag68g_dispatch_ignores_projection_only_legacy_envelope() -> None:
     controller = RunController()
     handoff = _handoff(controller)
     lifecycle = {
         **handoff.active_source_class_recovery_lifecycle,
-        "active_source_class_recovery_action_envelope": {},
+        "authority_lifecycle": {
+            **handoff.active_source_class_recovery_lifecycle["authority_lifecycle"],
+            "recovery_action": None,
+        },
+        "active_source_class_recovery_action_envelope": {
+            "action_type": "recover_missing_source_class",
+            "required_source_class": ["official_current_rules"],
+            "allowed_action": True,
+        },
     }
     projection = dict(handoff.authoritative_source_action_trace["obligation_projection"])
     projection["active_source_class_recovery_action_envelope"] = {
@@ -412,9 +417,6 @@ def test_ag68g_dispatch_ignores_projection_only_envelope() -> None:
     ] is True
     assert not _authoritative_source_checkpoint_refresh_allowed(
         checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
-        official_canonical_recovery_execution_admitted=(
-            handoff.official_canonical_recovery_execution_admitted
-        ),
         active_source_class_recovery_lifecycle=lifecycle,
     )
     execution, captured_queries, _passages = _run_product_callsite_dispatch(
@@ -422,10 +424,13 @@ def test_ag68g_dispatch_ignores_projection_only_envelope() -> None:
         lifecycle,
     )
 
-    assert execution["attempted"] is True
-    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
+    assert execution["attempted"] is False
+    assert captured_queries == []
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
+    )
+    assert lifecycle["source_class_recovery_dispatch_reason"] == (
+        "canonical_recovery_action_absent"
     )
 
 
@@ -440,15 +445,9 @@ def test_ag68g_irs_weak_corpus_ownership_defers_to_authority_lifecycle() -> None
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
-    assert handoff.official_canonical_recovery_execution_admitted is True
-    assert lifecycle["active_source_class_recovery_eligible"] is True
-    assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert lifecycle["authority_lifecycle_weak_corpus_may_own_path"] is False
+    _assert_canonical_recovery_action(lifecycle)
     assert _authoritative_source_checkpoint_refresh_allowed(
         checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
-        official_canonical_recovery_execution_admitted=(
-            handoff.official_canonical_recovery_execution_admitted
-        ),
         active_source_class_recovery_lifecycle=lifecycle,
     )
 
@@ -460,26 +459,22 @@ def test_ag68g_terminal_stop_and_invalid_envelope_remain_fail_closed() -> None:
     terminal_checkpoint = _checkpoint(STOP_INSUFFICIENT_WITH_CAVEAT)
     invalid_lifecycle = {
         **lifecycle,
-        "active_source_class_recovery_action_envelope": {
-            "action_type": "recover_missing_source_class",
-            "required_source_class": [],
-            "allowed_action": True,
+        "authority_lifecycle": {
+            **lifecycle["authority_lifecycle"],
+            "recovery_action": {
+                **lifecycle["authority_lifecycle"]["recovery_action"],
+                "required_source_classes": [],
+            },
         },
     }
 
     assert not _authoritative_source_checkpoint_refresh_allowed(
         checkpoint_trace=terminal_checkpoint,
-        official_canonical_recovery_execution_admitted=(
-            handoff.official_canonical_recovery_execution_admitted
-        ),
         active_source_class_recovery_lifecycle=lifecycle,
     )
 
     assert not _authoritative_source_checkpoint_refresh_allowed(
         checkpoint_trace=_checkpoint(RETRIEVE_TARGETED),
-        official_canonical_recovery_execution_admitted=(
-            handoff.official_canonical_recovery_execution_admitted
-        ),
         active_source_class_recovery_lifecycle=invalid_lifecycle,
     )
 
@@ -496,8 +491,7 @@ def test_ag68g_checkpoint_exception_refresh_allows_aggregate_gap_admission() -> 
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
-    assert handoff.official_canonical_recovery_execution_admitted is True
-    assert lifecycle["active_source_class_recovery_eligible"] is True
+    _assert_canonical_recovery_action(lifecycle)
     assert _authoritative_source_checkpoint_refresh_allowed(
         checkpoint_trace={
             "available": False,
@@ -505,9 +499,6 @@ def test_ag68g_checkpoint_exception_refresh_allows_aggregate_gap_admission() -> 
             "decision": None,
             "recommended_action_name": None,
         },
-        official_canonical_recovery_execution_admitted=(
-            handoff.official_canonical_recovery_execution_admitted
-        ),
         active_source_class_recovery_lifecycle=lifecycle,
     )
 
@@ -524,15 +515,14 @@ def test_ag68g_aggregate_ordinary_status_no_longer_blocks_recovery_admission() -
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
 
-    assert handoff.official_canonical_recovery_execution_admitted is True
-    assert lifecycle["active_source_class_recovery_eligible"] is True
+    _assert_canonical_recovery_action(lifecycle)
     execution, captured_queries, _passages = _run_product_callsite_dispatch(
         controller,
         lifecycle,
     )
 
     assert execution["attempted"] is True
-    assert captured_queries == lifecycle["active_source_class_recovery_queries"]
+    assert captured_queries == controller.state.recovery_action_records[0].queries
     assert lifecycle["source_class_recovery_dispatch_authority"] == (
         "authority_lifecycle.recovery_action"
     )
@@ -540,13 +530,13 @@ def test_ag68g_aggregate_ordinary_status_no_longer_blocks_recovery_admission() -
 
 def test_ag68g_query_strings_and_helper_shapes_are_preserved() -> None:
     controller = RunController()
-    handoff = _handoff(controller)
+    _handoff(controller)
     official = run_forced_corridor_validation(official_current_forced_corridor_fixture())
     canonical = run_forced_corridor_validation(canonical_doc_forced_corridor_fixture())
 
-    assert handoff.active_source_class_recovery_lifecycle[
-        "active_source_class_recovery_queries"
-    ] == list(_SSA_RECOVERY_QUERIES)
+    assert controller.state.recovery_action_records[0].queries == list(
+        _SSA_RECOVERY_QUERIES
+    )
     assert official.classification["next_failure_layer"] == (
         "offline_recovery_dispatch_fixture_succeeded"
     )
