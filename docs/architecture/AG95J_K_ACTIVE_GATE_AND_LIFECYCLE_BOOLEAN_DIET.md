@@ -5,6 +5,10 @@ ScryRaven/proplex provider, model, search, retrieval, secret, `.env`, DB row,
 raw provider payload, raw prompt, private log, cache, full raw trace, local
 output packet, or private artifact access was used.
 
+Status note, AG-95L: the remaining bounded product-callsite compatibility reads
+in `core/pipeline_orchestrator.py` were addressed by
+`AG95L_PIPELINE_PRODUCT_CALLSITE_COMPATIBILITY_READ_DIET.md`.
+
 ## Current Doctrine
 
 Source-class recovery dispatch authority remains:

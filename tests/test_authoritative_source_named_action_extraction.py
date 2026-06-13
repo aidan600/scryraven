@@ -545,7 +545,8 @@ def test_orchestrator_adapter_handoff_preserves_named_action_result_keys() -> No
         direct.official_canonical_recovery_execution_admitted
     )
     assert handoff.authoritative_source_action_trace == direct.trace
-    assert handoff.legacy_runtime_values()[0] == direct.recommendation
+    assert handoff.compatibility_runtime_values()[0] == direct.recommendation
+    assert handoff.legacy_runtime_values() == handoff.compatibility_runtime_values()
 
 
 def test_orchestrator_adapter_trace_fragment_attaches_trace_safe_outputs_only() -> None:
