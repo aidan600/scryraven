@@ -45,6 +45,7 @@ OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_SCHEMA_VERSION = (
 OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE = (
     "Official / Canonical Source Recovery Diagnostics"
 )
+DOGFOOD_COST_SEARCH_METRICS_TITLE = "Dogfood Cost / Search Metrics"
 LEDGER_GATED_VISIBILITY_CONSUMER_SUBORDINATION_SCHEMA_VERSION = (
     "ledger_gated_visibility_consumer_subordination_ag74c_v1"
 )
@@ -99,6 +100,7 @@ _SECRET_VALUE_PATTERNS = (
         r"(?i)\b(api[_ -]?key|secret|token|password)\b\s*[:=]\s*[^,\s;]+"
     ),
 )
+_SEARCH_COST_PHASES = frozenset({"retrieval", "search", "recon"})
 
 
 def build_official_canonical_recovery_visibility_export(
@@ -702,11 +704,161 @@ def build_official_canonical_recovery_visibility_export(
         "allocation_result_candidate_custody": (
             allocation_result_custody or NOT_OBSERVABLE
         ),
+        "dogfood_cost_search_metrics": {},
         "unknown_fields": [],
         "behavior_changed": False,
     }
+    export["dogfood_cost_search_metrics"] = build_dogfood_cost_search_metrics(
+        trace,
+        official_canonical_export=export,
+    )
     export["unknown_fields"] = _unknown_fields(export)
     return export
+
+
+def build_dogfood_cost_search_metrics(
+    runtime_trace: Mapping[str, Any] | None,
+    *,
+    official_canonical_export: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build sanitized dogfood-visible search-efficiency metrics.
+
+    Values are derived only from existing sanitized trace/cost/provider
+    diagnostics. Missing or ambiguous values stay explicitly unavailable.
+    """
+    trace = runtime_trace if isinstance(runtime_trace, Mapping) else {}
+    export = official_canonical_export if isinstance(official_canonical_export, Mapping) else {}
+    provider_attempts = [
+        attempt
+        for attempt in trace.get("provider_diagnostics", [])
+        if isinstance(attempt, Mapping)
+    ]
+    provider_calls_by_provider: dict[str, int] = {}
+    provider_calls_by_role: dict[str, int] = {}
+    query_counts_by_role: dict[str, int] = {}
+    provider_result_count = 0
+    accepted_url_count = 0
+    for attempt in provider_attempts:
+        logical_attempts = _first_known_int(attempt.get("logical_attempt_count"))
+        if logical_attempts == UNKNOWN:
+            logical_attempts = 1
+        query_count = _first_known_int(attempt.get("query_count"))
+        if query_count == UNKNOWN:
+            query_count = 0
+        result_count = _first_known_int(attempt.get("result_count"))
+        if result_count == UNKNOWN:
+            result_count = 0
+        accepted_count = _first_known_int(attempt.get("accepted_url_count"))
+        if accepted_count == UNKNOWN:
+            accepted_count = 0
+        provider = _clean_token(attempt.get("provider")) or UNKNOWN
+        role = _clean_token(attempt.get("provider_role")) or UNKNOWN
+        provider_calls_by_provider[provider] = (
+            provider_calls_by_provider.get(provider, 0) + logical_attempts
+        )
+        provider_calls_by_role[role] = provider_calls_by_role.get(role, 0) + logical_attempts
+        query_counts_by_role[role] = query_counts_by_role.get(role, 0) + query_count
+        provider_result_count += result_count
+        accepted_url_count += accepted_count
+
+    cost = trace.get("cost")
+    cost_by_phase = (
+        cost.get("cost_by_phase")
+        if isinstance(cost, Mapping) and isinstance(cost.get("cost_by_phase"), Mapping)
+        else None
+    )
+    calls_by_phase = (
+        cost.get("calls_by_phase")
+        if isinstance(cost, Mapping) and isinstance(cost.get("calls_by_phase"), Mapping)
+        else None
+    )
+    llm_model_call_count = _non_search_phase_int_total(calls_by_phase)
+    llm_model_cost_usd = _non_search_phase_float_total(cost_by_phase)
+
+    provider_source = (
+        "observed_from_provider_diagnostics" if provider_attempts else NOT_OBSERVABLE
+    )
+    cost_source = "observed_from_execution_trace"
+    return {
+        "schema_version": "dogfood_cost_search_metrics_ag96a0_v1",
+        "diagnostic_only": True,
+        "sanitized": True,
+        "behavior_changed": False,
+        "mode": _metric(
+            _optional_text(trace.get("mode")),
+            source=cost_source,
+            unavailable_if_unknown=True,
+        ),
+        "wall_time_seconds": _metric(
+            _first_known_float(
+                trace.get("latency_seconds"),
+                _nested(trace, ("timing", "latency_seconds")),
+            ),
+            source=cost_source,
+            unavailable_if_unknown=True,
+        ),
+        "total_llm_model_calls": _metric(
+            llm_model_call_count,
+            source=cost_source if llm_model_call_count != UNKNOWN else NOT_OBSERVABLE,
+            unavailable_if_unknown=True,
+        ),
+        "total_llm_model_cost_usd": _metric(
+            llm_model_cost_usd,
+            source=cost_source if llm_model_cost_usd != UNKNOWN else NOT_OBSERVABLE,
+            unavailable_if_unknown=True,
+        ),
+        "search_provider_cost_usd": _metric(
+            UNKNOWN,
+            source="unavailable",
+            interpretation="provider_unit_cost_not_observable",
+            unavailable_if_unknown=True,
+        ),
+        "search_provider_calls_total": _metric(
+            sum(provider_calls_by_provider.values()) if provider_attempts else UNKNOWN,
+            source=provider_source,
+            unavailable_if_unknown=True,
+        ),
+        "search_provider_calls_by_provider": _metric(
+            dict(sorted(provider_calls_by_provider.items())) if provider_attempts else UNKNOWN,
+            source=provider_source,
+            unavailable_if_unknown=True,
+        ),
+        "search_provider_calls_by_role": _metric(
+            dict(sorted(provider_calls_by_role.items())) if provider_attempts else UNKNOWN,
+            source=provider_source,
+            unavailable_if_unknown=True,
+        ),
+        "retrieval_query_variant_count_by_role": _metric(
+            dict(sorted(query_counts_by_role.items())) if provider_attempts else UNKNOWN,
+            source=provider_source,
+            unavailable_if_unknown=True,
+        ),
+        "provider_result_count": _metric(
+            provider_result_count if provider_attempts else UNKNOWN,
+            source=provider_source,
+            unavailable_if_unknown=True,
+        ),
+        "accepted_url_count": _metric(
+            accepted_url_count if provider_attempts else UNKNOWN,
+            source=provider_source,
+            unavailable_if_unknown=True,
+        ),
+        "official_canonical_candidate_count": _metric(
+            export.get("candidate_official_or_canonical_count", UNKNOWN),
+            source="observed_from_official_canonical_diagnostics",
+            unavailable_if_unknown=True,
+        ),
+        "final_official_canonical_evidence_count": _metric(
+            export.get("final_evidence_official_or_canonical_count", UNKNOWN),
+            source="observed_from_official_canonical_diagnostics",
+            unavailable_if_unknown=True,
+        ),
+        "final_official_canonical_citation_count": _metric(
+            export.get("final_citation_official_or_canonical_count", UNKNOWN),
+            source="observed_from_official_canonical_diagnostics",
+            unavailable_if_unknown=True,
+        ),
+    }
 
 
 def build_official_canonical_recovery_visibility_trace(
@@ -1114,10 +1266,43 @@ def format_official_canonical_recovery_diagnostics_markdown(
         "allocation_result_final_evidence_changed",
         "allocation_result_final_citation_changed",
         "allocation_result_candidate_custody",
+        "dogfood_cost_search_metrics",
         "unknown_fields",
         "behavior_changed",
     ):
         lines.append(f"- `{key}`: {_format_value(export.get(key, UNKNOWN))}")
+    return "\n".join(lines)
+
+
+def format_dogfood_cost_search_metrics_markdown(
+    runtime_trace_or_export: Mapping[str, Any] | None,
+) -> str:
+    """Render AG-96A0 dogfood cost/search metrics as a compact section."""
+    if _looks_like_export(runtime_trace_or_export):
+        metrics = runtime_trace_or_export.get("dogfood_cost_search_metrics")
+    else:
+        metrics = build_official_canonical_recovery_visibility_export(
+            runtime_trace_or_export
+        ).get("dogfood_cost_search_metrics")
+    metrics_map = metrics if isinstance(metrics, Mapping) else {}
+    lines = [f"## {DOGFOOD_COST_SEARCH_METRICS_TITLE}"]
+    for key in (
+        "mode",
+        "wall_time_seconds",
+        "total_llm_model_calls",
+        "total_llm_model_cost_usd",
+        "search_provider_cost_usd",
+        "search_provider_calls_total",
+        "search_provider_calls_by_provider",
+        "search_provider_calls_by_role",
+        "retrieval_query_variant_count_by_role",
+        "provider_result_count",
+        "accepted_url_count",
+        "official_canonical_candidate_count",
+        "final_official_canonical_evidence_count",
+        "final_official_canonical_citation_count",
+    ):
+        lines.append(f"- `{key}`: {_format_metric(metrics_map.get(key))}")
     return "\n".join(lines)
 
 
@@ -1127,7 +1312,13 @@ def append_official_canonical_recovery_diagnostics_section(
 ) -> str:
     """Append the allowed diagnostics section to a report string."""
     base = str(report or "").rstrip()
-    section = format_official_canonical_recovery_diagnostics_markdown(runtime_trace)
+    export = build_official_canonical_recovery_visibility_export(runtime_trace)
+    section = "\n\n".join(
+        (
+            format_dogfood_cost_search_metrics_markdown(export),
+            format_official_canonical_recovery_diagnostics_markdown(export),
+        )
+    )
     return f"{base}\n\n{section}\n" if base else f"{section}\n"
 
 
@@ -1834,6 +2025,72 @@ def _source_obligation_status_for_export(
     return UNKNOWN
 
 
+def _metric(
+    value: Any,
+    *,
+    source: str,
+    interpretation: str | None = None,
+    unavailable_if_unknown: bool = False,
+) -> dict[str, Any]:
+    unavailable = unavailable_if_unknown and _is_unavailable_metric_value(value)
+    return {
+        "value": "unavailable" if unavailable else value,
+        "source": source if not unavailable else "unavailable",
+        "interpretation": interpretation or ("not_observable" if unavailable else source),
+    }
+
+
+def _is_unavailable_metric_value(value: Any) -> bool:
+    return isinstance(value, str) and value in {UNKNOWN, NOT_OBSERVABLE}
+
+
+def _non_search_phase_int_total(phases: Mapping[str, Any] | None) -> int | str:
+    if not isinstance(phases, Mapping):
+        return UNKNOWN
+    total = 0
+    observed = False
+    for raw_phase, raw_count in phases.items():
+        phase = _clean_token(raw_phase)
+        count = _first_known_int(raw_count)
+        if phase in _SEARCH_COST_PHASES or count == UNKNOWN:
+            continue
+        total += count
+        observed = True
+    return total if observed else UNKNOWN
+
+
+def _non_search_phase_float_total(phases: Mapping[str, Any] | None) -> float | str:
+    if not isinstance(phases, Mapping):
+        return UNKNOWN
+    total = 0.0
+    observed = False
+    for raw_phase, raw_cost in phases.items():
+        phase = _clean_token(raw_phase)
+        cost = _optional_float(raw_cost)
+        if phase in _SEARCH_COST_PHASES or cost == UNKNOWN:
+            continue
+        total += cost
+        observed = True
+    return round(total, 6) if observed else UNKNOWN
+
+
+def _first_known_float(*values: Any) -> float | str:
+    for value in values:
+        parsed = _optional_float(value)
+        if parsed != UNKNOWN:
+            return parsed
+    return UNKNOWN
+
+
+def _optional_float(value: Any) -> float | str:
+    if value is None or isinstance(value, bool) or value == UNKNOWN:
+        return UNKNOWN
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return UNKNOWN
+
+
 def _nested(source: Mapping[str, Any], keys: Iterable[str]) -> Any:
     current: Any = source
     for key in keys:
@@ -2030,17 +2287,29 @@ def _format_value(value: Any) -> str:
     return _clean_text(value, limit=_MAX_TEXT_CHARS) or UNKNOWN
 
 
+def _format_metric(value: Any) -> str:
+    if not isinstance(value, Mapping):
+        return "value=unavailable, source=unavailable, interpretation=not_observable"
+    metric_value = _format_value(value.get("value", "unavailable"))
+    source = _format_value(value.get("source", "unavailable"))
+    interpretation = _format_value(value.get("interpretation", "not_observable"))
+    return f"value={metric_value}, source={source}, interpretation={interpretation}"
+
+
 __all__ = [
+    "DOGFOOD_COST_SEARCH_METRICS_TITLE",
     "NOT_OBSERVABLE",
     "OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE",
     "OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_SCHEMA_VERSION",
     "OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_TRACE_KEY",
     "UNKNOWN",
     "append_official_canonical_recovery_diagnostics_section",
+    "build_dogfood_cost_search_metrics",
     "classify_official_source_acquisition_quality_layer",
     "build_official_canonical_recovery_visibility_export",
     "build_official_canonical_recovery_visibility_trace",
     "classify_ag50d_next_failure_layer",
     "classify_likely_next_failure_layer",
+    "format_dogfood_cost_search_metrics_markdown",
     "format_official_canonical_recovery_diagnostics_markdown",
 ]

@@ -33,6 +33,7 @@ def test_cost_accumulator_rolls_up_model_tokens_and_cost() -> None:
     assert snap["total_calls"] == 1
     assert snap["cost_by_phase"]["router"] == 1.25
     assert snap["cost_by_model"]["gpt-5.4-mini"] == 1.25
+    assert snap["calls_by_phase"] == {"router": 1}
     assert snap["total_cost_usd"] == 1.25
 
 
@@ -47,6 +48,7 @@ def test_unknown_models_are_counted_without_invented_cost() -> None:
 
     snap = acc.snapshot()
     assert snap["total_calls"] == 1
+    assert snap["calls_by_phase"] == {"local": 1}
     assert snap["total_input_tokens"] == 100
     assert snap["total_output_tokens"] == 50
     assert snap["total_cost_usd"] == 0.0

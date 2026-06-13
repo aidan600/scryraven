@@ -120,6 +120,7 @@ class CostAccumulator:
                 "total_cost_usd": round(sum(self.cost_by_phase.values()), 6),
                 "cost_by_phase": {k: round(v, 6) for k, v in sorted(self.cost_by_phase.items())},
                 "cost_by_model": {k: round(v, 6) for k, v in sorted(self.cost_by_model.items())},
+                "calls_by_phase": {k: int(v) for k, v in sorted(self.calls_by_phase.items())},
                 "total_input_tokens": int(self.total_input_tokens),
                 "total_output_tokens": int(self.total_output_tokens),
                 "total_calls": int(self.total_calls),

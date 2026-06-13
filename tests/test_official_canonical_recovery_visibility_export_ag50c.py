@@ -11,6 +11,7 @@ from core.controller_provider_search_allocation import (
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
     PROVIDER_SEARCH_REVIEW_REQUEST,
 )
+from core.cost_accounting import CostAccumulator
 from core.evidence_integration_checkpoint import (
     EVIDENCE_INTEGRATION_CHECKPOINT_TRACE_KEY,
 )
@@ -18,6 +19,7 @@ from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
 )
 from core.official_canonical_recovery_visibility_export import (
+    DOGFOOD_COST_SEARCH_METRICS_TITLE,
     NOT_OBSERVABLE,
     OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE,
     OFFICIAL_CANONICAL_RECOVERY_VISIBILITY_SCHEMA_VERSION,
@@ -25,6 +27,7 @@ from core.official_canonical_recovery_visibility_export import (
     UNKNOWN,
     append_official_canonical_recovery_diagnostics_section,
     build_official_canonical_recovery_visibility_export,
+    format_dogfood_cost_search_metrics_markdown,
     format_official_canonical_recovery_diagnostics_markdown,
 )
 from core.runtime_trace_projection_assembly import (
@@ -368,7 +371,9 @@ def test_ag50c_report_output_section_contains_visible_fields() -> None:
     )
 
     assert output.startswith("Final answer body.")
+    assert f"## {DOGFOOD_COST_SEARCH_METRICS_TITLE}" in output
     assert f"## {OFFICIAL_CANONICAL_RECOVERY_DIAGNOSTICS_TITLE}" in output
+    assert "`final_official_canonical_citation_count`: value=1" in output
     assert (
         "`likely_next_failure_layer`: recovery_lane_source_citation_observed"
         in output
@@ -377,6 +382,105 @@ def test_ag50c_report_output_section_contains_visible_fields() -> None:
         "`likely_next_failure_layer_custody_interpretation`: "
         "recovery_lane_observation_not_controller_custody_status"
     ) in output
+
+
+def test_ag96a0_dogfood_cost_search_metrics_derive_sanitized_counts() -> None:
+    accumulator = CostAccumulator()
+    accumulator.record_model_call(
+        phase="model",
+        model="gpt-5.4-mini",
+        input_tokens=1_000_000,
+        output_tokens=500_000,
+    )
+    accumulator.record_embedding_call(
+        phase="embedding",
+        model="text-embedding-3-small",
+        input_tokens=1_000_000,
+    )
+    accumulator.record_search_call(phase="retrieval", provider="tavily", calls=2)
+
+    trace = _trace(
+        mode="Balanced",
+        latency_seconds=12.34,
+        cost=accumulator.snapshot(),
+        provider_diagnostics=[
+            {
+                "provider": "tavily",
+                "provider_role": "main_retrieval",
+                "query_count": 2,
+                "logical_attempt_count": 1,
+                "result_count": 5,
+                "accepted_url_count": 3,
+                "query_preview": "private query text should stay out of metrics",
+                "raw_provider_payload": {"body": "secret payload"},
+            },
+            {
+                "provider": "exa",
+                "provider_role": "source_class_recovery",
+                "query_count": 1,
+                "logical_attempt_count": 1,
+                "result_count": 3,
+                "accepted_url_count": 1,
+            },
+        ],
+    )
+    packet = _export(trace)
+    metrics = packet["dogfood_cost_search_metrics"]
+    rendered = format_dogfood_cost_search_metrics_markdown(packet)
+
+    assert metrics["mode"] == {
+        "value": "Balanced",
+        "source": "observed_from_execution_trace",
+        "interpretation": "observed_from_execution_trace",
+    }
+    assert metrics["wall_time_seconds"]["value"] == 12.34
+    assert metrics["total_llm_model_calls"]["value"] == 2
+    assert metrics["total_llm_model_cost_usd"]["value"] == 1.27
+    assert metrics["search_provider_cost_usd"] == {
+        "value": "unavailable",
+        "source": "unavailable",
+        "interpretation": "provider_unit_cost_not_observable",
+    }
+    assert metrics["search_provider_calls_total"]["value"] == 2
+    assert metrics["search_provider_calls_by_provider"]["value"] == {
+        "exa": 1,
+        "tavily": 1,
+    }
+    assert metrics["search_provider_calls_by_role"]["value"] == {
+        "main_retrieval": 1,
+        "source_class_recovery": 1,
+    }
+    assert metrics["retrieval_query_variant_count_by_role"]["value"] == {
+        "main_retrieval": 2,
+        "source_class_recovery": 1,
+    }
+    assert metrics["provider_result_count"]["value"] == 8
+    assert metrics["accepted_url_count"]["value"] == 4
+    assert metrics["official_canonical_candidate_count"]["value"] == 1
+    assert metrics["final_official_canonical_evidence_count"]["value"] == 1
+    assert metrics["final_official_canonical_citation_count"]["value"] == 1
+    assert "private query text" not in rendered
+    assert "secret payload" not in rendered
+    assert "`search_provider_calls_total`: value=2" in rendered
+
+
+def test_ag96a0_dogfood_metrics_mark_unobservable_without_guessing() -> None:
+    packet = _export({})
+    metrics = packet["dogfood_cost_search_metrics"]
+    rendered = format_dogfood_cost_search_metrics_markdown(packet)
+
+    assert metrics["total_llm_model_calls"] == {
+        "value": "unavailable",
+        "source": "unavailable",
+        "interpretation": "not_observable",
+    }
+    assert metrics["search_provider_calls_total"] == {
+        "value": "unavailable",
+        "source": "unavailable",
+        "interpretation": "not_observable",
+    }
+    assert "`total_llm_model_calls`: value=unavailable" in rendered
+    assert "`search_provider_calls_total`: value=unavailable" in rendered
 
 
 def test_ag50c_runtime_projection_attaches_export_to_checkpoint() -> None:
