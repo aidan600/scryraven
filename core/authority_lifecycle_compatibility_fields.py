@@ -1,8 +1,9 @@
 """Compatibility-field audit for AuthorityLifecycle projections.
 
 This module is a pure documentation surface for legacy trace/export fields
-that remain after AuthorityLifecycle became the controller-owned source of
-truth. It does not participate in runtime dispatch or final-answer behavior.
+that remain after AuthorityLifecycle became the RunAuthority-owned source of
+truth for this lane. It does not participate in runtime dispatch or
+final-answer behavior.
 """
 
 from __future__ import annotations
@@ -79,8 +80,7 @@ AUTHORITY_LIFECYCLE_COMPATIBILITY_FIELDS = (
     ),
     AuthorityLifecycleCompatibilityField(
         field_name="active_source_class_recovery_eligible",
-        replacement="authority_lifecycle.recovery_action.approved and "
-        "authority_lifecycle_required_recovery_allowed",
+        replacement="authority_lifecycle.recovery_action.approved",
         classification="compatibility handoff/projection",
         named_consumers=(
             "source_class_recovery_executor action lookup",

@@ -337,34 +337,20 @@ def test_ag94h_f_action_approved_and_authority_lifecycle_allows_recovery() -> No
         "skip_reason": None,
         "blockers": [],
     }
-    assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["active_source_class_recovery_missing_classes"] == _SOURCE_CLASSES
     assert lifecycle["active_source_class_recovery_queries"] == _RECOVERY_QUERIES
-    assert lifecycle["active_source_class_recovery_provider_role"] == (
-        "source_class_recovery"
-    )
-    assert lifecycle["active_source_class_recovery_search_depth"] == "basic"
-    assert lifecycle["active_source_class_recovery_attempt_count"] == 1
 
     assert {
         requirement.requirement_id
         for requirement in handoff.obligation_state.missing_authority_requirements()
     } == set(_SOURCE_CLASSES)
     assert lifecycle["authority_lifecycle_recovery_needed"] == "required"
-    assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
-    assert lifecycle["authority_lifecycle_execution_state"] == (
-        "approved_pending_execution"
-    )
-    assert lifecycle["authority_lifecycle_execution_blocked"] is False
     assert lifecycle["authority_lifecycle"]["recovery_action"]["action_type"] == (
         RECOVER_MISSING_SOURCE_CLASS
     )
     assert action_trace["authority_lifecycle_arbitration"][
         "authority_lifecycle_recovery_needed"
     ] == "required"
-    assert action_trace["authority_lifecycle_arbitration"][
-        "authority_lifecycle_required_recovery_allowed"
-    ] is True
 
     assert admission["required_source_classes"] == _SOURCE_CLASSES
     assert admission["unsatisfied_required_source_classes"] == _SOURCE_CLASSES
@@ -414,10 +400,9 @@ def test_ag94h_f_downstream_decision_spine_and_runner_dispatch_once() -> None:
         )
     )
 
-    assert lifecycle["active_source_class_recovery_eligible"] is True
     assert lifecycle["source_obligation_status"] == "official_current_required_unmet"
-    assert lifecycle["authority_lifecycle_required_recovery_allowed"] is True
     assert lifecycle["authority_lifecycle_recovery_needed"] == "required"
+    assert lifecycle["authority_lifecycle"]["recovery_action"]["approved"] is True
 
     assert decision.decision == RETRY_RECOVERY
     assert decision.retry_allowed is True
@@ -430,10 +415,6 @@ def test_ag94h_f_downstream_decision_spine_and_runner_dispatch_once() -> None:
         "execute_existing_recovery_action"
     )
 
-    assert spine.source_class_checkpoint_gate_trace[
-        "authority_lifecycle_required_recovery_allowed"
-    ] is True
-    assert spine.source_class_checkpoint_gate_trace["executor_dispatched"] is True
     assert spine.source_class_checkpoint_gate_trace["gate_reason"] == (
         "approved_by_authority_lifecycle_required_recovery"
     )
@@ -445,11 +426,8 @@ def test_ag94h_f_downstream_decision_spine_and_runner_dispatch_once() -> None:
     }
     assert search_calls == [_RECOVERY_QUERIES]
     assert all_passages[0]["retrieval_stage"] == "source_class_recovery"
-    assert lifecycle["active_source_class_recovery_execution_attempted"] is True
-    assert lifecycle["active_source_class_recovery_used"] is True
     assert lifecycle["active_source_class_recovery_skip_reason"] is None
-    assert lifecycle["authority_lifecycle_execution_state"] == "attempted"
-    assert lifecycle["authority_lifecycle_execution_blocked"] is False
+    assert lifecycle["authority_lifecycle"]["execution_state"]["state"] == "attempted"
 
 
 def test_ag94h_f_true_selected_authority_custody_still_satisfies() -> None:

@@ -50,8 +50,11 @@ booleans, lifecycle eligibility booleans, reports, exports, and
 lane. AG-95I retires the remaining source-class-specific ControllerLoopSpine
 packet aliases and AG-95F demotion markers; shared active-gate fields such as
 `executor_dispatched` and `executed_action_name` remain compatibility surfaces
-only where non-source-class arbitration coverage still needs them. They must not
-be restored as source-class runner dispatch authority.
+only where non-source-class arbitration coverage still needs them. AG-95J/K
+continues that diet by pruning source-class-adjacent active-gate assertions and
+rewriting redundant lifecycle/admission booleans to canonical
+AuthorityLifecycle recovery-action or runner execution state. These compatibility
+fields must not be restored as source-class runner dispatch authority.
 
 ### No orchestrator brain
 

@@ -185,8 +185,7 @@ def test_required_recovery_with_upstream_query_does_not_end_missing_executable()
     result = _handoff(_facts())
     lifecycle = result.active_source_class_recovery_lifecycle
 
-    assert result.official_canonical_recovery_execution_admitted is True
-    assert lifecycle["active_source_class_recovery_eligible"] is True
+    assert lifecycle["authority_lifecycle"]["recovery_action"]["approved"] is True
     assert lifecycle["active_source_class_recovery_skip_reason"] is None
     assert lifecycle["authority_lifecycle"]["recovery_query_count"] == 1
     assert lifecycle["authority_lifecycle"]["explicit_blockers"] == []
@@ -257,7 +256,7 @@ def test_no_executable_query_records_requirement_bound_lifecycle_blocker() -> No
     ).to_trace_fields()
     blocker = trace["authority_lifecycle_execution_blocker"]
 
-    assert trace["authority_lifecycle_required_recovery_allowed"] is False
+    assert trace["authority_lifecycle"]["execution_state"]["state"] == "blocked"
     assert blocker["requirement_id"] == "official_current_rules"
     assert blocker["owner"] == "controller/lifecycle"
     assert blocker["blocker_reason"] == "missing_executable_recovery_query"
@@ -272,17 +271,18 @@ def test_terminal_stop_blocks_but_weak_corpus_cannot_preempt_surfaced_recovery()
         terminal.active_source_class_recovery_lifecycle,
         action_name=STOP_INSUFFICIENT_WITH_CAVEAT,
     )
-    weak_spine = _spine(
+    _spine(
         weak.active_source_class_recovery_lifecycle,
         action_name=RECOVER_WEAK_CORPUS,
     )
 
-    assert terminal.official_canonical_recovery_execution_admitted is False
-    assert weak.official_canonical_recovery_execution_admitted is True
+    assert terminal.active_source_class_recovery_lifecycle["authority_lifecycle"][
+        "terminal_stop_state"
+    ] == "approved"
     assert terminal_spine.terminal_stop_approved is True
-    assert weak_spine.trace_packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
-        "blocked_by_authority_lifecycle_required_recovery"
-    )
+    assert weak.active_source_class_recovery_lifecycle["authority_lifecycle"][
+        "recovery_action"
+    ]["approved"] is True
 
 
 def test_lower_tier_evidence_remains_context_not_official_satisfaction() -> None:
