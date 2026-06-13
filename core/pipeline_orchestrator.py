@@ -56,13 +56,10 @@ from core.controller_action_envelope import (
     RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
     RESOLVE_CONFLICT,
-    STOP_INSUFFICIENT_WITH_CAVEAT,
-    STOP_SUFFICIENT,
 )
 from core.controller_loop_spine import (
     ControllerLoopSpineInput,
     build_controller_loop_spine_result,
-    checkpoint_action_name_from_trace,
     reconcile_retrieval_dispatch_runtime_checkpoint_trace,
 )
 from core.controller_recovery_decision import build_controller_recovery_decision
@@ -264,6 +261,13 @@ from core.runtime_prompt_assembly import (
     build_image_context,
     evidence_slice_for_analyst,
 )
+from core.source_class_authority_runtime_adapter import (
+    source_class_recovery_action_approved,
+    source_class_recovery_action_attempted,
+    source_class_recovery_authority_action,
+    source_class_recovery_authority_blocker_reasons,
+    source_class_recovery_checkpoint_refresh_allowed,
+)
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
     build_source_class_recovery_recommendation,
@@ -382,68 +386,6 @@ def _compact_runtime_strings(
 def _targeted_query_provenance_from_runtime(source: str | None) -> str | None:
     return source_path_from_runtime_source(source)
 
-def _source_class_recovery_authority_projection(
-    lifecycle_trace: dict[str, Any],
-) -> dict[str, Any]:
-    authority = lifecycle_trace.get("authority_lifecycle")
-    return authority if isinstance(authority, dict) else {}
-
-def _source_class_recovery_authority_action(
-    lifecycle_trace: dict[str, Any],
-) -> dict[str, Any]:
-    action = _source_class_recovery_authority_projection(lifecycle_trace).get(
-        "recovery_action"
-    )
-    return action if isinstance(action, dict) else {}
-
-def _source_class_recovery_execution_state(
-    lifecycle_trace: dict[str, Any],
-) -> dict[str, Any]:
-    execution = _source_class_recovery_authority_projection(lifecycle_trace).get(
-        "execution_state"
-    )
-    return execution if isinstance(execution, dict) else {}
-
-def _source_class_recovery_action_approved(
-    lifecycle_trace: dict[str, Any],
-) -> bool:
-    action = _source_class_recovery_authority_action(lifecycle_trace)
-    return bool(
-        action.get("action_type") == RECOVER_MISSING_SOURCE_CLASS
-        and action.get("approved") is True
-    )
-
-def _source_class_recovery_action_pending(
-    lifecycle_trace: dict[str, Any],
-) -> bool:
-    execution = _source_class_recovery_execution_state(lifecycle_trace)
-    return execution.get("state") in {"approved_pending_execution", None}
-
-def _source_class_recovery_action_attempted(
-    lifecycle_trace: dict[str, Any],
-) -> bool:
-    return _source_class_recovery_execution_state(lifecycle_trace).get(
-        "state"
-    ) == "attempted"
-
-def _source_class_recovery_authority_blocker_reasons(
-    lifecycle_trace: dict[str, Any],
-) -> tuple[str, ...]:
-    blockers = _source_class_recovery_authority_projection(lifecycle_trace).get(
-        "explicit_blockers"
-    )
-    if not isinstance(blockers, (list, tuple)):
-        return ()
-    out: list[str] = []
-    for item in blockers:
-        if not isinstance(item, dict):
-            continue
-        reason = item.get("blocker_reason") or item.get("reason") or item.get("kind")
-        text = " ".join(str(reason or "").strip().split())
-        if text:
-            out.append(text)
-    return tuple(out)
-
 def _targeted_retrieval_currentness_source_fit_facts(
     *,
     evidence_state: Any,
@@ -460,7 +402,7 @@ def _targeted_retrieval_currentness_source_fit_facts(
     )
     missing_classes.update(
         _compact_runtime_strings(
-            _source_class_recovery_authority_action(
+            source_class_recovery_authority_action(
                 active_source_class_recovery_lifecycle
             ).get(
                 "required_source_classes"
@@ -485,13 +427,13 @@ def _targeted_retrieval_currentness_source_fit_facts(
             getattr(evidence_state, "unfulfilled_obligations", ())
         )
         + _compact_runtime_strings(
-            _source_class_recovery_authority_blocker_reasons(
+            source_class_recovery_authority_blocker_reasons(
                 active_source_class_recovery_lifecycle
             )
         )
         + _compact_runtime_strings(
             [
-                _source_class_recovery_authority_action(
+                source_class_recovery_authority_action(
                     active_source_class_recovery_lifecycle
                 ).get("reason")
             ]
@@ -640,10 +582,10 @@ def _build_targeted_retrieval_lifecycle_from_runtime(
     )
     terminal_stop_approved = bool(controller_loop_spine_result.terminal_stop_approved)
     source_class_owns = bool(
-        _source_class_recovery_action_attempted(
+        source_class_recovery_action_attempted(
             active_source_class_recovery_lifecycle
         )
-        or _source_class_recovery_action_approved(
+        or source_class_recovery_action_approved(
             active_source_class_recovery_lifecycle
         )
         or checkpoint_action == RECOVER_MISSING_SOURCE_CLASS
@@ -727,7 +669,7 @@ def _build_targeted_retrieval_lifecycle_from_runtime(
         weak_corpus_recovery_owns_path=weak_corpus_owns,
         conflict_resolution_owns_path=conflict_owns,
         terminal_stop_owns_path=terminal_stop_owns,
-        source_class_blockers=_source_class_recovery_authority_blocker_reasons(
+        source_class_blockers=source_class_recovery_authority_blocker_reasons(
             active_source_class_recovery_lifecycle
         ),
         weak_corpus_blockers=(weak_corpus_lifecycle_trace or {}).get("blockers")
@@ -759,45 +701,6 @@ def _build_targeted_retrieval_lifecycle_from_runtime(
         **source_fit_facts,
     )
     return build_targeted_retrieval_lifecycle(snapshot).to_trace_fields()
-
-def _authoritative_source_checkpoint_refresh_allowed(
-    *,
-    checkpoint_trace: dict[str, Any],
-    active_source_class_recovery_lifecycle: dict[str, Any],
-) -> bool:
-    """Return whether a stale non-terminal checkpoint may be refreshed."""
-
-    action = _source_class_recovery_authority_action(
-        active_source_class_recovery_lifecycle
-    )
-    required_classes = action.get("required_source_classes")
-    recovery_action_approved = bool(
-        _source_class_recovery_action_approved(
-            active_source_class_recovery_lifecycle
-        )
-        and isinstance(required_classes, list)
-        and required_classes
-        and _source_class_recovery_action_pending(
-            active_source_class_recovery_lifecycle
-        )
-    )
-    checkpoint_action = checkpoint_action_name_from_trace(checkpoint_trace)
-    blockers = set(
-        _source_class_recovery_authority_blocker_reasons(
-            active_source_class_recovery_lifecycle
-        )
-    )
-    return bool(
-        recovery_action_approved
-        and checkpoint_action
-        not in {STOP_INSUFFICIENT_WITH_CAVEAT, STOP_SUFFICIENT}
-        and not blockers
-        & {
-            "blocked_by_weak_corpus_recovery",
-            "blocked_by_corpus_weak",
-            "terminal_stop" + "_approved",
-        }
-    )
 
 def _build_conflict_resolution_lifecycle_from_runtime_answer_contract(
     *,
@@ -3592,7 +3495,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     if (
         evidence_integration_checkpoint_decided
-        and _authoritative_source_checkpoint_refresh_allowed(
+        and source_class_recovery_checkpoint_refresh_allowed(
             checkpoint_trace=evidence_integration_checkpoint_trace,
             active_source_class_recovery_lifecycle=(
                 active_source_class_recovery_lifecycle
@@ -3648,7 +3551,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 )
             )
             if (
-                _source_class_recovery_action_approved(
+                source_class_recovery_action_approved(
                     active_source_class_recovery_lifecycle
                 )
                 and getattr(
@@ -4714,7 +4617,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         _bridge_result = apply_official_source_obligation_bridge(
             recommendation=source_class_recovery_telemetry,
             runtime_trace=_bridge_runtime_trace,
-            existing_blockers=_source_class_recovery_authority_blocker_reasons(
+            existing_blockers=source_class_recovery_authority_blocker_reasons(
                 active_source_class_recovery_lifecycle
             ),
         )
@@ -4774,7 +4677,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 "active_source_class_recovery_missing_classes": [
                     source_class
                     for source_class in (
-                        _source_class_recovery_authority_action(
+                        source_class_recovery_authority_action(
                             active_source_class_recovery_lifecycle
                         ).get("required_source_classes")
                         or []
