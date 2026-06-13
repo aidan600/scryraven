@@ -6,8 +6,6 @@ from typing import Any
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
-from core.controller_action_envelope import RECOVER_MISSING_SOURCE_CLASS
-from core.controller_loop_spine import build_controller_loop_spine_result
 from core.controller_provider_search_allocation import (
     PROVIDER_SEARCH_ALLOCATION_EXECUTION_TRACE_KEY,
     PROVIDER_SEARCH_ALLOCATION_TRACE_KEY,
@@ -224,15 +222,6 @@ def test_ag93e5_direct_ag93e4_recommendation_survives_authoritative_handoff() ->
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
     export = _visibility_export(handoff, lifecycle)
-    spine = build_controller_loop_spine_result(
-        checkpoint_trace={
-            "available": False,
-            "reason": "checkpoint_exception",
-            "official_canonical_checkpoint_exception_fallback_allowed": True,
-        },
-        source_class_lifecycle_trace=lifecycle,
-    )
-
     assert recommendation["source_class_recovery_recommended"] is True
     assert recommendation["missing_expected_source_classes"] == [_MISSING_CLASS]
     assert recommendation["source_class_recovery_query_count"] == 2
@@ -250,7 +239,6 @@ def test_ag93e5_direct_ag93e4_recommendation_survives_authoritative_handoff() ->
     assert lifecycle["authority_lifecycle_weak_corpus_may_own_path"] is False
     assert export["source_class_recovery_eligible"] is True
     assert export["recovery_query_count"] > 0
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
 
 
 def test_ag93e5_query_acquisition_for_bridge_obligation_skips_weak_corpus_block() -> None:

@@ -6,11 +6,6 @@ from typing import Any
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
-from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
-    ControllerLoopSpineInput,
-    build_controller_loop_spine_result,
-)
 from core.official_canonical_recovery_execution_admission import (
     OFFICIAL_CANONICAL_RECOVERY_EXECUTION_ADMISSION_TRACE_KEY,
 )
@@ -237,16 +232,6 @@ def test_ag94h_b_status_only_required_classes_approve_lifecycle_before_weak_arbi
     admission = _admission_payload(handoff)
     acquisition = _acquisition_payload(handoff)
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    spine = build_controller_loop_spine_result(
-        ControllerLoopSpineInput.from_traces(
-            checkpoint_trace={
-                "available": True,
-                "decision": {"action_name": RECOVER_MISSING_SOURCE_CLASS},
-                "recommended_action_name": RECOVER_MISSING_SOURCE_CLASS,
-            },
-            source_class_lifecycle_trace=lifecycle,
-        )
-    )
     recorded_actions = controller.snapshot_ledger()["retrieval_actions"]
 
     assert admission["admission_considered"] is True
@@ -292,7 +277,6 @@ def test_ag94h_b_status_only_required_classes_approve_lifecycle_before_weak_arbi
         "approved_pending_execution"
     )
 
-    assert spine.source_class_executor_dispatched is True
     assert recorded_actions[0]["name"] == "source_class_recovery"
     assert recorded_actions[0]["metadata"]["execution"] == (
         "controller_approved_pending_executor"

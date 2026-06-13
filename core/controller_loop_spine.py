@@ -4,9 +4,10 @@ This module owns the AG-33 through AG-37B control-plane arbitration around the
 evidence-integration checkpoint. It consumes compact, sanitized runtime facts
 and returns JSON-safe trace and authorization fields. It does not execute
 retrieval, choose providers, route depth, build prompts, persist data, or alter
-handoffs. Source-class recovery dispatch is no longer owned here; source-class
-spine fields are diagnostic compatibility traces for the canonical
-AuthorityLifecycle.recovery_action -> SourceClassRecoveryRunner path.
+handoffs. Source-class recovery dispatch is no longer owned here; shared
+active-gate fields may still reflect a source-class checkpoint, but canonical
+execution authority is AuthorityLifecycle.recovery_action ->
+SourceClassRecoveryRunner.
 """
 
 from __future__ import annotations
@@ -27,8 +28,6 @@ RECOVER_WEAK_CORPUS = "recover_weak_corpus"
 RESOLVE_CONFLICT = "resolve_conflict"
 STOP_INSUFFICIENT_WITH_CAVEAT = "stop_insufficient_with_caveat"
 STOP_SUFFICIENT = "stop_sufficient"
-SOURCE_CLASS_SPINE_TRACE_ROLE = "diagnostic_compatibility"
-SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY = "authority_lifecycle.recovery_action"
 _TARGETED_RETRIEVAL_ACTION_NAME = "retrieve_targeted"
 _TARGETED_RUNTIME_DISPATCH_NOT_INVERTED = (
     "blocked_by_runtime_dispatch_not_inverted"
@@ -215,10 +214,6 @@ class ControllerLoopDispatchAuthorization:
         )
 
     @property
-    def source_class_executor_dispatched(self) -> bool:
-        return self.authorized_action_name == RECOVER_MISSING_SOURCE_CLASS
-
-    @property
     def weak_corpus_executor_dispatched(self) -> bool:
         return self.authorized_action_name == RECOVER_WEAK_CORPUS
 
@@ -236,9 +231,6 @@ class ControllerLoopDispatchAuthorization:
             "promoted_action_name": self.promoted_action_name,
             "executed_action_name": self.executed_action_name,
             "authorized_action_name": self.authorized_action_name,
-            "source_class_executor_dispatched": (
-                self.source_class_executor_dispatched
-            ),
             "weak_corpus_executor_dispatched": (
                 self.weak_corpus_executor_dispatched
             ),
@@ -269,10 +261,6 @@ class ControllerLoopSpineResult:
     trace_packet: dict[str, Any]
 
     @property
-    def source_class_executor_dispatched(self) -> bool:
-        return self.dispatch_authorization.source_class_executor_dispatched
-
-    @property
     def weak_corpus_executor_dispatched(self) -> bool:
         return self.dispatch_authorization.weak_corpus_executor_dispatched
 
@@ -293,7 +281,6 @@ class ControllerLoopSpineResult:
             "input_facts": self.input_facts.to_dict(),
             "dispatch_authorization": self.dispatch_authorization.to_dict(),
             "terminal_stop_approved": self.terminal_stop_approved,
-            "source_class_executor_dispatched": self.source_class_executor_dispatched,
             "weak_corpus_executor_dispatched": self.weak_corpus_executor_dispatched,
             "conflict_resolution_executor_dispatched": (
                 self.conflict_resolution_executor_dispatched
@@ -401,14 +388,14 @@ def build_controller_loop_spine_result(
             lifecycle_trace=weak_lifecycle,
             terminal_stop_approved=terminal_stop_approved,
             source_class_recovery_dispatched=bool(
-                source_gate["source_class_executor_dispatched"]
+                source_gate["executor_dispatched"]
             ),
         )
     conflict_gate = _build_conflict_resolution_checkpoint_gate_trace(
         checkpoint_trace=checkpoint,
         lifecycle_trace=conflict_lifecycle,
         terminal_stop_approved=terminal_stop_approved,
-        source_class_executor_dispatched=bool(source_gate["executor_dispatched"]),
+        source_class_recovery_dispatched=bool(source_gate["executor_dispatched"]),
         weak_corpus_executor_dispatched=bool(
             weak_gate.get("weak_corpus_executor_dispatched")
         ),
@@ -644,16 +631,10 @@ def _build_source_class_checkpoint_gate_trace(
 
     return {
         "controller_gate_active": True,
-        "source_class_spine_trace_role": SOURCE_CLASS_SPINE_TRACE_ROLE,
-        "source_class_spine_dispatch_authority": False,
-        "source_class_runner_dispatch_authority": (
-            SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY
-        ),
         "gated_action": RECOVER_MISSING_SOURCE_CLASS,
         "checkpoint_action_name": checkpoint_action_name,
         "lifecycle_eligible": lifecycle_eligible,
         "official_canonical_admitted": official_canonical_admitted,
-        "official_canonical_dispatch_fallback": official_canonical_fallback_dispatch,
         "authority_lifecycle_checkpointless_dispatch": (
             checkpointless_authority_lifecycle_dispatch
         ),
@@ -683,7 +664,6 @@ def _build_source_class_checkpoint_gate_trace(
             lifecycle_trace.get("active_source_class_recovery_blockers") or []
         ),
         "executor_dispatched": executor_dispatched,
-        "source_class_executor_dispatched": executor_dispatched,
         "gate_reason": gate_reason,
         "runtime_behavior_changed": True,
     }
@@ -983,7 +963,7 @@ def _build_conflict_resolution_checkpoint_gate_trace(
     checkpoint_trace: Mapping[str, Any],
     lifecycle_trace: Mapping[str, Any],
     terminal_stop_approved: bool = False,
-    source_class_executor_dispatched: bool = False,
+    source_class_recovery_dispatched: bool = False,
     weak_corpus_executor_dispatched: bool = False,
 ) -> dict[str, Any]:
     checkpoint_action_name = checkpoint_action_name_from_trace(checkpoint_trace)
@@ -995,7 +975,7 @@ def _build_conflict_resolution_checkpoint_gate_trace(
         or []
     )
     other_promoted_action_selected = bool(
-        source_class_executor_dispatched or weak_corpus_executor_dispatched
+        source_class_recovery_dispatched or weak_corpus_executor_dispatched
     )
     executor_dispatched = (
         checkpoint_available
@@ -1298,7 +1278,7 @@ def _compose_combined_checkpoint_gate_trace(
         combined["blocked_executor_types"] = (
             [] if targeted_retrieval_authorized else ["targeted_retrieval"]
         )
-    if source_class_gate_trace.get("source_class_executor_dispatched"):
+    if source_class_gate_trace.get("executor_dispatched"):
         combined["gated_action"] = RECOVER_MISSING_SOURCE_CLASS
         combined["lifecycle_eligible"] = source_class_gate_trace[
             "lifecycle_eligible"
@@ -1328,11 +1308,9 @@ def _build_active_checkpoint_invariant_trace(
         else 0
     )
     terminal_stop_approved = bool(gate_trace.get("terminal_stop_approved"))
-    source_class_executor_dispatched = bool(
-        gate_trace.get(
-            "source_class_executor_dispatched",
-            gate_trace.get("executor_dispatched"),
-        )
+    source_class_recovery_dispatched = bool(
+        gate_trace.get("gated_action") == RECOVER_MISSING_SOURCE_CLASS
+        and gate_trace.get("executor_dispatched")
     )
     weak_corpus_gate_active = bool(gate_trace.get("weak_corpus_gate_active"))
     weak_corpus_executor_dispatched = bool(
@@ -1359,7 +1337,7 @@ def _build_active_checkpoint_invariant_trace(
 
     promoted_action_name = None
     executed_action_name = None
-    if source_class_executor_dispatched:
+    if source_class_recovery_dispatched:
         promoted_action_name = RECOVER_MISSING_SOURCE_CLASS
         executed_action_name = RECOVER_MISSING_SOURCE_CLASS
     elif terminal_stop_approved:
@@ -1377,7 +1355,7 @@ def _build_active_checkpoint_invariant_trace(
     gate_reason = str(gate_trace.get("gate_reason") or "active_gate_not_approved")
     if checkpoint_available and checkpoint_action_name and promoted_action_name is None:
         blocked_or_skipped_actions[checkpoint_action_name] = gate_reason
-    if terminal_stop_approved and source_class_executor_dispatched:
+    if terminal_stop_approved and source_class_recovery_dispatched:
         if checkpoint_action_name:
             blocked_or_skipped_actions[checkpoint_action_name] = (
                 "authority_lifecycle_preserved_required_recovery"
@@ -1406,7 +1384,7 @@ def _build_active_checkpoint_invariant_trace(
         checkpoint_available
         and checkpoint_action_name is not None
         and checkpoint_action_name != RECOVER_MISSING_SOURCE_CLASS
-        and not source_class_executor_dispatched
+        and not source_class_recovery_dispatched
     ):
         blocked_or_skipped_actions[RECOVER_MISSING_SOURCE_CLASS] = (
             "checkpoint_action_not_approved"
@@ -1449,7 +1427,7 @@ def _build_active_checkpoint_invariant_trace(
         )
         if targeted_retrieval_dispatch_authorized:
             blocked_or_skipped_actions.pop(_TARGETED_RETRIEVAL_ACTION_NAME, None)
-        elif terminal_stop_approved and source_class_executor_dispatched:
+        elif terminal_stop_approved and source_class_recovery_dispatched:
             blocked_or_skipped_actions[_TARGETED_RETRIEVAL_ACTION_NAME] = (
                 "blocked_by_authority_lifecycle_required_recovery"
             )

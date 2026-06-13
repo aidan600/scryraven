@@ -24,7 +24,6 @@ from core.authority_lifecycle_runtime_arbitration import (
     build_authority_runtime_arbitration,
 )
 from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
     STOP_INSUFFICIENT_WITH_CAVEAT,
     build_controller_loop_spine_result,
@@ -176,17 +175,12 @@ def _record_attempted(
 
 def test_ag69f_forced_ssa_terminal_stop_cannot_preempt_lifecycle_recovery() -> None:
     trace = _trace(terminal_stop_approved=True)
-    spine = build_controller_loop_spine_result(
-        checkpoint_trace=_checkpoint_terminal(),
-        source_class_lifecycle_trace=trace,
-    )
     _record_attempted(trace, result_count=0, accepted_url_count=0)
     packet = classify_authority_lifecycle_forced_corridor(
         trace,
         corridor_name="ssa_terminal_stop_forced_official_current",
     )
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert packet["terminal_stop_state"] == "approved"
     assert packet["recovery_action_state"] == "approved"
     assert packet["execution_attempted"] is True
@@ -210,7 +204,7 @@ def test_ag69f_forced_weak_corpus_cannot_preempt_lifecycle_recovery() -> None:
         corridor_name="ssa_weak_corpus_forced_official_current",
     )
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert spine.weak_corpus_executor_dispatched is False
     assert packet["weak_corpus_state"] == "owns_path"
     assert packet["execution_attempted"] is True
     assert packet["terminal_paths"] == ["approved_action_executed"]

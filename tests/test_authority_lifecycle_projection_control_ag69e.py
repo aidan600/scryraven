@@ -15,7 +15,6 @@ from core.authority_lifecycle_runtime_arbitration import (
     build_authority_runtime_arbitration,
 )
 from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
     STOP_INSUFFICIENT_WITH_CAVEAT,
     build_controller_loop_spine_result,
@@ -122,7 +121,6 @@ def test_ag69e_terminal_stop_cannot_control_when_lifecycle_allows_recovery() -> 
     )
 
     assert trace["authority_lifecycle_required_recovery_allowed"] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert spine.trace_packet["blocked_or_skipped_actions"][
         STOP_INSUFFICIENT_WITH_CAVEAT
     ] == "authority_lifecycle_preserved_required_recovery"
@@ -145,8 +143,10 @@ def test_ag69e_weak_corpus_cannot_control_when_lifecycle_allows_recovery() -> No
     )
 
     assert trace["authority_lifecycle_weak_corpus_may_own_path"] is False
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert spine.weak_corpus_executor_dispatched is False
+    assert spine.trace_packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
+        "blocked_by_authority_lifecycle_required_recovery"
+    )
 
 
 def test_ag69e_legacy_execution_and_candidate_return_fields_are_projections() -> None:

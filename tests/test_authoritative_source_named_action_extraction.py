@@ -414,8 +414,7 @@ def test_competing_checkpoint_action_blocks_fallback_dispatch_as_before() -> Non
     )
 
     assert result.action_decision.approved is True
-    assert spine.source_class_executor_dispatched is False
-    assert spine.authorized_dispatch != "recover_missing_source_class"
+    assert spine.source_class_checkpoint_gate_trace["spine_authorization_source"] is None
 
 
 def test_terminal_stop_checkpoint_blocks_required_recovery() -> None:
@@ -439,9 +438,10 @@ def test_terminal_stop_checkpoint_blocks_required_recovery() -> None:
     assert result.active_source_class_recovery_lifecycle[
         "authority_lifecycle_required_recovery_allowed"
     ] is True
-    assert spine.source_class_executor_dispatched is False
     assert spine.terminal_stop_approved is True
-    assert spine.authorized_dispatch is None
+    assert spine.trace_packet["blocked_or_skipped_actions"][
+        "recover_missing_source_class"
+    ] == "blocked_by_terminal_stop"
 
 
 def test_weak_corpus_blocker_remains_authoritative_for_canonical_docs() -> None:

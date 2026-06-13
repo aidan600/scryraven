@@ -7,7 +7,6 @@ from typing import Any
 import pytest
 
 from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
     RESOLVE_CONFLICT,
     STOP_INSUFFICIENT_WITH_CAVEAT,
@@ -538,8 +537,6 @@ def test_ag64d_live_style_admitted_official_current_recovery_executes() -> None:
     assert lifecycle["active_source_class_recovery_action_envelope"][
         "allowed_action"
     ] is True
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
     assert spine.trace_packet["gate_reason"] == (
         "approved_by_official_canonical_admission"
     )
@@ -612,8 +609,7 @@ def test_ag64d_checkpoint_ownership_blocks_official_current_fallback(
     )
 
     assert lifecycle["active_source_class_recovery_official_canonical_admitted"] is True
-    assert spine.source_class_executor_dispatched is False
-    assert spine.authorized_dispatch != RECOVER_MISSING_SOURCE_CLASS
+    assert spine.source_class_checkpoint_gate_trace["spine_authorization_source"] is None
 
 
 def test_ag64b_protected_surface_static_scan() -> None:

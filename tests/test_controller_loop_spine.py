@@ -10,8 +10,6 @@ from core.controller_loop_spine import (
     RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
     RESOLVE_CONFLICT,
-    SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY,
-    SOURCE_CLASS_SPINE_TRACE_ROLE,
     STOP_INSUFFICIENT_WITH_CAVEAT,
     STOP_SUFFICIENT,
     ControllerLoopActionCandidate,
@@ -129,12 +127,28 @@ def _run(action_name: str, **overrides: Any) -> dict[str, Any]:
     return result.trace_packet
 
 
-def _assert_source_class_trace_demoted(packet: dict[str, Any]) -> None:
-    assert packet["source_class_spine_trace_role"] == SOURCE_CLASS_SPINE_TRACE_ROLE
-    assert packet["source_class_spine_dispatch_authority"] is False
-    assert packet["source_class_runner_dispatch_authority"] == (
-        SOURCE_CLASS_RUNNER_DISPATCH_AUTHORITY
-    )
+def _action_executor_dispatched(packet: dict[str, Any], action_name: str) -> bool:
+    if action_name == RECOVER_MISSING_SOURCE_CLASS:
+        return bool(
+            packet["gated_action"] == RECOVER_MISSING_SOURCE_CLASS
+            and packet["executor_dispatched"]
+        )
+    if action_name == RECOVER_WEAK_CORPUS:
+        return bool(packet["weak_corpus_executor_dispatched"])
+    if action_name == RESOLVE_CONFLICT:
+        return bool(packet["conflict_resolution_executor_dispatched"])
+    return False
+
+
+def _assert_retired_source_class_packet_fields_absent(packet: dict[str, Any]) -> None:
+    retired_fields = {
+        "source_class_executor_dispatched",
+        "official_canonical_dispatch_fallback",
+        "source_class_spine_trace_role",
+        "source_class_spine_dispatch_authority",
+        "source_class_runner_dispatch_authority",
+    }
+    assert retired_fields.isdisjoint(packet)
 
 
 def test_checkpoint_action_name_extraction_prefers_decision() -> None:
@@ -230,9 +244,9 @@ def test_exactly_one_checkpoint_decision_and_at_most_one_promoted_action(
     assert packet["promoted_action_name"] == executed
     assert packet["executed_action_name"] == executed
     dispatched = [
-        packet["source_class_executor_dispatched"],
-        packet["weak_corpus_executor_dispatched"],
-        packet["conflict_resolution_executor_dispatched"],
+        _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS),
+        _action_executor_dispatched(packet, RECOVER_WEAK_CORPUS),
+        _action_executor_dispatched(packet, RESOLVE_CONFLICT),
     ]
     assert dispatched.count(True) == 1
 
@@ -254,7 +268,7 @@ def test_terminal_stop_blocks_bounded_executors(
     assert packet["final_answer_posture"] == posture
     assert packet["promoted_action_name"] == action_name
     assert packet["executed_action_name"] is None
-    assert packet["source_class_executor_dispatched"] is False
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is False
     assert packet["weak_corpus_executor_dispatched"] is False
     assert packet["conflict_resolution_executor_dispatched"] is False
     assert packet["blocked_or_skipped_actions"][RECOVER_MISSING_SOURCE_CLASS] == (
@@ -274,18 +288,20 @@ def test_terminal_stop_blocks_bounded_executors(
     assert packet["targeted_retrieval_dispatch_authorized"] is False
 
 
-def test_source_class_compatibility_trace_only_when_checkpoint_selects_it_and_lifecycle_is_eligible() -> None:
+def test_source_class_gate_uses_shared_active_gate_when_checkpoint_selects_it_and_lifecycle_is_eligible() -> None:
     approved = _run(RECOVER_MISSING_SOURCE_CLASS)
     blocked = _run(
         RECOVER_MISSING_SOURCE_CLASS,
         source=_source_lifecycle(eligible=False, reason="blocked_by_iteration_budget"),
     )
 
-    _assert_source_class_trace_demoted(approved)
+    _assert_retired_source_class_packet_fields_absent(approved)
     assert approved["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert approved["executor_dispatched"] is True
-    _assert_source_class_trace_demoted(blocked)
+    assert approved["gated_action"] == RECOVER_MISSING_SOURCE_CLASS
+    _assert_retired_source_class_packet_fields_absent(blocked)
     assert blocked["executed_action_name"] is None
+    assert blocked["executor_dispatched"] is False
     assert blocked["gate_reason"] == "blocked_by_lifecycle"
     assert blocked["blocked_or_skipped_actions"][RECOVER_MISSING_SOURCE_CLASS] == (
         "blocked_by_lifecycle"
@@ -307,10 +323,9 @@ def test_official_canonical_admission_remains_compatibility_trace_when_no_checkp
 
     assert packet["checkpoint_decision_count"] == 0
     assert packet["official_canonical_admitted"] is True
-    assert packet["official_canonical_dispatch_fallback"] is True
-    _assert_source_class_trace_demoted(packet)
-    assert packet["source_class_executor_dispatched"] is True
-    assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
+    assert packet["spine_authorization_source"] == "official_canonical_admission"
+    _assert_retired_source_class_packet_fields_absent(packet)
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is True
     assert result.dispatch_authorization.authorized_action_name == (
         RECOVER_MISSING_SOURCE_CLASS
     )
@@ -335,7 +350,7 @@ def test_official_canonical_admission_requires_valid_controller_envelope_for_fal
 
     assert packet["official_canonical_admitted"] is True
     assert packet["controller_action_envelope_approved"] is False
-    assert packet["source_class_executor_dispatched"] is False
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is False
     assert packet["executed_action_name"] is None
 
 
@@ -354,10 +369,9 @@ def test_official_canonical_admission_dispatches_on_licensed_checkpoint_exceptio
     ).trace_packet
 
     assert packet["official_canonical_admitted"] is True
-    assert packet["official_canonical_dispatch_fallback"] is True
-    assert packet["source_class_executor_dispatched"] is True
+    assert packet["spine_authorization_source"] == "official_canonical_admission"
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is True
     assert packet["gate_reason"] == "approved_by_official_canonical_admission"
-    assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
 
 
 def test_checkpoint_exception_without_fallback_control_fact_fails_closed() -> None:
@@ -374,8 +388,8 @@ def test_checkpoint_exception_without_fallback_control_fact_fails_closed() -> No
     ).trace_packet
 
     assert packet["official_canonical_admitted"] is True
-    assert packet["official_canonical_dispatch_fallback"] is False
-    assert packet["source_class_executor_dispatched"] is False
+    assert packet["spine_authorization_source"] is None
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is False
     assert packet["gate_reason"] == "checkpoint_unavailable"
     assert packet["executed_action_name"] is None
 
@@ -395,8 +409,8 @@ def test_checkpoint_exception_without_official_canonical_admission_fails_closed(
     ).trace_packet
 
     assert packet["official_canonical_admitted"] is False
-    assert packet["official_canonical_dispatch_fallback"] is False
-    assert packet["source_class_executor_dispatched"] is False
+    assert packet["spine_authorization_source"] is None
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is False
     assert packet["gate_reason"] == "checkpoint_unavailable"
     assert packet["executed_action_name"] is None
 
@@ -415,13 +429,12 @@ def test_official_canonical_admission_dispatches_when_checkpoint_actionless() ->
     ).trace_packet
 
     assert packet["official_canonical_admitted"] is True
-    assert packet["official_canonical_dispatch_fallback"] is True
-    assert packet["source_class_executor_dispatched"] is True
+    assert packet["spine_authorization_source"] == "official_canonical_admission"
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is True
     assert packet["gate_reason"] == "approved_by_official_canonical_admission"
-    assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
 
 
-def test_ag95h_remaining_source_class_old_keys_are_compatibility_trace_only() -> None:
+def test_ag95i_source_class_packet_field_diet_deletes_old_compatibility_keys() -> None:
     lifecycle = _source_lifecycle(official_canonical_admitted=True)
     synthetic_checkpoint_gap = build_controller_loop_spine_result(
         checkpoint_trace={
@@ -460,21 +473,21 @@ def test_ag95h_remaining_source_class_old_keys_are_compatibility_trace_only() ->
         source_class_lifecycle_trace=lifecycle,
     )
 
-    assert synthetic_checkpoint_gap.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert product_checkpoint_gap_without_fact.authorized_dispatch is None
-    assert product_checkpoint_gap_without_fact.source_class_executor_dispatched is False
-    assert product_checkpoint_gap_with_fact.authorized_dispatch == (
-        RECOVER_MISSING_SOURCE_CLASS
+    assert synthetic_checkpoint_gap.trace_packet["spine_authorization_source"] == (
+        "official_canonical_admission"
     )
+    assert product_checkpoint_gap_without_fact.trace_packet[
+        "spine_authorization_source"
+    ] is None
     assert product_checkpoint_gap_with_fact.trace_packet[
-        "official_canonical_dispatch_fallback"
-    ] is True
-    assert stale_checkpoint.authorized_dispatch is None
+        "spine_authorization_source"
+    ] == "official_canonical_admission"
     assert stale_checkpoint.trace_packet["gate_reason"] == (
         "alternate_action_not_promoted"
     )
-    assert refreshed_checkpoint.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert refreshed_checkpoint.source_class_executor_dispatched is True
+    assert refreshed_checkpoint.trace_packet["spine_authorization_source"] == (
+        "checkpoint_action"
+    )
 
     for result in (
         synthetic_checkpoint_gap,
@@ -483,7 +496,11 @@ def test_ag95h_remaining_source_class_old_keys_are_compatibility_trace_only() ->
         stale_checkpoint,
         refreshed_checkpoint,
     ):
-        _assert_source_class_trace_demoted(result.trace_packet)
+        _assert_retired_source_class_packet_fields_absent(result.trace_packet)
+        _assert_retired_source_class_packet_fields_absent(result.to_dict())
+        _assert_retired_source_class_packet_fields_absent(
+            result.dispatch_authorization.to_dict()
+        )
 
 
 @pytest.mark.parametrize(
@@ -504,8 +521,8 @@ def test_official_canonical_admission_does_not_substitute_for_checkpoint_action(
     )
 
     assert packet["official_canonical_admitted"] is True
-    assert packet["official_canonical_dispatch_fallback"] is False
-    assert packet["source_class_executor_dispatched"] is False
+    assert packet["spine_authorization_source"] is None
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is False
 
 
 def test_weak_corpus_dispatch_only_when_checkpoint_selects_it_and_lifecycle_is_eligible() -> None:
@@ -556,10 +573,19 @@ def test_source_class_weak_corpus_and_conflict_dispatch_are_mutually_exclusive()
             for action, used in (
                 (
                     RECOVER_MISSING_SOURCE_CLASS,
-                    packet["source_class_executor_dispatched"],
+                    _action_executor_dispatched(
+                        packet,
+                        RECOVER_MISSING_SOURCE_CLASS,
+                    ),
                 ),
-                (RECOVER_WEAK_CORPUS, packet["weak_corpus_executor_dispatched"]),
-                (RESOLVE_CONFLICT, packet["conflict_resolution_executor_dispatched"]),
+                (
+                    RECOVER_WEAK_CORPUS,
+                    _action_executor_dispatched(packet, RECOVER_WEAK_CORPUS),
+                ),
+                (
+                    RESOLVE_CONFLICT,
+                    _action_executor_dispatched(packet, RESOLVE_CONFLICT),
+                ),
             )
             if used
         ]
@@ -580,7 +606,7 @@ def test_unpromoted_actions_do_not_dispatch_substitutes(action_name: str) -> Non
     assert packet["promoted_action_name"] is None
     assert packet["executed_action_name"] is None
     assert packet["gate_reason"] == "alternate_action_not_promoted"
-    assert packet["source_class_executor_dispatched"] is False
+    assert _action_executor_dispatched(packet, RECOVER_MISSING_SOURCE_CLASS) is False
     assert packet["weak_corpus_executor_dispatched"] is False
     assert packet["conflict_resolution_executor_dispatched"] is False
 
@@ -645,7 +671,6 @@ def test_targeted_lifecycle_blocker_wins_over_runtime_dispatch_block() -> None:
 def test_non_selected_eligible_targeted_retrieval_is_checkpoint_not_approved() -> None:
     packet = _run(RECOVER_MISSING_SOURCE_CLASS)
 
-    assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert packet["targeted_retrieval_lifecycle_eligible"] is True
     assert packet["blocked_or_skipped_actions"][_RETRIEVE_TARGETED] == (
         "checkpoint_action_not_approved"
@@ -808,7 +833,6 @@ def test_pipeline_orchestrator_does_not_recompute_spine_promotion_state() -> Non
         "executed_action_name",
         "executor_dispatched",
         "executor_dispatch_blocked",
-        "source_class_executor_dispatched",
         "weak_corpus_executor_dispatched",
         "conflict_resolution_executor_dispatched",
         "terminal_stop_approved",

@@ -522,7 +522,6 @@ def test_ag22_source_class_checkpoint_skips_weak_and_preserves_official_lane(
     assert trace["active_source_class_recovery_used"] is True
     assert trace["active_source_class_recovery_attempt_count"] == 1
     assert packet["promoted_action_name"] == RECOVER_MISSING_SOURCE_CLASS
-    assert packet["executed_action_name"] == RECOVER_MISSING_SOURCE_CLASS
     assert packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
         "checkpoint_action_not_approved"
     )

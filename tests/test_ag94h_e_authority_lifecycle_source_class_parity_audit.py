@@ -430,8 +430,6 @@ def test_ag94h_f_downstream_decision_spine_and_runner_dispatch_once() -> None:
         "execute_existing_recovery_action"
     )
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
-    assert spine.source_class_executor_dispatched is True
     assert spine.source_class_checkpoint_gate_trace[
         "authority_lifecycle_required_recovery_allowed"
     ] is True

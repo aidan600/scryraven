@@ -16,7 +16,6 @@ from core.authority_lifecycle_runtime_arbitration import (
     build_authority_runtime_arbitration,
 )
 from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
     RECOVER_WEAK_CORPUS,
     STOP_INSUFFICIENT_WITH_CAVEAT,
     build_controller_loop_spine_result,
@@ -280,8 +279,10 @@ def test_terminal_stop_blocks_but_weak_corpus_cannot_preempt_surfaced_recovery()
 
     assert terminal.official_canonical_recovery_execution_admitted is False
     assert weak.official_canonical_recovery_execution_admitted is True
-    assert terminal_spine.authorized_dispatch is None
-    assert weak_spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
+    assert terminal_spine.terminal_stop_approved is True
+    assert weak_spine.trace_packet["blocked_or_skipped_actions"][RECOVER_WEAK_CORPUS] == (
+        "blocked_by_authority_lifecycle_required_recovery"
+    )
 
 
 def test_lower_tier_evidence_remains_context_not_official_satisfaction() -> None:

@@ -15,10 +15,6 @@ from core.authority_lifecycle_execution import (
 from core.authority_lifecycle_runtime_arbitration import (
     build_authority_runtime_arbitration,
 )
-from core.controller_loop_spine import (
-    RECOVER_MISSING_SOURCE_CLASS,
-    build_controller_loop_spine_result,
-)
 from core.official_canonical_recovery_visibility_export import (
     build_official_canonical_recovery_visibility_export,
 )
@@ -392,11 +388,6 @@ def test_ag69d_real_path_fixture_reaches_post_execution_candidate_visibility() -
         orchestrator_state=_orchestrator_state(),
     )
     lifecycle = handoff.active_source_class_recovery_lifecycle
-    spine = build_controller_loop_spine_result(
-        checkpoint_trace={"available": False, "reason": "checkpoint_unavailable"},
-        source_class_lifecycle_trace=lifecycle,
-    )
-
     execution, queries, passages = _execute_real_path_fixture(controller, lifecycle)
     final, decision = apply_recovered_evidence_visibility_boundary(
         final_top_evidence=[_existing_secondary()],
@@ -406,7 +397,6 @@ def test_ag69d_real_path_fixture_reaches_post_execution_candidate_visibility() -
     )
     lifecycle.update(decision.to_trace_fields())
 
-    assert spine.authorized_dispatch == RECOVER_MISSING_SOURCE_CLASS
     assert execution["attempted"] is True
     assert list(_RECOVERY_QUERIES)[0] in queries
     assert passages[0]["retrieval_stage"] == "source_class_recovery"
