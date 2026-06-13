@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.pipeline_orchestrator import (
+from core.retrieval_depth_policy import (
     choose_retrieval_search_depth,
     choose_supplemental_search_depth,
 )

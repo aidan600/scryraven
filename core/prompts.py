@@ -1,4 +1,4 @@
-"""Prompt bundles for ProPlex."""
+"""Prompt bundles for ScryRaven."""
 
 # Word targets are guidance only — JSON must remain complete and parseable.
 ECONOMIST_COMPLEXITY_BUDGET: dict[str, str] = {

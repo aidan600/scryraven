@@ -388,10 +388,7 @@ def test_ag94h_d_candidate_state_does_not_trust_legacy_final_counts() -> None:
     assert export["candidate_acquisition_eligible"] is False
     assert export["candidate_acquisition_used"] is False
     assert export["acquisition_attempted"] is False
-    assert export["controller_recovery_decision_observed"] is False
-    assert export["controller_recovery_decision_projection_source"] == (
-        "absent_from_runtime_trace"
-    )
+    assert "controller_recovery_decision_observed" not in export
     assert "controller_recovery_decision" not in export
     assert decision["candidate_state_summary"] != (
         "selected_complete_official_current_evidence_exists"

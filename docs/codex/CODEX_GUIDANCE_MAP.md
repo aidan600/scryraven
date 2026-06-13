@@ -60,8 +60,9 @@ are repo files; use repo-visible files and the current phase prompt.
   to FinalEvidenceBundle/FinalAnswerPacket observation, and AG-95Q moves
   provider-review allocation runtime ownership to canonical
   RunAuthority/SearchJudgment-fed lifecycle state consumed by the provider
-  allocation helper. ControllerRecoveryDecision remains diagnostic/export
-  compatibility only where older projection coverage still needs it. AG-95F/G/H
+  allocation helper. AG-95R/S/T retires ControllerRecoveryDecision from active
+  visibility export; current export coverage observes canonical provider-review
+  allocation fields. AG-95F/G/H
   are historical setup phases; use AG-95I through AG-95Q for the current packet,
   lifecycle, provider-review allocation, and pipeline product-callsite
   compatibility contract.

@@ -13,7 +13,6 @@ from core.controller_provider_search_allocation import (
     build_provider_review_allocation_request,
     build_provider_search_allocation_record,
 )
-from core.controller_recovery_decision import build_controller_recovery_decision
 from core.official_canonical_recovery_visibility_export import (
     build_official_canonical_recovery_visibility_export,
 )
@@ -250,7 +249,7 @@ def _non_allocation_cases() -> list[tuple[str, dict[str, Any]]]:
     ]
 
 
-def test_ag75a_canonical_provider_review_request_preserves_legacy_slice() -> None:
+def test_ag75a_canonical_provider_review_request_uses_lifecycle_state() -> None:
     cases = [
         (
             "provider review allocation after zero-candidate recovery",
@@ -259,10 +258,12 @@ def test_ag75a_canonical_provider_review_request_preserves_legacy_slice() -> Non
                 active_source_class_recovery_provider_role="source_class_recovery",
                 active_source_class_recovery_search_depth="basic",
             ),
+            True,
         ),
         (
             "retry still available",
             _allocation_trace(recovery_slot_available=True),
+            False,
         ),
         (
             "stale controller fields do not allocate",
@@ -271,15 +272,15 @@ def test_ag75a_canonical_provider_review_request_preserves_legacy_slice() -> Non
                 recovery_decision=PROVIDER_SEARCH_REVIEW_REQUEST,
                 recovery_allowed_executor_action=PROVIDER_SEARCH_ALLOCATION_ACTION,
             ),
+            False,
         ),
-        *_non_allocation_cases(),
     ]
+    cases.extend((name, lifecycle, False) for name, lifecycle in _non_allocation_cases())
 
-    for name, lifecycle in cases:
-        old_decision = build_controller_recovery_decision(lifecycle).decision
+    for name, lifecycle, expected in cases:
         request = build_provider_review_allocation_request(lifecycle)
 
-        if old_decision == PROVIDER_SEARCH_REVIEW_REQUEST:
+        if expected:
             assert request is not None, name
             assert request.decision == PROVIDER_SEARCH_REVIEW_REQUEST, name
         else:

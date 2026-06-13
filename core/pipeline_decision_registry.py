@@ -234,7 +234,7 @@ PIPELINE_DECISION_REGISTRY: tuple[PipelineDecisionRegistryEntry, ...] = (
     PipelineDecisionRegistryEntry(
         decision_name="recovered_evidence_visibility_boundary",
         current_location="core/recovered_evidence_visibility.py",
-        current_owner="ControllerRecoveryDecision plus recovered evidence visibility helper",
+        current_owner="canonical lifecycle plus recovered evidence visibility helper",
         target_owner="Controller-approved candidate stream and final evidence builder input",
         executor_helper="apply_controller_recovered_evidence_visibility",
         observer_export_surface="AuthorityLifecycle candidate fit and ControllerEvidenceLedger",
@@ -285,14 +285,14 @@ PIPELINE_DECISION_REGISTRY: tuple[PipelineDecisionRegistryEntry, ...] = (
     PipelineDecisionRegistryEntry(
         decision_name="recovery_retry_stop_provider_review_decision",
         current_location="core/controller_recovery_decision.py",
-        current_owner="ControllerRecoveryDecision diagnostic decision table",
+        current_owner="historical ControllerRecoveryDecision diagnostic table",
         target_owner="RunAuthority lifecycle and provider-review allocation request",
         executor_helper="diagnostic/export observer only",
         observer_export_surface="official/canonical visibility export",
         protected_surface_risk=("provider_routing", "query_generation", "follow_up_behavior"),
         current_test_coverage=(
-            "tests/test_ag74d_controller_recovery_retry_stop_loop.py",
             "tests/test_ag74f_recovery_runner_extraction.py",
+            "tests/test_official_canonical_recovery_visibility_export_ag50c.py",
         ),
         deletion_or_extraction_status="runtime_allocation_bypassed_ag95q",
         next_action="Delete or demote remaining provider-review diagnostic fields after export coverage moves.",
@@ -418,7 +418,7 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
     OrchestratorBurnDownSeam(
         seam_name="source-class recovery runner dispatch handoff",
         current_location="core/pipeline_orchestrator.py lines 5159-5279",
-        current_owner="ControllerRecoveryDecision plus source_class_recovery_runner",
+        current_owner="RunAuthority lifecycle plus source_class_recovery_runner",
         target_owner="core.source_class_recovery_runner",
         classification="pure_plumbing",
         protected_surface_risk=("provider_routing_selection_depth_escalation",),
@@ -464,7 +464,7 @@ AG76C_BD_ORCHESTRATOR_SEAM_LEDGER: tuple[OrchestratorBurnDownSeam, ...] = (
     OrchestratorBurnDownSeam(
         seam_name="recovered evidence visibility boundary",
         current_location="core/recovered_evidence_visibility.py",
-        current_owner="ControllerRecoveryDecision plus recovered evidence visibility helper",
+        current_owner="canonical lifecycle plus recovered evidence visibility helper",
         target_owner="core.recovered_evidence_visibility",
         classification="extracted_complete",
         protected_surface_risk=("candidate_fit_semantics", "final_evidence_selection_semantics"),

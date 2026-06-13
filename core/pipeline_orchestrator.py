@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -41,11 +40,11 @@ from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
 from core.conflict_resolution_controller import (
-    ConflictResolutionControllerDecision,
     ConflictResolutionDecision,
-    build_conflict_resolution_controller_input,
-    build_conflict_resolution_lifecycle,
     conflict_resolution_lifecycle_defaults,
+)
+from core.conflict_resolution_runtime_adapter import (
+    build_conflict_resolution_lifecycle_from_runtime_answer_contract as _build_conflict_resolution_lifecycle_from_runtime_answer_contract,
 )
 from core.context_measurement import (
     ContextMeasurementCollector,
@@ -60,7 +59,6 @@ from core.controller_action_envelope import (
 from core.controller_loop_spine import (
     ControllerLoopSpineInput,
     build_controller_loop_spine_result,
-    reconcile_retrieval_dispatch_runtime_checkpoint_trace,
 )
 from core.controller_state_mirror import record_run_metadata_snapshot
 from core.corpus_state import (
@@ -116,7 +114,6 @@ from core.nutrition_author_notes import (
 )
 from core.ordinary_continuation_candidate import (
     ordinary_continuation_candidate_defaults,
-    source_path_from_runtime_source,
 )
 from core.ordinary_continuation_spine_gate import (
     EvaluatorContinuationSpineGateFacts,
@@ -172,11 +169,15 @@ from core.query_production_runtime import (
 from core.recovered_evidence_visibility import (
     apply_controller_recovered_evidence_visibility,
 )
+from core.retrieval_authority_stage import build_retrieval_authority_stage
 from core.retrieval_batch_dispatch import (
-    RETRIEVAL_BATCH_DISPATCH_TRACE_KEY,
     RetrievalBatchDispatchFacts,
     build_retrieval_batch_dispatch_decision,
     retrieval_batch_dispatch_defaults,
+)
+from core.retrieval_depth_policy import (
+    choose_retrieval_search_depth,
+    choose_supplemental_search_depth,
 )
 from core.retrieval_dispatch_runtime import (
     EmbeddingActionRecord,
@@ -191,12 +192,9 @@ from core.retrieval_quality import (
     DEFAULT_UTILIZATION_THRESHOLD,
     VERBOSITY_GATE_UTILIZATION_THRESHOLD,
     build_disambiguation_queries,
-    format_quoted_anchor,
-    official_bias_phrase,
     should_retry_retrieval,
     utilization_entity_anchor,
     utilization_rate,
-    wants_official_source_bias,
 )
 from core.retrieval_scheduler import (
     continuation_action_values,
@@ -214,7 +212,6 @@ from core.retrieval_stop_controller import (
     decide_retrieval_stop_with_kernel_action,
 )
 from core.retrieval_stop_trace_projection import (
-    build_ordinary_continuation_trace_projection,
     build_retrieval_stop_active_stop_budget_exhausted_telemetry,
     build_retrieval_stop_active_stop_no_queries_telemetry,
     build_retrieval_stop_shadow_telemetry,
@@ -254,13 +251,6 @@ from core.runtime_prompt_assembly import (
     build_image_context,
     evidence_slice_for_analyst,
 )
-from core.source_class_authority_runtime_adapter import (
-    source_class_recovery_action_approved,
-    source_class_recovery_action_attempted,
-    source_class_recovery_authority_action,
-    source_class_recovery_authority_blocker_reasons,
-    source_class_recovery_checkpoint_refresh_allowed,
-)
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
     build_source_class_recovery_recommendation,
@@ -282,9 +272,10 @@ from core.synthesis_evaluator_supplemental_search_runtime_handoff import (
     RuntimeSynthesisEvaluatorSupplementalSearchFactCollector,
 )
 from core.targeted_retrieval_controller import (
-    build_targeted_retrieval_controller_input,
-    build_targeted_retrieval_lifecycle,
     targeted_retrieval_lifecycle_defaults,
+)
+from core.targeted_retrieval_runtime_adapter import (
+    build_targeted_retrieval_lifecycle_from_runtime as _build_targeted_retrieval_lifecycle_from_runtime,
 )
 from core.useful_content import evaluate_useful_content
 from core.weak_corpus_controller import (
@@ -293,6 +284,15 @@ from core.weak_corpus_controller import (
     decide_weak_corpus_recovery,
     record_weak_corpus_recovery_decision,
     weak_corpus_recovery_trace_fields,
+)
+from core.weak_corpus_recovery_queries import (
+    clean_query as _clean_query,
+)
+from core.weak_corpus_recovery_queries import (
+    extract_year as _extract_year,
+)
+from core.weak_corpus_recovery_queries import (
+    weak_corpus_recovery_seed_queries as _weak_corpus_recovery_seed_queries,
 )
 from core.weak_failure_gate_contract import (
     build_weak_failure_gate_state,
@@ -336,17 +336,6 @@ class PipelineError(RuntimeError):
 # Module-level helpers (moved from ui/pages.py inner functions)
 # ---------------------------------------------------------------------------
 
-def _clean_query(q: str) -> str:
-    """Normalize query text and drop likely trailing token truncation."""
-    q2 = " ".join((q or "").strip().split())
-    if not q2:
-        return ""
-    words = q2.split(" ")
-    last = words[-1]
-    if len(last) < 3 and last.isalpha() and "." not in last:
-        words = words[:-1]
-    return " ".join(words)[:300]
-
 _retrieval_stop_shadow_defaults = retrieval_stop_shadow_defaults
 _retrieval_stop_active_defaults = retrieval_stop_active_defaults
 _build_retrieval_stop_shadow_telemetry = build_retrieval_stop_shadow_telemetry
@@ -357,549 +346,9 @@ _build_retrieval_stop_active_stop_budget_exhausted_telemetry = (
     build_retrieval_stop_active_stop_budget_exhausted_telemetry
 )
 
-def _compact_runtime_strings(
-    values: Any,
-    *,
-    max_items: int = 8,
-    max_len: int = 180,
-) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    iterable = values if isinstance(values, (list, tuple, set, frozenset)) else []
-    for item in iterable:
-        text = " ".join(str(item or "").strip().split())[:max_len]
-        key = text.casefold()
-        if text and key not in seen:
-            out.append(text)
-            seen.add(key)
-        if len(out) >= max_items:
-            break
-    return out
-
-def _targeted_query_provenance_from_runtime(source: str | None) -> str | None:
-    return source_path_from_runtime_source(source)
-
-def _targeted_retrieval_currentness_source_fit_facts(
-    *,
-    evidence_state: Any,
-    source_class_recovery_telemetry: dict[str, Any],
-    active_source_class_recovery_lifecycle: dict[str, Any],
-) -> dict[str, bool]:
-    missing_classes = set(
-        _compact_runtime_strings(getattr(evidence_state, "source_classes_missing", ()))
-    )
-    missing_classes.update(
-        _compact_runtime_strings(
-            source_class_recovery_telemetry.get("missing_expected_source_classes")
-        )
-    )
-    missing_classes.update(
-        _compact_runtime_strings(
-            source_class_recovery_authority_action(
-                active_source_class_recovery_lifecycle
-            ).get(
-                "required_source_classes"
-            )
-        )
-    )
-    gap_candidates = set(
-        _compact_runtime_strings(
-            source_class_recovery_telemetry.get("source_class_gap_candidates")
-        )
-    )
-    source_fit_gaps = missing_classes | gap_candidates
-    official_current_source_gap = "official_current_rules" in source_fit_gaps
-    legal_or_regulatory_gap = "legal_or_regulatory_text" in source_fit_gaps
-
-    text_facts = " ".join(
-        _compact_runtime_strings(getattr(evidence_state, "missing_information", ()))
-        + _compact_runtime_strings(
-            getattr(evidence_state, "partial_obligations", ())
-        )
-        + _compact_runtime_strings(
-            getattr(evidence_state, "unfulfilled_obligations", ())
-        )
-        + _compact_runtime_strings(
-            source_class_recovery_authority_blocker_reasons(
-                active_source_class_recovery_lifecycle
-            )
-        )
-        + _compact_runtime_strings(
-            [
-                source_class_recovery_authority_action(
-                    active_source_class_recovery_lifecycle
-                ).get("reason")
-            ]
-        )
-    ).casefold()
-    current_terms = (
-        "current",
-        "latest",
-        "deadline",
-        "injunction",
-        "lawsuit",
-        "enforcement",
-        "policy change",
-        "agency action",
-        "regulatory event",
-    )
-    legal_terms = ("legal", "regulatory", "rule", "agency", "court")
-    text_current_gap = any(term in text_facts for term in current_terms)
-    text_legal_gap = any(term in text_facts for term in legal_terms)
-    legal_or_regulatory_current_event_gap = bool(
-        legal_or_regulatory_gap
-        or (text_current_gap and text_legal_gap)
-    )
-    currentness_gap_detected = bool(
-        official_current_source_gap
-        or legal_or_regulatory_current_event_gap
-        or text_current_gap
-    )
-    reputable_news_or_primary_update_needed = bool(
-        currentness_gap_detected
-        and (
-            official_current_source_gap
-            or legal_or_regulatory_current_event_gap
-            or "reputable_news" in source_fit_gaps
-            or "reputable_secondary" in source_fit_gaps
-        )
-    )
-    final_answer_should_caveat_missing_current_source = bool(
-        currentness_gap_detected
-        and (official_current_source_gap or legal_or_regulatory_current_event_gap)
-    )
-    return {
-        "currentness_gap_detected": currentness_gap_detected,
-        "official_current_source_gap": official_current_source_gap,
-        "legal_or_regulatory_current_event_gap": (
-            legal_or_regulatory_current_event_gap
-        ),
-        "reputable_news_or_primary_update_needed": (
-            reputable_news_or_primary_update_needed
-        ),
-        "final_answer_should_caveat_missing_current_source": (
-            final_answer_should_caveat_missing_current_source
-        ),
-    }
-
-def _build_ordinary_continuation_candidate_from_runtime(
-    *,
-    existing_candidate_trace: dict[str, Any],
-    evidence_state: Any,
-    conflict_resolving_queries: list[str] | tuple[str, ...] = (),
-    current_iteration: int = 0,
-    max_iterations: int = 0,
-) -> dict[str, Any]:
-    return build_ordinary_continuation_trace_projection(
-        existing_candidate_trace=existing_candidate_trace,
-        evidence_state=evidence_state,
-        compact_runtime_strings_fn=_compact_runtime_strings,
-        conflict_resolving_queries=conflict_resolving_queries,
-        current_iteration=current_iteration,
-        max_iterations=max_iterations,
-    )
-
-def _build_targeted_retrieval_lifecycle_from_runtime(
-    *,
-    answer_contract_result: Any,
-    source_class_recovery_telemetry: dict[str, Any],
-    active_source_class_recovery_lifecycle: dict[str, Any],
-    weak_corpus_lifecycle_trace: dict[str, Any] | None,
-    active_conflict_resolution_lifecycle: dict[str, Any],
-    retrieval_stop_shadow_telemetry: dict[str, Any],
-    retrieval_stop_active_telemetry: dict[str, Any],
-    controller_loop_spine_result: Any,
-    ordinary_continuation_candidate_trace: dict[str, Any],
-    max_iterations: int,
-) -> dict[str, Any]:
-    state = getattr(answer_contract_result, "state", None)
-    evidence_state = getattr(state, "evidence_state_summary", None)
-    if evidence_state is None:
-        return targeted_retrieval_lifecycle_defaults()
-
-    checkpoint_action = getattr(
-        controller_loop_spine_result,
-        "checkpoint_action_name",
-        None,
-    )
-    spine_authorization = getattr(
-        controller_loop_spine_result,
-        "dispatch_authorization",
-        None,
-    )
-    blocked_actions = (
-        getattr(spine_authorization, "blocked_or_skipped_actions", {}) or {}
-    )
-    ordinary_candidate = dict(ordinary_continuation_candidate_trace or {})
-    candidate_queries = _compact_runtime_strings(
-        ordinary_candidate.get("ordinary_next_queries")
-    )
-    prior_queries = _compact_runtime_strings(ordinary_candidate.get("prior_queries"))
-    if not candidate_queries:
-        candidate_queries = _compact_runtime_strings(
-            getattr(evidence_state, "next_queries", ())
-        )
-    if not prior_queries:
-        prior_queries = _compact_runtime_strings(
-            getattr(evidence_state, "prior_queries", ())
-        )
-    material_gap_facts = (
-        _compact_runtime_strings(getattr(evidence_state, "missing_information", ()))
-        + _compact_runtime_strings(
-            getattr(evidence_state, "partial_obligations", ())
-        )
-        + _compact_runtime_strings(
-            getattr(evidence_state, "unfulfilled_obligations", ())
-        )
-        + _compact_runtime_strings(
-            getattr(evidence_state, "source_classes_missing", ())
-        )
-    )
-    retrieval_continue_gap = (
-        retrieval_stop_shadow_telemetry.get("retrieval_stop_shadow_decision")
-        == "continue_retrieval"
-        and bool(candidate_queries)
-    )
-    source_fit_facts = _targeted_retrieval_currentness_source_fit_facts(
-        evidence_state=evidence_state,
-        source_class_recovery_telemetry=source_class_recovery_telemetry,
-        active_source_class_recovery_lifecycle=(
-            active_source_class_recovery_lifecycle
-        ),
-    )
-    weak_corpus_dispatched = bool(
-        controller_loop_spine_result.weak_corpus_executor_dispatched
-    )
-    conflict_dispatched = bool(
-        controller_loop_spine_result.conflict_resolution_executor_dispatched
-    )
-    terminal_stop_approved = bool(controller_loop_spine_result.terminal_stop_approved)
-    source_class_owns = bool(
-        source_class_recovery_action_attempted(
-            active_source_class_recovery_lifecycle
-        )
-        or source_class_recovery_action_approved(
-            active_source_class_recovery_lifecycle
-        )
-        or checkpoint_action == RECOVER_MISSING_SOURCE_CLASS
-    )
-    weak_corpus_owns = bool(
-        (weak_corpus_lifecycle_trace or {}).get("approved")
-        or checkpoint_action == RECOVER_WEAK_CORPUS
-        or weak_corpus_dispatched
-    )
-    conflict_owns = bool(
-        active_conflict_resolution_lifecycle.get(
-            "active_conflict_resolution_used"
-        )
-        or active_conflict_resolution_lifecycle.get(
-            "active_conflict_resolution_eligible"
-        )
-        or checkpoint_action == RESOLVE_CONFLICT
-        or conflict_dispatched
-    )
-    terminal_stop_owns = bool(
-        terminal_stop_approved
-        or checkpoint_action
-        in {"stop_insufficient_with_caveat", "stop_sufficient"}
-        or retrieval_stop_active_telemetry.get("retrieval_stop_active_available")
-    )
-    targeted_iteration = max(
-        0,
-        int(
-            ordinary_candidate.get("current_iteration")
-            or ordinary_candidate.get("iteration")
-            or 0
-        ),
-    )
-    conflict_resolving_queries = _compact_runtime_strings(
-        ordinary_candidate.get("conflict_resolving_queries")
-    )
-    if not conflict_resolving_queries:
-        conflict_resolving_queries = _compact_runtime_strings(
-            getattr(evidence_state, "resolving_queries", ())
-        )
-    snapshot = build_targeted_retrieval_controller_input(
-        material_contract_gap_remaining=bool(
-            material_gap_facts or retrieval_continue_gap
-        ),
-        material_contract_gap=(
-            material_gap_facts[0]
-            if material_gap_facts
-            else "ordinary continuation gap"
-            if retrieval_continue_gap
-            else None
-        ),
-        approved_ordinary_next_queries=candidate_queries,
-        query_provenance=_targeted_query_provenance_from_runtime(
-            ordinary_candidate.get("source_path")
-            or ordinary_candidate.get("query_provenance")
-        ),
-        query_generation_complete=bool(candidate_queries),
-        prior_queries=prior_queries,
-        next_queries_redundant=bool(
-            getattr(evidence_state, "next_query_redundant", False)
-            or retrieval_stop_shadow_telemetry.get(
-                "retrieval_stop_shadow_decision"
-            )
-            == "stop_redundant_queries"
-        ),
-        redundancy_status=(
-            "redundant"
-            if retrieval_stop_shadow_telemetry.get(
-                "retrieval_stop_shadow_decision"
-            )
-            == "stop_redundant_queries"
-            else "non_redundant"
-            if candidate_queries
-            else None
-        ),
-        iteration=targeted_iteration,
-        max_iterations=max_iterations,
-        targeted_budget_remaining=max(0, int(max_iterations - targeted_iteration)),
-        prior_attempted_for_gap=False,
-        source_class_recovery_owns_path=source_class_owns,
-        weak_corpus_recovery_owns_path=weak_corpus_owns,
-        conflict_resolution_owns_path=conflict_owns,
-        terminal_stop_owns_path=terminal_stop_owns,
-        source_class_blockers=source_class_recovery_authority_blocker_reasons(
-            active_source_class_recovery_lifecycle
-        ),
-        weak_corpus_blockers=(weak_corpus_lifecycle_trace or {}).get("blockers")
-        or (),
-        conflict_blockers=active_conflict_resolution_lifecycle.get(
-            "active_conflict_resolution_blockers"
-        )
-        or (),
-        provider_policy_reusable=True,
-        provider_policy_change_required=False,
-        provider_swap_required=False,
-        search_depth_reusable=True,
-        search_depth_policy_change_required=False,
-        search_depth_escalation_required=False,
-        legal_source_repair_required=False,
-        conflict_resolving_queries=conflict_resolving_queries,
-        metadata={
-            "source": "runtime_passive_lifecycle",
-            "ordinary_continuation_candidate": ordinary_candidate,
-            "retrieval_stop_shadow_stage": retrieval_stop_shadow_telemetry.get(
-                "retrieval_stop_shadow_stage"
-            ),
-            "retrieval_stop_shadow_decision": retrieval_stop_shadow_telemetry.get(
-                "retrieval_stop_shadow_decision"
-            ),
-            "checkpoint_action_name": checkpoint_action,
-            "blocked_or_skipped_actions": dict(blocked_actions),
-        },
-        **source_fit_facts,
-    )
-    return build_targeted_retrieval_lifecycle(snapshot).to_trace_fields()
-
-def _build_conflict_resolution_lifecycle_from_runtime_answer_contract(
-    *,
-    answer_contract_result: Any,
-    current_search_depth: str | None,
-    iteration_budget_available: bool,
-    active_conflict_resolution_lifecycle: dict[str, Any],
-    provider_policy_reusable: bool = True,
-    provider_swap_required: bool = False,
-    search_depth_reusable: bool = True,
-    search_depth_escalation_required: bool = False,
-    lifecycle_phase: str = "pre_analyst",
-) -> tuple[dict[str, Any], ConflictResolutionDecision]:
-    state = getattr(answer_contract_result, "state", None)
-    evidence_state = getattr(state, "evidence_state_summary", None)
-    if evidence_state is None:
-        return dict(active_conflict_resolution_lifecycle), ConflictResolutionDecision(
-            decision=ConflictResolutionControllerDecision.BLOCKED_WITH_REASON,
-            reason="conflict_state_unavailable",
-            blockers=("conflict_state_unavailable",),
-            conflict_notes=(),
-            queries=(),
-            attempt_count=0,
-        )
-
-    state_attempts = getattr(state, "recovery_attempts", {})
-    prior_attempt_count = max(
-        int(state_attempts.get("resolve_conflict", 0) or 0),
-        int(
-            active_conflict_resolution_lifecycle.get(
-                "active_conflict_resolution_attempt_count"
-            )
-            or 0
-        ),
-    )
-    snapshot = build_conflict_resolution_controller_input(
-        conflicts_present=bool(evidence_state.conflicts_present),
-        conflict_notes=evidence_state.conflict_notes,
-        resolving_queries=evidence_state.resolving_queries,
-        ordinary_next_queries=evidence_state.next_queries,
-        current_search_depth=current_search_depth,
-        iteration_budget_available=bool(iteration_budget_available),
-        prior_attempt_count=prior_attempt_count,
-        provider_policy_reusable=provider_policy_reusable,
-        provider_swap_required=provider_swap_required,
-        search_depth_reusable=search_depth_reusable,
-        search_depth_escalation_required=search_depth_escalation_required,
-        lifecycle_phase=lifecycle_phase,
-        metadata={
-            "source": "runtime_answer_contract_evidence_state",
-            "ordinary_next_query_count": len(evidence_state.next_queries),
-        },
-    )
-    lifecycle = build_conflict_resolution_lifecycle(snapshot)
-    return lifecycle.to_trace_fields(), lifecycle.decision
-
-def _extract_year(text: str) -> str:
-    m = re.search(r"\b(19|20)\d{2}\b", text or "")
-    return m.group(0) if m else "2026"
-
 def _acc_iter_time(iter_idx: int, started_at: float, acc: dict[int, float]) -> None:
     elapsed = max(0.0, time.monotonic() - started_at)
     acc[iter_idx] = float(acc.get(iter_idx, 0.0)) + elapsed
-
-def _has_explicit_retrieval_escalation(explicit_escalation_reason: str | None) -> bool:
-    return bool(str(explicit_escalation_reason or "").strip())
-
-def choose_retrieval_search_depth(
-    complexity: str,
-    base_search_depth: str | None,
-    iteration: int,
-    explicit_escalation_reason: str | None = None,
-) -> str:
-    """Choose main-loop retrieval depth without implicit medium second-pass escalation."""
-    base_depth = str(base_search_depth or "basic").strip().lower() or "basic"
-    if _has_explicit_retrieval_escalation(explicit_escalation_reason):
-        return "advanced"
-    if str(complexity or "").strip().lower() == "high":
-        return "advanced"
-    return base_depth
-
-def choose_supplemental_search_depth(
-    complexity: str,
-    base_search_depth: str | None,
-    explicit_escalation_reason: str | None = None,
-) -> str:
-    """Choose synthesis-gap supplemental retrieval depth from the same base policy."""
-    base_depth = str(base_search_depth or "basic").strip().lower() or "basic"
-    if _has_explicit_retrieval_escalation(explicit_escalation_reason):
-        return "advanced"
-    if str(complexity or "").strip().lower() == "high":
-        return "advanced"
-    return base_depth
-
-def _weak_corpus_recovery_seed_queries(
-    *,
-    user_query: str,
-    core_topic: str,
-    primary_entity: str,
-    canonical_subject: str | None,
-    current_date: str,
-    previous_queries: list[str] | None = None,
-) -> list[str]:
-    """Small deterministic query seed set for one bounded weak-corpus recovery pass."""
-    anchor = (canonical_subject or primary_entity or core_topic or "").strip()
-    uq = _clean_query(user_query)
-    topic = _clean_query(core_topic)
-    year = _extract_year(current_date)
-    anchor_tokens = set(re.findall(r"[a-z0-9]+", anchor.casefold()))
-    stop = {
-        "about",
-        "after",
-        "and",
-        "are",
-        "before",
-        "does",
-        "expected",
-        "find",
-        "for",
-        "give",
-        "have",
-        "into",
-        "latest",
-        "need",
-        "show",
-        "tell",
-        "that",
-        "the",
-        "their",
-        "there",
-        "these",
-        "this",
-        "what",
-        "when",
-        "where",
-        "which",
-        "with",
-    }
-
-    def _intent_terms(*texts: str, cap: int = 6) -> list[str]:
-        out: list[str] = []
-        seen: set[str] = set()
-        for text in texts:
-            for tok in re.findall(r"[A-Za-z0-9][A-Za-z0-9.-]*", text or ""):
-                key = tok.casefold().strip(".-")
-                if len(key) < 3 or key in stop or key in anchor_tokens or key in seen:
-                    continue
-                seen.add(key)
-                out.append(tok.strip(".-"))
-                if len(out) >= cap:
-                    return out
-        return out
-
-    def _sig(q: str) -> set[str]:
-        return {
-            t
-            for t in re.findall(r"[a-z0-9]+", (q or "").casefold())
-            if len(t) >= 3 and t not in stop
-        }
-
-    previous_sigs = [_sig(q) for q in (previous_queries or []) if q]
-
-    def _is_near_previous(q: str) -> bool:
-        s = _sig(q)
-        if not s:
-            return False
-        for prev in previous_sigs:
-            if not prev:
-                continue
-            overlap = len(s & prev) / max(1, len(s))
-            if (s == prev) or (overlap >= 0.85 and len(s) <= len(prev) + 1):
-                return True
-        return False
-
-    terms = _intent_terms(uq, topic)
-    term_tail = " ".join(terms)
-    compact_tail = " ".join(terms[:4])
-    quoted_anchor = format_quoted_anchor(anchor)
-    raw: list[str] = []
-
-    if anchor and compact_tail:
-        raw.append(f"{quoted_anchor} \"{compact_tail}\"")
-    if anchor and wants_official_source_bias(user_query, "general"):
-        phrase = official_bias_phrase(user_query)
-        raw.append(f"{quoted_anchor} {phrase} {compact_tail}".strip())
-    if anchor and term_tail:
-        raw.append(f"{quoted_anchor} {term_tail}")
-    if anchor and topic and topic.casefold() != anchor.casefold():
-        raw.append(f"{quoted_anchor} {topic}")
-    if anchor and term_tail and year:
-        raw.append(f"{quoted_anchor} {term_tail} {year}")
-    if not anchor and uq:
-        raw.append(uq)
-
-    seen: set[str] = set()
-    seen_signatures: set[frozenset[str]] = set()
-    out: list[str] = []
-    for q in raw:
-        q2 = _clean_query(q)
-        k = q2.casefold()
-        sig = frozenset(_sig(q2))
-        if q2 and k not in seen and sig not in seen_signatures and not _is_near_previous(q2):
-            seen.add(k)
-            seen_signatures.add(sig)
-            out.append(q2)
-    return out[:4]
 
 GENERIC_NEWS_DOMAINS = analyst_runtime_stage.GENERIC_NEWS_DOMAINS
 _query_expects_official_evidence = analyst_runtime_stage.query_expects_official_evidence
@@ -3486,228 +2935,65 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         iteration_budget_available=iterations_run < max_iterations,
         active_conflict_resolution_lifecycle=active_conflict_resolution_lifecycle,
     )
-    if (
-        evidence_integration_checkpoint_decided
-        and source_class_recovery_checkpoint_refresh_allowed(
-            checkpoint_trace=evidence_integration_checkpoint_trace,
-            active_source_class_recovery_lifecycle=(
-                active_source_class_recovery_lifecycle
-            ),
-        )
-    ):
-        evidence_integration_checkpoint_decided = False
-    if not evidence_integration_checkpoint_decided:
-        try:
-            _evidence_integration_snapshot = (
-                _build_evidence_integration_snapshot_from_runtime(
-                    answer_contract_result=_pre_recovery_answer_contract_result,
-                    source_class_recovery_recommendation=(
-                        _source_class_recovery_lifecycle_recommendation
-                    ),
-                    active_source_class_recovery_lifecycle=(
-                        active_source_class_recovery_lifecycle
-                    ),
-                    strategy=strategy,
-                    is_sufficient=is_sufficient,
-                    corpus_weak=corpus_weak,
-                    corpus_state=corpus_state,
-                    weak_corpus_recovery_used=weak_corpus_recovery_used,
-                    weak_corpus_recovery_attempted=weak_corpus_recovery_attempted,
-                    weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
-                    retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-                    iterations_run=iterations_run,
-                    max_iterations=max_iterations,
-                )
-            )
-            _evidence_integration_decision = decide_evidence_integration_checkpoint(
-                _evidence_integration_snapshot
-            )
-            evidence_integration_checkpoint_trace = (
-                build_evidence_integration_checkpoint_trace(
-                    snapshot=_evidence_integration_snapshot,
-                    decision=_evidence_integration_decision,
-                    legacy_runtime_branch="existing_source_class_lifecycle",
-                )
-            )
-            evidence_integration_checkpoint_handoff = (
-                _evidence_integration_decision.to_handoff_reference()
-            )
-            evidence_integration_checkpoint_decided = True
-        except Exception as exc:
-            run_log.warning(
-                "Non-fatal evidence-integration checkpoint omitted: %s",
-                exc,
-            )
-            evidence_integration_checkpoint_trace = (
-                evidence_integration_checkpoint_unavailable_trace(
-                    "checkpoint_exception"
-                )
-            )
-            if (
-                source_class_recovery_action_approved(
-                    active_source_class_recovery_lifecycle
-                )
-                and getattr(
-                    _pre_recovery_answer_contract_result,
-                    "adapter_result",
-                    None,
-                )
-                is not None
-            ):
-                evidence_integration_checkpoint_trace[
-                    "official_canonical_checkpoint_exception_fallback_allowed"
-                ] = True
-                evidence_integration_checkpoint_trace[
-                    "official_canonical_checkpoint_exception_fallback_source"
-                ] = "authoritative_source_action_handoff"
-            evidence_integration_checkpoint_handoff = {}
-            evidence_integration_checkpoint_decided = True
-
-    weak_corpus_lifecycle_for_checkpoint_gate = (
-        _weak_corpus_lifecycle_facts(weak_corpus_decision_for_checkpoint_gate)
-        if weak_corpus_recovery_considered
-        else None
+    _retrieval_authority_stage = build_retrieval_authority_stage(
+        answer_contract_result=_pre_recovery_answer_contract_result,
+        source_class_recovery_recommendation=(
+            _source_class_recovery_lifecycle_recommendation
+        ),
+        active_source_class_recovery_lifecycle=(
+            active_source_class_recovery_lifecycle
+        ),
+        active_conflict_resolution_lifecycle=active_conflict_resolution_lifecycle,
+        conflict_resolution_decision=conflict_resolution_decision_for_checkpoint_gate,
+        weak_corpus_lifecycle_trace=(
+            _weak_corpus_lifecycle_facts(weak_corpus_decision_for_checkpoint_gate)
+            if weak_corpus_recovery_considered
+            else None
+        ),
+        evidence_integration_checkpoint_trace=evidence_integration_checkpoint_trace,
+        evidence_integration_checkpoint_handoff=evidence_integration_checkpoint_handoff,
+        evidence_integration_checkpoint_decided=evidence_integration_checkpoint_decided,
+        ordinary_continuation_candidate_trace=ordinary_continuation_candidate_trace,
+        retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
+        retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
+        strategy=strategy,
+        is_sufficient=is_sufficient,
+        corpus_weak=corpus_weak,
+        corpus_state=corpus_state,
+        weak_corpus_recovery_used=weak_corpus_recovery_used,
+        weak_corpus_recovery_attempted=weak_corpus_recovery_attempted,
+        weak_corpus_recovery_skip_reason=weak_corpus_recovery_skip_reason,
+        iterations_run=iterations_run,
+        max_iterations=max_iterations,
+        conflict_resolving_queries=(
+            pre_recovery_conflict_projection["resolving_queries"]
+            if "pre_recovery_conflict_projection" in locals()
+            else ()
+        ),
+        retrieval_batch_dispatch_trace=retrieval_batch_dispatch_trace,
+        evaluator_continuation_spine_gate_trace=(
+            evaluator_continuation_spine_gate_trace
+        ),
+        expander_continuation_spine_gate_trace=expander_continuation_spine_gate_trace,
+        scout_continuation_spine_gate_trace=scout_continuation_spine_gate_trace,
+        logger=run_log,
+    )
+    evidence_integration_checkpoint_trace = (
+        _retrieval_authority_stage.evidence_integration_checkpoint_trace
+    )
+    evidence_integration_checkpoint_handoff = (
+        _retrieval_authority_stage.evidence_integration_checkpoint_handoff
+    )
+    evidence_integration_checkpoint_decided = (
+        _retrieval_authority_stage.evidence_integration_checkpoint_decided
     )
     ordinary_continuation_candidate_trace = (
-        _build_ordinary_continuation_candidate_from_runtime(
-            existing_candidate_trace=ordinary_continuation_candidate_trace,
-            evidence_state=(
-                getattr(
-                    getattr(_pre_recovery_answer_contract_result, "state", None),
-                    "evidence_state_summary",
-                    None,
-                )
-            ),
-            conflict_resolving_queries=(
-                pre_recovery_conflict_projection["resolving_queries"]
-                if "pre_recovery_conflict_projection" in locals()
-                else ()
-            ),
-            current_iteration=iterations_run,
-            max_iterations=max_iterations,
-        )
+        _retrieval_authority_stage.ordinary_continuation_candidate_trace
     )
-    controller_loop_spine_result = build_controller_loop_spine_result(
-        ControllerLoopSpineInput.from_traces(
-            checkpoint_trace=evidence_integration_checkpoint_trace,
-            source_class_lifecycle_trace=active_source_class_recovery_lifecycle,
-            weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_checkpoint_gate,
-            conflict_resolution_lifecycle_trace=(
-                _conflict_resolution_lifecycle_facts(
-                    decision=conflict_resolution_decision_for_checkpoint_gate,
-                    lifecycle_trace=active_conflict_resolution_lifecycle,
-                )
-            ),
-            ordinary_continuation_candidate_trace=(
-                ordinary_continuation_candidate_trace
-            ),
-        ),
+    targeted_retrieval_lifecycle_trace = (
+        _retrieval_authority_stage.targeted_retrieval_lifecycle_trace
     )
-    evidence_integration_checkpoint_trace = controller_loop_spine_result.trace_packet
-    spine_authorization = controller_loop_spine_result.dispatch_authorization
-    authorized_spine_action = spine_authorization.authorized_action_name
-    try:
-        targeted_retrieval_lifecycle_trace = (
-            _build_targeted_retrieval_lifecycle_from_runtime(
-                answer_contract_result=_pre_recovery_answer_contract_result,
-                source_class_recovery_telemetry=(
-                    _source_class_recovery_lifecycle_recommendation
-                ),
-                active_source_class_recovery_lifecycle=(
-                    active_source_class_recovery_lifecycle
-                ),
-                weak_corpus_lifecycle_trace=(
-                    weak_corpus_lifecycle_for_checkpoint_gate
-                ),
-                active_conflict_resolution_lifecycle=(
-                    active_conflict_resolution_lifecycle
-                ),
-                retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
-                retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
-                controller_loop_spine_result=controller_loop_spine_result,
-                ordinary_continuation_candidate_trace=(
-                    ordinary_continuation_candidate_trace
-                ),
-                max_iterations=max_iterations,
-            )
-        )
-    except Exception as exc:
-        run_log.warning(
-            "Non-fatal targeted-retrieval passive lifecycle omitted: %s",
-            exc,
-        )
-        targeted_retrieval_lifecycle_trace = targeted_retrieval_lifecycle_defaults()
-    controller_loop_spine_result = build_controller_loop_spine_result(
-        ControllerLoopSpineInput.from_traces(
-            checkpoint_trace=evidence_integration_checkpoint_trace,
-            source_class_lifecycle_trace=active_source_class_recovery_lifecycle,
-            weak_corpus_lifecycle_trace=weak_corpus_lifecycle_for_checkpoint_gate,
-            conflict_resolution_lifecycle_trace=(
-                _conflict_resolution_lifecycle_facts(
-                    decision=conflict_resolution_decision_for_checkpoint_gate,
-                    lifecycle_trace=active_conflict_resolution_lifecycle,
-                )
-            ),
-            ordinary_continuation_candidate_trace=(
-                ordinary_continuation_candidate_trace
-            ),
-            targeted_retrieval_lifecycle_trace=targeted_retrieval_lifecycle_trace,
-        ),
-    )
-    evidence_integration_checkpoint_trace = controller_loop_spine_result.trace_packet
-    spine_authorization = controller_loop_spine_result.dispatch_authorization
-    authorized_spine_action = spine_authorization.authorized_action_name
-    if (
-        retrieval_batch_dispatch_trace.get("dispatch_authorized")
-        and (
-            evaluator_continuation_spine_gate_trace.get(
-                "targeted_retrieval_dispatch_authorized"
-            )
-            or expander_continuation_spine_gate_trace.get(
-                "targeted_retrieval_dispatch_authorized"
-            )
-            or scout_continuation_spine_gate_trace.get(
-                "targeted_retrieval_dispatch_authorized"
-            )
-        )
-    ):
-        authorized_gate_trace = (
-            scout_continuation_spine_gate_trace
-            if scout_continuation_spine_gate_trace.get(
-                "targeted_retrieval_dispatch_authorized"
-            )
-            else expander_continuation_spine_gate_trace
-            if expander_continuation_spine_gate_trace.get(
-                "targeted_retrieval_dispatch_authorized"
-            )
-            else evaluator_continuation_spine_gate_trace
-        )
-        (
-            evidence_integration_checkpoint_trace,
-            ordinary_continuation_candidate_trace,
-            targeted_retrieval_lifecycle_trace,
-        ) = reconcile_retrieval_dispatch_runtime_checkpoint_trace(
-            checkpoint_trace=evidence_integration_checkpoint_trace,
-            ordinary_continuation_candidate_trace=ordinary_continuation_candidate_trace,
-            targeted_retrieval_lifecycle_trace=targeted_retrieval_lifecycle_trace,
-            authorized_gate_trace=authorized_gate_trace,
-        )
-        evidence_integration_checkpoint_trace[
-            "expander_continuation_spine_gate_trace"
-        ] = dict(expander_continuation_spine_gate_trace)
-        evidence_integration_checkpoint_trace[
-            "evaluator_continuation_spine_gate_trace"
-        ] = dict(evaluator_continuation_spine_gate_trace)
-        evidence_integration_checkpoint_trace[
-            "scout_continuation_spine_gate_trace"
-        ] = dict(scout_continuation_spine_gate_trace)
-        evidence_integration_checkpoint_trace[
-            "authorized_continuation_spine_gate_trace"
-        ] = dict(authorized_gate_trace)
-    if retrieval_batch_dispatch_trace.get("considered"):
-        evidence_integration_checkpoint_trace[RETRIEVAL_BATCH_DISPATCH_TRACE_KEY] = (
-            dict(retrieval_batch_dispatch_trace)
-        )
+    authorized_spine_action = _retrieval_authority_stage.authorized_spine_action
 
     source_class_recovery_result = run_source_class_recovery_dispatch(
         source_class_recovery_context_from_scope(
