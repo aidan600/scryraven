@@ -439,6 +439,10 @@ mechanical and subordinate.
 The future design target is a passive, canonical work-plan contract. This audit
 does not implement it.
 
+AG-96C2 follow-up note: `AG96C2_SEARCHWORKPLAN_PASSIVE_CONTRACT.md` implements
+this target as a passive data model and architecture document only; it does not
+wire SearchWorkPlan into runtime execution.
+
 ```text
 SearchWorkPlan:
   mode_contract
