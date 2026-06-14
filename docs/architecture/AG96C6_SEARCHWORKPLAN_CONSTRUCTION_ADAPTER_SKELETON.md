@@ -188,3 +188,8 @@ preserving provider/search, QueryPlan, prompt, citation, and final-answer
 behavior. That phase must name the exact runtime consumer, prove the consumer
 reads the constructed plan, and keep old authority paths explicitly
 subordinated or scheduled for retirement.
+
+AG-96C7 follow-up note:
+`AG96C7_RUNKERNEL_SHADOW_SEARCHWORKPLAN_CONSTRUCTION.md` adds the
+RunKernel-authorized shadow construction action/observation seam and keeps
+production runtime consumption closed.

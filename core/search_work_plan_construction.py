@@ -24,6 +24,15 @@ from core.query_shape_contract_resolution import (
     SourceObligationCandidate,
     StopEscalateRefusePosture,
 )
+from core.run_kernel import (
+    SEARCH_WORK_PLAN_CONSTRUCTION_STAGE,
+    ActionType,
+    AuthorizedAction,
+    Observation,
+    ObservationType,
+    RunStageStatus,
+    validate_authorized_action,
+)
 from core.search_work_plan import (
     AuditJob,
     AuthorityRef,
@@ -436,6 +445,31 @@ def construct_search_work_plan_from_records(
     )
 
 
+def observe_search_work_plan_construction(
+    action: AuthorizedAction,
+    input_record: SearchWorkPlanConstructionInput,
+) -> Observation:
+    """Return the RunKernel observation for an authorized shadow construction."""
+
+    validate_authorized_action(
+        action,
+        action_type=ActionType.SEARCH_WORK_PLAN_CONSTRUCT,
+        stage=SEARCH_WORK_PLAN_CONSTRUCTION_STAGE,
+        expected_observation_type=ObservationType.SEARCH_WORK_PLAN_CONSTRUCTED,
+    )
+    result = construct_search_work_plan_from_records(input_record)
+    return Observation.from_action(
+        action,
+        observation_type=ObservationType.SEARCH_WORK_PLAN_CONSTRUCTED,
+        status=RunStageStatus.COMPLETED,
+        payload={
+            "construction_result": result.to_dict(),
+            "search_work_plan_projection": result.search_work_plan.to_dict(),
+            "validation": result.validation,
+        },
+    )
+
+
 def _construct_components(
     component_candidates: Sequence[ComponentCandidate],
     obligation_candidates: Sequence[SourceObligationCandidate],
@@ -721,4 +755,5 @@ __all__ = [
     "SearchWorkPlanConstructionInput",
     "SearchWorkPlanConstructionResult",
     "construct_search_work_plan_from_records",
+    "observe_search_work_plan_construction",
 ]
