@@ -21,6 +21,7 @@ ROUTE_REQUEST_STAGE = "route_request"
 QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 RUN_CONTRACT_STAGE = "run_contract"
+SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
@@ -62,6 +63,7 @@ class ActionType(str, Enum):
 
     ROUTE_REQUEST = "route_request"
     RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
+    SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
     MAIN_RETRIEVAL_PASS = "main_retrieval_pass"
@@ -78,6 +80,7 @@ class ObservationType(str, Enum):
 
     ROUTE_RESULT = "route_result"
     RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
+    SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
     RETRIEVAL_PASS_RESULT = "retrieval_pass_result"
@@ -140,6 +143,24 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
 def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     safe = _json_safe(dict(value or {}))
     return dict(safe) if isinstance(safe, Mapping) else {}
+
+
+def _validation_status(validation: Mapping[str, Any]) -> str | None:
+    status = validation.get("status")
+    if status:
+        return str(status)
+    ok = validation.get("ok")
+    if ok is True:
+        return "ok"
+    if ok is False:
+        return "errors"
+    plan_validation = validation.get("search_work_plan")
+    if isinstance(plan_validation, Mapping):
+        if plan_validation.get("ok") is True:
+            return "ok"
+        if plan_validation.get("ok") is False:
+            return "errors"
+    return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -288,6 +309,9 @@ class RunState:
     run_contract: dict[str, Any] = field(default_factory=dict)
     run_contract_projection: dict[str, Any] = field(default_factory=dict)
     run_contract_validation: dict[str, Any] = field(default_factory=dict)
+    search_work_plan: dict[str, Any] = field(default_factory=dict)
+    search_work_plan_projection: dict[str, Any] = field(default_factory=dict)
+    search_work_plan_validation: dict[str, Any] = field(default_factory=dict)
     evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
     search_judgment: dict[str, Any] = field(default_factory=dict)
     search_judgment_projection: dict[str, Any] = field(default_factory=dict)
@@ -327,6 +351,9 @@ class RunState:
             run_contract=deepcopy(self.run_contract),
             run_contract_projection=deepcopy(self.run_contract_projection),
             run_contract_validation=deepcopy(self.run_contract_validation),
+            search_work_plan=deepcopy(self.search_work_plan),
+            search_work_plan_projection=deepcopy(self.search_work_plan_projection),
+            search_work_plan_validation=deepcopy(self.search_work_plan_validation),
             evidence_ledger=self.evidence_ledger.to_projection().to_dict(),
             search_judgment=deepcopy(self.search_judgment),
             search_judgment_projection=deepcopy(self.search_judgment_projection),
@@ -364,6 +391,9 @@ class KernelTraceProjection:
     run_contract: Mapping[str, Any]
     run_contract_projection: Mapping[str, Any]
     run_contract_validation: Mapping[str, Any]
+    search_work_plan: Mapping[str, Any]
+    search_work_plan_projection: Mapping[str, Any]
+    search_work_plan_validation: Mapping[str, Any]
     evidence_ledger: Mapping[str, Any]
     search_judgment: Mapping[str, Any]
     search_judgment_projection: Mapping[str, Any]
@@ -393,6 +423,13 @@ class KernelTraceProjection:
             "run_contract": _safe_mapping(self.run_contract),
             "run_contract_projection": _safe_mapping(self.run_contract_projection),
             "run_contract_validation": _safe_mapping(self.run_contract_validation),
+            "search_work_plan": _safe_mapping(self.search_work_plan),
+            "search_work_plan_projection": _safe_mapping(
+                self.search_work_plan_projection
+            ),
+            "search_work_plan_validation": _safe_mapping(
+                self.search_work_plan_validation
+            ),
             "evidence_ledger": _safe_mapping(self.evidence_ledger),
             "search_judgment": _safe_mapping(self.search_judgment),
             "search_judgment_projection": _safe_mapping(
@@ -498,6 +535,33 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.RUN_CONTRACT_SYNTHESIZED,
+        )
+
+    def authorize_search_work_plan_construction(
+        self,
+        *,
+        reason: str = "search_work_plan_shadow_construction_after_run_contract",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.run_contract_projection:
+            raise RunKernelTransitionError(
+                "SearchWorkPlan construction requires a reduced RunAuthority contract"
+            )
+        merged_inputs = {
+            "run_contract_ref": {
+                "contract_id": self.state.run_contract_projection.get("contract_id"),
+                "schema_version": self.state.run_contract_projection.get(
+                    "schema_version"
+                ),
+            },
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=SEARCH_WORK_PLAN_CONSTRUCTION_STAGE,
+            action_type=ActionType.SEARCH_WORK_PLAN_CONSTRUCT,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.SEARCH_WORK_PLAN_CONSTRUCTED,
         )
 
     def authorize_query_plan_admission(
@@ -763,6 +827,67 @@ class RunKernel:
             self.state.run_contract_validation = validation
             self.state.projections[action.stage] = deepcopy(
                 self.state.run_contract_projection
+            )
+        elif action.action_type is ActionType.SEARCH_WORK_PLAN_CONSTRUCT:
+            construction_result = _safe_mapping(
+                observation.payload.get("construction_result")
+            )
+            plan_projection = _safe_mapping(
+                observation.payload.get("search_work_plan_projection")
+            )
+            if not plan_projection:
+                plan_projection = _safe_mapping(
+                    construction_result.get("search_work_plan")
+                )
+            if not plan_projection:
+                raise RunKernelTransitionError(
+                    "SearchWorkPlan construction observation requires "
+                    "search_work_plan_projection"
+                )
+            validation = _safe_mapping(observation.payload.get("validation"))
+            if not validation:
+                validation = _safe_mapping(construction_result.get("validation"))
+            follow_up_authority = _safe_mapping(
+                plan_projection.get("follow_up_authority")
+            )
+            self.state.search_work_plan = plan_projection
+            self.state.search_work_plan_validation = validation
+            self.state.search_work_plan_projection = {
+                "owner": "RunKernel.SearchWorkPlan",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "construction_id": plan_projection.get("metadata", {}).get(
+                    "construction_id"
+                )
+                or construction_result.get("construction_id"),
+                "schema_version": plan_projection.get("schema_version"),
+                "planning_posture": plan_projection.get("planning_posture"),
+                "requested_mode": plan_projection.get("requested_mode", {}),
+                "effective_contract": plan_projection.get("effective_contract", {}),
+                "query_shape": plan_projection.get("query_shape", {}),
+                "component_count": len(plan_projection.get("components", []) or []),
+                "provider_job_count": len(
+                    plan_projection.get("provider_jobs", []) or []
+                ),
+                "quant_work_unit_count": len(
+                    plan_projection.get("quant_work_units", []) or []
+                ),
+                "audit_job_count": len(plan_projection.get("audit_jobs", []) or []),
+                "stop_condition_count": len(
+                    plan_projection.get("stop_conditions", []) or []
+                ),
+                "follow_up_permission": follow_up_authority.get("permission"),
+                "validation_status": _validation_status(validation),
+                "search_work_plan_runtime_consumed": False,
+                "runtime_consumed_by_query_plan": False,
+                "provider_search_behavior_changed": False,
+                "query_plan_behavior_changed": False,
+                "prompt_behavior_changed": False,
+                "final_answer_behavior_changed": False,
+            }
+            self.state.projections[action.stage] = deepcopy(
+                self.state.search_work_plan_projection
             )
         elif action.action_type is ActionType.EVIDENCE_LEDGER_REDUCE:
             self.state.evidence_ledger.reduce_observation(observation.payload)
@@ -1038,6 +1163,7 @@ __all__ = [
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
+    "SEARCH_WORK_PLAN_CONSTRUCTION_STAGE",
     "SUFFICIENCY_JUDGMENT_STAGE",
     "RUN_CONTRACT_STAGE",
     "QUERY_PRODUCTION_STAGE",
