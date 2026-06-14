@@ -390,3 +390,9 @@ resolution heuristics are sufficient. It does not decide hard numeric budgets,
 provider routing, query text, prompt text, or the exact model-assisted schema.
 It intentionally leaves first-pass-evidence-dependent shape repair to future
 SearchJudgment/SufficiencyJudgment integration phases.
+
+AG-96C4 follow-up note:
+`AG96C4_QUERY_SHAPE_CONTRACT_RESOLUTION_PASSIVE_RECORDS.md` adds passive
+query-shape assessment, contract-resolution, and SearchWorkPlan construction
+design records. Those records remain schema/validation scaffolding only; they do
+not construct `SearchWorkPlan` or change runtime behavior.
