@@ -242,6 +242,8 @@ Suggested staged sequence after AG-96C5:
 1. AG-96C6: passive or behavior-preserving `SearchWorkPlan` construction
    adapter skeleton. It may validate safe inputs and construct fixtures, but the
    plan is not consumed.
+   Follow-up note: `AG96C6_SEARCHWORKPLAN_CONSTRUCTION_ADAPTER_SKELETON.md`
+   implements that passive skeleton and keeps runtime consumption closed.
 2. AG-96C7: RunKernel-authorized construction of `SearchWorkPlan` into
    RunState/trace, still not affecting search, QueryPlan, providers, prompts,
    citations, or final answers.
