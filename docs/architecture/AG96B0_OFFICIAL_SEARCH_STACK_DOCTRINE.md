@@ -1,5 +1,10 @@
 # AG-96B0 Official Search Stack Doctrine
 
+AG-96C0 note: `docs/architecture/AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md`
+supersedes only this document's narrow Fast/Balanced/Deep mode framing. AG-96B0's
+provider-job, bridge-only, corridor, and final-evidence custody doctrines remain
+the official-source acquisition context for AG-96C0 and later phases.
+
 ## 1. Status and scope
 
 Status: architecture/design doctrine plus static adapter inventory.
