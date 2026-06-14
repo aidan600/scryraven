@@ -255,3 +255,8 @@ Likely future phases:
 Each activation phase must separately name the runtime consumer, the old
 authority path being subordinated or retired, the closed surfaces it opens, the
 tests required, and any live-validation boundary.
+
+AG-96C3 follow-up note:
+`AG96C3_QUERY_SHAPE_CONTRACT_RESOLUTION_DESIGN.md` defines the future
+pre-search RunKernel / RunAuthority resolution layer that may eventually fill
+this passive contract. It remains design/static only.
