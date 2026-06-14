@@ -15,6 +15,7 @@ _DECISION_PATH = _ROOT / "core" / "controller_recovery_decision.py"
 _EXECUTOR_PATH = _ROOT / "core" / "source_class_recovery_executor.py"
 _ORCHESTRATOR_PATH = _ROOT / "core" / "pipeline_orchestrator.py"
 _RUNNER_PATH = _ROOT / "core" / "source_class_recovery_runner.py"
+_FAST_OFFICIAL_LANE_PATH = _ROOT / "core" / "fast_official_lane.py"
 
 
 def _unmet_official_trace(**overrides: Any) -> dict[str, Any]:
@@ -152,6 +153,7 @@ def test_ag74e_static_guard_keeps_closed_surfaces_unchanged() -> None:
     executor_source = _EXECUTOR_PATH.read_text(encoding="utf-8").casefold()
     orchestrator_source = _ORCHESTRATOR_PATH.read_text(encoding="utf-8").casefold()
     runner_source = _RUNNER_PATH.read_text(encoding="utf-8").casefold()
+    fast_lane_source = _FAST_OFFICIAL_LANE_PATH.read_text(encoding="utf-8").casefold()
 
     decision_forbidden = (
         "select_providers",
@@ -165,17 +167,40 @@ def test_ag74e_static_guard_keeps_closed_surfaces_unchanged() -> None:
         "raw_provider_payload",
         "raw_prompt",
     )
-    executor_forbidden = decision_forbidden + (
-        "candidate_fit",
+    fit_semantic_owners = (
+        "_answer_bearing_obligation_patterns",
+        "_source_is_answer_bearing_for_obligation",
+        "_source_satisfies_missing_authority",
+        "_specific_answer_bearing_required",
+        "_source_class_match",
     )
 
     for forbidden in decision_forbidden:
         assert forbidden not in decision_source
-    for forbidden in executor_forbidden:
+    for forbidden in (*decision_forbidden, *fit_semantic_owners):
         assert forbidden not in executor_source
+
+    assert decision_source.count("candidate_fit") == 1
+    assert '"candidate_fit_unchanged": true' in decision_source
+    assert "candidate_fit" not in orchestrator_source
+    for forbidden in fit_semantic_owners:
+        assert forbidden not in decision_source
+        assert forbidden not in orchestrator_source
+    assert "def _candidate_fit_decision(" in executor_source
+    assert executor_source.count("apply_recovered_evidence_visibility_boundary(") == 1
+    assert executor_source.index("def _candidate_fit_decision(") < executor_source.index(
+        "direct_decision = _candidate_fit_decision("
+    )
+    assert "record_candidate_fit(" in executor_source
+    assert "lane_completion_posture" in fast_lane_source
+    assert "candidate_fit_passed" in fast_lane_source
 
     assert orchestrator_source.count("execute_source_class_recovery_action(") == 0
     assert runner_source.count("execute_source_class_recovery_action(") == 1
     assert "run_source_class_recovery_dispatch(" in orchestrator_source
     assert "request_provider_search_review" not in orchestrator_source
     assert "request_provider_search_review" not in executor_source
+    for source in (executor_source, fast_lane_source):
+        assert "irs.gov" not in source
+        assert "uscis.gov" not in source
+        assert "ssa.gov" not in source
