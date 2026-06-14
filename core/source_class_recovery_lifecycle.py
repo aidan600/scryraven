@@ -10,6 +10,7 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Mapping
 
+from core.fast_official_lane import fast_official_lane_defaults
 from core.official_canonical_recovery_candidate_acquisition import (
     official_canonical_recovery_candidate_acquisition_defaults,
 )
@@ -92,6 +93,7 @@ ACTIVE_SOURCE_CLASS_RECOVERY_TRACE_FIELDS = (
     "zero_candidate_blocker_kind",
     "official_canonical_candidate_visible",
     "likely_next_failure_layer",
+    "fast_official_lane",
     "behavior_changed",
 )
 
@@ -177,6 +179,7 @@ def _trace_payload(
         **recovery_source_quality_defaults(),
         **recovered_evidence_visibility_defaults(),
         **official_canonical_recovery_candidate_acquisition_defaults(),
+        "fast_official_lane": fast_official_lane_defaults(),
     }
 
 

@@ -15,8 +15,23 @@ from core.canonical_technical_docs_policy import (
     is_academic_literature_domain_filter,
     is_canonical_technical_documentation_context,
 )
+from core.fast_official_lane import (
+    FAST_OFFICIAL_LANE_TRACE_KEY,
+    build_fast_official_lane_plan,
+    concrete_bridge_hints_from_diagnostics,
+    record_bridge_hints,
+    record_candidate_fit,
+    record_direct_attempt,
+    record_retry_attempt,
+    record_retry_fit_result,
+    record_retry_skipped,
+    retry_authorized_after_fit_rejection,
+)
 from core.official_canonical_recovery_candidate_acquisition import (
     build_official_canonical_recovery_candidate_acquisition_trace,
+)
+from core.recovered_evidence_visibility import (
+    apply_recovered_evidence_visibility_boundary,
 )
 from core.run_controller import RunController
 from core.source_class_recovery import build_recovery_source_quality_diagnostics
@@ -173,6 +188,41 @@ def _mark_source_class_recovery_executed(
             action.metadata.update(metadata)
 
 
+def _source_identity_url(source: Mapping[str, Any]) -> str:
+    return str(source.get("url") or "").strip()
+
+
+def _candidate_fit_decision(
+    *,
+    lifecycle_trace: Mapping[str, Any],
+    recovered_passages: list[dict[str, Any]],
+) -> Any:
+    _evidence, decision = apply_recovered_evidence_visibility_boundary(
+        final_top_evidence=[],
+        recovered_passages=recovered_passages,
+        lifecycle_trace=lifecycle_trace,
+        max_final_evidence=1,
+        reserve_limit=1,
+    )
+    return decision
+
+
+def _usable_recovered_passages(
+    recovered_passages: Any,
+    *,
+    provider_role: str,
+) -> list[dict[str, Any]]:
+    usable_passages: list[dict[str, Any]] = []
+    for passage in recovered_passages or []:
+        if not isinstance(passage, dict):
+            continue
+        recovered = dict(passage)
+        recovered.setdefault("_provider_role", provider_role)
+        recovered.setdefault("retrieval_stage", provider_role)
+        usable_passages.append(recovered)
+    return usable_passages
+
+
 def execute_source_class_recovery_action(
     controller: RunController,
     *,
@@ -269,6 +319,14 @@ def execute_source_class_recovery_action(
         lifecycle_trace,
         explanation="source_class_recovery_executor_entrypoint_reached",
     )
+    fast_lane_plan = build_fast_official_lane_plan(
+        lifecycle_trace=lifecycle_trace,
+        complexity=complexity,
+        search_providers=search_providers,
+        official_domain_constraints=official_domain_constraints,
+    )
+    lifecycle_trace[FAST_OFFICIAL_LANE_TRACE_KEY] = fast_lane_plan.as_trace()
+    record_direct_attempt(lifecycle_trace, plan=fast_lane_plan)
     seen_before = len(seen_urls)
     recovered_passages = process_search_queries(
         queries,
@@ -293,19 +351,96 @@ def execute_source_class_recovery_action(
         provider_diagnostics=provider_diagnostics,
         provider_role=provider_role,
     )
-    new_url_count = max(0, len(seen_urls) - seen_before)
-    usable_passages: list[dict[str, Any]] = []
-    for passage in recovered_passages or []:
-        if not isinstance(passage, dict):
-            continue
-        recovered = dict(passage)
-        recovered.setdefault("_provider_role", provider_role)
-        recovered.setdefault("retrieval_stage", provider_role)
-        usable_passages.append(recovered)
+    usable_passages = _usable_recovered_passages(
+        recovered_passages,
+        provider_role=provider_role,
+    )
+
+    if fast_lane_plan.used:
+        direct_decision = _candidate_fit_decision(
+            lifecycle_trace=lifecycle_trace,
+            recovered_passages=usable_passages,
+        )
+        record_candidate_fit(
+            lifecycle_trace,
+            status=direct_decision.source_fit_status,
+            rejection_reasons=direct_decision.source_fit_rejection_reasons,
+        )
+        if retry_authorized_after_fit_rejection(
+            lifecycle_trace,
+            plan=fast_lane_plan,
+        ):
+            bridge_hints = concrete_bridge_hints_from_diagnostics(
+                provider_diagnostics,
+                known_urls=(
+                    _source_identity_url(passage) for passage in usable_passages
+                ),
+            )
+            record_bridge_hints(lifecycle_trace, hints=bridge_hints)
+            retry_hint = next(
+                (hint for hint in bridge_hints if hint.retry_query()),
+                None,
+            )
+            retry_query = retry_hint.retry_query() if retry_hint is not None else None
+            if retry_hint is not None and retry_query:
+                record_retry_attempt(
+                    lifecycle_trace,
+                    hint=retry_hint,
+                    retry_query=retry_query,
+                )
+                retry_passages = process_search_queries(
+                    [retry_query],
+                    intent,
+                    complexity,
+                    str(search_depth),
+                    results_per_query,
+                    recovery_include_domains,
+                    exclude_domains,
+                    query_embedding,
+                    seen_urls,
+                    collected_images,
+                    embed_provider,
+                    embed_model,
+                    local_url,
+                    embed_texts,
+                    compute_similarities,
+                    status_container=status_container,
+                    search_providers=list(search_providers),
+                    exa_domain_filter=recovery_exa_domain_filter,
+                    entity_hint=entity_hint,
+                    provider_diagnostics=provider_diagnostics,
+                    provider_role=provider_role,
+                )
+                usable_passages.extend(
+                    _usable_recovered_passages(
+                        retry_passages,
+                        provider_role=provider_role,
+                    )
+                )
+                retry_decision = _candidate_fit_decision(
+                    lifecycle_trace=lifecycle_trace,
+                    recovered_passages=usable_passages,
+                )
+                record_retry_fit_result(
+                    lifecycle_trace,
+                    status=retry_decision.source_fit_status,
+                    rejection_reasons=retry_decision.source_fit_rejection_reasons,
+                )
+            else:
+                record_retry_skipped(
+                    lifecycle_trace,
+                    reason="skipped_no_concrete_bridge_hint",
+                )
+        else:
+            record_retry_skipped(
+                lifecycle_trace,
+                reason="skipped_candidate_fit_not_retryable",
+            )
 
     if usable_passages:
         all_passages.extend(usable_passages)
 
+    new_url_count = max(0, len(seen_urls) - seen_before)
     result_count = len(usable_passages)
     lifecycle_trace.update(
         build_recovery_source_quality_diagnostics(usable_passages)
@@ -342,6 +477,10 @@ def execute_source_class_recovery_action(
         pass_record["include_domains"] = list(recovery_include_domains)
         pass_record["official_domain_constraints"] = list(
             official_domain_constraints
+        )
+    if fast_lane_plan.used:
+        pass_record["fast_official_lane"] = dict(
+            lifecycle_trace.get(FAST_OFFICIAL_LANE_TRACE_KEY) or {}
         )
     retrieval_pass_records.append(pass_record)
     for name, value in (
