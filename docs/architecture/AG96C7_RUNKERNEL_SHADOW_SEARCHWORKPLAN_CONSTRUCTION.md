@@ -174,3 +174,9 @@ AG-96C8 should likely be either a behavior-preserving SearchWorkPlan runtime
 construction callsite/projection path or a QueryPlan shadow relationship
 design/adapter, depending on what AG-96C7 review exposes. Provider/search
 behavior should remain closed until a later phase explicitly opens it.
+
+AG-96C8 follow-up note:
+`AG96C8_RUNTIME_SHADOW_SEARCHWORKPLAN_CALLSITE.md` wires the behavior-preserving
+runtime shadow construction callsite after RunAuthority contract synthesis and
+keeps QueryPlan, provider/search, prompt, citation, and final-answer behavior
+closed.
