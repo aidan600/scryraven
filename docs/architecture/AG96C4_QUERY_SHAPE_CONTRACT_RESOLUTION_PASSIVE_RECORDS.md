@@ -226,3 +226,8 @@ AG-96C4 does not:
 Each activation phase should name the runtime consumer, old authority paths to
 subordinate or retire, opened surfaces, offline tests, and live-validation
 boundary if live evidence is required.
+
+AG-96C5 follow-up note:
+`AG96C5_SEARCHWORKPLAN_RUNTIME_CONSTRUCTION_DESIGN.md` defines the future
+RunKernel / RunAuthority construction seam for the passive records above. It
+remains design/static only and does not construct or consume `SearchWorkPlan`.
