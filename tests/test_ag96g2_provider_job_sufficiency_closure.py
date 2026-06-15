@@ -250,6 +250,149 @@ def _judgment(
     )
 
 
+def test_single_skeleton_contract_falls_back_to_unambiguous_provider_job_custody() -> None:
+    contract = _contract(
+        _requirement(
+            "run-contract:official_current_rules",
+            kind="official_current",
+            source_class="official_current_rules",
+            source_tier="official",
+            currentness="current",
+        )
+    )
+    ledger = {
+        "candidate_count": 1,
+        "requirement_count": 1,
+        "source_requirements": [
+            {
+                "requirement_id": (
+                    "provider_job_requirement:component-fee:"
+                    "obligation-official-fee:provider-official-fee"
+                ),
+                "requirement_kind": "official_current",
+                "required_source_class": "official_current_rules",
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "status": "satisfied",
+                "linked_candidate_ids": ["candidate-official-fee"],
+            }
+        ],
+    }
+
+    judgment = _judgment(contract, ledger)
+
+    assert judgment.required_obligations_satisfied is True
+    assert judgment.satisfied_obligations[0].component_id == "component_fee"
+    assert judgment.satisfied_obligations[0].source_obligation_id == (
+        "obligation_official_fee"
+    )
+    assert judgment.satisfied_obligations[0].provider_job_id == (
+        "provider_official_fee"
+    )
+
+
+def test_ref_mismatch_does_not_use_official_current_class_fallback() -> None:
+    contract = _contract(
+        _requirement(
+            "run-contract:official_fee",
+            kind="official_current",
+            source_class="official_current_rules",
+            source_tier="official",
+            currentness="current",
+            component_id="component-fee",
+            source_obligation_id="obligation-official-fee",
+            provider_job_id="provider-official-fee",
+        ),
+        _requirement(
+            "run-contract:official-deadline",
+            kind="official_current",
+            source_class="official_current_rules",
+            source_tier="official",
+            currentness="current",
+            component_id="component-deadline",
+            source_obligation_id="obligation-official-deadline",
+            provider_job_id="provider-official-deadline",
+        ),
+    )
+    ledger = {
+        "candidate_count": 1,
+        "requirement_count": 1,
+        "source_requirements": [
+            {
+                "requirement_id": (
+                    "provider_job_requirement:component-fee:"
+                    "obligation-official-fee:provider-official-fee"
+                ),
+                "requirement_kind": "official_current",
+                "required_source_class": "official_current_rules",
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "status": "satisfied",
+                "linked_candidate_ids": ["candidate-official-fee"],
+            }
+        ],
+    }
+
+    judgment = _judgment(contract, ledger)
+
+    assert [item.component_id for item in judgment.satisfied_obligations] == [
+        "component_fee"
+    ]
+    assert [item.component_id for item in judgment.missing_required_obligations] == [
+        "component_deadline"
+    ]
+    assert judgment.required_obligations_satisfied is False
+    assert judgment.decision is RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED
+
+
+def test_skeleton_contract_does_not_fallback_when_multiple_compatible_ledgers() -> None:
+    contract = _contract(
+        _requirement(
+            "run-contract:official_current_rules",
+            kind="official_current",
+            source_class="official_current_rules",
+            source_tier="official",
+            currentness="current",
+        )
+    )
+    ledger = {
+        "candidate_count": 2,
+        "requirement_count": 2,
+        "source_requirements": [
+            {
+                "requirement_id": (
+                    "provider_job_requirement:component-fee:"
+                    "obligation-official-fee:provider-official-fee"
+                ),
+                "requirement_kind": "official_current",
+                "required_source_class": "official_current_rules",
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "status": "satisfied",
+                "linked_candidate_ids": ["candidate-official-fee"],
+            },
+            {
+                "requirement_id": (
+                    "provider_job_requirement:component-deadline:"
+                    "obligation-official-deadline:provider-official-deadline"
+                ),
+                "requirement_kind": "official_current",
+                "required_source_class": "official_current_rules",
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "status": "satisfied",
+                "linked_candidate_ids": ["candidate-official-deadline"],
+            },
+        ],
+    }
+
+    judgment = _judgment(contract, ledger)
+
+    assert not judgment.satisfied_obligations
+    assert judgment.missing_required_obligations
+    assert judgment.required_obligations_satisfied is False
+
+
 def test_satisfied_official_current_provider_job_custody_governs_ready_direct() -> None:
     contract = _contract(
         _requirement(
@@ -258,6 +401,9 @@ def test_satisfied_official_current_provider_job_custody_governs_ready_direct() 
             source_class="official_current_rules",
             source_tier="official",
             currentness="current",
+            component_id="component-fee",
+            source_obligation_id="obligation-official-fee",
+            provider_job_id="provider-official-fee",
         )
     )
     _kernel, ledger = _kernel_with_contract_and_provider_job_ledger(contract)
@@ -280,17 +426,49 @@ def test_satisfied_official_current_provider_job_custody_governs_ready_direct() 
 def test_aggregate_only_official_current_never_satisfies_custody() -> None:
     contract = _contract(
         _requirement(
-            "run-contract:official_current_rules",
+            (
+                "provider_job_requirement:component-fee:"
+                "obligation-official-fee:provider-official-fee"
+            ),
             kind="official_current",
             source_class="official_current_rules",
             source_tier="official",
             currentness="current",
+            component_id="component-fee",
+            source_obligation_id="obligation-official-fee",
+            provider_job_id="provider-official-fee",
         )
     )
-    _kernel, ledger = _kernel_with_contract_and_provider_job_ledger(
-        contract,
-        retrieval_records={"source_tier_counts": {"official": 2}},
-    )
+    ledger = {
+        "candidate_count": 0,
+        "requirement_count": 1,
+        "source_requirements": [
+            {
+                "requirement_id": (
+                    "provider_job_requirement:component-fee:"
+                    "obligation-official-fee:provider-official-fee"
+                ),
+                "requirement_kind": "official_current",
+                "required_source_class": "official_current_rules",
+                "required_source_tier": "official",
+                "required_currentness": "current",
+                "status": "unsatisfied",
+                "reason": "aggregate_counts_cannot_satisfy_custody",
+                "aggregate_counts_insufficient": True,
+                "linked_candidate_ids": [],
+            }
+        ],
+        "custody_gaps": [
+            {
+                "gap_type": "legacy_aggregate_only_path",
+                "requirement_id": (
+                    "provider_job_requirement:component-fee:"
+                    "obligation-official-fee:provider-official-fee"
+                ),
+                "reason": "aggregate count observed without candidate identity",
+            }
+        ],
+    }
 
     judgment = _judgment(contract, ledger)
 
@@ -525,6 +703,9 @@ def test_runtime_handoff_consumes_post_g1_runkernel_evidence_ledger_projection()
             source_class="official_current_rules",
             source_tier="official",
             currentness="current",
+            component_id="component-fee",
+            source_obligation_id="obligation-official-fee",
+            provider_job_id="provider-official-fee",
         )
     )
     kernel, ledger = _kernel_with_contract_and_provider_job_ledger(contract)

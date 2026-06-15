@@ -160,10 +160,9 @@ def _source_class_family(requirement: Mapping[str, Any]) -> str | None:
     return _SOURCE_CLASS_FAMILIES.get(source_class, source_class)
 
 
-def _requirement_refs(requirement: Mapping[str, Any]) -> set[str]:
+def _lineage_refs(requirement: Mapping[str, Any]) -> set[str]:
     refs: set[str] = set()
     for key in (
-        "requirement_id",
         "component_id",
         "source_obligation_id",
         "obligation_id",
@@ -174,7 +173,8 @@ def _requirement_refs(requirement: Mapping[str, Any]) -> set[str]:
         token = _req_key(requirement.get(key))
         if token:
             refs.add(token)
-    return refs
+    refs.update(_provider_job_requirement_parts(requirement).values())
+    return {ref for ref in refs if ref}
 
 
 def _provider_job_requirement_parts(
@@ -320,35 +320,9 @@ def _compatible_kind_and_class(
     return True
 
 
-def _matching_score(
-    requirement: Mapping[str, Any],
-    ledger_requirement: Mapping[str, Any],
-) -> int:
+def _match_rank(ledger_requirement: Mapping[str, Any]) -> int:
     status = clean_token(ledger_requirement.get("status"))
-    if _exact_requirement_match(requirement, ledger_requirement):
-        score = 100
-        if status == "satisfied":
-            score += 200
-        return score
-    if not _compatible_kind_and_class(requirement, ledger_requirement):
-        return 0
-    requirement_refs = _requirement_refs(requirement)
-    ledger_refs = _requirement_refs(ledger_requirement)
-    score = 30
-    if requirement_refs and ledger_refs:
-        score += 40 if requirement_refs & ledger_refs else 0
-    if _source_class_family(requirement) == _source_class_family(ledger_requirement):
-        score += 20
-    if _req_key(requirement.get("required_source_tier")) and (
-        _req_key(requirement.get("required_source_tier"))
-        == _req_key(ledger_requirement.get("required_source_tier"))
-    ):
-        score += 5
-    if _req_key(requirement.get("required_currentness")) and (
-        _req_key(requirement.get("required_currentness"))
-        == _req_key(ledger_requirement.get("required_currentness"))
-    ):
-        score += 5
+    score = 0
     if any(
         _field(ledger_requirement, key)
         for key in ("component_id", "source_obligation_id", "provider_job_id")
@@ -363,16 +337,42 @@ def _matching_score(
     return score
 
 
+def _best_match(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    best: tuple[int, dict[str, Any]] = (-1, {})
+    for candidate in candidates:
+        score = _match_rank(candidate)
+        if score > best[0]:
+            best = (score, dict(candidate))
+    return best[1]
+
+
 def _find_ledger_requirement(
     requirement: Mapping[str, Any],
     ledger_requirements: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    best: tuple[int, dict[str, Any]] = (0, {})
-    for ledger_requirement in ledger_requirements:
-        score = _matching_score(requirement, ledger_requirement)
-        if score > best[0]:
-            best = (score, dict(ledger_requirement))
-    return best[1] if best[0] >= 50 else {}
+    exact = [
+        item
+        for item in ledger_requirements
+        if _exact_requirement_match(requirement, item)
+    ]
+    if exact:
+        return _best_match(exact)
+
+    compatible = [
+        item
+        for item in ledger_requirements
+        if _compatible_kind_and_class(requirement, item)
+    ]
+    requirement_lineage_refs = _lineage_refs(requirement)
+    if requirement_lineage_refs:
+        ref_matches = [
+            item
+            for item in compatible
+            if requirement_lineage_refs & _lineage_refs(item)
+        ]
+        return _best_match(ref_matches) if ref_matches else {}
+
+    return dict(compatible[0]) if len(compatible) == 1 else {}
 
 
 def _assessment(
