@@ -304,6 +304,7 @@ def test_orchestrator_adapter_passes_run_kernel_search_work_lane_projection() ->
             "_source_class_recovery_lifecycle_recommendation": (
                 _empty_recommendation()
             ),
+            "_search_work_official_current_recovery_activation_allowed": True,
             "_source_class_recovery_answer_contract_observability": {},
             "_source_tier_recovery_lifecycle": {
                 "source_tier_counts": {"secondary": 2},
@@ -334,6 +335,64 @@ def test_orchestrator_adapter_passes_run_kernel_search_work_lane_projection() ->
     assert "official_current_rules" in recommendation["missing_expected_source_classes"]
     assert "sourced_numeric_values" in recommendation["missing_expected_source_classes"]
     assert lifecycle["active_source_class_recovery_eligible"] is True
+
+
+def test_orchestrator_adapter_requires_controlled_activation_handoff() -> None:
+    controller = RunController()
+    run_kernel = SimpleNamespace(
+        state=SimpleNamespace(
+            projections={"search_work_shadow_lane_projection": _lane()}
+        )
+    )
+    handoff = build_authoritative_source_action_orchestrator_handoff(
+        controller,
+        orchestrator_state={
+            "query": "What is the current official filing fee?",
+            "intent": "general",
+            "report_type": "general_research",
+            "query_type": "current_events",
+            "core_topic": "current official filing fee",
+            "primary_entity": "filing fee",
+            "_source_class_recovery_lifecycle_recommendation": (
+                _empty_recommendation()
+            ),
+            "_source_class_recovery_answer_contract_observability": {},
+            "_source_tier_recovery_lifecycle": {
+                "source_tier_counts": {"secondary": 2},
+                "official_evidence_found": False,
+            },
+            "_source_domain_recovery_lifecycle": {
+                "source_domain_counts": {"analysis.example": 2},
+                "top_source_domains": [
+                    {"domain": "analysis.example", "count": 2}
+                ],
+            },
+            "run_kernel": run_kernel,
+            "corpus_state": "HEALTHY",
+            "corpus_weak": False,
+            "weak_corpus_recovery_considered": False,
+            "weak_corpus_recovery_used": False,
+            "weak_corpus_recovery_skip_reason": None,
+            "current_search_depth_for_recovery": "basic",
+            "iterations_run": 0,
+            "max_iterations": 2,
+            "waste_flags": [],
+        },
+    )
+
+    recommendation = handoff.recommendation
+    assert "sourced_numeric_values" not in recommendation[
+        "missing_expected_source_classes"
+    ]
+    assert "source_obligation_driven" not in recommendation
+    assert (
+        SEARCH_WORK_OFFICIAL_CURRENT_RECOVERY_ACTIVATION_TRACE_KEY
+        not in recommendation
+    )
+    assert all(
+        "search_work" not in field
+        for field in recommendation.get("source_class_recovery_trigger_fields", [])
+    )
 
 
 def test_runtime_blockers_prevent_lifecycle_escalation_but_preserve_visibility() -> None:

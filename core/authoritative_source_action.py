@@ -293,7 +293,7 @@ def build_authoritative_source_obligation_state_and_action(
         recommendation=recommendation,
         runtime_trace=runtime_trace,
         obligation_facts=facts.obligation_facts,
-        existing_blockers=_official_current_recovery_ownership_blockers(facts),
+        existing_blockers=_official_source_obligation_bridge_blockers(facts),
         logger=logger,
     )
     if bridge_result is not None:
@@ -629,6 +629,12 @@ def _apply_search_work_official_current_activation(
     facts: AuthoritativeSourceActionFacts,
     logger: Any | None,
 ) -> dict[str, Any]:
+    reason = str(recommendation.get("source_class_recovery_reason") or "")
+    if (
+        _source_class_gap_signal_present(recommendation)
+        and not reason.startswith("official_source_obligation_bridge:")
+    ):
+        return dict(recommendation)
     try:
         return activate_search_work_official_current_recovery_recommendation(
             recommendation=recommendation,
@@ -652,10 +658,35 @@ def _apply_search_work_official_current_activation(
 def _search_work_official_current_activation_blockers(
     facts: AuthoritativeSourceActionFacts,
 ) -> tuple[str, ...]:
-    return _official_current_recovery_ownership_blockers(facts)
+    blockers = list(_official_source_obligation_bridge_blockers(facts))
+    source_signals = _safe_mapping(facts.source_class_evidence_signals)
+    if facts.weak_corpus_recovery_used:
+        blockers.append("weak_corpus_recovery_owns_path")
+        blockers.append("search_work_activation_blocked_by_weak_corpus_owner")
+    elif facts.weak_corpus_recovery_considered and (
+        facts.weak_corpus_recovery_skip_reason
+        not in {None, "", "not_weak_corpus"}
+    ):
+        blockers.append("blocked_by_weak_corpus_recovery")
+        blockers.append("search_work_activation_blocked_by_weak_corpus_owner")
+    elif (
+        facts.weak_corpus_recovery_considered
+        and facts.weak_corpus_recovery_skip_reason == "not_weak_corpus"
+    ):
+        blockers.append("search_work_activation_blocked_by_existing_corpus_lifecycle")
+    elif facts.corpus_weak:
+        blockers.append("blocked_by_corpus_weak")
+        blockers.append("search_work_activation_blocked_by_weak_corpus_owner")
+    if facts.retrieve_to_anchor_recommended:
+        blockers.append("blocked_by_retrieve_to_anchor_recommendation")
+    if facts.ordinary_continuation_path_active:
+        blockers.append("blocked_by_ordinary_continuation_path")
+    if source_signals.get("official_evidence_found") is True:
+        blockers.append("existing_official_evidence_found")
+    return _string_tuple(blockers)
 
 
-def _official_current_recovery_ownership_blockers(
+def _official_source_obligation_bridge_blockers(
     facts: AuthoritativeSourceActionFacts,
 ) -> tuple[str, ...]:
     blockers: list[str] = []
