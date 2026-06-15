@@ -242,10 +242,7 @@ from core.runtime_prompt_assembly import (
     build_image_context,
     evidence_slice_for_analyst,
 )
-from core.search_work_plan_shadow_runtime import (
-    RuntimeShadowSearchWorkPlanInput,
-    observe_runtime_shadow_search_work_plan_construction,
-)
+from core.search_work_shadow_lane_runtime import run_search_work_shadow_lane
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
     build_source_class_recovery_recommendation,
@@ -766,31 +763,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     run_kernel.reduce(run_contract_result.observation)
     run_contract_projection = dict(run_kernel.state.run_contract_projection)
-    search_work_plan_action = run_kernel.authorize_search_work_plan_construction(
-        inputs={
-            "run_contract_id": run_contract_projection.get("contract_id"),
+    run_search_work_shadow_lane(
+        run_kernel=run_kernel,
+        run_contract_projection=run_contract_projection,
+        route_projection=run_kernel.state.projections.get("route_request", {}),
+        requested_mode=strategy,
+        selected_depth=run_contract_projection.get("selected_depth"),
+        current_date_ref={"id": "run_config.current_date"},
+        safe_user_domain_hints={},
+        metadata={
+            "callsite": "pipeline_orchestrator.after_run_contract_synthesis",
             "route_action_id": route_request_action.action_id,
-            "shadow_only": True,
-            "query_plan_behavior_changed": False,
-            "provider_search_behavior_changed": False,
-        }
-    )
-    run_kernel.reduce(
-        observe_runtime_shadow_search_work_plan_construction(
-            search_work_plan_action,
-            RuntimeShadowSearchWorkPlanInput(
-                run_contract_projection=run_contract_projection,
-                route_projection=run_kernel.state.projections.get("route_request", {}),
-                requested_mode=strategy,
-                selected_depth=run_contract_projection.get("selected_depth"),
-                current_date_ref={"id": "run_config.current_date"},
-                safe_user_domain_hints={},
-                metadata={
-                    "callsite": "pipeline_orchestrator.after_run_contract_synthesis",
-                    "runtime_shadow_projection_only": True,
-                },
-            ),
-        )
+            "runtime_shadow_projection_only": True,
+        },
     )
 
     policy_state = load_policy_state(policy_state_path)

@@ -291,17 +291,15 @@ def test_pipeline_callsite_is_pass_through_after_contract_synthesis() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
 
     contract_reduce = source.index("run_kernel.reduce(run_contract_result.observation)")
-    shadow_authorize = source.index("authorize_search_work_plan_construction")
-    shadow_observe = source.index(
-        "observe_runtime_shadow_search_work_plan_construction",
-        contract_reduce,
-    )
+    shadow_lane = source.index("run_search_work_shadow_lane", contract_reduce)
     query_authorize = source.index(
         "query_production_action = run_kernel.authorize_query_production",
-        shadow_observe,
+        shadow_lane,
     )
 
-    assert contract_reduce < shadow_authorize < shadow_observe < query_authorize
+    assert contract_reduce < shadow_lane < query_authorize
+    assert "RuntimeShadowSearchWorkPlanInput" not in source
+    assert "observe_runtime_shadow_search_work_plan_construction" not in source
     assert "SearchWorkPlanConstructionInput" not in source
     assert "QueryShapeAssessment" not in source
     assert "ContractResolutionRecord" not in source
