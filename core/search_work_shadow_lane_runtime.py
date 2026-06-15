@@ -65,6 +65,7 @@ def run_search_work_shadow_lane(
     route_projection: Mapping[str, Any] | None = None,
     requested_mode: str | None = None,
     selected_depth: str | None = None,
+    safe_query_preview: str | None = None,
     current_date_ref: str | Mapping[str, Any] | None = None,
     safe_user_domain_hints: Mapping[str, Any] | None = None,
     metadata: Mapping[str, Any] | None = None,
@@ -96,6 +97,7 @@ def run_search_work_shadow_lane(
             route_projection=route_projection,
             requested_mode=requested_mode,
             selected_depth=selected_depth,
+            safe_query_preview=safe_query_preview,
             current_date_ref=current_date_ref,
             safe_user_domain_hints=safe_user_domain_hints,
             metadata={
@@ -117,6 +119,7 @@ def run_search_work_shadow_lane(
         build_search_work_official_current_handoff(query_plan_work_shadow_projection)
     )
     lane_projection = _lane_projection(
+        search_work_plan=state.search_work_plan,
         search_work_plan_projection=search_work_plan_projection,
         query_plan_work_shadow_projection=query_plan_work_shadow_projection,
         search_work_official_current_handoff=search_work_official_current_handoff,
@@ -137,12 +140,16 @@ def run_search_work_shadow_lane(
 
 def _lane_projection(
     *,
+    search_work_plan: Mapping[str, Any],
     search_work_plan_projection: Mapping[str, Any],
     query_plan_work_shadow_projection: Mapping[str, Any],
     search_work_official_current_handoff: Mapping[str, Any],
     action_ref: Mapping[str, Any],
     metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
+    construction_metadata = _mapping(
+        _mapping(search_work_plan.get("metadata")).get("construction_metadata")
+    )
     projection = {
         "schema_version": SEARCH_WORK_SHADOW_LANE_SCHEMA_VERSION,
         "trace_key": SEARCH_WORK_SHADOW_LANE_TRACE_KEY,
@@ -150,6 +157,16 @@ def _lane_projection(
         "derived_from": "RunAuthorityContract",
         "shadow_lane_ran": True,
         "shadow_only": True,
+        "implements_query_shape_classifier": bool(
+            construction_metadata.get("implements_query_shape_classifier")
+        ),
+        "implements_contract_resolver": bool(
+            construction_metadata.get("implements_contract_resolver")
+        ),
+        "search_work_plan_fallback_reason": _clean_token(
+            construction_metadata.get("fallback_reason"),
+            limit=220,
+        ),
         "search_work_plan_projection_present": bool(search_work_plan_projection),
         "query_plan_work_shadow_projection_present": bool(
             query_plan_work_shadow_projection
@@ -242,6 +259,10 @@ def _lane_projection(
 def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     safe = _json_safe(dict(value or {}))
     return dict(safe) if isinstance(safe, Mapping) else {}
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:

@@ -2,9 +2,10 @@
 
 This helper is a bounded projection adapter. It consumes only safe structured
 runtime state that already exists after RunAuthority contract reduction and
-returns a RunKernel observation through the AG-96C7 construction seam. It does
-not classify raw queries, resolve contracts, build executable QueryPlan entries,
-choose providers, call search/retrieval/model APIs, or mutate RunKernel state.
+returns a RunKernel observation through the AG-96C7 construction seam. It may
+derive deterministic query-shape and contract-resolution records for shadow
+projection, but it does not build executable QueryPlan entries, choose
+providers, call search/retrieval/model APIs, or mutate RunKernel state.
 """
 
 from __future__ import annotations
@@ -40,6 +41,10 @@ from core.search_work_plan import (
 from core.search_work_plan_construction import (
     SearchWorkPlanConstructionInput,
     observe_search_work_plan_construction,
+)
+from core.search_work_query_shape_runtime import (
+    DeterministicSearchWorkRuntimeInput,
+    build_deterministic_search_work_runtime_records,
 )
 
 RUNTIME_SHADOW_SEARCH_WORK_PLAN_HELPER = "ag96c8_runtime_shadow_search_work_plan"
@@ -81,6 +86,7 @@ class RuntimeShadowSearchWorkPlanInput:
     route_projection: Mapping[str, Any] | None = None
     requested_mode: str | None = None
     selected_depth: str | None = None
+    safe_query_preview: str | None = None
     current_date_ref: str | Mapping[str, Any] | None = None
     safe_user_domain_hints: Mapping[str, Any] | None = None
     metadata: Mapping[str, Any] | None = None
@@ -90,7 +96,7 @@ def observe_runtime_shadow_search_work_plan_construction(
     action: AuthorizedAction,
     runtime_input: RuntimeShadowSearchWorkPlanInput,
 ) -> Observation:
-    """Construct and observe a conservative SearchWorkPlan projection."""
+    """Construct and observe a shadow SearchWorkPlan projection."""
 
     construction_input = build_runtime_shadow_search_work_plan_input(runtime_input)
     return observe_search_work_plan_construction(action, construction_input)
@@ -99,11 +105,125 @@ def observe_runtime_shadow_search_work_plan_construction(
 def build_runtime_shadow_search_work_plan_input(
     runtime_input: RuntimeShadowSearchWorkPlanInput,
 ) -> SearchWorkPlanConstructionInput:
-    """Return AG-96C6 construction input from already-safe runtime state."""
+    """Return AG-96C6 construction input from already-safe runtime state.
 
+    AG-96E1 prefers deterministic real QueryShapeAssessment and
+    ContractResolutionRecord construction. If validation fails, the helper
+    falls back to the older conservative scaffold and records why.
+    """
     contract = _safe_mapping(runtime_input.run_contract_projection)
     route_facts = _safe_route_facts(runtime_input.route_projection or {})
     contract_id = _clean_token(contract.get("contract_id")) or "contract:unavailable"
+    try:
+        records = build_deterministic_search_work_runtime_records(
+            DeterministicSearchWorkRuntimeInput(
+                contract_id=contract_id,
+                run_contract_projection=contract,
+                route_facts=route_facts,
+                requested_mode=runtime_input.requested_mode,
+                selected_depth=runtime_input.selected_depth
+                or _clean_token(contract.get("selected_depth")),
+                safe_query_preview=runtime_input.safe_query_preview,
+                current_date_ref=runtime_input.current_date_ref,
+                metadata=runtime_input.metadata,
+            )
+        )
+        return _construction_input_from_records(
+            runtime_input=runtime_input,
+            contract=contract,
+            route_facts=route_facts,
+            contract_id=contract_id,
+            assessment=records.query_shape_assessment,
+            resolution=records.contract_resolution,
+        )
+    except Exception as exc:
+        return _build_conservative_runtime_shadow_search_work_plan_input(
+            runtime_input,
+            contract=contract,
+            route_facts=route_facts,
+            contract_id=contract_id,
+            fallback_reason=f"deterministic_ag96e1_failed:{type(exc).__name__}",
+        )
+
+
+def _construction_input_from_records(
+    *,
+    runtime_input: RuntimeShadowSearchWorkPlanInput,
+    contract: Mapping[str, Any],
+    route_facts: Mapping[str, Any],
+    contract_id: str,
+    assessment: QueryShapeAssessment,
+    resolution: ContractResolutionRecord,
+) -> SearchWorkPlanConstructionInput:
+    selected_depth = _clean_token(runtime_input.selected_depth) or _clean_token(
+        contract.get("selected_depth")
+    )
+    return SearchWorkPlanConstructionInput(
+        construction_id=f"construction:{contract_id}:ag96e1",
+        requested_mode_source="run_config_or_run_contract_projection",
+        query_shape_assessment=assessment,
+        contract_resolution=resolution,
+        construction_design=SearchWorkPlanConstructionDesignRecord(
+            design_id=f"design:{contract_id}:ag96e1",
+            future_runtime_consumer="RunKernel.SearchWorkPlan shadow projection",
+            closed_surfaces=(
+                "QueryPlan behavior",
+                "query generation/order/admission",
+                "provider/search/retrieval behavior",
+                "prompt behavior",
+                "citation/final-answer behavior",
+                "mode_policy.py",
+            ),
+            metadata={
+                "runtime_shadow_scaffolding": False,
+                "phase": "AG-96E1",
+                "implements_query_shape_classifier": True,
+                "implements_contract_resolver": True,
+                "fallback_reason": None,
+            },
+        ).require_valid(),
+        safe_route_facts=route_facts,
+        run_authority_contract_ref={
+            "contract_id": contract_id,
+            "schema_version": contract.get("schema_version"),
+        },
+        current_date_ref=_safe_ref(runtime_input.current_date_ref),
+        passive_mode_policy_snapshot={
+            "requested_mode": resolution.requested_mode.value,
+            "selected_depth": selected_depth,
+            "source": "run_config_or_run_contract_projection",
+            "runtime_mode_mutated": False,
+        },
+        safe_user_domain_hints=_safe_mapping(runtime_input.safe_user_domain_hints or {}),
+        metadata=_safe_mapping(
+            {
+                "helper": RUNTIME_SHADOW_SEARCH_WORK_PLAN_HELPER,
+                "phase": "AG-96E1",
+                "runtime_shadow_scaffolding": False,
+                "implements_query_shape_classifier": True,
+                "implements_contract_resolver": True,
+                "fallback_reason": None,
+                "safe_structured_inputs_only": True,
+                "safe_preview_used": bool(_clean_text(runtime_input.safe_query_preview)),
+                "behavior_changed": False,
+                "query_plan_behavior_changed": False,
+                "provider_search_behavior_changed": False,
+                **dict(runtime_input.metadata or {}),
+            }
+        ),
+    )
+
+
+def _build_conservative_runtime_shadow_search_work_plan_input(
+    runtime_input: RuntimeShadowSearchWorkPlanInput,
+    *,
+    contract: Mapping[str, Any],
+    route_facts: Mapping[str, Any],
+    contract_id: str,
+    fallback_reason: str | None,
+) -> SearchWorkPlanConstructionInput:
+    """Return the AG-96C8 conservative scaffold as an AG-96E1 fallback."""
+
     selected_depth = _clean_token(runtime_input.selected_depth) or _clean_token(
         contract.get("selected_depth")
     )
@@ -153,6 +273,7 @@ def build_runtime_shadow_search_work_plan_input(
         metadata={
             "runtime_shadow_scaffolding": True,
             "implements_query_shape_classifier": False,
+            "fallback_reason": fallback_reason,
             "uses_raw_query_text": False,
         },
     ).require_valid()
@@ -172,6 +293,7 @@ def build_runtime_shadow_search_work_plan_input(
             "runtime_shadow_scaffolding": True,
             "implements_contract_resolver": False,
             "selected_depth": selected_depth,
+            "fallback_reason": fallback_reason,
         },
     ).require_valid()
     return SearchWorkPlanConstructionInput(
@@ -192,7 +314,8 @@ def build_runtime_shadow_search_work_plan_input(
             ),
             metadata={
                 "runtime_shadow_scaffolding": True,
-                "phase": "AG-96C8",
+                "phase": "AG-96E1",
+                "fallback_reason": fallback_reason,
             },
         ).require_valid(),
         safe_route_facts=route_facts,
@@ -210,8 +333,11 @@ def build_runtime_shadow_search_work_plan_input(
         metadata=_safe_mapping(
             {
                 "helper": RUNTIME_SHADOW_SEARCH_WORK_PLAN_HELPER,
-                "phase": "AG-96C8",
+                "phase": "AG-96E1",
                 "runtime_shadow_scaffolding": True,
+                "implements_query_shape_classifier": False,
+                "implements_contract_resolver": False,
+                "fallback_reason": fallback_reason,
                 "safe_structured_inputs_only": True,
                 "behavior_changed": False,
                 "query_plan_behavior_changed": False,
