@@ -85,6 +85,46 @@ Balanced may produce micro and meso recommendations, but cannot authorize macro
 diagnosis. Deep may produce macro diagnosis and reconciliation-support
 candidates, still with caps and stop posture.
 
+## Fast Micro-hop Validation
+
+Fast remains RunAuthority-governed. Fast is not "non-reasoning": it may perform
+passive micro-hop validation over already-available sanitized record facts.
+
+Fast micro-hop validation may inspect and classify:
+
+- evidence custody status;
+- source class / source tier fit;
+- bridge-only provider output status;
+- currentness gaps;
+- source-bound numeric unknown or resolution status;
+- citation and final-answer posture gaps;
+- whether selected Fast mode is sufficient;
+- whether the final posture should be direct, caveated, insufficient, refused,
+  or escalated to Balanced/Deep.
+
+Fast micro-hop records are validation and posture records only. They do not
+create AG-96I1 follow-up authorization candidates, do not recommend provider-job
+execution, and do not grant Fast the Balanced/Deep meso or macro deliberation
+surface.
+
+Mode boundary:
+
+| Mode | Micro validation | Meso targeted repair | Macro run diagnosis |
+| --- | --- | --- | --- |
+| Fast | yes | no new AG-96I1A behavior; separately licensed narrow direct repair seams may exist outside this grammar | no |
+| Balanced | yes | yes, bounded | no |
+| Deep | yes | yes, larger bounded | yes, capped |
+
+Fast can classify bridge-only evidence, numeric unknowns, citation/final-answer
+posture gaps, caveat/refusal posture, and selected-mode insufficiency. When a
+gap requires contract-shape or conflict/reconciliation work, Fast records
+`selected_mode_insufficient` / `needs_balanced_or_deep` rather than pretending to
+run Deep-only reconciliation.
+
+AG-96I1A does not change runtime Fast behavior, provider routing, provider
+selection, search depth, query generation, retrieval execution, retrieval
+ranking/filtering, Author prose, citation formatting, or final-answer style.
+
 ## Balanced Boundary
 
 Balanced can represent one-hop official/current, canonical, numeric, entity,
@@ -164,6 +204,9 @@ The checkpoint records fallback posture before any future execution:
   cannot be supported;
 - mark `needs_deep` when Balanced encounters macro reconciliation or contract
   shape work.
+- mark `selected_mode_insufficient` / `needs_balanced_or_deep` when Fast
+  encounters work that requires Balanced or Deep rather than Fast micro
+  validation.
 
 ## Bridge-only Provider Output Rule
 
@@ -184,3 +227,47 @@ Still deferred:
 - new providers or provider routing changes;
 - search-depth, query-generation, retrieval ranking/filtering, Author prose, or
   citation formatting changes.
+
+## Deferred: Conversational Follow-up Search / Follow-up Turn Contract
+
+AG-96I1 and AG-96I1A concern in-run follow-up deliberation:
+
+```text
+first-pass evidence
+-> gap detected
+-> bounded provider-job recommendation / authorization candidate
+```
+
+They do not handle a later user turn such as:
+
+- "What about California?"
+- "Is that still true today?"
+- "Compare that to Canada."
+- "Find a better source."
+- "Can you say that more simply?"
+
+That conversational follow-up surface is deferred. The future desired shape is:
+
+```text
+new user turn
+-> classify relationship to prior answer
+-> decide whether prior EvidenceLedger / FinalAnswerPacket can be reused
+-> amend or create RunAuthorityContract
+-> create new/extended SearchWork components
+-> re-check source obligations and currentness
+-> run normal mode-bounded policy
+```
+
+A conversational follow-up must not inherit prior evidence as automatically
+sufficient. Prior evidence can be reused only when:
+
+- entity, scope, and time window still match;
+- currentness has not become stale for the new claim;
+- prior source obligations still apply;
+- the new question does not add a new component or stricter obligation;
+- prior FinalAnswerPacket did not mark the evidence caveated, partial, or
+  citation-ineligible.
+
+AG-96I1A documents this deferred boundary only. It does not implement
+conversational follow-up search, prior-answer reuse, Follow-up Turn Contract
+runtime behavior, or any new SearchWork execution path.
