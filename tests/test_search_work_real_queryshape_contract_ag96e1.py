@@ -199,6 +199,21 @@ def _provider_job_kinds(payload: dict[str, Any]) -> set[str]:
     }
 
 
+def _component_obligation_kind_map(payload: dict[str, Any]) -> dict[str, set[str]]:
+    obligation_kind_by_candidate_id = {
+        item["candidate_id"]: item["kind"]
+        for item in payload["source_obligation_candidates"]
+    }
+    return {
+        item["user_facing_subquestion"]: {
+            obligation_kind_by_candidate_id[candidate_id]
+            for candidate_id in item.get("source_obligation_candidate_ids", [])
+            if candidate_id in obligation_kind_by_candidate_id
+        }
+        for item in payload["component_candidates"]
+    }
+
+
 def test_simple_lookup_produces_one_simple_component_without_strict_official_or_legal() -> None:
     assessment = _assessment_payload("Who founded SQLite?")
 
@@ -252,6 +267,42 @@ def test_multipart_query_produces_multiple_components_in_lane_projection() -> No
     assert kernel.state.search_work_plan_projection["component_count"] >= 3
     assert query_plan_shadow["work_counts"]["component_count"] >= 3
     assert len(query_plan_shadow["candidate_work_groups"]) >= 3
+
+
+def test_multipart_component_obligations_are_component_local() -> None:
+    query = "What are the current official fee, legal deadline, and API parameter?"
+    assessment = _assessment_payload(query)
+    obligation_map = _component_obligation_kind_map(assessment)
+    strict_obligations = {
+        SourceObligationKind.OFFICIAL_CURRENT.value,
+        SourceObligationKind.LEGAL_CURRENT_PRIMARY.value,
+        SourceObligationKind.CANONICAL_DOCUMENTATION.value,
+    }
+
+    assert len(obligation_map) >= 3
+    fee_kinds = next(
+        kinds for question, kinds in obligation_map.items() if "fee" in question
+    )
+    legal_kinds = next(
+        kinds for question, kinds in obligation_map.items() if "legal deadline" in question
+    )
+    api_kinds = next(
+        kinds for question, kinds in obligation_map.items() if "API parameter" in question
+    )
+
+    assert SourceObligationKind.OFFICIAL_CURRENT.value in fee_kinds
+    assert SourceObligationKind.LEGAL_CURRENT_PRIMARY.value in legal_kinds
+    assert SourceObligationKind.CANONICAL_DOCUMENTATION.value in api_kinds
+    assert SourceObligationKind.LEGAL_CURRENT_PRIMARY.value not in fee_kinds
+    assert SourceObligationKind.CANONICAL_DOCUMENTATION.value not in fee_kinds
+    assert SourceObligationKind.OFFICIAL_CURRENT.value not in legal_kinds
+    assert SourceObligationKind.CANONICAL_DOCUMENTATION.value not in legal_kinds
+    assert SourceObligationKind.OFFICIAL_CURRENT.value not in api_kinds
+    assert SourceObligationKind.LEGAL_CURRENT_PRIMARY.value not in api_kinds
+    assert all(
+        not strict_obligations.issubset(kinds)
+        for kinds in obligation_map.values()
+    )
 
 
 def test_compare_query_marks_conflict_and_official_current_work_hints() -> None:

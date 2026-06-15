@@ -306,7 +306,7 @@ def _component_specs(
     specs: list[dict[str, Any]] = []
     for index, part in enumerate(raw_parts, start=1):
         part_text = _clean_text(part, limit=220) or f"component {index}"
-        part_blob = _text_blob(part_text, text)
+        part_blob = _text_blob(part_text)
         specs.append(
             {
                 "component_id": f"component-{index}",
@@ -396,19 +396,25 @@ def _component_obligation_kinds(
         for kind in obligation_kinds
         if kind is not SourceObligationKind.REPUTABLE_SECONDARY
     ]
-    local = _inferred_obligation_kinds(part_text)
+    local = [
+        kind
+        for kind in _inferred_obligation_kinds(part_text)
+        if kind is not SourceObligationKind.REPUTABLE_SECONDARY
+    ]
     if local:
         return tuple(kind for kind in local if kind in obligation_kinds or kind in strict)
+    matched = [
+        kind
+        for kind in strict
+        if _kind_text_match(kind, part_text)
+    ]
+    if matched:
+        return tuple(matched)
     if len(strict) == 1:
         return tuple(strict)
-    if len(strict) > 1:
-        matched = [
-            kind
-            for kind in strict
-            if _kind_text_match(kind, part_text)
-        ]
-        return tuple(matched or strict)
-    return tuple(obligation_kinds or (SourceObligationKind.REPUTABLE_SECONDARY,))
+    if not strict and SourceObligationKind.REPUTABLE_SECONDARY in obligation_kinds:
+        return (SourceObligationKind.REPUTABLE_SECONDARY,)
+    return ()
 
 
 def _source_obligation_candidates(
