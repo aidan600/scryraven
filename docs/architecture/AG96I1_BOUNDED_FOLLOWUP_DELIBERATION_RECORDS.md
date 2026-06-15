@@ -217,10 +217,14 @@ numeric values, citation eligibility, or final-answer posture by themselves.
 
 ## Deferred To AG-96I2
 
-Still deferred:
+AG-96I2A consumes these passive checkpoints into canonical RunKernel
+sealed/denied follow-up authorization state while keeping every seal
+non-executable. See
+[AG96I2A_FOLLOWUP_AUTHORIZATION_SEALING.md](AG96I2A_FOLLOWUP_AUTHORIZATION_SEALING.md).
+
+Still deferred after AG-96I2A:
 
 - runtime-gated execution of sealed follow-up jobs;
-- RunKernel consumption of authorization records;
 - live dogfood;
 - provider/cost evaluation;
 - provider capability registry backed by real provider behavior;
