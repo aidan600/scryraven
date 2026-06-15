@@ -275,6 +275,99 @@ def test_ag96g3_packet_consumes_sufficiency_final_packet_inputs_as_authority() -
     assert payload.authority_payload["satisfied_source_obligations"]
 
 
+def test_ag96g3_citation_ineligible_prompt_refs_are_stable_across_run_ids() -> None:
+    sufficiency_projection = RunSufficiencyJudgment(
+        judgment_id="ag96g3-stable-citation-ineligible",
+        decision=RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED,
+        final_answer_posture=SufficiencyPosture.PARTIAL_ANSWER,
+        final_answer_allowed=True,
+        final_packet_inputs={
+            "decision": "partial_answer_authorized",
+            "final_answer_posture": "partial_answer",
+            "final_answer_allowed": True,
+            "required_obligations_satisfied": False,
+            "readiness_status": "insufficient_authorized",
+            "readiness_reasons": ["required_obligations_missing"],
+            "claim_postures": ["insufficient_evidence"],
+            "missing_required_obligations": [
+                {
+                    "requirement_id": "req-official",
+                    "requirement_kind": "official_current",
+                    "required_source_class": "official_current_rules",
+                    "status": "missing",
+                    "reason": "required_evidence_ledger_gap",
+                }
+            ],
+            "partial_obligations": [],
+            "satisfied_obligations": [],
+            "source_bound_numeric_unknowns": [],
+            "mandatory_caveats": ["missing_source_custody_must_be_caveated"],
+            "prohibited_upgrades": [
+                "do_not_treat_missing_official_current_custody_as_satisfied"
+            ],
+            "behavior_boundary_flags": {
+                "provider_search_behavior_changed": False,
+                "retrieval_behavior_changed": False,
+                "prompt_behavior_changed": False,
+                "citation_behavior_changed": False,
+                "author_prose_behavior_changed": False,
+            },
+        },
+    ).to_projection()
+    evidence = _passage(
+        source_id=91,
+        url="https://example.com/context",
+        title="Context source",
+        source_tier="secondary",
+        source_class="reputable_secondary",
+    )
+
+    packet_a = build_final_answer_packet(
+        run_id="stable-a",
+        final_evidence=[evidence],
+        sufficiency_judgment_projection=sufficiency_projection,
+    )
+    packet_b = build_final_answer_packet(
+        run_id="stable-b",
+        final_evidence=[evidence],
+        sufficiency_judgment_projection=sufficiency_projection,
+    )
+    _packet_a, payload_a = derive_author_input_payload(
+        packet_a,
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+    _packet_b, payload_b = derive_author_input_payload(
+        packet_b,
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    line_a = next(
+        line
+        for line in payload_a.authority_block.splitlines()
+        if line.startswith("- Do not cite citation-ineligible evidence:")
+    )
+    line_b = next(
+        line
+        for line in payload_b.authority_block.splitlines()
+        if line.startswith("- Do not cite citation-ineligible evidence:")
+    )
+    assert line_a == line_b
+    assert "final-answer-packet-stable-a" not in line_a
+    assert "final-answer-packet-stable-b" not in line_b
+    assert "evidence_position=1" in line_a
+    assert "source_id=91" in line_a
+    assert "domain=example.com" in line_a
+    assert "title=Context source" in line_a
+    assert "reason=sufficiency_has_no_satisfied_source_obligation" in line_a
+    assert payload_a.citation_ineligible_refs[0]["evidence_id"] != (
+        payload_b.citation_ineligible_refs[0]["evidence_id"]
+    )
+
+
 def test_ag89d_legacy_citation_handoff_is_demoted_behind_packet() -> None:
     packet = build_final_answer_packet(
         run_id="r7",

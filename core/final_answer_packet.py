@@ -119,6 +119,22 @@ def _domain_from_url(url: Any) -> str | None:
     return domain or None
 
 
+def _citation_ineligible_prompt_ref(ref: Mapping[str, Any]) -> str:
+    parts: list[str] = []
+    for key, label in (
+        ("evidence_position", "evidence_position"),
+        ("source_id", "source_id"),
+        ("domain", "domain"),
+        ("title", "title"),
+        ("reason", "reason"),
+    ):
+        value = _safe_json(ref.get(key))
+        if value in (None, "", [], {}):
+            continue
+        parts.append(f"{label}={value}")
+    return ", ".join(parts) if parts else "reason=citation_ineligible"
+
+
 def _is_sensitive_key(key: Any) -> bool:
     normalized = str(key or "").strip().casefold()
     return normalized.startswith("raw_") or normalized in _SENSITIVE_KEYS
@@ -460,10 +476,31 @@ class FinalAnswerPacket:
             )
         allowed_ids = tuple(record.evidence_id for record in self.evidence_allowed)
         citation_source_ids = tuple(record.source_id for record in self.citation_eligible if record.source_id is not None)
+        evidence_by_id = {record.evidence_id: record for record in self.evidence_records}
         citation_ineligible_refs = tuple(
             {
                 "evidence_id": record.evidence_id,
+                "evidence_position": (
+                    evidence_by_id[record.evidence_id].position
+                    if record.evidence_id in evidence_by_id
+                    else None
+                ),
                 "source_id": record.source_id,
+                "url": (
+                    evidence_by_id[record.evidence_id].url
+                    if record.evidence_id in evidence_by_id
+                    else None
+                ),
+                "domain": (
+                    evidence_by_id[record.evidence_id].domain
+                    if record.evidence_id in evidence_by_id
+                    else None
+                ),
+                "title": (
+                    evidence_by_id[record.evidence_id].title
+                    if record.evidence_id in evidence_by_id
+                    else None
+                ),
                 "reason": record.reason,
             }
             for record in self.citation_ineligible
@@ -553,10 +590,7 @@ class FinalAnswerPacket:
         if citation_ineligible_refs:
             rendered = []
             for ref in citation_ineligible_refs:
-                rendered.append(
-                    f"{ref.get('evidence_id')}"
-                    f"(source_id={ref.get('source_id')}, reason={ref.get('reason')})"
-                )
+                rendered.append(_citation_ineligible_prompt_ref(ref))
             lines.append(
                 "- Do not cite citation-ineligible evidence: " + "; ".join(rendered)
             )
