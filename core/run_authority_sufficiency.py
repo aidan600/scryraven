@@ -158,6 +158,10 @@ class SufficiencyRequirementAssessment:
     required_source_class: str | None = None
     required_source_tier: str | None = None
     required_currentness: str | None = None
+    component_id: str | None = None
+    source_obligation_id: str | None = None
+    provider_job_id: str | None = None
+    origin_ref: str | None = None
     status: str = "missing"
     reason: str | None = None
     satisfied_candidate_ids: tuple[str, ...] = ()
@@ -171,6 +175,10 @@ class SufficiencyRequirementAssessment:
                 "required_source_class": clean_token(self.required_source_class),
                 "required_source_tier": clean_token(self.required_source_tier),
                 "required_currentness": clean_token(self.required_currentness),
+                "component_id": clean_token(self.component_id),
+                "source_obligation_id": clean_token(self.source_obligation_id),
+                "provider_job_id": clean_token(self.provider_job_id),
+                "origin_ref": clean_token(self.origin_ref),
                 "status": clean_token(self.status),
                 "reason": clean_text(self.reason, limit=260),
                 "satisfied_candidate_ids": list(self.satisfied_candidate_ids),
@@ -189,6 +197,10 @@ class SufficiencyRequirementAssessment:
             required_source_class=clean_token(payload.get("required_source_class")),
             required_source_tier=clean_token(payload.get("required_source_tier")),
             required_currentness=clean_token(payload.get("required_currentness")),
+            component_id=clean_token(payload.get("component_id")),
+            source_obligation_id=clean_token(payload.get("source_obligation_id")),
+            provider_job_id=clean_token(payload.get("provider_job_id")),
+            origin_ref=clean_token(payload.get("origin_ref")),
             status=clean_token(payload.get("status")) or "missing",
             reason=clean_text(payload.get("reason"), limit=260),
             satisfied_candidate_ids=_string_tuple(
@@ -531,14 +543,39 @@ class RunSufficiencyJudgment:
             "decision": self.decision.value,
             "final_answer_posture": self.final_answer_posture.value,
             "final_answer_allowed": bool(self.final_answer_allowed),
+            "required_obligations_satisfied": bool(
+                self.required_obligations_satisfied
+            ),
             "readiness_status": readiness_status,
             "readiness_reasons": list(self.readiness_reasons),
             "claim_postures": list(dict.fromkeys(claim_postures)),
             "missing_source_obligations": missing,
+            "missing_required_obligations": [
+                item.to_dict() for item in self.missing_required_obligations
+            ],
+            "partial_obligations": [
+                item.to_dict() for item in self.partial_obligations
+            ],
+            "satisfied_obligations": [
+                item.to_dict() for item in self.satisfied_obligations
+            ],
+            "source_bound_numeric_unknowns": list(
+                self.source_bound_numeric_unknowns
+            ),
             "source_obligations": missing
             + [item.to_dict() for item in self.satisfied_obligations],
             "mandatory_caveats": list(self.mandatory_caveats),
             "prohibited_upgrades": list(self.prohibited_upgrades),
+            "behavior_boundary_flags": {
+                "query_text_generated": False,
+                "provider_search_behavior_changed": False,
+                "retrieval_behavior_changed": False,
+                "prompt_behavior_changed": False,
+                "citation_behavior_changed": False,
+                "author_prose_behavior_changed": False,
+                "quant_extraction_executed": False,
+                "calculation_executed": False,
+            },
         }
 
     def to_projection(self) -> dict[str, Any]:

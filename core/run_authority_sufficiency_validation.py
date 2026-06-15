@@ -48,6 +48,36 @@ _REQUIRED_SOURCE_TIERS = frozenset(
 _MISSING_LEDGER_STATUSES = frozenset(
     {"unsatisfied", "unknown", "not_observable", "partially_satisfied"}
 )
+_KIND_FAMILIES = {
+    "official_current": "official_current",
+    "official": "official_current",
+    "current": "official_current",
+    "legal_primary": "legal",
+    "legal_current_primary": "legal",
+    "legal": "legal",
+    "canonical_docs": "canonical",
+    "canonical_documentation": "canonical",
+    "canonical": "canonical",
+    "source_bound": "source_bound_numeric",
+    "source_bound_numeric": "source_bound_numeric",
+    "sourced_numeric_values": "source_bound_numeric",
+}
+_SOURCE_CLASS_FAMILIES = {
+    "official_current_rules": "official_current",
+    "current_primary_or_official": "official_current",
+    "legal_or_regulatory_text": "legal",
+    "primary_source_documents": "canonical",
+    "canonical_docs": "canonical",
+    "sourced_numeric_values": "source_bound_numeric",
+    "source_bound_numeric": "source_bound_numeric",
+    "source_bound": "source_bound_numeric",
+}
+_SOURCE_BOUND_EXTRACTION_FLAGS = (
+    "source_bound_numeric_values_extracted",
+    "source_bound_numeric_extraction_executed",
+    "quant_extraction_executed",
+    "calculation_executed",
+)
 
 
 def _list(value: Any) -> list[Any]:
@@ -93,6 +123,89 @@ def _req_key(value: Any) -> str | None:
     return token.casefold().replace("-", "_").replace(":", "_").replace(" ", "_")
 
 
+def _field(payload: Mapping[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        token = clean_token(payload.get(key))
+        if token:
+            return token
+    return None
+
+
+def _ref_field(payload: Mapping[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        token = _req_key(payload.get(key))
+        if token:
+            return token
+    return None
+
+
+def _kind_family(requirement: Mapping[str, Any]) -> str:
+    kind = _req_key(requirement.get("requirement_kind") or requirement.get("kind"))
+    if kind in _KIND_FAMILIES:
+        return _KIND_FAMILIES[kind]
+    source_class = _req_key(
+        requirement.get("required_source_class") or requirement.get("source_class")
+    )
+    if source_class in _SOURCE_CLASS_FAMILIES:
+        return _SOURCE_CLASS_FAMILIES[source_class]
+    return kind or "general"
+
+
+def _source_class_family(requirement: Mapping[str, Any]) -> str | None:
+    source_class = _req_key(
+        requirement.get("required_source_class") or requirement.get("source_class")
+    )
+    if not source_class:
+        return None
+    return _SOURCE_CLASS_FAMILIES.get(source_class, source_class)
+
+
+def _requirement_refs(requirement: Mapping[str, Any]) -> set[str]:
+    refs: set[str] = set()
+    for key in (
+        "requirement_id",
+        "component_id",
+        "source_obligation_id",
+        "obligation_id",
+        "provider_job_id",
+        "provider_job_ref",
+        "origin_ref",
+    ):
+        token = _req_key(requirement.get(key))
+        if token:
+            refs.add(token)
+    return refs
+
+
+def _provider_job_requirement_parts(
+    requirement: Mapping[str, Any],
+) -> dict[str, str]:
+    req_id = _req_key(requirement.get("requirement_id"))
+    if not req_id or not req_id.startswith("provider_job_requirement_"):
+        return {}
+    tail = req_id.removeprefix("provider_job_requirement_").split("_")
+    try:
+        obligation_index = tail.index("obligation")
+        provider_index = tail.index("provider", obligation_index + 1)
+    except ValueError:
+        return {}
+    if obligation_index <= 0 or provider_index <= obligation_index:
+        return {}
+    return {
+        "component_id": "_".join(tail[:obligation_index]),
+        "source_obligation_id": "_".join(tail[obligation_index:provider_index]),
+        "provider_job_id": "_".join(tail[provider_index:]),
+    }
+
+
+def _ledger_requirements(projection: Mapping[str, Any]) -> list[dict[str, Any]]:
+    return [
+        dict(item)
+        for item in _list(projection.get("source_requirements"))
+        if isinstance(item, Mapping)
+    ]
+
+
 def _required_contract_requirements(
     projection: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
@@ -124,6 +237,12 @@ def _required_contract_requirements(
                 "required_source_tier": source_tier,
                 "required_currentness": currentness,
                 "strictness": strictness,
+                "component_id": clean_token(item.get("component_id")),
+                "source_obligation_id": clean_token(
+                    item.get("source_obligation_id") or item.get("obligation_id")
+                ),
+                "provider_job_id": clean_token(item.get("provider_job_id")),
+                "origin_ref": clean_token(item.get("origin_ref")),
             }
         )
     return requirements
@@ -152,31 +271,108 @@ def _preferred_contract_requirements(
                     item.get("required_currentness")
                 ),
                 "strictness": "preferred",
+                "component_id": clean_token(item.get("component_id")),
+                "source_obligation_id": clean_token(
+                    item.get("source_obligation_id") or item.get("obligation_id")
+                ),
+                "provider_job_id": clean_token(item.get("provider_job_id")),
+                "origin_ref": clean_token(item.get("origin_ref")),
             }
         )
     return requirements
 
 
-def _ledger_requirements_by_key(
-    projection: Mapping[str, Any],
-) -> dict[str, dict[str, Any]]:
-    out: dict[str, dict[str, Any]] = {}
-    for item in _list(projection.get("source_requirements")):
-        if not isinstance(item, Mapping):
-            continue
-        req_id = clean_token(item.get("requirement_id"))
-        source_class = clean_token(item.get("required_source_class"))
-        if req_id:
-            out[req_id] = dict(item)
-            key = _req_key(req_id)
-            if key:
-                out[key] = dict(item)
-        if source_class:
-            out.setdefault(source_class, dict(item))
-            key = _req_key(source_class)
-            if key:
-                out.setdefault(key, dict(item))
-    return out
+def _exact_requirement_match(
+    requirement: Mapping[str, Any],
+    ledger_requirement: Mapping[str, Any],
+) -> bool:
+    req_id = _req_key(requirement.get("requirement_id"))
+    ledger_id = _req_key(ledger_requirement.get("requirement_id"))
+    return bool(req_id and ledger_id and req_id == ledger_id)
+
+
+def _compatible_kind_and_class(
+    requirement: Mapping[str, Any],
+    ledger_requirement: Mapping[str, Any],
+) -> bool:
+    required_family = _kind_family(requirement)
+    ledger_family = _kind_family(ledger_requirement)
+    if required_family != ledger_family:
+        return False
+    if required_family == "source_bound_numeric":
+        return True
+    required_class = _source_class_family(requirement)
+    ledger_class = _source_class_family(ledger_requirement)
+    if required_class and ledger_class and required_class != ledger_class:
+        return False
+    required_tier = _req_key(requirement.get("required_source_tier"))
+    ledger_tier = _req_key(ledger_requirement.get("required_source_tier"))
+    if required_tier and ledger_tier and required_tier != ledger_tier:
+        return False
+    required_currentness = _req_key(requirement.get("required_currentness"))
+    ledger_currentness = _req_key(ledger_requirement.get("required_currentness"))
+    if (
+        required_currentness
+        and ledger_currentness
+        and required_currentness != ledger_currentness
+    ):
+        return False
+    return True
+
+
+def _matching_score(
+    requirement: Mapping[str, Any],
+    ledger_requirement: Mapping[str, Any],
+) -> int:
+    status = clean_token(ledger_requirement.get("status"))
+    if _exact_requirement_match(requirement, ledger_requirement):
+        score = 100
+        if status == "satisfied":
+            score += 200
+        return score
+    if not _compatible_kind_and_class(requirement, ledger_requirement):
+        return 0
+    requirement_refs = _requirement_refs(requirement)
+    ledger_refs = _requirement_refs(ledger_requirement)
+    score = 30
+    if requirement_refs and ledger_refs:
+        score += 40 if requirement_refs & ledger_refs else 0
+    if _source_class_family(requirement) == _source_class_family(ledger_requirement):
+        score += 20
+    if _req_key(requirement.get("required_source_tier")) and (
+        _req_key(requirement.get("required_source_tier"))
+        == _req_key(ledger_requirement.get("required_source_tier"))
+    ):
+        score += 5
+    if _req_key(requirement.get("required_currentness")) and (
+        _req_key(requirement.get("required_currentness"))
+        == _req_key(ledger_requirement.get("required_currentness"))
+    ):
+        score += 5
+    if any(
+        _field(ledger_requirement, key)
+        for key in ("component_id", "source_obligation_id", "provider_job_id")
+    ) or (
+        clean_token(ledger_requirement.get("origin_ref")) or ""
+    ).startswith("provider_job_execution:"):
+        score += 300
+    if status == "satisfied":
+        score += 200
+    elif status == "partially_satisfied":
+        score += 100
+    return score
+
+
+def _find_ledger_requirement(
+    requirement: Mapping[str, Any],
+    ledger_requirements: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    best: tuple[int, dict[str, Any]] = (0, {})
+    for ledger_requirement in ledger_requirements:
+        score = _matching_score(requirement, ledger_requirement)
+        if score > best[0]:
+            best = (score, dict(ledger_requirement))
+    return best[1] if best[0] >= 50 else {}
 
 
 def _assessment(
@@ -187,6 +383,7 @@ def _assessment(
     ledger_requirement: Mapping[str, Any] | None = None,
 ) -> SufficiencyRequirementAssessment:
     ledger = _mapping(ledger_requirement)
+    provider_job_parts = _provider_job_requirement_parts(ledger)
     return SufficiencyRequirementAssessment(
         requirement_id=str(
             requirement.get("requirement_id")
@@ -210,6 +407,20 @@ def _assessment(
             requirement.get("required_currentness")
             or ledger.get("required_currentness")
         ),
+        component_id=_ref_field(requirement, "component_id")
+        or _ref_field(ledger, "component_id")
+        or provider_job_parts.get("component_id"),
+        source_obligation_id=_ref_field(
+            requirement,
+            "source_obligation_id",
+            "obligation_id",
+        )
+        or _ref_field(ledger, "source_obligation_id", "obligation_id")
+        or provider_job_parts.get("source_obligation_id"),
+        provider_job_id=_ref_field(requirement, "provider_job_id", "provider_job_ref")
+        or _ref_field(ledger, "provider_job_id", "provider_job_ref")
+        or provider_job_parts.get("provider_job_id"),
+        origin_ref=_field(requirement, "origin_ref") or _field(ledger, "origin_ref"),
         status=status,
         reason=reason or clean_text(ledger.get("reason"), limit=260),
         satisfied_candidate_ids=tuple(
@@ -325,19 +536,39 @@ def _conflict_reasons(facts: Mapping[str, Any]) -> tuple[str, ...]:
 
 def _source_bound_unknowns(
     missing: Sequence[SufficiencyRequirementAssessment],
+    partial: Sequence[SufficiencyRequirementAssessment],
+    satisfied: Sequence[SufficiencyRequirementAssessment],
+    final_evidence: Mapping[str, Any],
     conflict_facts: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any], ...]:
     unknowns: list[dict[str, Any]] = []
-    for item in missing:
-        if item.requirement_kind == "source_bound_numeric" or (
-            item.required_source_class or ""
-        ) in {"source_bound_numeric", "source_bound", "official_current_rules"}:
-            if item.requirement_kind == "source_bound_numeric":
+    for item in (*missing, *partial):
+        if item.requirement_kind == "source_bound_numeric":
+            unknowns.append(
+                {
+                    "requirement_id": item.requirement_id,
+                    "source_class": item.required_source_class,
+                    "reason": item.reason or "source_bound_numeric_missing",
+                }
+            )
+    extraction_executed = any(
+        _truthy(final_evidence.get(flag)) for flag in _SOURCE_BOUND_EXTRACTION_FLAGS
+    )
+    if not extraction_executed:
+        for item in satisfied:
+            if item.requirement_kind == "source_bound_numeric" and (
+                item.provider_job_id
+                or (item.origin_ref or "").startswith("provider_job_execution:")
+                or item.required_source_class == "sourced_numeric_values"
+            ):
                 unknowns.append(
                     {
                         "requirement_id": item.requirement_id,
                         "source_class": item.required_source_class,
-                        "reason": item.reason or "source_bound_numeric_missing",
+                        "satisfied_candidate_ids": list(
+                            item.satisfied_candidate_ids
+                        ),
+                        "reason": "source_bound_numeric_extraction_deferred",
                     }
                 )
     activation = _mapping(conflict_facts.get("source_conflict_answer_posture_activation"))
@@ -473,6 +704,10 @@ def _mandatory_caveats(
             )
         else:
             caveats.append(f"missing_required_source:{item.required_source_class}")
+        if item.reason == "aggregate_counts_cannot_satisfy_custody":
+            caveats.append("aggregate_only_evidence_ledger_custody_insufficient")
+        if item.reason == "no_linked_candidate_satisfies_requirement":
+            caveats.append("candidate_level_custody_does_not_satisfy_requirement")
     for item in partial:
         caveats.append(f"partial_source_obligation:{item.required_source_class}")
     if missing or partial or unknowns:
@@ -634,22 +869,15 @@ def build_deterministic_sufficiency_judgment(
     weak_facts = _mapping(judgment_input.weak_failure_facts)
     budget = _mapping(judgment_input.budget)
 
-    ledger_requirements = _ledger_requirements_by_key(ledger)
+    ledger_requirements = _ledger_requirements(ledger)
     missing: list[SufficiencyRequirementAssessment] = []
     partial: list[SufficiencyRequirementAssessment] = []
     satisfied: list[SufficiencyRequirementAssessment] = []
     for requirement in _required_contract_requirements(contract):
-        keys = [
-            requirement.get("requirement_id"),
-            _req_key(requirement.get("requirement_id")),
-            requirement.get("required_source_class"),
-            _req_key(requirement.get("required_source_class")),
-        ]
-        ledger_requirement = {}
-        for key in keys:
-            if key and key in ledger_requirements:
-                ledger_requirement = ledger_requirements[key]
-                break
+        ledger_requirement = _find_ledger_requirement(
+            requirement,
+            ledger_requirements,
+        )
         status = clean_token(ledger_requirement.get("status"))
         if status == "satisfied":
             satisfied.append(
@@ -694,17 +922,10 @@ def build_deterministic_sufficiency_judgment(
                 missing.append(item)
 
     for requirement in _preferred_contract_requirements(contract):
-        keys = [
-            requirement.get("requirement_id"),
-            _req_key(requirement.get("requirement_id")),
-            requirement.get("required_source_class"),
-            _req_key(requirement.get("required_source_class")),
-        ]
-        ledger_requirement = {}
-        for key in keys:
-            if key and key in ledger_requirements:
-                ledger_requirement = ledger_requirements[key]
-                break
+        ledger_requirement = _find_ledger_requirement(
+            requirement,
+            ledger_requirements,
+        )
         if clean_token(ledger_requirement.get("status")) == "satisfied":
             satisfied.append(
                 _assessment(
@@ -726,7 +947,13 @@ def build_deterministic_sufficiency_judgment(
 
     conflicts = _conflict_reasons(conflict_facts)
     inferred = _indirect_claims(inference_facts)
-    unknowns = _source_bound_unknowns(missing, conflict_facts)
+    unknowns = _source_bound_unknowns(
+        missing,
+        partial,
+        satisfied,
+        final_evidence,
+        conflict_facts,
+    )
     weak = _weak_reasons(weak_facts, final_evidence)
     failure_card = _failure_card_authorized(weak_facts)
     failure_reason = _failure_card_reason(weak_facts)
