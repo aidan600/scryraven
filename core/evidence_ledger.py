@@ -460,6 +460,8 @@ class EvidenceLedger:
                 status=_clean_token(link.get("link_status")),
             )
         self._admit_aggregate_counts(payload.get("aggregate_counts"))
+        for gap in _list(payload.get("custody_gaps") or payload.get("gaps")):
+            self._admit_gap_record(gap, source=source)
         self._admit_final_evidence(payload.get("final_evidence"))
         self._evaluate_requirements()
         return self
@@ -806,6 +808,22 @@ class EvidenceLedger:
                     reason="final evidence selected before ledger candidate custody",
                     source_ref="final_evidence",
                 )
+
+    def _admit_gap_record(self, record: Any, *, source: str) -> None:
+        if not isinstance(record, Mapping):
+            return
+        gap_type = _coerce_enum(
+            EvidenceCustodyGapType,
+            record.get("gap_type"),
+            EvidenceCustodyGapType.MISSING_CANDIDATE_IDENTITY.value,
+        )
+        self._gap(
+            gap_type,
+            requirement_id=_clean_token(record.get("requirement_id")),
+            candidate_id=_clean_token(record.get("candidate_id")),
+            reason=_clean_text(record.get("reason")),
+            source_ref=_clean_text(record.get("source_ref")) or source,
+        )
 
     def _evaluate_requirements(self) -> None:
         for requirement in self.requirements.values():
