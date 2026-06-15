@@ -542,6 +542,8 @@ def _source_bound_unknowns(
     conflict_facts: Mapping[str, Any],
 ) -> tuple[Mapping[str, Any], ...]:
     unknowns: list[dict[str, Any]] = []
+    resolved_keys = _resolved_quant_requirement_keys(final_evidence)
+    quant_packet_unknowns = _quant_packet_unknowns(final_evidence)
     for item in (*missing, *partial):
         if item.requirement_kind == "source_bound_numeric":
             unknowns.append(
@@ -561,6 +563,8 @@ def _source_bound_unknowns(
                 or (item.origin_ref or "").startswith("provider_job_execution:")
                 or item.required_source_class == "sourced_numeric_values"
             ):
+                if _assessment_quant_keys(item) & resolved_keys:
+                    continue
                 unknowns.append(
                     {
                         "requirement_id": item.requirement_id,
@@ -571,6 +575,7 @@ def _source_bound_unknowns(
                         "reason": "source_bound_numeric_extraction_deferred",
                     }
                 )
+    unknowns.extend(quant_packet_unknowns)
     activation = _mapping(conflict_facts.get("source_conflict_answer_posture_activation"))
     if _int_value(activation.get("source_bound_unresolved_value_count")) > 0:
         unknowns.append(
@@ -587,6 +592,135 @@ def _source_bound_unknowns(
             }
         )
     return tuple(unknowns)
+
+
+def _quant_packets(final_evidence: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    packets = final_evidence.get("quant_work_unit_packets") or final_evidence.get(
+        "source_bound_numeric_packets"
+    )
+    return tuple(item for item in _list(packets) if isinstance(item, Mapping))
+
+
+def _assessment_quant_keys(item: SufficiencyRequirementAssessment) -> set[str]:
+    return {
+        key
+        for key in {
+            _req_key(item.requirement_id),
+            _req_key(item.component_id),
+            _req_key(item.source_obligation_id),
+            _req_key(item.provider_job_id),
+        }
+        if key
+    }
+
+
+def _packet_quant_keys(packet: Mapping[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for key in ("requirement_ids", "source_obligation_ids", "component_ids"):
+        keys.update(_req_key(item) for item in _list(packet.get(key)))
+    keys.add(_req_key(packet.get("quant_unit_id")))
+    return {key for key in keys if key}
+
+
+def _resolved_quant_requirement_keys(final_evidence: Mapping[str, Any]) -> set[str]:
+    keys: set[str] = set()
+    for packet in _quant_packets(final_evidence):
+        if clean_token(packet.get("calculation_status")) != "succeeded":
+            continue
+        if clean_token(packet.get("extraction_status")) != "succeeded":
+            continue
+        keys.update(_packet_quant_keys(packet))
+    return keys
+
+
+def _source_bound_resolutions(
+    final_evidence: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    resolutions: list[dict[str, Any]] = []
+    for packet in _quant_packets(final_evidence):
+        if clean_token(packet.get("calculation_status")) != "succeeded":
+            continue
+        if clean_token(packet.get("extraction_status")) != "succeeded":
+            continue
+        resolutions.append(
+            {
+                "quant_unit_id": clean_token(packet.get("quant_unit_id")),
+                "component_ids": _string_list(packet.get("component_ids")),
+                "source_obligation_ids": _string_list(packet.get("source_obligation_ids")),
+                "requirement_ids": _string_list(packet.get("requirement_ids")),
+                "required_variables": _string_list(packet.get("required_variables")),
+                "extracted_values": [
+                    _mapping(item)
+                    for item in _list(packet.get("extracted_values"))
+                    if isinstance(item, Mapping)
+                ],
+                "calculation_result": _mapping(packet.get("calculation_result")),
+                "source_refs": [
+                    _mapping(item)
+                    for item in _list(packet.get("source_refs"))
+                    if isinstance(item, Mapping)
+                ],
+                "high_stakes_quant": _truthy(packet.get("high_stakes_quant")),
+                "reason": "source_bound_numeric_extraction_and_calculation_succeeded",
+            }
+        )
+    return tuple(resolutions)
+
+
+def _quant_packet_unknowns(final_evidence: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
+    unknowns: list[dict[str, Any]] = []
+    for packet in _quant_packets(final_evidence):
+        if clean_token(packet.get("calculation_status")) == "succeeded" and clean_token(
+            packet.get("extraction_status")
+        ) == "succeeded":
+            continue
+        unknowns.append(
+            {
+                "requirement_id": (
+                    next(iter(_string_list(packet.get("requirement_ids"))), None)
+                    or clean_token(packet.get("quant_unit_id"))
+                    or "source_bound_numeric"
+                ),
+                "quant_unit_id": clean_token(packet.get("quant_unit_id")),
+                "source_class": "sourced_numeric_values",
+                "unresolved_values": [
+                    _mapping(item)
+                    for item in _list(packet.get("unresolved_values"))
+                    if isinstance(item, Mapping)
+                ],
+                "blocked_reasons": _string_list(packet.get("blocked_reasons")),
+                "reason": (
+                    next(iter(_string_list(packet.get("blocked_reasons"))), None)
+                    or "source_bound_numeric_quant_work_unresolved"
+                ),
+            }
+        )
+    return tuple(unknowns)
+
+
+def _quant_behavior_boundary_flags(
+    final_evidence: Mapping[str, Any],
+    resolutions: Sequence[Mapping[str, Any]],
+) -> dict[str, bool]:
+    packets = _quant_packets(final_evidence)
+    extraction_attempted = any(
+        _truthy(final_evidence.get(flag)) for flag in _SOURCE_BOUND_EXTRACTION_FLAGS
+    )
+    calculation_succeeded = any(
+        clean_token(packet.get("calculation_status")) == "succeeded"
+        for packet in packets
+    )
+    return {
+        "query_text_generated": False,
+        "provider_search_behavior_changed": False,
+        "retrieval_behavior_changed": False,
+        "prompt_behavior_changed": False,
+        "citation_behavior_changed": False,
+        "author_prose_behavior_changed": False,
+        "arbitrary_code_execution_used": False,
+        "quant_extraction_executed": bool(packets or extraction_attempted),
+        "calculation_executed": bool(calculation_succeeded or resolutions),
+    }
 
 
 def _indirect_claims(facts: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
@@ -954,6 +1088,7 @@ def build_deterministic_sufficiency_judgment(
         final_evidence,
         conflict_facts,
     )
+    quant_resolutions = _source_bound_resolutions(final_evidence)
     weak = _weak_reasons(weak_facts, final_evidence)
     failure_card = _failure_card_authorized(weak_facts)
     failure_reason = _failure_card_reason(weak_facts)
@@ -1014,7 +1149,7 @@ def build_deterministic_sufficiency_judgment(
     if not _required_contract_requirements(contract) and final_evidence_count > 0:
         required_satisfied = True
 
-    return RunSufficiencyJudgment(
+    judgment = RunSufficiencyJudgment(
         judgment_id=f"sufficiency:{stable_hash(judgment_input.to_model_payload())[:16]}",
         decision=decision,
         mode=SufficiencyJudgmentMode.DETERMINISTIC,
@@ -1029,6 +1164,7 @@ def build_deterministic_sufficiency_judgment(
         unresolved_conflicts=conflicts,
         indirect_inference_claims=inferred,
         source_bound_numeric_unknowns=unknowns,
+        source_bound_numeric_resolutions=quant_resolutions,
         weak_or_thin_evidence=weak,
         failure_card_authorized=failure_card,
         final_answer_allowed=final_allowed,
@@ -1037,6 +1173,13 @@ def build_deterministic_sufficiency_judgment(
         readiness_reasons=readiness_reasons,
         rationale=rationale,
     )
+    final_packet_inputs = dict(judgment.final_packet_inputs)
+    existing_flags = _mapping(final_packet_inputs.get("behavior_boundary_flags"))
+    final_packet_inputs["behavior_boundary_flags"] = {
+        **existing_flags,
+        **_quant_behavior_boundary_flags(final_evidence, quant_resolutions),
+    }
+    return replace(judgment, final_packet_inputs=final_packet_inputs)
 
 
 def _unsafe_direct_model_posture(
@@ -1197,6 +1340,7 @@ def validate_or_repair_sufficiency_judgment(
     required_missing = deterministic_judgment.missing_required_obligations
     required_partial = deterministic_judgment.partial_obligations
     unknowns = deterministic_judgment.source_bound_numeric_unknowns
+    resolutions = deterministic_judgment.source_bound_numeric_resolutions
     conflicts = deterministic_judgment.unresolved_conflicts
     inferred = deterministic_judgment.indirect_inference_claims
     weak = deterministic_judgment.weak_or_thin_evidence
@@ -1207,6 +1351,8 @@ def validate_or_repair_sufficiency_judgment(
         reasons.append("restored_partial_obligations")
     if unknowns and not model_judgment.source_bound_numeric_unknowns:
         reasons.append("restored_source_bound_numeric_unknowns")
+    if resolutions and not model_judgment.source_bound_numeric_resolutions:
+        reasons.append("restored_source_bound_numeric_resolutions")
     if conflicts and not model_judgment.unresolved_conflicts:
         reasons.append("restored_unresolved_conflicts")
     if inferred and not model_judgment.indirect_inference_claims:
@@ -1230,6 +1376,9 @@ def validate_or_repair_sufficiency_judgment(
             ),
             source_bound_numeric_unknowns=(
                 model_judgment.source_bound_numeric_unknowns or unknowns
+            ),
+            source_bound_numeric_resolutions=(
+                model_judgment.source_bound_numeric_resolutions or resolutions
             ),
             unresolved_conflicts=model_judgment.unresolved_conflicts or conflicts,
             indirect_inference_claims=model_judgment.indirect_inference_claims

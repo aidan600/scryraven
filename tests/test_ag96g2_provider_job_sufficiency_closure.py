@@ -816,6 +816,7 @@ def test_behavior_boundaries_and_redaction_are_preserved() -> None:
         "prompt_behavior_changed": False,
         "citation_behavior_changed": False,
         "author_prose_behavior_changed": False,
+        "arbitrary_code_execution_used": False,
         "quant_extraction_executed": False,
         "calculation_executed": False,
     }

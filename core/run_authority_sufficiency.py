@@ -356,6 +356,7 @@ class RunSufficiencyJudgment:
     unresolved_conflicts: tuple[str, ...] = ()
     indirect_inference_claims: tuple[Mapping[str, Any], ...] = ()
     source_bound_numeric_unknowns: tuple[Mapping[str, Any], ...] = ()
+    source_bound_numeric_resolutions: tuple[Mapping[str, Any], ...] = ()
     weak_or_thin_evidence: tuple[str, ...] = ()
     failure_card_authorized: bool = False
     final_answer_allowed: bool = True
@@ -413,6 +414,15 @@ class RunSufficiencyJudgment:
             tuple(
                 _safe_mapping(item)
                 for item in self.source_bound_numeric_unknowns
+                if isinstance(item, Mapping)
+            ),
+        )
+        object.__setattr__(
+            self,
+            "source_bound_numeric_resolutions",
+            tuple(
+                _safe_mapping(item)
+                for item in self.source_bound_numeric_resolutions
                 if isinstance(item, Mapping)
             ),
         )
@@ -483,6 +493,11 @@ class RunSufficiencyJudgment:
             source_bound_numeric_unknowns=tuple(
                 _safe_mapping(item)
                 for item in _list(payload.get("source_bound_numeric_unknowns"))
+                if isinstance(item, Mapping)
+            ),
+            source_bound_numeric_resolutions=tuple(
+                _safe_mapping(item)
+                for item in _list(payload.get("source_bound_numeric_resolutions"))
                 if isinstance(item, Mapping)
             ),
             weak_or_thin_evidence=_string_tuple(payload.get("weak_or_thin_evidence")),
@@ -562,6 +577,9 @@ class RunSufficiencyJudgment:
             "source_bound_numeric_unknowns": list(
                 self.source_bound_numeric_unknowns
             ),
+            "source_bound_numeric_resolutions": list(
+                self.source_bound_numeric_resolutions
+            ),
             "source_obligations": missing
             + [item.to_dict() for item in self.satisfied_obligations],
             "mandatory_caveats": list(self.mandatory_caveats),
@@ -574,7 +592,7 @@ class RunSufficiencyJudgment:
                 "citation_behavior_changed": False,
                 "author_prose_behavior_changed": False,
                 "quant_extraction_executed": False,
-                "calculation_executed": False,
+                "calculation_executed": bool(self.source_bound_numeric_resolutions),
             },
         }
 
@@ -608,6 +626,9 @@ class RunSufficiencyJudgment:
                 "indirect_inference_claims": list(self.indirect_inference_claims),
                 "source_bound_numeric_unknowns": list(
                     self.source_bound_numeric_unknowns
+                ),
+                "source_bound_numeric_resolutions": list(
+                    self.source_bound_numeric_resolutions
                 ),
                 "weak_or_thin_evidence": list(self.weak_or_thin_evidence),
                 "failure_card_authorized": bool(self.failure_card_authorized),

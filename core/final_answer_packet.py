@@ -299,6 +299,7 @@ class FinalAnswerAuthorInputPayload:
     partial_source_obligations: tuple[Mapping[str, Any], ...] = ()
     satisfied_source_obligations: tuple[Mapping[str, Any], ...] = ()
     source_bound_numeric_unknowns: tuple[Mapping[str, Any], ...] = ()
+    source_bound_numeric_resolutions: tuple[Mapping[str, Any], ...] = ()
     readiness_status: str | None = None
     final_answer_posture: str | None = None
     sufficiency_decision: str | None = None
@@ -332,6 +333,7 @@ class FinalAnswerAuthorInputPayload:
             "partial_source_obligations": _safe_json(self.partial_source_obligations),
             "satisfied_source_obligations": _safe_json(self.satisfied_source_obligations),
             "source_bound_numeric_unknowns": _safe_json(self.source_bound_numeric_unknowns),
+            "source_bound_numeric_resolutions": _safe_json(self.source_bound_numeric_resolutions),
             "readiness_status": _clean_text(self.readiness_status, limit=120),
             "final_answer_posture": _clean_text(self.final_answer_posture, limit=120),
             "sufficiency_decision": _clean_text(self.sufficiency_decision, limit=120),
@@ -359,6 +361,7 @@ class FinalAnswerPacket:
     partial_obligations: tuple[Mapping[str, Any], ...] = ()
     satisfied_obligations: tuple[Mapping[str, Any], ...] = ()
     source_bound_numeric_unknowns: tuple[Mapping[str, Any], ...] = ()
+    source_bound_numeric_resolutions: tuple[Mapping[str, Any], ...] = ()
     behavior_boundary_flags: Mapping[str, Any] = field(default_factory=dict)
     claim_postures: tuple[ClaimPosture | str, ...] = ()
     mandatory_caveats: tuple[str, ...] = ()
@@ -450,6 +453,7 @@ class FinalAnswerPacket:
             "partial_source_obligations": _safe_json(partial_source_obligations),
             "satisfied_source_obligations": _safe_json(satisfied_source_obligations),
             "source_bound_numeric_unknowns": _safe_json(self.source_bound_numeric_unknowns),
+            "source_bound_numeric_resolutions": _safe_json(self.source_bound_numeric_resolutions),
             "mandatory_caveats": [_clean_text(item, limit=300) for item in self.mandatory_caveats],
             "prohibited_upgrades": [_clean_text(item, limit=300) for item in self.prohibited_upgrades],
             "behavior_boundary_flags": _safe_json(self.behavior_boundary_flags),
@@ -551,6 +555,7 @@ class FinalAnswerPacket:
             partial_source_obligations=partial_source_obligations,
             satisfied_source_obligations=satisfied_source_obligations,
             source_bound_numeric_unknowns=tuple(self.source_bound_numeric_unknowns),
+            source_bound_numeric_resolutions=tuple(self.source_bound_numeric_resolutions),
             readiness_status=self.readiness_status.value,
             final_answer_posture=self.final_answer_posture,
             sufficiency_decision=self.sufficiency_decision,
@@ -630,6 +635,15 @@ class FinalAnswerPacket:
                 "- Source-bound numeric unknowns: "
                 + "; ".join(rendered)
             )
+        if self.source_bound_numeric_resolutions:
+            rendered = [
+                f"{item.get('quant_unit_id') or item.get('requirement_id') or 'source_bound_numeric'}={item.get('calculation_result') or item.get('extracted_values')}"
+                for item in self.source_bound_numeric_resolutions
+            ]
+            lines.append(
+                "- Source-bound numeric resolved values: "
+                + "; ".join(str(item) for item in rendered)
+            )
         final_answer_posture = _clean_text(
             self.final_answer_posture
             or self.author_input_refs.get("final_answer_posture"),
@@ -692,6 +706,7 @@ class FinalAnswerPacket:
             "partial_obligations": _safe_json(self.partial_obligations),
             "satisfied_obligations": _safe_json(self.satisfied_obligations),
             "source_bound_numeric_unknowns": _safe_json(self.source_bound_numeric_unknowns),
+            "source_bound_numeric_resolutions": _safe_json(self.source_bound_numeric_resolutions),
             "behavior_boundary_flags": _safe_json(self.behavior_boundary_flags),
             "claim_postures": postures,
             "mandatory_caveats": [_clean_text(item, limit=300) for item in self.mandatory_caveats],
