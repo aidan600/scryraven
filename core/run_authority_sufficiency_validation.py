@@ -698,6 +698,31 @@ def _quant_packet_unknowns(final_evidence: Mapping[str, Any]) -> tuple[Mapping[s
     return tuple(unknowns)
 
 
+def _quant_behavior_boundary_flags(
+    final_evidence: Mapping[str, Any],
+    resolutions: Sequence[Mapping[str, Any]],
+) -> dict[str, bool]:
+    packets = _quant_packets(final_evidence)
+    extraction_attempted = any(
+        _truthy(final_evidence.get(flag)) for flag in _SOURCE_BOUND_EXTRACTION_FLAGS
+    )
+    calculation_succeeded = any(
+        clean_token(packet.get("calculation_status")) == "succeeded"
+        for packet in packets
+    )
+    return {
+        "query_text_generated": False,
+        "provider_search_behavior_changed": False,
+        "retrieval_behavior_changed": False,
+        "prompt_behavior_changed": False,
+        "citation_behavior_changed": False,
+        "author_prose_behavior_changed": False,
+        "arbitrary_code_execution_used": False,
+        "quant_extraction_executed": bool(packets or extraction_attempted),
+        "calculation_executed": bool(calculation_succeeded or resolutions),
+    }
+
+
 def _indirect_claims(facts: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
     claims: list[dict[str, Any]] = []
     if _int_value(facts.get("inferred_claim_count")) > 0 or _truthy(
@@ -1124,7 +1149,7 @@ def build_deterministic_sufficiency_judgment(
     if not _required_contract_requirements(contract) and final_evidence_count > 0:
         required_satisfied = True
 
-    return RunSufficiencyJudgment(
+    judgment = RunSufficiencyJudgment(
         judgment_id=f"sufficiency:{stable_hash(judgment_input.to_model_payload())[:16]}",
         decision=decision,
         mode=SufficiencyJudgmentMode.DETERMINISTIC,
@@ -1148,6 +1173,13 @@ def build_deterministic_sufficiency_judgment(
         readiness_reasons=readiness_reasons,
         rationale=rationale,
     )
+    final_packet_inputs = dict(judgment.final_packet_inputs)
+    existing_flags = _mapping(final_packet_inputs.get("behavior_boundary_flags"))
+    final_packet_inputs["behavior_boundary_flags"] = {
+        **existing_flags,
+        **_quant_behavior_boundary_flags(final_evidence, quant_resolutions),
+    }
+    return replace(judgment, final_packet_inputs=final_packet_inputs)
 
 
 def _unsafe_direct_model_posture(

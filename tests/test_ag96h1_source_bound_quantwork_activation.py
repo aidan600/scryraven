@@ -110,6 +110,9 @@ def test_direct_source_bound_numeric_value_extracts_and_clears_unknown() -> None
         "value"
     ] == 176100
     assert authority["source_bound_numeric_unknowns"] == []
+    assert authority["behavior_boundary_flags"]["quant_extraction_executed"] is True
+    assert authority["behavior_boundary_flags"]["calculation_executed"] is True
+    assert authority["behavior_boundary_flags"]["arbitrary_code_execution_used"] is False
     assert authority["citation_eligible_source_ids"] == [801]
 
 
@@ -358,6 +361,42 @@ def test_resolved_and_unresolved_quant_outputs_reach_author_payload() -> None:
     assert "Source-bound numeric resolved values:" in resolved["payload"].prompt
     assert unresolved_authority["source_bound_numeric_unknowns"]
     assert "Source-bound numeric unknowns:" in unresolved["payload"].prompt
+
+
+def test_unresolved_quant_packet_reports_extraction_without_calculation() -> None:
+    result = _numeric_spine(
+        records=[
+            _numeric_record(
+                numeric_facts=[{"variable": "other_rate", "value": 9.5, "unit": "percent"}]
+            )
+        ],
+        quant_units=[
+            _quant_unit(
+                required_variables=("rate",),
+                calculation_kind="identity",
+                units={"rate": "percent"},
+            )
+        ],
+    )
+    flags = _payload_authority(result)["behavior_boundary_flags"]
+
+    assert result["quant_packets"][0]["extraction_status"] == "unresolved"
+    assert flags["quant_extraction_executed"] is True
+    assert flags["calculation_executed"] is False
+    assert flags["arbitrary_code_execution_used"] is False
+
+
+def test_no_quant_packet_preserves_false_quant_behavior_flags() -> None:
+    record = _numeric_record(
+        numeric_facts=[{"variable": "rate", "value": 9.5, "unit": "percent"}]
+    )
+    result = _numeric_spine(records=[record], quant_units=[])
+    flags = _payload_authority(result)["behavior_boundary_flags"]
+
+    assert result["quant_packets"] == ()
+    assert flags["quant_extraction_executed"] is False
+    assert flags["calculation_executed"] is False
+    assert flags["arbitrary_code_execution_used"] is False
 
 
 def test_numeric_success_does_not_upgrade_unrelated_official_obligation() -> None:
