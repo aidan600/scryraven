@@ -29,6 +29,7 @@ SEARCH_JUDGMENT_STAGE = "search_judgment"
 SUFFICIENCY_JUDGMENT_STAGE = "sufficiency_judgment"
 FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
+FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -73,6 +74,7 @@ class ActionType(str, Enum):
     SUFFICIENCY_JUDGMENT_DECIDE = "sufficiency_judgment_decide"
     FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
     AUTHOR_EXECUTE = "author_execute"
+    FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
 
 
 class ObservationType(str, Enum):
@@ -90,6 +92,7 @@ class ObservationType(str, Enum):
     SUFFICIENCY_JUDGMENT_DECIDED = "sufficiency_judgment_decided"
     FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
+    FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
 
 
 class RunStageStatus(str, Enum):
@@ -323,6 +326,9 @@ class RunState:
     author_observation: dict[str, Any] = field(default_factory=dict)
     final_answer_outcome: dict[str, Any] = field(default_factory=dict)
     final_answer_authority_projection: dict[str, Any] = field(default_factory=dict)
+    followup_authorization_state: dict[str, Any] = field(default_factory=dict)
+    followup_authorization_projection: dict[str, Any] = field(default_factory=dict)
+    followup_authorization_history: list[dict[str, Any]] = field(default_factory=list)
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -371,6 +377,13 @@ class RunState:
             final_answer_authority_projection=deepcopy(
                 self.final_answer_authority_projection
             ),
+            followup_authorization_state=deepcopy(self.followup_authorization_state),
+            followup_authorization_projection=deepcopy(
+                self.followup_authorization_projection
+            ),
+            followup_authorization_history=deepcopy(
+                self.followup_authorization_history
+            ),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -405,6 +418,9 @@ class KernelTraceProjection:
     author_observation: Mapping[str, Any]
     final_answer_outcome: Mapping[str, Any]
     final_answer_authority_projection: Mapping[str, Any]
+    followup_authorization_state: Mapping[str, Any]
+    followup_authorization_projection: Mapping[str, Any]
+    followup_authorization_history: Sequence[Mapping[str, Any]]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -451,6 +467,15 @@ class KernelTraceProjection:
             "final_answer_authority_projection": _safe_mapping(
                 self.final_answer_authority_projection
             ),
+            "followup_authorization_state": _safe_mapping(
+                self.followup_authorization_state
+            ),
+            "followup_authorization_projection": _safe_mapping(
+                self.followup_authorization_projection
+            ),
+            "followup_authorization_history": [
+                _safe_mapping(item) for item in self.followup_authorization_history
+            ],
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
         }
@@ -731,6 +756,20 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.AUTHOR_OUTPUT_OBSERVED,
+        )
+
+    def authorize_followup_authorization_consumption(
+        self,
+        *,
+        reason: str = "ag96i2a_followup_checkpoint_runtime_consumption",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        return self.authorize(
+            stage=FOLLOWUP_AUTHORIZATION_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHORIZATION_CONSUME,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.FOLLOWUP_AUTHORIZATION_CONSUMED,
         )
 
     def reduce(self, observation: Observation) -> RunState:
@@ -1140,6 +1179,82 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.final_answer_outcome
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHORIZATION_CONSUME:
+            followup_state = _safe_mapping(
+                observation.payload.get("followup_authorization_state")
+            )
+            if not followup_state:
+                raise RunKernelTransitionError(
+                    "follow-up authorization observation requires "
+                    "followup_authorization_state"
+                )
+            for sealed in followup_state.get("sealed_candidates", []) or []:
+                if not isinstance(sealed, Mapping):
+                    continue
+                gate = sealed.get("execution_gate", {})
+                if not isinstance(gate, Mapping):
+                    raise RunKernelTransitionError(
+                        "follow-up authorization seal requires execution gate"
+                    )
+                if (
+                    gate.get("execution_permission") is not False
+                    or gate.get("executable_in_current_phase") is not False
+                    or gate.get("provider_execution_licensed") is not False
+                ):
+                    raise RunKernelTransitionError(
+                        "AG-96I2A follow-up authorization must be non-executable"
+                    )
+            gate = followup_state.get("execution_gate", {})
+            if not isinstance(gate, Mapping) or gate.get("execution_permission") is not False:
+                raise RunKernelTransitionError(
+                    "AG-96I2A follow-up authorization state requires closed execution gate"
+                )
+            self.state.followup_authorization_state = followup_state
+            self.state.followup_authorization_projection = {
+                "owner": "RunKernel.FollowupAuthorization",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": followup_state.get("schema_version"),
+                "consumption_id": followup_state.get("consumption_id"),
+                "checkpoint_id": followup_state.get("checkpoint_id"),
+                "run_id": followup_state.get("run_id"),
+                "mode": followup_state.get("mode"),
+                "input_checkpoint_hash": followup_state.get("input_checkpoint_hash"),
+                "validation_status": followup_state.get("validation", {}).get(
+                    "status"
+                ),
+                "status": followup_state.get("status"),
+                "selected_authorization_candidate_ids": followup_state.get(
+                    "selected_authorization_candidate_ids",
+                    [],
+                ),
+                "denied_candidate_ids": followup_state.get(
+                    "denied_candidate_ids",
+                    [],
+                ),
+                "sealed_candidate_count": followup_state.get(
+                    "sealed_candidate_count",
+                    0,
+                ),
+                "selected_mode_insufficient": followup_state.get(
+                    "selected_mode_insufficient"
+                ),
+                "needs_balanced_or_deep": followup_state.get(
+                    "needs_balanced_or_deep"
+                ),
+                "needs_deep": followup_state.get("needs_deep"),
+                "execution_gate": _safe_mapping(gate),
+                "behavior_boundary_flags": _safe_mapping(
+                    followup_state.get("behavior_boundary_flags")
+                ),
+            }
+            self.state.followup_authorization_history.append(
+                deepcopy(self.state.followup_authorization_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_authorization_projection
+            )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
@@ -1173,6 +1288,7 @@ def validate_authorized_action(
 __all__ = [
     "AUTHOR_EXECUTION_STAGE",
     "FINAL_ANSWER_PACKET_STAGE",
+    "FOLLOWUP_AUTHORIZATION_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
