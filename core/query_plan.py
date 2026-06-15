@@ -19,6 +19,9 @@ from core.retrieval_quality import (
     query_has_domain_anchor,
     wants_official_source_bias,
 )
+from core.search_work_query_plan_consumption import (
+    allocate_existing_queries_by_search_work,
+)
 
 QUERY_PLAN_TRACE_KEY = "query_plan"
 
@@ -167,6 +170,7 @@ class QueryPlanItem:
 class QueryPlan:
     plan_id: str = "query-plan-1"
     items: tuple[QueryPlanItem, ...] = ()
+    search_work_consumption: Mapping[str, Any] = field(default_factory=dict)
 
     def _next_id(self) -> str:
         return f"{self.plan_id}:q{len(self.items) + 1}"
@@ -225,6 +229,68 @@ class QueryPlan:
             )
         return plan
 
+    def consume_search_work_for_existing_queries(
+        self,
+        queries: Sequence[str],
+        *,
+        query_plan_context: Mapping[str, Any] | None = None,
+        search_work_projection: Mapping[str, Any] | None = None,
+        max_len: int | None,
+        origin: str,
+        role: QueryPlanRole | str,
+        phase: str = "search_work_component_allocation",
+    ) -> tuple["QueryPlan", list[str]]:
+        if search_work_projection is None:
+            return self, list(queries)
+        result = allocate_existing_queries_by_search_work(
+            candidate_queries=queries,
+            query_plan_context=query_plan_context,
+            search_work_projection=search_work_projection,
+            max_len=max_len,
+            origin=origin,
+            role=role.value if isinstance(role, QueryPlanRole) else str(role),
+            phase=phase,
+        )
+        plan = replace(self, search_work_consumption=result.to_dict())
+        if not result.search_work_consumed_by_query_plan:
+            return plan, list(queries)
+        admitted = list(result.admitted_query_order)
+        metadata_by_query = {
+            str(query): dict(metadata)
+            for query, metadata in result.query_metadata.items()
+            if isinstance(metadata, Mapping)
+        }
+        for order, query in enumerate(admitted, start=1):
+            plan = plan.append(
+                origin=origin,
+                role=role,
+                status=QueryPlanStatus.FINALIZED,
+                authorized_query=query,
+                admission_reason="search_work_component_allocation",
+                mutation_reason="search_work_component_aware_order",
+                phase=phase,
+                order=order,
+                metadata=metadata_by_query.get(query, {}),
+            )
+        for offset, query in enumerate(result.rejected_over_budget_queries, start=len(admitted) + 1):
+            metadata = {
+                "max_len": max_len,
+                "would_have_status": QueryPlanStatus.FINALIZED.value,
+                **metadata_by_query.get(query, {}),
+            }
+            plan = plan.append(
+                origin=origin,
+                role=role,
+                status=QueryPlanStatus.REJECTED_OVER_BUDGET,
+                authorized_query=query,
+                admission_reason="rejected_over_budget",
+                mutation_reason="search_work_component_aware_cap",
+                phase=phase,
+                order=offset,
+                metadata=metadata,
+            )
+        return plan, admitted
+
     def queries_by_iteration(self) -> dict[int, list[str]]:
         out: dict[int, list[str]] = {}
         ordered = [
@@ -236,7 +302,7 @@ class QueryPlan:
         return out
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "plan_id": _clean_text(self.plan_id, limit=80),
             "items": [item.to_dict() for item in self.items],
             "authorized_queries_by_iteration": {
@@ -246,6 +312,11 @@ class QueryPlan:
             "depth_policy": QueryPlanStatus.DEPTH_POLICY_UNCHANGED.value,
             "custody_satisfaction_owner": "official_current_source_custody",
         }
+        if self.search_work_consumption:
+            payload["search_work_consumption"] = _safe_json(
+                self.search_work_consumption
+            )
+        return payload
 
     def to_trace_fragment(self) -> dict[str, Any]:
         return {QUERY_PLAN_TRACE_KEY: self.to_dict()}

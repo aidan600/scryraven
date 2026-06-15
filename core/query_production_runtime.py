@@ -21,7 +21,7 @@ from core.anchor_resolution import (
 )
 from core.nutrition_lookup import detect_nutrition_lookup_telemetry
 from core.provider_diagnostics import build_provider_attempt_diagnostic
-from core.query_plan import QUERY_PLAN_TRACE_KEY
+from core.query_plan import QUERY_PLAN_TRACE_KEY, QueryPlanRole
 from core.query_plan_runtime_adapter import QueryPlanRuntimeAdapter
 from core.retrieval_quality import (
     extract_recon_context,
@@ -845,6 +845,7 @@ def execute_query_plan_admission_action(
     current_date: str,
     max_queries: int,
     route_runtime_posture: Mapping[str, Any],
+    search_work_projection: Mapping[str, Any] | None = None,
 ) -> QueryPlanAdmissionResult:
     """Admit existing candidates into QueryPlan after RunKernel authorization."""
 
@@ -861,6 +862,13 @@ def execute_query_plan_admission_action(
     else:
         raise ValueError(f"unsupported query admission candidate source: {candidate_source}")
 
+    queries = query_authority.consume_search_work_for_existing_queries(
+        queries,
+        search_work_projection=search_work_projection,
+        max_len=max_queries,
+        origin=f"{candidate_source}_search_work_consumption",
+        role=QueryPlanRole.INITIAL,
+    )
     recency_projection = query_authority.apply_initial_recency_merge(
         queries,
         query_type=query_type,
