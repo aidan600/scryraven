@@ -82,6 +82,7 @@ class FollowupDecision(str, Enum):
     CAVEAT = "caveat"
     REFUSE = "refuse"
     NEEDS_DEEP = "needs_deep"
+    SELECTED_MODE_INSUFFICIENT = "selected_mode_insufficient"
     INSUFFICIENT_BUDGET = "insufficient_budget"
     DECORATIVE_SEARCH_BLOCKED = "decorative_search_blocked"
 
@@ -112,6 +113,7 @@ class StopPosture(str, Enum):
     INSUFFICIENT_EVIDENCE = "insufficient_evidence"
     REFUSE_OR_BLOCK = "refuse_or_block"
     NEEDS_DEEP = "needs_deep"
+    NEEDS_BALANCED_OR_DEEP = "needs_balanced_or_deep"
 
 
 def clean_text(value: Any, *, limit: int = 500) -> str | None:
@@ -977,8 +979,13 @@ def build_followup_deliberation_checkpoint(
                 ),
             )
         )
-        job_kind = _provider_job_for_gap(gap)
-        debit = _debit_for_job(job_kind, hop_type)
+        fast_micro_validation = mode is FollowupMode.FAST
+        job_kind = None if fast_micro_validation else _provider_job_for_gap(gap)
+        debit = (
+            BudgetDebit(budget_bucket="fast_micro_validation")
+            if fast_micro_validation
+            else _debit_for_job(job_kind, hop_type)
+        )
         decision, denial_reason, protected = _decision_for_gap(
             gap=gap,
             mode=mode,
@@ -988,7 +995,11 @@ def build_followup_deliberation_checkpoint(
             components=components,
             prior_attempts=prior_attempts,
         )
-        expected = _expected_custody_update(gap, job_kind)
+        expected = (
+            None
+            if fast_micro_validation
+            else _expected_custody_update(gap, job_kind)
+        )
         recommendation = FollowupRecommendation(
             recommendation_id=f"rec.{index:03d}",
             gap_id=gap.gap_id,
@@ -1003,13 +1014,21 @@ def build_followup_deliberation_checkpoint(
             source_obligation_id=gap.source_obligation_id,
             requirement_ids=gap.requirement_ids,
             provider_job_kind=job_kind,
-            query_intent=_query_intent(gap, job_kind),
+            query_intent=(
+                None
+                if fast_micro_validation
+                else _query_intent(gap, job_kind)
+            ),
             expected_custody_update=expected,
             budget_requested=debit,
             fallback_posture=_fallback_for_gap(gap, mode),
             bridge_only_provider_output=gap.bridge_only_provider_output_present,
             reason=denial_reason
-            or "concrete gap has bounded provider-job recommendation",
+            or (
+                "fast micro-hop validation is posture-only"
+                if fast_micro_validation
+                else "concrete gap has bounded provider-job recommendation"
+            ),
         )
         recommendations.append(recommendation)
 
@@ -1197,6 +1216,8 @@ def _default_hop(gap_type: GapType) -> ReasoningHopType:
 
 
 def _hop_for_gap(gap: GapAssessment, mode: FollowupMode) -> ReasoningHopType:
+    if mode is FollowupMode.FAST:
+        return ReasoningHopType.MICRO_VERIFICATION
     if mode is FollowupMode.BALANCED and gap.deep_only_reconciliation:
         return ReasoningHopType.MACRO_RUN_DIAGNOSIS
     return gap.recommended_hop_type
@@ -1274,6 +1295,8 @@ def _decision_for_gap(
     components: Mapping[str, Mapping[str, Any]],
     prior_attempts: Mapping[tuple[str, str], int],
 ) -> tuple[FollowupDecision, str | None, tuple[str, ...]]:
+    if mode is FollowupMode.FAST:
+        return _fast_micro_validation_decision(gap)
     if gap.gap_type is GapType.CITATION_FINAL_ANSWER_POSTURE_GAP and clean_token(
         gap.repairability
     ) == "decorative_only":
@@ -1334,6 +1357,49 @@ def _decision_for_gap(
     return FollowupDecision.AUTHORIZE_CANDIDATE, None, ()
 
 
+def _fast_micro_validation_decision(
+    gap: GapAssessment,
+) -> tuple[FollowupDecision, str | None, tuple[str, ...]]:
+    if gap.gap_type in {
+        GapType.CONFLICT_RECONCILIATION_GAP,
+        GapType.CONTRACT_SHAPE_GAP,
+    }:
+        return (
+            FollowupDecision.SELECTED_MODE_INSUFFICIENT,
+            "fast_selected_mode_insufficient_needs_balanced_or_deep",
+            (),
+        )
+    if gap.gap_type is GapType.LEGAL_CURRENT_PRIMARY_GAP:
+        return (
+            FollowupDecision.REFUSE,
+            "fast_micro_validation_legal_current_primary_gap_refusal_posture",
+            (),
+        )
+    if gap.gap_type is GapType.SOURCE_BOUND_NUMERIC_GAP:
+        return (
+            FollowupDecision.STOP,
+            "source_bound_numeric_unresolved_remains_unknown",
+            (),
+        )
+    if gap.gap_type is GapType.CITATION_FINAL_ANSWER_POSTURE_GAP:
+        return (
+            FollowupDecision.CAVEAT,
+            "fast_micro_validation_citation_final_answer_posture_gap",
+            (),
+        )
+    if gap.gap_type in {GapType.OFFICIAL_CURRENT_GAP, GapType.CURRENTNESS_GAP}:
+        return (
+            FollowupDecision.CAVEAT,
+            "fast_micro_validation_official_current_gap_no_followup_candidate",
+            (),
+        )
+    return (
+        FollowupDecision.CAVEAT,
+        "fast_micro_validation_gap_no_followup_candidate",
+        (),
+    )
+
+
 def _expected_custody_update(
     gap: GapAssessment,
     job_kind: ProviderJobKind,
@@ -1381,6 +1447,13 @@ def _query_intent(gap: GapAssessment, job_kind: ProviderJobKind) -> str:
 
 
 def _fallback_for_gap(gap: GapAssessment, mode: FollowupMode) -> StopPosture:
+    if mode is FollowupMode.FAST and gap.gap_type in {
+        GapType.CONFLICT_RECONCILIATION_GAP,
+        GapType.CONTRACT_SHAPE_GAP,
+    }:
+        return StopPosture.NEEDS_BALANCED_OR_DEEP
+    if mode is FollowupMode.FAST and gap.gap_type is GapType.SOURCE_BOUND_NUMERIC_GAP:
+        return StopPosture.INSUFFICIENT_EVIDENCE
     if mode is FollowupMode.BALANCED and gap.deep_only_reconciliation:
         return StopPosture.NEEDS_DEEP
     if gap.gap_type is GapType.LEGAL_CURRENT_PRIMARY_GAP:
@@ -1394,6 +1467,8 @@ def _fallback_for_gap(gap: GapAssessment, mode: FollowupMode) -> StopPosture:
 
 
 def _stop_decision_for_denial(decision: FollowupDecision) -> FollowupDecision:
+    if decision is FollowupDecision.SELECTED_MODE_INSUFFICIENT:
+        return FollowupDecision.SELECTED_MODE_INSUFFICIENT
     if decision is FollowupDecision.NEEDS_DEEP:
         return FollowupDecision.NEEDS_DEEP
     if decision is FollowupDecision.INSUFFICIENT_BUDGET:

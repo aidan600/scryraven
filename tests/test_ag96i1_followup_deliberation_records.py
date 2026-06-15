@@ -10,6 +10,7 @@ from core.followup_deliberation import (
     GapType,
     ProviderJobKind,
     ReasoningHopType,
+    StopPosture,
     build_followup_deliberation_checkpoint,
 )
 from core.followup_deliberation_validation import (
@@ -166,6 +167,131 @@ def test_balanced_marks_needs_deep_for_conflict_currentness_reconciliation() -> 
     assert records["budget_decisions"][0]["decision"] == "needs_deep"
     assert records["followup_authorization_candidates"] == []
     assert records["stop_decisions"][0]["final_answer_posture"] == "needs_deep"
+
+
+def test_fast_micro_verification_allowed_for_custody_and_final_answer_posture() -> None:
+    checkpoint = _checkpoint(
+        mode="fast",
+        gaps=[
+            _gap(
+                GapType.CITATION_FINAL_ANSWER_POSTURE_GAP.value,
+                gap_id="gap.citation",
+                obligation_id="obligation-citation",
+                requirement_id="requirement-citation",
+                evidence_indicators=[
+                    "bridge_only_provider_output_present",
+                    "candidate_missing_answer_bearing_extract",
+                ],
+                bridge_only_provider_output_present=True,
+            )
+        ],
+    )
+    records = _records(checkpoint)
+
+    assert records["reasoning_hops"][0]["hop_type"] == "micro_verification"
+    assert records["reasoning_hops"][0]["may_request_followup"] is False
+    assert records["followup_recommendations"][0]["decision"] == "caveat"
+    assert "provider_job_kind" not in records["followup_recommendations"][0]
+    assert "expected_custody_update" not in records["followup_recommendations"][0]
+    assert records["followup_authorization_candidates"] == []
+    assert validate_followup_deliberation_checkpoint(checkpoint).ok
+
+
+def test_fast_official_current_gap_produces_no_followup_authorization_candidate() -> None:
+    checkpoint = _checkpoint(mode="fast")
+    records = _records(checkpoint)
+
+    assert records["reasoning_hops"][0]["hop_type"] == "micro_verification"
+    assert records["followup_recommendations"][0]["decision"] == "caveat"
+    assert records["followup_recommendations"][0]["reason"] == (
+        "fast_micro_validation_official_current_gap_no_followup_candidate"
+    )
+    assert records["followup_authorization_candidates"] == []
+    assert records["budget_decisions"][0]["debit"]["budget_bucket"] == (
+        "fast_micro_validation"
+    )
+    assert records["budget_decisions"][0]["debit"]["provider_calls"] == 0
+    assert records["budget_decisions"][0]["debit"]["fetches_reserved"] == 0
+
+
+def test_fast_citation_posture_gap_caveats_without_fetch_read_authorization() -> None:
+    checkpoint = _checkpoint(
+        mode="fast",
+        gaps=[
+            _gap(
+                GapType.CITATION_FINAL_ANSWER_POSTURE_GAP.value,
+                gap_id="gap.citation",
+                obligation_id="obligation-citation",
+                requirement_id="requirement-citation",
+                evidence_indicators=["candidate_missing_answer_bearing_extract"],
+            )
+        ],
+    )
+    records = _records(checkpoint)
+
+    recommendation = records["followup_recommendations"][0]
+    assert recommendation["decision"] == "caveat"
+    assert recommendation["hop_type"] == "micro_verification"
+    assert "provider_job_kind" not in recommendation
+    assert "query_intent" not in recommendation
+    assert records["followup_authorization_candidates"] == []
+    assert records["stop_decisions"][0]["final_answer_posture"] == "answer_with_caveats"
+
+
+def test_fast_source_bound_numeric_unresolved_remains_unknown_without_quantwork() -> None:
+    checkpoint = _checkpoint(
+        mode="fast",
+        gaps=[
+            _gap(
+                GapType.SOURCE_BOUND_NUMERIC_GAP.value,
+                gap_id="gap.numeric",
+                obligation_id="obligation-numeric",
+                requirement_id="requirement-numeric",
+                evidence_indicators=["source_bound_numeric_unresolved"],
+            )
+        ],
+    )
+    records = _records(checkpoint)
+
+    assert records["reasoning_hops"][0]["hop_type"] == "micro_verification"
+    assert records["followup_recommendations"][0]["decision"] == "stop"
+    assert records["followup_authorization_candidates"] == []
+    assert records["sufficiency_handoff"]["source_bound_numeric_unknowns"] == [
+        "obligation_numeric"
+    ]
+    encoded = json.dumps(records, sort_keys=True)
+    assert "source_bound_numeric_extraction_calculation_support" not in encoded
+    assert "direct_candidate_search" not in encoded
+
+
+def test_fast_conflict_or_contract_shape_gap_marks_selected_mode_insufficient() -> None:
+    for gap_type in (
+        GapType.CONFLICT_RECONCILIATION_GAP.value,
+        GapType.CONTRACT_SHAPE_GAP.value,
+    ):
+        checkpoint = _checkpoint(
+            mode="fast",
+            gaps=[
+                _gap(
+                    gap_type,
+                    gap_id=f"gap.{gap_type}",
+                    obligation_id="obligation-contract",
+                    requirement_id="requirement-contract",
+                    evidence_indicators=["requires_reconciliation_or_contract_shape"],
+                )
+            ],
+        )
+        records = _records(checkpoint)
+
+        assert records["reasoning_hops"][0]["hop_type"] == "micro_verification"
+        assert records["budget_decisions"][0]["decision"] == (
+            "selected_mode_insufficient"
+        )
+        assert records["stop_decisions"][0]["final_answer_posture"] == (
+            "needs_balanced_or_deep"
+        )
+        assert records["followup_authorization_candidates"] == []
+        assert validate_followup_deliberation_checkpoint(checkpoint).ok
 
 
 def test_deep_may_produce_macro_diagnosis_and_reconciliation_support_candidate() -> None:
@@ -434,6 +560,69 @@ def test_validation_rejects_forbidden_capability_claims_and_bridge_final_satisfa
     assert any("bridge-only provider output" in error for error in result.errors)
 
 
+def test_validation_rejects_fast_meso_macro_and_reconciliation_candidates() -> None:
+    checkpoint = _checkpoint(mode="fast")
+    payload = checkpoint.to_dict()
+    payload["records"]["followup_authorization_candidates"] = [
+        {
+            "authorization_id": "auth.fast.bad.meso",
+            "recommendation_id": "rec.001",
+            "decision": "authorize_candidate",
+            "mode": "fast",
+            "hop_type": "meso_targeted_repair",
+            "provider_job_kind": "official_current_candidate_acquisition",
+            "component_id": "component-rule",
+            "source_obligation_id": "obligation-official-current",
+            "requirement_ids": ["requirement-official-current"],
+            "budget_debit": {},
+            "expected_evidence_ledger_custody_update": {"custody_update_expected": []},
+            "fallback_stop_posture": "answer_with_caveats",
+            "fallback_caveat_refuse_posture": "insufficient_evidence",
+        },
+        {
+            "authorization_id": "auth.fast.bad.macro",
+            "recommendation_id": "rec.002",
+            "decision": "authorize_candidate",
+            "mode": "fast",
+            "hop_type": "macro_run_diagnosis",
+            "provider_job_kind": "reconciliation_support",
+            "component_id": "component-rule",
+            "source_obligation_id": "obligation-conflict",
+            "requirement_ids": ["requirement-conflict"],
+            "budget_debit": {},
+            "expected_evidence_ledger_custody_update": {"custody_update_expected": []},
+            "fallback_stop_posture": "needs_balanced_or_deep",
+            "fallback_caveat_refuse_posture": "insufficient_evidence",
+        },
+    ]
+
+    result = validate_followup_deliberation_checkpoint(payload)
+
+    assert not result.ok
+    assert any("Fast may not contain authorization candidates" in e for e in result.errors)
+    assert any("Fast cannot authorize meso_targeted_repair" in e for e in result.errors)
+    assert any("Fast cannot authorize macro_run_diagnosis" in e for e in result.errors)
+    assert any("Fast cannot authorize reconciliation_support" in e for e in result.errors)
+
+
+def test_validation_rejects_fast_execution_shaped_recommendation() -> None:
+    checkpoint = _checkpoint(mode="fast")
+    payload = checkpoint.to_dict()
+    recommendation = payload["records"]["followup_recommendations"][0]
+    recommendation["decision"] = "recommend"
+    recommendation["hop_type"] = "meso_targeted_repair"
+    recommendation["provider_job_kind"] = "official_current_candidate_acquisition"
+    recommendation["expected_custody_update"] = {"custody_update_expected": []}
+
+    result = validate_followup_deliberation_checkpoint(payload)
+
+    assert not result.ok
+    assert any("Fast may only record micro_verification" in e for e in result.errors)
+    assert any("Fast may not recommend follow-up execution" in e for e in result.errors)
+    assert any("Fast may not name provider_job_kind" in e for e in result.errors)
+    assert any("Fast may not define follow-up custody update" in e for e in result.errors)
+
+
 def test_static_guards_keep_new_modules_passive_and_closed_surfaces_untouched() -> None:
     module_paths = [
         ROOT / "core" / "followup_deliberation.py",
@@ -491,10 +680,12 @@ def test_taxonomy_contains_all_ag96i1_canonical_values() -> None:
         "caveat",
         "refuse",
         "needs_deep",
+        "selected_mode_insufficient",
         "insufficient_budget",
         "decorative_search_blocked",
     }
     assert ProviderJobKind.PROVIDER_ANSWER_CONTEXT.value == "provider_answer_context"
+    assert StopPosture.NEEDS_BALANCED_OR_DEEP.value == "needs_balanced_or_deep"
 
 
 def _imports(path: Path) -> set[str]:

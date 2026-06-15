@@ -81,12 +81,17 @@ def validate_followup_deliberation_checkpoint(
     }
     recommendations = list(_mappings(records.get("followup_recommendations")))
     candidates = list(_mappings(records.get("followup_authorization_candidates")))
+    hops = list(_mappings(records.get("reasoning_hops")))
     mode = clean_token(payload.get("mode")) or FollowupMode.BALANCED.value
+    fast_mode = mode == FollowupMode.FAST.value
 
     for item in recommendations:
         rec_id = clean_token(item.get("recommendation_id")) or "recommendation"
         gap_type = clean_token(item.get("gap_type"))
         gap_id = clean_token(item.get("gap_id"))
+        hop_type = clean_token(item.get("hop_type"))
+        job_kind = clean_token(item.get("provider_job_kind"))
+        decision = clean_token(item.get("decision"))
         if gap_type not in {gap.value for gap in GapType}:
             errors.append(f"{rec_id} must name a canonical gap_type")
         if not gap_id or gap_id not in gaps:
@@ -101,10 +106,27 @@ def validate_followup_deliberation_checkpoint(
             errors.append(f"{rec_id} must define expected EvidenceLedger custody update")
         if not clean_token(item.get("fallback_posture")):
             errors.append(f"{rec_id} must define fallback stop/caveat/refuse posture")
+        if fast_mode:
+            if hop_type != ReasoningHopType.MICRO_VERIFICATION.value:
+                errors.append(f"{rec_id} Fast may only record micro_verification")
+            if decision in {
+                FollowupDecision.AUTHORIZE_CANDIDATE.value,
+                FollowupDecision.RECOMMEND.value,
+            }:
+                errors.append(f"{rec_id} Fast may not recommend follow-up execution")
+            if job_kind:
+                errors.append(f"{rec_id} Fast may not name provider_job_kind")
+            if item.get("expected_custody_update"):
+                errors.append(
+                    f"{rec_id} Fast may not define follow-up custody update"
+                )
 
     for item in candidates:
         auth_id = clean_token(item.get("authorization_id")) or "authorization_candidate"
         job_kind = clean_token(item.get("provider_job_kind"))
+        hop_type = clean_token(item.get("hop_type"))
+        if fast_mode:
+            errors.append(f"{auth_id} Fast may not contain authorization candidates")
         if job_kind not in {job.value for job in ProviderJobKind}:
             errors.append(f"{auth_id} must name provider_job_kind")
         if not item.get("expected_evidence_ledger_custody_update"):
@@ -121,13 +143,27 @@ def validate_followup_deliberation_checkpoint(
             == ReasoningHopType.MACRO_RUN_DIAGNOSIS.value
         ):
             errors.append(f"{auth_id} Balanced cannot authorize macro_run_diagnosis")
+        if fast_mode and hop_type == ReasoningHopType.MESO_TARGETED_REPAIR.value:
+            errors.append(f"{auth_id} Fast cannot authorize meso_targeted_repair")
+        if fast_mode and hop_type == ReasoningHopType.MACRO_RUN_DIAGNOSIS.value:
+            errors.append(f"{auth_id} Fast cannot authorize macro_run_diagnosis")
         if (
             mode == FollowupMode.BALANCED.value
             and job_kind == ProviderJobKind.RECONCILIATION_SUPPORT.value
         ):
             errors.append(f"{auth_id} Balanced cannot authorize Deep-only reconciliation")
+        if fast_mode and job_kind == ProviderJobKind.RECONCILIATION_SUPPORT.value:
+            errors.append(f"{auth_id} Fast cannot authorize reconciliation_support")
         if clean_token(item.get("decision")) != FollowupDecision.AUTHORIZE_CANDIDATE.value:
             errors.append(f"{auth_id} candidate decision must be authorize_candidate")
+
+    for item in hops:
+        hop_id = clean_token(item.get("hop_id")) or "reasoning_hop"
+        hop_type = clean_token(item.get("hop_type"))
+        if fast_mode and hop_type != ReasoningHopType.MICRO_VERIFICATION.value:
+            errors.append(f"{hop_id} Fast may only record micro_verification")
+        if fast_mode and bool(item.get("may_request_followup")):
+            errors.append(f"{hop_id} Fast micro_verification may not request follow-up")
 
     handoff = dict(records.get("sufficiency_handoff") or {})
     if handoff.get("bridge_only_provider_outputs_satisfy_final_evidence"):
