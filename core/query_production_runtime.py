@@ -43,6 +43,9 @@ from core.run_kernel import (
     RunStageStatus,
     validate_authorized_action,
 )
+from core.search_work_provider_job_execution import (
+    build_provider_job_execution_handoff,
+)
 
 
 def brave_reconnaissance(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
@@ -817,9 +820,10 @@ def _query_plan_projection(
     recency_merge_query: str | None,
     current_queries: Sequence[str],
     contract_source_requirement_hints: Sequence[Mapping[str, Any]] | None = None,
+    provider_job_execution_handoff: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     query_plan = query_authority.to_trace_fragment().get(QUERY_PLAN_TRACE_KEY, {})
-    return {
+    projection = {
         "query_plan_ref": query_plan,
         "query_source": query_source,
         "recency_merge_used": bool(recency_merge_used),
@@ -832,6 +836,12 @@ def _query_plan_projection(
             if isinstance(item, Mapping)
         ],
     }
+    if provider_job_execution_handoff:
+        projection["provider_job_execution_handoff"] = dict(
+            provider_job_execution_handoff
+        )
+        projection["provider_job_execution_handoff_present"] = True
+    return projection
 
 
 def execute_query_plan_admission_action(
@@ -904,6 +914,14 @@ def execute_query_plan_admission_action(
             },
         )
 
+    provider_job_execution_handoff = build_provider_job_execution_handoff(
+        search_work_projection=search_work_projection,
+        query_plan_trace=query_authority.to_trace_fragment().get(
+            QUERY_PLAN_TRACE_KEY,
+            {},
+        ),
+        current_queries=current_queries,
+    )
     intent = str(route_runtime_posture["intent"])
     route_entities = route_runtime_posture.get(
         "entities_list",
@@ -952,6 +970,7 @@ def execute_query_plan_admission_action(
         recency_merge_query=recency_projection.recency_merge_query,
         current_queries=current_queries,
         contract_source_requirement_hints=contract_source_requirement_hints,
+        provider_job_execution_handoff=provider_job_execution_handoff,
     )
     observation = Observation.from_action(
         action,
