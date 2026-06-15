@@ -34,6 +34,7 @@ class CitationRequirementStatus(str, Enum):
 
 class SourceObligationStatus(str, Enum):
     SATISFIED = "source_obligation_satisfied"
+    PARTIAL = "source_obligation_partial"
     MISSING_REQUIRED_SOURCE = "missing_required_source"
     OFFICIAL_CURRENT_UNSATISFIED = "official_current_unsatisfied"
     SOURCE_BOUND_VALUE_MISSING = "source_bound_value_missing"
@@ -279,8 +280,16 @@ class FinalAnswerAuthorInputPayload:
     citation_source_ids: tuple[Any, ...] = ()
     citation_ineligible_refs: tuple[Mapping[str, Any], ...] = ()
     missing_source_obligations: tuple[Mapping[str, Any], ...] = ()
+    partial_source_obligations: tuple[Mapping[str, Any], ...] = ()
+    satisfied_source_obligations: tuple[Mapping[str, Any], ...] = ()
+    source_bound_numeric_unknowns: tuple[Mapping[str, Any], ...] = ()
+    readiness_status: str | None = None
+    final_answer_posture: str | None = None
+    sufficiency_decision: str | None = None
+    claim_postures: tuple[str, ...] = ()
     mandatory_caveats: tuple[str, ...] = ()
     prohibited_upgrades: tuple[str, ...] = ()
+    authority_payload: Mapping[str, Any] = field(default_factory=dict)
     authority_block: str = ""
 
     def __post_init__(self) -> None:
@@ -304,8 +313,16 @@ class FinalAnswerAuthorInputPayload:
             "citation_source_ids": list(self.citation_source_ids),
             "citation_ineligible_refs": _safe_json(self.citation_ineligible_refs),
             "missing_source_obligations": _safe_json(self.missing_source_obligations),
+            "partial_source_obligations": _safe_json(self.partial_source_obligations),
+            "satisfied_source_obligations": _safe_json(self.satisfied_source_obligations),
+            "source_bound_numeric_unknowns": _safe_json(self.source_bound_numeric_unknowns),
+            "readiness_status": _clean_text(self.readiness_status, limit=120),
+            "final_answer_posture": _clean_text(self.final_answer_posture, limit=120),
+            "sufficiency_decision": _clean_text(self.sufficiency_decision, limit=120),
+            "claim_postures": list(self.claim_postures),
             "mandatory_caveat_count": len(self.mandatory_caveats),
             "prohibited_upgrade_count": len(self.prohibited_upgrades),
+            "authority_payload": _safe_json(self.authority_payload),
             "authority_block_hash": _hash_text(self.authority_block) if self.authority_block else None,
             "authority_block_length": len(self.authority_block),
         }
@@ -318,6 +335,15 @@ class FinalAnswerPacket:
     citation_records: tuple[CitationEligibilityRecord, ...] = ()
     source_obligations: tuple[SourceObligationRecord, ...] = ()
     official_current_custody_summary: Mapping[str, Any] = field(default_factory=dict)
+    sufficiency_decision: str | None = None
+    final_answer_posture: str | None = None
+    final_answer_allowed: bool = True
+    required_obligations_satisfied: bool | None = None
+    missing_required_obligations: tuple[Mapping[str, Any], ...] = ()
+    partial_obligations: tuple[Mapping[str, Any], ...] = ()
+    satisfied_obligations: tuple[Mapping[str, Any], ...] = ()
+    source_bound_numeric_unknowns: tuple[Mapping[str, Any], ...] = ()
+    behavior_boundary_flags: Mapping[str, Any] = field(default_factory=dict)
     claim_postures: tuple[ClaimPosture | str, ...] = ()
     mandatory_caveats: tuple[str, ...] = ()
     prohibited_upgrades: tuple[str, ...] = ()
@@ -337,6 +363,8 @@ class FinalAnswerPacket:
         )
         if raw_status not in {item.value for item in FinalAnswerReadinessStatus}:
             raise ValueError(f"unknown final answer readiness status: {raw_status}")
+        if self.final_answer_allowed is False and raw_status != FinalAnswerReadinessStatus.BLOCKED.value:
+            raise ValueError("disallowed FinalAnswerPacket must be blocked")
         object.__setattr__(
             self,
             "readiness_status",
@@ -378,6 +406,39 @@ class FinalAnswerPacket:
             },
         )
 
+    def to_authority_payload(
+        self,
+        *,
+        citation_source_ids: Sequence[Any],
+        citation_ineligible_refs: Sequence[Mapping[str, Any]],
+        missing_source_obligations: Sequence[Mapping[str, Any]],
+        partial_source_obligations: Sequence[Mapping[str, Any]],
+        satisfied_source_obligations: Sequence[Mapping[str, Any]],
+    ) -> dict[str, Any]:
+        postures = [
+            item.value if isinstance(item, ClaimPosture) else str(item)
+            for item in self.claim_postures
+        ]
+        return {
+            "packet_id": self.packet_id,
+            "readiness_status": self.readiness_status.value,
+            "readiness_reasons": list(self.readiness_reasons),
+            "sufficiency_decision": _clean_text(self.sufficiency_decision, limit=120),
+            "final_answer_posture": _clean_text(self.final_answer_posture, limit=120),
+            "final_answer_allowed": bool(self.final_answer_allowed),
+            "required_obligations_satisfied": self.required_obligations_satisfied,
+            "claim_postures": postures,
+            "citation_eligible_source_ids": list(citation_source_ids),
+            "citation_ineligible_refs": _safe_json(citation_ineligible_refs),
+            "missing_source_obligations": _safe_json(missing_source_obligations),
+            "partial_source_obligations": _safe_json(partial_source_obligations),
+            "satisfied_source_obligations": _safe_json(satisfied_source_obligations),
+            "source_bound_numeric_unknowns": _safe_json(self.source_bound_numeric_unknowns),
+            "mandatory_caveats": [_clean_text(item, limit=300) for item in self.mandatory_caveats],
+            "prohibited_upgrades": [_clean_text(item, limit=300) for item in self.prohibited_upgrades],
+            "behavior_boundary_flags": _safe_json(self.behavior_boundary_flags),
+        }
+
     def to_author_input_payload(
         self,
         *,
@@ -408,14 +469,36 @@ class FinalAnswerPacket:
             for record in self.citation_ineligible
         )
         missing_source_obligations = tuple(
-            record.to_dict()
-            for record in self.source_obligations
-            if record.status is not SourceObligationStatus.SATISFIED
+            self.missing_required_obligations
+            or tuple(
+                record.to_dict()
+                for record in self.source_obligations
+                if record.status is not SourceObligationStatus.SATISFIED
+            )
+        )
+        partial_source_obligations = tuple(self.partial_obligations)
+        satisfied_source_obligations = tuple(
+            self.satisfied_obligations
+            or tuple(
+                record.to_dict()
+                for record in self.source_obligations
+                if record.status is SourceObligationStatus.SATISFIED
+            )
+        )
+        authority_payload = self.to_authority_payload(
+            citation_source_ids=citation_source_ids,
+            citation_ineligible_refs=citation_ineligible_refs,
+            missing_source_obligations=missing_source_obligations,
+            partial_source_obligations=partial_source_obligations,
+            satisfied_source_obligations=satisfied_source_obligations,
         )
         authority_block = self.to_author_authority_block(
             citation_source_ids=citation_source_ids,
             citation_ineligible_refs=citation_ineligible_refs,
             missing_source_obligations=missing_source_obligations,
+            partial_source_obligations=partial_source_obligations,
+            satisfied_source_obligations=satisfied_source_obligations,
+            authority_payload=authority_payload,
         )
         payload = FinalAnswerAuthorInputPayload(
             packet_id=self.packet_id,
@@ -428,8 +511,16 @@ class FinalAnswerPacket:
             citation_source_ids=citation_source_ids,
             citation_ineligible_refs=citation_ineligible_refs,
             missing_source_obligations=missing_source_obligations,
+            partial_source_obligations=partial_source_obligations,
+            satisfied_source_obligations=satisfied_source_obligations,
+            source_bound_numeric_unknowns=tuple(self.source_bound_numeric_unknowns),
+            readiness_status=self.readiness_status.value,
+            final_answer_posture=self.final_answer_posture,
+            sufficiency_decision=self.sufficiency_decision,
+            claim_postures=tuple(authority_payload["claim_postures"]),
             mandatory_caveats=self.mandatory_caveats,
             prohibited_upgrades=self.prohibited_upgrades,
+            authority_payload=authority_payload,
             authority_block=authority_block,
         )
         return payload
@@ -441,6 +532,9 @@ class FinalAnswerPacket:
         citation_source_ids: Sequence[Any],
         citation_ineligible_refs: Sequence[Mapping[str, Any]],
         missing_source_obligations: Sequence[Mapping[str, Any]],
+        partial_source_obligations: Sequence[Mapping[str, Any]],
+        satisfied_source_obligations: Sequence[Mapping[str, Any]],
+        authority_payload: Mapping[str, Any],
     ) -> str:
         lines: list[str] = [
             "",
@@ -448,7 +542,14 @@ class FinalAnswerPacket:
             "FINAL ANSWER PACKET AUTHORITY (mandatory; do not mention this block):",
             "- Use only these citation-eligible Source IDs for citations: "
             + (", ".join(str(item) for item in citation_source_ids) if citation_source_ids else "none"),
+            "- Final-answer readiness: "
+            + str(authority_payload.get("readiness_status") or self.readiness_status.value),
         ]
+        if authority_payload.get("claim_postures"):
+            lines.append(
+                "- Claim posture: "
+                + ", ".join(str(item) for item in authority_payload["claim_postures"])
+            )
         if citation_ineligible_refs:
             rendered = []
             for ref in citation_ineligible_refs:
@@ -468,12 +569,41 @@ class FinalAnswerPacket:
                 "- Missing or unsatisfied source obligations to caveat: "
                 + "; ".join(rendered)
             )
+        if partial_source_obligations:
+            rendered = [
+                f"{item.get('required_source_class') or item.get('source_class') or item.get('requirement_kind')}={item.get('status')}"
+                for item in partial_source_obligations
+            ]
+            lines.append(
+                "- Partial source obligations to caveat: "
+                + "; ".join(rendered)
+            )
+        if satisfied_source_obligations:
+            rendered = [
+                f"{item.get('required_source_class') or item.get('source_class') or item.get('requirement_kind')}={item.get('status')}"
+                for item in satisfied_source_obligations
+            ]
+            lines.append(
+                "- Satisfied source obligations: "
+                + "; ".join(rendered)
+            )
+        if self.source_bound_numeric_unknowns:
+            rendered = [
+                f"{item.get('requirement_id') or item.get('source_class') or 'source_bound_numeric'}:{item.get('reason') or 'unknown'}"
+                for item in self.source_bound_numeric_unknowns
+            ]
+            lines.append(
+                "- Source-bound numeric unknowns: "
+                + "; ".join(rendered)
+            )
         final_answer_posture = _clean_text(
-            self.author_input_refs.get("final_answer_posture"),
+            self.final_answer_posture
+            or self.author_input_refs.get("final_answer_posture"),
             limit=120,
         )
         sufficiency_decision = _clean_text(
-            self.author_input_refs.get("sufficiency_decision"),
+            self.sufficiency_decision
+            or self.author_input_refs.get("sufficiency_decision"),
             limit=120,
         )
         if final_answer_posture:
@@ -520,6 +650,15 @@ class FinalAnswerPacket:
             "citation_ineligible": [record.to_dict() for record in self.citation_ineligible],
             "source_obligations": [record.to_dict() for record in self.source_obligations],
             "official_current_custody_summary": _safe_json(self.official_current_custody_summary),
+            "sufficiency_decision": _clean_text(self.sufficiency_decision, limit=120),
+            "final_answer_posture": _clean_text(self.final_answer_posture, limit=120),
+            "final_answer_allowed": bool(self.final_answer_allowed),
+            "required_obligations_satisfied": self.required_obligations_satisfied,
+            "missing_required_obligations": _safe_json(self.missing_required_obligations),
+            "partial_obligations": _safe_json(self.partial_obligations),
+            "satisfied_obligations": _safe_json(self.satisfied_obligations),
+            "source_bound_numeric_unknowns": _safe_json(self.source_bound_numeric_unknowns),
+            "behavior_boundary_flags": _safe_json(self.behavior_boundary_flags),
             "claim_postures": postures,
             "mandatory_caveats": [_clean_text(item, limit=300) for item in self.mandatory_caveats],
             "prohibited_upgrades": [_clean_text(item, limit=300) for item in self.prohibited_upgrades],

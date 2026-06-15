@@ -20,6 +20,11 @@ from core.final_answer_runtime_adapter import (
     final_answer_packet_trace_fragment,
 )
 from core.official_current_source_custody import OfficialCurrentSourceCustodyState
+from core.run_authority_sufficiency import (
+    RunSufficiencyDecision,
+    RunSufficiencyJudgment,
+    SufficiencyPosture,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -183,6 +188,91 @@ def test_ag89d_citation_ineligible_evidence_is_not_author_citable() -> None:
     assert payload.citation_ineligible_refs[0]["reason"] == "source_id_missing"
     assert "Do not cite citation-ineligible evidence" in payload.prompt
     assert "source_id_missing" in payload.prompt
+
+
+def test_ag96g3_packet_consumes_sufficiency_final_packet_inputs_as_authority() -> None:
+    sufficiency_projection = RunSufficiencyJudgment(
+        judgment_id="ag96g3-contradictory-packet-inputs",
+        decision=RunSufficiencyDecision.READY_DIRECT,
+        final_answer_posture=SufficiencyPosture.DIRECT_ANSWER,
+        final_answer_allowed=True,
+        final_packet_inputs={
+            "decision": "source_bound_numeric_unknown",
+            "final_answer_posture": "partial_answer",
+            "final_answer_allowed": True,
+            "required_obligations_satisfied": False,
+            "readiness_status": "insufficient_authorized",
+            "readiness_reasons": ["source_bound_numeric_value_remains_unknown"],
+            "claim_postures": ["insufficient_evidence"],
+            "missing_required_obligations": [
+                {
+                    "requirement_id": "req-numeric",
+                    "requirement_kind": "source_bound_numeric",
+                    "required_source_class": "sourced_numeric_values",
+                    "status": "missing",
+                    "reason": "numeric_value_not_extracted",
+                }
+            ],
+            "partial_obligations": [
+                {
+                    "requirement_id": "req-secondary-context",
+                    "requirement_kind": "reputable_secondary",
+                    "required_source_class": "reputable_secondary",
+                    "status": "partial",
+                }
+            ],
+            "satisfied_obligations": [
+                {
+                    "requirement_id": "req-official",
+                    "requirement_kind": "official_current",
+                    "required_source_class": "official_current_rules",
+                    "status": "satisfied",
+                    "satisfied_candidate_ids": ["candidate-official"],
+                }
+            ],
+            "source_bound_numeric_unknowns": [
+                {
+                    "requirement_id": "req-numeric",
+                    "reason": "numeric_value_not_extracted",
+                }
+            ],
+            "mandatory_caveats": ["numeric_value_not_extracted_must_be_caveated"],
+            "prohibited_upgrades": ["do_not_present_numeric_unknown_as_known"],
+            "behavior_boundary_flags": {
+                "provider_search_behavior_changed": False,
+                "retrieval_behavior_changed": False,
+                "prompt_behavior_changed": False,
+                "citation_behavior_changed": False,
+                "author_prose_behavior_changed": False,
+            },
+        },
+    ).to_projection()
+    packet = build_final_answer_packet(
+        run_id="ag96g3-authority",
+        final_evidence=[_passage(source_id=81)],
+        sufficiency_judgment_projection=sufficiency_projection,
+    )
+    packet, payload = derive_author_input_payload(
+        packet,
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    assert packet.readiness_status.value == "insufficient_authorized"
+    assert packet.sufficiency_decision == "source_bound_numeric_unknown"
+    assert packet.final_answer_posture == "partial_answer"
+    assert packet.required_obligations_satisfied is False
+    assert packet.missing_required_obligations[0]["requirement_id"] == "req-numeric"
+    assert packet.partial_obligations[0]["requirement_id"] == "req-secondary-context"
+    assert packet.satisfied_obligations[0]["requirement_id"] == "req-official"
+    assert packet.source_bound_numeric_unknowns[0]["requirement_id"] == "req-numeric"
+    assert packet.behavior_boundary_flags["citation_behavior_changed"] is False
+    assert payload.authority_payload["readiness_status"] == "insufficient_authorized"
+    assert payload.authority_payload["claim_postures"] == ["insufficient_evidence"]
+    assert payload.authority_payload["source_bound_numeric_unknowns"]
+    assert payload.authority_payload["partial_source_obligations"]
+    assert payload.authority_payload["satisfied_source_obligations"]
 
 
 def test_ag89d_legacy_citation_handoff_is_demoted_behind_packet() -> None:

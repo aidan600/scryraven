@@ -194,8 +194,22 @@ def execute_author_action(
         "missing_source_obligation_count": len(
             author_payload.missing_source_obligations
         ),
+        "partial_source_obligation_count": len(
+            author_payload.partial_source_obligations
+        ),
+        "satisfied_source_obligation_count": len(
+            author_payload.satisfied_source_obligations
+        ),
+        "source_bound_numeric_unknown_count": len(
+            author_payload.source_bound_numeric_unknowns
+        ),
+        "readiness_status": author_payload.readiness_status,
+        "final_answer_posture": author_payload.final_answer_posture,
+        "sufficiency_decision": author_payload.sufficiency_decision,
+        "claim_postures": list(author_payload.claim_postures),
         "mandatory_caveat_count": len(author_payload.mandatory_caveats),
         "prohibited_upgrade_count": len(author_payload.prohibited_upgrades),
+        "authority_payload_ref": dict(author_payload.authority_payload),
         "report_hash": _hash_text(report),
         "report_length": len(report),
         "final_text_included": False,

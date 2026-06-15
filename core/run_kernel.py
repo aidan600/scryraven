@@ -1094,6 +1094,15 @@ class RunKernel:
                 "missing_source_obligation_count": len(
                     author_payload_ref.get("missing_source_obligations", []) or []
                 ),
+                "partial_source_obligation_count": len(
+                    author_payload_ref.get("partial_source_obligations", []) or []
+                ),
+                "satisfied_source_obligation_count": len(
+                    author_payload_ref.get("satisfied_source_obligations", []) or []
+                ),
+                "source_bound_numeric_unknown_count": len(
+                    author_payload_ref.get("source_bound_numeric_unknowns", []) or []
+                ),
                 "mandatory_caveat_count": author_payload_ref.get(
                     "mandatory_caveat_count",
                     0,
@@ -1101,6 +1110,10 @@ class RunKernel:
                 "prohibited_upgrade_count": author_payload_ref.get(
                     "prohibited_upgrade_count",
                     0,
+                ),
+                "author_authority_payload_ref": author_payload_ref.get(
+                    "authority_payload",
+                    {},
                 ),
             }
             self.state.projections[action.stage] = deepcopy(
