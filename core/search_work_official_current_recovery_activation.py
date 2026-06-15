@@ -79,12 +79,14 @@ def activate_search_work_official_current_recovery_recommendation(
         existing_blockers=existing_blockers,
     )
     missing_from_bridge = _string_list(bridge.get("missing_expected_source_classes"))
+    bridge_present = bool(bridge.get("bridge_considered"))
+    if not bridge_present:
+        return base
     blockers = _append_strings(
         _string_list(existing_blockers),
         _string_list(bridge.get("handoff_blockers")),
         _string_list(bridge.get("bridge_blockers")),
     )
-    bridge_present = bool(bridge.get("bridge_considered"))
     bridge_eligible = bool(bridge.get("bridge_eligible"))
     activation_eligible = bool(
         bridge_present

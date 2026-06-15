@@ -191,6 +191,33 @@ def test_existing_fields_are_appended_without_destructive_overwrite() -> None:
     assert merged["source_class_recovery_query_count"] == 1
 
 
+def test_no_search_work_projection_leaves_existing_recommendation_undecorated() -> None:
+    existing = {
+        "source_class_recovery_recommended": True,
+        "source_class_recovery_shadow_mode": True,
+        "missing_expected_source_classes": ["archival_primary_text"],
+        "source_class_recovery_reason": "existing_reason",
+        "source_class_recovery_queries": ["existing executable query"],
+        "source_class_recovery_query_count": 1,
+        "source_class_recovery_trigger_fields": ["existing_trigger"],
+    }
+
+    merged = activate_search_work_official_current_recovery_recommendation(
+        recommendation=existing,
+    )
+
+    assert merged == existing
+    assert "search_work_official_current_recovery_activation" not in merged
+    assert "source_obligation_driven" not in merged
+    assert merged["missing_expected_source_classes"] == ["archival_primary_text"]
+    assert merged["source_class_recovery_reason"] == "existing_reason"
+    assert merged["source_class_recovery_trigger_fields"] == ["existing_trigger"]
+    assert all(
+        "search_work" not in field
+        for field in merged["source_class_recovery_trigger_fields"]
+    )
+
+
 def test_existing_blockers_preserve_missing_visibility_without_activation() -> None:
     merged = activate_search_work_official_current_recovery_recommendation(
         recommendation=_empty_recommendation(),
