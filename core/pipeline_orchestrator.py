@@ -769,6 +769,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         route_projection=run_kernel.state.projections.get("route_request", {}),
         requested_mode=strategy,
         selected_depth=run_contract_projection.get("selected_depth"),
+        safe_query_preview=query,
         current_date_ref={"id": "run_config.current_date"},
         safe_user_domain_hints={},
         metadata={
