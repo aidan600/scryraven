@@ -223,9 +223,9 @@ def build_runtime_shadow_search_work_plan_input(
 
 
 def _source_requirements(contract: Mapping[str, Any]) -> tuple[Mapping[str, Any], ...]:
-    requirements = contract.get("source_requirements") or contract.get(
-        "source_requirement_summary"
-    )
+    requirements = contract.get("source_requirements")
+    if not isinstance(requirements, Sequence) or isinstance(requirements, str):
+        requirements = contract.get("source_requirement_summary")
     if not isinstance(requirements, Sequence) or isinstance(requirements, str):
         return ()
     return tuple(item for item in requirements if isinstance(item, Mapping))

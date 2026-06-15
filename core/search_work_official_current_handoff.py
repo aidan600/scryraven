@@ -211,10 +211,85 @@ def _acquisition_needs(
     query_plan_shadow: Mapping[str, Any],
 ) -> dict[str, tuple[Mapping[str, Any], ...]]:
     needs = _mapping(query_plan_shadow.get("acquisition_needs"))
-    return {
+    out = {
         kind: _sequence_of_mappings(needs.get(kind))
         for kind in _ACQUISITION_NEED_KINDS
     }
+    if any(out.values()):
+        return out
+    return _fallback_acquisition_needs_from_provider_jobs(query_plan_shadow)
+
+
+def _fallback_acquisition_needs_from_provider_jobs(
+    query_plan_shadow: Mapping[str, Any],
+) -> dict[str, tuple[Mapping[str, Any], ...]]:
+    out: dict[str, list[dict[str, Any]]] = {
+        kind: [] for kind in _ACQUISITION_NEED_KINDS
+    }
+    jobs_by_component = _mapping(query_plan_shadow.get("provider_jobs_by_component"))
+    for component_id, jobs in jobs_by_component.items():
+        clean_component_id = _clean_token(component_id) or "component:unknown"
+        for job in _sequence_of_mappings(jobs):
+            work_kind = _clean_token(job.get("work_kind")) or ""
+            obligation_ids = _text_sequence(job.get("source_obligation_ids")) or (
+                _clean_token(job.get("work_id")) or "",
+            )
+            for obligation_id in obligation_ids:
+                kind = _need_kind_from_provider_hint(
+                    obligation_id=obligation_id,
+                    work_kind=work_kind,
+                )
+                if not kind:
+                    continue
+                _append_need_once(
+                    out[kind],
+                    {
+                        "component_id": clean_component_id,
+                        "obligation_id": obligation_id,
+                        "strictness": "required",
+                        "shadow_hint_only": True,
+                        "derived_from_provider_job_hint": True,
+                    },
+                )
+    return {kind: tuple(values) for kind, values in out.items()}
+
+
+def _need_kind_from_provider_hint(
+    *,
+    obligation_id: str,
+    work_kind: str,
+) -> str | None:
+    obligation = obligation_id.casefold()
+    job_kind = work_kind.casefold()
+    if "source_bound_numeric" in obligation or (
+        "numeric" in obligation and job_kind == "fetch_read_extract"
+    ):
+        return "source_bound_numeric"
+    if "legal" in obligation or "regulatory" in obligation:
+        return "legal_current_primary"
+    if (
+        "canonical" in obligation
+        or "docs" in obligation
+        or "primary_source_documents" in obligation
+    ):
+        return "canonical_documentation"
+    if "official_current" in obligation or job_kind == "official_candidate_acquisition":
+        return "official_current"
+    if job_kind == "canonical_extraction":
+        return "canonical_documentation"
+    return None
+
+
+def _append_need_once(values: list[dict[str, Any]], need: dict[str, Any]) -> None:
+    identity = (need.get("component_id"), need.get("obligation_id"), need.get("strictness"))
+    for existing in values:
+        if (
+            existing.get("component_id"),
+            existing.get("obligation_id"),
+            existing.get("strictness"),
+        ) == identity:
+            return
+    values.append(need)
 
 
 def _handoff_need(

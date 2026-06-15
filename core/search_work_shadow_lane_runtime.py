@@ -13,6 +13,10 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from core.run_kernel import RunKernel
+from core.search_work_official_current_handoff import (
+    OFFICIAL_CURRENT_HANDOFF_TRACE_KEY,
+    build_search_work_official_current_handoff,
+)
 from core.search_work_plan_query_plan_shadow import (
     QUERY_PLAN_WORK_SHADOW_TRACE_KEY,
     build_query_plan_work_shadow_projection,
@@ -109,9 +113,13 @@ def run_search_work_shadow_lane(
             "search_work_plan_projection": search_work_plan_projection,
         }
     )
+    search_work_official_current_handoff = (
+        build_search_work_official_current_handoff(query_plan_work_shadow_projection)
+    )
     lane_projection = _lane_projection(
         search_work_plan_projection=search_work_plan_projection,
         query_plan_work_shadow_projection=query_plan_work_shadow_projection,
+        search_work_official_current_handoff=search_work_official_current_handoff,
         action_ref={
             "action_id": action.action_id,
             "stage": action.stage,
@@ -131,6 +139,7 @@ def _lane_projection(
     *,
     search_work_plan_projection: Mapping[str, Any],
     query_plan_work_shadow_projection: Mapping[str, Any],
+    search_work_official_current_handoff: Mapping[str, Any],
     action_ref: Mapping[str, Any],
     metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -145,7 +154,68 @@ def _lane_projection(
         "query_plan_work_shadow_projection_present": bool(
             query_plan_work_shadow_projection
         ),
+        "search_work_official_current_handoff_present": bool(
+            search_work_official_current_handoff
+        ),
         "query_plan_work_shadow_trace_key": QUERY_PLAN_WORK_SHADOW_TRACE_KEY,
+        "search_work_official_current_handoff_trace_key": (
+            OFFICIAL_CURRENT_HANDOFF_TRACE_KEY
+        ),
+        "official_current_handoff_source_obligation_driven": bool(
+            search_work_official_current_handoff.get("source_obligation_driven")
+        ),
+        "official_current_handoff_mode_specific_official_executor": bool(
+            search_work_official_current_handoff.get(
+                "mode_specific_official_executor"
+            )
+        ),
+        "official_current_handoff_provider_selected": bool(
+            search_work_official_current_handoff.get("provider_selected")
+        ),
+        "official_current_handoff_query_text_generated": bool(
+            search_work_official_current_handoff.get("query_text_generated")
+        ),
+        "official_current_handoff_search_executed": bool(
+            search_work_official_current_handoff.get("search_executed")
+        ),
+        "official_current_handoff_retrieval_executed": bool(
+            search_work_official_current_handoff.get("retrieval_executed")
+        ),
+        "official_current_handoff_final_answer_behavior_changed": bool(
+            search_work_official_current_handoff.get(
+                "final_answer_behavior_changed"
+            )
+        ),
+        "official_current_handoff_need_counts": {
+            "official_current": len(
+                _sequence_of_mappings(
+                    search_work_official_current_handoff.get(
+                        "official_current_needs"
+                    )
+                )
+            ),
+            "legal_current_primary": len(
+                _sequence_of_mappings(
+                    search_work_official_current_handoff.get(
+                        "legal_current_primary_needs"
+                    )
+                )
+            ),
+            "canonical_documentation": len(
+                _sequence_of_mappings(
+                    search_work_official_current_handoff.get(
+                        "canonical_documentation_needs"
+                    )
+                )
+            ),
+            "source_bound_numeric": len(
+                _sequence_of_mappings(
+                    search_work_official_current_handoff.get(
+                        "source_bound_numeric_needs"
+                    )
+                )
+            ),
+        },
         "search_work_plan_runtime_consumed": False,
         "runtime_consumed_by_query_plan": False,
         "query_plan_behavior_changed": False,
@@ -160,6 +230,9 @@ def _lane_projection(
         "final_answer_behavior_changed": False,
         "search_work_plan_projection": search_work_plan_projection,
         "query_plan_work_shadow_projection": query_plan_work_shadow_projection,
+        "search_work_official_current_handoff": (
+            search_work_official_current_handoff
+        ),
         "action_ref": action_ref,
         "metadata": metadata,
     }
@@ -172,7 +245,7 @@ def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
-    if depth > 5:
+    if depth > 7:
         return "[redacted]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -205,6 +278,12 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
 
 def _clean_token(value: Any, *, limit: int = 160) -> str | None:
     return _clean_text(value, limit=limit)
+
+
+def _sequence_of_mappings(value: Any) -> tuple[Mapping[str, Any], ...]:
+    if not isinstance(value, Sequence) or isinstance(value, str):
+        return ()
+    return tuple(item for item in value if isinstance(item, Mapping))
 
 
 __all__ = [
