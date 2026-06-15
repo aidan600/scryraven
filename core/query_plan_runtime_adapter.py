@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from core.query_plan import (
     QueryPlan,
@@ -68,6 +68,33 @@ class QueryPlanRuntimeAdapter:
         )
         return authorized
 
+    def consume_search_work_for_existing_queries(
+        self,
+        queries: Sequence[str],
+        *,
+        search_work_projection: Mapping[str, Any] | None,
+        max_len: int | None,
+        origin: str,
+        role: QueryPlanRole | str,
+        phase: str = "search_work_component_allocation",
+    ) -> list[str]:
+        context = {
+            "primary_entity": self.primary_entity,
+            "entities_list": list(self.entities_list or []),
+            "core_topic": self.core_topic,
+            "user_query": self.user_query,
+            "intent": self.intent,
+        }
+        self.plan, allocated = self.plan.consume_search_work_for_existing_queries(
+            queries,
+            query_plan_context=context,
+            search_work_projection=search_work_projection,
+            max_len=max_len,
+            origin=origin,
+            role=role,
+            phase=phase,
+        )
+        return allocated
 
     def admit_recon_candidates(self, queries: Sequence[str]) -> list[str]:
         """Admit recon-rewriter candidates before they become retrieval queries."""

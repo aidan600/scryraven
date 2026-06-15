@@ -242,7 +242,10 @@ from core.runtime_prompt_assembly import (
     build_image_context,
     evidence_slice_for_analyst,
 )
-from core.search_work_shadow_lane_runtime import run_search_work_shadow_lane
+from core.search_work_shadow_lane_runtime import (
+    SEARCH_WORK_SHADOW_LANE_TRACE_KEY,
+    run_search_work_shadow_lane,
+)
 from core.source_class_recovery import (
     build_source_class_observability_telemetry,
     build_source_class_recovery_recommendation,
@@ -938,6 +941,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         current_date=current_date,
         max_queries=query_plan_inputs.max_queries,
         route_runtime_posture=query_plan_inputs.effective_route_posture,
+        search_work_projection=run_kernel.state.projections.get(
+            SEARCH_WORK_SHADOW_LANE_TRACE_KEY
+        ),
     )
     run_kernel.reduce(query_admission_result.observation)
     queries = query_admission_result.queries
