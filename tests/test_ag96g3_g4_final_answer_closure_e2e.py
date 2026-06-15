@@ -16,6 +16,7 @@ from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     derive_author_input_payload,
 )
+from core.quant_work_unit_runtime import build_quant_work_unit_packets
 from core.query_plan import QUERY_PLAN_TRACE_KEY, QueryPlanRole
 from core.query_plan_runtime_adapter import build_query_plan_runtime_adapter
 from core.run_authority_sufficiency import (
@@ -298,6 +299,7 @@ def _spine(
     retrieval_records: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
     final_evidence_records: Sequence[Mapping[str, Any]] | None = None,
     search_work_projection: Mapping[str, Any] | None = None,
+    quant_work_units: Sequence[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     projection = (
         search_work_projection
@@ -342,6 +344,11 @@ def _spine(
         if final_evidence_records is not None
         else _final_evidence(retrieval_records if isinstance(retrieval_records, Sequence) else [])
     )
+    quant_packets = build_quant_work_unit_packets(
+        quant_work_units=quant_work_units or (),
+        evidence_ledger_projection=ledger,
+        candidate_records=retrieval_records,
+    )
     judgment = build_deterministic_sufficiency_judgment(
         RunSufficiencyJudgmentInput(
             contract_projection=contract,
@@ -353,8 +360,12 @@ def _spine(
                 "final_evidence_count": len(evidence),
                 "author_evidence_count": len(evidence),
                 "citation_eligible_candidate_count": len(evidence),
-                "quant_extraction_executed": False,
-                "calculation_executed": False,
+                "quant_extraction_executed": bool(quant_packets),
+                "calculation_executed": any(
+                    packet.get("calculation_status") == "succeeded"
+                    for packet in quant_packets
+                ),
+                "quant_work_unit_packets": list(quant_packets),
             },
         )
     )
@@ -382,6 +393,7 @@ def _spine(
             "provider_job_evidence_ledger_bridge_projection"
         ],
         "ledger": ledger,
+        "quant_packets": quant_packets,
         "judgment": judgment,
         "packet": packet,
         "payload": payload,

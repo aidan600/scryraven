@@ -959,6 +959,10 @@ def build_final_answer_packet(
         sufficiency_judgment_projection,
         "source_bound_numeric_unknowns",
     )
+    source_bound_resolutions = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "source_bound_numeric_resolutions",
+    )
     behavior_boundary_flags = _sufficiency_packet_mapping(
         sufficiency_judgment_projection,
         "behavior_boundary_flags",
@@ -982,6 +986,7 @@ def build_final_answer_packet(
         partial_obligations=partial_obligations,
         satisfied_obligations=satisfied_obligations,
         source_bound_numeric_unknowns=source_bound_unknowns,
+        source_bound_numeric_resolutions=source_bound_resolutions,
         behavior_boundary_flags=behavior_boundary_flags,
         claim_postures=claim_postures,
         mandatory_caveats=tuple(
