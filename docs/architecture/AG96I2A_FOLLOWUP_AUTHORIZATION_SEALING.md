@@ -106,9 +106,13 @@ This phase is offline only. It does not call providers, search engines, retrieva
 dispatchers, fetch/read units, model prompts, arbitrary code execution, or live
 dogfood. It does not connect sealed state to provider-job executors.
 
-## Deferred To AG-96I2B
+## Follow-on AG-96I2B
 
-Deferred work includes executable provider-job dispatch, real budget/cost
-accounting, live validation, provider capability evaluation, conversational
-Follow-up Turn Contract behavior, prior-answer reuse policy, and any user-facing
-follow-up search implementation.
+AG-96I2B adds the next bounded seam:
+[AG96I2B_FOLLOWUP_FIXTURE_DISPATCH.md](AG96I2B_FOLLOWUP_FIXTURE_DISPATCH.md).
+It consumes sealed non-executable AG-96I2A candidates through a fixture-only
+execution gate and reduces sanitized fixture observations into canonical
+RunKernel follow-up execution state. EvidenceLedger intake, real provider-job
+dispatch, real budget/cost accounting, live validation, provider capability
+evaluation, conversational Follow-up Turn Contract behavior, prior-answer reuse
+policy, and any user-facing follow-up search implementation remain deferred.
