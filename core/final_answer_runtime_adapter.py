@@ -62,7 +62,12 @@ def _evidence_record_from_passage(
     )
 
 
-def _citation_record_for_evidence(record: FinalEvidenceRecord) -> CitationEligibilityRecord:
+def _citation_record_for_evidence(
+    record: FinalEvidenceRecord,
+    *,
+    sufficiency_constrained: bool = False,
+    satisfied_source_classes: frozenset[str] = frozenset(),
+) -> CitationEligibilityRecord:
     if record.source_id is None:
         return CitationEligibilityRecord(
             citation_id=f"{record.evidence_id}:citation",
@@ -80,6 +85,28 @@ def _citation_record_for_evidence(record: FinalEvidenceRecord) -> CitationEligib
             status=CitationEligibilityStatus.CITATION_INELIGIBLE,
             requirement=CitationRequirementStatus.CITATION_OPTIONAL,
             reason="source_url_missing",
+        )
+    if (
+        sufficiency_constrained
+        and satisfied_source_classes
+        and _contract_requirement_key(record.source_class) not in satisfied_source_classes
+    ):
+        return CitationEligibilityRecord(
+            citation_id=f"{record.evidence_id}:citation",
+            evidence_id=record.evidence_id,
+            source_id=record.source_id,
+            status=CitationEligibilityStatus.CITATION_INELIGIBLE,
+            requirement=CitationRequirementStatus.CITATION_OPTIONAL,
+            reason="not_supported_by_sufficiency_satisfied_obligation",
+        )
+    if sufficiency_constrained and not satisfied_source_classes:
+        return CitationEligibilityRecord(
+            citation_id=f"{record.evidence_id}:citation",
+            evidence_id=record.evidence_id,
+            source_id=record.source_id,
+            status=CitationEligibilityStatus.CITATION_INELIGIBLE,
+            requirement=CitationRequirementStatus.CITATION_OPTIONAL,
+            reason="sufficiency_has_no_satisfied_source_obligation",
         )
     return CitationEligibilityRecord(
         citation_id=f"{record.evidence_id}:citation",
@@ -315,16 +342,19 @@ def _source_obligations_from_sufficiency(
         if isinstance(sufficiency.get("final_packet_inputs"), Mapping)
         else {}
     )
-    raw_obligations = (
-        packet_inputs.get("source_obligations")
-        or packet_inputs.get("missing_source_obligations")
-        or sufficiency.get("missing_required_obligations")
-        or ()
-    )
+    raw_obligations = []
+    for key in (
+        "missing_required_obligations",
+        "partial_obligations",
+        "satisfied_obligations",
+        "missing_source_obligations",
+        "source_obligations",
+    ):
+        value = packet_inputs.get(key) or sufficiency.get(key) or ()
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+            raw_obligations.extend(item for item in value if isinstance(item, Mapping))
     obligations: list[SourceObligationRecord] = []
     for index, item in enumerate(raw_obligations, start=1):
-        if not isinstance(item, Mapping):
-            continue
         source_class = str(
             item.get("required_source_class")
             or item.get("source_class")
@@ -334,11 +364,12 @@ def _source_obligations_from_sufficiency(
         if not source_class:
             continue
         status_value = str(item.get("status") or "").strip()
-        status = (
-            SourceObligationStatus.SATISFIED
-            if status_value == "satisfied"
-            else _status_for_sufficiency_obligation(item)
-        )
+        if status_value == "satisfied":
+            status = SourceObligationStatus.SATISFIED
+        elif status_value == "partial":
+            status = SourceObligationStatus.PARTIAL
+        else:
+            status = _status_for_sufficiency_obligation(item)
         obligations.append(
             SourceObligationRecord(
                 obligation_id=(
@@ -394,6 +425,10 @@ def _sufficiency_readiness(
         else {}
     )
     raw_status = (
+        "blocked"
+        if packet_inputs.get("final_answer_allowed") is False
+        else None
+    ) or (
         packet_inputs.get("readiness_status")
         or (
             "blocked"
@@ -420,6 +455,14 @@ def _sufficiency_readiness(
     )
 
 
+def _sufficiency_packet_inputs(projection: Any) -> dict[str, Any]:
+    sufficiency = _sufficiency_projection_from_any(projection)
+    if not sufficiency:
+        return {}
+    packet_inputs = sufficiency.get("final_packet_inputs")
+    return dict(packet_inputs) if isinstance(packet_inputs, Mapping) else {}
+
+
 def _sufficiency_packet_items(
     projection: Any,
     key: str,
@@ -436,6 +479,55 @@ def _sufficiency_packet_items(
     if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
         return tuple(str(item) for item in value if str(item or "").strip())
     return ()
+
+
+def _sufficiency_packet_mappings(
+    projection: Any,
+    key: str,
+) -> tuple[Mapping[str, Any], ...]:
+    packet_inputs = _sufficiency_packet_inputs(projection)
+    value = packet_inputs.get(key)
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return tuple(dict(item) for item in value if isinstance(item, Mapping))
+    sufficiency = _sufficiency_projection_from_any(projection)
+    fallback = sufficiency.get(key) if sufficiency else ()
+    if isinstance(fallback, Sequence) and not isinstance(fallback, (str, bytes)):
+        return tuple(dict(item) for item in fallback if isinstance(item, Mapping))
+    return ()
+
+
+def _sufficiency_packet_text(
+    projection: Any,
+    key: str,
+) -> str | None:
+    packet_inputs = _sufficiency_packet_inputs(projection)
+    value = packet_inputs.get(key)
+    if value is None:
+        value = _sufficiency_projection_from_any(projection).get(key) if _sufficiency_projection_from_any(projection) else None
+    text = str(value or "").strip()
+    return text or None
+
+
+def _sufficiency_packet_bool(
+    projection: Any,
+    key: str,
+) -> bool | None:
+    packet_inputs = _sufficiency_packet_inputs(projection)
+    value = packet_inputs.get(key)
+    if isinstance(value, bool):
+        return value
+    sufficiency = _sufficiency_projection_from_any(projection)
+    value = sufficiency.get(key) if sufficiency else None
+    return value if isinstance(value, bool) else None
+
+
+def _sufficiency_packet_mapping(
+    projection: Any,
+    key: str,
+) -> dict[str, Any]:
+    packet_inputs = _sufficiency_packet_inputs(projection)
+    value = packet_inputs.get(key)
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
 def _sufficiency_author_ref(projection: Any) -> dict[str, Any]:
@@ -705,19 +797,50 @@ def build_final_answer_packet(
     author_notes: str | None = None,
 ) -> FinalAnswerPacket:
     packet_id = f"final-answer-packet-{run_id}"
+    sufficiency_projection = _sufficiency_projection_from_any(
+        sufficiency_judgment_projection
+    )
+    sufficiency_missing_required = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "missing_required_obligations",
+    )
+    sufficiency_partial = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "partial_obligations",
+    )
+    sufficiency_satisfied = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "satisfied_obligations",
+    )
+    sufficiency_constrained_citations = bool(
+        sufficiency_projection and (sufficiency_missing_required or sufficiency_partial)
+    )
+    satisfied_source_classes = frozenset(
+        _contract_requirement_key(
+            item.get("required_source_class")
+            or item.get("source_class")
+            or item.get("requirement_kind")
+        )
+        for item in sufficiency_satisfied
+        if isinstance(item, Mapping)
+    )
     evidence_records = tuple(
         _evidence_record_from_passage(passage, position=index, packet_id=packet_id)
         for index, passage in enumerate(final_evidence or (), start=1)
     )
-    citation_records = tuple(_citation_record_for_evidence(record) for record in evidence_records)
+    citation_records = tuple(
+        _citation_record_for_evidence(
+            record,
+            sufficiency_constrained=sufficiency_constrained_citations,
+            satisfied_source_classes=satisfied_source_classes,
+        )
+        for record in evidence_records
+    )
     custody_source_obligations = _source_obligations_from_custody(
         source_obligation_projection
     )
     answer_contract_source_obligations = _source_obligations_from_answer_contract(
         answer_contract_projection
-    )
-    sufficiency_projection = _sufficiency_projection_from_any(
-        sufficiency_judgment_projection
     )
     contract_source_obligations = (
         ()
@@ -811,12 +934,55 @@ def build_final_answer_packet(
         "prohibited_upgrades",
     )
     prohibited.extend(sufficiency_prohibited)
+    final_answer_allowed = _sufficiency_packet_bool(
+        sufficiency_judgment_projection,
+        "final_answer_allowed",
+    )
+    if final_answer_allowed is None:
+        final_answer_allowed = True
+    sufficiency_decision = _sufficiency_packet_text(
+        sufficiency_judgment_projection,
+        "decision",
+    )
+    final_answer_posture = _sufficiency_packet_text(
+        sufficiency_judgment_projection,
+        "final_answer_posture",
+    )
+    required_satisfied = _sufficiency_packet_bool(
+        sufficiency_judgment_projection,
+        "required_obligations_satisfied",
+    )
+    missing_required = sufficiency_missing_required
+    partial_obligations = sufficiency_partial
+    satisfied_obligations = sufficiency_satisfied
+    source_bound_unknowns = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "source_bound_numeric_unknowns",
+    )
+    behavior_boundary_flags = _sufficiency_packet_mapping(
+        sufficiency_judgment_projection,
+        "behavior_boundary_flags",
+    )
+    if final_answer_allowed is False:
+        readiness_status = FinalAnswerReadinessStatus.BLOCKED
+        readiness_reasons = tuple(
+            dict.fromkeys((*readiness_reasons, "final_answer_not_allowed"))
+        )
     return FinalAnswerPacket(
         packet_id=packet_id,
         evidence_records=evidence_records,
         citation_records=citation_records,
         source_obligations=source_obligations,
         official_current_custody_summary=custody_summary,
+        sufficiency_decision=sufficiency_decision,
+        final_answer_posture=final_answer_posture,
+        final_answer_allowed=bool(final_answer_allowed),
+        required_obligations_satisfied=required_satisfied,
+        missing_required_obligations=missing_required,
+        partial_obligations=partial_obligations,
+        satisfied_obligations=satisfied_obligations,
+        source_bound_numeric_unknowns=source_bound_unknowns,
+        behavior_boundary_flags=behavior_boundary_flags,
         claim_postures=claim_postures,
         mandatory_caveats=tuple(
             dict.fromkeys(
