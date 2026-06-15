@@ -16,6 +16,9 @@ from core.evidence_ledger import (
     build_evidence_ledger_observation_from_runtime,
 )
 from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
+from core.provider_job_evidence_ledger_bridge import (
+    build_provider_job_evidence_ledger_observation,
+)
 from core.run_kernel import RunKernel
 
 
@@ -82,6 +85,58 @@ def reduce_pre_recovery_source_obligations_into_evidence_ledger(
     return _ledger_projection(run_kernel)
 
 
+def reduce_provider_job_evidence_into_evidence_ledger(
+    *,
+    run_kernel: RunKernel,
+    run_id: str,
+    provider_job_execution_handoff: Mapping[str, Any] | None,
+    query_plan_trace: Mapping[str, Any] | None,
+    current_authorized_queries: Sequence[str],
+    retrieval_records: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
+    search_work_projection: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Reduce AG-96F1 provider-job evidence custody through EvidenceLedger."""
+
+    bridge_result = build_provider_job_evidence_ledger_observation(
+        observation_id=f"{run_id}:evidence-ledger:provider-job-g1",
+        provider_job_execution_handoff=provider_job_execution_handoff,
+        query_plan_trace=query_plan_trace,
+        current_authorized_queries=current_authorized_queries,
+        retrieval_records=retrieval_records,
+        search_work_projection=search_work_projection,
+    )
+    if not bridge_result.observation_payload:
+        return {
+            "evidence_ledger_projection": _ledger_projection(run_kernel),
+            "provider_job_evidence_ledger_bridge_projection": dict(
+                bridge_result.projection
+            ),
+            "observation_payload": {},
+        }
+    action = run_kernel.authorize_evidence_ledger_reduction(
+        inputs={
+            "observation_source": "provider_job_evidence_ledger_bridge",
+            "candidate_count": bridge_result.projection.get("candidate_count"),
+            "requirement_count": bridge_result.projection.get("requirement_count"),
+            "provider_job_bridge_schema": bridge_result.projection.get(
+                "schema_version"
+            ),
+        }
+    )
+    result = execute_evidence_ledger_reduction_action(
+        action,
+        payload=bridge_result.observation_payload,
+    )
+    run_kernel.reduce(result.observation)
+    return {
+        "evidence_ledger_projection": _ledger_projection(run_kernel),
+        "provider_job_evidence_ledger_bridge_projection": dict(
+            bridge_result.projection
+        ),
+        "observation_payload": dict(bridge_result.observation_payload),
+    }
+
+
 def reduce_final_evidence_bundle_into_evidence_ledger(
     *,
     run_kernel: RunKernel,
@@ -143,5 +198,6 @@ __all__ = [
     "reduce_final_evidence_bundle_into_evidence_ledger",
     "reduce_post_final_source_obligations_into_evidence_ledger",
     "reduce_pre_recovery_source_obligations_into_evidence_ledger",
+    "reduce_provider_job_evidence_into_evidence_ledger",
     "reduce_run_contract_requirements_into_evidence_ledger",
 ]

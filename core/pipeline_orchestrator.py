@@ -74,6 +74,7 @@ from core.evidence_integration_checkpoint import (
 )
 from core.evidence_ledger_lifecycle import (
     reduce_pre_recovery_source_obligations_into_evidence_ledger,
+    reduce_provider_job_evidence_into_evidence_ledger,
     reduce_run_contract_requirements_into_evidence_ledger,
 )
 from core.evidence_registry_mirror import record_final_evidence_snapshot
@@ -605,6 +606,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     run_contract_projection: dict[str, Any] = {}
     evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+    provider_job_evidence_ledger_bridge_projection: dict[str, Any] = {}
     search_judgment_projection: dict[str, Any] = {}
     sufficiency_judgment_projection: dict[str, Any] = {}
     answer_contract_projection: dict[str, Any] = {}
@@ -948,6 +950,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     run_kernel.reduce(query_admission_result.observation)
     queries = query_admission_result.queries
     current_queries = query_admission_result.current_queries
+    provider_job_execution_handoff = dict(
+        query_admission_result.observation.payload.get(
+            "provider_job_execution_handoff"
+        )
+        or {}
+    )
     recency_merge_used = query_admission_result.recency_merge_used
     recency_merge_query = query_admission_result.recency_merge_query
     router_query_preparation_contract = (
@@ -2771,6 +2779,30 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             authorization_observation_source=(
                 "run_authority_contract_pre_recovery"
             ),
+        )
+        provider_job_evidence_reduction = (
+            reduce_provider_job_evidence_into_evidence_ledger(
+                run_kernel=run_kernel,
+                run_id=run_id,
+                provider_job_execution_handoff=provider_job_execution_handoff,
+                query_plan_trace=query_authority.to_trace_fragment().get(
+                    "query_plan",
+                    {},
+                ),
+                current_authorized_queries=current_queries,
+                retrieval_records=all_passages,
+                search_work_projection=run_kernel.state.projections.get(
+                    SEARCH_WORK_SHADOW_LANE_TRACE_KEY
+                ),
+            )
+        )
+        evidence_ledger_projection = provider_job_evidence_reduction[
+            "evidence_ledger_projection"
+        ]
+        provider_job_evidence_ledger_bridge_projection = (
+            provider_job_evidence_reduction[
+                "provider_job_evidence_ledger_bridge_projection"
+            ]
         )
         evidence_ledger_projection = (
             reduce_pre_recovery_source_obligations_into_evidence_ledger(

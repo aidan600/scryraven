@@ -95,6 +95,9 @@ def build_execution_trace_projection(runtime_values: Mapping[str, Any]) -> dict[
         "useful_content": v["useful_content"],
         "response_displayable": v["response_displayable"],
         "evidence_sufficient": v["evidence_sufficient"],
+        "provider_job_evidence_ledger_bridge_projection": dict(
+            v.get("provider_job_evidence_ledger_bridge_projection") or {}
+        ),
         "answer_class": v["answer_class"],
         "useful_content_reason": v["useful_content_reason"],
         "waste_flags": list(v["waste_flags"]),
