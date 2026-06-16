@@ -36,7 +36,7 @@ or `core/pipeline_orchestrator.py` domain logic are opened.
 | `followup_final_answer_packet_state` | `RunKernel.FollowupFinalAnswerPacket` | Author gate authorization |
 | `final_answer_packet` | `RunKernel.FinalAnswerPacket` | Author gate adapter |
 | `final_answer_authority_projection` | `RunKernel.FinalAnswerPacket` | Author gate adapter |
-| `followup_author_gate_state` | `RunKernel.FollowupAuthorGate` | fixture audit endpoint only |
+| `followup_author_gate_state` | `RunKernel.FollowupAuthorGate` | fixture-only Author observation in AG-96I2H |
 
 Adapter records remain untrusted observations until RunKernel validates the
 authorized binding and re-derives the canonical state.
@@ -74,16 +74,18 @@ RunKernel has accumulated a long follow-up reducer section. AG-96I2G only
 centralizes repeated closed-flag validation. A later phase should consider:
 
 ```text
-AG-96I2H: RunKernel follow-up reducer extraction / module split
+Future reducer cleanup: RunKernel follow-up reducer extraction / module split
 ```
 
-That phase should be mechanical, preserve reducer semantics, and keep
-RunKernel as the authority owner unless it explicitly relicenses ownership
-movement.
+That cleanup remains parked after AG-96I2H. It should be mechanical, preserve
+reducer semantics, and keep RunKernel as the authority owner unless it
+explicitly relicenses ownership movement.
 
 ## Next Recommended Phase
 
 Do not open Author execution or product answer activation by implication.
-Recommended next work is either the parked AG-96I2H reducer extraction, or a
-separate fixture-only Author observation phase with explicit Author-execution,
-prompt/prose, citation-rendering, and product-answer boundaries.
+AG-96I2H now opens only the separate fixture-only Author observation phase with
+explicit Author-execution, prompt/prose, citation-rendering, and product-answer
+boundaries. It is documented in
+[AG96I2H_FOLLOWUP_AUTHOR_OBSERVATION.md](AG96I2H_FOLLOWUP_AUTHOR_OBSERVATION.md).
+The reducer extraction remains parked for a later phase.
