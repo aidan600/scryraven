@@ -30,6 +30,7 @@ SUFFICIENCY_JUDGMENT_STAGE = "sufficiency_judgment"
 FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
+FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -75,6 +76,7 @@ class ActionType(str, Enum):
     FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
+    FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
 
 
 class ObservationType(str, Enum):
@@ -93,6 +95,7 @@ class ObservationType(str, Enum):
     FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
+    FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
 
 
 class RunStageStatus(str, Enum):
@@ -329,6 +332,9 @@ class RunState:
     followup_authorization_state: dict[str, Any] = field(default_factory=dict)
     followup_authorization_projection: dict[str, Any] = field(default_factory=dict)
     followup_authorization_history: list[dict[str, Any]] = field(default_factory=list)
+    followup_execution_state: dict[str, Any] = field(default_factory=dict)
+    followup_execution_projection: dict[str, Any] = field(default_factory=dict)
+    followup_execution_history: list[dict[str, Any]] = field(default_factory=list)
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -384,6 +390,11 @@ class RunState:
             followup_authorization_history=deepcopy(
                 self.followup_authorization_history
             ),
+            followup_execution_state=deepcopy(self.followup_execution_state),
+            followup_execution_projection=deepcopy(
+                self.followup_execution_projection
+            ),
+            followup_execution_history=deepcopy(self.followup_execution_history),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -421,6 +432,9 @@ class KernelTraceProjection:
     followup_authorization_state: Mapping[str, Any]
     followup_authorization_projection: Mapping[str, Any]
     followup_authorization_history: Sequence[Mapping[str, Any]]
+    followup_execution_state: Mapping[str, Any]
+    followup_execution_projection: Mapping[str, Any]
+    followup_execution_history: Sequence[Mapping[str, Any]]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -475,6 +489,13 @@ class KernelTraceProjection:
             ),
             "followup_authorization_history": [
                 _safe_mapping(item) for item in self.followup_authorization_history
+            ],
+            "followup_execution_state": _safe_mapping(self.followup_execution_state),
+            "followup_execution_projection": _safe_mapping(
+                self.followup_execution_projection
+            ),
+            "followup_execution_history": [
+                _safe_mapping(item) for item in self.followup_execution_history
             ],
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
@@ -770,6 +791,43 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.FOLLOWUP_AUTHORIZATION_CONSUMED,
+        )
+
+    def authorize_followup_fixture_execution(
+        self,
+        *,
+        candidate_id: str,
+        reason: str = "ag96i2b_followup_fixture_execution_observation",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.followup_authorization_state:
+            raise RunKernelTransitionError(
+                "follow-up fixture execution requires reduced follow-up authorization state"
+            )
+        candidate = _followup_sealed_candidate(
+            self.state.followup_authorization_state,
+            candidate_id,
+        )
+        merged_inputs = {
+            **dict(inputs or {}),
+            "followup_authorization_consumption_id": (
+                self.state.followup_authorization_state.get("consumption_id")
+            ),
+            "sealed_candidate_id": candidate.get("candidate_id"),
+            "fixture_execution_mode": "fixture_only",
+            "provider_job_kind": candidate.get("provider_job_kind"),
+            "provider_execution_licensed": False,
+        }
+        if merged_inputs.get("fixture_execution_mode") != "fixture_only":
+            raise RunKernelTransitionError(
+                "follow-up fixture execution only authorizes fixture_only mode"
+            )
+        return self.authorize(
+            stage=FOLLOWUP_EXECUTION_STAGE,
+            action_type=ActionType.FOLLOWUP_FIXTURE_EXECUTE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.FOLLOWUP_EXECUTION_OBSERVED,
         )
 
     def reduce(self, observation: Observation) -> RunState:
@@ -1255,6 +1313,102 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_authorization_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_FIXTURE_EXECUTE:
+            execution_state = _safe_mapping(
+                observation.payload.get("followup_execution_state")
+            )
+            if not execution_state:
+                raise RunKernelTransitionError(
+                    "follow-up execution observation requires followup_execution_state"
+                )
+            if not self.state.followup_authorization_state:
+                raise RunKernelTransitionError(
+                    "follow-up execution requires existing authorization state"
+                )
+            if (
+                execution_state.get("followup_authorization_consumption_id")
+                != self.state.followup_authorization_state.get("consumption_id")
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up execution must reference current authorization state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _validate_followup_execution_action_binding(
+                action_inputs=action_inputs,
+                execution_state=execution_state,
+            )
+            gate = _safe_mapping(execution_state.get("execution_gate"))
+            flags = _safe_mapping(execution_state.get("behavior_boundary_flags"))
+            if gate.get("allowed_execution_mode") != "fixture_only":
+                raise RunKernelTransitionError(
+                    "follow-up execution reducer only accepts fixture_only observations"
+                )
+            if gate.get("provider_execution_licensed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up execution observation must keep provider execution unlicensed"
+                )
+            for flag in (
+                "live_provider_call_executed",
+                "search_executed",
+                "retrieval_executed",
+                "fetch_executed",
+                "model_called",
+                "evidence_ledger_mutated",
+            ):
+                if flags.get(flag) is not False:
+                    raise RunKernelTransitionError(
+                        f"follow-up execution observation requires {flag}=False"
+                    )
+            if execution_state.get("evidence_ledger_intake_deferred") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up execution must defer EvidenceLedger intake"
+                )
+            if execution_state.get("evidence_ledger_evidence_admitted") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up execution must not admit EvidenceLedger evidence"
+                )
+            self.state.followup_execution_state = execution_state
+            self.state.followup_execution_projection = {
+                "owner": "RunKernel.FollowupFixtureExecution",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": execution_state.get("schema_version"),
+                "execution_id": execution_state.get("execution_id"),
+                "observation_id": execution_state.get("observation_id"),
+                "run_id": execution_state.get("run_id"),
+                "checkpoint_id": execution_state.get("checkpoint_id"),
+                "followup_authorization_consumption_id": execution_state.get(
+                    "followup_authorization_consumption_id"
+                ),
+                "sealed_candidate_id": execution_state.get("sealed_candidate_id"),
+                "provider_job_kind": execution_state.get("provider_job_kind"),
+                "component_id": execution_state.get("component_id"),
+                "source_obligation_id": execution_state.get("source_obligation_id"),
+                "result_status": execution_state.get("result_status"),
+                "fixture_execution_mode": execution_state.get(
+                    "fixture_execution_mode"
+                ),
+                "bridge_only": execution_state.get("bridge_only"),
+                "final_evidence_satisfied": execution_state.get(
+                    "final_evidence_satisfied"
+                ),
+                "citation_eligible": execution_state.get("citation_eligible"),
+                "evidence_ledger_intake_deferred": execution_state.get(
+                    "evidence_ledger_intake_deferred"
+                ),
+                "budget_semantics": _safe_mapping(
+                    execution_state.get("budget_semantics")
+                ),
+                "execution_gate": gate,
+                "behavior_boundary_flags": flags,
+            }
+            self.state.followup_execution_history.append(
+                deepcopy(self.state.followup_execution_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_execution_projection
+            )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
@@ -1285,10 +1439,60 @@ def validate_authorized_action(
     return action
 
 
+def _followup_sealed_candidate(
+    followup_state: Mapping[str, Any],
+    candidate_id: str,
+) -> Mapping[str, Any]:
+    expected = _clean_text(candidate_id, limit=160)
+    expected = expected.casefold().replace("-", "_").replace(" ", "_") if expected else ""
+    for candidate in followup_state.get("sealed_candidates", []) or []:
+        if not isinstance(candidate, Mapping):
+            continue
+        actual = _clean_text(candidate.get("candidate_id"), limit=160)
+        actual = actual.casefold().replace("-", "_").replace(" ", "_") if actual else ""
+        if actual == expected:
+            return candidate
+    raise RunKernelTransitionError(
+        f"follow-up fixture execution candidate {candidate_id!r} is not sealed"
+    )
+
+
+def _validate_followup_execution_action_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    execution_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "fixture_execution_mode",
+    ):
+        if execution_state.get(binding_field) != action_inputs.get(binding_field):
+            raise RunKernelTransitionError(
+                "follow-up execution observation "
+                f"{binding_field} does not match authorized action"
+            )
+    if action_inputs.get("fixture_execution_mode") != "fixture_only":
+        raise RunKernelTransitionError(
+            "follow-up fixture execution action must be bound to fixture_only mode"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up fixture execution action must keep provider execution unlicensed"
+        )
+    action_job_kind = action_inputs.get("provider_job_kind")
+    execution_job_kind = execution_state.get("provider_job_kind")
+    if (action_job_kind or execution_job_kind) and action_job_kind != execution_job_kind:
+        raise RunKernelTransitionError(
+            "follow-up execution observation provider_job_kind does not match authorized action"
+        )
+
+
 __all__ = [
     "AUTHOR_EXECUTION_STAGE",
     "FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_AUTHORIZATION_STAGE",
+    "FOLLOWUP_EXECUTION_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
