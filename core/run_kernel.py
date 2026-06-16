@@ -29,6 +29,11 @@ from core.followup_final_answer_packet_runtime import (
 from core.followup_final_answer_packet_runtime import (
     FOLLOWUP_FINAL_ANSWER_PACKET_STAGE as FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME,
 )
+from core.followup_fixture_boundaries import (
+    FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
+    FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS,
+    FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+)
 from core.followup_sufficiency_recheck_runtime import (
     FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
     build_followup_sufficiency_recheck_record,
@@ -85,6 +90,46 @@ _SENSITIVE_KEYS = frozenset(
         "secrets",
         "token",
     }
+)
+
+_FOLLOWUP_NO_LIVE_FALSE_FLAGS = FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS[1:]
+_FOLLOWUP_EXECUTION_FALSE_FLAGS = (
+    "live_provider_call_executed",
+    "search_executed",
+    "retrieval_executed",
+    "fetch_executed",
+    "model_called",
+    "evidence_ledger_mutated",
+)
+_FOLLOWUP_INTAKE_FALSE_FLAGS = (
+    *_FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    "sufficiency_judgment_rechecked",
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    "final_answer_packet_updated",
+    "final_answer_behavior_changed",
+    "author_prose_behavior_changed",
+    "citation_behavior_changed",
+)
+_FOLLOWUP_RECHECK_FALSE_FLAGS = (
+    *_FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    "final_answer_packet_updated",
+    "final_answer_behavior_changed",
+    "author_prose_behavior_changed",
+    "citation_behavior_changed",
+)
+_FOLLOWUP_PACKET_FALSE_FLAGS = (
+    *_FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
+)
+_FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS = (
+    *_FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    "sufficiency_judgment_rechecked",
+    "final_answer_packet_rebuilt",
+    "final_answer_packet_updated",
+    *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
 )
 
 
@@ -1855,18 +1900,11 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "follow-up execution observation must keep provider execution unlicensed"
                 )
-            for flag in (
-                "live_provider_call_executed",
-                "search_executed",
-                "retrieval_executed",
-                "fetch_executed",
-                "model_called",
-                "evidence_ledger_mutated",
-            ):
-                if flags.get(flag) is not False:
-                    raise RunKernelTransitionError(
-                        f"follow-up execution observation requires {flag}=False"
-                    )
+            _require_followup_flags_false(
+                flags,
+                _FOLLOWUP_EXECUTION_FALSE_FLAGS,
+                context="follow-up execution observation",
+            )
             if execution_state.get("evidence_ledger_intake_deferred") is not True:
                 raise RunKernelTransitionError(
                     "follow-up execution must defer EvidenceLedger intake"
@@ -1938,28 +1976,11 @@ class RunKernel:
                 intake_state=intake_state,
             )
             flags = _safe_mapping(intake_state.get("behavior_boundary_flags"))
-            for flag in (
-                "live_provider_call_executed",
-                "provider_job_scheduled",
-                "provider_job_dispatched",
-                "search_executed",
-                "retrieval_executed",
-                "fetch_executed",
-                "model_called",
-                "query_generation_changed",
-                "retrieval_ranking_filtering_changed",
-                "sufficiency_judgment_rechecked",
-                "search_judgment_rerun",
-                "final_answer_packet_updated",
-                "final_answer_behavior_changed",
-                "author_prose_behavior_changed",
-                "citation_behavior_changed",
-                "pipeline_orchestrator_domain_logic_changed",
-            ):
-                if flags.get(flag) is not False:
-                    raise RunKernelTransitionError(
-                        f"follow-up evidence intake observation requires {flag}=False"
-                    )
+            _require_followup_flags_false(
+                flags,
+                _FOLLOWUP_INTAKE_FALSE_FLAGS,
+                context="follow-up evidence intake observation",
+            )
             if flags.get("evidence_ledger_mutated") is not True:
                 raise RunKernelTransitionError(
                     "follow-up evidence intake must be the EvidenceLedger mutation seam"
@@ -2121,27 +2142,11 @@ class RunKernel:
                     "projection"
                 )
             flags = _safe_mapping(recheck_state.get("behavior_boundary_flags"))
-            for flag in (
-                "live_provider_call_executed",
-                "provider_job_scheduled",
-                "provider_job_dispatched",
-                "search_executed",
-                "retrieval_executed",
-                "fetch_executed",
-                "model_called",
-                "query_generation_changed",
-                "retrieval_ranking_filtering_changed",
-                "search_judgment_rerun",
-                "final_answer_packet_updated",
-                "final_answer_behavior_changed",
-                "author_prose_behavior_changed",
-                "citation_behavior_changed",
-                "pipeline_orchestrator_domain_logic_changed",
-            ):
-                if flags.get(flag) is not False:
-                    raise RunKernelTransitionError(
-                        f"follow-up sufficiency recheck requires {flag}=False"
-                    )
+            _require_followup_flags_false(
+                flags,
+                _FOLLOWUP_RECHECK_FALSE_FLAGS,
+                context="follow-up sufficiency recheck",
+            )
             if flags.get("sufficiency_judgment_rechecked") is not True:
                 raise RunKernelTransitionError(
                     "follow-up sufficiency recheck must recheck SufficiencyJudgment"
@@ -2307,31 +2312,11 @@ class RunKernel:
                     "follow-up FinalAnswerPacket requires packet_projection"
                 )
             flags = _safe_mapping(packet_state.get("behavior_boundary_flags"))
-            for flag in (
-                "live_provider_call_executed",
-                "provider_job_scheduled",
-                "provider_job_dispatched",
-                "search_executed",
-                "retrieval_executed",
-                "fetch_executed",
-                "model_called",
-                "query_generation_changed",
-                "retrieval_ranking_filtering_changed",
-                "search_judgment_rerun",
-                "author_executor_invoked",
-                "author_prompt_changed",
-                "author_prose_behavior_changed",
-                "citation_rendering_changed",
-                "citation_formatter_invoked",
-                "citation_behavior_changed",
-                "product_answer_behavior_changed",
-                "final_answer_behavior_changed",
-                "pipeline_orchestrator_domain_logic_changed",
-            ):
-                if flags.get(flag) is not False:
-                    raise RunKernelTransitionError(
-                        f"follow-up FinalAnswerPacket requires {flag}=False"
-                    )
+            _require_followup_flags_false(
+                flags,
+                _FOLLOWUP_PACKET_FALSE_FLAGS,
+                context="follow-up FinalAnswerPacket",
+            )
             if flags.get("final_answer_packet_prepared") is not True:
                 raise RunKernelTransitionError(
                     "follow-up FinalAnswerPacket must prepare packet state"
@@ -2551,34 +2536,11 @@ class RunKernel:
                 "storage_only": False,
             }
             flags = _safe_mapping(gate_state.get("behavior_boundary_flags"))
-            for flag in (
-                "live_provider_call_executed",
-                "provider_job_scheduled",
-                "provider_job_dispatched",
-                "search_executed",
-                "retrieval_executed",
-                "fetch_executed",
-                "model_called",
-                "query_generation_changed",
-                "retrieval_ranking_filtering_changed",
-                "search_judgment_rerun",
-                "sufficiency_judgment_rechecked",
-                "final_answer_packet_rebuilt",
-                "final_answer_packet_updated",
-                "author_executor_invoked",
-                "author_prompt_changed",
-                "author_prose_behavior_changed",
-                "citation_rendering_changed",
-                "citation_formatter_invoked",
-                "citation_behavior_changed",
-                "product_answer_behavior_changed",
-                "final_answer_behavior_changed",
-                "pipeline_orchestrator_domain_logic_changed",
-            ):
-                if flags.get(flag) is not False:
-                    raise RunKernelTransitionError(
-                        f"follow-up Author gate requires {flag}=False"
-                    )
+            _require_followup_flags_false(
+                flags,
+                _FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS,
+                context="follow-up Author gate",
+            )
             if gate_state.get("packet_authority_consumed") is not True:
                 raise RunKernelTransitionError(
                     "follow-up Author gate must consume packet authority"
@@ -2742,6 +2704,17 @@ def validate_authorized_action(
         expected_observation_type=expected_observation_type,
     )
     return action
+
+
+def _require_followup_flags_false(
+    flags: Mapping[str, Any],
+    flag_names: Sequence[str],
+    *,
+    context: str,
+) -> None:
+    for flag in flag_names:
+        if flags.get(flag) is not False:
+            raise RunKernelTransitionError(f"{context} requires {flag}=False")
 
 
 def _canonical_sufficiency_judgment_projection(

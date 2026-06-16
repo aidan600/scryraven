@@ -23,6 +23,12 @@ from core.followup_execution_runtime import (
     FIXTURE_EXECUTION_MODE,
     FollowupExecutionStatus,
 )
+from core.followup_fixture_boundaries import (
+    FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    followup_common_redaction_posture,
+    followup_fixture_provenance,
+    followup_live_surface_flags,
+)
 from core.run_kernel import (
     FOLLOWUP_EVIDENCE_INTAKE_STAGE,
     ActionType,
@@ -689,49 +695,27 @@ def _requirement_kind(source_class: str) -> str:
 
 
 def _fixture_only_provenance() -> dict[str, Any]:
-    return {
-        "origin": "ag96i2b_followup_fixture_execution",
-        "intake_bridge": "ag96i2c_followup_evidence_ledger_intake",
-        "fixture_only": True,
-        "live_provider_result": False,
-        "provider_job_executor_connected": False,
-    }
+    return followup_fixture_provenance(
+        intake_bridge="ag96i2c_followup_evidence_ledger_intake"
+    )
 
 
 def _behavior_boundary_flags() -> dict[str, bool]:
     return {
-        "provider_execution_licensed": False,
-        "live_provider_call_executed": False,
-        "provider_job_scheduled": False,
-        "provider_job_dispatched": False,
-        "search_executed": False,
-        "retrieval_executed": False,
-        "fetch_executed": False,
-        "model_called": False,
-        "query_generation_changed": False,
-        "retrieval_ranking_filtering_changed": False,
+        **followup_live_surface_flags(),
         "evidence_ledger_mutated": True,
         "evidence_ledger_intake_only_opened_surface": True,
         "sufficiency_judgment_rechecked": False,
-        "search_judgment_rerun": False,
+        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
         "final_answer_packet_updated": False,
         "final_answer_behavior_changed": False,
         "author_prose_behavior_changed": False,
         "citation_behavior_changed": False,
-        "pipeline_orchestrator_domain_logic_changed": False,
     }
 
 
 def _redaction_posture() -> dict[str, bool]:
-    return {
-        "json_safe": True,
-        "sanitized_fixture_summary_only": True,
-        "provider_payloads_retained": False,
-        "prompts_retained": False,
-        "model_responses_retained": False,
-        "unsanitized_text_retained": False,
-        "private_records_or_complete_traces_retained": False,
-    }
+    return followup_common_redaction_posture()
 
 
 def _mapping(value: Any) -> dict[str, Any]:

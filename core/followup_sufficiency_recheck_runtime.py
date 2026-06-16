@@ -13,6 +13,12 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from core.followup_deliberation import clean_text, clean_token, safe_json, stable_hash
+from core.followup_fixture_boundaries import (
+    FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    followup_common_redaction_posture,
+    followup_fixture_provenance,
+    followup_live_surface_flags,
+)
 from core.run_authority_sufficiency import (
     RunSufficiencyDecision,
     RunSufficiencyJudgmentInput,
@@ -1000,17 +1006,8 @@ def _required_source_tier(source_class: str) -> str | None:
 
 def _behavior_boundary_flags() -> dict[str, bool]:
     return {
-        "provider_execution_licensed": False,
-        "live_provider_call_executed": False,
-        "provider_job_scheduled": False,
-        "provider_job_dispatched": False,
-        "search_executed": False,
-        "retrieval_executed": False,
-        "fetch_executed": False,
-        "model_called": False,
-        "query_generation_changed": False,
-        "retrieval_ranking_filtering_changed": False,
-        "search_judgment_rerun": False,
+        **followup_live_surface_flags(),
+        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
         "sufficiency_judgment_rechecked": True,
         "final_answer_packet_updated": False,
         "final_answer_behavior_changed": False,
@@ -1018,31 +1015,18 @@ def _behavior_boundary_flags() -> dict[str, bool]:
         "author_activation_allowed": False,
         "citation_behavior_changed": False,
         "citation_eligible": False,
-        "pipeline_orchestrator_domain_logic_changed": False,
     }
 
 
 def _fixture_only_provenance() -> dict[str, Any]:
-    return {
-        "origin": "ag96i2b_followup_fixture_execution",
-        "intake_bridge": "ag96i2c_followup_evidence_ledger_intake",
-        "recheck_bridge": "ag96i2d_followup_sufficiency_recheck",
-        "fixture_only": True,
-        "live_provider_result": False,
-        "provider_job_executor_connected": False,
-    }
+    return followup_fixture_provenance(
+        intake_bridge="ag96i2c_followup_evidence_ledger_intake",
+        recheck_bridge="ag96i2d_followup_sufficiency_recheck",
+    )
 
 
 def _redaction_posture() -> dict[str, bool]:
-    return {
-        "json_safe": True,
-        "sanitized_fixture_summary_only": True,
-        "provider_payloads_retained": False,
-        "prompts_retained": False,
-        "model_responses_retained": False,
-        "unsanitized_text_retained": False,
-        "private_records_or_complete_traces_retained": False,
-    }
+    return followup_common_redaction_posture()
 
 
 def _mapping(value: Any) -> dict[str, Any]:
