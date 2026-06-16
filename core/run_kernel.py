@@ -21,6 +21,15 @@ from core.followup_author_gate_runtime import (
 from core.followup_author_gate_runtime import (
     FOLLOWUP_AUTHOR_GATE_STAGE as FOLLOWUP_AUTHOR_GATE_STAGE_NAME,
 )
+from core.followup_author_observation_runtime import (
+    FOLLOWUP_AUTHOR_OBSERVATION_MODE,
+    build_followup_author_observation_record,
+    derive_followup_author_observation_compliance,
+    reject_followup_author_observation_boundary_spoof,
+)
+from core.followup_author_observation_runtime import (
+    FOLLOWUP_AUTHOR_OBSERVATION_STAGE as FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME,
+)
 from core.followup_final_answer_packet_runtime import (
     FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
     build_followup_final_answer_packet_record,
@@ -64,6 +73,7 @@ FOLLOWUP_EVIDENCE_INTAKE_STAGE = "followup_evidence_intake"
 FOLLOWUP_SUFFICIENCY_RECHECK_STAGE = FOLLOWUP_SUFFICIENCY_RECHECK_STAGE_NAME
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
+FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -131,6 +141,15 @@ _FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS = (
     "final_answer_packet_updated",
     *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
 )
+_FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS = (
+    *_FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    "sufficiency_judgment_rechecked",
+    "final_answer_packet_rebuilt",
+    "final_answer_packet_updated",
+    *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
+    "final_text_included",
+)
 
 
 class ActionType(str, Enum):
@@ -154,6 +173,7 @@ class ActionType(str, Enum):
     FOLLOWUP_SUFFICIENCY_RECHECK = "followup_sufficiency_recheck"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
+    FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
 
 
 class ObservationType(str, Enum):
@@ -181,6 +201,9 @@ class ObservationType(str, Enum):
         "followup_final_answer_packet_prepared"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
+    FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
+        "followup_author_observation_observed"
+    )
 
 
 class RunStageStatus(str, Enum):
@@ -440,6 +463,13 @@ class RunState:
     followup_author_gate_state: dict[str, Any] = field(default_factory=dict)
     followup_author_gate_projection: dict[str, Any] = field(default_factory=dict)
     followup_author_gate_history: list[dict[str, Any]] = field(default_factory=list)
+    followup_author_observation_state: dict[str, Any] = field(default_factory=dict)
+    followup_author_observation_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_observation_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -534,6 +564,15 @@ class RunState:
             followup_author_gate_history=deepcopy(
                 self.followup_author_gate_history
             ),
+            followup_author_observation_state=deepcopy(
+                self.followup_author_observation_state
+            ),
+            followup_author_observation_projection=deepcopy(
+                self.followup_author_observation_projection
+            ),
+            followup_author_observation_history=deepcopy(
+                self.followup_author_observation_history
+            ),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -586,6 +625,9 @@ class KernelTraceProjection:
     followup_author_gate_state: Mapping[str, Any]
     followup_author_gate_projection: Mapping[str, Any]
     followup_author_gate_history: Sequence[Mapping[str, Any]]
+    followup_author_observation_state: Mapping[str, Any]
+    followup_author_observation_projection: Mapping[str, Any]
+    followup_author_observation_history: Sequence[Mapping[str, Any]]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -685,6 +727,16 @@ class KernelTraceProjection:
             ),
             "followup_author_gate_history": [
                 _safe_mapping(item) for item in self.followup_author_gate_history
+            ],
+            "followup_author_observation_state": _safe_mapping(
+                self.followup_author_observation_state
+            ),
+            "followup_author_observation_projection": _safe_mapping(
+                self.followup_author_observation_projection
+            ),
+            "followup_author_observation_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_observation_history
             ],
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
@@ -1462,6 +1514,169 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.FOLLOWUP_AUTHOR_GATE_OBSERVED,
+        )
+
+    def authorize_followup_author_observation(
+        self,
+        *,
+        reason: str = "ag96i2h_followup_fixture_author_output_observation",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.followup_author_gate_state:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires reduced Author gate state"
+            )
+        gate_state = self.state.followup_author_gate_state
+        if gate_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires canonical Author gate state"
+            )
+        if gate_state.get("author_gate_mode") != FOLLOWUP_AUTHOR_GATE_MODE:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires fixture-only Author gate"
+            )
+        if gate_state.get("packet_authority_consumed") is not True:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires consumed packet authority"
+            )
+        if gate_state.get("author_activation_allowed") is not False:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires Author activation closed"
+            )
+        if gate_state.get("author_execution_deferred") is not True:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires deferred Author execution"
+            )
+        if gate_state.get("final_text_included") is not False:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires no final text in gate state"
+            )
+        if not self.state.final_answer_packet:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires canonical FinalAnswerPacket"
+            )
+        if not self.state.final_answer_authority_projection:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires canonical packet authority"
+            )
+        authority = self.state.final_answer_authority_projection
+        if authority.get("owner") != "RunKernel.FinalAnswerPacket":
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires RunKernel packet authority"
+            )
+        if authority.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires canonical packet authority"
+            )
+        if authority.get("packet_id") != self.state.final_answer_packet.get(
+            "packet_id"
+        ):
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires packet/projection match"
+            )
+        if authority.get("packet_id") != gate_state.get("packet_id"):
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires Author gate packet match"
+            )
+        payload_ref = _safe_mapping(authority.get("author_payload_ref"))
+        if payload_ref.get("status") != "author_execution_deferred":
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires deferred Author payload"
+            )
+        if authority.get("author_activation_allowed") is not False:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires Author activation closed"
+            )
+        if authority.get("author_execution_deferred") is not True:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires Author execution deferred"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "follow-up Author observation requires product Author output closed"
+            )
+        if self.state.followup_author_observation_state.get(
+            "author_gate_id"
+        ) == gate_state.get("author_gate_id"):
+            raise RunKernelTransitionError(
+                "follow-up Author observation already reduced for this Author gate"
+            )
+        canonical_inputs = {
+            "run_id": gate_state.get("run_id"),
+            "checkpoint_id": gate_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": gate_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": gate_state.get("sealed_candidate_id"),
+            "followup_execution_id": gate_state.get("followup_execution_id"),
+            "execution_id": gate_state.get("execution_id"),
+            "followup_evidence_intake_id": gate_state.get(
+                "followup_evidence_intake_id"
+            ),
+            "intake_id": gate_state.get("intake_id"),
+            "followup_sufficiency_recheck_id": gate_state.get(
+                "followup_sufficiency_recheck_id"
+            ),
+            "recheck_id": gate_state.get("recheck_id"),
+            "followup_final_answer_packet_id": gate_state.get(
+                "followup_final_answer_packet_id"
+            ),
+            "packet_preparation_id": gate_state.get("packet_preparation_id"),
+            "followup_author_gate_id": gate_state.get("author_gate_id"),
+            "author_gate_id": gate_state.get("author_gate_id"),
+            "packet_id": self.state.final_answer_packet.get("packet_id"),
+            "provider_job_kind": gate_state.get("provider_job_kind"),
+            "component_id": gate_state.get("component_id"),
+            "source_obligation_id": gate_state.get("source_obligation_id"),
+            "requirement_ids": gate_state.get("requirement_ids", []),
+            "expected_source_classes": gate_state.get(
+                "expected_source_classes",
+                [],
+            ),
+            "fixture_execution_mode": gate_state.get("fixture_execution_mode"),
+            "evidence_ledger_intake_mode": gate_state.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": gate_state.get(
+                "sufficiency_recheck_mode"
+            ),
+            "final_answer_packet_mode": gate_state.get(
+                "final_answer_packet_mode"
+            ),
+            "author_gate_mode": gate_state.get("author_gate_mode"),
+            "fixture_author_observation_mode": FOLLOWUP_AUTHOR_OBSERVATION_MODE,
+            "final_answer_packet_digest": followup_projection_digest(
+                self.state.final_answer_packet
+            ),
+            "final_answer_authority_projection_digest": followup_projection_digest(
+                authority
+            ),
+            "followup_author_gate_digest": followup_projection_digest(gate_state),
+            "provider_execution_licensed": False,
+            "author_activation_allowed": False,
+            "author_execution_deferred": True,
+            "author_executor_invoked": False,
+            "model_called": False,
+            "author_prompt_changed": False,
+            "author_prose_behavior_changed": False,
+            "citation_rendering_changed": False,
+            "citation_formatter_invoked": False,
+            "product_answer_behavior_changed": False,
+            "final_text_included": False,
+            "live_validation_not_run": True,
+            "expected_observation_record_type": (
+                "followup_author_observation_consumption_record"
+            ),
+        }
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_OBSERVATION_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED
+            ),
         )
 
     def reduce(self, observation: Observation) -> RunState:
@@ -2676,6 +2891,243 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_gate_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION:
+            observed_author_state = _safe_mapping(
+                observation.payload.get("followup_author_observation_state")
+            )
+            if not observed_author_state:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation requires "
+                    "followup_author_observation_state"
+                )
+            if not self.state.followup_author_gate_state:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation requires existing Author gate state"
+                )
+            try:
+                reject_followup_author_observation_boundary_spoof(
+                    observed_author_state
+                )
+            except PermissionError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            action_inputs = _safe_mapping(action.inputs)
+            _validate_followup_author_observation_binding(
+                action_inputs=action_inputs,
+                observed_author_state=observed_author_state,
+            )
+            observed_output_facts = _safe_mapping(
+                observed_author_state.get("observed_output_facts")
+            )
+            if not observed_output_facts:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation requires sanitized output facts"
+                )
+            try:
+                canonical_record = build_followup_author_observation_record(
+                    action_inputs=action_inputs,
+                    followup_author_gate_state=self.state.followup_author_gate_state,
+                    final_answer_packet=self.state.final_answer_packet,
+                    final_answer_authority_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                    observed_output_facts=observed_output_facts,
+                )
+                compliance = derive_followup_author_observation_compliance(
+                    final_answer_packet=self.state.final_answer_packet,
+                    final_answer_authority_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                    followup_author_gate_state=self.state.followup_author_gate_state,
+                    observed_output_facts=observed_output_facts,
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            author_state = {
+                **canonical_record.to_dict(),
+                **compliance,
+                "owner": "RunKernel.FollowupAuthorObservation",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+            }
+            flags = _safe_mapping(author_state.get("behavior_boundary_flags"))
+            _require_followup_flags_false(
+                flags,
+                _FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS,
+                context="follow-up Author observation",
+            )
+            if author_state.get("author_output_observed") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation must observe Author output facts"
+                )
+            if author_state.get("packet_authority_consumed") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation must consume packet authority"
+                )
+            if flags.get("author_output_observed") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation flags must record output observation"
+                )
+            if flags.get("packet_authority_consumed") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation flags must consume packet authority"
+                )
+            if author_state.get("author_activation_allowed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation must keep Author activation closed"
+                )
+            if author_state.get("author_execution_deferred") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation must defer Author execution"
+                )
+            if author_state.get("final_text_included") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation must not retain final text"
+                )
+            if author_state.get("live_validation_not_run") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up Author observation must not run live validation"
+                )
+            self.state.followup_author_observation_state = author_state
+            self.state.followup_author_observation_projection = {
+                "owner": "RunKernel.FollowupAuthorObservation",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": author_state.get("schema_version"),
+                "author_observation_id": author_state.get(
+                    "author_observation_id"
+                ),
+                "observation_id": author_state.get("observation_id"),
+                "run_id": author_state.get("run_id"),
+                "checkpoint_id": author_state.get("checkpoint_id"),
+                "followup_authorization_consumption_id": author_state.get(
+                    "followup_authorization_consumption_id"
+                ),
+                "sealed_candidate_id": author_state.get("sealed_candidate_id"),
+                "followup_execution_id": author_state.get("followup_execution_id"),
+                "execution_id": author_state.get("execution_id"),
+                "followup_evidence_intake_id": author_state.get(
+                    "followup_evidence_intake_id"
+                ),
+                "intake_id": author_state.get("intake_id"),
+                "followup_sufficiency_recheck_id": author_state.get(
+                    "followup_sufficiency_recheck_id"
+                ),
+                "recheck_id": author_state.get("recheck_id"),
+                "followup_final_answer_packet_id": author_state.get(
+                    "followup_final_answer_packet_id"
+                ),
+                "packet_preparation_id": author_state.get("packet_preparation_id"),
+                "followup_author_gate_id": author_state.get(
+                    "followup_author_gate_id"
+                ),
+                "author_gate_id": author_state.get("author_gate_id"),
+                "packet_id": author_state.get("packet_id"),
+                "provider_job_kind": author_state.get("provider_job_kind"),
+                "component_id": author_state.get("component_id"),
+                "source_obligation_id": author_state.get("source_obligation_id"),
+                "requirement_ids": author_state.get("requirement_ids", []),
+                "expected_source_classes": author_state.get(
+                    "expected_source_classes",
+                    [],
+                ),
+                "final_answer_packet_mode": author_state.get(
+                    "final_answer_packet_mode"
+                ),
+                "author_gate_mode": author_state.get("author_gate_mode"),
+                "fixture_author_observation_mode": author_state.get(
+                    "fixture_author_observation_mode"
+                ),
+                "final_answer_packet_digest": author_state.get(
+                    "final_answer_packet_digest"
+                ),
+                "final_answer_authority_projection_digest": author_state.get(
+                    "final_answer_authority_projection_digest"
+                ),
+                "followup_author_gate_digest": author_state.get(
+                    "followup_author_gate_digest"
+                ),
+                "author_output_observed": True,
+                "packet_authority_consumed": True,
+                "packet_authority_compliance_status": author_state.get(
+                    "packet_authority_compliance_status"
+                ),
+                "citation_compliance_status": author_state.get(
+                    "citation_compliance_status"
+                ),
+                "caveat_compliance_status": author_state.get(
+                    "caveat_compliance_status"
+                ),
+                "prohibited_upgrade_compliance_status": author_state.get(
+                    "prohibited_upgrade_compliance_status"
+                ),
+                "source_bound_unknown_compliance_status": author_state.get(
+                    "source_bound_unknown_compliance_status"
+                ),
+                "missing_obligation_compliance_status": author_state.get(
+                    "missing_obligation_compliance_status"
+                ),
+                "citation_eligible_source_ids": author_state.get(
+                    "citation_eligible_source_ids",
+                    [],
+                ),
+                "cited_source_ids": author_state.get("cited_source_ids", []),
+                "unauthorized_citation_source_ids": author_state.get(
+                    "unauthorized_citation_source_ids",
+                    [],
+                ),
+                "missing_mandatory_caveats": author_state.get(
+                    "missing_mandatory_caveats",
+                    [],
+                ),
+                "prohibited_upgrade_violations": author_state.get(
+                    "prohibited_upgrade_violations",
+                    [],
+                ),
+                "unacknowledged_source_bound_unknowns": author_state.get(
+                    "unacknowledged_source_bound_unknowns",
+                    [],
+                ),
+                "unacknowledged_missing_obligations": author_state.get(
+                    "unacknowledged_missing_obligations",
+                    [],
+                ),
+                "report_hash": author_state.get("report_hash"),
+                "report_length": author_state.get("report_length"),
+                "final_text_hash": author_state.get("final_text_hash"),
+                "final_text_length": author_state.get("final_text_length"),
+                "final_text_included": False,
+                "author_activation_allowed": False,
+                "author_execution_deferred": True,
+                "author_executor_invoked": False,
+                "model_called": False,
+                "author_prompt_changed": False,
+                "author_prose_behavior_changed": False,
+                "citation_rendering_changed": False,
+                "citation_formatter_invoked": False,
+                "product_answer_behavior_changed": False,
+                "live_validation_not_run": True,
+                "behavior_boundary_flags": flags,
+                "canonical_final_answer_packet_ref": {
+                    "owner": "RunKernel.FinalAnswerPacket",
+                    "canonical_state": True,
+                    "packet_id": author_state.get("packet_id"),
+                    "projection_stage": FINAL_ANSWER_PACKET_STAGE,
+                },
+                "canonical_followup_author_gate_ref": {
+                    "owner": "RunKernel.FollowupAuthorGate",
+                    "canonical_state": True,
+                    "author_gate_id": author_state.get("author_gate_id"),
+                    "projection_stage": FOLLOWUP_AUTHOR_GATE_STAGE,
+                },
+            }
+            self.state.followup_author_observation_history.append(
+                deepcopy(self.state.followup_author_observation_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_observation_projection
+            )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
@@ -3177,6 +3629,106 @@ def _validate_followup_author_gate_observation_binding(
         )
 
 
+def _validate_followup_author_observation_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    observed_author_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "run_id",
+        "checkpoint_id",
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_evidence_intake_id",
+        "intake_id",
+        "followup_sufficiency_recheck_id",
+        "recheck_id",
+        "followup_final_answer_packet_id",
+        "packet_preparation_id",
+        "followup_author_gate_id",
+        "author_gate_id",
+        "packet_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "fixture_execution_mode",
+        "evidence_ledger_intake_mode",
+        "sufficiency_recheck_mode",
+        "final_answer_packet_mode",
+        "author_gate_mode",
+        "fixture_author_observation_mode",
+        "final_answer_packet_digest",
+        "final_answer_authority_projection_digest",
+        "followup_author_gate_digest",
+    ):
+        if observed_author_state.get(binding_field) != action_inputs.get(
+            binding_field
+        ):
+            raise RunKernelTransitionError(
+                "follow-up Author observation "
+                f"{binding_field} does not match authorized action"
+            )
+    if _followup_token_list(
+        observed_author_state.get("requirement_ids")
+    ) != _followup_token_list(action_inputs.get("requirement_ids")):
+        raise RunKernelTransitionError(
+            "follow-up Author observation requirement_ids do not match "
+            "authorized action"
+        )
+    if _followup_token_list(
+        observed_author_state.get("expected_source_classes")
+    ) != _followup_token_list(action_inputs.get("expected_source_classes")):
+        raise RunKernelTransitionError(
+            "follow-up Author observation expected_source_classes do not match "
+            "authorized action"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up Author observation action must keep provider unlicensed"
+        )
+    if action_inputs.get("final_answer_packet_mode") != (
+        FOLLOWUP_FINAL_ANSWER_PACKET_MODE
+    ):
+        raise RunKernelTransitionError(
+            "follow-up Author observation action must consume fixture-only packet"
+        )
+    if action_inputs.get("author_gate_mode") != FOLLOWUP_AUTHOR_GATE_MODE:
+        raise RunKernelTransitionError(
+            "follow-up Author observation action must consume fixture-only gate"
+        )
+    if action_inputs.get("fixture_author_observation_mode") != (
+        FOLLOWUP_AUTHOR_OBSERVATION_MODE
+    ):
+        raise RunKernelTransitionError(
+            "follow-up Author observation action must be fixture-only"
+        )
+    for flag in (
+        "author_activation_allowed",
+        "author_executor_invoked",
+        "model_called",
+        "author_prompt_changed",
+        "author_prose_behavior_changed",
+        "citation_rendering_changed",
+        "citation_formatter_invoked",
+        "product_answer_behavior_changed",
+        "final_text_included",
+    ):
+        if action_inputs.get(flag) is not False:
+            raise RunKernelTransitionError(
+                f"follow-up Author observation action must keep {flag}=False"
+            )
+    if action_inputs.get("author_execution_deferred") is not True:
+        raise RunKernelTransitionError(
+            "follow-up Author observation action must defer Author execution"
+        )
+    if action_inputs.get("live_validation_not_run") is not True:
+        raise RunKernelTransitionError(
+            "follow-up Author observation action must not run live validation"
+        )
+
+
 def _build_followup_evidence_intake_ledger_observation(
     *,
     intake_state: Mapping[str, Any],
@@ -3471,6 +4023,7 @@ __all__ = [
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
+    "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_SUFFICIENCY_RECHECK_STAGE",
     "MAIN_RETRIEVAL_STAGE",
