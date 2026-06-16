@@ -294,7 +294,7 @@ def test_diagnostics_exclude_raw_private_payload_surfaces() -> None:
                 "raw_page_text": "blocked raw page text",
                 "prompt": "blocked raw prompt",
                 "model_output": "blocked model output",
-                "payload": {"secret": "blocked payload"},
+                "payload": {"private_payload_marker": "blocked payload"},
                 "env": "blocked env value",
                 "db_row": "blocked db row",
                 "cache_row": "blocked cache row",
