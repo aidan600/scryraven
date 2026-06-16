@@ -157,18 +157,53 @@ def _fake_official_search(_query: str) -> list[dict[str, Any]]:
     ]
 
 
+def _fake_lower_then_official_search(_query: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": "Mileage rate explainer from a fleet vendor",
+            "url": "https://cardata.co/blog/mileage-rate",
+            "domain": "cardata.co",
+            "snippet": "raw rank 1 snippet must not be retained",
+            "text": "raw rank 1 text must not be retained",
+            "payload": {"placeholder": "blocked_rank_1"},
+        },
+        {
+            "title": "IRS announces 2026 standard mileage rates",
+            "url": "https://www.irs.gov/newsroom/irs-announces-2026-standard-mileage-rates",
+            "domain": "irs.gov",
+            "snippet": "raw rank 2 snippet must not be retained",
+            "raw_content": "raw rank 2 content must not be retained",
+            "payload": {"placeholder": "blocked_rank_2"},
+        },
+    ]
+
+
+def _fake_lower_only_search(_query: str) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": "Mileage rate explainer from a fleet vendor",
+            "url": "https://cardata.co/blog/mileage-rate",
+            "domain": "cardata.co",
+            "snippet": "raw lower-tier snippet must not be retained",
+            "text": "raw lower-tier text must not be retained",
+            "payload": {"placeholder": "blocked_lower_only"},
+        }
+    ]
+
+
 def _execute_live_gate(
     action: AuthorizedAction,
     *,
     provider_search: Any = _fake_official_search,
     config_available: bool = True,
+    provider_name: str = "fake_live_search",
 ) -> Any:
     return execute_live_gated_followup_provider_job_validation_action(
         action,
         live_validation_authorized=True,
         provider_search=provider_search,
         provider_config_available=lambda: config_available,
-        provider_name="fake_live_search",
+        provider_name=provider_name,
     )
 
 
@@ -310,6 +345,159 @@ def test_live_gate_returns_sanitized_candidate_facts_only() -> None:
     assert candidate["source_tier"] == "official"
     assert candidate["source_class"] == "official_government"
     assert candidate["authorized_query"] == AG96I3B_EXACT_VALIDATION_QUERY
+
+
+def test_official_current_selector_chooses_lower_rank_official_candidate() -> None:
+    kernel = _authorized_kernel()
+    action = _provider_job_action(kernel)
+
+    result = _execute_live_gate(
+        action,
+        provider_search=_fake_lower_then_official_search,
+    )
+
+    record = result.validation_record.to_dict()
+    candidate = record["sanitized_candidate_facts"]
+    diagnostics = record["provider_result_set_diagnostics"]
+    assert candidate["domain"] == "irs.gov"
+    assert candidate["url"].startswith("https://www.irs.gov/")
+    assert candidate["result_status"] == "candidate_acquired"
+    assert candidate["bridge_only"] is False
+    assert diagnostics["provider_result_count"] == 2
+    assert diagnostics["sanitized_result_count"] == 2
+    assert diagnostics["selected_candidate_rank"] == 2
+    assert diagnostics["selected_candidate_reason"] == (
+        "official_current_candidate_selected"
+    )
+    assert diagnostics["first_failure_layer"] == "none"
+    assert [item["domain"] for item in diagnostics["sanitized_results"]] == [
+        "cardata.co",
+        "irs.gov",
+    ]
+
+
+def test_no_official_result_records_bridge_hint_and_ledger_does_not_admit() -> None:
+    kernel = _authorized_kernel()
+    action = _provider_job_action(kernel)
+
+    result = _execute_live_gate(action, provider_search=_fake_lower_only_search)
+    kernel.reduce(result.provider_job_action_result.observation)
+    _intake_provider_job(kernel)
+
+    record = result.validation_record.to_dict()
+    candidate = record["sanitized_candidate_facts"]
+    diagnostics = record["provider_result_set_diagnostics"]
+    intake = kernel.state.followup_evidence_intake_state
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+
+    assert record["stop_reason"] == "no_satisfying_official_current_candidate"
+    assert candidate["domain"] == "cardata.co"
+    assert candidate["result_status"] == "bridge_only"
+    assert candidate["bridge_only"] is True
+    assert diagnostics["selected_candidate_rank"] == 1
+    assert diagnostics["selected_candidate_reason"] == (
+        "no_satisfying_official_current_candidate_bridge_hint_recorded"
+    )
+    assert diagnostics["first_failure_layer"] == "official_current_selection"
+    assert intake["evidence_ledger_candidate_admitted"] is False
+    assert intake["source_obligation_satisfied"] is False
+    assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
+
+
+def test_scout_bridge_hint_mode_records_hints_without_official_satisfaction() -> None:
+    kernel = _authorized_kernel()
+    action = _replace_action_inputs(
+        _provider_job_action(kernel),
+        provider_job_kind=ProviderJobKind.SCOUT_DISAMBIGUATION.value,
+    )
+
+    result = _execute_live_gate(
+        action,
+        provider_search=_fake_lower_then_official_search,
+    )
+
+    record = result.validation_record.to_dict()
+    candidate = record["sanitized_candidate_facts"]
+    diagnostics = record["provider_result_set_diagnostics"]
+    flags = record["behavior_boundary_flags"]
+    assert result.provider_job_action_result is None
+    assert record["stop_reason"] == "provider_hints_recorded"
+    assert candidate["domain"] == "cardata.co"
+    assert candidate["result_status"] == "bridge_only"
+    assert candidate["bridge_only"] is True
+    assert flags["official_current_candidate_acquisition_allowed"] is True
+    assert flags["scout_disambiguation_allowed"] is True
+    assert flags["bridge_hint_discovery_allowed"] is True
+    assert flags["other_provider_job_kinds_allowed"] is False
+    assert diagnostics["provider_job_kind"] == "scout_disambiguation"
+    assert diagnostics["selected_candidate_reason"] == (
+        "scout_bridge_hint_recorded_not_official_current_satisfaction"
+    )
+    assert diagnostics["first_failure_layer"] == "official_current_selection"
+
+
+def test_scout_only_provider_surface_records_alignment_mismatch() -> None:
+    kernel = _authorized_kernel()
+    action = _provider_job_action(kernel)
+
+    result = _execute_live_gate(
+        action,
+        provider_search=_fake_lower_then_official_search,
+        provider_name="brave_reconnaissance",
+    )
+
+    record = result.validation_record.to_dict()
+    candidate = record["sanitized_candidate_facts"]
+    diagnostics = record["provider_result_set_diagnostics"]
+    assert candidate["domain"] == "irs.gov"
+    assert candidate["result_status"] == "bridge_only"
+    assert candidate["bridge_only"] is True
+    assert diagnostics["selected_candidate_rank"] == 2
+    assert diagnostics["provider_surface_role"] == "scout_bridge_hint"
+    assert diagnostics["provider_job_surface_alignment_status"] == (
+        "provider_surface_mismatch"
+    )
+    assert diagnostics["selected_candidate_reason"] == (
+        "official_current_candidate_visible_on_scout_bridge_surface"
+    )
+    assert diagnostics["first_failure_layer"] == "provider_job_surface_alignment"
+
+
+def test_result_set_diagnostics_include_multiple_sanitized_ranks_only() -> None:
+    kernel = _authorized_kernel()
+    action = _provider_job_action(kernel)
+
+    result = _execute_live_gate(
+        action,
+        provider_search=_fake_lower_then_official_search,
+    )
+
+    diagnostics = result.validation_record.to_dict()[
+        "provider_result_set_diagnostics"
+    ]
+    serialized = json.dumps(diagnostics, sort_keys=True)
+    assert diagnostics["provider_result_count"] == 2
+    assert diagnostics["sanitized_result_count"] == 2
+    assert [item["rank"] for item in diagnostics["sanitized_results"]] == [1, 2]
+    assert {
+        "rank",
+        "url",
+        "title",
+        "domain",
+        "source_class",
+        "source_tier",
+        "currentness_signal",
+        "candidate_fit_status",
+    } == set(diagnostics["sanitized_results"][0])
+    for forbidden in (
+        "snippet",
+        "raw_content",
+        "raw rank",
+        "payload",
+        "blocked_rank_1",
+        "blocked_rank_2",
+    ):
+        assert forbidden not in serialized
 
 
 def test_live_gate_preserves_runkernel_state_and_same_evidence_ledger_path() -> None:
