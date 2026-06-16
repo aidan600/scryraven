@@ -150,3 +150,14 @@ AG-96I2J — Follow-up fixture spine focused-test fixture helper diet
 
 That phase should only consolidate remaining AG-96I2C-F test setup where it
 improves readability, and should keep adversarial mutation tests explicit.
+
+## AG-96I2J Follow-up Result
+
+AG-96I2J completed that focused-test helper diet:
+[AG96I2J_FOLLOWUP_FOCUSED_TEST_FIXTURE_HELPER_DIET.md](AG96I2J_FOLLOWUP_FOCUSED_TEST_FIXTURE_HELPER_DIET.md).
+
+Result: the older AG-96I2C-F focused tests now share fixture-only stage-through
+setup through `tests.helpers.followup_fixture_spine`, while spoofing,
+binding-mismatch, closed-surface, and stage-specific mutation logic remains
+local in the tests that explain it. Runtime files did not change, and RunKernel
+authority did not move.

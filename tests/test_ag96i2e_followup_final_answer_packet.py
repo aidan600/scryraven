@@ -7,16 +7,11 @@ from typing import Any
 
 import pytest
 
-from core.followup_authorization_runtime import (
-    execute_followup_authorization_consumption_action,
-)
-from core.followup_deliberation import GapType, build_followup_deliberation_checkpoint
+from core.followup_deliberation import GapType
 from core.followup_deliberation_validation import passive_module_static_guard
-from core.followup_evidence_intake_runtime import execute_followup_evidence_intake_action
 from core.followup_execution_runtime import (
     FIXTURE_EXECUTION_MODE,
     execute_followup_fixture,
-    execute_followup_fixture_action,
 )
 from core.followup_final_answer_packet_runtime import (
     FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
@@ -24,172 +19,30 @@ from core.followup_final_answer_packet_runtime import (
 )
 from core.followup_sufficiency_recheck_runtime import (
     FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
-    execute_followup_sufficiency_recheck_action,
 )
 from core.run_kernel import (
     FINAL_ANSWER_PACKET_STAGE,
     FOLLOWUP_FINAL_ANSWER_PACKET_STAGE,
     Observation,
-    RunKernel,
     RunKernelTransitionError,
+)
+from tests.helpers.followup_fixture_spine import (
+    build_followup_fixture_checkpoint,
+    consume_followup_final_answer_packet,
+    followup_fixture_gap,
+    followup_fixture_payload,
+    run_followup_through_sufficiency_recheck,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def _budget(**overrides: int) -> dict[str, int]:
-    base = {
-        "cost_points_remaining": 8,
-        "provider_calls_remaining": 3,
-        "fetches_remaining": 3,
-        "read_units_remaining": 3,
-        "followup_rounds_remaining": 2,
-        "meso_authorizations_remaining": 3,
-        "macro_hops_remaining": 1,
-    }
-    base.update(overrides)
-    return base
-
-
-def _component(component_id: str, *, served: bool = True) -> dict[str, Any]:
-    return {
-        "component_id": component_id,
-        "central": True,
-        "served_minimum": served,
-        "minimum_provider_calls": 1,
-        "minimum_fetches": 1,
-        "minimum_read_units": 1,
-    }
-
-
-def _gap(
-    gap_type: str,
-    *,
-    gap_id: str = "gap.official",
-    component_id: str = "component-rule",
-    obligation_id: str = "obligation-official-current",
-    requirement_id: str = "requirement-official-current",
-    **overrides: Any,
-) -> dict[str, Any]:
-    payload = {
-        "gap_id": gap_id,
-        "gap_type": gap_type,
-        "component_id": component_id,
-        "source_obligation_id": obligation_id,
-        "requirement_ids": [requirement_id],
-        "severity": "central_required",
-        "evidence_indicators": ["required_obligation_unsatisfied"],
-    }
-    payload.update(overrides)
-    return payload
-
-
-def _checkpoint(**overrides: Any) -> Any:
-    fixture = {
-        "run_id": "ag96i2e-fixture",
-        "checkpoint_id": "after-first-pass",
-        "mode": "balanced",
-        "components": [_component("component-rule")],
-        "budget_ledger": _budget(),
-        "gaps": [_gap(GapType.OFFICIAL_CURRENT_GAP.value)],
-        "sufficiency_handoff": {
-            "satisfied_obligations": [],
-            "missing_obligations": ["obligation-official-current"],
-            "recommended_final_posture": "answer_with_caveats",
-            "mandatory_caveats": ["prior_missing_official_current_caveat"],
-            "prohibited_upgrades": ["prior_do_not_upgrade_fixture_gap"],
-        },
-    }
-    fixture.update(overrides)
-    return build_followup_deliberation_checkpoint(fixture)
-
-
-def _fixture_payload(**overrides: Any) -> dict[str, Any]:
-    payload = {
-        "result_status": "fixture_success",
-        "summary": "Sanitized official current fixture candidate observed.",
-        "url": "https://agency.example/current-rule",
-        "title": "Current Official Rule",
-        "domain": "agency.example",
-        "source_tier": "official",
-        "source_class": "official_current_rules",
-        "currentness_signal": "current",
-        "answer_bearing_extract_available": True,
-        "eligible_for_stronger_obligation": True,
-    }
-    payload.update(overrides)
-    return payload
-
-
-def _through_recheck(
-    *,
-    checkpoint: Any | None = None,
-    fixture_payload: dict[str, Any] | None = None,
-    prior_sufficiency: dict[str, Any] | None = None,
-) -> RunKernel:
-    kernel = RunKernel.start(run_id="ag96i2e-fixture", request_id="request-1")
-    auth_action = kernel.authorize_followup_authorization_consumption(
-        inputs={"checkpoint_id": "after-first-pass"}
-    )
-    auth_result = execute_followup_authorization_consumption_action(
-        auth_action,
-        checkpoint=checkpoint or _checkpoint(),
-    )
-    kernel.reduce(auth_result.observation)
-    exec_action = kernel.authorize_followup_fixture_execution(
-        candidate_id="auth.candidate.001",
-        inputs={"fixture_execution_mode": FIXTURE_EXECUTION_MODE},
-    )
-    exec_result = execute_followup_fixture_action(
-        exec_action,
-        authorization_state=kernel.state.followup_authorization_state,
-        sealed_candidate_id="auth.candidate.001",
-        fixture_result_payload=fixture_payload or _fixture_payload(),
-        execution_mode=FIXTURE_EXECUTION_MODE,
-    )
-    kernel.reduce(exec_result.observation)
-    intake_action = kernel.authorize_followup_evidence_intake()
-    intake_result = execute_followup_evidence_intake_action(
-        intake_action,
-        followup_execution_state=kernel.state.followup_execution_state,
-        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
-    )
-    kernel.reduce(intake_result.observation)
-    if prior_sufficiency is not None:
-        kernel.state.sufficiency_judgment_projection = prior_sufficiency
-    recheck_action = kernel.authorize_followup_sufficiency_recheck()
-    recheck_result = execute_followup_sufficiency_recheck_action(
-        recheck_action,
-        followup_evidence_intake_state=kernel.state.followup_evidence_intake_state,
-        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
-        prior_sufficiency_judgment_projection=kernel.state.sufficiency_judgment_projection,
-        sufficiency_handoff=kernel.state.followup_authorization_state.get(
-            "sufficiency_handoff",
-            {},
-        ),
-    )
-    kernel.reduce(recheck_result.observation)
-    return kernel
-
-
-def _prepare_packet(kernel: RunKernel):
-    action = kernel.authorize_followup_final_answer_packet_prepare()
-    result = execute_followup_final_answer_packet_prepare_action(
-        action,
-        followup_sufficiency_recheck_state=kernel.state.followup_sufficiency_recheck_state,
-        sufficiency_judgment_projection=kernel.state.sufficiency_judgment_projection,
-        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
-        followup_evidence_intake_state=kernel.state.followup_evidence_intake_state,
-    )
-    kernel.reduce(result.observation)
-    return action, result
+RUN_ID = "ag96i2e-fixture"
 
 
 def test_happy_path_prepares_fixture_only_packet_from_rechecked_state() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     before_observed = deepcopy(kernel.state.final_answer_packet)
 
-    _action, result = _prepare_packet(kernel)
+    _action, result = consume_followup_final_answer_packet(kernel)
 
     state = kernel.state.followup_final_answer_packet_state
     projection = kernel.state.followup_final_answer_packet_projection
@@ -230,9 +83,10 @@ def test_packet_consumes_sufficiency_caveats_obligations_unknowns_and_conflicts(
         "mandatory_caveats": ["prior_conflict_must_be_caveated"],
         "prohibited_upgrades": ["prior_do_not_resolve_conflict_without_source"],
     }
-    checkpoint = _checkpoint(
+    checkpoint = build_followup_fixture_checkpoint(
+        run_id=RUN_ID,
         gaps=[
-            _gap(
+            followup_fixture_gap(
                 GapType.SOURCE_BOUND_NUMERIC_GAP.value,
                 gap_id="gap.numeric",
                 obligation_id="obligation-source-bound-numeric",
@@ -240,9 +94,10 @@ def test_packet_consumes_sufficiency_caveats_obligations_unknowns_and_conflicts(
             )
         ]
     )
-    kernel = _through_recheck(
+    kernel = run_followup_through_sufficiency_recheck(
+        run_id=RUN_ID,
         checkpoint=checkpoint,
-        fixture_payload=_fixture_payload(
+        fixture_payload=followup_fixture_payload(
             source_class="sourced_numeric_values",
             source_tier="official",
             title="Numeric source fixture",
@@ -250,7 +105,7 @@ def test_packet_consumes_sufficiency_caveats_obligations_unknowns_and_conflicts(
         prior_sufficiency=prior,
     )
 
-    _prepare_packet(kernel)
+    consume_followup_final_answer_packet(kernel)
 
     packet = kernel.state.final_answer_packet
     projection = kernel.state.followup_final_answer_packet_projection
@@ -271,9 +126,9 @@ def test_packet_consumes_sufficiency_caveats_obligations_unknowns_and_conflicts(
 
 
 def test_packet_eligible_evidence_refs_come_from_accepted_ledger_custody() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
 
-    _prepare_packet(kernel)
+    consume_followup_final_answer_packet(kernel)
 
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
     accepted_candidate_id = ledger["candidate_records"][0]["candidate_id"]
@@ -299,9 +154,12 @@ def test_packet_eligible_evidence_refs_come_from_accepted_ledger_custody() -> No
 def test_non_satisfying_ledger_candidates_do_not_become_packet_eligible(
     payload: dict[str, Any],
 ) -> None:
-    kernel = _through_recheck(fixture_payload=_fixture_payload(**payload))
+    kernel = run_followup_through_sufficiency_recheck(
+        run_id=RUN_ID,
+        fixture_payload=followup_fixture_payload(**payload),
+    )
 
-    _prepare_packet(kernel)
+    consume_followup_final_answer_packet(kernel)
 
     assert kernel.state.final_answer_packet["evidence_allowed"] == []
     assert kernel.state.final_answer_packet["citation_eligible"] == []
@@ -314,7 +172,7 @@ def test_non_satisfying_ledger_candidates_do_not_become_packet_eligible(
 
 
 def test_reducer_rejects_observation_bound_to_different_recheck() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     action = kernel.authorize_followup_final_answer_packet_prepare()
     result = execute_followup_final_answer_packet_prepare_action(
         action,
@@ -340,7 +198,7 @@ def test_reducer_rejects_observation_bound_to_different_recheck() -> None:
 
 
 def test_authorization_inputs_cannot_override_canonical_packet_bindings() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     action = kernel.authorize_followup_final_answer_packet_prepare(
         inputs={
             "packet_id": "malicious-packet",
@@ -385,7 +243,7 @@ def test_authorization_inputs_cannot_override_canonical_packet_bindings() -> Non
 
 
 def test_observation_spoofing_is_overwritten_by_canonical_packet_derivation() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     action = kernel.authorize_followup_final_answer_packet_prepare()
     result = execute_followup_final_answer_packet_prepare_action(
         action,
@@ -442,7 +300,7 @@ def test_observation_spoofing_is_overwritten_by_canonical_packet_derivation() ->
 
 
 def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     before = {
         "search_judgment": deepcopy(kernel.state.search_judgment),
         "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
@@ -450,7 +308,7 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
         "final_answer_outcome": deepcopy(kernel.state.final_answer_outcome),
     }
 
-    _prepare_packet(kernel)
+    consume_followup_final_answer_packet(kernel)
 
     assert kernel.state.search_judgment == before["search_judgment"]
     assert kernel.state.search_judgment_projection == before[
@@ -506,16 +364,16 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
 
 
 def test_second_packet_prepare_for_same_recheck_is_rejected() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
 
-    _prepare_packet(kernel)
+    consume_followup_final_answer_packet(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="already prepared"):
         kernel.authorize_followup_final_answer_packet_prepare()
 
 
 def test_adapter_requires_authorized_action_type() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     wrong_action = kernel.authorize_followup_sufficiency_recheck()
 
     with pytest.raises(ValueError, match="authorized action type"):
@@ -529,7 +387,7 @@ def test_adapter_requires_authorized_action_type() -> None:
 
 
 def test_cross_recheck_observation_from_second_fixture_is_rejected() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     action_for_a = kernel.authorize_followup_final_answer_packet_prepare()
     candidate_b = deepcopy(kernel.state.followup_authorization_state["sealed_candidates"][0])
     candidate_b["candidate_id"] = "auth.candidate.002"
@@ -538,7 +396,7 @@ def test_cross_recheck_observation_from_second_fixture_is_rejected() -> None:
     b_execution = execute_followup_fixture(
         kernel.state.followup_authorization_state,
         sealed_candidate_id="auth.candidate.002",
-        fixture_result_payload=_fixture_payload(title="Candidate B"),
+        fixture_result_payload=followup_fixture_payload(title="Candidate B"),
         execution_mode=FIXTURE_EXECUTION_MODE,
     ).to_dict()
 
@@ -563,7 +421,7 @@ def test_cross_recheck_observation_from_second_fixture_is_rejected() -> None:
 
 
 def test_packet_authorization_binds_sufficiency_and_recheck_digests() -> None:
-    kernel = _through_recheck()
+    kernel = run_followup_through_sufficiency_recheck(run_id=RUN_ID)
     action = kernel.authorize_followup_final_answer_packet_prepare()
 
     assert action.inputs["sufficiency_recheck_mode"] == FOLLOWUP_SUFFICIENCY_RECHECK_MODE
