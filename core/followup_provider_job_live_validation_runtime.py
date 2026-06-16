@@ -13,13 +13,18 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Mapping
-from urllib.parse import urlparse
 
 from core.followup_deliberation import ProviderJobKind, clean_text, clean_token
 from core.followup_provider_job_execution_runtime import (
     FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
     FollowupProviderJobExecutionActionResult,
     execute_followup_provider_job_action,
+)
+from core.followup_provider_result_set_diagnostics import (
+    DISCOVERY_UNCONSTRAINED,
+    build_official_current_discovery_diagnostics,
+    sanitize_result_set_diagnostics,
+    selected_or_bridge_result,
 )
 
 AG96I3B_LIVE_VALIDATION_SCHEMA_VERSION = "ag96i3b_live_followup_validation_v2"
@@ -65,13 +70,6 @@ _SCOUT_BRIDGE_JOB_KINDS = frozenset(
         ProviderJobKind.SCOUT_DISAMBIGUATION.value,
         ProviderJobKind.BRIDGE_HINT_DISCOVERY.value,
     }
-)
-_SCOUT_BRIDGE_PROVIDER_NAMES = frozenset({"brave_reconnaissance"})
-_OFFICIAL_CURRENT_SOURCE_CLASSES = frozenset(
-    {"official_government", "official_current_rules"}
-)
-_CURRENTNESS_FAILURE_SIGNALS = frozenset(
-    {"stale", "outdated", "historical_only", "off_topic", "not_current"}
 )
 
 
@@ -132,7 +130,7 @@ class FollowupProviderJobLiveValidationRecord:
             "result_status": clean_token(self.result_status),
             "stop_reason": clean_token(self.stop_reason, limit=180),
             "sanitized_candidate_facts": candidate,
-            "provider_result_set_diagnostics": _sanitize_result_set_diagnostics(
+            "provider_result_set_diagnostics": sanitize_result_set_diagnostics(
                 self.sanitized_result_set_diagnostics,
                 provider_job_kind=self.provider_job_kind,
                 provider_name=self.provider_name,
@@ -318,34 +316,23 @@ def _candidate_from_search_results(
     authorized_query: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     provider_job_kind = clean_token(provider_job_kind)
-    result_records = [
-        _sanitized_result_record(item, rank=index)
-        for index, item in enumerate(results, start=1)
-    ]
-    selected = _select_result_record(
-        result_records,
+    diagnostics = build_official_current_discovery_diagnostics(
+        results,
         provider_job_kind=provider_job_kind,
         provider_name=provider_name,
+        provider_surface_role="candidate_acquisition",
+        acquisition_mode=DISCOVERY_UNCONSTRAINED,
+        authorized_query_ref=authorized_query_ref,
+        authorized_query=authorized_query,
     )
-    diagnostics = _result_set_diagnostics(
-        result_records,
-        selected=selected,
-        provider_job_kind=provider_job_kind,
-        provider_name=provider_name,
-    )
+    selected = selected_or_bridge_result(diagnostics)
     if selected is None:
         return _no_result_candidate(
             provider_name=provider_name,
             authorized_query_ref=authorized_query_ref,
             authorized_query=authorized_query,
         ), diagnostics
-    selected_reason = str(diagnostics.get("selected_candidate_reason") or "")
-    bridge_only = _selected_candidate_is_bridge_only(
-        selected,
-        provider_job_kind=provider_job_kind,
-        selected_reason=selected_reason,
-        provider_name=provider_name,
-    )
+    bridge_only = bool(diagnostics.get("bridge_only"))
     result_status = (
         "bridge_only" if bridge_only else LIVE_VALIDATION_STATUS_CANDIDATE_ACQUIRED
     )
@@ -550,217 +537,6 @@ def _brave_provider_search(query: str) -> Iterable[Mapping[str, Any]]:
     )
 
 
-def _source_class_for_domain(domain: str | None) -> tuple[str | None, str]:
-    normalized = clean_text(domain, limit=160) or ""
-    if normalized.endswith(".gov") or normalized == "irs.gov":
-        return "official", "official_government"
-    if normalized.endswith(".edu"):
-        return "academic", "academic_or_expert"
-    return None, "unknown"
-
-
-def _currentness_signal(*, title: str | None, url: str | None) -> str:
-    text = f"{title or ''} {url or ''}".casefold()
-    if "2026" in text or "current" in text:
-        return "current_candidate_signal"
-    return "currentness_not_verified_by_validation_gate"
-
-
-def _sanitized_result_record(value: Mapping[str, Any], *, rank: int) -> dict[str, Any]:
-    source = _mapping(value)
-    url = clean_text(source.get("url"), limit=500)
-    domain = clean_text(source.get("domain"), limit=160) or _domain_from_url(url)
-    title = clean_text(source.get("title"), limit=300)
-    source_tier, source_class = _source_class_for_domain(domain)
-    currentness_signal = _currentness_signal(title=title, url=url)
-    return {
-        "rank": int(rank),
-        "url": url,
-        "title": title,
-        "domain": clean_text(domain, limit=160),
-        "source_class": source_class,
-        "source_tier": source_tier,
-        "currentness_signal": currentness_signal,
-        "candidate_fit_status": _candidate_fit_status(
-            url=url,
-            source_tier=source_tier,
-            source_class=source_class,
-            currentness_signal=currentness_signal,
-        ),
-    }
-
-
-def _candidate_fit_status(
-    *,
-    url: str | None,
-    source_tier: str | None,
-    source_class: str,
-    currentness_signal: str,
-) -> str:
-    if not url:
-        return "no_url"
-    if _is_official_current_result(
-        source_tier=source_tier,
-        source_class=source_class,
-        currentness_signal=currentness_signal,
-    ):
-        return "official_current_candidate_fit"
-    if source_tier == "official" or source_class in _OFFICIAL_CURRENT_SOURCE_CLASSES:
-        return "official_currentness_unverified"
-    return "bridge_hint_only"
-
-
-def _is_official_current_result(
-    *,
-    source_tier: str | None,
-    source_class: str | None,
-    currentness_signal: str | None,
-) -> bool:
-    return (
-        source_tier == "official"
-        or source_class in _OFFICIAL_CURRENT_SOURCE_CLASSES
-    ) and clean_token(currentness_signal) not in _CURRENTNESS_FAILURE_SIGNALS
-
-
-def _select_result_record(
-    results: list[dict[str, Any]],
-    *,
-    provider_job_kind: str,
-    provider_name: str,
-) -> dict[str, Any] | None:
-    url_results = [item for item in results if item.get("url")]
-    if not url_results:
-        return None
-    if provider_job_kind == _OFFICIAL_CURRENT_JOB_KIND:
-        official_current = [
-            item
-            for item in url_results
-            if item.get("candidate_fit_status") == "official_current_candidate_fit"
-        ]
-        if official_current:
-            return official_current[0]
-    return url_results[0]
-
-
-def _result_set_diagnostics(
-    results: list[dict[str, Any]],
-    *,
-    selected: Mapping[str, Any] | None,
-    provider_job_kind: str,
-    provider_name: str,
-) -> dict[str, Any]:
-    selected_rank = int(selected.get("rank")) if selected is not None else None
-    selected_reason = _selected_candidate_reason(
-        selected,
-        provider_job_kind=provider_job_kind,
-        provider_name=provider_name,
-    )
-    return {
-        "provider_result_count": len(results),
-        "sanitized_result_count": len(results),
-        "sanitized_results": results,
-        "provider_job_kind": clean_token(provider_job_kind),
-        "provider_name": clean_token(provider_name),
-        "provider_surface_role": _provider_surface_role(provider_name),
-        "provider_job_surface_alignment_status": _provider_job_surface_alignment_status(
-            provider_job_kind=provider_job_kind,
-            provider_name=provider_name,
-        ),
-        "selected_candidate_rank": selected_rank,
-        "selected_candidate_reason": selected_reason,
-        "first_failure_layer": _first_failure_layer(
-            selected,
-            provider_job_kind=provider_job_kind,
-            selected_reason=selected_reason,
-            provider_name=provider_name,
-            results=results,
-        ),
-    }
-
-
-def _selected_candidate_reason(
-    selected: Mapping[str, Any] | None,
-    *,
-    provider_job_kind: str,
-    provider_name: str,
-) -> str:
-    if selected is None:
-        return "provider_returned_no_url_bearing_results"
-    if provider_job_kind in _SCOUT_BRIDGE_JOB_KINDS:
-        return "scout_bridge_hint_recorded_not_official_current_satisfaction"
-    if (
-        provider_job_kind == _OFFICIAL_CURRENT_JOB_KIND
-        and selected.get("candidate_fit_status") == "official_current_candidate_fit"
-    ):
-        if _provider_surface_role(provider_name) == "scout_bridge_hint":
-            return "official_current_candidate_visible_on_scout_bridge_surface"
-        return "official_current_candidate_selected"
-    if provider_job_kind == _OFFICIAL_CURRENT_JOB_KIND:
-        return "no_satisfying_official_current_candidate_bridge_hint_recorded"
-    return "candidate_recorded_for_diagnostics"
-
-
-def _first_failure_layer(
-    selected: Mapping[str, Any] | None,
-    *,
-    provider_job_kind: str,
-    selected_reason: str,
-    provider_name: str,
-    results: list[dict[str, Any]],
-) -> str:
-    if _provider_job_surface_alignment_status(
-        provider_job_kind=provider_job_kind,
-        provider_name=provider_name,
-    ) == "provider_surface_mismatch":
-        return "provider_job_surface_alignment"
-    if not results:
-        return "provider_result_set"
-    if selected is None:
-        return "candidate_url_selection"
-    if selected_reason in {
-        "no_satisfying_official_current_candidate_bridge_hint_recorded",
-        "scout_bridge_hint_recorded_not_official_current_satisfaction",
-    }:
-        return "official_current_selection"
-    return "none"
-
-
-def _selected_candidate_is_bridge_only(
-    selected: Mapping[str, Any],
-    *,
-    provider_job_kind: str,
-    selected_reason: str,
-    provider_name: str,
-) -> bool:
-    if provider_job_kind in _SCOUT_BRIDGE_JOB_KINDS:
-        return True
-    if _provider_job_surface_alignment_status(
-        provider_job_kind=provider_job_kind,
-        provider_name=provider_name,
-    ) == "provider_surface_mismatch":
-        return True
-    return selected_reason != "official_current_candidate_selected"
-
-
-def _provider_surface_role(provider_name: str) -> str:
-    if clean_token(provider_name) in _SCOUT_BRIDGE_PROVIDER_NAMES:
-        return "scout_bridge_hint"
-    return "candidate_acquisition"
-
-
-def _provider_job_surface_alignment_status(
-    *,
-    provider_job_kind: str,
-    provider_name: str,
-) -> str:
-    if (
-        provider_job_kind == _OFFICIAL_CURRENT_JOB_KIND
-        and _provider_surface_role(provider_name) == "scout_bridge_hint"
-    ):
-        return "provider_surface_mismatch"
-    return "aligned"
-
-
 def _stop_reason_for_candidate(
     candidate: Mapping[str, Any],
     *,
@@ -775,6 +551,8 @@ def _stop_reason_for_candidate(
         return "provider_surface_mismatch_bridge_hint_only"
     if selected_reason == "no_satisfying_official_current_candidate_bridge_hint_recorded":
         return "no_satisfying_official_current_candidate"
+    if selected_reason == "provider_result_set_lacked_official_current_candidate":
+        return "no_satisfying_official_current_candidate"
     if selected_reason == "scout_bridge_hint_recorded_not_official_current_satisfaction":
         return "provider_hints_recorded"
     if bool(candidate.get("bridge_only")):
@@ -788,88 +566,16 @@ def _empty_result_set_diagnostics(
     provider_name: str,
     first_failure_layer: str,
 ) -> dict[str, Any]:
-    return {
-        "provider_result_count": 0,
-        "sanitized_result_count": 0,
-        "sanitized_results": [],
-        "provider_job_kind": clean_token(provider_job_kind),
-        "provider_name": clean_token(provider_name),
-        "provider_surface_role": _provider_surface_role(provider_name),
-        "provider_job_surface_alignment_status": _provider_job_surface_alignment_status(
-            provider_job_kind=clean_token(provider_job_kind),
-            provider_name=provider_name,
-        ),
-        "selected_candidate_rank": None,
-        "selected_candidate_reason": "no_provider_result_set_available",
-        "first_failure_layer": clean_token(first_failure_layer),
-    }
-
-
-def _sanitize_result_set_diagnostics(
-    value: Mapping[str, Any],
-    *,
-    provider_job_kind: str,
-    provider_name: str,
-) -> dict[str, Any]:
-    source = _mapping(value)
-    results = []
-    for item in source.get("sanitized_results", []):
-        mapped = _mapping(item)
-        if not mapped:
-            continue
-        results.append(
-            {
-                "rank": int(mapped.get("rank") or len(results) + 1),
-                "url": clean_text(mapped.get("url"), limit=500),
-                "title": clean_text(mapped.get("title"), limit=300),
-                "domain": clean_text(mapped.get("domain"), limit=160),
-                "source_class": clean_token(mapped.get("source_class")) or "unknown",
-                "source_tier": clean_token(mapped.get("source_tier")),
-                "currentness_signal": clean_token(
-                    mapped.get("currentness_signal") or "not_evaluated"
-                ),
-                "candidate_fit_status": clean_token(
-                    mapped.get("candidate_fit_status") or "not_evaluated"
-                ),
-            }
-        )
-    return {
-        "provider_result_count": int(source.get("provider_result_count") or 0),
-        "sanitized_result_count": int(source.get("sanitized_result_count") or 0),
-        "sanitized_results": results,
-        "provider_job_kind": clean_token(
-            source.get("provider_job_kind") or provider_job_kind
-        ),
-        "provider_name": clean_token(source.get("provider_name") or provider_name),
-        "provider_surface_role": clean_token(
-            source.get("provider_surface_role")
-            or _provider_surface_role(provider_name)
-        ),
-        "provider_job_surface_alignment_status": clean_token(
-            source.get("provider_job_surface_alignment_status")
-            or _provider_job_surface_alignment_status(
-                provider_job_kind=provider_job_kind,
-                provider_name=provider_name,
-            )
-        ),
-        "selected_candidate_rank": source.get("selected_candidate_rank"),
-        "selected_candidate_reason": clean_token(
-            source.get("selected_candidate_reason") or "unknown",
-            limit=180,
-        ),
-        "first_failure_layer": clean_token(
-            source.get("first_failure_layer") or "unknown",
-            limit=180,
-        ),
-    }
-
-
-def _domain_from_url(url: str | None) -> str | None:
-    parsed = urlparse(url or "")
-    domain = parsed.netloc.casefold()
-    if domain.startswith("www."):
-        domain = domain[4:]
-    return domain or None
+    diagnostics = build_official_current_discovery_diagnostics(
+        [],
+        provider_name=provider_name,
+        provider_surface_role="candidate_acquisition",
+        provider_job_kind=provider_job_kind,
+        acquisition_mode=DISCOVERY_UNCONSTRAINED,
+    )
+    diagnostics["selected_candidate_reason"] = "no_provider_result_set_available"
+    diagnostics["first_failure_layer"] = clean_token(first_failure_layer)
+    return diagnostics
 
 
 def _behavior_boundary_flags() -> dict[str, bool]:
