@@ -26,6 +26,7 @@ SCHEMA_VERSION = "ag96i3e_brokered_provider_neutral_discovery_validation_v1"
 OUTPUT_DIR = ROOT / "output"
 LIVE_SPEND_WARNING = "This command may spend exactly one live provider/search call."
 FIXTURE_PROVIDER = "fixture"
+MAX_RESULTS_LIMIT = 10
 SUPPORTED_PROVIDERS = frozenset({"brave", "tavily", "linkup", FIXTURE_PROVIDER})
 DEFERRED_PROVIDERS = {
     "exa": (
@@ -35,11 +36,13 @@ DEFERRED_PROVIDERS = {
 }
 LIVE_BUDGET = {
     "max_provider_search_calls": 1,
+    "max_results_limit": MAX_RESULTS_LIMIT,
     "max_fetch_read_attempts": 0,
     "max_model_calls": 0,
     "max_author_executor_calls": 0,
     "retries_allowed": False,
 }
+
 
 class ProviderCallBudget:
     def __init__(self, *, max_provider_search_calls: int = 1) -> None:
@@ -90,6 +93,9 @@ def main(argv: list[str] | None = None) -> int:
     max_results = int(args.max_results)
     if max_results < 1:
         print("refusing max-results below 1", file=sys.stderr)
+        return 2
+    if max_results > MAX_RESULTS_LIMIT:
+        print(f"refusing max-results above {MAX_RESULTS_LIMIT}", file=sys.stderr)
         return 2
 
     if not fixture_mode and not _provider_config_available(provider):

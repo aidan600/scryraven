@@ -20,8 +20,8 @@ answer behavior was invoked.
 ## Runner Boundary
 
 The runner accepts an explicit provider surface, query, broker job id, ignored
-`output/` packet path, and `--max-results`. Live provider mode refuses to run
-unless the operator passes:
+`output/` packet path, and `--max-results`. `--max-results` defaults to 5 and is
+capped at 10. Live provider mode refuses to run unless the operator passes:
 
 ```text
 --confirm-live-provider-call
@@ -38,6 +38,7 @@ The live budget is fixed:
 ```json
 {
   "max_provider_search_calls": 1,
+  "max_results_limit": 10,
   "max_fetch_read_attempts": 0,
   "max_model_calls": 0,
   "max_author_executor_calls": 0,

@@ -81,6 +81,91 @@ def test_runner_refuses_output_outside_ignored_output(capsys: pytest.CaptureFixt
     assert "outside ignored repo output/" in captured.err
 
 
+def test_runner_refuses_max_results_below_one(capsys: pytest.CaptureFixture[str]) -> None:
+    runner = _load_runner_module()
+
+    result = runner.main(
+        [
+            "--provider",
+            "fixture",
+            "--query",
+            "offline fixture official current discovery smoke",
+            "--job-id",
+            "ag96i3e-offline-fixture-smoke",
+            "--output",
+            "output/ag96i3e_fixture_zero_max_results.json",
+            "--max-results",
+            "0",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 2
+    assert "below 1" in captured.err
+
+
+def test_live_provider_refuses_max_results_over_cap_before_config_or_dispatch(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runner = _load_runner_module()
+
+    monkeypatch.setattr(
+        runner,
+        "_provider_config_available",
+        lambda _provider: pytest.fail("max-results cap must be checked first"),
+    )
+    monkeypatch.setattr(
+        runner,
+        "_dispatch_provider",
+        lambda *_args, **_kwargs: pytest.fail("over-cap request must not dispatch"),
+    )
+
+    result = runner.main(
+        [
+            "--provider",
+            "brave",
+            "--query",
+            "official current discovery",
+            "--job-id",
+            "ag96i3e-brave-discovery-once",
+            "--output",
+            "output/ag96i3e_over_cap.json",
+            "--max-results",
+            str(runner.MAX_RESULTS_LIMIT + 1),
+            "--confirm-live-provider-call",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 2
+    assert f"above {runner.MAX_RESULTS_LIMIT}" in captured.err
+    assert runner.LIVE_SPEND_WARNING not in captured.out
+
+
+def test_fixture_mode_respects_max_results_cap(capsys: pytest.CaptureFixture[str]) -> None:
+    runner = _load_runner_module()
+
+    result = runner.main(
+        [
+            "--provider",
+            "fixture",
+            "--query",
+            "offline fixture official current discovery smoke",
+            "--job-id",
+            "ag96i3e-offline-fixture-smoke",
+            "--output",
+            "output/ag96i3e_fixture_over_cap.json",
+            "--max-results",
+            str(runner.MAX_RESULTS_LIMIT + 1),
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 2
+    assert f"above {runner.MAX_RESULTS_LIMIT}" in captured.err
+
+
 def test_fixture_cli_smoke_writes_same_sanitized_packet_shape(tmp_path: Path) -> None:
     output_relative = f"output/ag96i3e_offline_fixture_smoke_{tmp_path.name}.json"
     output_path = ROOT / output_relative
@@ -442,6 +527,7 @@ def _assert_ag96i3e_packet_shape(packet: dict[str, Any], *, provider: str) -> No
     assert packet["provider"] == provider
     assert packet["live_budget"] == {
         "max_provider_search_calls": 1,
+        "max_results_limit": 10,
         "max_fetch_read_attempts": 0,
         "max_model_calls": 0,
         "max_author_executor_calls": 0,
