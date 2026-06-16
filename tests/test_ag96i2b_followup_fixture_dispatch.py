@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -483,6 +484,66 @@ def test_runkernel_rejects_execution_observation_with_live_or_ledger_flags() -> 
         kernel.reduce(bad_observation)
 
 
+def test_runkernel_rejects_observation_for_different_sealed_candidate_than_action() -> None:
+    kernel = RunKernel.start(run_id="ag96i2b-fixture", request_id="request-1")
+    auth_action = kernel.authorize_followup_authorization_consumption()
+    auth_result = execute_followup_authorization_consumption_action(
+        auth_action,
+        checkpoint=_checkpoint(),
+    )
+    kernel.reduce(auth_result.observation)
+    candidate_b = deepcopy(kernel.state.followup_authorization_state["sealed_candidates"][0])
+    candidate_b["candidate_id"] = "auth.candidate.002"
+    candidate_b["seal_id"] = "seal:after-first-pass:auth.candidate.002"
+    candidate_b["provider_job_kind"] = "direct_candidate_search"
+    kernel.state.followup_authorization_state["sealed_candidates"].append(candidate_b)
+
+    action_for_a = kernel.authorize_followup_fixture_execution(
+        candidate_id="auth.candidate.001",
+        inputs={"fixture_execution_mode": FIXTURE_EXECUTION_MODE},
+    )
+    result_for_b = execute_followup_fixture_action(
+        action_for_a,
+        authorization_state=kernel.state.followup_authorization_state,
+        sealed_candidate_id="auth.candidate.002",
+        fixture_result_payload=_fixture_payload(),
+        execution_mode=FIXTURE_EXECUTION_MODE,
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="sealed_candidate_id"):
+        kernel.reduce(result_for_b.observation)
+
+
+def test_runkernel_rejects_observation_provider_job_kind_mismatch() -> None:
+    kernel = RunKernel.start(run_id="ag96i2b-fixture", request_id="request-1")
+    auth_action = kernel.authorize_followup_authorization_consumption()
+    auth_result = execute_followup_authorization_consumption_action(
+        auth_action,
+        checkpoint=_checkpoint(),
+    )
+    kernel.reduce(auth_result.observation)
+    action = kernel.authorize_followup_fixture_execution(
+        candidate_id="auth.candidate.001",
+        inputs={"fixture_execution_mode": FIXTURE_EXECUTION_MODE},
+    )
+    record = execute_followup_fixture(
+        kernel.state.followup_authorization_state,
+        sealed_candidate_id="auth.candidate.001",
+        fixture_result_payload=_fixture_payload(),
+        execution_mode=FIXTURE_EXECUTION_MODE,
+    ).to_dict()
+    record["provider_job_kind"] = "semantic_recall"
+    bad_observation = kernel.state.observations[-1].__class__.from_action(
+        action,
+        observation_type="followup_execution_observed",
+        status="completed",
+        payload={"followup_execution_state": record},
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="provider_job_kind"):
+        kernel.reduce(bad_observation)
+
+
 def test_static_guards_keep_fixture_dispatch_closed_to_provider_search_and_orchestrator() -> None:
     module_paths = [
         ROOT / "core" / "followup_execution_runtime.py",
@@ -518,7 +579,7 @@ def test_static_guards_keep_fixture_dispatch_closed_to_provider_search_and_orche
     assert FOLLOWUP_EXECUTION_STAGE == "followup_fixture_execution"
 
 
-def test_run_kernel_authorization_rejects_non_fixture_mode() -> None:
+def test_run_kernel_authorization_inputs_cannot_override_canonical_binding_fields() -> None:
     kernel = RunKernel.start(run_id="ag96i2b-fixture", request_id="request-1")
     auth_action = kernel.authorize_followup_authorization_consumption()
     auth_result = execute_followup_authorization_consumption_action(
@@ -527,11 +588,28 @@ def test_run_kernel_authorization_rejects_non_fixture_mode() -> None:
     )
     kernel.reduce(auth_result.observation)
 
-    with pytest.raises(RunKernelTransitionError, match="fixture_only"):
-        kernel.authorize_followup_fixture_execution(
-            candidate_id="auth.candidate.001",
-            inputs={"fixture_execution_mode": "live"},
-        )
+    action = kernel.authorize_followup_fixture_execution(
+        candidate_id="auth.candidate.001",
+        inputs={
+            "followup_authorization_consumption_id": "malicious-consumption",
+            "sealed_candidate_id": "auth.candidate.002",
+            "fixture_execution_mode": "live",
+            "provider_job_kind": "semantic_recall",
+            "provider_execution_licensed": True,
+            "caller_note": "preserved_non_binding_input",
+        },
+    )
+
+    assert action.inputs["followup_authorization_consumption_id"] == (
+        kernel.state.followup_authorization_state["consumption_id"]
+    )
+    assert action.inputs["sealed_candidate_id"] == "auth.candidate.001"
+    assert action.inputs["fixture_execution_mode"] == FIXTURE_EXECUTION_MODE
+    assert action.inputs["provider_job_kind"] == (
+        "official_current_candidate_acquisition"
+    )
+    assert action.inputs["provider_execution_licensed"] is False
+    assert action.inputs["caller_note"] == "preserved_non_binding_input"
 
 
 def test_balanced_injected_macro_or_denied_candidate_remains_unexecutable() -> None:

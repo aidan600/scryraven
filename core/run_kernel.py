@@ -809,6 +809,7 @@ class RunKernel:
             candidate_id,
         )
         merged_inputs = {
+            **dict(inputs or {}),
             "followup_authorization_consumption_id": (
                 self.state.followup_authorization_state.get("consumption_id")
             ),
@@ -816,7 +817,6 @@ class RunKernel:
             "fixture_execution_mode": "fixture_only",
             "provider_job_kind": candidate.get("provider_job_kind"),
             "provider_execution_licensed": False,
-            **dict(inputs or {}),
         }
         if merged_inputs.get("fixture_execution_mode") != "fixture_only":
             raise RunKernelTransitionError(
@@ -1332,6 +1332,11 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "follow-up execution must reference current authorization state"
                 )
+            action_inputs = _safe_mapping(action.inputs)
+            _validate_followup_execution_action_binding(
+                action_inputs=action_inputs,
+                execution_state=execution_state,
+            )
             gate = _safe_mapping(execution_state.get("execution_gate"))
             flags = _safe_mapping(execution_state.get("behavior_boundary_flags"))
             if gate.get("allowed_execution_mode") != "fixture_only":
@@ -1450,6 +1455,37 @@ def _followup_sealed_candidate(
     raise RunKernelTransitionError(
         f"follow-up fixture execution candidate {candidate_id!r} is not sealed"
     )
+
+
+def _validate_followup_execution_action_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    execution_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "fixture_execution_mode",
+    ):
+        if execution_state.get(binding_field) != action_inputs.get(binding_field):
+            raise RunKernelTransitionError(
+                "follow-up execution observation "
+                f"{binding_field} does not match authorized action"
+            )
+    if action_inputs.get("fixture_execution_mode") != "fixture_only":
+        raise RunKernelTransitionError(
+            "follow-up fixture execution action must be bound to fixture_only mode"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up fixture execution action must keep provider execution unlicensed"
+        )
+    action_job_kind = action_inputs.get("provider_job_kind")
+    execution_job_kind = execution_state.get("provider_job_kind")
+    if (action_job_kind or execution_job_kind) and action_job_kind != execution_job_kind:
+        raise RunKernelTransitionError(
+            "follow-up execution observation provider_job_kind does not match authorized action"
+        )
 
 
 __all__ = [
