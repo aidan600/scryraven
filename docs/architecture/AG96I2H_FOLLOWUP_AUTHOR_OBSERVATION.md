@@ -129,3 +129,7 @@ AG-96I2H does not open:
 Future phases are still needed for real Author execution, prose quality
 evaluation, citation rendering, product display, and any live validation. Those
 surfaces require explicit phase scope and separate tests.
+
+AG-96I2I follows this phase with a maintainability-only RunKernel audit and
+mechanical follow-up reducer extraction:
+[AG96I2I_FOLLOWUP_RUNKERNEL_MAINTAINABILITY_AUDIT.md](AG96I2I_FOLLOWUP_RUNKERNEL_MAINTAINABILITY_AUDIT.md).
