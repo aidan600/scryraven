@@ -419,11 +419,16 @@ def test_scout_bridge_hint_mode_records_hints_without_official_satisfaction() ->
     record = result.validation_record.to_dict()
     candidate = record["sanitized_candidate_facts"]
     diagnostics = record["provider_result_set_diagnostics"]
+    flags = record["behavior_boundary_flags"]
     assert result.provider_job_action_result is None
     assert record["stop_reason"] == "provider_hints_recorded"
     assert candidate["domain"] == "cardata.co"
     assert candidate["result_status"] == "bridge_only"
     assert candidate["bridge_only"] is True
+    assert flags["official_current_candidate_acquisition_allowed"] is True
+    assert flags["scout_disambiguation_allowed"] is True
+    assert flags["bridge_hint_discovery_allowed"] is True
+    assert flags["other_provider_job_kinds_allowed"] is False
     assert diagnostics["provider_job_kind"] == "scout_disambiguation"
     assert diagnostics["selected_candidate_reason"] == (
         "scout_bridge_hint_recorded_not_official_current_satisfaction"

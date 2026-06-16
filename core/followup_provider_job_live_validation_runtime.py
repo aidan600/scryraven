@@ -874,7 +874,10 @@ def _domain_from_url(url: str | None) -> str | None:
 
 def _behavior_boundary_flags() -> dict[str, bool]:
     return {
-        "provider_job_kind_limited_to_official_current_candidate_acquisition": True,
+        "official_current_candidate_acquisition_allowed": True,
+        "scout_disambiguation_allowed": True,
+        "bridge_hint_discovery_allowed": True,
+        "other_provider_job_kinds_allowed": False,
         "query_generation_changed": False,
         "query_mutation_changed": False,
         "provider_routing_changed": False,
