@@ -1,4 +1,4 @@
-"""Fixture-only follow-up SufficiencyJudgment recheck seam for AG-96I2D.
+"""Offline follow-up SufficiencyJudgment recheck seam for AG-96I2D/AG-96I3A.
 
 This module derives a conservative SufficiencyJudgment recheck from canonical
 follow-up EvidenceLedger intake state and the current EvidenceLedger projection.
@@ -18,6 +18,9 @@ from core.followup_fixture_boundaries import (
     followup_common_redaction_posture,
     followup_fixture_provenance,
     followup_live_surface_flags,
+)
+from core.followup_provider_job_execution_runtime import (
+    FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
 )
 from core.run_authority_sufficiency import (
     RunSufficiencyDecision,
@@ -78,6 +81,7 @@ class FollowupSufficiencyRecheckRequest:
     result_status: str
     bridge_only: bool
     fixture_execution_mode: str
+    execution_mode: str
     evidence_ledger_intake_mode: str
     evidence_ledger_projection_digest: str
     evidence_ledger_custody_summary: Mapping[str, Any]
@@ -130,6 +134,7 @@ class FollowupSufficiencyRecheckRequest:
             "result_status": clean_token(self.result_status),
             "bridge_only": bool(self.bridge_only),
             "fixture_execution_mode": clean_token(self.fixture_execution_mode),
+            "execution_mode": clean_token(self.execution_mode),
             "evidence_ledger_intake_mode": clean_token(
                 self.evidence_ledger_intake_mode
             ),
@@ -241,6 +246,7 @@ class FollowupSufficiencyRecheckObservation:
             "result_status": request.get("result_status"),
             "bridge_only": request.get("bridge_only"),
             "fixture_execution_mode": request.get("fixture_execution_mode"),
+            "execution_mode": request.get("execution_mode"),
             "evidence_ledger_intake_mode": request.get(
                 "evidence_ledger_intake_mode"
             ),
@@ -528,6 +534,11 @@ def build_followup_sufficiency_recheck_record(
         result_status=str(action.get("result_status") or ""),
         bridge_only=bool(action.get("bridge_only")),
         fixture_execution_mode=str(action.get("fixture_execution_mode") or ""),
+        execution_mode=str(
+            action.get("execution_mode")
+            or action.get("fixture_execution_mode")
+            or ""
+        ),
         evidence_ledger_intake_mode=str(
             action.get("evidence_ledger_intake_mode") or ""
         ),
@@ -702,9 +713,19 @@ def _validate_intake_state(state: Mapping[str, Any]) -> None:
         raise PermissionError("follow-up sufficiency recheck requires canonical intake state")
     if state.get("owner") != "RunKernel.FollowupEvidenceIntake":
         raise PermissionError("follow-up sufficiency recheck requires RunKernel intake state")
-    if state.get("fixture_execution_mode") != "fixture_only":
-        raise PermissionError("follow-up sufficiency recheck requires fixture_only execution")
-    if state.get("evidence_ledger_intake_mode") != "fixture_only_followup_intake":
+    execution_mode = (
+        clean_token(state.get("execution_mode"))
+        or clean_token(state.get("fixture_execution_mode"))
+    )
+    if execution_mode not in {"fixture_only", FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE}:
+        raise PermissionError("follow-up sufficiency recheck requires known execution")
+    intake_mode = clean_token(state.get("evidence_ledger_intake_mode"))
+    if execution_mode == FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE:
+        if intake_mode != "bounded_provider_job_offline_followup_intake":
+            raise PermissionError(
+                "follow-up sufficiency recheck requires offline provider-job intake"
+            )
+    elif intake_mode != "fixture_only_followup_intake":
         raise PermissionError("follow-up sufficiency recheck requires fixture-only intake")
     if state.get("provider_execution_licensed") is not False:
         raise PermissionError("provider execution is not licensed for sufficiency recheck")
@@ -761,11 +782,17 @@ def _validate_action_inputs(
         "source_obligation_id",
         "result_status",
         "bridge_only",
-        "fixture_execution_mode",
+        "execution_mode",
         "evidence_ledger_intake_mode",
     ):
         if action_inputs.get(field) != intake_state.get(field):
             raise PermissionError(f"authorized sufficiency recheck {field} mismatch")
+    if (
+        action_inputs.get("execution_mode") == "fixture_only"
+        and action_inputs.get("fixture_execution_mode")
+        != intake_state.get("fixture_execution_mode")
+    ):
+        raise PermissionError("authorized sufficiency recheck fixture_execution_mode mismatch")
     for action_field, state_field in (
         ("followup_evidence_intake_id", "intake_id"),
         ("intake_id", "intake_id"),

@@ -63,6 +63,8 @@ class FollowupAuthorizationSeal:
     budget_debit: Mapping[str, Any]
     fallback_stop_posture: str | None
     fallback_caveat_refuse_posture: str | None
+    authorized_query_ref: str | None = None
+    authorized_query: str | None = None
     bridge_only_provider_output: bool = False
     status: FollowupAuthorizationStatus = (
         FollowupAuthorizationStatus.SEALED_NON_EXECUTABLE
@@ -99,6 +101,11 @@ class FollowupAuthorizationSeal:
                 "fallback_caveat_refuse_posture": clean_token(
                     self.fallback_caveat_refuse_posture
                 ),
+                "authorized_query_ref": clean_token(
+                    self.authorized_query_ref,
+                    limit=180,
+                ),
+                "authorized_query": clean_text(self.authorized_query, limit=300),
                 "bridge_only_provider_output": bool(self.bridge_only_provider_output),
                 "bridge_only_provider_output_satisfies_final_evidence": False,
                 "final_evidence_satisfaction_allowed": False,
@@ -414,6 +421,11 @@ def _seal_candidate(
         fallback_caveat_refuse_posture=clean_token(
             candidate.get("fallback_caveat_refuse_posture")
         ),
+        authorized_query_ref=clean_token(
+            candidate.get("authorized_query_ref"),
+            limit=180,
+        ),
+        authorized_query=clean_text(candidate.get("authorized_query"), limit=300),
         bridge_only_provider_output=bool(candidate.get("bridge_only_provider_output")),
     )
 
