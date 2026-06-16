@@ -526,7 +526,7 @@ def test_non_satisfying_provider_job_results_do_not_satisfy_official_current(
         ("provider_routing_changed", True),
         ("live_validation_not_run", False),
         ("raw_text", "raw should never be retained"),
-        ("raw_payload", {"secret": "nope"}),
+        ("raw_payload", {"placeholder": "blocked_test_value"}),
     ],
 )
 def test_observation_spoofing_is_rejected(field: str, value: Any) -> None:
