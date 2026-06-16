@@ -114,3 +114,14 @@ That phase should remain separate from this fixture-helper diet and should not
 open live ScryRaven/proplex calls, Author execution, citation rendering, or
 product final-answer behavior unless explicitly scoped with a budget, redaction
 plan, validation artifact path, and stop condition.
+
+## AG-96I2K Follow-up Result
+
+AG-96I2K completed the live follow-up execution readiness audit:
+[AG96I2K_LIVE_FOLLOWUP_EXECUTION_READINESS_AUDIT.md](AG96I2K_LIVE_FOLLOWUP_EXECUTION_READINESS_AUDIT.md).
+
+Result: the recommended first live-shaped follow-up target is
+`official_current_candidate_acquisition`, implemented next as an offline
+live-shaped recovery executor/adapter before any live validation. Runtime
+files stayed closed for AG-96I2K, and live provider/search/retrieval/fetch/read,
+Author, citation-rendering, and product-answer behavior remained disabled.
