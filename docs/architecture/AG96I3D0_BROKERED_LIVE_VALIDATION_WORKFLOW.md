@@ -50,7 +50,8 @@ writing.
 
 ## Client Behavior
 
-The client posts only to the configured broker URL, defaulting to:
+The client posts only to a configured local broker URL with scheme `http` and
+host `127.0.0.1`, `localhost`, or `::1`, defaulting to:
 
 ```text
 http://127.0.0.1:8765/run

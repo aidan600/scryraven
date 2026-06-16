@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
-from urllib import error, request
+from urllib import error, parse, request
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DIR = ROOT / "output"
@@ -34,6 +34,13 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "refusing to request brokered live validation: pass "
             "--confirm-live-provider-call to acknowledge live-call spend",
+            file=sys.stderr,
+        )
+        return 2
+    if not _is_loopback_broker_url(args.broker_url):
+        print(
+            "refusing to send broker token to non-local broker URL: "
+            f"{args.broker_url}",
             file=sys.stderr,
         )
         return 2
@@ -143,6 +150,14 @@ def _decode_json_response(status: int, response_body: bytes) -> dict[str, Any]:
 def _safe_error_detail(exc: error.URLError) -> str:
     reason = getattr(exc, "reason", exc)
     return reason.__class__.__name__
+
+
+def _is_loopback_broker_url(broker_url: str) -> bool:
+    parsed = parse.urlparse(broker_url)
+    return (
+        parsed.scheme == "http"
+        and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+    )
 
 
 def _resolve_output_path(raw_path: str) -> Path:

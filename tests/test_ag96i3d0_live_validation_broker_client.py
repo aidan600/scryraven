@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import importlib.util
 import json
 import os
 import subprocess
@@ -8,7 +9,10 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import ModuleType
 from typing import Any, ClassVar
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "request_live_validation_broker.py"
@@ -147,6 +151,63 @@ def test_client_can_read_token_from_environment_without_printing_it() -> None:
     assert headers["x-scryraven-broker-token"] == "env-one-shot-token"
     assert "env-one-shot-token" not in result.stdout
     assert "env-one-shot-token" not in result.stderr
+
+
+def test_default_and_localhost_broker_urls_are_accepted() -> None:
+    client = _load_client_module()
+
+    assert client._is_loopback_broker_url(client.DEFAULT_BROKER_URL)
+    assert client._is_loopback_broker_url("http://localhost:8765/run")
+    assert client._is_loopback_broker_url("http://[::1]:8765/run")
+
+
+def test_client_refuses_https_non_local_broker_url_before_warning() -> None:
+    result = _run_client(
+        "--broker-url",
+        "https://example.com/run",
+        "--job-id",
+        "ag96i3d0-official-current-once",
+        "--token",
+        "one-shot-token",
+        "--confirm-live-provider-call",
+    )
+
+    assert result.returncode == 2
+    assert "non-local broker URL" in result.stderr
+    assert "This request may spend one live provider/search call" not in result.stdout
+    assert "one-shot-token" not in result.stdout
+    assert "one-shot-token" not in result.stderr
+
+
+def test_client_refuses_public_provider_broker_url_without_contacting_broker(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = _load_client_module()
+
+    def unexpected_request(*_args: object, **_kwargs: object) -> tuple[int, dict[str, Any]]:
+        raise AssertionError("broker request should not be attempted")
+
+    monkeypatch.setattr(client, "_post_broker_json", unexpected_request)
+
+    result = client.main(
+        [
+            "--broker-url",
+            "http://api.search.brave.com/run",
+            "--job-id",
+            "ag96i3d0-official-current-once",
+            "--token",
+            "one-shot-token",
+            "--confirm-live-provider-call",
+        ]
+    )
+    captured = capsys.readouterr()
+
+    assert result == 2
+    assert "non-local broker URL" in captured.err
+    assert "This request may spend one live provider/search call" not in captured.out
+    assert "one-shot-token" not in captured.out
+    assert "one-shot-token" not in captured.err
 
 
 def test_client_handles_200_broker_json_and_writes_ignored_output(
@@ -308,3 +369,15 @@ def _imports(path: Path) -> set[str]:
 
 def _lower_headers(headers: dict[str, str]) -> dict[str, str]:
     return {key.lower(): value for key, value in headers.items()}
+
+
+def _load_client_module() -> ModuleType:
+    spec = importlib.util.spec_from_file_location(
+        "request_live_validation_broker",
+        SCRIPT,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
