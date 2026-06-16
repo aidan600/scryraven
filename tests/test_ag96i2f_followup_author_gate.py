@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -11,203 +10,27 @@ from core.followup_author_gate_runtime import (
     FOLLOWUP_AUTHOR_GATE_MODE,
     execute_followup_author_gate_action,
 )
-from core.followup_authorization_runtime import (
-    execute_followup_authorization_consumption_action,
-)
-from core.followup_deliberation import GapType, build_followup_deliberation_checkpoint
 from core.followup_deliberation_validation import passive_module_static_guard
-from core.followup_evidence_intake_runtime import execute_followup_evidence_intake_action
-from core.followup_execution_runtime import (
-    FIXTURE_EXECUTION_MODE,
-    execute_followup_fixture_action,
-)
-from core.followup_final_answer_packet_runtime import (
-    FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
-    execute_followup_final_answer_packet_prepare_action,
-)
-from core.followup_sufficiency_recheck_runtime import (
-    execute_followup_sufficiency_recheck_action,
-)
+from core.followup_execution_runtime import FIXTURE_EXECUTION_MODE
+from core.followup_final_answer_packet_runtime import FOLLOWUP_FINAL_ANSWER_PACKET_MODE
 from core.run_kernel import (
     FOLLOWUP_AUTHOR_GATE_STAGE,
     Observation,
-    RunKernel,
     RunKernelTransitionError,
+)
+from tests.helpers.followup_fixture_spine import (
+    consume_followup_author_gate,
+    run_followup_through_final_answer_packet,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def _budget(**overrides: int) -> dict[str, int]:
-    base = {
-        "cost_points_remaining": 8,
-        "provider_calls_remaining": 3,
-        "fetches_remaining": 3,
-        "read_units_remaining": 3,
-        "followup_rounds_remaining": 2,
-        "meso_authorizations_remaining": 3,
-        "macro_hops_remaining": 1,
-    }
-    base.update(overrides)
-    return base
-
-
-def _component(component_id: str, *, served: bool = True) -> dict[str, Any]:
-    return {
-        "component_id": component_id,
-        "central": True,
-        "served_minimum": served,
-        "minimum_provider_calls": 1,
-        "minimum_fetches": 1,
-        "minimum_read_units": 1,
-    }
-
-
-def _gap(
-    gap_type: str,
-    *,
-    gap_id: str = "gap.official",
-    component_id: str = "component-rule",
-    obligation_id: str = "obligation-official-current",
-    requirement_id: str = "requirement-official-current",
-    **overrides: Any,
-) -> dict[str, Any]:
-    payload = {
-        "gap_id": gap_id,
-        "gap_type": gap_type,
-        "component_id": component_id,
-        "source_obligation_id": obligation_id,
-        "requirement_ids": [requirement_id],
-        "severity": "central_required",
-        "evidence_indicators": ["required_obligation_unsatisfied"],
-    }
-    payload.update(overrides)
-    return payload
-
-
-def _checkpoint(**overrides: Any) -> Any:
-    fixture = {
-        "run_id": "ag96i2f-fixture",
-        "checkpoint_id": "after-first-pass",
-        "mode": "balanced",
-        "components": [_component("component-rule")],
-        "budget_ledger": _budget(),
-        "gaps": [_gap(GapType.OFFICIAL_CURRENT_GAP.value)],
-        "sufficiency_handoff": {
-            "satisfied_obligations": [],
-            "missing_obligations": ["obligation-official-current"],
-            "recommended_final_posture": "answer_with_caveats",
-            "mandatory_caveats": ["prior_missing_official_current_caveat"],
-            "prohibited_upgrades": ["prior_do_not_upgrade_fixture_gap"],
-        },
-    }
-    fixture.update(overrides)
-    return build_followup_deliberation_checkpoint(fixture)
-
-
-def _fixture_payload(**overrides: Any) -> dict[str, Any]:
-    payload = {
-        "result_status": "fixture_success",
-        "summary": "Sanitized official current fixture candidate observed.",
-        "url": "https://agency.example/current-rule",
-        "title": "Current Official Rule",
-        "domain": "agency.example",
-        "source_tier": "official",
-        "source_class": "official_current_rules",
-        "currentness_signal": "current",
-        "answer_bearing_extract_available": True,
-        "eligible_for_stronger_obligation": True,
-    }
-    payload.update(overrides)
-    return payload
-
-
-def _through_recheck(
-    *,
-    checkpoint: Any | None = None,
-    fixture_payload: dict[str, Any] | None = None,
-    prior_sufficiency: dict[str, Any] | None = None,
-) -> RunKernel:
-    kernel = RunKernel.start(run_id="ag96i2f-fixture", request_id="request-1")
-    auth_action = kernel.authorize_followup_authorization_consumption(
-        inputs={"checkpoint_id": "after-first-pass"}
-    )
-    auth_result = execute_followup_authorization_consumption_action(
-        auth_action,
-        checkpoint=checkpoint or _checkpoint(),
-    )
-    kernel.reduce(auth_result.observation)
-    exec_action = kernel.authorize_followup_fixture_execution(
-        candidate_id="auth.candidate.001",
-        inputs={"fixture_execution_mode": FIXTURE_EXECUTION_MODE},
-    )
-    exec_result = execute_followup_fixture_action(
-        exec_action,
-        authorization_state=kernel.state.followup_authorization_state,
-        sealed_candidate_id="auth.candidate.001",
-        fixture_result_payload=fixture_payload or _fixture_payload(),
-        execution_mode=FIXTURE_EXECUTION_MODE,
-    )
-    kernel.reduce(exec_result.observation)
-    intake_action = kernel.authorize_followup_evidence_intake()
-    intake_result = execute_followup_evidence_intake_action(
-        intake_action,
-        followup_execution_state=kernel.state.followup_execution_state,
-        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
-    )
-    kernel.reduce(intake_result.observation)
-    if prior_sufficiency is not None:
-        kernel.state.sufficiency_judgment_projection = prior_sufficiency
-    recheck_action = kernel.authorize_followup_sufficiency_recheck()
-    recheck_result = execute_followup_sufficiency_recheck_action(
-        recheck_action,
-        followup_evidence_intake_state=kernel.state.followup_evidence_intake_state,
-        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
-        prior_sufficiency_judgment_projection=kernel.state.sufficiency_judgment_projection,
-        sufficiency_handoff=kernel.state.followup_authorization_state.get(
-            "sufficiency_handoff",
-            {},
-        ),
-    )
-    kernel.reduce(recheck_result.observation)
-    return kernel
-
-
-def _prepare_packet(kernel: RunKernel):
-    action = kernel.authorize_followup_final_answer_packet_prepare()
-    result = execute_followup_final_answer_packet_prepare_action(
-        action,
-        followup_sufficiency_recheck_state=kernel.state.followup_sufficiency_recheck_state,
-        sufficiency_judgment_projection=kernel.state.sufficiency_judgment_projection,
-        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
-        followup_evidence_intake_state=kernel.state.followup_evidence_intake_state,
-    )
-    kernel.reduce(result.observation)
-    return action, result
-
-
-def _through_packet(**kwargs: Any) -> RunKernel:
-    kernel = _through_recheck(**kwargs)
-    _prepare_packet(kernel)
-    return kernel
-
-
-def _consume_gate(kernel: RunKernel):
-    action = kernel.authorize_followup_author_gate()
-    result = execute_followup_author_gate_action(
-        action,
-        followup_final_answer_packet_state=kernel.state.followup_final_answer_packet_state,
-        final_answer_packet=kernel.state.final_answer_packet,
-        final_answer_authority_projection=kernel.state.final_answer_authority_projection,
-    )
-    kernel.reduce(result.observation)
-    return action, result
+RUN_ID = "ag96i2f-fixture"
 
 
 def test_happy_path_consumes_packet_into_deferred_author_gate() -> None:
-    kernel = _through_packet()
+    kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
 
-    _action, result = _consume_gate(kernel)
+    _action, result = consume_followup_author_gate(kernel)
 
     state = kernel.state.followup_author_gate_state
     projection = kernel.state.followup_author_gate_projection
@@ -231,7 +54,7 @@ def test_happy_path_consumes_packet_into_deferred_author_gate() -> None:
 
 
 def test_gate_consumes_packet_fields_without_reconstructing_from_ledger() -> None:
-    kernel = _through_packet()
+    kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
     packet_only_citation = {
         "source_id": "packet-only-source",
         "status": "citation_eligible",
@@ -274,7 +97,7 @@ def test_gate_consumes_packet_fields_without_reconstructing_from_ledger() -> Non
         "packet_only_payload": True,
     }
 
-    _consume_gate(kernel)
+    consume_followup_author_gate(kernel)
 
     state = kernel.state.followup_author_gate_state
     assert state["mandatory_caveats"] == ["packet_only_mandatory_caveat"]
@@ -296,7 +119,7 @@ def test_gate_consumes_packet_fields_without_reconstructing_from_ledger() -> Non
 
 
 def test_binding_guard_rejects_packet_b_observation_under_packet_a_action() -> None:
-    kernel = _through_packet()
+    kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
     action = kernel.authorize_followup_author_gate()
     result = execute_followup_author_gate_action(
         action,
@@ -320,7 +143,7 @@ def test_binding_guard_rejects_packet_b_observation_under_packet_a_action() -> N
 
 
 def test_authorization_inputs_cannot_override_canonical_gate_bindings() -> None:
-    kernel = _through_packet()
+    kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
     action = kernel.authorize_followup_author_gate(
         inputs={
             "packet_id": "malicious-packet",
@@ -387,7 +210,7 @@ def test_authorization_inputs_cannot_override_canonical_gate_bindings() -> None:
 
 
 def test_observation_spoofing_is_overwritten_by_canonical_gate_derivation() -> None:
-    kernel = _through_packet()
+    kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
     action = kernel.authorize_followup_author_gate()
     result = execute_followup_author_gate_action(
         action,
@@ -433,7 +256,7 @@ def test_observation_spoofing_is_overwritten_by_canonical_gate_derivation() -> N
 
 
 def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
-    kernel = _through_packet()
+    kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
     before = {
         "search_judgment": deepcopy(kernel.state.search_judgment),
         "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
@@ -445,7 +268,7 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
         "final_answer_outcome": deepcopy(kernel.state.final_answer_outcome),
     }
 
-    _consume_gate(kernel)
+    consume_followup_author_gate(kernel)
 
     assert kernel.state.search_judgment == before["search_judgment"]
     assert kernel.state.search_judgment_projection == before[
@@ -507,7 +330,7 @@ def test_closed_surfaces_remain_closed_and_orchestrator_is_untouched() -> None:
 
 
 def test_adapter_requires_author_gate_authorized_action_type() -> None:
-    kernel = _through_packet()
+    kernel = run_followup_through_final_answer_packet(run_id=RUN_ID)
     wrong_action = kernel.authorize_followup_fixture_execution(
         candidate_id="auth.candidate.001",
         inputs={"fixture_execution_mode": FIXTURE_EXECUTION_MODE},

@@ -56,6 +56,28 @@ class FollowupFixtureSpineResult:
     gate_result: Any
 
 
+def followup_fixture_gap(
+    gap_type: str,
+    *,
+    gap_id: str = "gap.official",
+    component_id: str = "component-rule",
+    obligation_id: str = "obligation-official-current",
+    requirement_id: str = "requirement-official-current",
+    **overrides: Any,
+) -> dict[str, Any]:
+    payload = {
+        "gap_id": gap_id,
+        "gap_type": gap_type,
+        "component_id": component_id,
+        "source_obligation_id": obligation_id,
+        "requirement_ids": [requirement_id],
+        "severity": "central_required",
+        "evidence_indicators": ["required_obligation_unsatisfied"],
+    }
+    payload.update(overrides)
+    return payload
+
+
 def build_followup_fixture_checkpoint(
     *,
     run_id: str,
@@ -68,17 +90,7 @@ def build_followup_fixture_checkpoint(
         "mode": "balanced",
         "components": [_component("component-rule")],
         "budget_ledger": _budget(),
-        "gaps": [
-            {
-                "gap_id": "gap.official",
-                "gap_type": GapType.OFFICIAL_CURRENT_GAP.value,
-                "component_id": "component-rule",
-                "source_obligation_id": "obligation-official-current",
-                "requirement_ids": ["requirement-official-current"],
-                "severity": "central_required",
-                "evidence_indicators": ["required_obligation_unsatisfied"],
-            }
-        ],
+        "gaps": [followup_fixture_gap(GapType.OFFICIAL_CURRENT_GAP.value)],
         "sufficiency_handoff": {
             "satisfied_obligations": [],
             "missing_obligations": ["obligation-official-current"],
@@ -108,31 +120,34 @@ def followup_fixture_payload(**overrides: Any) -> dict[str, Any]:
     return payload
 
 
-def run_followup_fixture_spine(
+def consume_followup_authorization(
+    kernel: RunKernel,
     *,
-    run_id: str,
-    request_id: str = "request-1",
-    candidate_id: str = "auth.candidate.001",
     checkpoint_id: str = "after-first-pass",
     checkpoint: Any | None = None,
-    fixture_payload: Mapping[str, Any] | None = None,
-    packet_mutator: Callable[[RunKernel], None] | None = None,
-) -> FollowupFixtureSpineResult:
-    kernel = RunKernel.start(run_id=run_id, request_id=request_id)
-
+) -> tuple[Any, Any]:
     auth_action = kernel.authorize_followup_authorization_consumption(
         inputs={"checkpoint_id": checkpoint_id}
     )
+    if checkpoint is None:
+        checkpoint = build_followup_fixture_checkpoint(
+            run_id=kernel.state.run_id,
+            checkpoint_id=checkpoint_id,
+        )
     auth_result = execute_followup_authorization_consumption_action(
         auth_action,
-        checkpoint=checkpoint
-        or build_followup_fixture_checkpoint(
-            run_id=run_id,
-            checkpoint_id=checkpoint_id,
-        ),
+        checkpoint=checkpoint,
     )
     kernel.reduce(auth_result.observation)
+    return auth_action, auth_result
 
+
+def consume_followup_fixture_execution(
+    kernel: RunKernel,
+    *,
+    candidate_id: str = "auth.candidate.001",
+    fixture_payload: Mapping[str, Any] | None = None,
+) -> tuple[Any, Any]:
     exec_action = kernel.authorize_followup_fixture_execution(
         candidate_id=candidate_id,
         inputs={"fixture_execution_mode": FIXTURE_EXECUTION_MODE},
@@ -145,7 +160,10 @@ def run_followup_fixture_spine(
         execution_mode=FIXTURE_EXECUTION_MODE,
     )
     kernel.reduce(exec_result.observation)
+    return exec_action, exec_result
 
+
+def consume_followup_evidence_intake(kernel: RunKernel) -> tuple[Any, Any]:
     intake_action = kernel.authorize_followup_evidence_intake()
     intake_result = execute_followup_evidence_intake_action(
         intake_action,
@@ -153,7 +171,10 @@ def run_followup_fixture_spine(
         evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
     )
     kernel.reduce(intake_result.observation)
+    return intake_action, intake_result
 
+
+def consume_followup_sufficiency_recheck(kernel: RunKernel) -> tuple[Any, Any]:
     recheck_action = kernel.authorize_followup_sufficiency_recheck()
     recheck_result = execute_followup_sufficiency_recheck_action(
         recheck_action,
@@ -166,7 +187,10 @@ def run_followup_fixture_spine(
         ),
     )
     kernel.reduce(recheck_result.observation)
+    return recheck_action, recheck_result
 
+
+def consume_followup_final_answer_packet(kernel: RunKernel) -> tuple[Any, Any]:
     packet_action = kernel.authorize_followup_final_answer_packet_prepare()
     packet_result = execute_followup_final_answer_packet_prepare_action(
         packet_action,
@@ -176,10 +200,10 @@ def run_followup_fixture_spine(
         followup_evidence_intake_state=kernel.state.followup_evidence_intake_state,
     )
     kernel.reduce(packet_result.observation)
+    return packet_action, packet_result
 
-    if packet_mutator is not None:
-        packet_mutator(kernel)
 
+def consume_followup_author_gate(kernel: RunKernel) -> tuple[Any, Any]:
     gate_action = kernel.authorize_followup_author_gate()
     gate_result = execute_followup_author_gate_action(
         gate_action,
@@ -188,6 +212,129 @@ def run_followup_fixture_spine(
         final_answer_authority_projection=kernel.state.final_answer_authority_projection,
     )
     kernel.reduce(gate_result.observation)
+    return gate_action, gate_result
+
+
+def run_followup_through_execution(
+    *,
+    run_id: str,
+    request_id: str = "request-1",
+    candidate_id: str = "auth.candidate.001",
+    checkpoint_id: str = "after-first-pass",
+    checkpoint: Any | None = None,
+    fixture_payload: Mapping[str, Any] | None = None,
+) -> RunKernel:
+    kernel = RunKernel.start(run_id=run_id, request_id=request_id)
+    consume_followup_authorization(
+        kernel,
+        checkpoint_id=checkpoint_id,
+        checkpoint=checkpoint,
+    )
+    consume_followup_fixture_execution(
+        kernel,
+        candidate_id=candidate_id,
+        fixture_payload=fixture_payload,
+    )
+    return kernel
+
+
+def run_followup_through_evidence_intake(
+    *,
+    run_id: str,
+    request_id: str = "request-1",
+    candidate_id: str = "auth.candidate.001",
+    checkpoint_id: str = "after-first-pass",
+    checkpoint: Any | None = None,
+    fixture_payload: Mapping[str, Any] | None = None,
+) -> RunKernel:
+    kernel = run_followup_through_execution(
+        run_id=run_id,
+        request_id=request_id,
+        candidate_id=candidate_id,
+        checkpoint_id=checkpoint_id,
+        checkpoint=checkpoint,
+        fixture_payload=fixture_payload,
+    )
+    consume_followup_evidence_intake(kernel)
+    return kernel
+
+
+def run_followup_through_sufficiency_recheck(
+    *,
+    run_id: str,
+    request_id: str = "request-1",
+    candidate_id: str = "auth.candidate.001",
+    checkpoint_id: str = "after-first-pass",
+    checkpoint: Any | None = None,
+    fixture_payload: Mapping[str, Any] | None = None,
+    prior_sufficiency: Mapping[str, Any] | None = None,
+) -> RunKernel:
+    kernel = run_followup_through_evidence_intake(
+        run_id=run_id,
+        request_id=request_id,
+        candidate_id=candidate_id,
+        checkpoint_id=checkpoint_id,
+        checkpoint=checkpoint,
+        fixture_payload=fixture_payload,
+    )
+    if prior_sufficiency is not None:
+        kernel.state.sufficiency_judgment_projection = dict(prior_sufficiency)
+    consume_followup_sufficiency_recheck(kernel)
+    return kernel
+
+
+def run_followup_through_final_answer_packet(
+    *,
+    run_id: str,
+    request_id: str = "request-1",
+    candidate_id: str = "auth.candidate.001",
+    checkpoint_id: str = "after-first-pass",
+    checkpoint: Any | None = None,
+    fixture_payload: Mapping[str, Any] | None = None,
+    prior_sufficiency: Mapping[str, Any] | None = None,
+) -> RunKernel:
+    kernel = run_followup_through_sufficiency_recheck(
+        run_id=run_id,
+        request_id=request_id,
+        candidate_id=candidate_id,
+        checkpoint_id=checkpoint_id,
+        checkpoint=checkpoint,
+        fixture_payload=fixture_payload,
+        prior_sufficiency=prior_sufficiency,
+    )
+    consume_followup_final_answer_packet(kernel)
+    return kernel
+
+
+def run_followup_fixture_spine(
+    *,
+    run_id: str,
+    request_id: str = "request-1",
+    candidate_id: str = "auth.candidate.001",
+    checkpoint_id: str = "after-first-pass",
+    checkpoint: Any | None = None,
+    fixture_payload: Mapping[str, Any] | None = None,
+    packet_mutator: Callable[[RunKernel], None] | None = None,
+) -> FollowupFixtureSpineResult:
+    kernel = RunKernel.start(run_id=run_id, request_id=request_id)
+    _auth_action, auth_result = consume_followup_authorization(
+        kernel,
+        checkpoint_id=checkpoint_id,
+        checkpoint=checkpoint,
+    )
+    _exec_action, exec_result = consume_followup_fixture_execution(
+        kernel,
+        candidate_id=candidate_id,
+        fixture_payload=fixture_payload,
+    )
+    _intake_action, intake_result = consume_followup_evidence_intake(kernel)
+    _recheck_action, recheck_result = consume_followup_sufficiency_recheck(kernel)
+    _packet_action, packet_result = consume_followup_final_answer_packet(kernel)
+
+    if packet_mutator is not None:
+        packet_mutator(kernel)
+
+    _gate_action, gate_result = consume_followup_author_gate(kernel)
 
     return FollowupFixtureSpineResult(
         kernel=kernel,
