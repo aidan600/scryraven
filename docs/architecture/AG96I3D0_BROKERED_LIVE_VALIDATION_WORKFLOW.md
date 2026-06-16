@@ -41,11 +41,12 @@ Broker jobs are allowlisted by `job_id`. Broker tokens are one-shot permission
 slips for the local broker; they are not provider secrets and must not be
 committed, logged, or pasted into chat. Live-call budgets must be displayed
 before running. Retries are forbidden unless a later phase explicitly licenses
-them. Broker output must be sanitized and written only to ignored paths such as
-`output/`.
+them. Broker output must be sanitized and written only under the repo `output/`
+directory.
 
 `output/` is ignored by the repo `.gitignore`, and the client verifies an
-explicit `--output` path with `git check-ignore` before writing.
+explicit `--output` path is both inside repo `output/` and gitignored before
+writing.
 
 ## Client Behavior
 
@@ -146,9 +147,9 @@ AG-96I3D0 keeps these surfaces closed:
 
 Tests use mocked local HTTP behavior only. They prove the client refuses missing
 tokens and missing spend acknowledgement, sends the expected POST body, keeps the
-token in the broker header only, handles 200/400/403 JSON, refuses non-ignored
-output paths, and statically avoids provider imports or environment-file
-loading.
+token in the broker header only, handles 200/400/403 JSON, refuses `.env` or
+other non-`output/` paths even when gitignored, refuses non-ignored docs paths,
+and statically avoids provider imports or environment-file loading.
 
 No raw provider payloads, raw snippets, raw page text, API keys, `.env` values,
 DB/cache rows, private logs, or full traces are retained by this workflow.

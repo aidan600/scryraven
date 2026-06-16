@@ -157,7 +157,8 @@ def test_client_handles_200_broker_json_and_writes_ignored_output(
         "job_id": "ag96i3d0-official-current-once",
         "sanitized_packet_path": "output/ag96i3d0_packet.json",
     }
-    output = ROOT / "output" / f"ag96i3d0_test_broker_response_{tmp_path.name}.json"
+    output_relative = f"output/ag96i3d0_test_broker_response_{tmp_path.name}.json"
+    output = ROOT / output_relative
     if output.exists():
         output.unlink()
     try:
@@ -171,7 +172,7 @@ def test_client_handles_200_broker_json_and_writes_ignored_output(
                 "one-shot-token",
                 "--confirm-live-provider-call",
                 "--output",
-                str(output),
+                output_relative,
             )
 
         assert result.returncode == 0
@@ -231,7 +232,41 @@ def test_client_refuses_non_ignored_output_path() -> None:
     )
 
     assert result.returncode == 2
-    assert "non-ignored path" in result.stderr
+    assert "outside ignored repo output/" in result.stderr
+
+
+def test_client_refuses_env_output_even_though_gitignored() -> None:
+    result = _run_client(
+        "--broker-url",
+        "http://127.0.0.1:1/run",
+        "--job-id",
+        "ag96i3d0-official-current-once",
+        "--token",
+        "one-shot-token",
+        "--confirm-live-provider-call",
+        "--output",
+        str(ROOT / ".env"),
+    )
+
+    assert result.returncode == 2
+    assert "outside ignored repo output/" in result.stderr
+
+
+def test_client_refuses_non_output_ignored_private_looking_path() -> None:
+    result = _run_client(
+        "--broker-url",
+        "http://127.0.0.1:1/run",
+        "--job-id",
+        "ag96i3d0-official-current-once",
+        "--token",
+        "one-shot-token",
+        "--confirm-live-provider-call",
+        "--output",
+        str(ROOT / "ag96i3d0_token_response.json"),
+    )
+
+    assert result.returncode == 2
+    assert "outside ignored repo output/" in result.stderr
 
 
 def test_static_client_imports_no_provider_modules_and_reads_no_env_files() -> None:

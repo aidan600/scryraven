@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any
 from urllib import error, request
 
+ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_DIR = ROOT / "output"
 DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
 TOKEN_ENV_VAR = "SCRYRAVEN_BROKER_TOKEN"
 TOKEN_HEADER = "X-ScryRaven-Broker-Token"
@@ -36,10 +38,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    output_path = Path(args.output) if args.output else None
-    if output_path is not None and not _is_gitignored(output_path):
+    output_path = _resolve_output_path(args.output) if args.output else None
+    if output_path is not None and not _is_allowed_output_path(output_path):
         print(
-            f"refusing to write broker response to non-ignored path: {output_path}",
+            "refusing to write broker response outside ignored repo output/ "
+            f"path: {output_path}",
             file=sys.stderr,
         )
         return 2
@@ -142,11 +145,27 @@ def _safe_error_detail(exc: error.URLError) -> str:
     return reason.__class__.__name__
 
 
+def _resolve_output_path(raw_path: str) -> Path:
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path.resolve()
+
+
+def _is_allowed_output_path(path: Path) -> bool:
+    try:
+        path.relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return False
+    return _is_gitignored(path)
+
+
 def _is_gitignored(path: Path) -> bool:
     result = subprocess.run(
         ["git", "check-ignore", "-q", str(path)],
         check=False,
         capture_output=True,
+        cwd=ROOT,
         text=True,
     )
     return result.returncode == 0
