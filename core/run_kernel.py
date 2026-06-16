@@ -14,6 +14,15 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from core.evidence_ledger import EvidenceLedger
+from core.followup_sufficiency_recheck_runtime import (
+    FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
+    build_followup_sufficiency_recheck_record,
+    evidence_ledger_custody_summary,
+    evidence_ledger_projection_digest,
+)
+from core.followup_sufficiency_recheck_runtime import (
+    FOLLOWUP_SUFFICIENCY_RECHECK_STAGE as FOLLOWUP_SUFFICIENCY_RECHECK_STAGE_NAME,
+)
 
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
@@ -32,6 +41,7 @@ AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
 FOLLOWUP_EVIDENCE_INTAKE_STAGE = "followup_evidence_intake"
+FOLLOWUP_SUFFICIENCY_RECHECK_STAGE = FOLLOWUP_SUFFICIENCY_RECHECK_STAGE_NAME
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -79,6 +89,7 @@ class ActionType(str, Enum):
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
     FOLLOWUP_EVIDENCE_INTAKE = "followup_evidence_intake"
+    FOLLOWUP_SUFFICIENCY_RECHECK = "followup_sufficiency_recheck"
 
 
 class ObservationType(str, Enum):
@@ -99,6 +110,9 @@ class ObservationType(str, Enum):
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
     FOLLOWUP_EVIDENCE_INTAKE_OBSERVED = "followup_evidence_intake_observed"
+    FOLLOWUP_SUFFICIENCY_RECHECK_OBSERVED = (
+        "followup_sufficiency_recheck_observed"
+    )
 
 
 class RunStageStatus(str, Enum):
@@ -341,6 +355,13 @@ class RunState:
     followup_evidence_intake_state: dict[str, Any] = field(default_factory=dict)
     followup_evidence_intake_projection: dict[str, Any] = field(default_factory=dict)
     followup_evidence_intake_history: list[dict[str, Any]] = field(default_factory=list)
+    followup_sufficiency_recheck_state: dict[str, Any] = field(default_factory=dict)
+    followup_sufficiency_recheck_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_sufficiency_recheck_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -410,6 +431,15 @@ class RunState:
             followup_evidence_intake_history=deepcopy(
                 self.followup_evidence_intake_history
             ),
+            followup_sufficiency_recheck_state=deepcopy(
+                self.followup_sufficiency_recheck_state
+            ),
+            followup_sufficiency_recheck_projection=deepcopy(
+                self.followup_sufficiency_recheck_projection
+            ),
+            followup_sufficiency_recheck_history=deepcopy(
+                self.followup_sufficiency_recheck_history
+            ),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -453,6 +483,9 @@ class KernelTraceProjection:
     followup_evidence_intake_state: Mapping[str, Any]
     followup_evidence_intake_projection: Mapping[str, Any]
     followup_evidence_intake_history: Sequence[Mapping[str, Any]]
+    followup_sufficiency_recheck_state: Mapping[str, Any]
+    followup_sufficiency_recheck_projection: Mapping[str, Any]
+    followup_sufficiency_recheck_history: Sequence[Mapping[str, Any]]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -523,6 +556,16 @@ class KernelTraceProjection:
             ),
             "followup_evidence_intake_history": [
                 _safe_mapping(item) for item in self.followup_evidence_intake_history
+            ],
+            "followup_sufficiency_recheck_state": _safe_mapping(
+                self.followup_sufficiency_recheck_state
+            ),
+            "followup_sufficiency_recheck_projection": _safe_mapping(
+                self.followup_sufficiency_recheck_projection
+            ),
+            "followup_sufficiency_recheck_history": [
+                _safe_mapping(item)
+                for item in self.followup_sufficiency_recheck_history
             ],
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
@@ -912,6 +955,100 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_sufficiency_recheck(
+        self,
+        *,
+        reason: str = "ag96i2d_followup_fixture_sufficiency_recheck",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.followup_evidence_intake_state:
+            raise RunKernelTransitionError(
+                "follow-up sufficiency recheck requires reduced follow-up "
+                "EvidenceLedger intake state"
+            )
+        intake_state = self.state.followup_evidence_intake_state
+        if intake_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up sufficiency recheck requires canonical intake state"
+            )
+        if intake_state.get("evidence_ledger_intake_mode") != (
+            "fixture_only_followup_intake"
+        ):
+            raise RunKernelTransitionError(
+                "follow-up sufficiency recheck requires fixture-only intake state"
+            )
+        ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+        if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
+            raise RunKernelTransitionError(
+                "follow-up sufficiency recheck requires EvidenceLedger projection"
+            )
+        if ledger_projection.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up sufficiency recheck requires canonical EvidenceLedger"
+            )
+        if int(ledger_projection.get("requirement_count") or 0) <= 0:
+            raise RunKernelTransitionError(
+                "follow-up sufficiency recheck requires EvidenceLedger requirements"
+            )
+        canonical_inputs = {
+            "run_id": intake_state.get("run_id"),
+            "checkpoint_id": intake_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": intake_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": intake_state.get("sealed_candidate_id"),
+            "followup_execution_id": intake_state.get("followup_execution_id"),
+            "execution_id": intake_state.get("execution_id"),
+            "followup_execution_observation_id": intake_state.get(
+                "followup_execution_observation_id"
+            ),
+            "followup_evidence_intake_id": intake_state.get("intake_id"),
+            "intake_id": intake_state.get("intake_id"),
+            "followup_evidence_intake_observation_id": intake_state.get(
+                "observation_id"
+            ),
+            "provider_job_kind": intake_state.get("provider_job_kind"),
+            "component_id": intake_state.get("component_id"),
+            "source_obligation_id": intake_state.get("source_obligation_id"),
+            "requirement_ids": intake_state.get("requirement_ids", []),
+            "expected_source_classes": intake_state.get(
+                "expected_source_classes",
+                [],
+            ),
+            "result_status": intake_state.get("result_status"),
+            "bridge_only": intake_state.get("bridge_only"),
+            "fixture_execution_mode": intake_state.get("fixture_execution_mode"),
+            "evidence_ledger_intake_mode": intake_state.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "provider_execution_licensed": False,
+            "sufficiency_recheck_mode": FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
+            "evidence_ledger_projection_digest": (
+                evidence_ledger_projection_digest(ledger_projection)
+            ),
+            "evidence_ledger_custody_summary": evidence_ledger_custody_summary(
+                ledger_projection
+            ),
+            "final_answer_packet_deferred": True,
+            "author_activation_allowed": False,
+            "citation_behavior_changed": False,
+            "citation_eligible": False,
+            "live_validation_not_run": True,
+            "expected_observation_record_type": (
+                "followup_sufficiency_recheck_consumption_record"
+            ),
+        }
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        return self.authorize(
+            stage=FOLLOWUP_SUFFICIENCY_RECHECK_STAGE,
+            action_type=ActionType.FOLLOWUP_SUFFICIENCY_RECHECK,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_SUFFICIENCY_RECHECK_OBSERVED
+            ),
+        )
+
     def reduce(self, observation: Observation) -> RunState:
         action = self.state.issued_actions.get(observation.action_id)
         if action is None:
@@ -1151,94 +1288,13 @@ class RunKernel:
                 )
             validation = _safe_mapping(observation.payload.get("validation"))
             self.state.sufficiency_judgment = judgment_projection
-            self.state.sufficiency_judgment_projection = {
-                "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
-                "canonical_state": True,
-                "trace_only": False,
-                "storage_only": False,
-                "schema_version": judgment_projection.get("schema_version"),
-                "judgment_id": judgment_projection.get("judgment_id"),
-                "decision": judgment_projection.get("decision"),
-                "mode": judgment_projection.get("mode"),
-                "contract_id": judgment_projection.get("contract_id"),
-                "selected_template_ids": judgment_projection.get(
-                    "selected_template_ids",
-                    [],
-                ),
-                "contract_fulfilled": judgment_projection.get("contract_fulfilled"),
-                "required_obligations_satisfied": judgment_projection.get(
-                    "required_obligations_satisfied"
-                ),
-                "missing_required_obligations": judgment_projection.get(
-                    "missing_required_obligations",
-                    [],
-                ),
-                "partial_obligations": judgment_projection.get(
-                    "partial_obligations",
-                    [],
-                ),
-                "satisfied_obligations": judgment_projection.get(
-                    "satisfied_obligations",
-                    [],
-                ),
-                "unresolved_conflicts": judgment_projection.get(
-                    "unresolved_conflicts",
-                    [],
-                ),
-                "indirect_inference_claims": judgment_projection.get(
-                    "indirect_inference_claims",
-                    [],
-                ),
-                "source_bound_numeric_unknowns": judgment_projection.get(
-                    "source_bound_numeric_unknowns",
-                    [],
-                ),
-                "weak_or_thin_evidence": judgment_projection.get(
-                    "weak_or_thin_evidence",
-                    [],
-                ),
-                "failure_card_authorized": judgment_projection.get(
-                    "failure_card_authorized"
-                ),
-                "final_answer_allowed": judgment_projection.get(
-                    "final_answer_allowed"
-                ),
-                "final_answer_posture": judgment_projection.get(
-                    "final_answer_posture"
-                ),
-                "mandatory_caveats": judgment_projection.get(
-                    "mandatory_caveats",
-                    [],
-                ),
-                "prohibited_upgrades": judgment_projection.get(
-                    "prohibited_upgrades",
-                    [],
-                ),
-                "readiness_reasons": judgment_projection.get(
-                    "readiness_reasons",
-                    [],
-                ),
-                "final_packet_inputs": judgment_projection.get(
-                    "final_packet_inputs",
-                    {},
-                ),
-                "rationale": judgment_projection.get("rationale"),
-                "validation_status": validation.get("status")
-                or judgment_projection.get("validation", {}).get("status"),
-                "prompt_hash": validation.get("prompt_hash")
-                or observation.payload.get("prompt_hash"),
-                "prompt_length": validation.get("prompt_length")
-                or observation.payload.get("prompt_length"),
-                "model_identity": {
-                    "provider": validation.get("provider"),
-                    "model": validation.get("model"),
-                    "effort": validation.get("effort"),
-                    "use_reasoning": validation.get("use_reasoning"),
-                },
-                "prompt_text_retained": False,
-                "model_response_text_retained": False,
-                "provider_payload_retained": False,
-            }
+            self.state.sufficiency_judgment_projection = (
+                _canonical_sufficiency_judgment_projection(
+                    judgment_projection=judgment_projection,
+                    validation=validation,
+                    observation_payload=observation.payload,
+                )
+            )
             self.state.sufficiency_judgment_history.append(
                 deepcopy(self.state.sufficiency_judgment_projection)
             )
@@ -1648,6 +1704,188 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_evidence_intake_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_SUFFICIENCY_RECHECK:
+            observed_recheck_state = _safe_mapping(
+                observation.payload.get("followup_sufficiency_recheck_state")
+            )
+            if not observed_recheck_state:
+                raise RunKernelTransitionError(
+                    "follow-up sufficiency recheck observation requires "
+                    "followup_sufficiency_recheck_state"
+                )
+            if not self.state.followup_evidence_intake_state:
+                raise RunKernelTransitionError(
+                    "follow-up sufficiency recheck requires existing intake state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _validate_followup_sufficiency_recheck_observation_binding(
+                action_inputs=action_inputs,
+                observed_recheck_state=observed_recheck_state,
+            )
+            ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+            try:
+                canonical_record = build_followup_sufficiency_recheck_record(
+                    action_inputs=action_inputs,
+                    followup_evidence_intake_state=(
+                        self.state.followup_evidence_intake_state
+                    ),
+                    evidence_ledger_projection=ledger_projection,
+                    prior_sufficiency_judgment_projection=(
+                        self.state.sufficiency_judgment_projection
+                    ),
+                    sufficiency_handoff=_safe_mapping(
+                        self.state.followup_authorization_state.get(
+                            "sufficiency_handoff"
+                        )
+                    ),
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            recheck_state = canonical_record.to_dict()
+            judgment_projection = _safe_mapping(
+                recheck_state.get("sufficiency_judgment_projection")
+            )
+            if not judgment_projection:
+                raise RunKernelTransitionError(
+                    "follow-up sufficiency recheck requires SufficiencyJudgment "
+                    "projection"
+                )
+            flags = _safe_mapping(recheck_state.get("behavior_boundary_flags"))
+            for flag in (
+                "live_provider_call_executed",
+                "provider_job_scheduled",
+                "provider_job_dispatched",
+                "search_executed",
+                "retrieval_executed",
+                "fetch_executed",
+                "model_called",
+                "query_generation_changed",
+                "retrieval_ranking_filtering_changed",
+                "search_judgment_rerun",
+                "final_answer_packet_updated",
+                "final_answer_behavior_changed",
+                "author_prose_behavior_changed",
+                "citation_behavior_changed",
+                "pipeline_orchestrator_domain_logic_changed",
+            ):
+                if flags.get(flag) is not False:
+                    raise RunKernelTransitionError(
+                        f"follow-up sufficiency recheck requires {flag}=False"
+                    )
+            if flags.get("sufficiency_judgment_rechecked") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up sufficiency recheck must recheck SufficiencyJudgment"
+                )
+            if recheck_state.get("final_answer_packet_deferred") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up sufficiency recheck must defer FinalAnswerPacket"
+                )
+            if recheck_state.get("author_activation_allowed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up sufficiency recheck must keep Author closed"
+                )
+            if recheck_state.get("citation_behavior_changed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up sufficiency recheck must not change citations"
+                )
+            recheck_state = {
+                **recheck_state,
+                "owner": "RunKernel.FollowupSufficiencyRecheck",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "observation_id": observed_recheck_state.get("observation_id"),
+            }
+            self.state.followup_sufficiency_recheck_state = recheck_state
+            validation = _safe_mapping(judgment_projection.get("validation"))
+            self.state.sufficiency_judgment = judgment_projection
+            self.state.sufficiency_judgment_projection = (
+                _canonical_sufficiency_judgment_projection(
+                    judgment_projection=judgment_projection,
+                    validation=validation,
+                    observation_payload=judgment_projection,
+                )
+            )
+            self.state.sufficiency_judgment_history.append(
+                deepcopy(self.state.sufficiency_judgment_projection)
+            )
+            self.state.projections[SUFFICIENCY_JUDGMENT_STAGE] = deepcopy(
+                self.state.sufficiency_judgment_projection
+            )
+            self.state.followup_sufficiency_recheck_projection = {
+                "owner": "RunKernel.FollowupSufficiencyRecheck",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": recheck_state.get("schema_version"),
+                "recheck_id": recheck_state.get("recheck_id"),
+                "observation_id": recheck_state.get("observation_id"),
+                "run_id": recheck_state.get("run_id"),
+                "checkpoint_id": recheck_state.get("checkpoint_id"),
+                "followup_authorization_consumption_id": recheck_state.get(
+                    "followup_authorization_consumption_id"
+                ),
+                "sealed_candidate_id": recheck_state.get("sealed_candidate_id"),
+                "followup_execution_id": recheck_state.get("followup_execution_id"),
+                "execution_id": recheck_state.get("execution_id"),
+                "followup_execution_observation_id": recheck_state.get(
+                    "followup_execution_observation_id"
+                ),
+                "followup_evidence_intake_id": recheck_state.get(
+                    "followup_evidence_intake_id"
+                ),
+                "intake_id": recheck_state.get("intake_id"),
+                "followup_evidence_intake_observation_id": recheck_state.get(
+                    "followup_evidence_intake_observation_id"
+                ),
+                "provider_job_kind": recheck_state.get("provider_job_kind"),
+                "component_id": recheck_state.get("component_id"),
+                "source_obligation_id": recheck_state.get("source_obligation_id"),
+                "requirement_ids": recheck_state.get("requirement_ids", []),
+                "expected_source_classes": recheck_state.get(
+                    "expected_source_classes",
+                    [],
+                ),
+                "result_status": recheck_state.get("result_status"),
+                "bridge_only": recheck_state.get("bridge_only"),
+                "sufficiency_recheck_mode": recheck_state.get(
+                    "sufficiency_recheck_mode"
+                ),
+                "evidence_ledger_projection_digest": recheck_state.get(
+                    "evidence_ledger_projection_digest"
+                ),
+                "source_requirement_status_summary": recheck_state.get(
+                    "source_requirement_status_summary",
+                    {},
+                ),
+                "fixture_sufficiency_posture": recheck_state.get(
+                    "fixture_sufficiency_posture"
+                ),
+                "sufficiency_judgment_ref": recheck_state.get(
+                    "sufficiency_judgment_ref",
+                    {},
+                ),
+                "final_answer_packet_deferred": recheck_state.get(
+                    "final_answer_packet_deferred"
+                ),
+                "author_activation_allowed": recheck_state.get(
+                    "author_activation_allowed"
+                ),
+                "citation_behavior_changed": recheck_state.get(
+                    "citation_behavior_changed"
+                ),
+                "citation_eligible": recheck_state.get("citation_eligible"),
+                "live_validation_not_run": recheck_state.get(
+                    "live_validation_not_run"
+                ),
+                "behavior_boundary_flags": flags,
+            }
+            self.state.followup_sufficiency_recheck_history.append(
+                deepcopy(self.state.followup_sufficiency_recheck_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_sufficiency_recheck_projection
+            )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
@@ -1676,6 +1914,92 @@ def validate_authorized_action(
         expected_observation_type=expected_observation_type,
     )
     return action
+
+
+def _canonical_sufficiency_judgment_projection(
+    *,
+    judgment_projection: Mapping[str, Any],
+    validation: Mapping[str, Any],
+    observation_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    validation_mapping = _safe_mapping(validation)
+    judgment_validation = _safe_mapping(judgment_projection.get("validation"))
+    return {
+        "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "schema_version": judgment_projection.get("schema_version"),
+        "judgment_id": judgment_projection.get("judgment_id"),
+        "decision": judgment_projection.get("decision"),
+        "mode": judgment_projection.get("mode"),
+        "contract_id": judgment_projection.get("contract_id"),
+        "selected_template_ids": judgment_projection.get(
+            "selected_template_ids",
+            [],
+        ),
+        "contract_fulfilled": judgment_projection.get("contract_fulfilled"),
+        "required_obligations_satisfied": judgment_projection.get(
+            "required_obligations_satisfied"
+        ),
+        "missing_required_obligations": judgment_projection.get(
+            "missing_required_obligations",
+            [],
+        ),
+        "partial_obligations": judgment_projection.get(
+            "partial_obligations",
+            [],
+        ),
+        "satisfied_obligations": judgment_projection.get(
+            "satisfied_obligations",
+            [],
+        ),
+        "unresolved_conflicts": judgment_projection.get(
+            "unresolved_conflicts",
+            [],
+        ),
+        "indirect_inference_claims": judgment_projection.get(
+            "indirect_inference_claims",
+            [],
+        ),
+        "source_bound_numeric_unknowns": judgment_projection.get(
+            "source_bound_numeric_unknowns",
+            [],
+        ),
+        "source_bound_numeric_resolutions": judgment_projection.get(
+            "source_bound_numeric_resolutions",
+            [],
+        ),
+        "weak_or_thin_evidence": judgment_projection.get(
+            "weak_or_thin_evidence",
+            [],
+        ),
+        "failure_card_authorized": judgment_projection.get(
+            "failure_card_authorized"
+        ),
+        "final_answer_allowed": judgment_projection.get("final_answer_allowed"),
+        "final_answer_posture": judgment_projection.get("final_answer_posture"),
+        "mandatory_caveats": judgment_projection.get("mandatory_caveats", []),
+        "prohibited_upgrades": judgment_projection.get("prohibited_upgrades", []),
+        "readiness_reasons": judgment_projection.get("readiness_reasons", []),
+        "final_packet_inputs": judgment_projection.get("final_packet_inputs", {}),
+        "rationale": judgment_projection.get("rationale"),
+        "validation_status": validation_mapping.get("status")
+        or judgment_validation.get("status"),
+        "prompt_hash": validation_mapping.get("prompt_hash")
+        or observation_payload.get("prompt_hash"),
+        "prompt_length": validation_mapping.get("prompt_length")
+        or observation_payload.get("prompt_length"),
+        "model_identity": {
+            "provider": validation_mapping.get("provider"),
+            "model": validation_mapping.get("model"),
+            "effort": validation_mapping.get("effort"),
+            "use_reasoning": validation_mapping.get("use_reasoning"),
+        },
+        "prompt_text_retained": False,
+        "model_response_text_retained": False,
+        "provider_payload_retained": False,
+    }
 
 
 def _followup_sealed_candidate(
@@ -1815,6 +2139,73 @@ def _validate_followup_evidence_intake_action_binding(
     ):
         raise RunKernelTransitionError(
             "follow-up evidence intake action must be fixture-only"
+        )
+
+
+def _validate_followup_sufficiency_recheck_observation_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    observed_recheck_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_execution_observation_id",
+        "followup_evidence_intake_id",
+        "intake_id",
+        "followup_evidence_intake_observation_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "result_status",
+        "bridge_only",
+        "fixture_execution_mode",
+        "evidence_ledger_intake_mode",
+        "sufficiency_recheck_mode",
+        "evidence_ledger_projection_digest",
+    ):
+        if observed_recheck_state.get(binding_field) != action_inputs.get(binding_field):
+            raise RunKernelTransitionError(
+                "follow-up sufficiency recheck observation "
+                f"{binding_field} does not match authorized action"
+            )
+    if _followup_token_list(
+        observed_recheck_state.get("requirement_ids")
+    ) != _followup_token_list(action_inputs.get("requirement_ids")):
+        raise RunKernelTransitionError(
+            "follow-up sufficiency recheck observation requirement_ids do not "
+            "match authorized action"
+        )
+    if _followup_token_list(
+        observed_recheck_state.get("expected_source_classes")
+    ) != _followup_token_list(action_inputs.get("expected_source_classes")):
+        raise RunKernelTransitionError(
+            "follow-up sufficiency recheck observation expected_source_classes do "
+            "not match authorized action"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up sufficiency recheck action must keep provider unlicensed"
+        )
+    if action_inputs.get("sufficiency_recheck_mode") != (
+        FOLLOWUP_SUFFICIENCY_RECHECK_MODE
+    ):
+        raise RunKernelTransitionError(
+            "follow-up sufficiency recheck action must be fixture-only"
+        )
+    if action_inputs.get("final_answer_packet_deferred") is not True:
+        raise RunKernelTransitionError(
+            "follow-up sufficiency recheck action must defer FinalAnswerPacket"
+        )
+    if action_inputs.get("author_activation_allowed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up sufficiency recheck action must keep Author closed"
+        )
+    if action_inputs.get("citation_behavior_changed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up sufficiency recheck action must not change citations"
         )
 
 
@@ -2090,12 +2481,28 @@ def _followup_token(value: Any, *, limit: int = 220) -> str:
     return text.casefold().replace("-", "_").replace(" ", "_")[:limit]
 
 
+def _followup_token_list(value: Any) -> list[str]:
+    if value is None or isinstance(value, str):
+        values = [value] if value else []
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        values = list(value)
+    else:
+        values = [value]
+    out: list[str] = []
+    for item in values:
+        token = _followup_token(item)
+        if token and token not in out:
+            out.append(token)
+    return out
+
+
 __all__ = [
     "AUTHOR_EXECUTION_STAGE",
     "FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_AUTHORIZATION_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
+    "FOLLOWUP_SUFFICIENCY_RECHECK_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
