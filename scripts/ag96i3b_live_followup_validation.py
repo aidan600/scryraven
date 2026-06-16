@@ -201,6 +201,10 @@ def _render_packet(
     stop_reason: str,
 ) -> str:
     candidate = _mapping(validation.get("sanitized_candidate_facts"))
+    diagnostics = _mapping(validation.get("provider_result_set_diagnostics"))
+    sanitized_results = [
+        _mapping(item) for item in diagnostics.get("sanitized_results", [])
+    ]
     branch = _git_output(["git", "branch", "--show-current"]) or "unknown"
     head = _git_output(["git", "rev-parse", "--short", "HEAD"]) or "unknown"
     base_full = _git_output(["git", "merge-base", "main", "HEAD"]) or ""
@@ -251,6 +255,31 @@ def _render_packet(
         f"- fetchable_status: {candidate.get('fetchable_status') or 'none'}",
         f"- readable_status: {candidate.get('readable_status') or 'none'}",
         f"- authorized_query_ref: {candidate.get('authorized_query_ref') or 'none'}",
+        "",
+        "## Sanitized Result Set Diagnostics",
+        "",
+        f"- provider_result_count: {diagnostics.get('provider_result_count', 0)}",
+        f"- sanitized_result_count: {diagnostics.get('sanitized_result_count', 0)}",
+        f"- provider_surface_role: {diagnostics.get('provider_surface_role') or 'none'}",
+        f"- provider_job_surface_alignment_status: {diagnostics.get('provider_job_surface_alignment_status') or 'none'}",
+        f"- selected_candidate_rank: {diagnostics.get('selected_candidate_rank') or 'none'}",
+        f"- selected_candidate_reason: {diagnostics.get('selected_candidate_reason') or 'none'}",
+        f"- first_failure_layer: {diagnostics.get('first_failure_layer') or 'none'}",
+        "",
+        "### Sanitized Ranks",
+        "",
+        *[
+            (
+                f"- rank {item.get('rank')}: url={item.get('url') or 'none'}; "
+                f"title={item.get('title') or 'none'}; "
+                f"domain={item.get('domain') or 'none'}; "
+                f"source_class={item.get('source_class') or 'none'}; "
+                f"source_tier={item.get('source_tier') or 'none'}; "
+                f"currentness_signal={item.get('currentness_signal') or 'none'}; "
+                f"candidate_fit_status={item.get('candidate_fit_status') or 'none'}"
+            )
+            for item in sanitized_results
+        ],
         "",
         "## EvidenceLedger / Sufficiency / Packet Posture",
         "",
