@@ -100,3 +100,9 @@ AG-96I2G or a later phase is required for either a fixture Author observation
 or product-answer activation. Any later Author invocation must explicitly
 license Author execution, prompt/prose behavior, citation rendering or
 formatting behavior if changed, and product final-answer activation.
+
+AG-96I2G is documented in
+[AG96I2G_FOLLOWUP_SPINE_CLEANUP_AUDIT.md](AG96I2G_FOLLOWUP_SPINE_CLEANUP_AUDIT.md).
+It audits and cleans the fixture-only AG-96I2A through AG-96I2F spine without
+opening new Author, citation, provider/search, retrieval, fetch, model, or
+product final-answer behavior.

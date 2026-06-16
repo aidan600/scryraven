@@ -14,6 +14,10 @@ from typing import Any, Mapping
 
 from core.followup_authorization_runtime import FollowupRuntimeConsumptionRecord
 from core.followup_deliberation import FollowupMode, clean_text, clean_token, safe_json
+from core.followup_fixture_boundaries import (
+    followup_common_redaction_posture,
+    followup_live_surface_flags,
+)
 from core.run_kernel import (
     FOLLOWUP_EXECUTION_STAGE,
     ActionType,
@@ -399,21 +403,11 @@ def _fixture_execution_gate() -> dict[str, Any]:
 
 def _behavior_boundary_flags() -> dict[str, bool]:
     return {
-        "provider_execution_licensed": False,
-        "live_provider_call_executed": False,
-        "provider_job_scheduled": False,
-        "provider_job_dispatched": False,
-        "search_executed": False,
-        "retrieval_executed": False,
-        "fetch_executed": False,
-        "model_called": False,
-        "query_generation_changed": False,
-        "retrieval_ranking_filtering_changed": False,
+        **followup_live_surface_flags(),
         "evidence_ledger_mutated": False,
         "sufficiency_judgment_rechecked": False,
         "final_answer_behavior_changed": False,
         "author_prose_behavior_changed": False,
-        "pipeline_orchestrator_domain_logic_changed": False,
     }
 
 
@@ -428,15 +422,7 @@ def _fixture_budget_semantics(planned_debit: Mapping[str, Any]) -> dict[str, Any
 
 
 def _redaction_posture() -> dict[str, bool]:
-    return {
-        "json_safe": True,
-        "sanitized_fixture_summary_only": True,
-        "provider_payloads_retained": False,
-        "prompts_retained": False,
-        "model_responses_retained": False,
-        "unsanitized_text_retained": False,
-        "private_records_or_complete_traces_retained": False,
-    }
+    return followup_common_redaction_posture()
 
 
 def _mapping(value: Any) -> dict[str, Any]:

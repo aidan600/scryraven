@@ -16,6 +16,15 @@ from core.followup_final_answer_packet_runtime import (
     FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
     followup_projection_digest,
 )
+from core.followup_fixture_boundaries import (
+    FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
+    FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS,
+    FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    followup_closed_flags,
+    followup_common_redaction_posture,
+    followup_fixture_provenance,
+    followup_live_surface_flags,
+)
 
 FOLLOWUP_AUTHOR_GATE_SCHEMA_VERSION = "followup_author_gate_ag96i2f_v1"
 FOLLOWUP_AUTHOR_GATE_TRACE_KEY = "followup_author_gate_runtime"
@@ -661,48 +670,25 @@ def _validate_action_inputs(
 
 def _behavior_boundary_flags() -> dict[str, bool]:
     return {
-        "provider_execution_licensed": False,
-        "live_provider_call_executed": False,
-        "provider_job_scheduled": False,
-        "provider_job_dispatched": False,
-        "search_executed": False,
-        "retrieval_executed": False,
-        "fetch_executed": False,
-        "model_called": False,
-        "query_generation_changed": False,
-        "retrieval_ranking_filtering_changed": False,
-        "search_judgment_rerun": False,
+        **followup_live_surface_flags(),
+        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
         "sufficiency_judgment_rechecked": False,
         "final_answer_packet_rebuilt": False,
         "final_answer_packet_updated": False,
         "packet_authority_consumed": True,
         "author_activation_allowed": False,
         "author_execution_deferred": True,
-        "author_executor_invoked": False,
-        "author_prompt_changed": False,
-        "author_prose_behavior_changed": False,
-        "citation_rendering_changed": False,
-        "citation_formatter_invoked": False,
-        "citation_behavior_changed": False,
-        "product_answer_behavior_changed": False,
-        "final_answer_behavior_changed": False,
+        **followup_closed_flags(
+            *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS
+        ),
         "live_validation_not_run": True,
-        "pipeline_orchestrator_domain_logic_changed": False,
     }
 
 
 def _packet_state_closed_false_flags() -> tuple[str, ...]:
     return (
-        "live_provider_call_executed",
-        "provider_job_scheduled",
-        "provider_job_dispatched",
-        "search_executed",
-        "retrieval_executed",
-        "fetch_executed",
-        "model_called",
-        "query_generation_changed",
-        "retrieval_ranking_filtering_changed",
-        "search_judgment_rerun",
+        *FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS[1:],
+        *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
         "author_executor_invoked",
         "author_prompt_changed",
         "author_prose_behavior_changed",
@@ -711,35 +697,25 @@ def _packet_state_closed_false_flags() -> tuple[str, ...]:
         "citation_behavior_changed",
         "product_answer_behavior_changed",
         "final_answer_behavior_changed",
-        "pipeline_orchestrator_domain_logic_changed",
     )
 
 
 def _fixture_only_provenance() -> dict[str, Any]:
-    return {
-        "origin": "ag96i2b_followup_fixture_execution",
-        "intake_bridge": "ag96i2c_followup_evidence_ledger_intake",
-        "recheck_bridge": "ag96i2d_followup_sufficiency_recheck",
-        "packet_bridge": "ag96i2e_followup_final_answer_packet_prepare",
-        "author_gate_bridge": "ag96i2f_followup_author_gate",
-        "fixture_only": True,
-        "live_provider_result": False,
-        "provider_job_executor_connected": False,
-        "author_executor_connected": False,
-    }
+    return followup_fixture_provenance(
+        intake_bridge="ag96i2c_followup_evidence_ledger_intake",
+        recheck_bridge="ag96i2d_followup_sufficiency_recheck",
+        packet_bridge="ag96i2e_followup_final_answer_packet_prepare",
+        author_gate_bridge="ag96i2f_followup_author_gate",
+        author_executor_connected=False,
+    )
 
 
 def _redaction_posture() -> dict[str, bool]:
-    return {
-        "json_safe": True,
-        "packet_authority_refs_only": True,
-        "final_text_retained": False,
-        "provider_payloads_retained": False,
-        "prompts_retained": False,
-        "model_responses_retained": False,
-        "unsanitized_text_retained": False,
-        "private_records_or_complete_traces_retained": False,
-    }
+    return followup_common_redaction_posture(
+        sanitized_fixture_summary_only=False,
+        packet_authority_refs_only=True,
+        final_text_retained=False,
+    )
 
 
 def _mapping(value: Any) -> dict[str, Any]:
