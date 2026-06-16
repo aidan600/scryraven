@@ -75,7 +75,13 @@ The fixture-origin custody record is visibly tied to:
 - sanitized fixture result summary.
 
 `fixture_success` may admit a fixture-origin candidate custody record into the
-ledger. It does not set final evidence satisfied, does not create final-answer
+ledger only when the fixture candidate's source class matches the sealed
+candidate's expected source-obligation contract. The required ledger source
+class is derived from the sealed `expected_evidence_ledger_custody_update`
+source classes, with sealed provider-job kind as a fallback when sanitized
+payload depth redaction obscures the nested class list. The fixture result's
+`source_class` describes the candidate; it does not redefine the requirement.
+This intake does not set final evidence satisfied, does not create final-answer
 citation eligibility, and does not update FinalAnswerPacket or Author state.
 
 `fixture_bridge_only` records bridge-only posture but cannot satisfy source

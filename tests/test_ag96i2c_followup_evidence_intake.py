@@ -121,6 +121,7 @@ def _fixture_payload(**overrides: Any) -> dict[str, Any]:
 
 def _authorize_and_execute(
     *,
+    checkpoint: Any | None = None,
     fixture_payload: dict[str, Any] | None = None,
 ) -> RunKernel:
     kernel = RunKernel.start(run_id="ag96i2c-fixture", request_id="request-1")
@@ -129,7 +130,7 @@ def _authorize_and_execute(
     )
     auth_result = execute_followup_authorization_consumption_action(
         auth_action,
-        checkpoint=_checkpoint(),
+        checkpoint=checkpoint or _checkpoint(),
     )
     kernel.reduce(auth_result.observation)
     exec_action = kernel.authorize_followup_fixture_execution(
@@ -182,8 +183,9 @@ def test_followup_fixture_success_intakes_into_evidence_ledger_and_kernel_state(
     assert candidate["source_class"] == "official_current_rules"
     assert candidate["currentness_signal"] == "current"
     assert candidate["final_evidence_eligible"] is False
-    requirement = _requirement(after, "obligation_official_current")
+    requirement = _requirement(after, "source_requirement:requirement_official_current")
     assert requirement["status"] == SourceRequirementStatus.SATISFIED.value
+    assert requirement["required_source_class"] == "official_current_rules"
 
     state = kernel.state.followup_evidence_intake_state
     projection = kernel.state.followup_evidence_intake_projection
@@ -255,6 +257,7 @@ def test_intake_authorization_inputs_cannot_override_canonical_binding_fields() 
     assert action.inputs["provider_job_kind"] == execution["provider_job_kind"]
     assert action.inputs["component_id"] == execution["component_id"]
     assert action.inputs["source_obligation_id"] == execution["source_obligation_id"]
+    assert action.inputs["requirement_ids"] == execution["requirement_ids"]
     assert action.inputs["provider_execution_licensed"] is False
     assert action.inputs["evidence_ledger_intake_mode"] == FOLLOWUP_EVIDENCE_INTAKE_MODE
     assert action.inputs["caller_note"] == "preserved_non_binding_input"
@@ -268,7 +271,7 @@ def test_bridge_only_intake_records_posture_without_satisfying_downstream_surfac
     _intake(kernel)
 
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
-    requirement = _requirement(ledger, "obligation_official_current")
+    requirement = _requirement(ledger, "source_requirement:requirement_official_current")
     assert requirement["status"] == SourceRequirementStatus.UNSATISFIED.value
     assert ledger["final_evidence_refs"] == []
     assert kernel.state.followup_evidence_intake_state["bridge_only"] is True
@@ -293,13 +296,84 @@ def test_failure_status_intake_does_not_create_satisfying_ledger_evidence(
     _intake(kernel)
 
     ledger = kernel.state.evidence_ledger.to_projection().to_dict()
-    requirement = _requirement(ledger, "obligation_official_current")
+    requirement = _requirement(ledger, "source_requirement:requirement_official_current")
     assert requirement["status"] != SourceRequirementStatus.SATISFIED.value
     assert all(
         record["disposition"] != "accepted"
         for record in ledger["custody_records"]
     )
     assert kernel.state.followup_evidence_intake_state["final_evidence_satisfied"] is False
+
+
+def test_fixture_success_secondary_source_class_does_not_satisfy_official_current_obligation() -> None:
+    kernel = _authorize_and_execute(
+        fixture_payload=_fixture_payload(
+            source_tier="secondary",
+            source_class="reputable_secondary",
+            eligible_for_stronger_obligation=True,
+        )
+    )
+
+    _intake(kernel)
+
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    requirement = _requirement(ledger, "source_requirement:requirement_official_current")
+    custody = ledger["custody_records"][0]
+    assert requirement["required_source_class"] == "official_current_rules"
+    assert requirement["status"] == SourceRequirementStatus.UNSATISFIED.value
+    assert custody["disposition"] == "rejected"
+    assert (
+        kernel.state.followup_evidence_intake_state[
+            "evidence_ledger_candidate_admitted"
+        ]
+        is False
+    )
+
+
+def test_fixture_success_expected_official_current_source_class_still_intakes_successfully() -> None:
+    kernel = _authorize_and_execute(
+        fixture_payload=_fixture_payload(source_class="official_government")
+    )
+
+    _intake(kernel)
+
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    requirement = _requirement(ledger, "source_requirement:requirement_official_current")
+    assert requirement["required_source_class"] == "official_current_rules"
+    assert requirement["status"] == SourceRequirementStatus.SATISFIED.value
+    assert ledger["custody_records"][0]["disposition"] == "accepted"
+
+
+def test_legal_current_primary_provider_job_flows_through_fixture_intake() -> None:
+    checkpoint = _checkpoint(
+        gaps=[
+            _gap(
+                GapType.LEGAL_CURRENT_PRIMARY_GAP.value,
+                gap_id="gap.legal",
+                obligation_id="obligation-legal-current",
+                requirement_id="requirement-legal-current",
+            )
+        ]
+    )
+    kernel = _authorize_and_execute(
+        checkpoint=checkpoint,
+        fixture_payload=_fixture_payload(
+            source_class="legal_or_regulatory_text",
+            source_tier="official",
+            title="Current legal text",
+        ),
+    )
+
+    assert (
+        kernel.state.followup_execution_state["provider_job_kind"]
+        == "legal_current_primary_acquisition"
+    )
+    _intake(kernel)
+
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    requirement = _requirement(ledger, "source_requirement:requirement_legal_current")
+    assert requirement["required_source_class"] == "legal_or_regulatory_text"
+    assert requirement["status"] == SourceRequirementStatus.SATISFIED.value
 
 
 def test_intake_reducer_rejects_closed_surface_flags() -> None:

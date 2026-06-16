@@ -13,7 +13,12 @@ from enum import Enum
 from typing import Any, Mapping
 
 from core.evidence_ledger import EvidenceLedgerObservation
-from core.followup_deliberation import clean_text, clean_token, safe_json
+from core.followup_deliberation import (
+    ProviderJobKind,
+    clean_text,
+    clean_token,
+    safe_json,
+)
 from core.followup_execution_runtime import (
     FIXTURE_EXECUTION_MODE,
     FollowupExecutionStatus,
@@ -54,8 +59,10 @@ class FollowupEvidenceIntakeRequest:
     provider_job_kind: str
     component_id: str
     source_obligation_id: str
+    requirement_ids: tuple[str, ...]
     result_status: str
     bridge_only: bool
+    expected_source_classes: tuple[str, ...]
     expected_evidence_ledger_custody_update: Mapping[str, Any]
     sanitized_fixture_result_summary: Mapping[str, Any]
     provider_execution_licensed: bool
@@ -86,8 +93,16 @@ class FollowupEvidenceIntakeRequest:
             "provider_job_kind": clean_token(self.provider_job_kind),
             "component_id": clean_token(self.component_id),
             "source_obligation_id": clean_token(self.source_obligation_id),
+            "requirement_ids": [
+                clean_token(item) for item in self.requirement_ids if clean_token(item)
+            ],
             "result_status": clean_token(self.result_status),
             "bridge_only": bool(self.bridge_only),
+            "expected_source_classes": [
+                clean_token(item)
+                for item in self.expected_source_classes
+                if clean_token(item)
+            ],
             "expected_evidence_ledger_custody_update": safe_json(
                 self.expected_evidence_ledger_custody_update
             ),
@@ -139,6 +154,10 @@ class FollowupEvidenceIntakeObservation:
     def to_dict(self) -> dict[str, Any]:
         request = self.request.to_dict()
         result = self.result.to_dict()
+        ledger_observation = _ledger_observation_from_request(
+            self.request,
+            ledger_projection={},
+        ).to_dict()
         return {
             "schema_version": FOLLOWUP_EVIDENCE_INTAKE_SCHEMA_VERSION,
             "trace_key": FOLLOWUP_EVIDENCE_INTAKE_TRACE_KEY,
@@ -162,9 +181,11 @@ class FollowupEvidenceIntakeObservation:
             "provider_job_kind": request.get("provider_job_kind"),
             "component_id": request.get("component_id"),
             "source_obligation_id": request.get("source_obligation_id"),
+            "requirement_ids": request.get("requirement_ids", []),
             "result_status": request.get("result_status"),
             "fixture_execution_mode": FIXTURE_EXECUTION_MODE,
             "bridge_only": request.get("bridge_only"),
+            "expected_source_classes": request.get("expected_source_classes", []),
             "expected_evidence_ledger_custody_update": request.get(
                 "expected_evidence_ledger_custody_update",
                 {},
@@ -183,7 +204,17 @@ class FollowupEvidenceIntakeObservation:
             "request": request,
             "result": result,
             "intake_status": result.get("status"),
-            "ledger_observation": result.get("ledger_observation", {}),
+            "ledger_observation": ledger_observation,
+            "ledger_requirements": ledger_observation.get("requirements", []),
+            "ledger_candidates": ledger_observation.get("candidates", []),
+            "ledger_requirement_links": ledger_observation.get(
+                "requirement_links",
+                [],
+            ),
+            "ledger_followup_fixture_intake": ledger_observation.get(
+                "followup_fixture_intake",
+                {},
+            ),
             "evidence_ledger_candidate_admitted": result.get(
                 "evidence_ledger_candidate_admitted"
             ),
@@ -274,8 +305,10 @@ def build_followup_evidence_intake_record(
         provider_job_kind=str(state.get("provider_job_kind") or ""),
         component_id=str(state.get("component_id") or ""),
         source_obligation_id=str(state.get("source_obligation_id") or ""),
+        requirement_ids=tuple(_strings(state.get("requirement_ids"))),
         result_status=str(state.get("result_status") or ""),
         bridge_only=bool(state.get("bridge_only")),
+        expected_source_classes=tuple(_strings(state.get("expected_source_classes"))),
         expected_evidence_ledger_custody_update=_mapping(
             state.get("expected_evidence_ledger_custody_update")
         ),
@@ -327,12 +360,9 @@ def _validate_execution_state(state: Mapping[str, Any]) -> None:
         raise PermissionError("follow-up execution state must defer EvidenceLedger intake")
     if state.get("evidence_ledger_evidence_admitted") is not False:
         raise PermissionError("follow-up execution state must not have admitted evidence")
-    if state.get("provider_job_kind") not in {
-        "official_current_candidate_acquisition",
-        "direct_candidate_search",
-        "semantic_recall",
-        "reconciliation_support",
-    }:
+    try:
+        ProviderJobKind(state.get("provider_job_kind"))
+    except ValueError:
         raise PermissionError("unknown follow-up provider job kind")
     if state.get("result_status") not in {item.value for item in FollowupExecutionStatus}:
         raise PermissionError("unknown follow-up fixture result status")
@@ -403,7 +433,7 @@ def _ledger_observation_from_request(
         "candidates": [candidate],
         "requirement_links": [
             {
-                "requirement_id": request.source_obligation_id,
+                "requirement_id": _requirement_id(request),
                 "candidate_id": candidate["candidate_id"],
                 "link_reason": "followup_fixture_execution_binding",
                 "link_status": candidate["disposition"],
@@ -424,6 +454,8 @@ def _ledger_observation_from_request(
             "provider_job_kind": request.provider_job_kind,
             "component_id": request.component_id,
             "source_obligation_id": request.source_obligation_id,
+            "requirement_ids": list(request.requirement_ids),
+            "expected_source_classes": _expected_source_classes(request),
             "result_status": request.result_status,
             "bridge_only": request.bridge_only,
             "fixture_only_provenance": _fixture_only_provenance(),
@@ -440,7 +472,11 @@ def _ledger_observation_from_request(
     return EvidenceLedgerObservation(
         observation_id=f"ledger:{request.execution_id}",
         source="followup_fixture_evidence_intake",
-        payload=payload,
+        payload={
+            key: value
+            for key, value in payload.items()
+            if key not in {"observation_id", "observation_source"}
+        },
     )
 
 
@@ -448,11 +484,7 @@ def _source_requirement(
     request: FollowupEvidenceIntakeRequest,
     summary: Mapping[str, Any],
 ) -> dict[str, Any]:
-    required_source_class = (
-        clean_token(summary.get("required_source_class"))
-        or clean_token(summary.get("source_class"))
-        or "unknown"
-    )
+    required_source_class = _required_source_class(request)
     required_source_tier = clean_token(summary.get("required_source_tier"))
     if not required_source_tier and required_source_class in {
         "official_current_rules",
@@ -462,7 +494,7 @@ def _source_requirement(
     }:
         required_source_tier = "official"
     return {
-        "requirement_id": request.source_obligation_id,
+        "requirement_id": _requirement_id(request),
         "requirement_kind": _requirement_kind(required_source_class),
         "origin_ref": f"followup_fixture_execution:{request.execution_id}",
         "required_source_class": required_source_class,
@@ -516,8 +548,9 @@ def _candidate_record(
         "fetchable_status": clean_token(summary.get("fetchable_status") or fetchable),
         "disposition": disposition,
         "record_kind": "fact",
-        "requirement_id": request.source_obligation_id,
-        "eligible_for_stronger_obligation": bool(
+        "requirement_id": _requirement_id(request),
+        "eligible_for_stronger_obligation": _source_class_matches_expected(request)
+        and bool(
             summary.get("eligible_for_stronger_obligation")
             or source_tier in {"official", "primary", "canonical"}
         ),
@@ -534,7 +567,10 @@ def _candidate_record(
 def _candidate_disposition(request: FollowupEvidenceIntakeRequest) -> str:
     if request.bridge_only:
         return "contextual"
-    if request.result_status == FollowupExecutionStatus.FIXTURE_SUCCESS.value:
+    if (
+        request.result_status == FollowupExecutionStatus.FIXTURE_SUCCESS.value
+        and _source_class_matches_expected(request)
+    ):
         return "accepted"
     return "rejected"
 
@@ -542,6 +578,11 @@ def _candidate_disposition(request: FollowupEvidenceIntakeRequest) -> str:
 def _candidate_reason(request: FollowupEvidenceIntakeRequest) -> str:
     if request.bridge_only:
         return "bridge_only_fixture_result_not_satisfying"
+    if (
+        request.result_status == FollowupExecutionStatus.FIXTURE_SUCCESS.value
+        and not _source_class_matches_expected(request)
+    ):
+        return "fixture_success_source_class_outside_sealed_contract"
     if request.result_status == FollowupExecutionStatus.FIXTURE_SUCCESS.value:
         return "fixture_success_followup_evidence_intake"
     return f"{request.result_status}_not_admitted_as_satisfying_evidence"
@@ -551,6 +592,7 @@ def _candidate_admitted(request: FollowupEvidenceIntakeRequest) -> bool:
     return (
         request.result_status == FollowupExecutionStatus.FIXTURE_SUCCESS.value
         and not request.bridge_only
+        and _source_class_matches_expected(request)
     )
 
 
@@ -572,6 +614,68 @@ def _ledger_candidate_id(request: FollowupEvidenceIntakeRequest) -> str:
     return clean_token(
         f"followup_fixture:{request.sealed_candidate_id}:{request.execution_id}"
     )
+
+
+def _requirement_id(request: FollowupEvidenceIntakeRequest) -> str:
+    requirement_id = next(iter(request.requirement_ids), None) or request.source_obligation_id
+    if ":" not in requirement_id:
+        return f"source_requirement:{requirement_id}"
+    return requirement_id
+
+
+def _expected_source_classes(request: FollowupEvidenceIntakeRequest) -> tuple[str, ...]:
+    if request.expected_source_classes and "[redacted]" not in request.expected_source_classes:
+        return request.expected_source_classes
+    expected = _mapping(request.expected_evidence_ledger_custody_update)
+    classes = _strings(expected.get("source_classes"))
+    if classes and "[redacted]" not in classes:
+        return tuple(classes)
+    return _expected_source_classes_for_provider_job(request.provider_job_kind)
+
+
+def _expected_source_classes_for_provider_job(provider_job_kind: str) -> tuple[str, ...]:
+    job_kind = clean_token(provider_job_kind)
+    if job_kind == ProviderJobKind.OFFICIAL_CURRENT_CANDIDATE_ACQUISITION.value:
+        return ("official_government", "official_current_rules")
+    if job_kind == ProviderJobKind.LEGAL_CURRENT_PRIMARY_ACQUISITION.value:
+        return ("primary_legal", "legal_or_regulatory_text")
+    if job_kind == ProviderJobKind.CANONICAL_DOC_ACQUISITION.value:
+        return ("canonical", "primary_source_documents")
+    if (
+        job_kind
+        == ProviderJobKind.SOURCE_BOUND_NUMERIC_EXTRACTION_CALCULATION_SUPPORT.value
+    ):
+        return ("sourced_numeric_values",)
+    if job_kind == ProviderJobKind.CONFLICT_CURRENTNESS_CHECK.value:
+        return ("current_primary_or_official",)
+    if job_kind == ProviderJobKind.RECONCILIATION_SUPPORT.value:
+        return ("source_family_map",)
+    if job_kind == ProviderJobKind.FETCH_READ_EXTRACT.value:
+        return ("answer_bearing_extract",)
+    return ("answer_bearing_candidate",)
+
+
+def _required_source_class(request: FollowupEvidenceIntakeRequest) -> str:
+    expected = _expected_source_classes(request)
+    preferred = (
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "primary_source_documents",
+        "current_primary_or_official",
+        "sourced_numeric_values",
+    )
+    for item in preferred:
+        if item in expected:
+            return item
+    return next(iter(expected), "unknown")
+
+
+def _source_class_matches_expected(request: FollowupEvidenceIntakeRequest) -> bool:
+    summary = _mapping(request.sanitized_fixture_result_summary)
+    source_class = clean_token(summary.get("source_class"))
+    if not source_class:
+        return False
+    return source_class in _expected_source_classes(request)
 
 
 def _requirement_kind(source_class: str) -> str:
@@ -632,6 +736,17 @@ def _redaction_posture() -> dict[str, bool]:
 
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _strings(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    out: list[str] = []
+    for item in value:
+        token = clean_token(item)
+        if token:
+            out.append(token)
+    return out
 
 
 __all__ = [

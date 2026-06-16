@@ -844,6 +844,7 @@ class RunKernel:
             "fixture_execution_mode": "fixture_only",
             "provider_job_kind": candidate.get("provider_job_kind"),
             "provider_execution_licensed": False,
+            "requirement_ids": candidate.get("requirement_ids", []),
         }
         if merged_inputs.get("fixture_execution_mode") != "fixture_only":
             raise RunKernelTransitionError(
@@ -884,6 +885,11 @@ class RunKernel:
             "provider_job_kind": execution_state.get("provider_job_kind"),
             "component_id": execution_state.get("component_id"),
             "source_obligation_id": execution_state.get("source_obligation_id"),
+            "requirement_ids": execution_state.get("requirement_ids", []),
+            "expected_source_classes": execution_state.get(
+                "expected_source_classes",
+                [],
+            ),
             "result_status": execution_state.get("result_status"),
             "bridge_only": execution_state.get("bridge_only"),
             "provider_execution_licensed": False,
@@ -1461,6 +1467,7 @@ class RunKernel:
                 "provider_job_kind": execution_state.get("provider_job_kind"),
                 "component_id": execution_state.get("component_id"),
                 "source_obligation_id": execution_state.get("source_obligation_id"),
+                "requirement_ids": execution_state.get("requirement_ids", []),
                 "result_status": execution_state.get("result_status"),
                 "fixture_execution_mode": execution_state.get(
                     "fixture_execution_mode"
@@ -1558,6 +1565,26 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "follow-up evidence intake requires ledger_observation"
                 )
+            if intake_state.get("ledger_requirements") is not None:
+                ledger_observation = {
+                    "observation_id": ledger_observation.get("observation_id"),
+                    "observation_source": ledger_observation.get(
+                        "observation_source",
+                    )
+                    or "followup_fixture_evidence_intake",
+                    "requirements": list(
+                        intake_state.get("ledger_requirements", []) or []
+                    ),
+                    "candidates": list(
+                        intake_state.get("ledger_candidates", []) or []
+                    ),
+                    "requirement_links": list(
+                        intake_state.get("ledger_requirement_links", []) or []
+                    ),
+                    "followup_fixture_intake": _safe_mapping(
+                        intake_state.get("ledger_followup_fixture_intake")
+                    ),
+                }
             self.state.evidence_ledger.reduce_observation(ledger_observation)
             ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
             self.state.projections[EVIDENCE_LEDGER_STAGE] = deepcopy(
@@ -1586,6 +1613,11 @@ class RunKernel:
                 "provider_job_kind": intake_state.get("provider_job_kind"),
                 "component_id": intake_state.get("component_id"),
                 "source_obligation_id": intake_state.get("source_obligation_id"),
+                "requirement_ids": intake_state.get("requirement_ids", []),
+                "expected_source_classes": intake_state.get(
+                    "expected_source_classes",
+                    [],
+                ),
                 "result_status": intake_state.get("result_status"),
                 "bridge_only": intake_state.get("bridge_only"),
                 "evidence_ledger_intake_mode": intake_state.get(
@@ -1692,6 +1724,12 @@ def _validate_followup_execution_action_binding(
         raise RunKernelTransitionError(
             "follow-up fixture execution action must keep provider execution unlicensed"
         )
+    if list(execution_state.get("requirement_ids", []) or []) != list(
+        action_inputs.get("requirement_ids", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up execution observation requirement_ids does not match authorized action"
+        )
     action_job_kind = action_inputs.get("provider_job_kind")
     execution_job_kind = execution_state.get("provider_job_kind")
     if (action_job_kind or execution_job_kind) and action_job_kind != execution_job_kind:
@@ -1726,6 +1764,34 @@ def _validate_followup_evidence_intake_action_binding(
                 "follow-up evidence intake observation "
                 f"{binding_field} does not match execution state"
             )
+    if list(intake_state.get("requirement_ids", []) or []) != list(
+        action_inputs.get("requirement_ids", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation requirement_ids do not match "
+            "authorized action"
+        )
+    if list(intake_state.get("requirement_ids", []) or []) != list(
+        execution_state.get("requirement_ids", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation requirement_ids do not match "
+            "execution state"
+        )
+    if list(intake_state.get("expected_source_classes", []) or []) != list(
+        action_inputs.get("expected_source_classes", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation expected_source_classes do not "
+            "match authorized action"
+        )
+    if list(intake_state.get("expected_source_classes", []) or []) != list(
+        execution_state.get("expected_source_classes", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation expected_source_classes do not "
+            "match execution state"
+        )
     for action_field, state_field in (
         ("followup_execution_id", "execution_id"),
         ("execution_id", "execution_id"),
