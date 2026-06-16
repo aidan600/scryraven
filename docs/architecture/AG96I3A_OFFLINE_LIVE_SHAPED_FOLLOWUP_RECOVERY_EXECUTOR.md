@@ -182,11 +182,45 @@ This keeps the first executor seam narrow enough to prove custody and authority
 without importing legal interpretation, numeric extraction, routing policy,
 query generation, retrieval ranking, or product-answer behavior.
 
-## AG-96I3B Next
+## AG-96I3B Planned Next
 
-AG-96I3B should add the first explicitly budgeted live validation gate for this
-same provider-job seam. It should keep the same answer contract and downstream
-path, authorize at most one official/current live-shaped run, preserve the
-redaction plan, and stop on missing config, budget denial, closed-surface claim,
-raw/private payload exposure, or any need for query generation, routing policy,
-ranking, Author execution, citation rendering, or product final-answer changes.
+AG-96I3A originally left AG-96I3B as the first explicitly budgeted live
+validation gate for this same provider-job seam. That gate needed to keep the
+same answer contract and downstream path, authorize at most one official/current
+live-shaped run, preserve the redaction plan, and stop on missing config,
+budget denial, closed-surface claim, raw/private payload exposure, or any need
+for query generation, routing policy, ranking, Author execution, citation
+rendering, or product final-answer changes.
+
+## AG-96I3B Follow-up Result
+
+AG-96I3B implemented that first live-gated validation harness:
+[AG96I3B_LIVE_GATED_OFFICIAL_CURRENT_FOLLOWUP_VALIDATION.md](AG96I3B_LIVE_GATED_OFFICIAL_CURRENT_FOLLOWUP_VALIDATION.md).
+
+The opened live gate remains limited to:
+
+```text
+provider_job_kind=official_current_candidate_acquisition
+```
+
+It requires explicit `live_validation_authorized=True`, a RunKernel-authorized
+provider-job action, and pre-authorized query identity. It performs no query
+generation or mutation, makes at most one configured provider/search call,
+authorizes no fetch/read attempt, and feeds only sanitized candidate facts back
+through the existing AG-96I3A provider-job execution seam.
+
+The local AG-96I3B validation command stopped as:
+
+```text
+live_validation_status=config_missing_not_run
+```
+
+No provider/search, fetch/read, model, AuthorExecutor, citation-rendering, or
+product final-answer call occurred. The ignored local packet is:
+
+```text
+output/ag96i3b_live_followup_official_current_validation_packet.md
+```
+
+`output/` was verified ignored before and after packet writing. The packet
+contains sanitized validation facts only and was not committed.
