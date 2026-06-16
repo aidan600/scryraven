@@ -1,5 +1,5 @@
 """
-Non-secret private broker sketch for AG-96I3D0 operators.
+Non-secret private broker sketch for AG-96I3D0/AG-96I3E operators.
 
 Do not run this file from the repository as-is. Copy the shape into a private
 local location, replace placeholders there, and keep one-shot tokens plus
@@ -21,7 +21,127 @@ ALLOWLISTED_JOBS = {
         "max_fetch_read_attempts": 0,
         "max_model_calls": 0,
         "retries_allowed": False,
-    }
+    },
+    "ag96i3e-offline-fixture-smoke": {
+        "provider": "fixture",
+        "query": "offline fixture official current discovery smoke",
+        "output": "output/ag96i3e_offline_fixture_smoke_packet.json",
+        "max_provider_search_calls": 0,
+        "max_fetch_read_attempts": 0,
+        "max_model_calls": 0,
+        "max_author_executor_calls": 0,
+        "retries_allowed": False,
+        "fixture_mode": True,
+        "template_command": [
+            "py",
+            "scripts\\ag96i3e_brokered_provider_neutral_discovery_validation.py",
+            "--provider",
+            "fixture",
+            "--query",
+            "offline fixture official current discovery smoke",
+            "--job-id",
+            "ag96i3e-offline-fixture-smoke",
+            "--output",
+            "output\\ag96i3e_offline_fixture_smoke_packet.json",
+        ],
+    },
+    "ag96i3e-brave-discovery-once": {
+        "provider": "brave",
+        "query": "<authorized provider-neutral official/current query>",
+        "output": "output/ag96i3e_brave_discovery_once_packet.json",
+        "max_provider_search_calls": 1,
+        "max_fetch_read_attempts": 0,
+        "max_model_calls": 0,
+        "max_author_executor_calls": 0,
+        "retries_allowed": False,
+        "operator_warning": (
+            "This command may spend exactly one live provider/search call."
+        ),
+        "template_command": [
+            "py",
+            "scripts\\ag96i3e_brokered_provider_neutral_discovery_validation.py",
+            "--provider",
+            "brave",
+            "--query",
+            "<authorized provider-neutral official/current query>",
+            "--job-id",
+            "ag96i3e-brave-discovery-once",
+            "--output",
+            "output\\ag96i3e_brave_discovery_once_packet.json",
+            "--max-results",
+            "5",
+            "--confirm-live-provider-call",
+        ],
+    },
+    "ag96i3e-tavily-discovery-once": {
+        "provider": "tavily",
+        "query": "<authorized provider-neutral official/current query>",
+        "output": "output/ag96i3e_tavily_discovery_once_packet.json",
+        "max_provider_search_calls": 1,
+        "max_fetch_read_attempts": 0,
+        "max_model_calls": 0,
+        "max_author_executor_calls": 0,
+        "retries_allowed": False,
+        "operator_warning": (
+            "This command may spend exactly one live provider/search call."
+        ),
+        "template_command": [
+            "py",
+            "scripts\\ag96i3e_brokered_provider_neutral_discovery_validation.py",
+            "--provider",
+            "tavily",
+            "--query",
+            "<authorized provider-neutral official/current query>",
+            "--job-id",
+            "ag96i3e-tavily-discovery-once",
+            "--output",
+            "output\\ag96i3e_tavily_discovery_once_packet.json",
+            "--max-results",
+            "5",
+            "--confirm-live-provider-call",
+        ],
+    },
+    "ag96i3e-linkup-discovery-once": {
+        "provider": "linkup",
+        "query": "<authorized provider-neutral official/current query>",
+        "output": "output/ag96i3e_linkup_discovery_once_packet.json",
+        "max_provider_search_calls": 1,
+        "max_fetch_read_attempts": 0,
+        "max_model_calls": 0,
+        "max_author_executor_calls": 0,
+        "retries_allowed": False,
+        "operator_warning": (
+            "This command may spend exactly one live provider/search call."
+        ),
+        "template_command": [
+            "py",
+            "scripts\\ag96i3e_brokered_provider_neutral_discovery_validation.py",
+            "--provider",
+            "linkup",
+            "--query",
+            "<authorized provider-neutral official/current query>",
+            "--job-id",
+            "ag96i3e-linkup-discovery-once",
+            "--output",
+            "output\\ag96i3e_linkup_discovery_once_packet.json",
+            "--max-results",
+            "5",
+            "--confirm-live-provider-call",
+        ],
+    },
+    "ag96i3e-exa-discovery-once": {
+        "provider": "exa",
+        "provider_support_status": "deferred_not_enabled_in_ag96i3e",
+        "deferred_reason": (
+            "Current Exa wrapper uses search_and_contents/text retrieval, so "
+            "AG-96I3E does not treat it as an unambiguous search-only call."
+        ),
+        "max_provider_search_calls": 0,
+        "max_fetch_read_attempts": 0,
+        "max_model_calls": 0,
+        "max_author_executor_calls": 0,
+        "retries_allowed": False,
+    },
 }
 
 
