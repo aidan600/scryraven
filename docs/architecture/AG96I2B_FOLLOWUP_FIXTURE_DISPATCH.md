@@ -106,9 +106,19 @@ Bridge-only fixture results are recorded as `fixture_bridge_only`. They cannot
 satisfy final evidence, cannot create citation eligibility, cannot mutate
 EvidenceLedger, and preserve the fallback posture from the sealed candidate.
 
-## Deferred To AG-96I2C And Later
+## Follow-on AG-96I2C
 
-Deferred work includes EvidenceLedger intake for follow-up execution
-observations, real provider-job execution, live dogfood, provider/cost
+AG-96I2C adds the next bounded seam:
+[AG96I2C_FOLLOWUP_EVIDENCE_INTAKE.md](AG96I2C_FOLLOWUP_EVIDENCE_INTAKE.md).
+It consumes canonical fixture execution observations through an authorized
+fixture-only EvidenceLedger intake bridge and mutates EvidenceLedger through its
+existing custody/admission API. SufficiencyJudgment recheck, FinalAnswerPacket,
+citations, Author behavior, real provider-job execution, live dogfood, and
+conversational follow-up behavior remain deferred.
+
+## Deferred After AG-96I2C
+
+Deferred work includes fixture-only SufficiencyJudgment recheck over updated
+EvidenceLedger state, real provider-job execution, live dogfood, provider/cost
 evaluation, provider capability evaluation, and the conversational Follow-up
 Turn Contract. AG-96I2B is only the gated fixture dispatch seam.

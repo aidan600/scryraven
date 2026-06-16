@@ -49,6 +49,7 @@ class FollowupExecutionRequest:
     provider_job_kind: str
     component_id: str
     source_obligation_id: str
+    requirement_ids: tuple[str, ...]
     expected_evidence_ledger_custody_update: Mapping[str, Any]
     budget_debit: Mapping[str, Any]
     fallback_stop_posture: str | None
@@ -71,6 +72,9 @@ class FollowupExecutionRequest:
             "provider_job_kind": clean_token(self.provider_job_kind),
             "component_id": clean_token(self.component_id),
             "source_obligation_id": clean_token(self.source_obligation_id),
+            "requirement_ids": [
+                clean_token(item) for item in self.requirement_ids if clean_token(item)
+            ],
             "expected_evidence_ledger_custody_update": safe_json(
                 self.expected_evidence_ledger_custody_update
             ),
@@ -142,6 +146,12 @@ class FollowupExecutionObservation:
             "provider_job_kind": request.get("provider_job_kind"),
             "component_id": request.get("component_id"),
             "source_obligation_id": request.get("source_obligation_id"),
+            "requirement_ids": request.get("requirement_ids", []),
+            "expected_source_classes": _strings(
+                _mapping(
+                    request.get("expected_evidence_ledger_custody_update")
+                ).get("source_classes")
+            ),
             "expected_evidence_ledger_custody_update": request.get(
                 "expected_evidence_ledger_custody_update",
                 {},
@@ -236,6 +246,7 @@ def execute_followup_fixture(
         provider_job_kind=str(candidate.get("provider_job_kind") or ""),
         component_id=str(candidate.get("component_id") or ""),
         source_obligation_id=str(candidate.get("source_obligation_id") or ""),
+        requirement_ids=tuple(_strings(candidate.get("requirement_ids"))),
         expected_evidence_ledger_custody_update=_mapping(
             candidate.get("expected_evidence_ledger_custody_update")
         ),
@@ -430,6 +441,17 @@ def _redaction_posture() -> dict[str, bool]:
 
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _strings(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    out: list[str] = []
+    for item in value:
+        token = clean_token(item)
+        if token:
+            out.append(token)
+    return out
 
 
 __all__ = [

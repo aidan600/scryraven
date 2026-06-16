@@ -31,6 +31,7 @@ FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
+FOLLOWUP_EVIDENCE_INTAKE_STAGE = "followup_evidence_intake"
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -77,6 +78,7 @@ class ActionType(str, Enum):
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
+    FOLLOWUP_EVIDENCE_INTAKE = "followup_evidence_intake"
 
 
 class ObservationType(str, Enum):
@@ -96,6 +98,7 @@ class ObservationType(str, Enum):
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
+    FOLLOWUP_EVIDENCE_INTAKE_OBSERVED = "followup_evidence_intake_observed"
 
 
 class RunStageStatus(str, Enum):
@@ -335,6 +338,9 @@ class RunState:
     followup_execution_state: dict[str, Any] = field(default_factory=dict)
     followup_execution_projection: dict[str, Any] = field(default_factory=dict)
     followup_execution_history: list[dict[str, Any]] = field(default_factory=list)
+    followup_evidence_intake_state: dict[str, Any] = field(default_factory=dict)
+    followup_evidence_intake_projection: dict[str, Any] = field(default_factory=dict)
+    followup_evidence_intake_history: list[dict[str, Any]] = field(default_factory=list)
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -395,6 +401,15 @@ class RunState:
                 self.followup_execution_projection
             ),
             followup_execution_history=deepcopy(self.followup_execution_history),
+            followup_evidence_intake_state=deepcopy(
+                self.followup_evidence_intake_state
+            ),
+            followup_evidence_intake_projection=deepcopy(
+                self.followup_evidence_intake_projection
+            ),
+            followup_evidence_intake_history=deepcopy(
+                self.followup_evidence_intake_history
+            ),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -435,6 +450,9 @@ class KernelTraceProjection:
     followup_execution_state: Mapping[str, Any]
     followup_execution_projection: Mapping[str, Any]
     followup_execution_history: Sequence[Mapping[str, Any]]
+    followup_evidence_intake_state: Mapping[str, Any]
+    followup_evidence_intake_projection: Mapping[str, Any]
+    followup_evidence_intake_history: Sequence[Mapping[str, Any]]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -496,6 +514,15 @@ class KernelTraceProjection:
             ),
             "followup_execution_history": [
                 _safe_mapping(item) for item in self.followup_execution_history
+            ],
+            "followup_evidence_intake_state": _safe_mapping(
+                self.followup_evidence_intake_state
+            ),
+            "followup_evidence_intake_projection": _safe_mapping(
+                self.followup_evidence_intake_projection
+            ),
+            "followup_evidence_intake_history": [
+                _safe_mapping(item) for item in self.followup_evidence_intake_history
             ],
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
@@ -817,6 +844,7 @@ class RunKernel:
             "fixture_execution_mode": "fixture_only",
             "provider_job_kind": candidate.get("provider_job_kind"),
             "provider_execution_licensed": False,
+            "requirement_ids": candidate.get("requirement_ids", []),
         }
         if merged_inputs.get("fixture_execution_mode") != "fixture_only":
             raise RunKernelTransitionError(
@@ -828,6 +856,60 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.FOLLOWUP_EXECUTION_OBSERVED,
+        )
+
+    def authorize_followup_evidence_intake(
+        self,
+        *,
+        reason: str = "ag96i2c_followup_fixture_evidence_ledger_intake",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.followup_execution_state:
+            raise RunKernelTransitionError(
+                "follow-up evidence intake requires reduced follow-up execution state"
+            )
+        execution_state = self.state.followup_execution_state
+        merged_inputs = {
+            **dict(inputs or {}),
+            "followup_authorization_consumption_id": execution_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": execution_state.get("sealed_candidate_id"),
+            "followup_execution_id": execution_state.get("execution_id"),
+            "execution_id": execution_state.get("execution_id"),
+            "followup_execution_observation_id": execution_state.get(
+                "observation_id"
+            ),
+            "observation_id": execution_state.get("observation_id"),
+            "fixture_execution_mode": execution_state.get("fixture_execution_mode"),
+            "provider_job_kind": execution_state.get("provider_job_kind"),
+            "component_id": execution_state.get("component_id"),
+            "source_obligation_id": execution_state.get("source_obligation_id"),
+            "requirement_ids": execution_state.get("requirement_ids", []),
+            "expected_source_classes": execution_state.get(
+                "expected_source_classes",
+                [],
+            ),
+            "result_status": execution_state.get("result_status"),
+            "bridge_only": execution_state.get("bridge_only"),
+            "provider_execution_licensed": False,
+            "evidence_ledger_intake_mode": "fixture_only_followup_intake",
+            "expected_observation_record_type": (
+                "followup_evidence_intake_consumption_record"
+            ),
+        }
+        if merged_inputs.get("fixture_execution_mode") != "fixture_only":
+            raise RunKernelTransitionError(
+                "follow-up evidence intake only authorizes fixture_only execution state"
+            )
+        return self.authorize(
+            stage=FOLLOWUP_EVIDENCE_INTAKE_STAGE,
+            action_type=ActionType.FOLLOWUP_EVIDENCE_INTAKE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_EVIDENCE_INTAKE_OBSERVED
+            ),
         )
 
     def reduce(self, observation: Observation) -> RunState:
@@ -1385,6 +1467,7 @@ class RunKernel:
                 "provider_job_kind": execution_state.get("provider_job_kind"),
                 "component_id": execution_state.get("component_id"),
                 "source_obligation_id": execution_state.get("source_obligation_id"),
+                "requirement_ids": execution_state.get("requirement_ids", []),
                 "result_status": execution_state.get("result_status"),
                 "fixture_execution_mode": execution_state.get(
                     "fixture_execution_mode"
@@ -1408,6 +1491,162 @@ class RunKernel:
             )
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_execution_projection
+            )
+        elif action.action_type is ActionType.FOLLOWUP_EVIDENCE_INTAKE:
+            intake_state = _safe_mapping(
+                observation.payload.get("followup_evidence_intake_state")
+            )
+            if not intake_state:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake observation requires "
+                    "followup_evidence_intake_state"
+                )
+            if not self.state.followup_execution_state:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake requires existing execution state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _validate_followup_evidence_intake_action_binding(
+                action_inputs=action_inputs,
+                execution_state=self.state.followup_execution_state,
+                intake_state=intake_state,
+            )
+            flags = _safe_mapping(intake_state.get("behavior_boundary_flags"))
+            for flag in (
+                "live_provider_call_executed",
+                "provider_job_scheduled",
+                "provider_job_dispatched",
+                "search_executed",
+                "retrieval_executed",
+                "fetch_executed",
+                "model_called",
+                "query_generation_changed",
+                "retrieval_ranking_filtering_changed",
+                "sufficiency_judgment_rechecked",
+                "search_judgment_rerun",
+                "final_answer_packet_updated",
+                "final_answer_behavior_changed",
+                "author_prose_behavior_changed",
+                "citation_behavior_changed",
+                "pipeline_orchestrator_domain_logic_changed",
+            ):
+                if flags.get(flag) is not False:
+                    raise RunKernelTransitionError(
+                        f"follow-up evidence intake observation requires {flag}=False"
+                    )
+            if flags.get("evidence_ledger_mutated") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must be the EvidenceLedger mutation seam"
+                )
+            if flags.get("evidence_ledger_intake_only_opened_surface") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake may only open EvidenceLedger intake"
+                )
+            if intake_state.get("provider_execution_licensed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must keep provider execution unlicensed"
+                )
+            if intake_state.get("evidence_ledger_intake_mode") != (
+                "fixture_only_followup_intake"
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake requires fixture_only intake mode"
+                )
+            if intake_state.get("final_evidence_satisfied") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must not satisfy final evidence"
+                )
+            if intake_state.get("citation_eligible") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must not create citation eligibility"
+                )
+            ledger_observation = _build_followup_evidence_intake_ledger_observation(
+                intake_state=intake_state,
+                execution_state=self.state.followup_execution_state,
+            )
+            derived_outcome = _followup_evidence_intake_outcome(ledger_observation)
+            intake_state = {
+                **intake_state,
+                **derived_outcome,
+                "ledger_observation": deepcopy(ledger_observation),
+                "ledger_requirements": deepcopy(
+                    ledger_observation.get("requirements", [])
+                ),
+                "ledger_candidates": deepcopy(ledger_observation.get("candidates", [])),
+                "ledger_requirement_links": deepcopy(
+                    ledger_observation.get("requirement_links", [])
+                ),
+                "ledger_followup_fixture_intake": deepcopy(
+                    ledger_observation.get("followup_fixture_intake", {})
+                ),
+            }
+            self.state.evidence_ledger.reduce_observation(ledger_observation)
+            ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+            self.state.projections[EVIDENCE_LEDGER_STAGE] = deepcopy(
+                ledger_projection
+            )
+            self.state.followup_evidence_intake_state = intake_state
+            self.state.followup_evidence_intake_projection = {
+                "owner": "RunKernel.FollowupEvidenceIntake",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": intake_state.get("schema_version"),
+                "intake_id": intake_state.get("intake_id"),
+                "observation_id": intake_state.get("observation_id"),
+                "run_id": intake_state.get("run_id"),
+                "checkpoint_id": intake_state.get("checkpoint_id"),
+                "followup_authorization_consumption_id": intake_state.get(
+                    "followup_authorization_consumption_id"
+                ),
+                "sealed_candidate_id": intake_state.get("sealed_candidate_id"),
+                "followup_execution_id": intake_state.get("followup_execution_id"),
+                "execution_id": intake_state.get("execution_id"),
+                "followup_execution_observation_id": intake_state.get(
+                    "followup_execution_observation_id"
+                ),
+                "provider_job_kind": intake_state.get("provider_job_kind"),
+                "component_id": intake_state.get("component_id"),
+                "source_obligation_id": intake_state.get("source_obligation_id"),
+                "requirement_ids": intake_state.get("requirement_ids", []),
+                "expected_source_classes": intake_state.get(
+                    "expected_source_classes",
+                    [],
+                ),
+                "result_status": intake_state.get("result_status"),
+                "bridge_only": intake_state.get("bridge_only"),
+                "evidence_ledger_intake_mode": intake_state.get(
+                    "evidence_ledger_intake_mode"
+                ),
+                "evidence_ledger_observation_id": ledger_observation.get(
+                    "observation_id"
+                ),
+                "evidence_ledger_candidate_count": ledger_projection.get(
+                    "candidate_count"
+                ),
+                "evidence_ledger_requirement_count": ledger_projection.get(
+                    "requirement_count"
+                ),
+                "evidence_ledger_custody_record_count": ledger_projection.get(
+                    "custody_record_count"
+                ),
+                "source_obligation_satisfied": intake_state.get(
+                    "source_obligation_satisfied"
+                ),
+                "final_evidence_satisfied": intake_state.get(
+                    "final_evidence_satisfied"
+                ),
+                "citation_eligible": intake_state.get("citation_eligible"),
+                "sufficiency_judgment_recheck_deferred": intake_state.get(
+                    "sufficiency_judgment_recheck_deferred"
+                ),
+                "behavior_boundary_flags": flags,
+            }
+            self.state.followup_evidence_intake_history.append(
+                deepcopy(self.state.followup_evidence_intake_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_evidence_intake_projection
             )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
@@ -1480,6 +1719,12 @@ def _validate_followup_execution_action_binding(
         raise RunKernelTransitionError(
             "follow-up fixture execution action must keep provider execution unlicensed"
         )
+    if list(execution_state.get("requirement_ids", []) or []) != list(
+        action_inputs.get("requirement_ids", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up execution observation requirement_ids does not match authorized action"
+        )
     action_job_kind = action_inputs.get("provider_job_kind")
     execution_job_kind = execution_state.get("provider_job_kind")
     if (action_job_kind or execution_job_kind) and action_job_kind != execution_job_kind:
@@ -1488,10 +1733,368 @@ def _validate_followup_execution_action_binding(
         )
 
 
+def _validate_followup_evidence_intake_action_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    execution_state: Mapping[str, Any],
+    intake_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "fixture_execution_mode",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "result_status",
+        "bridge_only",
+    ):
+        if intake_state.get(binding_field) != action_inputs.get(binding_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{binding_field} does not match authorized action"
+            )
+        if intake_state.get(binding_field) != execution_state.get(binding_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{binding_field} does not match execution state"
+            )
+    if list(intake_state.get("requirement_ids", []) or []) != list(
+        action_inputs.get("requirement_ids", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation requirement_ids do not match "
+            "authorized action"
+        )
+    if list(intake_state.get("requirement_ids", []) or []) != list(
+        execution_state.get("requirement_ids", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation requirement_ids do not match "
+            "execution state"
+        )
+    if list(intake_state.get("expected_source_classes", []) or []) != list(
+        action_inputs.get("expected_source_classes", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation expected_source_classes do not "
+            "match authorized action"
+        )
+    if list(intake_state.get("expected_source_classes", []) or []) != list(
+        execution_state.get("expected_source_classes", []) or []
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake observation expected_source_classes do not "
+            "match execution state"
+        )
+    for action_field, state_field in (
+        ("followup_execution_id", "execution_id"),
+        ("execution_id", "execution_id"),
+        ("followup_execution_observation_id", "observation_id"),
+    ):
+        if intake_state.get(action_field) != action_inputs.get(action_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{action_field} does not match authorized action"
+            )
+        if intake_state.get(action_field) != execution_state.get(state_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{action_field} does not match execution state"
+            )
+    if action_inputs.get("fixture_execution_mode") != "fixture_only":
+        raise RunKernelTransitionError(
+            "follow-up evidence intake action must be bound to fixture_only mode"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up evidence intake action must keep provider execution unlicensed"
+        )
+    if action_inputs.get("evidence_ledger_intake_mode") != (
+        "fixture_only_followup_intake"
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake action must be fixture-only"
+        )
+
+
+def _build_followup_evidence_intake_ledger_observation(
+    *,
+    intake_state: Mapping[str, Any],
+    execution_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    summary = _safe_mapping(execution_state.get("sanitized_fixture_result_summary"))
+    requirement_id = _followup_intake_requirement_id(execution_state)
+    expected_source_classes = _followup_expected_source_classes(execution_state)
+    required_source_class = _followup_required_source_class(expected_source_classes)
+    candidate_id = _followup_intake_candidate_id(execution_state)
+    disposition = _followup_intake_candidate_disposition(
+        result_status=execution_state.get("result_status"),
+        bridge_only=bool(execution_state.get("bridge_only")),
+        source_class=summary.get("source_class"),
+        expected_source_classes=expected_source_classes,
+    )
+    candidate = {
+        "candidate_id": candidate_id,
+        "url": summary.get("url"),
+        "title": summary.get("title") or summary.get("summary"),
+        "domain": summary.get("domain"),
+        "source_label": (
+            "fixture follow-up intake "
+            f"{execution_state.get('component_id')} "
+            f"{execution_state.get('source_obligation_id')} "
+            f"{execution_state.get('sealed_candidate_id')}"
+        ),
+        "provider_name": "followup_fixture",
+        "provider_role": execution_state.get("provider_job_kind"),
+        "retrieval_pass_id": execution_state.get("observation_id"),
+        "query_ref": "fixture_only_followup_intake",
+        "action_ref": execution_state.get("execution_id"),
+        "source_tier": summary.get("source_tier")
+        or _followup_default_source_tier(required_source_class),
+        "source_class": summary.get("source_class") or "unknown",
+        "currentness_signal": summary.get("currentness_signal") or "fixture_current",
+        "readable_status": summary.get("readable_status")
+        or (
+            "readable"
+            if execution_state.get("result_status") == "fixture_success"
+            else "not_readable"
+        ),
+        "fetchable_status": summary.get("fetchable_status")
+        or (
+            "fetchable"
+            if execution_state.get("result_status") == "fixture_success"
+            else "not_fetchable"
+        ),
+        "disposition": disposition,
+        "record_kind": "fact",
+        "requirement_id": requirement_id,
+        "eligible_for_stronger_obligation": (
+            disposition == "accepted"
+            and bool(
+                summary.get("eligible_for_stronger_obligation")
+                or summary.get("source_tier") in {"official", "primary", "canonical"}
+            )
+        ),
+        "final_evidence_eligible": False,
+        "reason": _followup_intake_candidate_reason(
+            result_status=execution_state.get("result_status"),
+            bridge_only=bool(execution_state.get("bridge_only")),
+            disposition=disposition,
+        ),
+        "followup_execution_id": execution_state.get("execution_id"),
+        "followup_execution_observation_id": execution_state.get("observation_id"),
+        "sealed_candidate_id": execution_state.get("sealed_candidate_id"),
+        "component_id": execution_state.get("component_id"),
+    }
+    return {
+        "observation_id": f"ledger:{execution_state.get('execution_id')}",
+        "observation_source": "followup_fixture_evidence_intake",
+        "requirements": [
+            {
+                "requirement_id": requirement_id,
+                "requirement_kind": _followup_requirement_kind(required_source_class),
+                "origin_ref": (
+                    f"followup_fixture_execution:{execution_state.get('execution_id')}"
+                ),
+                "required_source_class": required_source_class,
+                "required_source_tier": _followup_default_source_tier(
+                    required_source_class
+                ),
+                "required_currentness": summary.get("required_currentness")
+                or summary.get("currentness_signal")
+                or "current",
+            }
+        ],
+        "candidates": [candidate],
+        "requirement_links": [
+            {
+                "requirement_id": requirement_id,
+                "candidate_id": candidate_id,
+                "link_reason": "followup_fixture_execution_binding",
+                "link_status": disposition,
+            }
+        ],
+        "followup_fixture_intake": {
+            "schema_version": intake_state.get("schema_version"),
+            "run_id": execution_state.get("run_id"),
+            "checkpoint_id": execution_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": execution_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": execution_state.get("sealed_candidate_id"),
+            "followup_execution_id": execution_state.get("execution_id"),
+            "followup_execution_observation_id": execution_state.get("observation_id"),
+            "provider_job_kind": execution_state.get("provider_job_kind"),
+            "component_id": execution_state.get("component_id"),
+            "source_obligation_id": execution_state.get("source_obligation_id"),
+            "requirement_ids": list(execution_state.get("requirement_ids", []) or []),
+            "expected_source_classes": list(expected_source_classes),
+            "result_status": execution_state.get("result_status"),
+            "bridge_only": bool(execution_state.get("bridge_only")),
+            "fixture_only_provenance": {
+                "origin": "ag96i2b_followup_fixture_execution",
+                "intake_bridge": "ag96i2c_followup_evidence_ledger_intake",
+                "fixture_only": True,
+                "live_provider_result": False,
+                "provider_job_executor_connected": False,
+            },
+        },
+    }
+
+
+def _followup_evidence_intake_outcome(
+    ledger_observation: Mapping[str, Any],
+) -> dict[str, Any]:
+    candidates = list(ledger_observation.get("candidates", []) or [])
+    candidate = _safe_mapping(next(iter(candidates), {}))
+    disposition = candidate.get("disposition")
+    admitted = disposition == "accepted"
+    bridge_only = disposition == "contextual"
+    return {
+        "intake_status": (
+            "fixture_intake_admitted"
+            if admitted
+            else (
+                "fixture_bridge_only_recorded"
+                if bridge_only
+                else "fixture_no_admission_recorded"
+            )
+        ),
+        "evidence_ledger_candidate_admitted": admitted,
+        "source_obligation_satisfied": admitted,
+    }
+
+
+def _followup_intake_requirement_id(execution_state: Mapping[str, Any]) -> str:
+    requirement_ids = list(execution_state.get("requirement_ids", []) or [])
+    requirement_id = next(iter(requirement_ids), None) or execution_state.get(
+        "source_obligation_id"
+    )
+    text = _followup_token(requirement_id) or "followup_requirement"
+    if ":" not in text:
+        return f"source_requirement:{text}"
+    return text
+
+
+def _followup_intake_candidate_id(execution_state: Mapping[str, Any]) -> str:
+    return _followup_token(
+        "followup_fixture:"
+        f"{execution_state.get('sealed_candidate_id')}:"
+        f"{execution_state.get('execution_id')}"
+    )
+
+
+def _followup_expected_source_classes(
+    execution_state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    expected = [
+        _followup_token(item)
+        for item in list(execution_state.get("expected_source_classes", []) or [])
+    ]
+    expected = [item for item in expected if item and item != "[redacted]"]
+    if expected:
+        return tuple(expected)
+    job_kind = _followup_token(execution_state.get("provider_job_kind"))
+    by_job = {
+        "official_current_candidate_acquisition": (
+            "official_government",
+            "official_current_rules",
+        ),
+        "legal_current_primary_acquisition": (
+            "primary_legal",
+            "legal_or_regulatory_text",
+        ),
+        "canonical_doc_acquisition": ("canonical", "primary_source_documents"),
+        "source_bound_numeric_extraction_calculation_support": (
+            "sourced_numeric_values",
+        ),
+        "conflict_currentness_check": ("current_primary_or_official",),
+        "reconciliation_support": ("source_family_map",),
+        "fetch_read_extract": ("answer_bearing_extract",),
+    }
+    return by_job.get(job_kind, ("answer_bearing_candidate",))
+
+
+def _followup_required_source_class(expected_source_classes: Sequence[str]) -> str:
+    preferred = (
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "primary_source_documents",
+        "current_primary_or_official",
+        "sourced_numeric_values",
+    )
+    for item in preferred:
+        if item in expected_source_classes:
+            return item
+    return next(iter(expected_source_classes), "unknown")
+
+
+def _followup_intake_candidate_disposition(
+    *,
+    result_status: Any,
+    bridge_only: bool,
+    source_class: Any,
+    expected_source_classes: Sequence[str],
+) -> str:
+    if bridge_only:
+        return "contextual"
+    if (
+        result_status == "fixture_success"
+        and _followup_token(source_class) in expected_source_classes
+    ):
+        return "accepted"
+    return "rejected"
+
+
+def _followup_intake_candidate_reason(
+    *,
+    result_status: Any,
+    bridge_only: bool,
+    disposition: str,
+) -> str:
+    if bridge_only:
+        return "bridge_only_fixture_result_not_satisfying"
+    if result_status == "fixture_success" and disposition != "accepted":
+        return "fixture_success_source_class_outside_sealed_contract"
+    if result_status == "fixture_success":
+        return "fixture_success_followup_evidence_intake"
+    return f"{_followup_token(result_status)}_not_admitted_as_satisfying_evidence"
+
+
+def _followup_default_source_tier(required_source_class: str) -> str | None:
+    if required_source_class in {
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "current_primary_or_official",
+        "primary_source_documents",
+    }:
+        return "official"
+    return None
+
+
+def _followup_requirement_kind(required_source_class: str) -> str:
+    if required_source_class in {"official_current_rules", "current_primary_or_official"}:
+        return "official_current"
+    if required_source_class == "legal_or_regulatory_text":
+        return "legal"
+    if required_source_class in {"primary_source_documents", "archival_primary_text"}:
+        return "canonical"
+    return "general"
+
+
+def _followup_token(value: Any, *, limit: int = 220) -> str:
+    text = _clean_text(value, limit=limit)
+    if not text:
+        return ""
+    return text.casefold().replace("-", "_").replace(" ", "_")[:limit]
+
+
 __all__ = [
     "AUTHOR_EXECUTION_STAGE",
     "FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_AUTHORIZATION_STAGE",
+    "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
