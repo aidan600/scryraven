@@ -31,6 +31,7 @@ FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
+FOLLOWUP_EVIDENCE_INTAKE_STAGE = "followup_evidence_intake"
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -77,6 +78,7 @@ class ActionType(str, Enum):
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
+    FOLLOWUP_EVIDENCE_INTAKE = "followup_evidence_intake"
 
 
 class ObservationType(str, Enum):
@@ -96,6 +98,7 @@ class ObservationType(str, Enum):
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
+    FOLLOWUP_EVIDENCE_INTAKE_OBSERVED = "followup_evidence_intake_observed"
 
 
 class RunStageStatus(str, Enum):
@@ -335,6 +338,9 @@ class RunState:
     followup_execution_state: dict[str, Any] = field(default_factory=dict)
     followup_execution_projection: dict[str, Any] = field(default_factory=dict)
     followup_execution_history: list[dict[str, Any]] = field(default_factory=list)
+    followup_evidence_intake_state: dict[str, Any] = field(default_factory=dict)
+    followup_evidence_intake_projection: dict[str, Any] = field(default_factory=dict)
+    followup_evidence_intake_history: list[dict[str, Any]] = field(default_factory=list)
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -395,6 +401,15 @@ class RunState:
                 self.followup_execution_projection
             ),
             followup_execution_history=deepcopy(self.followup_execution_history),
+            followup_evidence_intake_state=deepcopy(
+                self.followup_evidence_intake_state
+            ),
+            followup_evidence_intake_projection=deepcopy(
+                self.followup_evidence_intake_projection
+            ),
+            followup_evidence_intake_history=deepcopy(
+                self.followup_evidence_intake_history
+            ),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -435,6 +450,9 @@ class KernelTraceProjection:
     followup_execution_state: Mapping[str, Any]
     followup_execution_projection: Mapping[str, Any]
     followup_execution_history: Sequence[Mapping[str, Any]]
+    followup_evidence_intake_state: Mapping[str, Any]
+    followup_evidence_intake_projection: Mapping[str, Any]
+    followup_evidence_intake_history: Sequence[Mapping[str, Any]]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -496,6 +514,15 @@ class KernelTraceProjection:
             ),
             "followup_execution_history": [
                 _safe_mapping(item) for item in self.followup_execution_history
+            ],
+            "followup_evidence_intake_state": _safe_mapping(
+                self.followup_evidence_intake_state
+            ),
+            "followup_evidence_intake_projection": _safe_mapping(
+                self.followup_evidence_intake_projection
+            ),
+            "followup_evidence_intake_history": [
+                _safe_mapping(item) for item in self.followup_evidence_intake_history
             ],
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
@@ -828,6 +855,55 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.FOLLOWUP_EXECUTION_OBSERVED,
+        )
+
+    def authorize_followup_evidence_intake(
+        self,
+        *,
+        reason: str = "ag96i2c_followup_fixture_evidence_ledger_intake",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.followup_execution_state:
+            raise RunKernelTransitionError(
+                "follow-up evidence intake requires reduced follow-up execution state"
+            )
+        execution_state = self.state.followup_execution_state
+        merged_inputs = {
+            **dict(inputs or {}),
+            "followup_authorization_consumption_id": execution_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": execution_state.get("sealed_candidate_id"),
+            "followup_execution_id": execution_state.get("execution_id"),
+            "execution_id": execution_state.get("execution_id"),
+            "followup_execution_observation_id": execution_state.get(
+                "observation_id"
+            ),
+            "observation_id": execution_state.get("observation_id"),
+            "fixture_execution_mode": execution_state.get("fixture_execution_mode"),
+            "provider_job_kind": execution_state.get("provider_job_kind"),
+            "component_id": execution_state.get("component_id"),
+            "source_obligation_id": execution_state.get("source_obligation_id"),
+            "result_status": execution_state.get("result_status"),
+            "bridge_only": execution_state.get("bridge_only"),
+            "provider_execution_licensed": False,
+            "evidence_ledger_intake_mode": "fixture_only_followup_intake",
+            "expected_observation_record_type": (
+                "followup_evidence_intake_consumption_record"
+            ),
+        }
+        if merged_inputs.get("fixture_execution_mode") != "fixture_only":
+            raise RunKernelTransitionError(
+                "follow-up evidence intake only authorizes fixture_only execution state"
+            )
+        return self.authorize(
+            stage=FOLLOWUP_EVIDENCE_INTAKE_STAGE,
+            action_type=ActionType.FOLLOWUP_EVIDENCE_INTAKE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_EVIDENCE_INTAKE_OBSERVED
+            ),
         )
 
     def reduce(self, observation: Observation) -> RunState:
@@ -1409,6 +1485,142 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_execution_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_EVIDENCE_INTAKE:
+            intake_state = _safe_mapping(
+                observation.payload.get("followup_evidence_intake_state")
+            )
+            if not intake_state:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake observation requires "
+                    "followup_evidence_intake_state"
+                )
+            if not self.state.followup_execution_state:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake requires existing execution state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _validate_followup_evidence_intake_action_binding(
+                action_inputs=action_inputs,
+                execution_state=self.state.followup_execution_state,
+                intake_state=intake_state,
+            )
+            flags = _safe_mapping(intake_state.get("behavior_boundary_flags"))
+            for flag in (
+                "live_provider_call_executed",
+                "provider_job_scheduled",
+                "provider_job_dispatched",
+                "search_executed",
+                "retrieval_executed",
+                "fetch_executed",
+                "model_called",
+                "query_generation_changed",
+                "retrieval_ranking_filtering_changed",
+                "sufficiency_judgment_rechecked",
+                "search_judgment_rerun",
+                "final_answer_packet_updated",
+                "final_answer_behavior_changed",
+                "author_prose_behavior_changed",
+                "citation_behavior_changed",
+                "pipeline_orchestrator_domain_logic_changed",
+            ):
+                if flags.get(flag) is not False:
+                    raise RunKernelTransitionError(
+                        f"follow-up evidence intake observation requires {flag}=False"
+                    )
+            if flags.get("evidence_ledger_mutated") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must be the EvidenceLedger mutation seam"
+                )
+            if flags.get("evidence_ledger_intake_only_opened_surface") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake may only open EvidenceLedger intake"
+                )
+            if intake_state.get("provider_execution_licensed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must keep provider execution unlicensed"
+                )
+            if intake_state.get("evidence_ledger_intake_mode") != (
+                "fixture_only_followup_intake"
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake requires fixture_only intake mode"
+                )
+            if intake_state.get("final_evidence_satisfied") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must not satisfy final evidence"
+                )
+            if intake_state.get("citation_eligible") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must not create citation eligibility"
+                )
+            ledger_observation = _safe_mapping(intake_state.get("ledger_observation"))
+            if not ledger_observation:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake requires ledger_observation"
+                )
+            self.state.evidence_ledger.reduce_observation(ledger_observation)
+            ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+            self.state.projections[EVIDENCE_LEDGER_STAGE] = deepcopy(
+                ledger_projection
+            )
+            self.state.followup_evidence_intake_state = intake_state
+            self.state.followup_evidence_intake_projection = {
+                "owner": "RunKernel.FollowupEvidenceIntake",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": intake_state.get("schema_version"),
+                "intake_id": intake_state.get("intake_id"),
+                "observation_id": intake_state.get("observation_id"),
+                "run_id": intake_state.get("run_id"),
+                "checkpoint_id": intake_state.get("checkpoint_id"),
+                "followup_authorization_consumption_id": intake_state.get(
+                    "followup_authorization_consumption_id"
+                ),
+                "sealed_candidate_id": intake_state.get("sealed_candidate_id"),
+                "followup_execution_id": intake_state.get("followup_execution_id"),
+                "execution_id": intake_state.get("execution_id"),
+                "followup_execution_observation_id": intake_state.get(
+                    "followup_execution_observation_id"
+                ),
+                "provider_job_kind": intake_state.get("provider_job_kind"),
+                "component_id": intake_state.get("component_id"),
+                "source_obligation_id": intake_state.get("source_obligation_id"),
+                "result_status": intake_state.get("result_status"),
+                "bridge_only": intake_state.get("bridge_only"),
+                "evidence_ledger_intake_mode": intake_state.get(
+                    "evidence_ledger_intake_mode"
+                ),
+                "evidence_ledger_observation_id": ledger_observation.get(
+                    "observation_id"
+                ),
+                "evidence_ledger_candidate_count": ledger_projection.get(
+                    "candidate_count"
+                ),
+                "evidence_ledger_requirement_count": ledger_projection.get(
+                    "requirement_count"
+                ),
+                "evidence_ledger_custody_record_count": ledger_projection.get(
+                    "custody_record_count"
+                ),
+                "source_obligation_satisfied": intake_state.get(
+                    "source_obligation_satisfied"
+                ),
+                "final_evidence_satisfied": intake_state.get(
+                    "final_evidence_satisfied"
+                ),
+                "citation_eligible": intake_state.get("citation_eligible"),
+                "sufficiency_judgment_recheck_deferred": intake_state.get(
+                    "sufficiency_judgment_recheck_deferred"
+                ),
+                "behavior_boundary_flags": flags,
+            }
+            self.state.followup_evidence_intake_history.append(
+                deepcopy(self.state.followup_evidence_intake_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_evidence_intake_projection
+            )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
@@ -1488,10 +1700,68 @@ def _validate_followup_execution_action_binding(
         )
 
 
+def _validate_followup_evidence_intake_action_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    execution_state: Mapping[str, Any],
+    intake_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "fixture_execution_mode",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "result_status",
+        "bridge_only",
+    ):
+        if intake_state.get(binding_field) != action_inputs.get(binding_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{binding_field} does not match authorized action"
+            )
+        if intake_state.get(binding_field) != execution_state.get(binding_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{binding_field} does not match execution state"
+            )
+    for action_field, state_field in (
+        ("followup_execution_id", "execution_id"),
+        ("execution_id", "execution_id"),
+        ("followup_execution_observation_id", "observation_id"),
+    ):
+        if intake_state.get(action_field) != action_inputs.get(action_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{action_field} does not match authorized action"
+            )
+        if intake_state.get(action_field) != execution_state.get(state_field):
+            raise RunKernelTransitionError(
+                "follow-up evidence intake observation "
+                f"{action_field} does not match execution state"
+            )
+    if action_inputs.get("fixture_execution_mode") != "fixture_only":
+        raise RunKernelTransitionError(
+            "follow-up evidence intake action must be bound to fixture_only mode"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up evidence intake action must keep provider execution unlicensed"
+        )
+    if action_inputs.get("evidence_ledger_intake_mode") != (
+        "fixture_only_followup_intake"
+    ):
+        raise RunKernelTransitionError(
+            "follow-up evidence intake action must be fixture-only"
+        )
+
+
 __all__ = [
     "AUTHOR_EXECUTION_STAGE",
     "FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_AUTHORIZATION_STAGE",
+    "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
