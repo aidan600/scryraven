@@ -100,3 +100,6 @@ AG-96I2D does not open:
 
 AG-96I2E or a later phase is required to decide whether and how a rechecked
 SufficiencyJudgment can feed FinalAnswerPacket preparation.
+
+AG-96I2E is now documented in
+[AG96I2E_FOLLOWUP_FINAL_ANSWER_PACKET.md](AG96I2E_FOLLOWUP_FINAL_ANSWER_PACKET.md).

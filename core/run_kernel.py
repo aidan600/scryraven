@@ -14,6 +14,14 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from core.evidence_ledger import EvidenceLedger
+from core.followup_final_answer_packet_runtime import (
+    FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
+    build_followup_final_answer_packet_record,
+    followup_projection_digest,
+)
+from core.followup_final_answer_packet_runtime import (
+    FOLLOWUP_FINAL_ANSWER_PACKET_STAGE as FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME,
+)
 from core.followup_sufficiency_recheck_runtime import (
     FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
     build_followup_sufficiency_recheck_record,
@@ -42,6 +50,7 @@ FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
 FOLLOWUP_EVIDENCE_INTAKE_STAGE = "followup_evidence_intake"
 FOLLOWUP_SUFFICIENCY_RECHECK_STAGE = FOLLOWUP_SUFFICIENCY_RECHECK_STAGE_NAME
+FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -90,6 +99,7 @@ class ActionType(str, Enum):
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
     FOLLOWUP_EVIDENCE_INTAKE = "followup_evidence_intake"
     FOLLOWUP_SUFFICIENCY_RECHECK = "followup_sufficiency_recheck"
+    FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
 
 
 class ObservationType(str, Enum):
@@ -112,6 +122,9 @@ class ObservationType(str, Enum):
     FOLLOWUP_EVIDENCE_INTAKE_OBSERVED = "followup_evidence_intake_observed"
     FOLLOWUP_SUFFICIENCY_RECHECK_OBSERVED = (
         "followup_sufficiency_recheck_observed"
+    )
+    FOLLOWUP_FINAL_ANSWER_PACKET_PREPARED = (
+        "followup_final_answer_packet_prepared"
     )
 
 
@@ -362,6 +375,13 @@ class RunState:
     followup_sufficiency_recheck_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
+    followup_final_answer_packet_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_final_answer_packet_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     next_action_sequence: int = 1
     next_observation_sequence: int = 1
 
@@ -440,6 +460,15 @@ class RunState:
             followup_sufficiency_recheck_history=deepcopy(
                 self.followup_sufficiency_recheck_history
             ),
+            followup_final_answer_packet_state=deepcopy(
+                self.followup_final_answer_packet_state
+            ),
+            followup_final_answer_packet_projection=deepcopy(
+                self.followup_final_answer_packet_projection
+            ),
+            followup_final_answer_packet_history=deepcopy(
+                self.followup_final_answer_packet_history
+            ),
             next_action_sequence=self.next_action_sequence,
             next_observation_sequence=self.next_observation_sequence,
         )
@@ -486,6 +515,9 @@ class KernelTraceProjection:
     followup_sufficiency_recheck_state: Mapping[str, Any]
     followup_sufficiency_recheck_projection: Mapping[str, Any]
     followup_sufficiency_recheck_history: Sequence[Mapping[str, Any]]
+    followup_final_answer_packet_state: Mapping[str, Any]
+    followup_final_answer_packet_projection: Mapping[str, Any]
+    followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
     next_action_sequence: int
     next_observation_sequence: int
 
@@ -566,6 +598,16 @@ class KernelTraceProjection:
             "followup_sufficiency_recheck_history": [
                 _safe_mapping(item)
                 for item in self.followup_sufficiency_recheck_history
+            ],
+            "followup_final_answer_packet_state": _safe_mapping(
+                self.followup_final_answer_packet_state
+            ),
+            "followup_final_answer_packet_projection": _safe_mapping(
+                self.followup_final_answer_packet_projection
+            ),
+            "followup_final_answer_packet_history": [
+                _safe_mapping(item)
+                for item in self.followup_final_answer_packet_history
             ],
             "next_action_sequence": self.next_action_sequence,
             "next_observation_sequence": self.next_observation_sequence,
@@ -1046,6 +1088,152 @@ class RunKernel:
             inputs=merged_inputs,
             expected_observation_type=(
                 ObservationType.FOLLOWUP_SUFFICIENCY_RECHECK_OBSERVED
+            ),
+        )
+
+    def authorize_followup_final_answer_packet_prepare(
+        self,
+        *,
+        reason: str = "ag96i2e_followup_fixture_final_answer_packet_prepare",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.followup_sufficiency_recheck_state:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires reduced "
+                "follow-up sufficiency recheck state"
+            )
+        recheck_state = self.state.followup_sufficiency_recheck_state
+        if recheck_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires canonical "
+                "recheck state"
+            )
+        if recheck_state.get("sufficiency_recheck_mode") != (
+            FOLLOWUP_SUFFICIENCY_RECHECK_MODE
+        ):
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires fixture-only "
+                "sufficiency recheck mode"
+            )
+        if recheck_state.get("final_answer_packet_deferred") is not True:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires recheck packet "
+                "deferral posture"
+            )
+        if recheck_state.get("author_activation_allowed") is not False:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires Author closed"
+            )
+        if self.state.followup_final_answer_packet_state.get("recheck_id") == (
+            recheck_state.get("recheck_id")
+        ):
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket already prepared for this recheck"
+            )
+        if not self.state.sufficiency_judgment_projection:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires canonical "
+                "SufficiencyJudgment projection"
+            )
+        sufficiency = self.state.sufficiency_judgment_projection
+        if sufficiency.get("owner") != "RunKernel.RunAuthoritySufficiencyJudgment":
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires "
+                "RunAuthority SufficiencyJudgment"
+            )
+        if sufficiency.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires canonical "
+                "SufficiencyJudgment"
+            )
+        ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+        if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires EvidenceLedger "
+                "projection"
+            )
+        if ledger_projection.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires canonical "
+                "EvidenceLedger"
+            )
+        intake_state = self.state.followup_evidence_intake_state
+        if intake_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket preparation requires canonical "
+                "EvidenceLedger intake state"
+            )
+        canonical_inputs = {
+            "run_id": recheck_state.get("run_id"),
+            "checkpoint_id": recheck_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": recheck_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": recheck_state.get("sealed_candidate_id"),
+            "followup_execution_id": recheck_state.get("followup_execution_id"),
+            "execution_id": recheck_state.get("execution_id"),
+            "followup_execution_observation_id": recheck_state.get(
+                "followup_execution_observation_id"
+            ),
+            "followup_evidence_intake_id": recheck_state.get(
+                "followup_evidence_intake_id"
+            ),
+            "intake_id": recheck_state.get("intake_id"),
+            "followup_evidence_intake_observation_id": recheck_state.get(
+                "followup_evidence_intake_observation_id"
+            ),
+            "followup_sufficiency_recheck_id": recheck_state.get("recheck_id"),
+            "recheck_id": recheck_state.get("recheck_id"),
+            "followup_sufficiency_recheck_observation_id": recheck_state.get(
+                "observation_id"
+            ),
+            "provider_job_kind": recheck_state.get("provider_job_kind"),
+            "component_id": recheck_state.get("component_id"),
+            "source_obligation_id": recheck_state.get("source_obligation_id"),
+            "requirement_ids": recheck_state.get("requirement_ids", []),
+            "expected_source_classes": list(
+                _followup_expected_source_classes(recheck_state)
+            ),
+            "fixture_execution_mode": recheck_state.get("fixture_execution_mode"),
+            "evidence_ledger_intake_mode": recheck_state.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": recheck_state.get(
+                "sufficiency_recheck_mode"
+            ),
+            "provider_execution_licensed": False,
+            "final_answer_packet_mode": FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
+            "evidence_ledger_projection_digest": (
+                evidence_ledger_projection_digest(ledger_projection)
+            ),
+            "sufficiency_judgment_digest": followup_projection_digest(sufficiency),
+            "followup_sufficiency_recheck_digest": followup_projection_digest(
+                recheck_state
+            ),
+            "evidence_ledger_custody_summary": evidence_ledger_custody_summary(
+                ledger_projection
+            ),
+            "final_answer_packet_prepared": False,
+            "author_activation_allowed": False,
+            "author_execution_deferred": True,
+            "citation_behavior_changed": False,
+            "citation_rendering_changed": False,
+            "citation_formatter_invoked": False,
+            "product_answer_behavior_changed": False,
+            "final_answer_behavior_changed": False,
+            "live_validation_not_run": True,
+            "expected_observation_record_type": (
+                "followup_final_answer_packet_consumption_record"
+            ),
+        }
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        return self.authorize(
+            stage=FOLLOWUP_FINAL_ANSWER_PACKET_STAGE,
+            action_type=ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARED
             ),
         )
 
@@ -1886,6 +2074,262 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_sufficiency_recheck_projection
             )
+        elif (
+            action.action_type
+            is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
+        ):
+            observed_packet_state = _safe_mapping(
+                observation.payload.get("followup_final_answer_packet_state")
+            )
+            if not observed_packet_state:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket observation requires "
+                    "followup_final_answer_packet_state"
+                )
+            if not self.state.followup_sufficiency_recheck_state:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket requires existing recheck state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _validate_followup_final_answer_packet_observation_binding(
+                action_inputs=action_inputs,
+                observed_packet_state=observed_packet_state,
+            )
+            ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+            try:
+                canonical_record = build_followup_final_answer_packet_record(
+                    action_inputs=action_inputs,
+                    followup_sufficiency_recheck_state=(
+                        self.state.followup_sufficiency_recheck_state
+                    ),
+                    sufficiency_judgment_projection=(
+                        self.state.sufficiency_judgment_projection
+                    ),
+                    evidence_ledger_projection=ledger_projection,
+                    followup_evidence_intake_state=(
+                        self.state.followup_evidence_intake_state
+                    ),
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            packet_state = {
+                **canonical_record.to_dict(),
+                "owner": "RunKernel.FollowupFinalAnswerPacket",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+            }
+            packet_projection = _safe_mapping(packet_state.get("packet_projection"))
+            if not packet_projection:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket requires packet_projection"
+                )
+            flags = _safe_mapping(packet_state.get("behavior_boundary_flags"))
+            for flag in (
+                "live_provider_call_executed",
+                "provider_job_scheduled",
+                "provider_job_dispatched",
+                "search_executed",
+                "retrieval_executed",
+                "fetch_executed",
+                "model_called",
+                "query_generation_changed",
+                "retrieval_ranking_filtering_changed",
+                "search_judgment_rerun",
+                "author_executor_invoked",
+                "author_prompt_changed",
+                "author_prose_behavior_changed",
+                "citation_rendering_changed",
+                "citation_formatter_invoked",
+                "citation_behavior_changed",
+                "product_answer_behavior_changed",
+                "final_answer_behavior_changed",
+                "pipeline_orchestrator_domain_logic_changed",
+            ):
+                if flags.get(flag) is not False:
+                    raise RunKernelTransitionError(
+                        f"follow-up FinalAnswerPacket requires {flag}=False"
+                    )
+            if flags.get("final_answer_packet_prepared") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket must prepare packet state"
+                )
+            if flags.get("final_answer_packet_updated") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket must update packet projection"
+                )
+            if flags.get("author_activation_allowed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket must keep Author closed"
+                )
+            if flags.get("author_execution_deferred") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket must defer Author execution"
+                )
+            if flags.get("live_validation_not_run") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up FinalAnswerPacket must not run live validation"
+                )
+            self.state.followup_final_answer_packet_state = packet_state
+            citation_eligible = list(packet_projection.get("citation_eligible") or [])
+            citation_eligible_source_ids = [
+                item.get("source_id")
+                for item in citation_eligible
+                if isinstance(item, Mapping) and item.get("source_id") is not None
+            ]
+            author_payload_ref = {
+                "packet_id": packet_projection.get("packet_id"),
+                "status": "author_execution_deferred",
+                "prompt_text_included": False,
+                "fixture_only": True,
+                "author_activation_allowed": False,
+                "author_execution_deferred": True,
+                "not_for_product_answer_activation": True,
+                "citation_formatter_invoked": False,
+            }
+            self.state.final_answer_packet = packet_projection
+            self.state.final_answer_authority_projection = {
+                "owner": "RunKernel.FinalAnswerPacket",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "packet_id": packet_projection.get("packet_id"),
+                "readiness_status": packet_projection.get("readiness_status"),
+                "readiness_reasons": packet_projection.get("readiness_reasons", []),
+                "author_payload_ref": author_payload_ref,
+                "citation_eligible_source_ids": citation_eligible_source_ids,
+                "citation_eligibility_refs": packet_state.get(
+                    "citation_eligibility_refs",
+                    [],
+                ),
+                "missing_source_obligation_count": len(
+                    packet_state.get("missing_required_obligations", []) or []
+                ),
+                "partial_source_obligation_count": len(
+                    packet_state.get("partial_obligations", []) or []
+                ),
+                "satisfied_source_obligation_count": len(
+                    packet_state.get("satisfied_obligations", []) or []
+                ),
+                "source_bound_numeric_unknown_count": len(
+                    packet_state.get("source_bound_unknowns", []) or []
+                ),
+                "mandatory_caveat_count": len(
+                    packet_state.get("mandatory_caveats", []) or []
+                ),
+                "prohibited_upgrade_count": len(
+                    packet_state.get("prohibited_upgrades", []) or []
+                ),
+                "author_authority_payload_ref": packet_state.get(
+                    "packet_authority_payload",
+                    {},
+                ),
+                "final_answer_packet_prepared": True,
+                "author_activation_allowed": False,
+                "author_execution_deferred": True,
+                "citation_rendering_changed": False,
+                "citation_formatter_invoked": False,
+                "product_answer_behavior_changed": False,
+                "live_validation_not_run": True,
+                "followup_packet_preparation_id": packet_state.get(
+                    "packet_preparation_id"
+                ),
+                "followup_recheck_id": packet_state.get("recheck_id"),
+            }
+            self.state.projections[FINAL_ANSWER_PACKET_STAGE] = deepcopy(
+                self.state.final_answer_authority_projection
+            )
+            self.state.followup_final_answer_packet_projection = {
+                "owner": "RunKernel.FollowupFinalAnswerPacket",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "schema_version": packet_state.get("schema_version"),
+                "packet_preparation_id": packet_state.get("packet_preparation_id"),
+                "observation_id": packet_state.get("observation_id"),
+                "run_id": packet_state.get("run_id"),
+                "checkpoint_id": packet_state.get("checkpoint_id"),
+                "followup_authorization_consumption_id": packet_state.get(
+                    "followup_authorization_consumption_id"
+                ),
+                "sealed_candidate_id": packet_state.get("sealed_candidate_id"),
+                "followup_execution_id": packet_state.get("followup_execution_id"),
+                "execution_id": packet_state.get("execution_id"),
+                "followup_execution_observation_id": packet_state.get(
+                    "followup_execution_observation_id"
+                ),
+                "followup_evidence_intake_id": packet_state.get(
+                    "followup_evidence_intake_id"
+                ),
+                "intake_id": packet_state.get("intake_id"),
+                "followup_evidence_intake_observation_id": packet_state.get(
+                    "followup_evidence_intake_observation_id"
+                ),
+                "followup_sufficiency_recheck_id": packet_state.get(
+                    "followup_sufficiency_recheck_id"
+                ),
+                "recheck_id": packet_state.get("recheck_id"),
+                "followup_sufficiency_recheck_observation_id": packet_state.get(
+                    "followup_sufficiency_recheck_observation_id"
+                ),
+                "provider_job_kind": packet_state.get("provider_job_kind"),
+                "component_id": packet_state.get("component_id"),
+                "source_obligation_id": packet_state.get("source_obligation_id"),
+                "requirement_ids": packet_state.get("requirement_ids", []),
+                "expected_source_classes": packet_state.get(
+                    "expected_source_classes",
+                    [],
+                ),
+                "final_answer_packet_mode": packet_state.get(
+                    "final_answer_packet_mode"
+                ),
+                "packet_id": packet_projection.get("packet_id"),
+                "readiness_status": packet_projection.get("readiness_status"),
+                "final_evidence_refs": packet_state.get("final_evidence_refs", []),
+                "citation_eligibility_refs": packet_state.get(
+                    "citation_eligibility_refs",
+                    [],
+                ),
+                "mandatory_caveats": packet_state.get("mandatory_caveats", []),
+                "prohibited_upgrades": packet_state.get("prohibited_upgrades", []),
+                "missing_required_obligations": packet_state.get(
+                    "missing_required_obligations",
+                    [],
+                ),
+                "partial_obligations": packet_state.get("partial_obligations", []),
+                "satisfied_obligations": packet_state.get(
+                    "satisfied_obligations",
+                    [],
+                ),
+                "source_bound_unknowns": packet_state.get(
+                    "source_bound_unknowns",
+                    [],
+                ),
+                "unresolved_conflicts": packet_state.get(
+                    "unresolved_conflicts",
+                    [],
+                ),
+                "final_answer_packet_prepared": True,
+                "author_activation_allowed": False,
+                "author_execution_deferred": True,
+                "citation_rendering_changed": False,
+                "citation_formatter_invoked": False,
+                "product_answer_behavior_changed": False,
+                "live_validation_not_run": True,
+                "behavior_boundary_flags": flags,
+                "canonical_final_answer_packet_ref": {
+                    "owner": "RunKernel.FinalAnswerPacket",
+                    "canonical_state": True,
+                    "packet_id": packet_projection.get("packet_id"),
+                    "projection_stage": FINAL_ANSWER_PACKET_STAGE,
+                },
+            }
+            self.state.followup_final_answer_packet_history.append(
+                deepcopy(self.state.followup_final_answer_packet_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_final_answer_packet_projection
+            )
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)
@@ -2209,6 +2653,85 @@ def _validate_followup_sufficiency_recheck_observation_binding(
         )
 
 
+def _validate_followup_final_answer_packet_observation_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    observed_packet_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "run_id",
+        "checkpoint_id",
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_execution_observation_id",
+        "followup_evidence_intake_id",
+        "intake_id",
+        "followup_evidence_intake_observation_id",
+        "followup_sufficiency_recheck_id",
+        "recheck_id",
+        "followup_sufficiency_recheck_observation_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "fixture_execution_mode",
+        "evidence_ledger_intake_mode",
+        "sufficiency_recheck_mode",
+        "final_answer_packet_mode",
+        "evidence_ledger_projection_digest",
+        "sufficiency_judgment_digest",
+        "followup_sufficiency_recheck_digest",
+    ):
+        if observed_packet_state.get(binding_field) != action_inputs.get(
+            binding_field
+        ):
+            raise RunKernelTransitionError(
+                "follow-up FinalAnswerPacket observation "
+                f"{binding_field} does not match authorized action"
+            )
+    if _followup_token_list(
+        observed_packet_state.get("requirement_ids")
+    ) != _followup_token_list(action_inputs.get("requirement_ids")):
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket observation requirement_ids do not "
+            "match authorized action"
+        )
+    if _followup_token_list(
+        observed_packet_state.get("expected_source_classes")
+    ) != _followup_token_list(action_inputs.get("expected_source_classes")):
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket observation expected_source_classes do "
+            "not match authorized action"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket action must keep provider unlicensed"
+        )
+    if action_inputs.get("final_answer_packet_mode") != (
+        FOLLOWUP_FINAL_ANSWER_PACKET_MODE
+    ):
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket action must be fixture-only"
+        )
+    if action_inputs.get("author_activation_allowed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket action must keep Author closed"
+        )
+    if action_inputs.get("citation_rendering_changed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket action must not render citations"
+        )
+    if action_inputs.get("product_answer_behavior_changed") is not False:
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket action must not change product answers"
+        )
+    if action_inputs.get("live_validation_not_run") is not True:
+        raise RunKernelTransitionError(
+            "follow-up FinalAnswerPacket action must not run live validation"
+        )
+
+
 def _build_followup_evidence_intake_ledger_observation(
     *,
     intake_state: Mapping[str, Any],
@@ -2502,6 +3025,7 @@ __all__ = [
     "FOLLOWUP_AUTHORIZATION_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
+    "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_SUFFICIENCY_RECHECK_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
