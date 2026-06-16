@@ -158,6 +158,34 @@ def _intake(kernel: RunKernel) -> None:
     kernel.reduce(intake_result.observation)
 
 
+def _intake_with_mutated_accepted_ledger_payload(kernel: RunKernel) -> None:
+    action = kernel.authorize_followup_evidence_intake()
+    result = execute_followup_evidence_intake_action(
+        action,
+        followup_execution_state=kernel.state.followup_execution_state,
+        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
+    )
+    payload = deepcopy(result.record.to_dict())
+    payload["ledger_candidates"][0]["disposition"] = "accepted"
+    payload["ledger_candidates"][0]["eligible_for_stronger_obligation"] = True
+    payload["ledger_candidates"][0]["final_evidence_eligible"] = True
+    payload["ledger_requirement_links"][0]["link_status"] = "accepted"
+    payload["ledger_observation"]["final_evidence"] = [
+        {
+            "source_id": "malicious-final",
+            "url": "https://example.com/malicious",
+            "title": "malicious final evidence",
+        }
+    ]
+    observation = Observation.from_action(
+        action,
+        observation_type="followup_evidence_intake_observed",
+        status="completed",
+        payload={"followup_evidence_intake_state": payload},
+    )
+    kernel.reduce(observation)
+
+
 def _requirement(projection: dict[str, Any], requirement_id: str) -> dict[str, Any]:
     for requirement in projection["source_requirements"]:
         if requirement["requirement_id"] == requirement_id:
@@ -374,6 +402,64 @@ def test_legal_current_primary_provider_job_flows_through_fixture_intake() -> No
     requirement = _requirement(ledger, "source_requirement:requirement_legal_current")
     assert requirement["required_source_class"] == "legal_or_regulatory_text"
     assert requirement["status"] == SourceRequirementStatus.SATISFIED.value
+
+
+def test_bridge_only_mutated_accepted_ledger_payload_remains_non_satisfying() -> None:
+    kernel = _authorize_and_execute(
+        fixture_payload=_fixture_payload(bridge_only=True)
+    )
+
+    _intake_with_mutated_accepted_ledger_payload(kernel)
+
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    requirement = _requirement(ledger, "source_requirement:requirement_official_current")
+    assert requirement["status"] == SourceRequirementStatus.UNSATISFIED.value
+    assert ledger["custody_records"][0]["disposition"] == "contextual"
+    assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
+    assert ledger["final_evidence_refs"] == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"no_result": True},
+        {"wrong_source_class": True, "source_class": "reputable_secondary"},
+    ],
+)
+def test_failure_status_mutated_accepted_ledger_payload_cannot_satisfy(
+    payload: dict[str, Any],
+) -> None:
+    kernel = _authorize_and_execute(fixture_payload=_fixture_payload(**payload))
+
+    _intake_with_mutated_accepted_ledger_payload(kernel)
+
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    requirement = _requirement(ledger, "source_requirement:requirement_official_current")
+    assert requirement["status"] == SourceRequirementStatus.UNSATISFIED.value
+    assert ledger["custody_records"][0]["disposition"] == "rejected"
+    assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
+    assert ledger["final_evidence_refs"] == []
+
+
+def test_secondary_fixture_success_mutated_accepted_ledger_payload_cannot_satisfy() -> None:
+    kernel = _authorize_and_execute(
+        fixture_payload=_fixture_payload(
+            source_tier="secondary",
+            source_class="reputable_secondary",
+            eligible_for_stronger_obligation=True,
+        )
+    )
+
+    _intake_with_mutated_accepted_ledger_payload(kernel)
+
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    requirement = _requirement(ledger, "source_requirement:requirement_official_current")
+    assert requirement["required_source_class"] == "official_current_rules"
+    assert requirement["status"] == SourceRequirementStatus.UNSATISFIED.value
+    assert ledger["custody_records"][0]["disposition"] == "rejected"
+    assert ledger["candidate_records"][0]["source_class"] == "reputable_secondary"
+    assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
+    assert ledger["final_evidence_refs"] == []
 
 
 def test_intake_reducer_rejects_closed_surface_flags() -> None:

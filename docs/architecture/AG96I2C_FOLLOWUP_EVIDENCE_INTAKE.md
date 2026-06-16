@@ -64,6 +64,10 @@ behavior changes, and pipeline-orchestrator domain logic changes.
 AG-96I2C does not invent a parallel ledger. The intake adapter builds a
 sanitized `EvidenceLedgerObservation`, and RunKernel mutates the existing
 `RunState.evidence_ledger` with `EvidenceLedger.reduce_observation(...)`.
+The reducer derives the actual ledger mutation payload from canonical
+follow-up execution/intake binding fields before mutation, so caller-supplied
+ledger requirement, candidate, link, or final-evidence fields cannot upgrade a
+bridge-only, failed, wrong-class, or off-contract fixture result.
 
 The fixture-origin custody record is visibly tied to:
 

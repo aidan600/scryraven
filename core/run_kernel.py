@@ -1560,31 +1560,24 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "follow-up evidence intake must not create citation eligibility"
                 )
-            ledger_observation = _safe_mapping(intake_state.get("ledger_observation"))
-            if not ledger_observation:
-                raise RunKernelTransitionError(
-                    "follow-up evidence intake requires ledger_observation"
-                )
-            if intake_state.get("ledger_requirements") is not None:
-                ledger_observation = {
-                    "observation_id": ledger_observation.get("observation_id"),
-                    "observation_source": ledger_observation.get(
-                        "observation_source",
-                    )
-                    or "followup_fixture_evidence_intake",
-                    "requirements": list(
-                        intake_state.get("ledger_requirements", []) or []
-                    ),
-                    "candidates": list(
-                        intake_state.get("ledger_candidates", []) or []
-                    ),
-                    "requirement_links": list(
-                        intake_state.get("ledger_requirement_links", []) or []
-                    ),
-                    "followup_fixture_intake": _safe_mapping(
-                        intake_state.get("ledger_followup_fixture_intake")
-                    ),
-                }
+            ledger_observation = _build_followup_evidence_intake_ledger_observation(
+                intake_state=intake_state,
+                execution_state=self.state.followup_execution_state,
+            )
+            intake_state = {
+                **intake_state,
+                "ledger_observation": deepcopy(ledger_observation),
+                "ledger_requirements": deepcopy(
+                    ledger_observation.get("requirements", [])
+                ),
+                "ledger_candidates": deepcopy(ledger_observation.get("candidates", [])),
+                "ledger_requirement_links": deepcopy(
+                    ledger_observation.get("requirement_links", [])
+                ),
+                "ledger_followup_fixture_intake": deepcopy(
+                    ledger_observation.get("followup_fixture_intake", {})
+                ),
+            }
             self.state.evidence_ledger.reduce_observation(ledger_observation)
             ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
             self.state.projections[EVIDENCE_LEDGER_STAGE] = deepcopy(
@@ -1821,6 +1814,255 @@ def _validate_followup_evidence_intake_action_binding(
         raise RunKernelTransitionError(
             "follow-up evidence intake action must be fixture-only"
         )
+
+
+def _build_followup_evidence_intake_ledger_observation(
+    *,
+    intake_state: Mapping[str, Any],
+    execution_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    summary = _safe_mapping(execution_state.get("sanitized_fixture_result_summary"))
+    requirement_id = _followup_intake_requirement_id(execution_state)
+    expected_source_classes = _followup_expected_source_classes(execution_state)
+    required_source_class = _followup_required_source_class(expected_source_classes)
+    candidate_id = _followup_intake_candidate_id(execution_state)
+    disposition = _followup_intake_candidate_disposition(
+        result_status=execution_state.get("result_status"),
+        bridge_only=bool(execution_state.get("bridge_only")),
+        source_class=summary.get("source_class"),
+        expected_source_classes=expected_source_classes,
+    )
+    candidate = {
+        "candidate_id": candidate_id,
+        "url": summary.get("url"),
+        "title": summary.get("title") or summary.get("summary"),
+        "domain": summary.get("domain"),
+        "source_label": (
+            "fixture follow-up intake "
+            f"{execution_state.get('component_id')} "
+            f"{execution_state.get('source_obligation_id')} "
+            f"{execution_state.get('sealed_candidate_id')}"
+        ),
+        "provider_name": "followup_fixture",
+        "provider_role": execution_state.get("provider_job_kind"),
+        "retrieval_pass_id": execution_state.get("observation_id"),
+        "query_ref": "fixture_only_followup_intake",
+        "action_ref": execution_state.get("execution_id"),
+        "source_tier": summary.get("source_tier")
+        or _followup_default_source_tier(required_source_class),
+        "source_class": summary.get("source_class") or "unknown",
+        "currentness_signal": summary.get("currentness_signal") or "fixture_current",
+        "readable_status": summary.get("readable_status")
+        or (
+            "readable"
+            if execution_state.get("result_status") == "fixture_success"
+            else "not_readable"
+        ),
+        "fetchable_status": summary.get("fetchable_status")
+        or (
+            "fetchable"
+            if execution_state.get("result_status") == "fixture_success"
+            else "not_fetchable"
+        ),
+        "disposition": disposition,
+        "record_kind": "fact",
+        "requirement_id": requirement_id,
+        "eligible_for_stronger_obligation": (
+            disposition == "accepted"
+            and bool(
+                summary.get("eligible_for_stronger_obligation")
+                or summary.get("source_tier") in {"official", "primary", "canonical"}
+            )
+        ),
+        "final_evidence_eligible": False,
+        "reason": _followup_intake_candidate_reason(
+            result_status=execution_state.get("result_status"),
+            bridge_only=bool(execution_state.get("bridge_only")),
+            disposition=disposition,
+        ),
+        "followup_execution_id": execution_state.get("execution_id"),
+        "followup_execution_observation_id": execution_state.get("observation_id"),
+        "sealed_candidate_id": execution_state.get("sealed_candidate_id"),
+        "component_id": execution_state.get("component_id"),
+    }
+    return {
+        "observation_id": f"ledger:{execution_state.get('execution_id')}",
+        "observation_source": "followup_fixture_evidence_intake",
+        "requirements": [
+            {
+                "requirement_id": requirement_id,
+                "requirement_kind": _followup_requirement_kind(required_source_class),
+                "origin_ref": (
+                    f"followup_fixture_execution:{execution_state.get('execution_id')}"
+                ),
+                "required_source_class": required_source_class,
+                "required_source_tier": _followup_default_source_tier(
+                    required_source_class
+                ),
+                "required_currentness": summary.get("required_currentness")
+                or summary.get("currentness_signal")
+                or "current",
+            }
+        ],
+        "candidates": [candidate],
+        "requirement_links": [
+            {
+                "requirement_id": requirement_id,
+                "candidate_id": candidate_id,
+                "link_reason": "followup_fixture_execution_binding",
+                "link_status": disposition,
+            }
+        ],
+        "followup_fixture_intake": {
+            "schema_version": intake_state.get("schema_version"),
+            "run_id": execution_state.get("run_id"),
+            "checkpoint_id": execution_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": execution_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": execution_state.get("sealed_candidate_id"),
+            "followup_execution_id": execution_state.get("execution_id"),
+            "followup_execution_observation_id": execution_state.get("observation_id"),
+            "provider_job_kind": execution_state.get("provider_job_kind"),
+            "component_id": execution_state.get("component_id"),
+            "source_obligation_id": execution_state.get("source_obligation_id"),
+            "requirement_ids": list(execution_state.get("requirement_ids", []) or []),
+            "expected_source_classes": list(expected_source_classes),
+            "result_status": execution_state.get("result_status"),
+            "bridge_only": bool(execution_state.get("bridge_only")),
+            "fixture_only_provenance": {
+                "origin": "ag96i2b_followup_fixture_execution",
+                "intake_bridge": "ag96i2c_followup_evidence_ledger_intake",
+                "fixture_only": True,
+                "live_provider_result": False,
+                "provider_job_executor_connected": False,
+            },
+        },
+    }
+
+
+def _followup_intake_requirement_id(execution_state: Mapping[str, Any]) -> str:
+    requirement_ids = list(execution_state.get("requirement_ids", []) or [])
+    requirement_id = next(iter(requirement_ids), None) or execution_state.get(
+        "source_obligation_id"
+    )
+    text = _followup_token(requirement_id) or "followup_requirement"
+    if ":" not in text:
+        return f"source_requirement:{text}"
+    return text
+
+
+def _followup_intake_candidate_id(execution_state: Mapping[str, Any]) -> str:
+    return _followup_token(
+        "followup_fixture:"
+        f"{execution_state.get('sealed_candidate_id')}:"
+        f"{execution_state.get('execution_id')}"
+    )
+
+
+def _followup_expected_source_classes(
+    execution_state: Mapping[str, Any],
+) -> tuple[str, ...]:
+    expected = [
+        _followup_token(item)
+        for item in list(execution_state.get("expected_source_classes", []) or [])
+    ]
+    expected = [item for item in expected if item and item != "[redacted]"]
+    if expected:
+        return tuple(expected)
+    job_kind = _followup_token(execution_state.get("provider_job_kind"))
+    by_job = {
+        "official_current_candidate_acquisition": (
+            "official_government",
+            "official_current_rules",
+        ),
+        "legal_current_primary_acquisition": (
+            "primary_legal",
+            "legal_or_regulatory_text",
+        ),
+        "canonical_doc_acquisition": ("canonical", "primary_source_documents"),
+        "source_bound_numeric_extraction_calculation_support": (
+            "sourced_numeric_values",
+        ),
+        "conflict_currentness_check": ("current_primary_or_official",),
+        "reconciliation_support": ("source_family_map",),
+        "fetch_read_extract": ("answer_bearing_extract",),
+    }
+    return by_job.get(job_kind, ("answer_bearing_candidate",))
+
+
+def _followup_required_source_class(expected_source_classes: Sequence[str]) -> str:
+    preferred = (
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "primary_source_documents",
+        "current_primary_or_official",
+        "sourced_numeric_values",
+    )
+    for item in preferred:
+        if item in expected_source_classes:
+            return item
+    return next(iter(expected_source_classes), "unknown")
+
+
+def _followup_intake_candidate_disposition(
+    *,
+    result_status: Any,
+    bridge_only: bool,
+    source_class: Any,
+    expected_source_classes: Sequence[str],
+) -> str:
+    if bridge_only:
+        return "contextual"
+    if (
+        result_status == "fixture_success"
+        and _followup_token(source_class) in expected_source_classes
+    ):
+        return "accepted"
+    return "rejected"
+
+
+def _followup_intake_candidate_reason(
+    *,
+    result_status: Any,
+    bridge_only: bool,
+    disposition: str,
+) -> str:
+    if bridge_only:
+        return "bridge_only_fixture_result_not_satisfying"
+    if result_status == "fixture_success" and disposition != "accepted":
+        return "fixture_success_source_class_outside_sealed_contract"
+    if result_status == "fixture_success":
+        return "fixture_success_followup_evidence_intake"
+    return f"{_followup_token(result_status)}_not_admitted_as_satisfying_evidence"
+
+
+def _followup_default_source_tier(required_source_class: str) -> str | None:
+    if required_source_class in {
+        "official_current_rules",
+        "legal_or_regulatory_text",
+        "current_primary_or_official",
+        "primary_source_documents",
+    }:
+        return "official"
+    return None
+
+
+def _followup_requirement_kind(required_source_class: str) -> str:
+    if required_source_class in {"official_current_rules", "current_primary_or_official"}:
+        return "official_current"
+    if required_source_class == "legal_or_regulatory_text":
+        return "legal"
+    if required_source_class in {"primary_source_documents", "archival_primary_text"}:
+        return "canonical"
+    return "general"
+
+
+def _followup_token(value: Any, *, limit: int = 220) -> str:
+    text = _clean_text(value, limit=limit)
+    if not text:
+        return ""
+    return text.casefold().replace("-", "_").replace(" ", "_")[:limit]
 
 
 __all__ = [
