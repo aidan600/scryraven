@@ -122,3 +122,6 @@ over the updated EvidenceLedger state. That later phase should decide how
 fixture-origin custody affects sufficiency without changing live provider,
 search, retrieval, citation, FinalAnswerPacket, or Author behavior by
 implication.
+
+AG-96I2D is now documented in
+[AG96I2D_FOLLOWUP_SUFFICIENCY_RECHECK.md](AG96I2D_FOLLOWUP_SUFFICIENCY_RECHECK.md).
