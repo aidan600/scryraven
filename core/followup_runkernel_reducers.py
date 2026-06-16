@@ -1668,6 +1668,12 @@ def _contains_sensitive_payload_field(value: Any) -> bool:
     if isinstance(value, Mapping):
         for key, item in value.items():
             token = _followup_token(key, limit=120)
+            if token in {
+                "budget_semantics",
+                "execution_gate",
+                "redaction_posture",
+            }:
+                continue
             if token in _FOLLOWUP_SENSITIVE_PAYLOAD_KEYS or token.startswith("raw_"):
                 return True
             if _contains_sensitive_payload_field(item):

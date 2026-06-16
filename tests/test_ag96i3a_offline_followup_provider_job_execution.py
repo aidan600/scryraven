@@ -545,6 +545,77 @@ def test_observation_spoofing_is_rejected(field: str, value: Any) -> None:
         kernel.reduce(_mutated_observation(action, spoofed))
 
 
+def test_provider_job_reducer_canonicalizes_nested_no_live_metadata() -> None:
+    kernel = _authorized_kernel()
+    action = kernel.authorize_followup_provider_job_execution(
+        candidate_id="auth.candidate.001"
+    )
+    result = execute_followup_provider_job_action(
+        action,
+        adapter_result_payload=_official_candidate_payload(),
+    )
+    spoofed = deepcopy(result.record.to_dict())
+    spoofed["budget_semantics"] = {
+        "planned_debit_authorized": {"provider_calls": 999},
+        "offline_provider_job_execution_did_not_incur_live_cost": False,
+        "actual_provider_search_fetch_read_cost_incurred": True,
+        "actual_provider_account_debited": True,
+        "provider_cost_accounting_deferred": False,
+    }
+    spoofed["execution_gate"] = {
+        "allowed_execution_mode": "bounded_provider_job_live",
+        "provider_job_kind_allowlist": [ProviderJobKind.SEMANTIC_RECALL.value],
+        "provider_execution_licensed": True,
+        "provider_execution_available_in_this_phase": True,
+        "offline_live_shaped_execution": False,
+        "adapter_result_injected_required": False,
+        "reason": "malicious",
+    }
+    spoofed["redaction_posture"] = {
+        "raw_provider_payloads_retained": True,
+        "raw_provider_payload_retained": True,
+        "raw_text_retained": True,
+        "raw_prompt_retained": True,
+        "raw_trace_retained": True,
+        "secrets_retained": True,
+        "private_logs_retained": True,
+        "full_trace_retained": True,
+    }
+
+    kernel.reduce(_mutated_observation(action, spoofed))
+
+    state = kernel.state.followup_execution_state
+    budget = state["budget_semantics"]
+    assert budget["planned_debit_authorized"] == action.inputs["budget_debit"]
+    assert budget["planned_debit_authorized"]["provider_calls"] != 999
+    assert budget["offline_provider_job_execution_did_not_incur_live_cost"] is True
+    assert budget["actual_provider_search_fetch_read_cost_incurred"] is False
+    assert budget["actual_provider_account_debited"] is False
+    assert budget["provider_cost_accounting_deferred"] is True
+
+    gate = state["execution_gate"]
+    assert gate["allowed_execution_mode"] == FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE
+    assert gate["provider_job_kind_allowlist"] == [FOLLOWUP_PROVIDER_JOB_ALLOWED_KIND]
+    assert gate["provider_execution_licensed"] is False
+    assert gate["provider_execution_available_in_this_phase"] is False
+    assert gate["offline_live_shaped_execution"] is True
+    assert gate["adapter_result_injected_required"] is True
+    assert gate["reason"] != "malicious"
+
+    redaction = state["redaction_posture"]
+    for field in (
+        "raw_provider_payloads_retained",
+        "raw_provider_payload_retained",
+        "raw_text_retained",
+        "raw_prompt_retained",
+        "raw_trace_retained",
+        "secrets_retained",
+        "private_logs_retained",
+        "full_trace_retained",
+    ):
+        assert redaction[field] is False
+
+
 def test_static_closed_surface_guard_for_offline_provider_job_module() -> None:
     module_path = ROOT / "core" / "followup_provider_job_execution_runtime.py"
     source = module_path.read_text(encoding="utf-8")

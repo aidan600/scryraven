@@ -40,6 +40,7 @@ from core.followup_final_answer_packet_runtime import (
 )
 from core.followup_provider_job_execution_runtime import (
     FOLLOWUP_PROVIDER_JOB_ALLOWED_KIND,
+    FOLLOWUP_PROVIDER_JOB_EXECUTION_GATE_REASON,
     FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
 )
 from core.followup_runkernel_reducers import (
@@ -2266,20 +2267,9 @@ class RunKernel:
                     "follow-up provider-job execution observation claims closed "
                     "answer authority"
                 )
-            gate = _safe_mapping(observed_execution_state.get("execution_gate"))
             flags = _safe_mapping(
                 observed_execution_state.get("behavior_boundary_flags")
             )
-            if gate.get("allowed_execution_mode") != (
-                FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE
-            ):
-                raise RunKernelTransitionError(
-                    "follow-up provider-job reducer only accepts offline mode"
-                )
-            if gate.get("provider_execution_licensed") is not False:
-                raise RunKernelTransitionError(
-                    "follow-up provider-job observation must keep provider execution unlicensed"
-                )
             _followup_checked(
                 require_followup_flags_false,
                 flags,
@@ -2321,6 +2311,17 @@ class RunKernel:
                 )
             summary = _safe_mapping(
                 observed_execution_state.get("sanitized_candidate_summary")
+            )
+            canonical_budget_semantics = (
+                _canonical_followup_provider_job_budget_semantics(
+                    _safe_mapping(action_inputs.get("budget_debit"))
+                )
+            )
+            canonical_execution_gate = (
+                _canonical_followup_provider_job_execution_gate()
+            )
+            canonical_redaction_posture = (
+                _canonical_followup_provider_job_redaction_posture()
             )
             execution_state = {
                 **observed_execution_state,
@@ -2370,12 +2371,9 @@ class RunKernel:
                 "product_answer_behavior_changed": False,
                 "evidence_ledger_intake_deferred": True,
                 "evidence_ledger_evidence_admitted": False,
-                "execution_gate": {
-                    **gate,
-                    "allowed_execution_mode": FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
-                    "provider_execution_licensed": False,
-                    "offline_live_shaped_execution": True,
-                },
+                "budget_semantics": canonical_budget_semantics,
+                "execution_gate": canonical_execution_gate,
+                "redaction_posture": canonical_redaction_posture,
                 "behavior_boundary_flags": {
                     **flags,
                     "provider_execution_licensed": False,
@@ -2408,9 +2406,7 @@ class RunKernel:
                     execution_state=execution_state,
                     execution_gate=_safe_mapping(execution_state.get("execution_gate")),
                     behavior_boundary_flags=canonical_flags,
-                    budget_semantics=_safe_mapping(
-                        execution_state.get("budget_semantics")
-                    ),
+                    budget_semantics=canonical_budget_semantics,
                 )
             )
             self.state.followup_execution_history.append(
@@ -3032,6 +3028,48 @@ def _require_followup_provider_job_budget(
     )
 
 
+def _canonical_followup_provider_job_budget_semantics(
+    budget_debit: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "planned_debit_authorized": dict(budget_debit),
+        "offline_provider_job_execution_did_not_incur_live_cost": True,
+        "actual_provider_search_fetch_read_cost_incurred": False,
+        "actual_provider_account_debited": False,
+        "provider_cost_accounting_deferred": True,
+    }
+
+
+def _canonical_followup_provider_job_execution_gate() -> dict[str, Any]:
+    return {
+        "allowed_execution_mode": FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
+        "provider_job_kind_allowlist": [FOLLOWUP_PROVIDER_JOB_ALLOWED_KIND],
+        "provider_execution_licensed": False,
+        "provider_execution_available_in_this_phase": False,
+        "offline_live_shaped_execution": True,
+        "adapter_result_injected_required": True,
+        "reason": FOLLOWUP_PROVIDER_JOB_EXECUTION_GATE_REASON,
+    }
+
+
+def _canonical_followup_provider_job_redaction_posture() -> dict[str, bool]:
+    return {
+        "sanitized_candidate_facts_only": True,
+        "raw_provider_payloads_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_text_retained": False,
+        "raw_prompt_retained": False,
+        "raw_trace_retained": False,
+        "provider_payload_retained": False,
+        "provider_payloads_retained": False,
+        "secrets_retained": False,
+        "db_rows_retained": False,
+        "cache_rows_retained": False,
+        "private_logs_retained": False,
+        "full_trace_retained": False,
+    }
+
+
 def _followup_provider_job_closed_surface_claimed(value: Any) -> bool:
     dangerous_true_keys = {
         "source_obligation_satisfied",
@@ -3064,6 +3102,12 @@ def _followup_provider_job_closed_surface_claimed(value: Any) -> bool:
     if isinstance(value, Mapping):
         for key, item in value.items():
             token = str(key or "").strip().casefold().replace("-", "_").replace(" ", "_")
+            if token in {
+                "budget_semantics",
+                "execution_gate",
+                "redaction_posture",
+            }:
+                continue
             if token in dangerous_true_keys and item is True:
                 return True
             if token in dangerous_false_keys and item is False:
