@@ -121,7 +121,12 @@ The canonical packet records preserve:
 
 ## Follow-on AG-96I2F
 
-AG-96I2F or a later phase is required before Author can consume this packet.
-That later phase must explicitly license Author invocation, prompt/prose
-behavior, citation rendering or formatting behavior if changed, and any product
-final-answer activation.
+AG-96I2F is now documented in
+[AG96I2F_FOLLOWUP_AUTHOR_GATE.md](AG96I2F_FOLLOWUP_AUTHOR_GATE.md). It opens
+only fixture-only Author gate / packet consumption and keeps Author execution,
+Author prose, citation rendering, and product final-answer behavior closed.
+
+AG-96I2G or a later phase is required for either a fixture Author observation or
+product-answer activation. Any later activation must explicitly license Author
+invocation, prompt/prose behavior, citation rendering or formatting behavior if
+changed, and product final-answer activation.
