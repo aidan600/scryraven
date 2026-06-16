@@ -38,6 +38,10 @@ from core.followup_final_answer_packet_runtime import (
 from core.followup_final_answer_packet_runtime import (
     FOLLOWUP_FINAL_ANSWER_PACKET_STAGE as FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME,
 )
+from core.followup_provider_job_execution_runtime import (
+    FOLLOWUP_PROVIDER_JOB_ALLOWED_KIND,
+    FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
+)
 from core.followup_runkernel_reducers import (
     FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS as _FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS,
 )
@@ -52,6 +56,9 @@ from core.followup_runkernel_reducers import (
 )
 from core.followup_runkernel_reducers import (
     FOLLOWUP_PACKET_FALSE_FLAGS as _FOLLOWUP_PACKET_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_PROVIDER_JOB_EXECUTION_FALSE_FLAGS as _FOLLOWUP_PROVIDER_JOB_EXECUTION_FALSE_FLAGS,
 )
 from core.followup_runkernel_reducers import (
     FOLLOWUP_RECHECK_FALSE_FLAGS as _FOLLOWUP_RECHECK_FALSE_FLAGS,
@@ -76,6 +83,7 @@ from core.followup_runkernel_reducers import (
     validate_followup_evidence_intake_action_binding,
     validate_followup_execution_action_binding,
     validate_followup_final_answer_packet_observation_binding,
+    validate_followup_provider_job_execution_action_binding,
     validate_followup_sufficiency_recheck_observation_binding,
 )
 from core.followup_sufficiency_recheck_runtime import (
@@ -104,6 +112,7 @@ FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
+FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE = "followup_provider_job_execution"
 FOLLOWUP_EVIDENCE_INTAKE_STAGE = "followup_evidence_intake"
 FOLLOWUP_SUFFICIENCY_RECHECK_STAGE = FOLLOWUP_SUFFICIENCY_RECHECK_STAGE_NAME
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
@@ -154,6 +163,7 @@ class ActionType(str, Enum):
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
+    FOLLOWUP_PROVIDER_JOB_EXECUTE = "followup_provider_job_execute"
     FOLLOWUP_EVIDENCE_INTAKE = "followup_evidence_intake"
     FOLLOWUP_SUFFICIENCY_RECHECK = "followup_sufficiency_recheck"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
@@ -178,6 +188,9 @@ class ObservationType(str, Enum):
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
+    FOLLOWUP_PROVIDER_JOB_EXECUTION_OBSERVED = (
+        "followup_provider_job_execution_observed"
+    )
     FOLLOWUP_EVIDENCE_INTAKE_OBSERVED = "followup_evidence_intake_observed"
     FOLLOWUP_SUFFICIENCY_RECHECK_OBSERVED = (
         "followup_sufficiency_recheck_observed"
@@ -1058,6 +1071,99 @@ class RunKernel:
             expected_observation_type=ObservationType.FOLLOWUP_EXECUTION_OBSERVED,
         )
 
+    def authorize_followup_provider_job_execution(
+        self,
+        *,
+        candidate_id: str,
+        reason: str = "ag96i3a_offline_followup_provider_job_execution",
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.followup_authorization_state:
+            raise RunKernelTransitionError(
+                "follow-up provider-job execution requires reduced follow-up "
+                "authorization state"
+            )
+        candidate = _followup_checked(
+            followup_sealed_candidate,
+            self.state.followup_authorization_state,
+            candidate_id,
+        )
+        if candidate.get("provider_job_kind") != FOLLOWUP_PROVIDER_JOB_ALLOWED_KIND:
+            raise RunKernelTransitionError(
+                "AG-96I3A only authorizes official_current_candidate_acquisition"
+            )
+        expected_update = _safe_mapping(
+            candidate.get("expected_evidence_ledger_custody_update")
+        )
+        expected_source_classes = _string_list(expected_update.get("source_classes"))
+        if not expected_source_classes or "[redacted]" in expected_source_classes:
+            expected_source_classes = [
+                "official_government",
+                "official_current_rules",
+            ]
+        if not set(expected_source_classes).intersection(
+            {"official_government", "official_current_rules"}
+        ):
+            raise RunKernelTransitionError(
+                "follow-up provider-job execution requires official/current source classes"
+            )
+        authorized_query_ref = _clean_text(
+            candidate.get("authorized_query_ref"),
+            limit=180,
+        )
+        authorized_query = _clean_text(candidate.get("authorized_query"), limit=300)
+        if not (authorized_query_ref or authorized_query):
+            raise RunKernelTransitionError(
+                "follow-up provider-job execution requires authorized query/ref"
+            )
+        budget_debit = _safe_mapping(candidate.get("budget_debit"))
+        _require_followup_provider_job_budget(
+            authorization_state=self.state.followup_authorization_state,
+            budget_debit=budget_debit,
+        )
+        merged_inputs = {
+            **dict(inputs or {}),
+            "run_id": self.state.run_id,
+            "checkpoint_id": self.state.followup_authorization_state.get(
+                "checkpoint_id"
+            ),
+            "followup_authorization_consumption_id": (
+                self.state.followup_authorization_state.get("consumption_id")
+            ),
+            "sealed_candidate_id": candidate.get("candidate_id"),
+            "execution_mode": FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
+            "provider_job_kind": candidate.get("provider_job_kind"),
+            "component_id": candidate.get("component_id"),
+            "source_obligation_id": candidate.get("source_obligation_id"),
+            "requirement_ids": candidate.get("requirement_ids", []),
+            "expected_source_classes": expected_source_classes,
+            "expected_evidence_ledger_custody_update": expected_update,
+            "budget_debit": budget_debit,
+            "authorized_query_ref": authorized_query_ref,
+            "authorized_query": authorized_query,
+            "provider_execution_licensed": False,
+            "live_provider_call_executed": False,
+            "search_executed": False,
+            "retrieval_executed": False,
+            "fetch_executed": False,
+            "model_called": False,
+            "author_activation_allowed": False,
+            "author_executor_invoked": False,
+            "citation_rendering_changed": False,
+            "citation_formatter_invoked": False,
+            "product_answer_behavior_changed": False,
+            "live_validation_not_run": True,
+        }
+        return self.authorize(
+            stage=FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE,
+            action_type=ActionType.FOLLOWUP_PROVIDER_JOB_EXECUTE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_PROVIDER_JOB_EXECUTION_OBSERVED
+            ),
+        )
+
     def authorize_followup_evidence_intake(
         self,
         *,
@@ -1082,6 +1188,8 @@ class RunKernel:
             ),
             "observation_id": execution_state.get("observation_id"),
             "fixture_execution_mode": execution_state.get("fixture_execution_mode"),
+            "execution_mode": execution_state.get("execution_mode")
+            or execution_state.get("fixture_execution_mode"),
             "provider_job_kind": execution_state.get("provider_job_kind"),
             "component_id": execution_state.get("component_id"),
             "source_obligation_id": execution_state.get("source_obligation_id"),
@@ -1092,15 +1200,27 @@ class RunKernel:
             ),
             "result_status": execution_state.get("result_status"),
             "bridge_only": execution_state.get("bridge_only"),
+            "authorized_query_ref": execution_state.get("authorized_query_ref"),
+            "authorized_query": execution_state.get("authorized_query"),
             "provider_execution_licensed": False,
-            "evidence_ledger_intake_mode": "fixture_only_followup_intake",
+            "evidence_ledger_intake_mode": (
+                "bounded_provider_job_offline_followup_intake"
+                if (
+                    execution_state.get("execution_mode")
+                    == FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE
+                )
+                else "fixture_only_followup_intake"
+            ),
             "expected_observation_record_type": (
                 "followup_evidence_intake_consumption_record"
             ),
         }
-        if merged_inputs.get("fixture_execution_mode") != "fixture_only":
+        if merged_inputs.get("execution_mode") not in {
+            "fixture_only",
+            FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
+        }:
             raise RunKernelTransitionError(
-                "follow-up evidence intake only authorizes fixture_only execution state"
+                "follow-up evidence intake only authorizes known execution modes"
             )
         return self.authorize(
             stage=FOLLOWUP_EVIDENCE_INTAKE_STAGE,
@@ -1128,11 +1248,16 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "follow-up sufficiency recheck requires canonical intake state"
             )
-        if intake_state.get("evidence_ledger_intake_mode") != (
-            "fixture_only_followup_intake"
-        ):
+        execution_mode = (
+            intake_state.get("execution_mode")
+            or intake_state.get("fixture_execution_mode")
+        )
+        if intake_state.get("evidence_ledger_intake_mode") not in {
+            "fixture_only_followup_intake",
+            "bounded_provider_job_offline_followup_intake",
+        }:
             raise RunKernelTransitionError(
-                "follow-up sufficiency recheck requires fixture-only intake state"
+                "follow-up sufficiency recheck requires known intake state"
             )
         ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
         if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
@@ -1175,6 +1300,7 @@ class RunKernel:
             "result_status": intake_state.get("result_status"),
             "bridge_only": intake_state.get("bridge_only"),
             "fixture_execution_mode": intake_state.get("fixture_execution_mode"),
+            "execution_mode": execution_mode,
             "evidence_ledger_intake_mode": intake_state.get(
                 "evidence_ledger_intake_mode"
             ),
@@ -1310,6 +1436,8 @@ class RunKernel:
                 followup_expected_source_classes(recheck_state)
             ),
             "fixture_execution_mode": recheck_state.get("fixture_execution_mode"),
+            "execution_mode": recheck_state.get("execution_mode")
+            or recheck_state.get("fixture_execution_mode"),
             "evidence_ledger_intake_mode": recheck_state.get(
                 "evidence_ledger_intake_mode"
             ),
@@ -2103,6 +2231,194 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_execution_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_PROVIDER_JOB_EXECUTE:
+            observed_execution_state = _safe_mapping(
+                observation.payload.get("followup_execution_state")
+            )
+            if not observed_execution_state:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution observation requires "
+                    "followup_execution_state"
+                )
+            if not self.state.followup_authorization_state:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution requires existing "
+                    "authorization state"
+                )
+            if (
+                observed_execution_state.get("followup_authorization_consumption_id")
+                != self.state.followup_authorization_state.get("consumption_id")
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution must reference current "
+                    "authorization state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _followup_checked(
+                validate_followup_provider_job_execution_action_binding,
+                action_inputs=action_inputs,
+                execution_state=observed_execution_state,
+            )
+            if _followup_provider_job_closed_surface_claimed(
+                observed_execution_state
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution observation claims closed "
+                    "answer authority"
+                )
+            gate = _safe_mapping(observed_execution_state.get("execution_gate"))
+            flags = _safe_mapping(
+                observed_execution_state.get("behavior_boundary_flags")
+            )
+            if gate.get("allowed_execution_mode") != (
+                FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up provider-job reducer only accepts offline mode"
+                )
+            if gate.get("provider_execution_licensed") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job observation must keep provider execution unlicensed"
+                )
+            _followup_checked(
+                require_followup_flags_false,
+                flags,
+                _FOLLOWUP_PROVIDER_JOB_EXECUTION_FALSE_FLAGS,
+                context="follow-up provider-job execution observation",
+            )
+            for field_name in (
+                "provider_execution_licensed",
+                "live_provider_call_executed",
+                "search_executed",
+                "retrieval_executed",
+                "fetch_executed",
+                "model_called",
+            ):
+                if observed_execution_state.get(field_name) is not False:
+                    raise RunKernelTransitionError(
+                        "follow-up provider-job execution observation requires "
+                        f"{field_name}=False"
+                    )
+            if observed_execution_state.get("live_validation_not_run") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution must not run live validation"
+                )
+            if observed_execution_state.get("offline_live_shaped_execution") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution must be offline live-shaped"
+                )
+            if observed_execution_state.get("adapter_result_injected") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution requires injected adapter result"
+                )
+            if observed_execution_state.get("evidence_ledger_intake_deferred") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution must defer EvidenceLedger intake"
+                )
+            if observed_execution_state.get("evidence_ledger_evidence_admitted") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up provider-job execution must not admit EvidenceLedger evidence"
+                )
+            summary = _safe_mapping(
+                observed_execution_state.get("sanitized_candidate_summary")
+            )
+            execution_state = {
+                **observed_execution_state,
+                "owner": "RunKernel.FollowupProviderJobExecution",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "run_id": action_inputs.get("run_id"),
+                "checkpoint_id": action_inputs.get("checkpoint_id"),
+                "followup_authorization_consumption_id": action_inputs.get(
+                    "followup_authorization_consumption_id"
+                ),
+                "sealed_candidate_id": action_inputs.get("sealed_candidate_id"),
+                "execution_mode": FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
+                "provider_job_kind": action_inputs.get("provider_job_kind"),
+                "component_id": action_inputs.get("component_id"),
+                "source_obligation_id": action_inputs.get("source_obligation_id"),
+                "requirement_ids": action_inputs.get("requirement_ids", []),
+                "expected_source_classes": action_inputs.get(
+                    "expected_source_classes",
+                    [],
+                ),
+                "expected_evidence_ledger_custody_update": action_inputs.get(
+                    "expected_evidence_ledger_custody_update",
+                    {},
+                ),
+                "budget_debit": action_inputs.get("budget_debit", {}),
+                "authorized_query_ref": action_inputs.get("authorized_query_ref"),
+                "authorized_query": action_inputs.get("authorized_query"),
+                "sanitized_candidate_summary": summary,
+                "provider_execution_licensed": False,
+                "live_provider_call_executed": False,
+                "search_executed": False,
+                "retrieval_executed": False,
+                "fetch_executed": False,
+                "model_called": False,
+                "live_validation_not_run": True,
+                "source_obligation_satisfied": False,
+                "final_evidence_satisfied": False,
+                "citation_eligible": False,
+                "sufficiency_ready": False,
+                "final_answer_packet_ready": False,
+                "author_activation_allowed": False,
+                "author_executor_invoked": False,
+                "citation_rendering_changed": False,
+                "citation_formatter_invoked": False,
+                "product_answer_behavior_changed": False,
+                "evidence_ledger_intake_deferred": True,
+                "evidence_ledger_evidence_admitted": False,
+                "execution_gate": {
+                    **gate,
+                    "allowed_execution_mode": FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
+                    "provider_execution_licensed": False,
+                    "offline_live_shaped_execution": True,
+                },
+                "behavior_boundary_flags": {
+                    **flags,
+                    "provider_execution_licensed": False,
+                    "live_provider_call_executed": False,
+                    "provider_job_scheduled": False,
+                    "provider_job_dispatched": False,
+                    "search_executed": False,
+                    "retrieval_executed": False,
+                    "fetch_executed": False,
+                    "model_called": False,
+                    "query_generation_changed": False,
+                    "retrieval_ranking_filtering_changed": False,
+                    "pipeline_orchestrator_domain_logic_changed": False,
+                    "evidence_ledger_mutated": False,
+                    "sufficiency_judgment_rechecked": False,
+                    "final_answer_packet_updated": False,
+                    "author_executor_invoked": False,
+                    "citation_formatter_invoked": False,
+                    "citation_behavior_changed": False,
+                    "product_answer_behavior_changed": False,
+                    "final_answer_behavior_changed": False,
+                },
+            }
+            self.state.followup_execution_state = execution_state
+            canonical_flags = _safe_mapping(
+                execution_state.get("behavior_boundary_flags")
+            )
+            self.state.followup_execution_projection = (
+                build_followup_execution_projection(
+                    execution_state=execution_state,
+                    execution_gate=_safe_mapping(execution_state.get("execution_gate")),
+                    behavior_boundary_flags=canonical_flags,
+                    budget_semantics=_safe_mapping(
+                        execution_state.get("budget_semantics")
+                    ),
+                )
+            )
+            self.state.followup_execution_history.append(
+                deepcopy(self.state.followup_execution_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_execution_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_EVIDENCE_INTAKE:
             intake_state = _safe_mapping(
                 observation.payload.get("followup_evidence_intake_state")
@@ -2142,11 +2458,12 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "follow-up evidence intake must keep provider execution unlicensed"
                 )
-            if intake_state.get("evidence_ledger_intake_mode") != (
-                "fixture_only_followup_intake"
-            ):
+            if intake_state.get("evidence_ledger_intake_mode") not in {
+                "fixture_only_followup_intake",
+                "bounded_provider_job_offline_followup_intake",
+            }:
                 raise RunKernelTransitionError(
-                    "follow-up evidence intake requires fixture_only intake mode"
+                    "follow-up evidence intake requires known intake mode"
                 )
             if intake_state.get("final_evidence_satisfied") is not False:
                 raise RunKernelTransitionError(
@@ -2174,6 +2491,9 @@ class RunKernel:
                 ),
                 "ledger_followup_fixture_intake": deepcopy(
                     ledger_observation.get("followup_fixture_intake", {})
+                ),
+                "ledger_followup_provider_job_intake": deepcopy(
+                    ledger_observation.get("followup_provider_job_intake", {})
                 ),
             }
             self.state.evidence_ledger.reduce_observation(ledger_observation)
@@ -2658,6 +2978,103 @@ def _followup_checked(callable_: Any, /, *args: Any, **kwargs: Any) -> Any:
         raise RunKernelTransitionError(str(exc)) from exc
 
 
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _clean_text(item, limit=180)
+        if text:
+            token = text.casefold().replace("-", "_").replace(" ", "_")
+            if token not in out:
+                out.append(token)
+    return out
+
+
+def _positive_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _require_followup_provider_job_budget(
+    *,
+    authorization_state: Mapping[str, Any],
+    budget_debit: Mapping[str, Any],
+) -> None:
+    required = {
+        "cost_points": budget_debit.get("cost_points"),
+        "provider_calls": budget_debit.get("provider_calls"),
+        "fetches_reserved": budget_debit.get("fetches_reserved"),
+        "read_units_reserved": budget_debit.get("read_units_reserved"),
+        "followup_rounds": budget_debit.get("followup_rounds"),
+    }
+    exhausted = [name for name, value in required.items() if _positive_int(value) <= 0]
+    if exhausted:
+        raise RunKernelTransitionError(
+            "follow-up provider-job execution requires authorized budget debit for "
+            + ", ".join(exhausted)
+        )
+    for decision in authorization_state.get("consumed_budget_decisions", []) or []:
+        if not isinstance(decision, Mapping):
+            continue
+        if decision.get("debit_authorized_for_future_phase") is not True:
+            continue
+        planned = _safe_mapping(decision.get("planned_or_denied_debit"))
+        if all(
+            _positive_int(planned.get(name)) == _positive_int(budget_debit.get(name))
+            for name in required
+        ):
+            return
+    raise RunKernelTransitionError(
+        "follow-up provider-job execution requires budget authorized by sealed state"
+    )
+
+
+def _followup_provider_job_closed_surface_claimed(value: Any) -> bool:
+    dangerous_true_keys = {
+        "source_obligation_satisfied",
+        "final_evidence_satisfied",
+        "citation_eligible",
+        "sufficiency_ready",
+        "sufficiency_judgment_ready",
+        "final_answer_packet_ready",
+        "author_activation_allowed",
+        "author_executor_invoked",
+        "citation_rendered",
+        "citation_rendering_changed",
+        "citation_formatter_invoked",
+        "product_answer_behavior_changed",
+        "final_answer_behavior_changed",
+        "query_generation_changed",
+        "query_mutation_changed",
+        "provider_routing_changed",
+        "provider_selection_changed",
+        "provider_depth_changed",
+        "search_depth_changed",
+        "retrieval_ranking_filtering_changed",
+        "raw_payload_retained",
+        "raw_text_retained",
+        "provider_payload_retained",
+    }
+    dangerous_false_keys = {
+        "live_validation_not_run",
+    }
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            token = str(key or "").strip().casefold().replace("-", "_").replace(" ", "_")
+            if token in dangerous_true_keys and item is True:
+                return True
+            if token in dangerous_false_keys and item is False:
+                return True
+            if _followup_provider_job_closed_surface_claimed(item):
+                return True
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        return any(_followup_provider_job_closed_surface_claimed(item) for item in value)
+    return False
+
+
 def _canonical_sufficiency_judgment_projection(
     *,
     judgment_projection: Mapping[str, Any],
@@ -2750,6 +3167,7 @@ __all__ = [
     "FOLLOWUP_AUTHORIZATION_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
+    "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",

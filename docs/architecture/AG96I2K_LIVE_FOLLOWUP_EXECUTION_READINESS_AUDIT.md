@@ -16,6 +16,20 @@ live-shaped recovery executor/adapter plugged into the existing
 RunKernel-authorized follow-up spine in AG-96I3A, with actual live validation
 deferred to a later explicitly budgeted phase.
 
+## AG-96I3A Follow-up Result
+
+AG-96I3A implemented the recommended offline live-shaped seam:
+[AG96I3A_OFFLINE_LIVE_SHAPED_FOLLOWUP_RECOVERY_EXECUTOR.md](AG96I3A_OFFLINE_LIVE_SHAPED_FOLLOWUP_RECOVERY_EXECUTOR.md).
+
+The implementation adds RunKernel-owned
+`FOLLOWUP_PROVIDER_JOB_EXECUTE` / `FOLLOWUP_PROVIDER_JOB_EXECUTION_OBSERVED`
+vocabulary for `official_current_candidate_acquisition`, reuses the existing
+`followup_execution_state` lane with
+`execution_mode=bounded_provider_job_offline`, and feeds the existing
+EvidenceLedger intake, SufficiencyJudgment recheck, and FinalAnswerPacket path.
+It remains offline: provider/search/retrieval/fetch/read/model, Author,
+citation-rendering, product-answer, and live-validation surfaces stayed closed.
+
 ## 1. Current Fixture Spine Summary
 
 The current follow-up fixture spine is:
@@ -661,3 +675,9 @@ executor boundary while preserving one answer contract, the same EvidenceLedger,
 the same SufficiencyJudgment path, and the same FinalAnswerPacket authority.
 Live calls, query generation, provider policy, Author, citations, product
 answers, and conversational follow-up remain closed.
+
+AG-96I3A has now completed that offline step. The remaining recommendation is
+to keep AG-96I3B as an explicitly budgeted live-validation gate for the same
+single provider-job kind, without broadening query generation, provider routing,
+retrieval ranking, Author, citation, product-answer, or conversational follow-up
+surfaces.

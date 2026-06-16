@@ -1,4 +1,4 @@
-"""Fixture-only follow-up FinalAnswerPacket preparation seam for AG-96I2E.
+"""Offline follow-up FinalAnswerPacket preparation seam for AG-96I2E/AG-96I3A.
 
 This module derives a packet-level authority record from canonical follow-up
 sufficiency recheck state, the current EvidenceLedger projection, and the
@@ -64,6 +64,7 @@ class FollowupFinalAnswerPacketRequest:
     requirement_ids: tuple[str, ...]
     expected_source_classes: tuple[str, ...]
     fixture_execution_mode: str
+    execution_mode: str
     evidence_ledger_intake_mode: str
     sufficiency_recheck_mode: str
     evidence_ledger_projection_digest: str
@@ -123,6 +124,7 @@ class FollowupFinalAnswerPacketRequest:
                 clean_token(item) for item in self.expected_source_classes
             ],
             "fixture_execution_mode": clean_token(self.fixture_execution_mode),
+            "execution_mode": clean_token(self.execution_mode),
             "evidence_ledger_intake_mode": clean_token(
                 self.evidence_ledger_intake_mode
             ),
@@ -256,6 +258,7 @@ class FollowupFinalAnswerPacketObservation:
             "requirement_ids": request.get("requirement_ids", []),
             "expected_source_classes": request.get("expected_source_classes", []),
             "fixture_execution_mode": request.get("fixture_execution_mode"),
+            "execution_mode": request.get("execution_mode"),
             "evidence_ledger_intake_mode": request.get(
                 "evidence_ledger_intake_mode"
             ),
@@ -462,6 +465,11 @@ def build_followup_final_answer_packet_record(
         requirement_ids=tuple(_strings(action.get("requirement_ids"))),
         expected_source_classes=tuple(_strings(action.get("expected_source_classes"))),
         fixture_execution_mode=str(action.get("fixture_execution_mode") or ""),
+        execution_mode=str(
+            action.get("execution_mode")
+            or action.get("fixture_execution_mode")
+            or ""
+        ),
         evidence_ledger_intake_mode=str(action.get("evidence_ledger_intake_mode") or ""),
         sufficiency_recheck_mode=str(action.get("sufficiency_recheck_mode") or ""),
         evidence_ledger_projection_digest=str(
@@ -868,12 +876,17 @@ def _validate_action_inputs(
         "provider_job_kind",
         "component_id",
         "source_obligation_id",
-        "fixture_execution_mode",
+        "execution_mode",
         "evidence_ledger_intake_mode",
         "sufficiency_recheck_mode",
     ):
         if action_inputs.get(field) != recheck_state.get(field):
             raise PermissionError(f"authorized follow-up packet {field} mismatch")
+    if action_inputs.get("execution_mode") == "fixture_only" and (
+        action_inputs.get("fixture_execution_mode")
+        != recheck_state.get("fixture_execution_mode")
+    ):
+        raise PermissionError("authorized follow-up packet fixture_execution_mode mismatch")
     for field in (
         "followup_authorization_consumption_id",
         "sealed_candidate_id",
@@ -884,13 +897,20 @@ def _validate_action_inputs(
         "provider_job_kind",
         "component_id",
         "source_obligation_id",
-        "fixture_execution_mode",
+        "execution_mode",
         "evidence_ledger_intake_mode",
     ):
         if action_inputs.get(field) != intake_state.get(field):
             raise PermissionError(
                 f"authorized follow-up packet intake {field} mismatch"
             )
+    if action_inputs.get("execution_mode") == "fixture_only" and (
+        action_inputs.get("fixture_execution_mode")
+        != intake_state.get("fixture_execution_mode")
+    ):
+        raise PermissionError(
+            "authorized follow-up packet intake fixture_execution_mode mismatch"
+        )
     for action_field, state_field in (
         ("followup_evidence_intake_id", "intake_id"),
         ("followup_evidence_intake_observation_id", "observation_id"),

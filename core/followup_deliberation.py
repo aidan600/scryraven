@@ -276,6 +276,8 @@ class GapAssessment:
     bridge_only_provider_output_present: bool = False
     must_not_upgrade_final_claim: bool = True
     non_repair_reason: str | None = None
+    authorized_query_ref: str | None = None
+    authorized_query: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -316,6 +318,11 @@ class GapAssessment:
                 ),
                 "must_not_upgrade_final_claim": bool(self.must_not_upgrade_final_claim),
                 "non_repair_reason": clean_text(self.non_repair_reason, limit=240),
+                "authorized_query_ref": clean_token(
+                    self.authorized_query_ref,
+                    limit=180,
+                ),
+                "authorized_query": clean_text(self.authorized_query, limit=300),
             }
         )
 
@@ -498,6 +505,8 @@ class FollowupAuthorizationCandidate:
     retry_allowed: bool = False
     requires_runauthority_seal: bool = True
     bridge_only_provider_output: bool = False
+    authorized_query_ref: str | None = None
+    authorized_query: str | None = None
     rationale: str | None = None
 
     def __post_init__(self) -> None:
@@ -572,6 +581,11 @@ class FollowupAuthorizationCandidate:
             "retry_allowed": bool(self.retry_allowed),
             "requires_runauthority_seal": bool(self.requires_runauthority_seal),
             "bridge_only_provider_output": bool(self.bridge_only_provider_output),
+            "authorized_query_ref": clean_token(
+                self.authorized_query_ref,
+                limit=180,
+            ),
+            "authorized_query": clean_text(self.authorized_query, limit=300),
             "rationale": clean_text(self.rationale, limit=300),
             "may_directly_browse": False,
             "may_directly_fetch": False,
@@ -1066,6 +1080,8 @@ def build_followup_deliberation_checkpoint(
                     fallback_caveat_refuse_posture=StopPosture.INSUFFICIENT_EVIDENCE,
                     retry_allowed=False,
                     bridge_only_provider_output=gap.bridge_only_provider_output_present,
+                    authorized_query_ref=gap.authorized_query_ref,
+                    authorized_query=gap.authorized_query,
                     rationale="passive candidate requires a future RunAuthority seal",
                 )
             )
@@ -1162,6 +1178,8 @@ def _gap_from_fixture(payload: Mapping[str, Any], *, index: int) -> GapAssessmen
         bridge_only_provider_output_present=bool(
             payload.get("bridge_only_provider_output_present")
         ),
+        authorized_query_ref=clean_token(payload.get("authorized_query_ref"), limit=180),
+        authorized_query=clean_text(payload.get("authorized_query"), limit=300),
         non_repair_reason=clean_text(payload.get("non_repair_reason"), limit=240),
     )
 
