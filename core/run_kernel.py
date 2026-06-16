@@ -1564,8 +1564,10 @@ class RunKernel:
                 intake_state=intake_state,
                 execution_state=self.state.followup_execution_state,
             )
+            derived_outcome = _followup_evidence_intake_outcome(ledger_observation)
             intake_state = {
                 **intake_state,
+                **derived_outcome,
                 "ledger_observation": deepcopy(ledger_observation),
                 "ledger_requirements": deepcopy(
                     ledger_observation.get("requirements", [])
@@ -1938,6 +1940,29 @@ def _build_followup_evidence_intake_ledger_observation(
                 "provider_job_executor_connected": False,
             },
         },
+    }
+
+
+def _followup_evidence_intake_outcome(
+    ledger_observation: Mapping[str, Any],
+) -> dict[str, Any]:
+    candidates = list(ledger_observation.get("candidates", []) or [])
+    candidate = _safe_mapping(next(iter(candidates), {}))
+    disposition = candidate.get("disposition")
+    admitted = disposition == "accepted"
+    bridge_only = disposition == "contextual"
+    return {
+        "intake_status": (
+            "fixture_intake_admitted"
+            if admitted
+            else (
+                "fixture_bridge_only_recorded"
+                if bridge_only
+                else "fixture_no_admission_recorded"
+            )
+        ),
+        "evidence_ledger_candidate_admitted": admitted,
+        "source_obligation_satisfied": admitted,
     }
 
 

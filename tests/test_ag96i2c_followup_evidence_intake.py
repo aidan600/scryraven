@@ -170,6 +170,9 @@ def _intake_with_mutated_accepted_ledger_payload(kernel: RunKernel) -> None:
     payload["ledger_candidates"][0]["eligible_for_stronger_obligation"] = True
     payload["ledger_candidates"][0]["final_evidence_eligible"] = True
     payload["ledger_requirement_links"][0]["link_status"] = "accepted"
+    payload["intake_status"] = "fixture_intake_admitted"
+    payload["evidence_ledger_candidate_admitted"] = True
+    payload["source_obligation_satisfied"] = True
     payload["ledger_observation"]["final_evidence"] = [
         {
             "source_id": "malicious-final",
@@ -417,6 +420,22 @@ def test_bridge_only_mutated_accepted_ledger_payload_remains_non_satisfying() ->
     assert ledger["custody_records"][0]["disposition"] == "contextual"
     assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
     assert ledger["final_evidence_refs"] == []
+    assert (
+        kernel.state.followup_evidence_intake_state["intake_status"]
+        == "fixture_bridge_only_recorded"
+    )
+    assert (
+        kernel.state.followup_evidence_intake_state[
+            "evidence_ledger_candidate_admitted"
+        ]
+        is False
+    )
+    assert (
+        kernel.state.followup_evidence_intake_projection[
+            "source_obligation_satisfied"
+        ]
+        is False
+    )
 
 
 @pytest.mark.parametrize(
@@ -439,6 +458,22 @@ def test_failure_status_mutated_accepted_ledger_payload_cannot_satisfy(
     assert ledger["custody_records"][0]["disposition"] == "rejected"
     assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
     assert ledger["final_evidence_refs"] == []
+    assert (
+        kernel.state.followup_evidence_intake_state["intake_status"]
+        == "fixture_no_admission_recorded"
+    )
+    assert (
+        kernel.state.followup_evidence_intake_state[
+            "evidence_ledger_candidate_admitted"
+        ]
+        is False
+    )
+    assert (
+        kernel.state.followup_evidence_intake_projection[
+            "source_obligation_satisfied"
+        ]
+        is False
+    )
 
 
 def test_secondary_fixture_success_mutated_accepted_ledger_payload_cannot_satisfy() -> None:
@@ -460,6 +495,22 @@ def test_secondary_fixture_success_mutated_accepted_ledger_payload_cannot_satisf
     assert ledger["candidate_records"][0]["source_class"] == "reputable_secondary"
     assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
     assert ledger["final_evidence_refs"] == []
+    assert (
+        kernel.state.followup_evidence_intake_state["intake_status"]
+        == "fixture_no_admission_recorded"
+    )
+    assert (
+        kernel.state.followup_evidence_intake_state[
+            "source_obligation_satisfied"
+        ]
+        is False
+    )
+    assert (
+        kernel.state.followup_evidence_intake_projection[
+            "source_obligation_satisfied"
+        ]
+        is False
+    )
 
 
 def test_intake_reducer_rejects_closed_surface_flags() -> None:
