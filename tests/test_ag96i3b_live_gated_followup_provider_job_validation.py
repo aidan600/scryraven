@@ -152,7 +152,7 @@ def _fake_official_search(_query: str) -> list[dict[str, Any]]:
             "snippet": "raw provider snippet must not be retained",
             "raw_content": "raw provider body must not be retained",
             "text": "raw readable page text must not be retained",
-            "payload": {"secret": "blocked"},
+            "payload": {"placeholder": "blocked_test_value"},
         }
     ]
 
@@ -292,7 +292,7 @@ def test_live_gate_redacts_raw_payload_text_and_snippet_fields() -> None:
         "raw provider",
         "raw readable",
         "payload",
-        "secret",
+        "blocked_test_value",
     ):
         assert forbidden not in serialized
 
