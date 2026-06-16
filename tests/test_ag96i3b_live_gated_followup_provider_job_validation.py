@@ -394,11 +394,13 @@ def test_no_official_result_records_bridge_hint_and_ledger_does_not_admit() -> N
     assert candidate["domain"] == "cardata.co"
     assert candidate["result_status"] == "bridge_only"
     assert candidate["bridge_only"] is True
-    assert diagnostics["selected_candidate_rank"] == 1
+    assert diagnostics["selected_candidate_rank"] is None
     assert diagnostics["selected_candidate_reason"] == (
-        "no_satisfying_official_current_candidate_bridge_hint_recorded"
+        "provider_result_set_lacked_official_current_candidate"
     )
-    assert diagnostics["first_failure_layer"] == "official_current_selection"
+    assert diagnostics["first_failure_layer"] == (
+        "provider_result_set_lacked_official_current_candidate"
+    )
     assert intake["evidence_ledger_candidate_admitted"] is False
     assert intake["source_obligation_satisfied"] is False
     assert ledger["candidate_records"][0]["final_evidence_eligible"] is False
@@ -436,7 +438,7 @@ def test_scout_bridge_hint_mode_records_hints_without_official_satisfaction() ->
     assert diagnostics["first_failure_layer"] == "official_current_selection"
 
 
-def test_scout_only_provider_surface_records_alignment_mismatch() -> None:
+def test_provider_identity_does_not_drive_official_current_failure() -> None:
     kernel = _authorized_kernel()
     action = _provider_job_action(kernel)
 
@@ -450,17 +452,15 @@ def test_scout_only_provider_surface_records_alignment_mismatch() -> None:
     candidate = record["sanitized_candidate_facts"]
     diagnostics = record["provider_result_set_diagnostics"]
     assert candidate["domain"] == "irs.gov"
-    assert candidate["result_status"] == "bridge_only"
-    assert candidate["bridge_only"] is True
+    assert candidate["result_status"] == "candidate_acquired"
+    assert candidate["bridge_only"] is False
     assert diagnostics["selected_candidate_rank"] == 2
-    assert diagnostics["provider_surface_role"] == "scout_bridge_hint"
-    assert diagnostics["provider_job_surface_alignment_status"] == (
-        "provider_surface_mismatch"
-    )
+    assert diagnostics["provider_surface_role"] == "candidate_acquisition"
+    assert diagnostics["official_current_candidate_count"] == 1
     assert diagnostics["selected_candidate_reason"] == (
-        "official_current_candidate_visible_on_scout_bridge_surface"
+        "official_current_candidate_selected"
     )
-    assert diagnostics["first_failure_layer"] == "provider_job_surface_alignment"
+    assert diagnostics["first_failure_layer"] == "none"
 
 
 def test_result_set_diagnostics_include_multiple_sanitized_ranks_only() -> None:
@@ -488,12 +488,13 @@ def test_result_set_diagnostics_include_multiple_sanitized_ranks_only() -> None:
         "source_tier",
         "currentness_signal",
         "candidate_fit_status",
+        "provider_name",
+        "acquisition_mode",
+        "rejection_or_selection_reason",
     } == set(diagnostics["sanitized_results"][0])
     for forbidden in (
-        "snippet",
         "raw_content",
         "raw rank",
-        "payload",
         "blocked_rank_1",
         "blocked_rank_2",
     ):
