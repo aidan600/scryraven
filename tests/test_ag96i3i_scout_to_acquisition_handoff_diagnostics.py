@@ -229,7 +229,7 @@ def test_handoff_retains_no_raw_snippets_payloads_page_text_or_env_values() -> N
                 "source_class": "official_government",
                 "currentness_signal": "currentness_not_verified_by_diagnostic",
                 "snippet": "blocked raw snippet marker",
-                "raw_provider_payload": {"secret": "blocked raw payload marker"},
+                "raw_provider_payload": {"payload_marker": "blocked raw payload marker"},
                 "page_text": "blocked page text marker",
                 "env_value": "blocked env marker",
             }
