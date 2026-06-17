@@ -445,6 +445,10 @@ class EvidenceLedger:
             f"evidence-ledger-observation:{len(self.observation_refs) + 1}"
         )
         source = _clean_text(payload.get("observation_source"), limit=120) or UNKNOWN
+        if any(
+            ref.get("observation_id") == observation_id for ref in self.observation_refs
+        ):
+            return self
         self.observation_refs.append(
             {"observation_id": observation_id, "source": source}
         )
