@@ -13,6 +13,9 @@ from enum import Enum
 from typing import Any, Mapping
 
 from core.evidence_ledger import EvidenceLedgerObservation
+from core.evidence_ledger_intake_adapter import (
+    build_evidence_ledger_intake_observation_from_admission_review,
+)
 from core.followup_deliberation import (
     ProviderJobKind,
     clean_text,
@@ -33,6 +36,13 @@ from core.followup_provider_job_execution_runtime import (
     FOLLOWUP_PROVIDER_JOB_ALLOWED_KIND,
     FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
     FollowupProviderJobExecutionStatus,
+)
+from core.followup_runkernel_reducers import (
+    AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
+    FollowupRunKernelReducerError,
+    ag96i3m2_admission_review_authorization_projection,
+    ag96i3m2_intake_binding_authorization_projection,
+    ag96i3m2_validate_authorized_intake_materials,
 )
 from core.run_kernel import (
     FOLLOWUP_EVIDENCE_INTAKE_STAGE,
@@ -60,6 +70,7 @@ class FollowupEvidenceIntakeStatus(str, Enum):
     PROVIDER_JOB_INTAKE_ADMITTED = "provider_job_intake_admitted"
     PROVIDER_JOB_BRIDGE_ONLY_RECORDED = "provider_job_bridge_only_recorded"
     PROVIDER_JOB_NO_ADMISSION_RECORDED = "provider_job_no_admission_recorded"
+    ADMISSION_REVIEW_INTAKE_ADMITTED = "admission_review_intake_admitted"
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,9 +277,105 @@ class FollowupEvidenceIntakeObservation:
 
 
 @dataclass(frozen=True, slots=True)
+class AG96I3M2FollowupEvidenceIntakeObservation:
+    observation_id: str
+    request: FollowupEvidenceIntakeRequest
+    admission_review_candidate: Mapping[str, Any]
+    evidence_ledger_intake_binding: Mapping[str, Any]
+    adapter_projection: Mapping[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        request = self.request.to_dict()
+        candidate_payload = _ag96i3m2_candidate_payload(
+            self.admission_review_candidate
+        )
+        binding_payload = _ag96i3m2_binding_payload(
+            self.evidence_ledger_intake_binding
+        )
+        candidate_projection = ag96i3m2_admission_review_authorization_projection(
+            candidate_payload
+        )
+        binding_projection = ag96i3m2_intake_binding_authorization_projection(
+            binding_payload
+        )
+        adapter_projection = _mapping(safe_json(self.adapter_projection))
+        return {
+            "schema_version": FOLLOWUP_EVIDENCE_INTAKE_SCHEMA_VERSION,
+            "trace_key": FOLLOWUP_EVIDENCE_INTAKE_TRACE_KEY,
+            "record_type": "followup_evidence_intake_observation",
+            "owner": "FollowupEvidenceIntakeRuntime",
+            "canonical_state": False,
+            "trace_only": False,
+            "storage_only": False,
+            "observation_id": clean_text(self.observation_id, limit=220),
+            "run_id": request.get("run_id"),
+            "checkpoint_id": request.get("checkpoint_id"),
+            "followup_authorization_consumption_id": request.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": request.get("sealed_candidate_id"),
+            "followup_execution_id": request.get("followup_execution_id"),
+            "execution_id": request.get("execution_id"),
+            "followup_execution_observation_id": request.get(
+                "followup_execution_observation_id"
+            ),
+            "provider_job_kind": request.get("provider_job_kind"),
+            "component_id": request.get("component_id"),
+            "source_obligation_id": request.get("source_obligation_id"),
+            "requirement_ids": request.get("requirement_ids", []),
+            "result_status": request.get("result_status"),
+            "fixture_execution_mode": (
+                FIXTURE_EXECUTION_MODE
+                if request.get("execution_mode") == FIXTURE_EXECUTION_MODE
+                else None
+            ),
+            "execution_mode": request.get("execution_mode"),
+            "authorized_query_ref": request.get("authorized_query_ref"),
+            "authorized_query": request.get("authorized_query"),
+            "bridge_only": request.get("bridge_only"),
+            "expected_source_classes": request.get("expected_source_classes", []),
+            "expected_evidence_ledger_custody_update": request.get(
+                "expected_evidence_ledger_custody_update",
+                {},
+            ),
+            "provider_execution_licensed": False,
+            "evidence_ledger_intake_mode": AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
+            "request": request,
+            "intake_status": (
+                FollowupEvidenceIntakeStatus.ADMISSION_REVIEW_INTAKE_ADMITTED.value
+            ),
+            "evidence_ledger_candidate_admitted": True,
+            "source_obligation_satisfied": True,
+            "runtime_evidence_intake_occurred": True,
+            "ag96i3m2_admission_review_candidate": candidate_projection,
+            "ag96i3m2_admission_review_candidate_payload": candidate_payload,
+            "ag96i3m2_evidence_ledger_intake_binding": binding_projection,
+            "ag96i3m2_evidence_ledger_intake_binding_payload": binding_payload,
+            "ag96i3m1_adapter_projection": {
+                **adapter_projection,
+                "accepted": True,
+            },
+            "adapter_call_path": (
+                "core.followup_evidence_intake_runtime."
+                "build_followup_evidence_intake_record -> "
+                "core.evidence_ledger_intake_adapter."
+                "build_evidence_ledger_intake_observation_from_admission_review"
+            ),
+            "final_evidence_satisfied": False,
+            "citation_eligible": False,
+            "author_activation_allowed": False,
+            "sufficiency_judgment_recheck_deferred": True,
+            "sufficiency_judgment_rechecked": False,
+            "final_answer_packet_updated": False,
+            "behavior_boundary_flags": _behavior_boundary_flags(),
+            "redaction_posture": _ag96i3m2_redaction_posture(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class FollowupEvidenceIntakeConsumptionRecord:
     intake_id: str
-    observation: FollowupEvidenceIntakeObservation
+    observation: FollowupEvidenceIntakeObservation | AG96I3M2FollowupEvidenceIntakeObservation
 
     def to_dict(self) -> dict[str, Any]:
         observed = self.observation.to_dict()
@@ -292,6 +399,8 @@ def execute_followup_evidence_intake_action(
     *,
     followup_execution_state: Mapping[str, Any],
     evidence_ledger_projection: Mapping[str, Any] | None = None,
+    admission_review_candidate: Mapping[str, Any] | None = None,
+    evidence_ledger_intake_binding: Mapping[str, Any] | None = None,
 ) -> FollowupEvidenceIntakeActionResult:
     authorized = validate_authorized_action(
         action,
@@ -303,6 +412,8 @@ def execute_followup_evidence_intake_action(
         authorized,
         followup_execution_state=followup_execution_state,
         evidence_ledger_projection=evidence_ledger_projection,
+        admission_review_candidate=admission_review_candidate,
+        evidence_ledger_intake_binding=evidence_ledger_intake_binding,
     )
     return FollowupEvidenceIntakeActionResult(
         record=record,
@@ -320,11 +431,26 @@ def build_followup_evidence_intake_record(
     *,
     followup_execution_state: Mapping[str, Any],
     evidence_ledger_projection: Mapping[str, Any] | None = None,
+    admission_review_candidate: Mapping[str, Any] | None = None,
+    evidence_ledger_intake_binding: Mapping[str, Any] | None = None,
 ) -> FollowupEvidenceIntakeConsumptionRecord:
     state = _mapping(safe_json(followup_execution_state))
     ledger_projection = _mapping(safe_json(evidence_ledger_projection))
     _validate_execution_state(state)
     _validate_action_inputs(action.inputs, state)
+    if action.inputs.get("evidence_ledger_intake_mode") == (
+        AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+    ):
+        return _build_ag96i3m2_evidence_intake_record(
+            action,
+            followup_execution_state=state,
+            admission_review_candidate=admission_review_candidate,
+            evidence_ledger_intake_binding=evidence_ledger_intake_binding,
+        )
+    if admission_review_candidate is not None or evidence_ledger_intake_binding is not None:
+        raise PermissionError(
+            "AG-96I3L admission-review intake material requires AG-96I3M2 mode"
+        )
 
     request = FollowupEvidenceIntakeRequest(
         request_id=f"followup-evidence-intake-request:{state.get('execution_id')}",
@@ -389,6 +515,94 @@ def build_followup_evidence_intake_record(
     )
     return FollowupEvidenceIntakeConsumptionRecord(
         intake_id=f"followup-evidence-intake:{request.execution_id}",
+        observation=observation,
+    )
+
+
+def _build_ag96i3m2_evidence_intake_record(
+    action: AuthorizedAction,
+    *,
+    followup_execution_state: Mapping[str, Any],
+    admission_review_candidate: Mapping[str, Any] | None,
+    evidence_ledger_intake_binding: Mapping[str, Any] | None,
+) -> FollowupEvidenceIntakeConsumptionRecord:
+    if admission_review_candidate is None:
+        raise PermissionError("AG-96I3M2 intake requires admission-review candidate")
+    if evidence_ledger_intake_binding is None:
+        raise PermissionError("AG-96I3M2 intake requires EvidenceLedgerIntakeBinding")
+    try:
+        ag96i3m2_validate_authorized_intake_materials(
+            action_inputs=action.inputs,
+            admission_review_candidate=admission_review_candidate,
+            binding=evidence_ledger_intake_binding,
+        )
+    except FollowupRunKernelReducerError as exc:
+        raise PermissionError(str(exc)) from exc
+
+    binding_payload = _ag96i3m2_binding_payload(evidence_ledger_intake_binding)
+    adapter_result = build_evidence_ledger_intake_observation_from_admission_review(
+        admission_review_candidate=admission_review_candidate,
+        binding=binding_payload,
+    )
+    if not adapter_result.accepted or adapter_result.observation is None:
+        blockers = [blocker.value for blocker in adapter_result.blocker_codes]
+        raise PermissionError(
+            "AG-96I3M2 EvidenceLedger intake adapter rejected candidate: "
+            + ", ".join(blockers)
+        )
+
+    state = followup_execution_state
+    request = FollowupEvidenceIntakeRequest(
+        request_id=f"followup-evidence-intake-request:{state.get('execution_id')}",
+        run_id=str(state.get("run_id") or ""),
+        checkpoint_id=str(state.get("checkpoint_id") or ""),
+        followup_authorization_consumption_id=str(
+            state.get("followup_authorization_consumption_id") or ""
+        ),
+        sealed_candidate_id=str(state.get("sealed_candidate_id") or ""),
+        followup_execution_id=str(state.get("execution_id") or ""),
+        execution_id=str(state.get("execution_id") or ""),
+        followup_execution_observation_id=str(state.get("observation_id") or ""),
+        observation_id=str(state.get("observation_id") or ""),
+        provider_job_kind=str(state.get("provider_job_kind") or ""),
+        component_id=str(state.get("component_id") or ""),
+        source_obligation_id=str(state.get("source_obligation_id") or ""),
+        requirement_ids=tuple(_strings(state.get("requirement_ids"))),
+        result_status=str(state.get("result_status") or ""),
+        bridge_only=bool(state.get("bridge_only")),
+        expected_source_classes=tuple(_strings(state.get("expected_source_classes"))),
+        expected_evidence_ledger_custody_update=_mapping(
+            state.get("expected_evidence_ledger_custody_update")
+        ),
+        sanitized_fixture_result_summary=_mapping(
+            state.get("sanitized_fixture_result_summary")
+        ),
+        sanitized_candidate_summary=_mapping(state.get("sanitized_candidate_summary")),
+        execution_mode=str(
+            state.get("execution_mode")
+            or state.get("fixture_execution_mode")
+            or FIXTURE_EXECUTION_MODE
+        ),
+        authorized_query_ref=clean_token(
+            state.get("authorized_query_ref"),
+            limit=180,
+        ),
+        authorized_query=clean_text(state.get("authorized_query"), limit=300),
+        provider_execution_licensed=False,
+        evidence_ledger_intake_mode=AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
+    )
+    observation = AG96I3M2FollowupEvidenceIntakeObservation(
+        observation_id=(
+            "followup-evidence-intake-observation:"
+            f"{request.execution_id}:ag96i3m2"
+        ),
+        request=request,
+        admission_review_candidate=admission_review_candidate,
+        evidence_ledger_intake_binding=binding_payload,
+        adapter_projection=adapter_result.projection,
+    )
+    return FollowupEvidenceIntakeConsumptionRecord(
+        intake_id=f"followup-evidence-intake:{request.execution_id}:ag96i3m2",
         observation=observation,
     )
 
@@ -501,9 +715,13 @@ def _validate_action_inputs(
             raise PermissionError(f"authorized intake action {action_field} mismatch")
     if action_inputs.get("provider_execution_licensed") is not False:
         raise PermissionError("authorized intake action must keep provider unlicensed")
-    if action_inputs.get("evidence_ledger_intake_mode") != (
-        _intake_mode_for_execution_state(state)
-    ):
+    intake_mode = action_inputs.get("evidence_ledger_intake_mode")
+    if intake_mode == AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE:
+        if not action_inputs.get("ag96i3m2_admission_review_candidate"):
+            raise PermissionError("AG-96I3M2 intake requires authorized candidate")
+        if not action_inputs.get("ag96i3m2_evidence_ledger_intake_binding"):
+            raise PermissionError("AG-96I3M2 intake requires authorized binding")
+    elif intake_mode != _intake_mode_for_execution_state(state):
         raise PermissionError("authorized intake action mode mismatch")
 
 
@@ -955,6 +1173,189 @@ def _redaction_posture() -> dict[str, bool]:
     return followup_common_redaction_posture()
 
 
+def _ag96i3m2_redaction_posture() -> dict[str, bool]:
+    return {
+        **followup_common_redaction_posture(
+            sanitized_fixture_summary_only=False,
+        ),
+        "sanitized_admission_review_projection_only": True,
+        "explicit_intake_binding_only": True,
+        "raw_text_retained": False,
+        "verifier_text_retained": False,
+        "supported_excerpts_retained": False,
+        "provider_payload_retained": False,
+        "raw_prompt_retained": False,
+        "raw_trace_retained": False,
+        "secrets_retained": False,
+        "db_rows_retained": False,
+        "private_logs_retained": False,
+    }
+
+
+def _ag96i3m2_candidate_payload(value: Mapping[str, Any]) -> dict[str, Any]:
+    candidate = _mapping(value)
+    identity = _mapping(candidate.get("candidate_identity_summary"))
+    verification = _mapping(candidate.get("verification_summary"))
+    read_summary = _mapping(candidate.get("read_observation_summary"))
+    custody_summary = _mapping(candidate.get("custody_metadata_summary"))
+    boundary_flags = _mapping(candidate.get("non_authoritative_boundary_flags"))
+    evidence_boundary = _mapping(candidate.get("evidence_boundary"))
+    return _compact(
+        {
+            "schema_version": clean_token(candidate.get("schema_version")),
+            "record_type": clean_token(candidate.get("record_type")),
+            "candidate_id": clean_token(candidate.get("candidate_id")),
+            "observation_id": clean_token(candidate.get("observation_id")),
+            "observation_ref": clean_text(candidate.get("observation_ref"), limit=220),
+            "owner": clean_text(candidate.get("owner"), limit=160),
+            "canonical_state": candidate.get("canonical_state") is True,
+            "trace_only": candidate.get("trace_only") is True,
+            "storage_only": candidate.get("storage_only") is True,
+            "diagnostic_only": candidate.get("diagnostic_only") is True,
+            "admission_review_status": clean_token(
+                candidate.get("admission_review_status")
+            ),
+            "admission_review_candidate_ready": (
+                candidate.get("admission_review_candidate_ready") is True
+            ),
+            "blocker_codes": _strings(candidate.get("blocker_codes")),
+            "reason_codes": _strings(candidate.get("reason_codes")),
+            "recommended_next_step": clean_token(
+                candidate.get("recommended_next_step")
+            ),
+            "candidate_identity_summary": _compact(
+                {
+                    "candidate_url": clean_text(identity.get("candidate_url"), limit=500),
+                    "candidate_domain": clean_text(
+                        identity.get("candidate_domain"),
+                        limit=160,
+                    ),
+                    "attempted_url": clean_text(identity.get("attempted_url"), limit=500),
+                    "resolved_url": clean_text(identity.get("resolved_url"), limit=500),
+                    "attempted_domain": clean_text(
+                        identity.get("attempted_domain"),
+                        limit=160,
+                    ),
+                    "resolved_domain": clean_text(
+                        identity.get("resolved_domain"),
+                        limit=160,
+                    ),
+                    "observation_domain": clean_text(
+                        identity.get("observation_domain"),
+                        limit=160,
+                    ),
+                    "source_identity_status": clean_token(
+                        identity.get("source_identity_status")
+                    ),
+                    "url_domain_comparison_posture": clean_token(
+                        identity.get("url_domain_comparison_posture")
+                    ),
+                }
+            ),
+            "verification_summary": _compact(
+                {
+                    "verification_status": clean_token(
+                        verification.get("verification_status")
+                    ),
+                    "candidate_accounting_status": clean_token(
+                        verification.get("candidate_accounting_status")
+                    ),
+                    "source_identity_status": clean_token(
+                        verification.get("source_identity_status")
+                    ),
+                    "official_source_status": clean_token(
+                        verification.get("official_source_status")
+                    ),
+                    "source_obligation": clean_token(
+                        verification.get("source_obligation")
+                    ),
+                    "source_class_required": clean_token(
+                        verification.get("source_class_required")
+                    ),
+                    "source_class_posture": clean_token(
+                        verification.get("source_class_posture")
+                    ),
+                    "currentness_posture": clean_token(
+                        verification.get("currentness_posture")
+                    ),
+                    "relevance_posture": clean_token(
+                        verification.get("relevance_posture")
+                    ),
+                    "candidate_fit_posture": clean_token(
+                        verification.get("candidate_fit_posture")
+                    ),
+                    "recommended_next_step_from_verification": clean_token(
+                        verification.get("recommended_next_step_from_verification")
+                    ),
+                }
+            ),
+            "read_observation_summary": _compact(
+                {
+                    "schema_version": clean_token(read_summary.get("schema_version")),
+                    "record_type": clean_token(read_summary.get("record_type")),
+                    "read_posture": clean_token(read_summary.get("read_posture")),
+                    "fetch_status": clean_token(read_summary.get("fetch_status")),
+                    "read_status": clean_token(read_summary.get("read_status")),
+                    "http_status": read_summary.get("http_status"),
+                    "content_type": clean_text(
+                        read_summary.get("content_type"),
+                        limit=160,
+                    ),
+                    "media_type": clean_token(read_summary.get("media_type")),
+                    "title": clean_text(read_summary.get("title"), limit=300),
+                    "detected_updated_date": clean_text(
+                        read_summary.get("detected_updated_date"),
+                        limit=80,
+                    ),
+                    "extracted_text_present": (
+                        read_summary.get("extracted_text_present") is True
+                    ),
+                    "extracted_text_char_count": read_summary.get(
+                        "extracted_text_char_count"
+                    ),
+                    "sanitized_text_char_count": read_summary.get(
+                        "sanitized_text_char_count"
+                    ),
+                    "extracted_text_truncated": (
+                        read_summary.get("extracted_text_truncated") is True
+                    ),
+                    "raw_page_text_retained": (
+                        read_summary.get("raw_page_text_retained") is True
+                    ),
+                }
+            ),
+            "custody_metadata_summary": _bool_mapping(custody_summary),
+            "custody_metadata_complete": (
+                candidate.get("custody_metadata_complete") is True
+            ),
+            "non_authoritative_boundary_flags": _bool_mapping(boundary_flags),
+            "evidence_boundary": _bool_mapping(evidence_boundary),
+            "final_evidence": candidate.get("final_evidence") is True,
+            "citation_eligible": candidate.get("citation_eligible") is True,
+            "evidence_ledger_admitted": candidate.get("evidence_ledger_admitted")
+            is True,
+            "author_activation_allowed": candidate.get("author_activation_allowed")
+            is True,
+        }
+    )
+
+
+def _ag96i3m2_binding_payload(value: Mapping[str, Any]) -> dict[str, Any]:
+    return ag96i3m2_intake_binding_authorization_projection(value)
+
+
+def _bool_mapping(value: Mapping[str, Any]) -> dict[str, bool]:
+    return {str(key): item is True for key, item in value.items()}
+
+
+def _compact(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in payload.items()
+        if value not in (None, "", [], {})
+    }
+
+
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -971,6 +1372,7 @@ def _strings(value: Any) -> list[str]:
 
 
 __all__ = [
+    "AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE",
     "FOLLOWUP_EVIDENCE_INTAKE_GATE_REASON",
     "FOLLOWUP_EVIDENCE_INTAKE_MODE",
     "FOLLOWUP_EVIDENCE_INTAKE_SCHEMA_VERSION",

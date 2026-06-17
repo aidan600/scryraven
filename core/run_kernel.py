@@ -44,28 +44,10 @@ from core.followup_provider_job_execution_runtime import (
     FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
 )
 from core.followup_runkernel_reducers import (
-    FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS as _FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS,
-)
-from core.followup_runkernel_reducers import (
-    FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS as _FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS,
-)
-from core.followup_runkernel_reducers import (
-    FOLLOWUP_EXECUTION_FALSE_FLAGS as _FOLLOWUP_EXECUTION_FALSE_FLAGS,
-)
-from core.followup_runkernel_reducers import (
-    FOLLOWUP_INTAKE_FALSE_FLAGS as _FOLLOWUP_INTAKE_FALSE_FLAGS,
-)
-from core.followup_runkernel_reducers import (
-    FOLLOWUP_PACKET_FALSE_FLAGS as _FOLLOWUP_PACKET_FALSE_FLAGS,
-)
-from core.followup_runkernel_reducers import (
-    FOLLOWUP_PROVIDER_JOB_EXECUTION_FALSE_FLAGS as _FOLLOWUP_PROVIDER_JOB_EXECUTION_FALSE_FLAGS,
-)
-from core.followup_runkernel_reducers import (
-    FOLLOWUP_RECHECK_FALSE_FLAGS as _FOLLOWUP_RECHECK_FALSE_FLAGS,
-)
-from core.followup_runkernel_reducers import (
+    AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
     FollowupRunKernelReducerError,
+    ag96i3m2_admission_review_authorization_projection,
+    ag96i3m2_intake_binding_authorization_projection,
     build_final_answer_authority_projection,
     build_followup_author_gate_projection,
     build_followup_author_observation_projection,
@@ -86,6 +68,27 @@ from core.followup_runkernel_reducers import (
     validate_followup_final_answer_packet_observation_binding,
     validate_followup_provider_job_execution_action_binding,
     validate_followup_sufficiency_recheck_observation_binding,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS as _FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS as _FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_EXECUTION_FALSE_FLAGS as _FOLLOWUP_EXECUTION_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_INTAKE_FALSE_FLAGS as _FOLLOWUP_INTAKE_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_PACKET_FALSE_FLAGS as _FOLLOWUP_PACKET_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_PROVIDER_JOB_EXECUTION_FALSE_FLAGS as _FOLLOWUP_PROVIDER_JOB_EXECUTION_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_RECHECK_FALSE_FLAGS as _FOLLOWUP_RECHECK_FALSE_FLAGS,
 )
 from core.followup_sufficiency_recheck_runtime import (
     FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
@@ -1170,14 +1173,37 @@ class RunKernel:
         *,
         reason: str = "ag96i2c_followup_fixture_evidence_ledger_intake",
         inputs: Mapping[str, Any] | None = None,
+        ag96i3l_admission_review_candidate: Mapping[str, Any] | None = None,
+        evidence_ledger_intake_binding: Any | None = None,
     ) -> AuthorizedAction:
         if not self.state.followup_execution_state:
             raise RunKernelTransitionError(
                 "follow-up evidence intake requires reduced follow-up execution state"
             )
         execution_state = self.state.followup_execution_state
+        caller_inputs = dict(inputs or {})
+        requested_mode = caller_inputs.get("evidence_ledger_intake_mode")
+        candidate_projection = (
+            ag96i3m2_admission_review_authorization_projection(
+                ag96i3l_admission_review_candidate
+            )
+            if ag96i3l_admission_review_candidate is not None
+            else {}
+        )
+        binding_projection = (
+            ag96i3m2_intake_binding_authorization_projection(
+                evidence_ledger_intake_binding
+            )
+            if evidence_ledger_intake_binding is not None
+            else {}
+        )
+        ag96i3m2_intake_requested = bool(
+            requested_mode == AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+            or candidate_projection
+            or binding_projection
+        )
         merged_inputs = {
-            **dict(inputs or {}),
+            **caller_inputs,
             "followup_authorization_consumption_id": execution_state.get(
                 "followup_authorization_consumption_id"
             ),
@@ -1205,23 +1231,42 @@ class RunKernel:
             "authorized_query": execution_state.get("authorized_query"),
             "provider_execution_licensed": False,
             "evidence_ledger_intake_mode": (
-                "bounded_provider_job_offline_followup_intake"
-                if (
-                    execution_state.get("execution_mode")
-                    == FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE
+                AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+                if ag96i3m2_intake_requested
+                else (
+                    "bounded_provider_job_offline_followup_intake"
+                    if (
+                        execution_state.get("execution_mode")
+                        == FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE
+                    )
+                    else "fixture_only_followup_intake"
                 )
-                else "fixture_only_followup_intake"
             ),
             "expected_observation_record_type": (
                 "followup_evidence_intake_consumption_record"
             ),
         }
+        if ag96i3m2_intake_requested:
+            merged_inputs["ag96i3m2_admission_review_candidate"] = (
+                candidate_projection
+            )
+            merged_inputs["ag96i3m2_evidence_ledger_intake_binding"] = (
+                binding_projection
+            )
         if merged_inputs.get("execution_mode") not in {
             "fixture_only",
             FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE,
         }:
             raise RunKernelTransitionError(
                 "follow-up evidence intake only authorizes known execution modes"
+            )
+        if merged_inputs.get("evidence_ledger_intake_mode") not in {
+            "fixture_only_followup_intake",
+            "bounded_provider_job_offline_followup_intake",
+            AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
+        }:
+            raise RunKernelTransitionError(
+                "follow-up evidence intake only authorizes known intake modes"
             )
         return self.authorize(
             stage=FOLLOWUP_EVIDENCE_INTAKE_STAGE,
@@ -2457,6 +2502,7 @@ class RunKernel:
             if intake_state.get("evidence_ledger_intake_mode") not in {
                 "fixture_only_followup_intake",
                 "bounded_provider_job_offline_followup_intake",
+                AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
             }:
                 raise RunKernelTransitionError(
                     "follow-up evidence intake requires known intake mode"
@@ -2468,6 +2514,14 @@ class RunKernel:
             if intake_state.get("citation_eligible") is not False:
                 raise RunKernelTransitionError(
                     "follow-up evidence intake must not create citation eligibility"
+                )
+            if intake_state.get("author_activation_allowed") is True:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must not activate Author"
+                )
+            if intake_state.get("final_answer_packet_updated") is True:
+                raise RunKernelTransitionError(
+                    "follow-up evidence intake must not update FinalAnswerPacket"
                 )
             ledger_observation = build_followup_evidence_intake_ledger_observation(
                 intake_state=intake_state,
