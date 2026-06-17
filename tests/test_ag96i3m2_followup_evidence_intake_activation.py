@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -281,6 +282,62 @@ def test_raw_text_verifier_excerpts_provider_payloads_are_rejected_before_reduct
         )
 
     assert kernel.state.evidence_ledger.to_projection().to_dict() == before
+
+
+def test_binding_raw_private_extras_are_stripped_before_runtime_state_and_adapter_use() -> None:
+    sentinel = "ag96i3m2-binding-private-sentinel"
+    binding = _binding_dict(
+        raw_text=sentinel,
+        verifier_text=sentinel,
+        supported_excerpt_fragments=[sentinel],
+        provider_payload={"payload": sentinel},
+        raw_prompt=sentinel,
+        full_trace={"trace": sentinel},
+    )
+    kernel = run_followup_through_execution(run_id=RUN_ID)
+    action = _authorize_m2(kernel, binding=binding)
+    result = execute_followup_evidence_intake_action(
+        action,
+        followup_execution_state=kernel.state.followup_execution_state,
+        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
+        admission_review_candidate=_ready_candidate(),
+        evidence_ledger_intake_binding=binding,
+    )
+
+    serialized_result = json.dumps(
+        {
+            "record": result.record.to_dict(),
+            "observation": result.observation.to_dict(),
+        },
+        sort_keys=True,
+    )
+    assert sentinel not in serialized_result
+    state_payload = result.record.to_dict()
+    persisted_binding = state_payload["ag96i3m2_evidence_ledger_intake_binding_payload"]
+    for forbidden_key in (
+        "raw_text",
+        "verifier_text",
+        "supported_excerpt_fragments",
+        "provider_payload",
+        "raw_prompt",
+        "full_trace",
+    ):
+        assert forbidden_key not in persisted_binding
+
+    kernel.reduce(result.observation)
+
+    serialized_state = json.dumps(
+        {
+            "state": kernel.state.followup_evidence_intake_state,
+            "projection": kernel.state.followup_evidence_intake_projection,
+            "ledger": kernel.state.evidence_ledger.to_projection().to_dict(),
+        },
+        sort_keys=True,
+    )
+    assert sentinel not in serialized_state
+    ledger = kernel.state.evidence_ledger.to_projection().to_dict()
+    assert ledger["candidate_count"] == 1
+    assert ledger["candidate_records"][0]["candidate_id"] == "irs_current_rules_2026"
 
 
 def test_duplicate_m2_observation_id_remains_idempotent() -> None:

@@ -289,7 +289,9 @@ class AG96I3M2FollowupEvidenceIntakeObservation:
         candidate_payload = _ag96i3m2_candidate_payload(
             self.admission_review_candidate
         )
-        binding_payload = _mapping(safe_json(self.evidence_ledger_intake_binding))
+        binding_payload = _ag96i3m2_binding_payload(
+            self.evidence_ledger_intake_binding
+        )
         candidate_projection = ag96i3m2_admission_review_authorization_projection(
             candidate_payload
         )
@@ -537,9 +539,10 @@ def _build_ag96i3m2_evidence_intake_record(
     except FollowupRunKernelReducerError as exc:
         raise PermissionError(str(exc)) from exc
 
+    binding_payload = _ag96i3m2_binding_payload(evidence_ledger_intake_binding)
     adapter_result = build_evidence_ledger_intake_observation_from_admission_review(
         admission_review_candidate=admission_review_candidate,
-        binding=evidence_ledger_intake_binding,
+        binding=binding_payload,
     )
     if not adapter_result.accepted or adapter_result.observation is None:
         blockers = [blocker.value for blocker in adapter_result.blocker_codes]
@@ -595,7 +598,7 @@ def _build_ag96i3m2_evidence_intake_record(
         ),
         request=request,
         admission_review_candidate=admission_review_candidate,
-        evidence_ledger_intake_binding=evidence_ledger_intake_binding,
+        evidence_ledger_intake_binding=binding_payload,
         adapter_projection=adapter_result.projection,
     )
     return FollowupEvidenceIntakeConsumptionRecord(
@@ -1335,6 +1338,10 @@ def _ag96i3m2_candidate_payload(value: Mapping[str, Any]) -> dict[str, Any]:
             is True,
         }
     )
+
+
+def _ag96i3m2_binding_payload(value: Mapping[str, Any]) -> dict[str, Any]:
+    return ag96i3m2_intake_binding_authorization_projection(value)
 
 
 def _bool_mapping(value: Mapping[str, Any]) -> dict[str, bool]:
