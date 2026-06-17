@@ -20,6 +20,9 @@ from core.followup_provider_result_set_diagnostics import (
     build_official_current_discovery_diagnostics,
     sanitize_result_set_diagnostics,
 )
+from core.followup_scout_acquisition_handoff import (
+    build_scout_to_acquisition_handoff_diagnostics,
+)
 from core.followup_search_freshness_policy import (
     build_search_freshness_policy_diagnostics,
 )
@@ -190,6 +193,17 @@ def build_validation_packet(
         freshness_policy_diagnostics
         or _build_freshness_policy(query=query, freshness_intent=freshness_intent)
     )
+    handoff_diagnostics = build_scout_to_acquisition_handoff_diagnostics(
+        provider_result_set_diagnostics=diagnostics,
+        freshness_policy_diagnostics=freshness_policy,
+        authorized_query=query,
+        query_variant_ref=diagnostics.get("authorized_query_ref"),
+        query_shape_mode="official_current_artifact_discovery",
+        provider_name=provider,
+        provider_surface_role="candidate_acquisition",
+        provider_job_kind=ProviderJobKind.OFFICIAL_CURRENT_CANDIDATE_ACQUISITION.value,
+        acquisition_mode=DISCOVERY_UNCONSTRAINED,
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "record_type": "brokered_provider_neutral_discovery_validation_packet",
@@ -215,6 +229,7 @@ def build_validation_packet(
         "author_executor_call_count": 0,
         "freshness_policy_diagnostics": freshness_policy,
         "provider_result_set_diagnostics": diagnostics,
+        "scout_to_acquisition_handoff_diagnostics": handoff_diagnostics,
         "redaction_posture": _redaction_posture(),
         "closed_surface_flags": _closed_surface_flags(),
         "evidence_boundary": {
