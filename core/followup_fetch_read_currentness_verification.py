@@ -393,8 +393,8 @@ def _currentness_supported(
 ) -> bool:
     if required_years_missing:
         return False
-    if currentness_terms and currentness_terms_found:
-        return True
+    if currentness_terms:
+        return bool(currentness_terms_found)
     if required_years_found:
         return True
     if not currentness_terms:

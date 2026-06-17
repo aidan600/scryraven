@@ -195,6 +195,26 @@ def test_official_relevant_page_missing_year_or_currentness_is_unclear() -> None
     assert packet["required_years_missing"] == ["2026"]
 
 
+def test_explicit_currentness_terms_missing_are_unclear_even_when_year_is_present() -> None:
+    packet = _verify_candidate(
+        url="https://www.example.gov/rules/fees-2026",
+        domain="example.gov",
+        title="Official 2026 fee page",
+        text="Example agency fee page for 2026 form filing requirements.",
+        requirements={
+            "required_terms": ["fee", "form", "filing"],
+            "required_years": [2026],
+            "currentness_terms": ["current", "updated"],
+            "expected_domain": "example.gov",
+        },
+    )
+
+    assert packet["verification_status"] == OFFICIAL_BUT_CURRENTNESS_UNCLEAR
+    assert packet["recommended_next_step"] == "targeted_fetch_read_retry"
+    assert packet["required_years_found"] == ["2026"]
+    assert packet["currentness_terms_found"] == []
+
+
 def test_fetch_read_failed_returns_fetch_read_failed() -> None:
     packet = _verify_candidate(
         url="https://www.example.gov/rules/current",
