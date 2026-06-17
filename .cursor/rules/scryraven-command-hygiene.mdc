@@ -1,0 +1,129 @@
+---
+description: PowerShell, Git, and publication hygiene for ScryRaven Cursor agents
+alwaysApply: true
+---
+
+# ScryRaven Cursor command hygiene
+
+Use Windows PowerShell-native commands.
+
+Prefer robust repo-targeted commands.
+
+Example:
+
+    $Repo = "C:\Users\aidan\ScryRaven"
+    git -C $Repo status --short --branch
+
+Avoid brittle command forms:
+- do not rely on cd state for important Git commands;
+- do not mix Bash heredocs with PowerShell;
+- do not write temporary files into the repo root;
+- do not use broad wildcard deletion;
+- do not use destructive Git.
+
+## Temp files
+
+Write temporary command output, commit messages, and scratch files under $env:TEMP, not in the repository.
+
+Allowed pattern:
+
+    $TempPath = Join-Path $env:TEMP "scryraven_temp.txt"
+
+Forbidden pattern:
+
+    $TempPath = "C:\Users\aidan\ScryRaven\_commit.txt"
+
+Only remove exact temp files under $env:TEMP.
+
+Do not use Remove-Item against repo paths unless the user explicitly authorizes that exact deletion.
+
+## Before committing
+
+Before any commit, show:
+
+    git -C $Repo status --short --branch
+    git -C $Repo diff --cached --name-status
+    git -C $Repo diff --cached --stat
+
+Commit only when exactly the expected files are staged.
+
+Do not commit untracked local artifacts, output packets, caches, logs, DB files, .env, generated private data, or unrelated files.
+
+Use plain ASCII commit messages unless the user explicitly asks otherwise.
+
+Use PowerShell-safe commit message handling. Prefer a temp file under $env:TEMP written with UTF-8 without BOM.
+
+Example:
+
+    $msgPath = Join-Path $env:TEMP "scryraven_commit_msg.txt"
+    [System.IO.File]::WriteAllText($msgPath, $msg, [System.Text.UTF8Encoding]::new($false))
+    git -C $Repo commit -F $msgPath
+    Remove-Item -Force $msgPath
+
+Do not amend after push.
+
+Before git commit --amend, prove all are true:
+- branch has not been pushed;
+- no draft PR exists yet;
+- staged diff is empty unless the amend is intentionally adding staged changes;
+- the user has approved the amend.
+
+## Publication
+
+Only push or open a draft PR when the phase prompt explicitly authorizes publication.
+
+Safe publication shape:
+
+    git -C $Repo push -u origin <phase-branch>
+    gh pr create --draft --base main --head <phase-branch>
+
+Never merge, squash merge, rebase, force-push, reset, clean destructively, delete branches, or mark a draft PR ready for review unless the user explicitly authorizes that exact action.
+
+## Read-only commands
+
+Read-only commands are generally safe:
+
+    git -C $Repo status --short --branch
+    git -C $Repo branch -vv
+    git -C $Repo log --oneline --decorate -n 20
+    git -C $Repo diff --stat main...HEAD
+    git -C $Repo diff --name-status main...HEAD
+    rg "<pattern>"
+    Get-Content <repo-file>
+
+Still avoid reading secrets, .env, DB rows, private logs, caches, raw provider payloads, raw prompts, full raw traces, local output packets, or unrelated generated artifacts.
+
+## Tests and live calls
+
+Offline tests are allowed when scoped by the phase.
+
+Do not run live ScryRaven/proplex/scryraven provider, model, search, retrieval, fetch/read, or validation calls unless the phase prompt explicitly scopes live validation.
+
+Before running broad tests, run focused tests first.
+
+Do not loop broad tests repeatedly without a clear reason.
+
+## Permission prompts
+
+When asking the user to approve a command, explain:
+- what the command does;
+- whether it reads or writes;
+- exact files or refs affected;
+- why it is safe;
+- what would be unsafe.
+
+Do not ask for broad allowlisting during a ScryRaven phase. Prefer one exact command approval at a time.
+
+## Stop conditions
+
+Stop and ask instead of improvising if a command would require:
+- destructive Git;
+- branch deletion;
+- history rewrite after push;
+- merge or squash merge;
+- force-push;
+- reset or clean;
+- broad filesystem deletion;
+- reading secrets or generated private artifacts;
+- live provider/search/model/fetch/read calls;
+- changing closed surfaces outside the phase prompt.
