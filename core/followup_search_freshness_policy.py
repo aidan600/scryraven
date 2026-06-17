@@ -216,8 +216,15 @@ def _provider_freshness_value_by_provider(intent: str) -> dict[str, str | None]:
         RECENT_WEEKS: "pw",
         RECENT_MONTHS: "pm",
     }.get(intent)
+    serper_value = {
+        LATEST_BREAKING: "qdr:d",
+        RECENT_DAYS: "qdr:d",
+        RECENT_WEEKS: "qdr:w",
+        RECENT_MONTHS: "qdr:m",
+    }.get(intent)
     return {
         "brave": brave_value,
+        "serper": serper_value,
         "tavily": None,
         "linkup": None,
         "exa": None,

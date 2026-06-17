@@ -293,6 +293,26 @@ def test_live_provider_missing_config_exits_before_warning(
             "sec.gov",
         ),
         (
+            "serper",
+            [
+                {
+                    "title": "Secondary bridge explanation",
+                    "url": "https://example.com/current-bridge",
+                    "snippet": "raw serper snippet must be stripped",
+                    "position": 1,
+                    "date": "Jan 10, 2026",
+                },
+                {
+                    "title": "IRS current official notice 2026",
+                    "url": "https://www.irs.gov/newsroom/current-notice-2026",
+                    "snippet": "raw serper official snippet must be stripped",
+                    "position": 2,
+                    "date": "Jan 11, 2026",
+                },
+            ],
+            "irs.gov",
+        ),
+        (
             "tavily",
             [
                 {

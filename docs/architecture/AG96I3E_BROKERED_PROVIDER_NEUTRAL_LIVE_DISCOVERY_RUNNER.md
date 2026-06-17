@@ -5,7 +5,9 @@
 AG-96I3E adds a repo-tracked runner that a private broker can invoke later to
 make one provider-neutral official/current discovery attempt and feed the
 sanitized result set through the AG-96I3D diagnostics contract. AG-96I3G extends
-the runner packet with provider-neutral scout freshness diagnostics.
+the runner packet with provider-neutral scout freshness diagnostics. AG-96I3H
+adds Serper as a cheap scout/candidate-discovery surface behind the same
+provider-neutral scout contract.
 
 The runner is:
 
@@ -106,6 +108,16 @@ py scripts\ag96i3e_brokered_provider_neutral_discovery_validation.py `
 
 ```powershell
 py scripts\ag96i3e_brokered_provider_neutral_discovery_validation.py `
+  --provider serper `
+  --query "<authorized provider-neutral query>" `
+  --job-id ag96i3e-serper-discovery-once `
+  --output output\ag96i3e_serper_discovery_once_packet.json `
+  --max-results 5 `
+  --confirm-live-provider-call
+```
+
+```powershell
+py scripts\ag96i3e_brokered_provider_neutral_discovery_validation.py `
   --provider tavily `
   --query "<authorized provider-neutral query>" `
   --job-id ag96i3e-tavily-discovery-once `
@@ -134,6 +146,9 @@ Supported live provider surfaces:
 
 - `brave`: provider-neutral scout wrapper dispatching to the existing Brave
   search surface.
+- `serper`: provider-neutral scout wrapper dispatching to Serper Google Search
+  as a cheap candidate-discovery surface. It maps Serper `organic[].link` to
+  normalized `url` and does not retain raw provider payloads.
 - `tavily`: existing `search_web_results` wrapper, called through its wrapped
   single-call function to avoid retry behavior.
 - `linkup`: existing `search_linkup_results` wrapper, called through its wrapped
@@ -200,3 +215,7 @@ Freshness policy diagnostics and selected candidates are diagnostic observations
 only. Final evidence still requires a later, separately authorized
 fetch/read/admission phase before any candidate can become citation eligible or
 flow to final answer behavior.
+
+Serper does not change that evidence boundary. It can cheaply scout candidate
+URLs, but premium provider work or a later fetch/read step may still be required
+before any candidate can become usable evidence.

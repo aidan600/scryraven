@@ -30,7 +30,9 @@ OUTPUT_DIR = ROOT / "output"
 LIVE_SPEND_WARNING = "This command may spend exactly one live provider/search call."
 FIXTURE_PROVIDER = "fixture"
 MAX_RESULTS_LIMIT = 10
-SUPPORTED_PROVIDERS = frozenset({"brave", "tavily", "linkup", FIXTURE_PROVIDER})
+SUPPORTED_PROVIDERS = frozenset(
+    {"brave", "serper", "tavily", "linkup", FIXTURE_PROVIDER}
+)
 DEFERRED_PROVIDERS = {
     "exa": (
         "deferred: current wrapper uses search_and_contents/text retrieval, so this "
@@ -309,6 +311,16 @@ def _dispatch_provider(
             freshness_policy=freshness_policy,
             cost_phase="ag96i3e_validation",
         )
+    if provider == "serper":
+        from core.search_providers import search_scout_results
+
+        return search_scout_results(
+            provider="serper",
+            query=query,
+            max_results=max_results,
+            freshness_policy=freshness_policy,
+            cost_phase="ag96i3e_validation",
+        )
     if provider == "tavily":
         from core.search_providers import search_web_results
 
@@ -380,6 +392,7 @@ def _fixture_results() -> list[dict[str, Any]]:
 def _provider_config_available(provider: str) -> bool:
     env_var_by_provider = {
         "brave": "BRAVE_API_KEY",
+        "serper": "SERPER_API_KEY",
         "tavily": "TAVILY_API_KEY",
         "linkup": "LINKUP_API_KEY",
     }
