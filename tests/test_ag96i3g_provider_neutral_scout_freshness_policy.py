@@ -51,6 +51,7 @@ def test_irs_known_year_current_query_forbids_past_week_only_freshness() -> None
     assert packet["freshness_intent"] in {KNOWN_YEAR, CURRENT_YEAR, CURRENT_OR_STABLE}
     assert packet["over_narrow_recent_window_forbidden"] is True
     assert packet["provider_freshness_value_by_provider"]["brave"] is None
+    assert packet["provider_freshness_value_by_provider"]["serper"] is None
     assert packet["live_call_authorized"] is False
     assert packet["provider_called"] is False
     assert packet["fetch_read_invoked"] is False
@@ -68,6 +69,7 @@ def test_shaped_irs_query_does_not_map_to_brave_past_week_freshness() -> None:
     assert packet["freshness_intent"] == KNOWN_YEAR
     assert packet["provider_freshness_policy"] == "omit_provider_freshness_filter"
     assert packet["provider_freshness_value_by_provider"]["brave"] is None
+    assert packet["provider_freshness_value_by_provider"]["serper"] is None
 
 
 def test_latest_poe_patch_uses_broad_or_mixed_probe_not_past_week_only() -> None:
@@ -88,6 +90,7 @@ def test_market_news_today_maps_to_narrow_freshness() -> None:
     assert packet["freshness_intent"] == LATEST_BREAKING
     assert packet["provider_freshness_policy"] == "apply_narrow_recent_filter"
     assert packet["provider_freshness_value_by_provider"]["brave"] == "pd"
+    assert packet["provider_freshness_value_by_provider"]["serper"] == "qdr:d"
 
 
 def test_historical_stable_query_maps_to_no_provider_freshness() -> None:
@@ -95,6 +98,7 @@ def test_historical_stable_query_maps_to_no_provider_freshness() -> None:
 
     assert packet["freshness_intent"] == HISTORICAL_OR_STABLE
     assert packet["provider_freshness_value_by_provider"]["brave"] is None
+    assert packet["provider_freshness_value_by_provider"]["serper"] is None
 
 
 def test_ambiguous_scout_query_allows_mixed_probes_without_canonical_promotion() -> None:
@@ -166,6 +170,7 @@ def test_ag96i3e_packet_includes_freshness_policy_diagnostics() -> None:
     )
     assert freshness["freshness_intent"] == KNOWN_YEAR
     assert freshness["provider_freshness_value_by_provider"]["brave"] is None
+    assert freshness["provider_freshness_value_by_provider"]["serper"] is None
     assert packet["provider_result_set_diagnostics"]["record_type"] == (
         "provider_neutral_official_current_result_set_diagnostics"
     )
@@ -221,14 +226,15 @@ def test_mocked_brave_can_use_narrow_freshness_for_breaking_posture() -> None:
     assert params["freshness"] == "pd"
 
 
-def test_static_guard_no_serper_adapter_or_env_placeholder_added() -> None:
+def test_static_guard_serper_adapter_stays_behind_scout_contract() -> None:
     search_source = SEARCH_PROVIDERS.read_text(encoding="utf-8").casefold()
     env_example = (ROOT / ".env.example").read_text(encoding="utf-8").casefold()
 
-    assert "serper_api_key" not in env_example
+    assert "serper_api_key=<your_serper_api_key>" in env_example
     assert "def search_serper" not in search_source
-    assert "serper_api_key" not in search_source
-    assert "api.serper" not in search_source
+    assert "serper reconnaissance" not in search_source
+    assert 'provider_name == "serper"' in search_source
+    assert "def _serper_search_results" in search_source
 
 
 def test_static_guard_no_provider_calls_in_freshness_helper() -> None:

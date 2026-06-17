@@ -49,6 +49,7 @@ Optional integrations:
 * `LINKUP_API_KEY`
 * `EXA_API_KEY`
 * `BRAVE_API_KEY`
+* `SERPER_API_KEY`
 * Local LM Studio endpoint, if using local models
 
 ## Setup

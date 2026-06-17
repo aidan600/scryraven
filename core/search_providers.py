@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 TAVILY_SEARCH_TIMEOUT_SEC = float(os.environ.get("TAVILY_SEARCH_TIMEOUT_SEC", "30"))
 LINKUP_SEARCH_TIMEOUT_SEC = float(os.environ.get("LINKUP_SEARCH_TIMEOUT_SEC", "30"))
 BRAVE_SEARCH_TIMEOUT_SEC = float(os.environ.get("BRAVE_SEARCH_TIMEOUT_SEC", "8"))
+SERPER_SEARCH_TIMEOUT_SEC = float(os.environ.get("SERPER_SEARCH_TIMEOUT_SEC", "8"))
 
 # Exa SDK uses requests without per-request timeout; bound wall-clock wait (orphan thread may still finish in background).
 EXA_SEARCH_TIMEOUT_SEC = float(os.environ.get("EXA_SEARCH_TIMEOUT_SEC", "30"))
@@ -29,6 +30,7 @@ _RETRIEVAL_TIMEOUT_SEC = {
     "linkup": LINKUP_SEARCH_TIMEOUT_SEC,
     "exa": EXA_SEARCH_TIMEOUT_SEC,
     "brave": BRAVE_SEARCH_TIMEOUT_SEC,
+    "serper": SERPER_SEARCH_TIMEOUT_SEC,
 }
 
 
@@ -378,8 +380,8 @@ def search_scout_results(
 ) -> list[dict[str, Any]]:
     """Provider-neutral lightweight scout search.
 
-    The scout role is provider-neutral. Brave is the only supported provider
-    surface for this path today; later providers can join the same contract.
+    The scout role is provider-neutral. Provider surfaces join this same
+    candidate-discovery contract without becoming separate evidence roles.
     Freshness is supplied by the caller's search-job policy and is omitted when
     no policy value is present.
     """
@@ -402,6 +404,14 @@ def search_scout_results(
             cost_accumulator=cost_accumulator,
             cost_phase=cost_phase,
             log_context="Brave scout search",
+        )
+    if provider_name == "serper":
+        return _serper_search_results(
+            query,
+            num_results=int(result_count),
+            freshness=freshness,
+            cost_accumulator=cost_accumulator,
+            cost_phase=cost_phase,
         )
     raise ValueError(f"unsupported scout provider: {provider}")
 
@@ -499,3 +509,101 @@ def _brave_search_results(
         }
         for r in results
     ]
+
+
+def _serper_search_results(
+    query: str,
+    api_key: str | None = None,
+    num_results: int = 5,
+    freshness: str | None = None,
+    cost_accumulator: CostAccumulator | None = None,
+    cost_phase: str = "scout",
+) -> list[dict[str, Any]]:
+    key = api_key or os.getenv("SERPER_API_KEY")
+    if not key:
+        raise RuntimeError("SERPER_API_KEY is not set")
+
+    headers = {
+        "X-API-KEY": key,
+        "Content-Type": "application/json",
+    }
+    payload: dict[str, Any] = {
+        "q": query,
+        "num": int(num_results),
+    }
+    if freshness:
+        payload["tbs"] = freshness
+
+    try:
+        response = requests.post(
+            "https://google.serper.dev/search",
+            headers=headers,
+            json=payload,
+            timeout=SERPER_SEARCH_TIMEOUT_SEC,
+        )
+        response.raise_for_status()
+        data = response.json()
+        if cost_accumulator is not None:
+            cost_accumulator.record_search_call(phase=cost_phase, provider="serper")
+    except Exception as e:
+        if isinstance(e, requests.exceptions.Timeout):
+            log_retrieval_timeout(
+                provider="serper",
+                query=query,
+                timeout_seconds=SERPER_SEARCH_TIMEOUT_SEC,
+                logger=logger,
+            )
+        else:
+            log_provider_error(
+                provider="serper",
+                error=f"{type(e).__name__}: {e}",
+                query_preview=(query or "")[:200],
+                phase="retrieval",
+                logger=logger,
+            )
+        logger.error("Serper scout search failed: %s: %s", type(e).__name__, e)
+        return []
+
+    results = []
+    for item in data.get("organic", []):
+        if not isinstance(item, Mapping):
+            continue
+        url = _serper_text(item.get("link"), limit=500)
+        title = _serper_text(item.get("title"), limit=300)
+        snippet = _serper_text(item.get("snippet"), limit=500)
+        normalized: dict[str, Any] = {
+            "title": title,
+            "url": url,
+            "snippet": snippet,
+            "domain": normalize_domain(url),
+            "credibility": credibility_score(url, title, snippet, "general"),
+        }
+        position = _serper_position(item.get("position"))
+        if position is not None:
+            normalized["position"] = position
+        date_value = _serper_date(item.get("date"))
+        if date_value:
+            normalized["date"] = date_value
+        if normalized["url"]:
+            results.append(normalized)
+    return results
+
+
+def _serper_position(value: Any) -> int | None:
+    try:
+        position = int(value)
+    except (TypeError, ValueError):
+        return None
+    if position < 1:
+        return None
+    return position
+
+
+def _serper_date(value: Any) -> str:
+    return _serper_text(value, limit=80)
+
+
+def _serper_text(value: Any, *, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(value.split())[:limit]

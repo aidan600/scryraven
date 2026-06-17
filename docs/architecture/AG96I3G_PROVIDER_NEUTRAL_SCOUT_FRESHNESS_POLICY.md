@@ -3,8 +3,10 @@
 ## Status
 
 AG-96I3G adds an offline freshness policy diagnostic helper and moves the
-AG-96I3E Brave diagnostic path onto a provider-neutral scout wrapper. No live
-validation was run, no broker was started, and no Serper adapter was added.
+AG-96I3E Brave diagnostic path onto a provider-neutral scout wrapper. AG-96I3H
+adds Serper to that same scout wrapper as a cheap candidate-discovery surface.
+No live validation was run and no broker was started for either freshness policy
+work or the Serper adapter.
 
 The implementation surfaces are:
 
@@ -59,8 +61,8 @@ Examples:
 
 ## Provider-neutral Scout
 
-Scout is the role. Brave is one provider surface that can perform the role.
-Serper or later APIs can plug into the same scout/freshness contract without
+Scout is the role. Brave and Serper are provider surfaces that can perform the
+role. Later APIs can plug into the same scout/freshness contract without
 renaming the role or treating one provider as the model.
 
 AG-96I3G introduces:
@@ -69,10 +71,21 @@ AG-96I3G introduces:
 search_scout_results(provider=..., query=..., freshness_policy=...)
 ```
 
-Today this generic wrapper supports only `provider="brave"`. The legacy
-`brave_reconnaissance(...)` function remains as a compatibility alias and keeps
-its historical default. New diagnostic code uses the provider-neutral scout path
-instead.
+Today this generic wrapper supports `provider="brave"` and `provider="serper"`.
+The legacy `brave_reconnaissance(...)` function remains as a compatibility
+alias and keeps its historical default. New diagnostic code uses the
+provider-neutral scout path instead.
+
+Serper receives Google-style `tbs` freshness values only when the
+provider-neutral policy chooses recent/breaking freshness:
+
+- `latest_breaking` and `recent_days`: `qdr:d`;
+- `recent_weeks`: `qdr:w`;
+- `recent_months`: `qdr:m`.
+
+Known-year, current-year, current-or-stable, historical-or-stable, and
+mixed-probe postures omit Serper freshness so official/current artifacts are
+not accidentally narrowed out.
 
 ## Diagnostic Runner Contract
 
@@ -111,10 +124,10 @@ observations only. They are not final evidence and are not citation eligible.
 Final evidence still requires a later, separately authorized fetch/read and
 admission phase through the existing authority chain.
 
-## Serper Next
+## Serper Diagnostic Boundary
 
-Serper was intentionally not added in AG-96I3G. The next phase can add a cheap
-scout adapter by implementing another provider surface behind
-`search_scout_results(...)` and translating the same freshness policy into that
-provider's supported request fields. That phase should preserve the same
-evidence boundary and should not change product provider routing by implication.
+AG-96I3H implements Serper as the next cheap scout adapter. Serper output is
+diagnostic only, not final evidence and not citation eligible. It is useful for
+future multi-query fan-out over AG-96I3F-shaped variants, but that fan-out still
+requires explicit authorization. Premium provider work or fetch/read may still
+be needed after Serper finds a promising candidate.
