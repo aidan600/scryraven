@@ -4,7 +4,8 @@
 
 AG-96I3E adds a repo-tracked runner that a private broker can invoke later to
 make one provider-neutral official/current discovery attempt and feed the
-sanitized result set through the AG-96I3D diagnostics contract.
+sanitized result set through the AG-96I3D diagnostics contract. AG-96I3G extends
+the runner packet with provider-neutral scout freshness diagnostics.
 
 The runner is:
 
@@ -131,7 +132,8 @@ remain outside the repository.
 
 Supported live provider surfaces:
 
-- `brave`: existing `brave_reconnaissance` wrapper.
+- `brave`: provider-neutral scout wrapper dispatching to the existing Brave
+  search surface.
 - `tavily`: existing `search_web_results` wrapper, called through its wrapped
   single-call function to avoid retry behavior.
 - `linkup`: existing `search_linkup_results` wrapper, called through its wrapped
@@ -185,6 +187,7 @@ The sanitized packet includes:
 - `job_id`, `provider`, and `query`;
 - fixed live budget;
 - provider/search, fetch/read, model, and Author counts;
+- `freshness_policy_diagnostics`;
 - `provider_result_set_diagnostics`;
 - redaction posture;
 - closed-surface flags;
@@ -193,6 +196,7 @@ The sanitized packet includes:
 Raw snippets, raw content, raw provider payloads, keys, prompts, model outputs,
 DB/cache rows, private logs, page text, and full traces are not retained.
 
-Selected candidates are diagnostic observations only. Final evidence still
-requires a later, separately authorized fetch/read/admission phase before any
-candidate can become citation eligible or flow to final answer behavior.
+Freshness policy diagnostics and selected candidates are diagnostic observations
+only. Final evidence still requires a later, separately authorized
+fetch/read/admission phase before any candidate can become citation eligible or
+flow to final answer behavior.

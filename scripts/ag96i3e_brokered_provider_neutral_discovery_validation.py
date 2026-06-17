@@ -20,6 +20,9 @@ from core.followup_provider_result_set_diagnostics import (
     build_official_current_discovery_diagnostics,
     sanitize_result_set_diagnostics,
 )
+from core.followup_search_freshness_policy import (
+    build_search_freshness_policy_diagnostics,
+)
 
 PHASE_ID = "AG-96I3E"
 SCHEMA_VERSION = "ag96i3e_brokered_provider_neutral_discovery_validation_v1"
@@ -105,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 3
 
+    freshness_policy = _build_freshness_policy(
+        query=query,
+        freshness_intent=args.freshness_intent,
+    )
     budget = ProviderCallBudget()
     if fixture_mode:
         raw_results = _fixture_results()
@@ -112,7 +119,13 @@ def main(argv: list[str] | None = None) -> int:
         print(LIVE_SPEND_WARNING)
         try:
             raw_results = list(
-                _dispatch_provider(provider, query, max_results, budget=budget)
+                _dispatch_provider(
+                    provider,
+                    query,
+                    max_results,
+                    budget=budget,
+                    freshness_policy=freshness_policy,
+                )
             )
         except Exception as exc:
             print(
@@ -134,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         raw_results=raw_results,
         provider_search_call_count=budget.provider_search_call_count,
         fixture_mode=fixture_mode,
+        freshness_policy_diagnostics=freshness_policy,
     )
 
     rendered = json.dumps(packet, indent=2, sort_keys=True)
@@ -154,6 +168,8 @@ def build_validation_packet(
     fixture_mode: bool = False,
     include_domains: Iterable[str] | None = None,
     domain_constraints: Iterable[str] | None = None,
+    freshness_intent: str | None = None,
+    freshness_policy_diagnostics: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     normalized_results = normalize_provider_results(
         raw_results,
@@ -168,6 +184,10 @@ def build_validation_packet(
         include_domains=include_domains,
         domain_constraints=domain_constraints,
     )
+    freshness_policy = dict(
+        freshness_policy_diagnostics
+        or _build_freshness_policy(query=query, freshness_intent=freshness_intent)
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "record_type": "brokered_provider_neutral_discovery_validation_packet",
@@ -180,6 +200,7 @@ def build_validation_packet(
         "provider": clean_token(provider, limit=80),
         "query": clean_text(query, limit=500),
         "provider_surface_role": "candidate_acquisition",
+        "scout_surface_role": "provider_neutral_scout",
         "provider_job_kind": ProviderJobKind.OFFICIAL_CURRENT_CANDIDATE_ACQUISITION.value,
         "acquisition_mode": DISCOVERY_UNCONSTRAINED,
         "max_results_requested": int(max_results),
@@ -190,6 +211,7 @@ def build_validation_packet(
         "fetch_read_attempt_count": 0,
         "model_call_count": 0,
         "author_executor_call_count": 0,
+        "freshness_policy_diagnostics": freshness_policy,
         "provider_result_set_diagnostics": diagnostics,
         "redaction_posture": _redaction_posture(),
         "closed_surface_flags": _closed_surface_flags(),
@@ -274,14 +296,17 @@ def _dispatch_provider(
     max_results: int,
     *,
     budget: ProviderCallBudget,
+    freshness_policy: Mapping[str, Any] | None = None,
 ) -> Iterable[Mapping[str, Any]]:
     budget.mark_provider_search_call()
     if provider == "brave":
-        from core.search_providers import brave_reconnaissance
+        from core.search_providers import search_scout_results
 
-        return brave_reconnaissance(
-            query,
-            num_results=max_results,
+        return search_scout_results(
+            provider="brave",
+            query=query,
+            max_results=max_results,
+            freshness_policy=freshness_policy,
             cost_phase="ag96i3e_validation",
         )
     if provider == "tavily":
@@ -315,6 +340,20 @@ def _dispatch_provider(
         )
         return results
     raise ValueError(f"unsupported provider: {provider}")
+
+
+def _build_freshness_policy(
+    *,
+    query: str,
+    freshness_intent: str | None = None,
+) -> dict[str, Any]:
+    return build_search_freshness_policy_diagnostics(
+        authorized_query=query,
+        provider_job_kind=ProviderJobKind.OFFICIAL_CURRENT_CANDIDATE_ACQUISITION.value,
+        acquisition_mode=DISCOVERY_UNCONSTRAINED,
+        query_shape_mode="official_current_artifact_discovery",
+        freshness_intent=freshness_intent,
+    )
 
 
 def _fixture_results() -> list[dict[str, Any]]:
@@ -369,6 +408,22 @@ def _parser() -> argparse.ArgumentParser:
         "--confirm-live-provider-call",
         action="store_true",
         help="Acknowledge exactly one live provider/search call may be spent.",
+    )
+    parser.add_argument(
+        "--freshness-intent",
+        choices=[
+            "none",
+            "latest_breaking",
+            "recent_days",
+            "recent_weeks",
+            "recent_months",
+            "current_year",
+            "known_year",
+            "current_or_stable",
+            "historical_or_stable",
+            "mixed_probe",
+        ],
+        help="Safe offline freshness intent override for diagnostic scout policy.",
     )
     return parser
 
