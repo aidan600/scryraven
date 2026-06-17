@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeout
 from datetime import datetime, timedelta
 from functools import lru_cache, wraps
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
@@ -365,6 +365,47 @@ def search_exa_results(
         return [], []
 
 
+def search_scout_results(
+    *,
+    provider: str,
+    query: str,
+    max_results: int | None = None,
+    num_results: int | None = None,
+    provider_freshness_value: str | None = None,
+    freshness_policy: Mapping[str, Any] | None = None,
+    cost_accumulator: CostAccumulator | None = None,
+    cost_phase: str = "scout",
+) -> list[dict[str, Any]]:
+    """Provider-neutral lightweight scout search.
+
+    The scout role is provider-neutral. Brave is the only supported provider
+    surface for this path today; later providers can join the same contract.
+    Freshness is supplied by the caller's search-job policy and is omitted when
+    no policy value is present.
+    """
+
+    provider_name = (provider or "").casefold()
+    result_count = num_results if num_results is not None else max_results
+    if result_count is None:
+        result_count = 5
+    freshness = provider_freshness_value
+    if freshness is None and freshness_policy:
+        by_provider = freshness_policy.get("provider_freshness_value_by_provider")
+        if isinstance(by_provider, Mapping):
+            value = by_provider.get(provider_name)
+            freshness = str(value) if value else None
+    if provider_name == "brave":
+        return _brave_search_results(
+            query,
+            num_results=int(result_count),
+            freshness=freshness,
+            cost_accumulator=cost_accumulator,
+            cost_phase=cost_phase,
+            log_context="Brave scout search",
+        )
+    raise ValueError(f"unsupported scout provider: {provider}")
+
+
 def brave_reconnaissance(
     query: str,
     api_key: str | None = None,
@@ -373,9 +414,32 @@ def brave_reconnaissance(
     cost_phase: str = "recon",
 ) -> list[dict[str, Any]]:
     """
-    Lightweight Brave Search for entity/term resolution only.
+    Legacy compatibility alias for lightweight Brave entity/term resolution.
+
+    New scout callsites should use ``search_scout_results(...)`` and supply
+    provider freshness from a provider-neutral freshness policy.
     Returns titles, URLs, and snippets; no full fetch, chunking, or embedding.
     """
+    return _brave_search_results(
+        query,
+        api_key=api_key,
+        num_results=num_results,
+        freshness="pw",
+        cost_accumulator=cost_accumulator,
+        cost_phase=cost_phase,
+        log_context="Brave reconnaissance",
+    )
+
+
+def _brave_search_results(
+    query: str,
+    api_key: str | None = None,
+    num_results: int = 5,
+    freshness: str | None = None,
+    cost_accumulator: CostAccumulator | None = None,
+    cost_phase: str = "scout",
+    log_context: str = "Brave scout search",
+) -> list[dict[str, Any]]:
     import httpx
 
     key = api_key or os.getenv("BRAVE_API_KEY")
@@ -392,8 +456,9 @@ def brave_reconnaissance(
         "count": num_results,
         "text_decorations": False,
         "search_lang": "en",
-        "freshness": "pw",
     }
+    if freshness:
+        params["freshness"] = freshness
     try:
         response = httpx.get(
             "https://api.search.brave.com/res/v1/web/search",
@@ -421,7 +486,7 @@ def brave_reconnaissance(
                 phase="retrieval",
                 logger=logger,
             )
-        logger.error("Brave reconnaissance failed: %s: %s", type(e).__name__, e)
+        logger.error("%s failed: %s: %s", log_context, type(e).__name__, e)
         return []
 
     results = data.get("web", {}).get("results", [])
