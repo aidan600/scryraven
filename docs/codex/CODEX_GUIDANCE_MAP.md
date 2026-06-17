@@ -23,6 +23,18 @@ are repo files; use repo-visible files and the current phase prompt.
 
 - **General architecture workflow and Path B PR process:**
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
+- **Current AG-96 lanes:** AG-96C `SearchWorkPlan` is a passive model through
+  runtime shadow projection only; QueryPlan, provider/search behavior, citation
+  behavior, and final answers remain unconsumed and unchanged. AG-96I3 is the
+  scout/read diagnostics lane for provider-neutral query shaping, freshness
+  policy, Serper scout diagnostics, scout-to-acquisition handoff, and offline
+  read-observation verification. For the current summary and next choices, read
+  `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
+- **Next AG-96 candidate directions:** choose explicitly between a sanitized
+  read-observation adapter for handoff candidates and EvidenceLedger
+  admission-review diagnostics for verified observations. The read-observation
+  adapter is the likely next implementation step when the goal is to bridge
+  scout handoff candidates into verification without admitting evidence.
 - **AG-89+ RunAuthority / authority-collapse work:**
   [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
 - **Current source-class recovery dispatch doctrine:** use

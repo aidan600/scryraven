@@ -4,6 +4,11 @@ Status: Recommended repo-tracked template
 Suggested repo path: `docs/codex/PHASE_BRIEF_TEMPLATE.md`
 
 Copy this for future phases and fill in only phase-specific details.
+Keep prompts compact. Standing workflow, boundary, safety, and publication rules
+belong in repo docs such as `AGENTS.md`, `CODEX_GUIDANCE_MAP.md`, and
+`ARCHITECTURE_GROOVE_PLAYBOOK.md`; phase prompts should not restate the whole
+operating manual. Include only the phase-specific goal, read files, scope,
+tests, validation, stop conditions, and final-bundle requirements.
 
 ```text
 <PHASE NAME>
