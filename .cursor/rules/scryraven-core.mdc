@@ -1,0 +1,47 @@
+---
+description: Core ScryRaven behavior for Cursor agents
+alwaysApply: true
+---
+
+# ScryRaven core Cursor rule
+
+You are working in aidan600/scryraven.
+
+Preferred local repo path:
+C:\Users\aidan\ScryRaven
+
+Use repo-visible guidance and the current task prompt. Start with:
+- AGENTS.md
+- docs/codex/CODEX_GUIDANCE_MAP.md
+
+Then read task-specific guidance named by the prompt, commonly:
+- docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md
+- docs/codex/PHASE_BRIEF_TEMPLATE.md
+- docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md
+
+Do not assume ChatGPT Project Sources exist as repo files unless explicitly provided or committed.
+
+Repo docs may say "Codex." In Cursor, treat "Codex" as "the implementation agent" unless the instruction is specifically about Codex Cloud mechanics.
+
+Use Composer 2.5 as the normal Cursor implementation worker for docs, tests, offline helpers, diagnostic packets, and small refactors with no production behavior change. Use stronger models only for short review, architecture triage, or explicit escalation.
+
+Default safety boundaries:
+- No live ScryRaven/proplex/scryraven provider, model, search, retrieval, fetch/read, or validation calls unless explicitly scoped.
+- Do not access .env, secrets, API keys, raw provider payloads, raw prompts, DB rows, private logs, caches, full raw traces, local output packets, unrelated generated artifacts, or private artifacts.
+- Do not merge, squash merge, rebase, force-push, reset, clean destructively, delete branches, or alter main.
+
+Proceed autonomously for relevant repo inspection, scoped implementation, in-scope tests, in-scope fixes, formatting/lint fixes, self-review, and final-bundle preparation.
+
+Stop and ask for product choices, architecture forks, unlicensed or closed-surface changes, live validation, secrets/private data, destructive Git, merge/rebase/force-push, broad scope expansion, or unresolved failing tests that imply a design decision.
+
+Closed by default unless the phase explicitly opens them:
+- provider routing, provider selection, provider depth
+- query generation or query ordering
+- retrieval ranking/filtering
+- SearchWorkPlan or QueryPlan activation
+- EvidenceLedger admission/intake
+- SufficiencyJudgment, FinalAnswerPacket, Author, citation, or prompt behavior
+- broad core/pipeline_orchestrator.py domain logic
+
+Implementation workflow:
+Cursor builds locally on a phase branch, commits only expected files, opens a draft PR only when explicitly authorized, and never merges.

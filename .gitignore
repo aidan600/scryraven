@@ -67,7 +67,10 @@ service-account*.json
 *tokens*
 
 # Cursor local state
-.cursor/
+.cursor/*
+!.cursor/
+!.cursor/rules/
+!.cursor/rules/*.mdc
 
 # OS / editor noise
 .DS_Store
