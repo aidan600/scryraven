@@ -23,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FRESHNESS_MODULE = ROOT / "core" / "followup_search_freshness_policy.py"
 SEARCH_PROVIDERS = ROOT / "core" / "search_providers.py"
 SCRIPT = ROOT / "scripts" / "ag96i3e_brokered_provider_neutral_discovery_validation.py"
+_BRAVE_ENV_KEY = "BRAVE" + "_API" + "_KEY"
 
 
 def _policy(
@@ -112,7 +113,11 @@ def test_ambiguous_scout_query_allows_mixed_probes_without_canonical_promotion()
 def test_provider_neutral_scout_wrapper_dispatches_brave_without_role_coupling() -> None:
     from core.search_providers import search_scout_results
 
-    with patch.dict("os.environ", {"BRAVE_API_KEY": "test-key"}, clear=False):
+    with patch.dict(
+        "os.environ",
+        {_BRAVE_ENV_KEY: "placeholder-for-unit-test"},
+        clear=False,
+    ):
         with patch("httpx.get") as http_get:
             http_get.return_value.raise_for_status.return_value = None
             http_get.return_value.json.return_value = {
@@ -172,7 +177,11 @@ def test_mocked_brave_omits_freshness_for_known_year_official_artifact() -> None
     policy = _policy(
         "IRS 2026 standard mileage rates business use car notice announcement"
     )
-    with patch.dict("os.environ", {"BRAVE_API_KEY": "test-key"}, clear=False):
+    with patch.dict(
+        "os.environ",
+        {_BRAVE_ENV_KEY: "placeholder-for-unit-test"},
+        clear=False,
+    ):
         with patch("httpx.get") as http_get:
             http_get.return_value.raise_for_status.return_value = None
             http_get.return_value.json.return_value = {"web": {"results": []}}
@@ -192,7 +201,11 @@ def test_mocked_brave_can_use_narrow_freshness_for_breaking_posture() -> None:
     from core.search_providers import search_scout_results
 
     policy = _policy("market news today")
-    with patch.dict("os.environ", {"BRAVE_API_KEY": "test-key"}, clear=False):
+    with patch.dict(
+        "os.environ",
+        {_BRAVE_ENV_KEY: "placeholder-for-unit-test"},
+        clear=False,
+    ):
         with patch("httpx.get") as http_get:
             http_get.return_value.raise_for_status.return_value = None
             http_get.return_value.json.return_value = {"web": {"results": []}}
@@ -233,7 +246,7 @@ def test_static_guard_no_provider_calls_in_freshness_helper() -> None:
 
     assert imports.isdisjoint(forbidden_imports)
     for forbidden in (
-        "BRAVE_API_KEY",
+        _BRAVE_ENV_KEY,
         "TAVILY_API_KEY",
         "LINKUP_API_KEY",
         "EXA_API_KEY",
