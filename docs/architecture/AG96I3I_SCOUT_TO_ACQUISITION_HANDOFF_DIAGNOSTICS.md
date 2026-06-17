@@ -20,7 +20,7 @@ start a broker, fetch/read pages, inspect `.env`, read secrets, invoke models,
 activate Author, create citation eligibility, admit EvidenceLedger records, or
 change product behavior.
 
-## Why The Serper IRS Run Was A Scout Success
+## Fixture Provenance: Why One Serper Run Was A Scout Success
 
 After AG-96I3H, a manually authorized brokered Serper diagnostic for:
 
@@ -49,6 +49,11 @@ currentness_signal=currentness_not_verified_by_diagnostic
 ```
 
 is a scout win and a verification candidate. It is not final evidence.
+
+This example is fixture provenance and a historical trigger for the diagnostic
+shape. Durable doctrine remains generic: a scout result may expose an
+official-looking candidate whose current support for the exact claim is still
+unverified until a later fetch/read layer supplies sanitized page observation.
 
 ## Handoff Contract
 
@@ -107,9 +112,10 @@ acquisition hints.
 
 ## Freshness Policy Travels With The Handoff
 
-The Serper IRS query was a known-year official/current artifact search. Narrow
-recent freshness was forbidden because a canonical IRS source may be older than
-recent SEO summaries while still authoritative.
+For known-year official/current artifact searches, narrow recent freshness may
+be forbidden because the canonical source may be older than recent SEO summaries
+while still authoritative. The historical Serper diagnostic above is one
+fixture instance of that broader pattern.
 
 The handoff carries:
 
@@ -136,7 +142,7 @@ things:
 - or reported that no official handoff candidate existed.
 
 This keeps acquisition accountable without turning a scout URL into a hard
-domain corridor, `includeDomains` filter, `site:` filter, or source-specific IRS
+domain corridor, `includeDomains` filter, `site:` filter, or source-specific
 resolver.
 
 ## Spending Posture
@@ -174,4 +180,4 @@ does not change:
 - FinalAnswerPacket authority;
 - `core/pipeline_orchestrator.py` domain logic;
 - include-domain or `site:` filtering;
-- source-specific IRS resolution.
+- source-specific resolution.

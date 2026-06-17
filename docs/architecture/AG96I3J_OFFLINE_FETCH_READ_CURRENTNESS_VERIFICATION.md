@@ -18,21 +18,22 @@ fetch or read live URLs, inspect `.env`, read secrets, invoke models, activate
 Author, create citation eligibility, admit EvidenceLedger records, or change
 product behavior.
 
-## Generic Verification, Not IRS Logic
+## Generic Verification, Not Source-Specific Logic
 
-The IRS standard-mileage page is one fixture shape because AG-96I3I showed that
-Serper could scout a rank-1 official-currentness-unverified IRS candidate. This
-phase does not implement an IRS resolver, a mileage-rate resolver, or any
-hardcoded answer value. The IRS fixture verifies only generic signals:
+One historical fixture used an official-currentness-unverified government page
+because AG-96I3I showed that a scout diagnostic could find an official-looking
+candidate before read verification existed. That fixture is provenance, not
+doctrine. This phase does not implement a source-specific resolver or any
+hardcoded answer value. Fixtures verify only generic signals:
 
 - candidate URL/domain match the supplied read observation;
 - source identity remains official;
 - required terms are present;
 - required year and currentness signals are present.
 
-The tests also cover USCIS fee pages, SEC rule/release pages, FDA recall/safety
-alerts, and software release notes. That mix keeps the helper centered on the
-packet contract rather than on one government domain or one numeric claim.
+The tests also cover other official pages and software release notes. That mix
+keeps the helper centered on the packet contract rather than on one domain or
+one claim type.
 
 ## Why Read Observation Is Required
 
@@ -134,4 +135,4 @@ AG-96I3J does not change:
 - provider selection policy;
 - `core/pipeline_orchestrator.py` domain logic;
 - include-domain or `site:` filtering;
-- source-specific IRS or mileage-rate resolution.
+- source-specific resolution.
