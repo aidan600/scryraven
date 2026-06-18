@@ -27,7 +27,9 @@ from core.followup_final_answer_packet_runtime import (
 )
 from core.followup_fixture_boundaries import (
     FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
-    FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS,
+    FOLLOWUP_FINAL_ANSWER_PACKET_MUTATION_FALSE_FLAGS,
+    FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
     FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
 )
 from core.followup_provider_job_execution_runtime import (
@@ -41,7 +43,6 @@ class FollowupRunKernelReducerError(ValueError):
     """Raised by mechanical helpers for RunKernel to translate."""
 
 
-FOLLOWUP_NO_LIVE_FALSE_FLAGS = FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS[1:]
 FOLLOWUP_EXECUTION_FALSE_FLAGS = (
     "live_provider_call_executed",
     "search_executed",
@@ -105,14 +106,7 @@ FOLLOWUP_BLOCKED_PACKET_SHELL_FALSE_FLAGS = (
     "final_evidence_selected",
     "citation_eligible",
     "citations_rendered",
-    "author_payload_created",
-    "analyst_activation_allowed",
-    "analyst_handoff_created",
-    "economist_activation_allowed",
-    "economist_handoff_created",
-    "economist_code_execution_allowed",
-    "answer_ready",
-    "prompt_behavior_changed",
+    *FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
 )
 FOLLOWUP_FINAL_EVIDENCE_SELECTION_FALSE_FLAGS = (
     *FOLLOWUP_NO_LIVE_FALSE_FLAGS,
@@ -120,45 +114,22 @@ FOLLOWUP_FINAL_EVIDENCE_SELECTION_FALSE_FLAGS = (
     *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
     "citation_eligible",
     "citations_rendered",
-    "author_payload_created",
-    "analyst_activation_allowed",
-    "analyst_handoff_created",
-    "economist_activation_allowed",
-    "economist_handoff_created",
-    "economist_code_execution_allowed",
-    "answer_ready",
-    "prompt_behavior_changed",
+    *FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
 )
 FOLLOWUP_CITATION_ELIGIBILITY_FALSE_FLAGS = (
     *FOLLOWUP_NO_LIVE_FALSE_FLAGS,
     *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
     *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
     "citations_rendered",
-    "author_payload_created",
-    "analyst_activation_allowed",
-    "analyst_handoff_created",
-    "economist_activation_allowed",
-    "economist_handoff_created",
-    "economist_code_execution_allowed",
-    "answer_ready",
-    "prompt_behavior_changed",
+    *FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
 )
 FOLLOWUP_CITATION_SOURCE_HANDOFF_FALSE_FLAGS = (
     *FOLLOWUP_NO_LIVE_FALSE_FLAGS,
     *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
     *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
-    "canonical_final_answer_packet_mutated",
-    "final_answer_packet_updated",
-    "final_answer_packet_rebuilt",
+    *FOLLOWUP_FINAL_ANSWER_PACKET_MUTATION_FALSE_FLAGS,
     "citations_rendered",
-    "author_payload_created",
-    "analyst_activation_allowed",
-    "analyst_handoff_created",
-    "economist_activation_allowed",
-    "economist_handoff_created",
-    "economist_code_execution_allowed",
-    "answer_ready",
-    "prompt_behavior_changed",
+    *FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
     "ordered_product_source_output_created",
 )
 FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS = (
