@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -36,6 +35,12 @@ from core.run_kernel import (
     Observation,
     RunKernel,
     RunKernelTransitionError,
+)
+from tests.ag96_static_guards import imported_modules
+from tests.ag96i3_assertions import (
+    assert_no_sensitive_payload,
+    assert_p1_boundary_snapshot_unchanged,
+    snapshot_p1_boundary_state,
 )
 from tests.helpers.followup_fixture_spine import run_followup_through_execution
 from tests.test_ag96i3m2_followup_evidence_intake_activation import (
@@ -139,8 +144,8 @@ def test_p1_happy_path_mutates_o2_shell_to_evidence_selected_blocked_packet() ->
     assert evidence["reason"] == (
         "ag96i3p1_selected_from_accepted_satisfied_evidence_ledger_custody"
     )
-    _assert_no_sensitive_payload(packet)
-    _assert_no_sensitive_payload(selection)
+    assert_no_sensitive_payload(packet)
+    assert_no_sensitive_payload(selection)
 
     assert kernel.state.final_answer_authority_projection == {}
     assert kernel.state.followup_final_answer_packet_state == {}
@@ -184,7 +189,7 @@ def test_p1_selects_only_expected_official_candidate_and_excludes_secondary() ->
     assert packet["citation_ineligible"] == []
     assert "citation_eligible_source_ids" not in packet
     assert "citation_eligibility_refs" not in packet
-    _assert_no_sensitive_payload(rejected)
+    assert_no_sensitive_payload(rejected)
 
 
 def test_p1_excludes_stale_sibling_linked_to_satisfied_requirement() -> None:
@@ -245,13 +250,13 @@ def test_p1_does_not_select_noneligible_canonical_ledger_candidates(
     mutator = mutators[mutator_name]
     kernel = _kernel_through_o2(mutator=mutator)
     action = kernel.authorize_followup_final_evidence_selection()
-    snapshot = _p1_state_snapshot(kernel)
+    snapshot = snapshot_p1_boundary_state(kernel)
 
     with pytest.raises(PermissionError, match="accepted satisfied EvidenceLedger custody"):
         _execute_p1(kernel, action=action)
 
     assert label
-    _assert_p1_snapshot_unchanged(kernel, snapshot)
+    assert_p1_boundary_snapshot_unchanged(kernel, snapshot)
     assert kernel.state.final_answer_packet["evidence_allowed"] == []
     assert kernel.state.final_answer_packet["final_evidence_selected"] is False
 
@@ -259,12 +264,12 @@ def test_p1_does_not_select_noneligible_canonical_ledger_candidates(
 def test_p1_reduce_rejects_no_qualifying_candidate_before_bookkeeping() -> None:
     kernel = _kernel_through_o2(mutator=_set_unreadable)
     action = kernel.authorize_followup_final_evidence_selection()
-    snapshot = _p1_state_snapshot(kernel)
+    snapshot = snapshot_p1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="accepted satisfied EvidenceLedger custody"):
         kernel.reduce(_minimal_p1_observation(action))
 
-    _assert_p1_snapshot_unchanged(kernel, snapshot)
+    assert_p1_boundary_snapshot_unchanged(kernel, snapshot)
     assert kernel.state.final_answer_packet["evidence_allowed"] == []
     assert kernel.state.final_answer_packet["final_evidence_selected"] is False
     assert kernel.state.final_answer_authority_projection == {}
@@ -366,7 +371,7 @@ def test_p1_reducer_rejects_stale_digests(mutation: str, match: str) -> None:
     kernel = _kernel_through_o2()
     action = kernel.authorize_followup_final_evidence_selection()
     result = _execute_p1(kernel, action=action)
-    snapshot = _p1_state_snapshot(kernel)
+    snapshot = snapshot_p1_boundary_state(kernel)
     if mutation == "ledger":
         kernel.state.evidence_ledger.observation_refs.append(
             {"observation_id": "ag96i3p1:stale-ledger", "source": "test"}
@@ -508,7 +513,7 @@ def test_p1_reducer_rebuilds_packet_and_ignores_caller_projection_override() -> 
 def test_p1_malformed_observation_rejects_before_bookkeeping_or_mutation() -> None:
     kernel = _kernel_through_o2()
     action = kernel.authorize_followup_final_evidence_selection()
-    snapshot = _p1_state_snapshot(kernel)
+    snapshot = snapshot_p1_boundary_state(kernel)
     bad_observation = Observation.from_action(
         action,
         observation_type="followup_final_evidence_selection_prepared",
@@ -519,7 +524,7 @@ def test_p1_malformed_observation_rejects_before_bookkeeping_or_mutation() -> No
     with pytest.raises(RunKernelTransitionError, match="requires followup"):
         kernel.reduce(bad_observation)
 
-    _assert_p1_snapshot_unchanged(kernel, snapshot)
+    assert_p1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_duplicate_p1_activation_for_same_o2_shell_rejects() -> None:
@@ -550,12 +555,12 @@ def test_stale_legacy_i2e_reduce_rejects_after_p1_without_state_change() -> None
         evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
         followup_evidence_intake_state=kernel.state.followup_evidence_intake_state,
     )
-    snapshot = _p1_state_snapshot(kernel)
+    snapshot = snapshot_p1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3P1"):
         kernel.reduce(legacy_result.observation)
 
-    _assert_p1_snapshot_unchanged(kernel, snapshot)
+    assert_p1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_stale_o2_reduce_rejects_after_p1_without_state_change() -> None:
@@ -569,12 +574,12 @@ def test_stale_o2_reduce_rejects_after_p1_without_state_change() -> None:
         stale_o2_action,
         stale_o2_result.observation,
     )
-    snapshot = _p1_state_snapshot(kernel)
+    snapshot = snapshot_p1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="stale AG-96I3O2"):
         kernel.reduce(stale_observation)
 
-    _assert_p1_snapshot_unchanged(kernel, snapshot)
+    assert_p1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_static_guards_keep_p1_closed_to_live_roles_citations_and_legacy_builder() -> None:
@@ -601,7 +606,7 @@ def test_static_guards_keep_p1_closed_to_live_roles_citations_and_legacy_builder
     for path in module_paths:
         source = path.read_text(encoding="utf-8")
         assert passive_module_static_guard(source, module_name=path.name) == ()
-        assert _imports(path).isdisjoint(forbidden_imports)
+        assert imported_modules(path).isdisjoint(forbidden_imports)
         for forbidden in (
             "AuthorExecutor(",
             "AnalystExecutor",
@@ -936,108 +941,3 @@ def _add_stale_official_sibling_candidate(kernel: RunKernel) -> None:
             link_status="accepted",
         )
     )
-
-
-def _p1_state_snapshot(kernel: RunKernel) -> dict[str, Any]:
-    return {
-        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
-        "final_answer_authority_projection": deepcopy(
-            kernel.state.final_answer_authority_projection
-        ),
-        "followup_final_evidence_selection_state": deepcopy(
-            kernel.state.followup_final_evidence_selection_state
-        ),
-        "followup_final_evidence_selection_projection": deepcopy(
-            kernel.state.followup_final_evidence_selection_projection
-        ),
-        "followup_final_evidence_selection_history": deepcopy(
-            kernel.state.followup_final_evidence_selection_history
-        ),
-        "followup_final_answer_packet_state": deepcopy(
-            kernel.state.followup_final_answer_packet_state
-        ),
-        "followup_blocked_final_answer_packet_shell_state": deepcopy(
-            kernel.state.followup_blocked_final_answer_packet_shell_state
-        ),
-        "projections": deepcopy(kernel.state.projections),
-        "action_statuses": deepcopy(kernel.state.action_statuses),
-        "stage_statuses": deepcopy(kernel.state.stage_statuses),
-        "reduced_action_ids": deepcopy(kernel.state.reduced_action_ids),
-        "observations": deepcopy(kernel.state.observations),
-        "next_observation_sequence": kernel.state.next_observation_sequence,
-    }
-
-
-def _assert_p1_snapshot_unchanged(
-    kernel: RunKernel,
-    snapshot: dict[str, Any],
-) -> None:
-    assert kernel.state.final_answer_packet == snapshot["final_answer_packet"]
-    assert kernel.state.final_answer_authority_projection == snapshot[
-        "final_answer_authority_projection"
-    ]
-    assert kernel.state.followup_final_evidence_selection_state == snapshot[
-        "followup_final_evidence_selection_state"
-    ]
-    assert kernel.state.followup_final_evidence_selection_projection == snapshot[
-        "followup_final_evidence_selection_projection"
-    ]
-    assert kernel.state.followup_final_evidence_selection_history == snapshot[
-        "followup_final_evidence_selection_history"
-    ]
-    assert kernel.state.followup_final_answer_packet_state == snapshot[
-        "followup_final_answer_packet_state"
-    ]
-    assert kernel.state.followup_blocked_final_answer_packet_shell_state == snapshot[
-        "followup_blocked_final_answer_packet_shell_state"
-    ]
-    assert kernel.state.projections == snapshot["projections"]
-    assert kernel.state.action_statuses == snapshot["action_statuses"]
-    assert kernel.state.stage_statuses == snapshot["stage_statuses"]
-    assert kernel.state.reduced_action_ids == snapshot["reduced_action_ids"]
-    assert kernel.state.observations == snapshot["observations"]
-    assert kernel.state.next_observation_sequence == snapshot[
-        "next_observation_sequence"
-    ]
-
-
-def _assert_no_sensitive_payload(value: Any) -> None:
-    markers = (
-        "raw_page_text",
-        "raw_prompt",
-        "raw_provider_payload",
-        "provider_payload",
-        "private_log",
-        "db_row",
-        "secret",
-        "full_trace",
-        "cache",
-    )
-
-    def walk(item: Any) -> None:
-        if isinstance(item, dict):
-            for key, child in item.items():
-                key_text = str(key).casefold()
-                if any(marker in key_text for marker in markers):
-                    assert child in (None, False, [], {}, (), "")
-                    continue
-                walk(child)
-        elif isinstance(item, (list, tuple, set)):
-            for child in item:
-                walk(child)
-        elif isinstance(item, str):
-            text = item.casefold()
-            assert not any(marker in text for marker in markers)
-
-    walk(value)
-
-
-def _imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    return imported

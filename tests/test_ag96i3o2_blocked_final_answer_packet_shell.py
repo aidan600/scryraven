@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -26,6 +25,13 @@ from core.run_kernel import (
     RunKernel,
     RunKernelTransitionError,
 )
+from tests.ag96_static_guards import imported_modules
+from tests.ag96i3_assertions import (
+    assert_o2_boundary_snapshot_unchanged,
+    assert_o2_closed_surfaces_unchanged,
+    snapshot_o2_boundary_state,
+    snapshot_o2_closed_surfaces,
+)
 from tests.helpers.followup_fixture_spine import run_followup_through_execution
 from tests.test_ag96i3m2_followup_evidence_intake_activation import (
     _execute_m2_intake,
@@ -44,7 +50,7 @@ def test_o2_happy_path_installs_canonical_blocked_packet_shell() -> None:
     ledger_before = kernel.state.evidence_ledger.to_projection().to_dict()
     sufficiency_before = deepcopy(kernel.state.sufficiency_judgment_projection)
     recheck_before = deepcopy(kernel.state.followup_sufficiency_recheck_state)
-    before = _closed_surface_snapshot(kernel)
+    before = snapshot_o2_closed_surfaces(kernel)
 
     action = kernel.authorize_followup_blocked_final_answer_packet_shell()
     readiness = kernel.state.followup_final_answer_packet_readiness_state
@@ -143,7 +149,7 @@ def test_o2_happy_path_installs_canonical_blocked_packet_shell() -> None:
     assert kernel.state.followup_blocked_final_answer_packet_shell_history == [
         projection
     ]
-    _assert_unchanged_except_o2(kernel, before)
+    assert_o2_closed_surfaces_unchanged(kernel, before)
 
 
 def test_o2_shell_is_not_structurally_role_consumable() -> None:
@@ -223,71 +229,12 @@ def test_pre_authorized_legacy_i2e_reduce_rejects_after_o2_shell_activation() ->
     )
 
     kernel.reduce(o2_result.observation)
-    snapshot = {
-        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
-        "final_answer_authority_projection": deepcopy(
-            kernel.state.final_answer_authority_projection
-        ),
-        "followup_blocked_final_answer_packet_shell_state": deepcopy(
-            kernel.state.followup_blocked_final_answer_packet_shell_state
-        ),
-        "followup_blocked_final_answer_packet_shell_projection": deepcopy(
-            kernel.state.followup_blocked_final_answer_packet_shell_projection
-        ),
-        "followup_blocked_final_answer_packet_shell_history": deepcopy(
-            kernel.state.followup_blocked_final_answer_packet_shell_history
-        ),
-        "followup_final_answer_packet_state": deepcopy(
-            kernel.state.followup_final_answer_packet_state
-        ),
-        "followup_final_answer_packet_projection": deepcopy(
-            kernel.state.followup_final_answer_packet_projection
-        ),
-        "followup_final_answer_packet_history": deepcopy(
-            kernel.state.followup_final_answer_packet_history
-        ),
-        "projections": deepcopy(kernel.state.projections),
-        "action_statuses": deepcopy(kernel.state.action_statuses),
-        "stage_statuses": deepcopy(kernel.state.stage_statuses),
-        "reduced_action_ids": deepcopy(kernel.state.reduced_action_ids),
-        "observations": deepcopy(kernel.state.observations),
-        "next_observation_sequence": kernel.state.next_observation_sequence,
-    }
+    snapshot = snapshot_o2_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="cannot reduce after AG-96I3O2"):
         kernel.reduce(legacy_result.observation)
 
-    assert kernel.state.final_answer_packet == snapshot["final_answer_packet"]
-    assert kernel.state.final_answer_authority_projection == {}
-    assert kernel.state.final_answer_authority_projection == snapshot[
-        "final_answer_authority_projection"
-    ]
-    assert kernel.state.followup_blocked_final_answer_packet_shell_state == snapshot[
-        "followup_blocked_final_answer_packet_shell_state"
-    ]
-    assert kernel.state.followup_blocked_final_answer_packet_shell_projection == snapshot[
-        "followup_blocked_final_answer_packet_shell_projection"
-    ]
-    assert kernel.state.followup_blocked_final_answer_packet_shell_history == snapshot[
-        "followup_blocked_final_answer_packet_shell_history"
-    ]
-    assert kernel.state.followup_final_answer_packet_state == snapshot[
-        "followup_final_answer_packet_state"
-    ]
-    assert kernel.state.followup_final_answer_packet_projection == snapshot[
-        "followup_final_answer_packet_projection"
-    ]
-    assert kernel.state.followup_final_answer_packet_history == snapshot[
-        "followup_final_answer_packet_history"
-    ]
-    assert kernel.state.projections == snapshot["projections"]
-    assert kernel.state.action_statuses == snapshot["action_statuses"]
-    assert kernel.state.stage_statuses == snapshot["stage_statuses"]
-    assert kernel.state.reduced_action_ids == snapshot["reduced_action_ids"]
-    assert kernel.state.observations == snapshot["observations"]
-    assert kernel.state.next_observation_sequence == snapshot[
-        "next_observation_sequence"
-    ]
+    assert_o2_boundary_snapshot_unchanged(kernel, snapshot)
 
     packet = kernel.state.final_answer_packet
     assert packet["owner"] == "RunKernel.FinalAnswerPacket"
@@ -527,7 +474,7 @@ def test_static_guards_keep_o2_closed_to_live_roles_citations_and_orchestrator()
     for path in module_paths:
         source = path.read_text(encoding="utf-8")
         assert passive_module_static_guard(source, module_name=path.name) == ()
-        assert _imports(path).isdisjoint(forbidden_imports)
+        assert imported_modules(path).isdisjoint(forbidden_imports)
         for forbidden in (
             "AuthorExecutor(",
             "AnalystExecutor",
@@ -612,66 +559,3 @@ def _observation_from_state(action: Any, state: dict[str, Any]) -> Observation:
         status="completed",
         payload={"followup_blocked_final_answer_packet_shell_state": state},
     )
-
-
-def _closed_surface_snapshot(kernel: RunKernel) -> dict[str, Any]:
-    return {
-        "search_judgment": deepcopy(kernel.state.search_judgment),
-        "search_judgment_projection": deepcopy(kernel.state.search_judgment_projection),
-        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
-        "final_answer_authority_projection": deepcopy(
-            kernel.state.final_answer_authority_projection
-        ),
-        "author_observation": deepcopy(kernel.state.author_observation),
-        "final_answer_outcome": deepcopy(kernel.state.final_answer_outcome),
-        "followup_final_answer_packet_readiness_state": deepcopy(
-            kernel.state.followup_final_answer_packet_readiness_state
-        ),
-        "followup_final_answer_packet_readiness_projection": deepcopy(
-            kernel.state.followup_final_answer_packet_readiness_projection
-        ),
-        "followup_final_answer_packet_state": deepcopy(
-            kernel.state.followup_final_answer_packet_state
-        ),
-        "followup_author_gate_state": deepcopy(kernel.state.followup_author_gate_state),
-        "followup_author_observation_state": deepcopy(
-            kernel.state.followup_author_observation_state
-        ),
-    }
-
-
-def _assert_unchanged_except_o2(
-    kernel: RunKernel,
-    before: dict[str, Any],
-) -> None:
-    assert kernel.state.search_judgment == before["search_judgment"]
-    assert kernel.state.search_judgment_projection == before[
-        "search_judgment_projection"
-    ]
-    assert kernel.state.final_answer_authority_projection == {}
-    assert kernel.state.author_observation == before["author_observation"]
-    assert kernel.state.final_answer_outcome == before["final_answer_outcome"]
-    assert kernel.state.followup_final_answer_packet_readiness_state == before[
-        "followup_final_answer_packet_readiness_state"
-    ]
-    assert kernel.state.followup_final_answer_packet_readiness_projection == before[
-        "followup_final_answer_packet_readiness_projection"
-    ]
-    assert kernel.state.followup_final_answer_packet_state == before[
-        "followup_final_answer_packet_state"
-    ]
-    assert kernel.state.followup_author_gate_state == before["followup_author_gate_state"]
-    assert kernel.state.followup_author_observation_state == before[
-        "followup_author_observation_state"
-    ]
-
-
-def _imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    return imported
