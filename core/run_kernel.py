@@ -2418,6 +2418,14 @@ class RunKernel:
                 f"expected sequence {self.state.next_observation_sequence}, "
                 f"got {observation.sequence}"
             )
+        if (
+            action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
+            and self.state.followup_blocked_final_answer_packet_shell_state
+        ):
+            raise RunKernelTransitionError(
+                "legacy follow-up FinalAnswerPacket preparation cannot reduce "
+                "after AG-96I3O2 blocked packet shell activation"
+            )
 
         self.state.reduced_action_ids.add(action.action_id)
         self.state.action_statuses[action.action_id] = observation.status

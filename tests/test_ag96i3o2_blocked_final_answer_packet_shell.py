@@ -13,6 +13,7 @@ from core.followup_final_answer_packet_runtime import (
     AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE,
     AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE,
     execute_followup_blocked_final_answer_packet_shell_action,
+    execute_followup_final_answer_packet_prepare_action,
     execute_followup_final_answer_packet_readiness_action,
 )
 from core.followup_sufficiency_recheck_runtime import (
@@ -204,6 +205,96 @@ def test_legacy_i2e_prepare_rejects_after_o2_shell_activation() -> None:
         kernel.authorize_followup_final_answer_packet_prepare()
 
     assert kernel.state.final_answer_authority_projection == {}
+
+
+def test_pre_authorized_legacy_i2e_reduce_rejects_after_o2_shell_activation() -> None:
+    kernel = _m2n_o1_kernel()
+    o2_action = kernel.authorize_followup_blocked_final_answer_packet_shell()
+    legacy_action = kernel.authorize_followup_final_answer_packet_prepare()
+    o2_result = _execute_o2(kernel, action=o2_action)
+    legacy_result = execute_followup_final_answer_packet_prepare_action(
+        legacy_action,
+        followup_sufficiency_recheck_state=(
+            kernel.state.followup_sufficiency_recheck_state
+        ),
+        sufficiency_judgment_projection=kernel.state.sufficiency_judgment_projection,
+        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
+        followup_evidence_intake_state=kernel.state.followup_evidence_intake_state,
+    )
+
+    kernel.reduce(o2_result.observation)
+    snapshot = {
+        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
+        "final_answer_authority_projection": deepcopy(
+            kernel.state.final_answer_authority_projection
+        ),
+        "followup_blocked_final_answer_packet_shell_state": deepcopy(
+            kernel.state.followup_blocked_final_answer_packet_shell_state
+        ),
+        "followup_blocked_final_answer_packet_shell_projection": deepcopy(
+            kernel.state.followup_blocked_final_answer_packet_shell_projection
+        ),
+        "followup_blocked_final_answer_packet_shell_history": deepcopy(
+            kernel.state.followup_blocked_final_answer_packet_shell_history
+        ),
+        "followup_final_answer_packet_state": deepcopy(
+            kernel.state.followup_final_answer_packet_state
+        ),
+        "followup_final_answer_packet_projection": deepcopy(
+            kernel.state.followup_final_answer_packet_projection
+        ),
+        "followup_final_answer_packet_history": deepcopy(
+            kernel.state.followup_final_answer_packet_history
+        ),
+        "projections": deepcopy(kernel.state.projections),
+        "action_statuses": deepcopy(kernel.state.action_statuses),
+        "stage_statuses": deepcopy(kernel.state.stage_statuses),
+        "reduced_action_ids": deepcopy(kernel.state.reduced_action_ids),
+        "observations": deepcopy(kernel.state.observations),
+        "next_observation_sequence": kernel.state.next_observation_sequence,
+    }
+
+    with pytest.raises(RunKernelTransitionError, match="cannot reduce after AG-96I3O2"):
+        kernel.reduce(legacy_result.observation)
+
+    assert kernel.state.final_answer_packet == snapshot["final_answer_packet"]
+    assert kernel.state.final_answer_authority_projection == {}
+    assert kernel.state.final_answer_authority_projection == snapshot[
+        "final_answer_authority_projection"
+    ]
+    assert kernel.state.followup_blocked_final_answer_packet_shell_state == snapshot[
+        "followup_blocked_final_answer_packet_shell_state"
+    ]
+    assert kernel.state.followup_blocked_final_answer_packet_shell_projection == snapshot[
+        "followup_blocked_final_answer_packet_shell_projection"
+    ]
+    assert kernel.state.followup_blocked_final_answer_packet_shell_history == snapshot[
+        "followup_blocked_final_answer_packet_shell_history"
+    ]
+    assert kernel.state.followup_final_answer_packet_state == snapshot[
+        "followup_final_answer_packet_state"
+    ]
+    assert kernel.state.followup_final_answer_packet_projection == snapshot[
+        "followup_final_answer_packet_projection"
+    ]
+    assert kernel.state.followup_final_answer_packet_history == snapshot[
+        "followup_final_answer_packet_history"
+    ]
+    assert kernel.state.projections == snapshot["projections"]
+    assert kernel.state.action_statuses == snapshot["action_statuses"]
+    assert kernel.state.stage_statuses == snapshot["stage_statuses"]
+    assert kernel.state.reduced_action_ids == snapshot["reduced_action_ids"]
+    assert kernel.state.observations == snapshot["observations"]
+    assert kernel.state.next_observation_sequence == snapshot[
+        "next_observation_sequence"
+    ]
+
+    packet = kernel.state.final_answer_packet
+    assert packet["owner"] == "RunKernel.FinalAnswerPacket"
+    assert packet["canonical_state"] is True
+    assert packet["readiness_status"] == "blocked"
+    assert packet["final_answer_allowed"] is False
+    assert packet["answer_ready"] is False
 
 
 @pytest.mark.parametrize(
