@@ -187,6 +187,35 @@ def test_p1_selects_only_expected_official_candidate_and_excludes_secondary() ->
     _assert_no_sensitive_payload(rejected)
 
 
+def test_p1_excludes_stale_sibling_linked_to_satisfied_requirement() -> None:
+    kernel = _kernel_through_o2(mutator=_add_stale_official_sibling_candidate)
+
+    action = kernel.authorize_followup_final_evidence_selection()
+    result = _execute_p1(kernel, action=action)
+    kernel.reduce(result.observation)
+
+    packet = kernel.state.final_answer_packet
+    assert [item["candidate_id"] for item in packet["evidence_allowed"]] == [
+        OFFICIAL_CANDIDATE_ID
+    ]
+    assert [item["candidate_id"] for item in packet["evidence_excluded"]] == [
+        "stale_official_rules_2025"
+    ]
+    rejected = packet["evidence_excluded"][0]
+    assert rejected["status"] == "evidence_excluded"
+    assert rejected["source_class"] == "official_current_rules"
+    assert rejected["source_tier"] == "official"
+    assert rejected["currentness_signal"] == "stale"
+    assert rejected["reason"] == "stale_currentness"
+    assert packet["citation_eligible"] == []
+    assert packet["citation_ineligible"] == []
+    assert kernel.state.final_answer_authority_projection == {}
+    assert packet["author_input_refs"] == {}
+    assert "author_payload_ref" not in packet
+    with pytest.raises(RunKernelTransitionError, match="reduced follow-up FinalAnswerPacket"):
+        kernel.authorize_followup_author_gate()
+
+
 @pytest.mark.parametrize(
     ("mutator_name", "label"),
     [
@@ -225,6 +254,20 @@ def test_p1_does_not_select_noneligible_canonical_ledger_candidates(
     _assert_p1_snapshot_unchanged(kernel, snapshot)
     assert kernel.state.final_answer_packet["evidence_allowed"] == []
     assert kernel.state.final_answer_packet["final_evidence_selected"] is False
+
+
+def test_p1_reduce_rejects_no_qualifying_candidate_before_bookkeeping() -> None:
+    kernel = _kernel_through_o2(mutator=_set_unreadable)
+    action = kernel.authorize_followup_final_evidence_selection()
+    snapshot = _p1_state_snapshot(kernel)
+
+    with pytest.raises(RunKernelTransitionError, match="accepted satisfied EvidenceLedger custody"):
+        kernel.reduce(_minimal_p1_observation(action))
+
+    _assert_p1_snapshot_unchanged(kernel, snapshot)
+    assert kernel.state.final_answer_packet["evidence_allowed"] == []
+    assert kernel.state.final_answer_packet["final_evidence_selected"] is False
+    assert kernel.state.final_answer_authority_projection == {}
 
 
 def test_p1_citation_and_role_surfaces_remain_closed() -> None:
@@ -684,6 +727,37 @@ def _p1_observation_from_state(action: Any, state: dict[str, Any]) -> Observatio
     )
 
 
+def _minimal_p1_observation(action: Any) -> Observation:
+    state = {
+        **dict(action.inputs),
+        "observation_id": f"{action.action_id}:minimal-observation",
+        "final_evidence_selected": True,
+        "final_answer_allowed": False,
+        "answer_ready": False,
+        "citation_eligible": [],
+        "citation_ineligible": [],
+        "citations_rendered": False,
+        "citation_rendering_changed": False,
+        "citation_behavior_changed": False,
+        "citation_formatter_invoked": False,
+        "author_activation_allowed": False,
+        "author_payload_created": False,
+        "author_execution_deferred": True,
+        "analyst_activation_allowed": False,
+        "analyst_handoff_created": False,
+        "economist_activation_allowed": False,
+        "economist_handoff_created": False,
+        "economist_code_execution_allowed": False,
+        "prompt_behavior_changed": False,
+        "product_answer_behavior_changed": False,
+        "live_validation_not_run": True,
+        "citation_eligibility_deferred": True,
+        "not_role_consumption_payload": True,
+        "author_input_refs": {},
+    }
+    return _p1_observation_from_state(action, state)
+
+
 def _stale_legacy_i2e_action(kernel: RunKernel) -> Any:
     shell = deepcopy(kernel.state.followup_blocked_final_answer_packet_shell_state)
     shell_projection = deepcopy(
@@ -817,6 +891,48 @@ def _add_secondary_candidate(kernel: RunKernel) -> None:
             requirement_id=OFFICIAL_REQUIREMENT_ID,
             candidate_id=candidate_id,
             link_reason="test_secondary_candidate",
+            link_status="accepted",
+        )
+    )
+
+
+def _add_stale_official_sibling_candidate(kernel: RunKernel) -> None:
+    candidate_id = "stale_official_rules_2025"
+    kernel.state.evidence_ledger.candidates[candidate_id] = EvidenceCandidate(
+        candidate_id=candidate_id,
+        url="https://www.irs.gov/tax-professionals/stale-rates",
+        title="Stale official rates",
+        domain="irs.gov",
+        source_tier="official",
+        source_class="official_current_rules",
+        currentness_signal="stale",
+        readable_status="readable",
+        fetchable_status="fetched",
+        fact_disposition=CandidateDisposition.ACCEPTED,
+        eligible_for_stronger_obligation=True,
+        contextual_only=False,
+        lower_tier=False,
+        final_evidence_eligible=False,
+    )
+    kernel.state.evidence_ledger.custody_records.append(
+        CandidateCustodyRecord(
+            candidate_id=candidate_id,
+            record_kind=CandidateCustodyKind.FACT,
+            disposition=CandidateDisposition.ACCEPTED,
+            reason="test stale official sibling",
+            source="test",
+            requirement_id=OFFICIAL_REQUIREMENT_ID,
+            observation_id="ag96i3p1:test-stale-sibling",
+        )
+    )
+    requirement = kernel.state.evidence_ledger.requirements[OFFICIAL_REQUIREMENT_ID]
+    if candidate_id not in requirement.linked_candidate_ids:
+        requirement.linked_candidate_ids.append(candidate_id)
+    kernel.state.evidence_ledger.links.append(
+        SourceObligationLink(
+            requirement_id=OFFICIAL_REQUIREMENT_ID,
+            candidate_id=candidate_id,
+            link_reason="test_stale_official_sibling",
             link_status="accepted",
         )
     )

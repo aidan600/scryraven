@@ -4069,7 +4069,7 @@ def _select_final_evidence_from_ledger(
             for requirement in satisfied_requirements
             if candidate_id in _strings(requirement.get("linked_candidate_ids"))
         )
-        reason = _p1_candidate_rejection_reason(
+        reason, selected_requirement = _p1_candidate_rejection_reason(
             candidate,
             linked_requirements=linked,
             custody_records=tuple(custody_by_candidate.get(candidate_id, ())),
@@ -4079,7 +4079,7 @@ def _select_final_evidence_from_ledger(
             selected.append(
                 _p1_final_evidence_ref(
                     candidate,
-                    requirement=linked[0],
+                    requirement=selected_requirement,
                     action_inputs=action_inputs,
                     position=position,
                     status=EvidenceAuthorityStatus.EVIDENCE_ALLOWED.value,
@@ -4094,7 +4094,7 @@ def _select_final_evidence_from_ledger(
             rejected.append(
                 _p1_final_evidence_ref(
                     candidate,
-                    requirement=linked[0] if linked else {},
+                    requirement=selected_requirement,
                     action_inputs=action_inputs,
                     position=None,
                     status=EvidenceAuthorityStatus.EVIDENCE_EXCLUDED.value,
@@ -4113,7 +4113,7 @@ def _select_final_evidence_from_ledger(
         "rejected_count": len(rejected),
         "selection_policy": (
             "accepted_fact_custody_linked_to_satisfied_requirement_"
-            "within_expected_source_classes"
+            "with_candidate_level_requirement_fit"
         ),
     }
     return selected, rejected, summary
@@ -4174,26 +4174,78 @@ def _p1_candidate_rejection_reason(
     linked_requirements: Sequence[Mapping[str, Any]],
     custody_records: Sequence[Mapping[str, Any]],
     expected_source_classes: set[str],
-) -> str | None:
+) -> tuple[str | None, Mapping[str, Any]]:
     if not linked_requirements:
-        return "not_linked_to_satisfied_source_requirement"
+        return "not_linked_to_satisfied_source_requirement", {}
     if candidate.get("fact_disposition") != "accepted":
-        return "candidate_fact_disposition_not_accepted"
+        return (
+            "candidate_fact_disposition_not_accepted",
+            linked_requirements[0],
+        )
     if not any(
         record.get("record_kind") == "fact"
         and record.get("disposition") == "accepted"
         for record in custody_records
     ):
-        return "missing_accepted_fact_custody_record"
+        return "missing_accepted_fact_custody_record", linked_requirements[0]
     candidate_class = clean_token(candidate.get("source_class"))
     if expected_source_classes and candidate_class not in expected_source_classes:
-        return "source_class_outside_expected_source_classes"
-    if candidate.get("contextual_only") is True or candidate.get("lower_tier") is True:
-        return "contextual_or_lower_tier_candidate_not_selectable"
+        return (
+            "source_class_outside_expected_source_classes",
+            linked_requirements[0],
+        )
+    first_fit_failure: str | None = None
+    for requirement in linked_requirements:
+        fit_failure = _p1_requirement_fit_rejection_reason(candidate, requirement)
+        if fit_failure is None:
+            return None, requirement
+        if first_fit_failure is None:
+            first_fit_failure = fit_failure
+    return (
+        first_fit_failure or "candidate_does_not_satisfy_requirement",
+        linked_requirements[0],
+    )
+
+
+def _p1_requirement_fit_rejection_reason(
+    candidate: Mapping[str, Any],
+    requirement: Mapping[str, Any],
+) -> str | None:
     if clean_token(candidate.get("readable_status")) in _p1_bad_readability():
         return "candidate_unreadable"
     if clean_token(candidate.get("fetchable_status")) in _p1_bad_readability():
         return "candidate_unfetchable"
+    if candidate.get("contextual_only") is True:
+        return "contextual_candidate_not_selectable"
+    if candidate.get("lower_tier") is True:
+        return "lower_tier_candidate_not_selectable"
+    candidate_class = clean_token(candidate.get("source_class"))
+    candidate_tier = clean_token(candidate.get("source_tier"))
+    if _p1_strong_requirement(requirement):
+        if candidate.get("eligible_for_stronger_obligation") is not True:
+            return "candidate_does_not_satisfy_requirement"
+        if clean_token(candidate.get("currentness_signal")) in _p1_bad_currentness():
+            return "stale_currentness"
+    required_class = clean_token(requirement.get("required_source_class"))
+    if required_class and required_class not in {"unknown", "not_observable"}:
+        if required_class == "official_current_rules" and (
+            candidate_tier in _p1_strong_source_tiers()
+        ):
+            pass
+        elif required_class == "current_primary_or_official" and (
+            candidate_class
+            in {
+                "official_current_rules",
+                "legal_or_regulatory_text",
+                "primary_source_documents",
+            }
+        ):
+            pass
+        elif candidate_class != required_class:
+            return "required_source_class_mismatch"
+    required_tier = clean_token(requirement.get("required_source_tier"))
+    if required_tier and candidate_tier != required_tier:
+        return "required_source_tier_mismatch"
     return None
 
 
@@ -4293,6 +4345,60 @@ def _p1_bad_readability() -> frozenset[str]:
             "no_readable_text",
         }
     )
+
+
+def _p1_bad_currentness() -> frozenset[str]:
+    return frozenset(
+        {
+            "stale",
+            "outdated",
+            "historical_only",
+            "off_topic",
+            "not_current",
+        }
+    )
+
+
+def _p1_strong_requirement(requirement: Mapping[str, Any]) -> bool:
+    kind = clean_token(requirement.get("requirement_kind"))
+    required_class = clean_token(requirement.get("required_source_class"))
+    required_tier = clean_token(requirement.get("required_source_tier"))
+    return (
+        kind in _p1_strong_requirement_kinds()
+        or required_class in _p1_strong_source_classes()
+        or required_tier in _p1_strong_source_tiers()
+    )
+
+
+def _p1_strong_requirement_kinds() -> frozenset[str]:
+    return frozenset(
+        {
+            "official",
+            "current",
+            "legal",
+            "canonical",
+            "source_bound",
+            "official_current",
+            "official_current_legal",
+        }
+    )
+
+
+def _p1_strong_source_classes() -> frozenset[str]:
+    return frozenset(
+        {
+            "official_current_rules",
+            "legal_or_regulatory_text",
+            "current_primary_or_official",
+            "primary_source_documents",
+            "archival_primary_text",
+            "historical_legal_text",
+        }
+    )
+
+
+def _p1_strong_source_tiers() -> frozenset[str]:
+    return frozenset({"official", "primary", "canonical"})
 
 
 def _reject_truthy_blocked_shell_downstream_flags(
