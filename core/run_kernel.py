@@ -1301,10 +1301,48 @@ class RunKernel:
         if intake_state.get("evidence_ledger_intake_mode") not in {
             "fixture_only_followup_intake",
             "bounded_provider_job_offline_followup_intake",
+            AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
         }:
             raise RunKernelTransitionError(
                 "follow-up sufficiency recheck requires known intake state"
             )
+        if intake_state.get(
+            "evidence_ledger_intake_mode"
+        ) == AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE:
+            if intake_state.get("runtime_evidence_intake_occurred") is not True:
+                raise RunKernelTransitionError(
+                    "AG-96I3M2 sufficiency recheck requires runtime "
+                    "EvidenceLedger intake"
+                )
+            if intake_state.get("source_obligation_satisfied") not in {
+                True,
+                False,
+            }:
+                raise RunKernelTransitionError(
+                    "AG-96I3M2 sufficiency recheck requires explicit source "
+                    "obligation posture"
+                )
+            if intake_state.get("sufficiency_judgment_recheck_deferred") is not True:
+                raise RunKernelTransitionError(
+                    "AG-96I3M2 sufficiency recheck requires deferred "
+                    "SufficiencyJudgment"
+                )
+            if intake_state.get("citation_eligible") is not False:
+                raise RunKernelTransitionError(
+                    "AG-96I3M2 sufficiency recheck must keep citations closed"
+                )
+            if intake_state.get("final_evidence_satisfied") is not False:
+                raise RunKernelTransitionError(
+                    "AG-96I3M2 sufficiency recheck must not consume final evidence"
+                )
+            if intake_state.get("author_activation_allowed") is not False:
+                raise RunKernelTransitionError(
+                    "AG-96I3M2 sufficiency recheck must keep Author closed"
+                )
+            if intake_state.get("final_answer_packet_updated") is not False:
+                raise RunKernelTransitionError(
+                    "AG-96I3M2 sufficiency recheck must not update FinalAnswerPacket"
+                )
         ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
         if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
             raise RunKernelTransitionError(

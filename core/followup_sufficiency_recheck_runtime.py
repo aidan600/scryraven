@@ -41,6 +41,9 @@ FOLLOWUP_SUFFICIENCY_RECHECK_MODE = "fixture_only_followup_sufficiency_recheck"
 FOLLOWUP_SUFFICIENCY_RECHECK_GATE_REASON = (
     "ag96i2d_fixture_only_sufficiency_recheck"
 )
+AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE = (
+    "ag96i3m2_admission_review_followup_intake"
+)
 
 
 class FollowupSufficiencyRequirementStatus(str, Enum):
@@ -85,8 +88,13 @@ class FollowupSufficiencyRecheckRequest:
     evidence_ledger_intake_mode: str
     evidence_ledger_projection_digest: str
     evidence_ledger_custody_summary: Mapping[str, Any]
+    evidence_ledger_observation_id: str
+    evidence_ledger_counts: Mapping[str, Any]
     source_requirement_statuses: tuple[Mapping[str, Any], ...]
     custody_gaps: tuple[Mapping[str, Any], ...]
+    official_current_custody_status: Mapping[str, Any]
+    ag96i3m2_admission_review_candidate: Mapping[str, Any]
+    ag96i3m2_evidence_ledger_intake_binding: Mapping[str, Any]
     provider_execution_licensed: bool
     sufficiency_recheck_mode: str
     final_answer_packet_deferred: bool
@@ -145,10 +153,24 @@ class FollowupSufficiencyRecheckRequest:
             "evidence_ledger_custody_summary": safe_json(
                 self.evidence_ledger_custody_summary
             ),
+            "evidence_ledger_observation_id": clean_text(
+                self.evidence_ledger_observation_id,
+                limit=220,
+            ),
+            "evidence_ledger_counts": safe_json(self.evidence_ledger_counts),
             "source_requirement_statuses": [
                 safe_json(item) for item in self.source_requirement_statuses
             ],
             "custody_gaps": [safe_json(item) for item in self.custody_gaps],
+            "official_current_custody_status": safe_json(
+                self.official_current_custody_status
+            ),
+            "ag96i3m2_admission_review_candidate": safe_json(
+                self.ag96i3m2_admission_review_candidate
+            ),
+            "ag96i3m2_evidence_ledger_intake_binding": safe_json(
+                self.ag96i3m2_evidence_ledger_intake_binding
+            ),
             "fixture_only_provenance": _fixture_only_provenance(),
             "provider_execution_licensed": bool(self.provider_execution_licensed),
             "sufficiency_recheck_mode": clean_token(self.sufficiency_recheck_mode),
@@ -257,11 +279,27 @@ class FollowupSufficiencyRecheckObservation:
                 "evidence_ledger_custody_summary",
                 {},
             ),
+            "evidence_ledger_observation_id": request.get(
+                "evidence_ledger_observation_id"
+            ),
+            "evidence_ledger_counts": request.get("evidence_ledger_counts", {}),
             "source_requirement_statuses": request.get(
                 "source_requirement_statuses",
                 [],
             ),
             "custody_gaps": request.get("custody_gaps", []),
+            "official_current_custody_status": request.get(
+                "official_current_custody_status",
+                {},
+            ),
+            "ag96i3m2_admission_review_candidate": request.get(
+                "ag96i3m2_admission_review_candidate",
+                {},
+            ),
+            "ag96i3m2_evidence_ledger_intake_binding": request.get(
+                "ag96i3m2_evidence_ledger_intake_binding",
+                {},
+            ),
             "fixture_only_provenance": request.get("fixture_only_provenance", {}),
             "provider_execution_licensed": request.get(
                 "provider_execution_licensed"
@@ -382,6 +420,11 @@ def build_followup_sufficiency_recheck_record(
         requirement_ids=_strings(action.get("requirement_ids")),
         source_obligation_id=action.get("source_obligation_id"),
     )
+    if _ag96i3m2_source_obligation_unsatisfied(intake):
+        statuses = _unsatisfied_source_requirement_statuses(
+            action_inputs=action,
+            statuses=statuses,
+        )
     custody_gaps = tuple(
         _mapping(item)
         for item in _list(ledger.get("custody_gaps"))
@@ -389,6 +432,11 @@ def build_followup_sufficiency_recheck_record(
     )
     custody_summary = evidence_ledger_custody_summary(ledger)
     digest = evidence_ledger_projection_digest(ledger)
+    m2_summary = _ag96i3m2_recheck_summary(
+        intake_state=intake,
+        evidence_ledger_projection=ledger,
+        source_requirement_statuses=statuses,
+    )
     judgment_input = _build_sufficiency_input(
         action_inputs=action,
         ledger_projection=ledger,
@@ -544,8 +592,21 @@ def build_followup_sufficiency_recheck_record(
         ),
         evidence_ledger_projection_digest=digest,
         evidence_ledger_custody_summary=custody_summary,
+        evidence_ledger_observation_id=str(
+            m2_summary.get("evidence_ledger_observation_id") or ""
+        ),
+        evidence_ledger_counts=_mapping(m2_summary.get("evidence_ledger_counts")),
         source_requirement_statuses=statuses,
         custody_gaps=custody_gaps,
+        official_current_custody_status=_mapping(
+            m2_summary.get("official_current_custody_status")
+        ),
+        ag96i3m2_admission_review_candidate=_mapping(
+            m2_summary.get("ag96i3m2_admission_review_candidate")
+        ),
+        ag96i3m2_evidence_ledger_intake_binding=_mapping(
+            m2_summary.get("ag96i3m2_evidence_ledger_intake_binding")
+        ),
         provider_execution_licensed=False,
         sufficiency_recheck_mode=FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
         final_answer_packet_deferred=True,
@@ -720,7 +781,9 @@ def _validate_intake_state(state: Mapping[str, Any]) -> None:
     if execution_mode not in {"fixture_only", FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE}:
         raise PermissionError("follow-up sufficiency recheck requires known execution")
     intake_mode = clean_token(state.get("evidence_ledger_intake_mode"))
-    if execution_mode == FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE:
+    if intake_mode == AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE:
+        _validate_ag96i3m2_intake_state(state)
+    elif execution_mode == FOLLOWUP_PROVIDER_JOB_OFFLINE_EXECUTION_MODE:
         if intake_mode != "bounded_provider_job_offline_followup_intake":
             raise PermissionError(
                 "follow-up sufficiency recheck requires offline provider-job intake"
@@ -733,6 +796,12 @@ def _validate_intake_state(state: Mapping[str, Any]) -> None:
         raise PermissionError("follow-up sufficiency recheck cannot consume final evidence satisfaction")
     if state.get("citation_eligible") is not False:
         raise PermissionError("follow-up sufficiency recheck cannot consume citation eligibility")
+    if state.get("author_activation_allowed", False) is not False:
+        raise PermissionError("follow-up sufficiency recheck cannot activate Author")
+    if state.get("final_answer_packet_updated", False) is not False:
+        raise PermissionError("follow-up sufficiency recheck cannot consume FinalAnswerPacket updates")
+    if state.get("sufficiency_judgment_recheck_deferred", True) is not True:
+        raise PermissionError("follow-up sufficiency recheck requires deferred SufficiencyJudgment")
     flags = _mapping(state.get("behavior_boundary_flags"))
     for flag in (
         "live_provider_call_executed",
@@ -828,6 +897,166 @@ def _validate_action_inputs(
         evidence_ledger_projection_digest(evidence_ledger_projection)
     ):
         raise PermissionError("authorized sufficiency recheck EvidenceLedger digest mismatch")
+
+
+def _validate_ag96i3m2_intake_state(state: Mapping[str, Any]) -> None:
+    if state.get("runtime_evidence_intake_occurred") is not True:
+        raise PermissionError(
+            "AG-96I3M2 sufficiency recheck requires runtime EvidenceLedger intake"
+        )
+    if state.get("source_obligation_satisfied") not in {True, False}:
+        raise PermissionError(
+            "AG-96I3M2 sufficiency recheck requires explicit source obligation posture"
+        )
+    if not _mapping(state.get("ag96i3m2_admission_review_candidate")):
+        raise PermissionError(
+            "AG-96I3M2 sufficiency recheck requires admission-review summary"
+        )
+    if not _mapping(state.get("ag96i3m2_evidence_ledger_intake_binding")):
+        raise PermissionError(
+            "AG-96I3M2 sufficiency recheck requires EvidenceLedger binding summary"
+        )
+    adapter_projection = _mapping(state.get("ag96i3m1_adapter_projection"))
+    if adapter_projection.get("accepted") is not True:
+        raise PermissionError(
+            "AG-96I3M2 sufficiency recheck requires accepted intake adapter state"
+        )
+    if state.get("sufficiency_judgment_rechecked") is not False:
+        raise PermissionError(
+            "AG-96I3M2 sufficiency recheck requires unrechecked intake state"
+        )
+
+
+def _ag96i3m2_source_obligation_unsatisfied(
+    intake_state: Mapping[str, Any],
+) -> bool:
+    return (
+        clean_token(intake_state.get("evidence_ledger_intake_mode"))
+        == AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+        and intake_state.get("source_obligation_satisfied") is False
+    )
+
+
+def _unsatisfied_source_requirement_statuses(
+    *,
+    action_inputs: Mapping[str, Any],
+    statuses: Sequence[Mapping[str, Any]],
+) -> tuple[Mapping[str, Any], ...]:
+    if statuses:
+        return tuple(
+            {
+                **_mapping(item),
+                "status": FollowupSufficiencyRequirementStatus.UNSATISFIED.value,
+                "reason": "ag96i3m2_source_obligation_not_satisfied",
+            }
+            for item in statuses
+        )
+    required_source_class = _required_source_class(
+        _strings(action_inputs.get("expected_source_classes")),
+        provider_job_kind=action_inputs.get("provider_job_kind"),
+    )
+    return (
+        {
+            "requirement_id": clean_token(_ledger_requirement_id(action_inputs)),
+            "status": FollowupSufficiencyRequirementStatus.UNSATISFIED.value,
+            "required_source_class": required_source_class,
+            "required_source_tier": _required_source_tier(required_source_class),
+            "required_currentness": "current",
+            "linked_candidate_ids": [],
+            "reason": "ag96i3m2_source_obligation_not_satisfied",
+        },
+    )
+
+
+def _ag96i3m2_recheck_summary(
+    *,
+    intake_state: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any],
+    source_requirement_statuses: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    summary = {
+        "evidence_ledger_observation_id": _evidence_ledger_observation_id(
+            intake_state
+        ),
+        "evidence_ledger_counts": _evidence_ledger_counts(
+            evidence_ledger_projection
+        ),
+        "official_current_custody_status": _official_current_custody_status(
+            intake_state=intake_state,
+            source_requirement_statuses=source_requirement_statuses,
+        ),
+    }
+    if clean_token(intake_state.get("evidence_ledger_intake_mode")) == (
+        AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+    ):
+        summary.update(
+            {
+                "ag96i3m2_admission_review_candidate": _mapping(
+                    intake_state.get("ag96i3m2_admission_review_candidate")
+                ),
+                "ag96i3m2_evidence_ledger_intake_binding": _mapping(
+                    intake_state.get("ag96i3m2_evidence_ledger_intake_binding")
+                ),
+            }
+        )
+    return summary
+
+
+def _evidence_ledger_observation_id(intake_state: Mapping[str, Any]) -> str:
+    ledger_observation = _mapping(intake_state.get("ledger_observation"))
+    return clean_text(ledger_observation.get("observation_id"), limit=220)
+
+
+def _evidence_ledger_counts(
+    evidence_ledger_projection: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "candidate_count": int(evidence_ledger_projection.get("candidate_count") or 0),
+        "requirement_count": int(
+            evidence_ledger_projection.get("requirement_count") or 0
+        ),
+        "custody_record_count": int(
+            evidence_ledger_projection.get("custody_record_count") or 0
+        ),
+        "custody_gap_count": len(_list(evidence_ledger_projection.get("custody_gaps"))),
+        "observation_ref_count": len(
+            _list(evidence_ledger_projection.get("observation_refs"))
+        ),
+    }
+
+
+def _official_current_custody_status(
+    *,
+    intake_state: Mapping[str, Any],
+    source_requirement_statuses: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    statuses = [_mapping(item) for item in source_requirement_statuses]
+    official_current_statuses = [
+        item
+        for item in statuses
+        if item.get("required_source_class")
+        in {"official_current_rules", "current_primary_or_official"}
+        or item.get("required_source_tier") == "official"
+        or item.get("required_currentness") == "current"
+    ]
+    return {
+        "source_obligation_satisfied": intake_state.get(
+            "source_obligation_satisfied"
+        ),
+        "runtime_evidence_intake_occurred": intake_state.get(
+            "runtime_evidence_intake_occurred"
+        ),
+        "official_current_requirement_count": len(official_current_statuses),
+        "official_current_satisfied": bool(official_current_statuses)
+        and all(
+            item.get("status")
+            == FollowupSufficiencyRequirementStatus.SATISFIED.value
+            for item in official_current_statuses
+        ),
+        "source_requirement_statuses": [
+            safe_json(item) for item in official_current_statuses
+        ],
+    }
 
 
 def _source_requirement_statuses(
