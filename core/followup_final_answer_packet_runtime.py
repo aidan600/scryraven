@@ -56,6 +56,21 @@ AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE = (
 FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_GATE_REASON = (
     "ag96i3o1_final_answer_packet_preparation_readiness"
 )
+FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_SCHEMA_VERSION = (
+    "followup_blocked_final_answer_packet_shell_ag96i3o2_v1"
+)
+FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_TRACE_KEY = (
+    "followup_blocked_final_answer_packet_shell_runtime"
+)
+FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE = (
+    "followup_blocked_final_answer_packet_shell"
+)
+AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE = (
+    "ag96i3o2_blocked_final_answer_packet_shell"
+)
+FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_GATE_REASON = (
+    "ag96i3o2_blocked_final_answer_packet_shell"
+)
 
 _FORBIDDEN_AUTHORITY_REF_FIELDS = frozenset(
     {
@@ -784,6 +799,451 @@ class FollowupFinalAnswerPacketReadinessActionResult:
     observation: Any
 
 
+@dataclass(frozen=True, slots=True)
+class FollowupBlockedFinalAnswerPacketShellRequest:
+    request_id: str
+    run_id: str
+    checkpoint_id: str
+    followup_authorization_consumption_id: str
+    sealed_candidate_id: str
+    followup_execution_id: str
+    execution_id: str
+    followup_execution_observation_id: str
+    followup_evidence_intake_id: str
+    intake_id: str
+    followup_evidence_intake_observation_id: str
+    followup_sufficiency_recheck_id: str
+    recheck_id: str
+    followup_sufficiency_recheck_observation_id: str
+    packet_preparation_readiness_id: str
+    readiness_observation_id: str
+    provider_job_kind: str
+    component_id: str
+    source_obligation_id: str
+    requirement_ids: tuple[str, ...]
+    expected_source_classes: tuple[str, ...]
+    fixture_execution_mode: str
+    execution_mode: str
+    evidence_ledger_intake_mode: str
+    sufficiency_recheck_mode: str
+    packet_preparation_readiness_mode: str
+    blocked_final_answer_packet_mode: str
+    evidence_ledger_projection_digest: str
+    sufficiency_judgment_digest: str
+    followup_sufficiency_recheck_digest: str
+    followup_final_answer_packet_readiness_digest: str
+    provider_execution_licensed: bool
+    final_evidence_selected: bool
+    citation_eligible: bool
+    citations_rendered: bool
+    citation_rendering_changed: bool
+    citation_behavior_changed: bool
+    citation_formatter_invoked: bool
+    author_activation_allowed: bool
+    author_payload_created: bool
+    author_execution_deferred: bool
+    analyst_activation_allowed: bool
+    analyst_handoff_created: bool
+    economist_activation_allowed: bool
+    economist_handoff_created: bool
+    economist_code_execution_allowed: bool
+    answer_ready: bool
+    prompt_behavior_changed: bool
+    product_answer_behavior_changed: bool
+    live_validation_not_run: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_SCHEMA_VERSION,
+            "record_type": "followup_blocked_final_answer_packet_shell_request",
+            "request_id": clean_text(self.request_id, limit=220),
+            "run_id": clean_token(self.run_id),
+            "checkpoint_id": clean_token(self.checkpoint_id),
+            "followup_authorization_consumption_id": clean_text(
+                self.followup_authorization_consumption_id,
+                limit=220,
+            ),
+            "sealed_candidate_id": clean_token(self.sealed_candidate_id),
+            "followup_execution_id": clean_text(
+                self.followup_execution_id,
+                limit=220,
+            ),
+            "execution_id": clean_text(self.execution_id, limit=220),
+            "followup_execution_observation_id": clean_text(
+                self.followup_execution_observation_id,
+                limit=220,
+            ),
+            "followup_evidence_intake_id": clean_text(
+                self.followup_evidence_intake_id,
+                limit=220,
+            ),
+            "intake_id": clean_text(self.intake_id, limit=220),
+            "followup_evidence_intake_observation_id": clean_text(
+                self.followup_evidence_intake_observation_id,
+                limit=220,
+            ),
+            "followup_sufficiency_recheck_id": clean_text(
+                self.followup_sufficiency_recheck_id,
+                limit=220,
+            ),
+            "recheck_id": clean_text(self.recheck_id, limit=220),
+            "followup_sufficiency_recheck_observation_id": clean_text(
+                self.followup_sufficiency_recheck_observation_id,
+                limit=220,
+            ),
+            "packet_preparation_readiness_id": clean_text(
+                self.packet_preparation_readiness_id,
+                limit=220,
+            ),
+            "readiness_observation_id": clean_text(
+                self.readiness_observation_id,
+                limit=220,
+            ),
+            "provider_job_kind": clean_token(self.provider_job_kind),
+            "component_id": clean_token(self.component_id),
+            "source_obligation_id": clean_token(self.source_obligation_id),
+            "requirement_ids": [clean_token(item) for item in self.requirement_ids],
+            "expected_source_classes": [
+                clean_token(item) for item in self.expected_source_classes
+            ],
+            "fixture_execution_mode": clean_token(self.fixture_execution_mode),
+            "execution_mode": clean_token(self.execution_mode),
+            "evidence_ledger_intake_mode": clean_token(
+                self.evidence_ledger_intake_mode
+            ),
+            "sufficiency_recheck_mode": clean_token(self.sufficiency_recheck_mode),
+            "packet_preparation_readiness_mode": clean_token(
+                self.packet_preparation_readiness_mode
+            ),
+            "blocked_final_answer_packet_mode": clean_token(
+                self.blocked_final_answer_packet_mode
+            ),
+            "evidence_ledger_projection_digest": clean_text(
+                self.evidence_ledger_projection_digest,
+                limit=120,
+            ),
+            "sufficiency_judgment_digest": clean_text(
+                self.sufficiency_judgment_digest,
+                limit=120,
+            ),
+            "followup_sufficiency_recheck_digest": clean_text(
+                self.followup_sufficiency_recheck_digest,
+                limit=120,
+            ),
+            "followup_final_answer_packet_readiness_digest": clean_text(
+                self.followup_final_answer_packet_readiness_digest,
+                limit=120,
+            ),
+            "provider_execution_licensed": bool(self.provider_execution_licensed),
+            "final_evidence_selected": bool(self.final_evidence_selected),
+            "citation_eligible_flag": bool(self.citation_eligible),
+            "citations_rendered": bool(self.citations_rendered),
+            "citation_rendering_changed": bool(self.citation_rendering_changed),
+            "citation_behavior_changed": bool(self.citation_behavior_changed),
+            "citation_formatter_invoked": bool(self.citation_formatter_invoked),
+            "author_activation_allowed": bool(self.author_activation_allowed),
+            "author_payload_created": bool(self.author_payload_created),
+            "author_execution_deferred": bool(self.author_execution_deferred),
+            "analyst_activation_allowed": bool(self.analyst_activation_allowed),
+            "analyst_handoff_created": bool(self.analyst_handoff_created),
+            "economist_activation_allowed": bool(self.economist_activation_allowed),
+            "economist_handoff_created": bool(self.economist_handoff_created),
+            "economist_code_execution_allowed": bool(
+                self.economist_code_execution_allowed
+            ),
+            "answer_ready": bool(self.answer_ready),
+            "prompt_behavior_changed": bool(self.prompt_behavior_changed),
+            "product_answer_behavior_changed": bool(
+                self.product_answer_behavior_changed
+            ),
+            "live_validation_not_run": bool(self.live_validation_not_run),
+            "behavior_boundary_flags": _blocked_shell_behavior_boundary_flags(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FollowupBlockedFinalAnswerPacketShellResult:
+    result_id: str
+    status: str
+    blocked_final_answer_packet_shell_id: str
+    packet_projection: Mapping[str, Any]
+    readiness_block_reasons: tuple[str, ...]
+    mandatory_caveats: tuple[str, ...]
+    prohibited_upgrades: tuple[str, ...]
+    missing_obligations: tuple[Mapping[str, Any], ...]
+    partial_obligations: tuple[Mapping[str, Any], ...]
+    satisfied_obligations: tuple[Mapping[str, Any], ...]
+    source_bound_unknowns: tuple[Mapping[str, Any], ...]
+    unresolved_conflicts: tuple[str, ...]
+    final_packet_inputs_summary: Mapping[str, Any]
+    official_current_custody_status: Mapping[str, Any]
+    ag96i3m2_candidate_summary: Mapping[str, Any]
+    ag96i3m2_binding_summary: Mapping[str, Any]
+    ag96i3n_recheck_summary: Mapping[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        packet = _mapping(self.packet_projection)
+        return {
+            "schema_version": FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_SCHEMA_VERSION,
+            "record_type": "followup_blocked_final_answer_packet_shell_result",
+            "result_id": clean_text(self.result_id, limit=220),
+            "status": clean_token(self.status),
+            "blocked_final_answer_packet_shell_id": clean_text(
+                self.blocked_final_answer_packet_shell_id,
+                limit=220,
+            ),
+            "packet_projection": safe_json(packet),
+            "packet_id": packet.get("packet_id"),
+            "readiness_status": packet.get("readiness_status"),
+            "readiness_reasons": packet.get("readiness_reasons", []),
+            "readiness_block_reasons": [
+                clean_token(item, limit=220) for item in self.readiness_block_reasons
+            ],
+            "final_answer_allowed": False,
+            "answer_ready": False,
+            "evidence_allowed": [],
+            "evidence_excluded": [],
+            "author_evidence": [],
+            "citation_eligible": [],
+            "citation_ineligible": [],
+            "author_input_refs": {},
+            "mandatory_caveats": [
+                clean_token(item, limit=220) for item in self.mandatory_caveats
+            ],
+            "prohibited_upgrades": [
+                clean_token(item, limit=220) for item in self.prohibited_upgrades
+            ],
+            "missing_obligations": [
+                safe_json(item) for item in self.missing_obligations
+            ],
+            "partial_obligations": [
+                safe_json(item) for item in self.partial_obligations
+            ],
+            "satisfied_obligations": [
+                safe_json(item) for item in self.satisfied_obligations
+            ],
+            "source_bound_unknowns": [
+                safe_json(item) for item in self.source_bound_unknowns
+            ],
+            "unresolved_conflicts": [
+                clean_token(item, limit=220) for item in self.unresolved_conflicts
+            ],
+            "final_packet_inputs_summary": safe_json(
+                self.final_packet_inputs_summary
+            ),
+            "official_current_custody_status": safe_json(
+                self.official_current_custody_status
+            ),
+            "ag96i3m2_candidate_summary": safe_json(
+                self.ag96i3m2_candidate_summary
+            ),
+            "ag96i3m2_binding_summary": safe_json(self.ag96i3m2_binding_summary),
+            "ag96i3n_recheck_summary": safe_json(self.ag96i3n_recheck_summary),
+            "canonical_final_answer_packet_mutated": True,
+            "final_answer_packet_updated": True,
+            "final_answer_packet_rebuilt": True,
+            "blocked_final_answer_packet_shell_activated": True,
+            "final_evidence_selected": False,
+            "citation_eligible_flag": False,
+            "citations_rendered": False,
+            "citation_rendering_changed": False,
+            "citation_behavior_changed": False,
+            "citation_formatter_invoked": False,
+            "author_activation_allowed": False,
+            "author_payload_created": False,
+            "author_execution_deferred": True,
+            "analyst_activation_allowed": False,
+            "analyst_handoff_created": False,
+            "economist_activation_allowed": False,
+            "economist_handoff_created": False,
+            "economist_code_execution_allowed": False,
+            "prompt_behavior_changed": False,
+            "product_answer_behavior_changed": False,
+            "live_validation_not_run": True,
+            "not_role_consumption_payload": True,
+            "final_evidence_selection_deferred": True,
+            "citation_eligibility_deferred": True,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FollowupBlockedFinalAnswerPacketShellObservation:
+    observation_id: str
+    request: FollowupBlockedFinalAnswerPacketShellRequest
+    result: FollowupBlockedFinalAnswerPacketShellResult
+
+    def to_dict(self) -> dict[str, Any]:
+        request = self.request.to_dict()
+        result = self.result.to_dict()
+        packet = _mapping(result.get("packet_projection"))
+        return {
+            "schema_version": FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_SCHEMA_VERSION,
+            "trace_key": FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_TRACE_KEY,
+            "record_type": "followup_blocked_final_answer_packet_shell_observation",
+            "owner": "FollowupBlockedFinalAnswerPacketShellRuntime",
+            "canonical_state": False,
+            "trace_only": False,
+            "storage_only": False,
+            "observation_id": clean_text(self.observation_id, limit=220),
+            "run_id": request.get("run_id"),
+            "checkpoint_id": request.get("checkpoint_id"),
+            "followup_authorization_consumption_id": request.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": request.get("sealed_candidate_id"),
+            "followup_execution_id": request.get("followup_execution_id"),
+            "execution_id": request.get("execution_id"),
+            "followup_execution_observation_id": request.get(
+                "followup_execution_observation_id"
+            ),
+            "followup_evidence_intake_id": request.get(
+                "followup_evidence_intake_id"
+            ),
+            "intake_id": request.get("intake_id"),
+            "followup_evidence_intake_observation_id": request.get(
+                "followup_evidence_intake_observation_id"
+            ),
+            "followup_sufficiency_recheck_id": request.get(
+                "followup_sufficiency_recheck_id"
+            ),
+            "recheck_id": request.get("recheck_id"),
+            "followup_sufficiency_recheck_observation_id": request.get(
+                "followup_sufficiency_recheck_observation_id"
+            ),
+            "packet_preparation_readiness_id": request.get(
+                "packet_preparation_readiness_id"
+            ),
+            "readiness_observation_id": request.get("readiness_observation_id"),
+            "provider_job_kind": request.get("provider_job_kind"),
+            "component_id": request.get("component_id"),
+            "source_obligation_id": request.get("source_obligation_id"),
+            "requirement_ids": request.get("requirement_ids", []),
+            "expected_source_classes": request.get("expected_source_classes", []),
+            "fixture_execution_mode": request.get("fixture_execution_mode"),
+            "execution_mode": request.get("execution_mode"),
+            "evidence_ledger_intake_mode": request.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": request.get("sufficiency_recheck_mode"),
+            "packet_preparation_readiness_mode": request.get(
+                "packet_preparation_readiness_mode"
+            ),
+            "blocked_final_answer_packet_mode": request.get(
+                "blocked_final_answer_packet_mode"
+            ),
+            "evidence_ledger_projection_digest": request.get(
+                "evidence_ledger_projection_digest"
+            ),
+            "sufficiency_judgment_digest": request.get(
+                "sufficiency_judgment_digest"
+            ),
+            "followup_sufficiency_recheck_digest": request.get(
+                "followup_sufficiency_recheck_digest"
+            ),
+            "followup_final_answer_packet_readiness_digest": request.get(
+                "followup_final_answer_packet_readiness_digest"
+            ),
+            "provider_execution_licensed": request.get(
+                "provider_execution_licensed"
+            ),
+            "request": request,
+            "result": result,
+            "blocked_final_answer_packet_shell_id": result.get(
+                "blocked_final_answer_packet_shell_id"
+            ),
+            "packet_projection": packet,
+            "packet_id": packet.get("packet_id"),
+            "readiness_status": packet.get("readiness_status"),
+            "readiness_reasons": packet.get("readiness_reasons", []),
+            "readiness_block_reasons": result.get("readiness_block_reasons", []),
+            "final_answer_allowed": False,
+            "answer_ready": False,
+            "evidence_allowed": [],
+            "evidence_excluded": [],
+            "author_evidence": [],
+            "citation_eligible": [],
+            "citation_ineligible": [],
+            "author_input_refs": {},
+            "mandatory_caveats": result.get("mandatory_caveats", []),
+            "prohibited_upgrades": result.get("prohibited_upgrades", []),
+            "missing_obligations": result.get("missing_obligations", []),
+            "partial_obligations": result.get("partial_obligations", []),
+            "satisfied_obligations": result.get("satisfied_obligations", []),
+            "source_bound_unknowns": result.get("source_bound_unknowns", []),
+            "unresolved_conflicts": result.get("unresolved_conflicts", []),
+            "final_packet_inputs_summary": result.get(
+                "final_packet_inputs_summary",
+                {},
+            ),
+            "official_current_custody_status": result.get(
+                "official_current_custody_status",
+                {},
+            ),
+            "ag96i3m2_candidate_summary": result.get(
+                "ag96i3m2_candidate_summary",
+                {},
+            ),
+            "ag96i3m2_binding_summary": result.get(
+                "ag96i3m2_binding_summary",
+                {},
+            ),
+            "ag96i3n_recheck_summary": result.get("ag96i3n_recheck_summary", {}),
+            "canonical_final_answer_packet_mutated": True,
+            "final_answer_packet_updated": True,
+            "final_answer_packet_rebuilt": True,
+            "blocked_final_answer_packet_shell_activated": True,
+            "final_evidence_selected": False,
+            "citation_eligible_flag": False,
+            "citations_rendered": False,
+            "citation_rendering_changed": False,
+            "citation_behavior_changed": False,
+            "citation_formatter_invoked": False,
+            "author_activation_allowed": False,
+            "author_payload_created": False,
+            "author_execution_deferred": True,
+            "analyst_activation_allowed": False,
+            "analyst_handoff_created": False,
+            "economist_activation_allowed": False,
+            "economist_handoff_created": False,
+            "economist_code_execution_allowed": False,
+            "prompt_behavior_changed": False,
+            "product_answer_behavior_changed": False,
+            "live_validation_not_run": True,
+            "not_role_consumption_payload": True,
+            "final_evidence_selection_deferred": True,
+            "citation_eligibility_deferred": True,
+            "behavior_boundary_flags": _blocked_shell_behavior_boundary_flags(),
+            "redaction_posture": _blocked_shell_redaction_posture(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FollowupBlockedFinalAnswerPacketShellConsumptionRecord:
+    blocked_final_answer_packet_shell_id: str
+    observation: FollowupBlockedFinalAnswerPacketShellObservation
+
+    def to_dict(self) -> dict[str, Any]:
+        observed = self.observation.to_dict()
+        return {
+            **observed,
+            "record_type": (
+                "followup_blocked_final_answer_packet_shell_consumption_record"
+            ),
+            "owner": "FollowupBlockedFinalAnswerPacketShellRuntime",
+            "canonical_state": False,
+            "blocked_final_answer_packet_shell_id": clean_text(
+                self.blocked_final_answer_packet_shell_id,
+                limit=220,
+            ),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FollowupBlockedFinalAnswerPacketShellActionResult:
+    record: FollowupBlockedFinalAnswerPacketShellConsumptionRecord
+    observation: Any
+
+
 def execute_followup_final_answer_packet_prepare_action(
     action: Any,
     *,
@@ -872,6 +1332,59 @@ def execute_followup_final_answer_packet_readiness_action(
             status=RunStageStatus.COMPLETED,
             payload={
                 "followup_final_answer_packet_readiness_state": record.to_dict()
+            },
+        ),
+    )
+
+
+def execute_followup_blocked_final_answer_packet_shell_action(
+    action: Any,
+    *,
+    followup_final_answer_packet_readiness_state: Mapping[str, Any],
+    followup_sufficiency_recheck_state: Mapping[str, Any],
+    sufficiency_judgment_projection: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any],
+    followup_evidence_intake_state: Mapping[str, Any],
+) -> FollowupBlockedFinalAnswerPacketShellActionResult:
+    """Execute the AG-96I3O2 blocked canonical packet shell adapter."""
+
+    from core.run_kernel import (  # Local import avoids a module import cycle.
+        ActionType,
+        Observation,
+        ObservationType,
+        RunStageStatus,
+        validate_authorized_action,
+    )
+
+    authorized = validate_authorized_action(
+        action,
+        action_type=ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+        stage=FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE,
+        expected_observation_type=(
+            ObservationType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_PREPARED
+        ),
+    )
+    record = build_followup_blocked_final_answer_packet_shell_record(
+        action_inputs=authorized.inputs,
+        followup_final_answer_packet_readiness_state=(
+            followup_final_answer_packet_readiness_state
+        ),
+        followup_sufficiency_recheck_state=followup_sufficiency_recheck_state,
+        sufficiency_judgment_projection=sufficiency_judgment_projection,
+        evidence_ledger_projection=evidence_ledger_projection,
+        followup_evidence_intake_state=followup_evidence_intake_state,
+    )
+    _ensure_no_private_payload(record.to_dict())
+    return FollowupBlockedFinalAnswerPacketShellActionResult(
+        record=record,
+        observation=Observation.from_action(
+            authorized,
+            observation_type=(
+                ObservationType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_PREPARED
+            ),
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "followup_blocked_final_answer_packet_shell_state": record.to_dict()
             },
         ),
     )
@@ -1252,8 +1765,334 @@ def build_followup_final_answer_packet_readiness_record(
     return record
 
 
+def build_followup_blocked_final_answer_packet_shell_record(
+    *,
+    action_inputs: Mapping[str, Any],
+    followup_final_answer_packet_readiness_state: Mapping[str, Any],
+    followup_sufficiency_recheck_state: Mapping[str, Any],
+    sufficiency_judgment_projection: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any],
+    followup_evidence_intake_state: Mapping[str, Any],
+) -> FollowupBlockedFinalAnswerPacketShellConsumptionRecord:
+    action = _mapping(safe_json(action_inputs))
+    readiness = _mapping(safe_json(followup_final_answer_packet_readiness_state))
+    recheck = _mapping(safe_json(followup_sufficiency_recheck_state))
+    sufficiency = _mapping(safe_json(sufficiency_judgment_projection))
+    ledger = _mapping(safe_json(evidence_ledger_projection))
+    intake = _mapping(safe_json(followup_evidence_intake_state))
+    _validate_readiness_recheck_state(recheck)
+    _validate_sufficiency_projection(sufficiency)
+    _validate_ledger_projection(ledger)
+    _validate_readiness_intake_state(intake, action)
+    _validate_blocked_shell_readiness_state(readiness, action)
+    _validate_blocked_shell_action_inputs(
+        action,
+        readiness,
+        recheck,
+        sufficiency,
+        ledger,
+        intake,
+    )
+
+    shell_id = str(action.get("blocked_final_answer_packet_shell_id") or "")
+    readiness_id = str(action.get("packet_preparation_readiness_id") or "")
+    readiness_observation_id = str(action.get("readiness_observation_id") or "")
+    readiness_block_reasons = tuple(
+        dict.fromkeys(_strings(readiness.get("block_reasons")))
+    )
+    mandatory = tuple(dict.fromkeys(_strings(readiness.get("mandatory_caveats"))))
+    prohibited = tuple(
+        dict.fromkeys(
+            _strings(readiness.get("prohibited_upgrades"))
+            + (
+                "do_not_treat_blocked_shell_as_author_input",
+                "do_not_select_final_evidence_from_blocked_shell",
+                "do_not_create_citation_eligibility_from_blocked_shell",
+                "do_not_activate_roles_from_blocked_shell",
+            )
+        )
+    )
+    missing = _dedupe_mappings(_mappings(readiness.get("missing_obligations")))
+    partial = _dedupe_mappings(_mappings(readiness.get("partial_obligations")))
+    satisfied = _dedupe_mappings(_mappings(readiness.get("satisfied_obligations")))
+    source_bound_unknowns = _dedupe_mappings(
+        _mappings(readiness.get("source_bound_unknowns"))
+    )
+    unresolved_conflicts = tuple(
+        dict.fromkeys(_strings(readiness.get("unresolved_conflicts")))
+    )
+    final_packet_inputs_summary = _strip_forbidden_authority_refs(
+        _mapping(readiness.get("final_packet_inputs_summary"))
+    )
+    official_current = _mapping(readiness.get("official_current_custody_status"))
+    packet_projection = _blocked_shell_packet_projection(
+        action=action,
+        readiness=readiness,
+        shell_id=shell_id,
+        readiness_id=readiness_id,
+        readiness_observation_id=readiness_observation_id,
+        readiness_block_reasons=readiness_block_reasons,
+        mandatory_caveats=mandatory,
+        prohibited_upgrades=prohibited,
+        missing_obligations=missing,
+        partial_obligations=partial,
+        satisfied_obligations=satisfied,
+        source_bound_unknowns=source_bound_unknowns,
+        unresolved_conflicts=unresolved_conflicts,
+        final_packet_inputs_summary=final_packet_inputs_summary,
+        official_current_custody_status=official_current,
+    )
+    request = FollowupBlockedFinalAnswerPacketShellRequest(
+        request_id=f"followup-blocked-final-answer-packet-shell-request:{readiness_id}",
+        run_id=str(action.get("run_id") or ""),
+        checkpoint_id=str(action.get("checkpoint_id") or ""),
+        followup_authorization_consumption_id=str(
+            action.get("followup_authorization_consumption_id") or ""
+        ),
+        sealed_candidate_id=str(action.get("sealed_candidate_id") or ""),
+        followup_execution_id=str(action.get("followup_execution_id") or ""),
+        execution_id=str(action.get("execution_id") or ""),
+        followup_execution_observation_id=str(
+            action.get("followup_execution_observation_id") or ""
+        ),
+        followup_evidence_intake_id=str(
+            action.get("followup_evidence_intake_id") or ""
+        ),
+        intake_id=str(action.get("intake_id") or ""),
+        followup_evidence_intake_observation_id=str(
+            action.get("followup_evidence_intake_observation_id") or ""
+        ),
+        followup_sufficiency_recheck_id=str(
+            action.get("followup_sufficiency_recheck_id") or ""
+        ),
+        recheck_id=str(action.get("recheck_id") or ""),
+        followup_sufficiency_recheck_observation_id=str(
+            action.get("followup_sufficiency_recheck_observation_id") or ""
+        ),
+        packet_preparation_readiness_id=readiness_id,
+        readiness_observation_id=readiness_observation_id,
+        provider_job_kind=str(action.get("provider_job_kind") or ""),
+        component_id=str(action.get("component_id") or ""),
+        source_obligation_id=str(action.get("source_obligation_id") or ""),
+        requirement_ids=tuple(_strings(action.get("requirement_ids"))),
+        expected_source_classes=tuple(_strings(action.get("expected_source_classes"))),
+        fixture_execution_mode=str(action.get("fixture_execution_mode") or ""),
+        execution_mode=str(
+            action.get("execution_mode")
+            or action.get("fixture_execution_mode")
+            or ""
+        ),
+        evidence_ledger_intake_mode=str(action.get("evidence_ledger_intake_mode") or ""),
+        sufficiency_recheck_mode=str(action.get("sufficiency_recheck_mode") or ""),
+        packet_preparation_readiness_mode=(
+            AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+        ),
+        blocked_final_answer_packet_mode=(
+            AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE
+        ),
+        evidence_ledger_projection_digest=str(
+            action.get("evidence_ledger_projection_digest") or ""
+        ),
+        sufficiency_judgment_digest=str(action.get("sufficiency_judgment_digest") or ""),
+        followup_sufficiency_recheck_digest=str(
+            action.get("followup_sufficiency_recheck_digest") or ""
+        ),
+        followup_final_answer_packet_readiness_digest=str(
+            action.get("followup_final_answer_packet_readiness_digest") or ""
+        ),
+        provider_execution_licensed=False,
+        final_evidence_selected=False,
+        citation_eligible=False,
+        citations_rendered=False,
+        citation_rendering_changed=False,
+        citation_behavior_changed=False,
+        citation_formatter_invoked=False,
+        author_activation_allowed=False,
+        author_payload_created=False,
+        author_execution_deferred=True,
+        analyst_activation_allowed=False,
+        analyst_handoff_created=False,
+        economist_activation_allowed=False,
+        economist_handoff_created=False,
+        economist_code_execution_allowed=False,
+        answer_ready=False,
+        prompt_behavior_changed=False,
+        product_answer_behavior_changed=False,
+        live_validation_not_run=True,
+    )
+    result = FollowupBlockedFinalAnswerPacketShellResult(
+        result_id=f"followup-blocked-final-answer-packet-shell-result:{readiness_id}",
+        status="blocked_final_answer_packet_shell_activated",
+        blocked_final_answer_packet_shell_id=shell_id,
+        packet_projection=packet_projection,
+        readiness_block_reasons=readiness_block_reasons,
+        mandatory_caveats=mandatory,
+        prohibited_upgrades=prohibited,
+        missing_obligations=missing,
+        partial_obligations=partial,
+        satisfied_obligations=satisfied,
+        source_bound_unknowns=source_bound_unknowns,
+        unresolved_conflicts=unresolved_conflicts,
+        final_packet_inputs_summary=final_packet_inputs_summary,
+        official_current_custody_status=official_current,
+        ag96i3m2_candidate_summary=_mapping(
+            readiness.get("ag96i3m2_candidate_summary")
+        ),
+        ag96i3m2_binding_summary=_mapping(
+            readiness.get("ag96i3m2_binding_summary")
+        ),
+        ag96i3n_recheck_summary=_mapping(readiness.get("ag96i3n_recheck_summary")),
+    )
+    observation = FollowupBlockedFinalAnswerPacketShellObservation(
+        observation_id=f"followup-blocked-final-answer-packet-shell-observation:{readiness_id}",
+        request=request,
+        result=result,
+    )
+    record = FollowupBlockedFinalAnswerPacketShellConsumptionRecord(
+        blocked_final_answer_packet_shell_id=shell_id,
+        observation=observation,
+    )
+    _ensure_no_private_payload(record.to_dict())
+    return record
+
+
 def followup_projection_digest(projection: Mapping[str, Any]) -> str:
     return stable_hash(safe_json(projection))
+
+
+def _blocked_shell_packet_projection(
+    *,
+    action: Mapping[str, Any],
+    readiness: Mapping[str, Any],
+    shell_id: str,
+    readiness_id: str,
+    readiness_observation_id: str,
+    readiness_block_reasons: Sequence[str],
+    mandatory_caveats: Sequence[str],
+    prohibited_upgrades: Sequence[str],
+    missing_obligations: Sequence[Mapping[str, Any]],
+    partial_obligations: Sequence[Mapping[str, Any]],
+    satisfied_obligations: Sequence[Mapping[str, Any]],
+    source_bound_unknowns: Sequence[Mapping[str, Any]],
+    unresolved_conflicts: Sequence[str],
+    final_packet_inputs_summary: Mapping[str, Any],
+    official_current_custody_status: Mapping[str, Any],
+) -> dict[str, Any]:
+    packet_id = f"blocked-final-answer-packet-shell:{readiness_id}"
+    reasons = tuple(
+        dict.fromkeys(
+            (
+                "ag96i3o2_blocked_packet_shell",
+                "final_evidence_selection_deferred",
+                "citation_eligibility_deferred",
+                "role_handoffs_closed",
+            )
+            + tuple(readiness_block_reasons)
+        )
+    )
+    packet = FinalAnswerPacket(
+        packet_id=packet_id,
+        evidence_records=(),
+        citation_records=(),
+        source_obligations=(),
+        official_current_custody_summary=official_current_custody_status,
+        sufficiency_decision=readiness.get("sufficiency_decision"),
+        final_answer_posture=readiness.get("sufficiency_posture"),
+        final_answer_allowed=False,
+        required_obligations_satisfied=(
+            _mapping(readiness.get("prerequisite_summary")).get(
+                "obligations_satisfied"
+            )
+            is True
+        ),
+        missing_required_obligations=tuple(missing_obligations),
+        partial_obligations=tuple(partial_obligations),
+        satisfied_obligations=tuple(satisfied_obligations),
+        source_bound_numeric_unknowns=tuple(source_bound_unknowns),
+        source_bound_numeric_resolutions=(),
+        behavior_boundary_flags=_blocked_shell_behavior_boundary_flags(),
+        claim_postures=(),
+        mandatory_caveats=tuple(mandatory_caveats),
+        prohibited_upgrades=tuple(prohibited_upgrades),
+        author_input_refs={},
+        query_lineage_refs={},
+        readiness_status="blocked",
+        readiness_reasons=reasons,
+    )
+    projection = packet.to_dict()
+    projection.update(
+        {
+            "owner": "RunKernel.FinalAnswerPacket",
+            "canonical_state": True,
+            "trace_only": False,
+            "storage_only": False,
+            "blocked_final_answer_packet_shell_id": shell_id,
+            "packet_preparation_readiness_id": readiness_id,
+            "packet_preparation_readiness_observation_id": (
+                readiness_observation_id
+            ),
+            "readiness_observation_id": readiness_observation_id,
+            "packet_preparation_readiness_mode": (
+                AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+            ),
+            "blocked_final_answer_packet_mode": (
+                AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE
+            ),
+            "evidence_ledger_intake_mode": action.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": action.get("sufficiency_recheck_mode"),
+            "evidence_ledger_projection_digest": action.get(
+                "evidence_ledger_projection_digest"
+            ),
+            "sufficiency_judgment_digest": action.get(
+                "sufficiency_judgment_digest"
+            ),
+            "followup_sufficiency_recheck_digest": action.get(
+                "followup_sufficiency_recheck_digest"
+            ),
+            "followup_final_answer_packet_readiness_digest": action.get(
+                "followup_final_answer_packet_readiness_digest"
+            ),
+            "readiness_block_reasons": list(readiness_block_reasons),
+            "missing_obligations": list(missing_obligations),
+            "source_bound_unknowns": list(source_bound_unknowns),
+            "final_packet_inputs_summary": safe_json(final_packet_inputs_summary),
+            "official_current_custody_status": safe_json(
+                official_current_custody_status
+            ),
+            "bounded_ag96i3m2_summary": safe_json(
+                readiness.get("ag96i3m2_candidate_summary")
+            ),
+            "bounded_ag96i3n_summary": safe_json(
+                readiness.get("ag96i3n_recheck_summary")
+            ),
+            "answer_ready": False,
+            "author_evidence": [],
+            "final_evidence_selected": False,
+            "citation_eligible_flag": False,
+            "citations_rendered": False,
+            "citation_rendering_changed": False,
+            "citation_behavior_changed": False,
+            "citation_formatter_invoked": False,
+            "author_payload_created": False,
+            "author_activation_allowed": False,
+            "author_execution_deferred": True,
+            "analyst_activation_allowed": False,
+            "analyst_handoff_created": False,
+            "economist_activation_allowed": False,
+            "economist_handoff_created": False,
+            "economist_code_execution_allowed": False,
+            "prompt_behavior_changed": False,
+            "product_answer_behavior_changed": False,
+            "live_validation_not_run": True,
+            "not_role_consumption_payload": True,
+            "final_evidence_selection_deferred": True,
+            "citation_eligibility_deferred": True,
+            "trace_mode": "final_answer_packet_blocked_shell_authority_state",
+        }
+    )
+    return _strip_forbidden_authority_refs(projection)
 
 
 def _packet_sufficiency_projection(
@@ -1822,6 +2661,225 @@ def _validate_readiness_action_inputs(
     _reject_forbidden_authority_refs(action_inputs)
 
 
+def _validate_blocked_shell_readiness_state(
+    readiness_state: Mapping[str, Any],
+    action_inputs: Mapping[str, Any],
+) -> None:
+    if readiness_state.get("owner") != "RunKernel.FollowupFinalAnswerPacketReadiness":
+        raise PermissionError("blocked shell requires RunKernel readiness owner")
+    if readiness_state.get("canonical_state") is not True:
+        raise PermissionError("blocked shell requires canonical readiness state")
+    if readiness_state.get("diagnostic_only") is not True:
+        raise PermissionError("blocked shell requires diagnostic readiness")
+    if readiness_state.get("not_final_answer_packet_authority") is not True:
+        raise PermissionError("blocked shell requires non-packet-authority readiness")
+    if readiness_state.get("not_role_consumption_payload") is not True:
+        raise PermissionError("blocked shell requires non-role readiness payload")
+    if readiness_state.get("packet_preparation_readiness_id") != action_inputs.get(
+        "packet_preparation_readiness_id"
+    ):
+        raise PermissionError("blocked shell readiness ID mismatch")
+    if readiness_state.get("observation_id") != action_inputs.get(
+        "readiness_observation_id"
+    ):
+        raise PermissionError("blocked shell readiness observation ID mismatch")
+    if readiness_state.get("packet_preparation_readiness_mode") != (
+        AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+    ):
+        raise PermissionError("blocked shell requires AG-96I3O1 readiness mode")
+    if readiness_state.get("final_answer_activation_blocked") is not True:
+        raise PermissionError("blocked shell requires blocked readiness activation")
+    if readiness_state.get("final_answer_allowed") is not False:
+        raise PermissionError("blocked shell requires final_answer_allowed=false")
+    _reject_truthy_downstream_flags(
+        readiness_state,
+        context="blocked shell readiness",
+    )
+    if readiness_state.get("author_execution_deferred") is not True:
+        raise PermissionError("blocked shell readiness must defer Author execution")
+    if readiness_state.get("live_validation_not_run") is not True:
+        raise PermissionError("blocked shell readiness must not run live validation")
+    _reject_forbidden_authority_refs(readiness_state)
+    _ensure_no_private_payload(readiness_state)
+
+
+def _validate_blocked_shell_action_inputs(
+    action_inputs: Mapping[str, Any],
+    readiness_state: Mapping[str, Any],
+    recheck_state: Mapping[str, Any],
+    sufficiency_projection: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any],
+    intake_state: Mapping[str, Any],
+) -> None:
+    for field in (
+        "run_id",
+        "checkpoint_id",
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_execution_observation_id",
+        "followup_evidence_intake_id",
+        "intake_id",
+        "followup_evidence_intake_observation_id",
+        "followup_sufficiency_recheck_id",
+        "recheck_id",
+        "followup_sufficiency_recheck_observation_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "execution_mode",
+        "evidence_ledger_intake_mode",
+        "sufficiency_recheck_mode",
+        "packet_preparation_readiness_mode",
+    ):
+        if action_inputs.get(field) != readiness_state.get(field):
+            raise PermissionError(f"blocked shell readiness {field} mismatch")
+    if action_inputs.get("execution_mode") == "fixture_only" and (
+        action_inputs.get("fixture_execution_mode")
+        != readiness_state.get("fixture_execution_mode")
+    ):
+        raise PermissionError("blocked shell readiness fixture_execution_mode mismatch")
+    for field in (
+        "run_id",
+        "checkpoint_id",
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_execution_observation_id",
+        "followup_evidence_intake_id",
+        "intake_id",
+        "followup_evidence_intake_observation_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "execution_mode",
+        "evidence_ledger_intake_mode",
+        "sufficiency_recheck_mode",
+    ):
+        if action_inputs.get(field) != recheck_state.get(field):
+            raise PermissionError(f"blocked shell recheck {field} mismatch")
+    if action_inputs.get("execution_mode") == "fixture_only" and (
+        action_inputs.get("fixture_execution_mode")
+        != recheck_state.get("fixture_execution_mode")
+    ):
+        raise PermissionError("blocked shell recheck fixture_execution_mode mismatch")
+    for field in (
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_execution_observation_id",
+        "intake_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "execution_mode",
+        "evidence_ledger_intake_mode",
+    ):
+        if action_inputs.get(field) != intake_state.get(field):
+            raise PermissionError(f"blocked shell intake {field} mismatch")
+    for action_field, state_field in (
+        ("followup_evidence_intake_id", "intake_id"),
+        ("followup_evidence_intake_observation_id", "observation_id"),
+    ):
+        if action_inputs.get(action_field) != intake_state.get(state_field):
+            raise PermissionError(f"blocked shell intake {action_field} mismatch")
+    for action_field, state_field in (
+        ("followup_sufficiency_recheck_id", "recheck_id"),
+        ("recheck_id", "recheck_id"),
+        ("followup_sufficiency_recheck_observation_id", "observation_id"),
+    ):
+        if action_inputs.get(action_field) != recheck_state.get(state_field):
+            raise PermissionError(f"blocked shell {action_field} mismatch")
+    if _strings(action_inputs.get("requirement_ids")) != _strings(
+        readiness_state.get("requirement_ids")
+    ):
+        raise PermissionError("blocked shell requirement_ids mismatch")
+    if _strings(action_inputs.get("requirement_ids")) != _strings(
+        recheck_state.get("requirement_ids")
+    ):
+        raise PermissionError("blocked shell recheck requirement_ids mismatch")
+    if _strings(action_inputs.get("expected_source_classes")) != _strings(
+        readiness_state.get("expected_source_classes")
+    ):
+        raise PermissionError("blocked shell expected_source_classes mismatch")
+    if _strings(action_inputs.get("expected_source_classes")) != (
+        _expected_source_classes(recheck_state)
+    ):
+        raise PermissionError("blocked shell recheck expected_source_classes mismatch")
+    if not action_inputs.get("blocked_final_answer_packet_shell_id"):
+        raise PermissionError("blocked shell requires shell ID")
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise PermissionError("blocked shell must keep provider unlicensed")
+    if action_inputs.get("evidence_ledger_intake_mode") != (
+        AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+    ):
+        raise PermissionError("blocked shell requires AG-96I3M2 intake mode")
+    if action_inputs.get("packet_preparation_readiness_mode") != (
+        AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+    ):
+        raise PermissionError("blocked shell action must consume AG-96I3O1 readiness")
+    if action_inputs.get("blocked_final_answer_packet_mode") != (
+        AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE
+    ):
+        raise PermissionError("blocked shell action must use AG-96I3O2 mode")
+    _reject_truthy_blocked_shell_downstream_flags(
+        action_inputs,
+        context="blocked shell action",
+    )
+    if action_inputs.get("author_execution_deferred") is not True:
+        raise PermissionError("blocked shell action must defer Author execution")
+    if action_inputs.get("live_validation_not_run") is not True:
+        raise PermissionError("blocked shell action must not run live validation")
+    if action_inputs.get("evidence_ledger_projection_digest") != (
+        evidence_ledger_projection_digest(evidence_ledger_projection)
+    ):
+        raise PermissionError("blocked shell EvidenceLedger digest mismatch")
+    if action_inputs.get("sufficiency_judgment_digest") != (
+        followup_projection_digest(sufficiency_projection)
+    ):
+        raise PermissionError("blocked shell SufficiencyJudgment digest mismatch")
+    if action_inputs.get("followup_sufficiency_recheck_digest") != (
+        followup_projection_digest(recheck_state)
+    ):
+        raise PermissionError("blocked shell recheck digest mismatch")
+    if action_inputs.get("followup_final_answer_packet_readiness_digest") != (
+        followup_projection_digest(readiness_state)
+    ):
+        raise PermissionError("blocked shell readiness digest mismatch")
+    _reject_forbidden_authority_refs(action_inputs)
+    _ensure_no_private_payload(action_inputs)
+
+
+def _reject_truthy_blocked_shell_downstream_flags(
+    payload: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    for field in (
+        "final_evidence_selected",
+        "citation_eligible",
+        "citations_rendered",
+        "citation_rendering_changed",
+        "citation_behavior_changed",
+        "citation_formatter_invoked",
+        "author_activation_allowed",
+        "author_payload_created",
+        "analyst_activation_allowed",
+        "analyst_handoff_created",
+        "economist_activation_allowed",
+        "economist_handoff_created",
+        "economist_code_execution_allowed",
+        "answer_ready",
+        "prompt_behavior_changed",
+        "product_answer_behavior_changed",
+    ):
+        if payload.get(field) is not False:
+            raise PermissionError(f"{context} requires {field}=False")
+
+
 def _reject_truthy_downstream_flags(
     payload: Mapping[str, Any],
     *,
@@ -1904,6 +2962,42 @@ def _readiness_behavior_boundary_flags() -> dict[str, bool]:
     }
 
 
+def _blocked_shell_behavior_boundary_flags() -> dict[str, bool]:
+    return {
+        **followup_live_surface_flags(),
+        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
+        "sufficiency_judgment_rechecked": True,
+        "packet_preparation_readiness_consumed": True,
+        "canonical_final_answer_packet_mutated": True,
+        "final_answer_packet_updated": True,
+        "final_answer_packet_rebuilt": True,
+        "blocked_final_answer_packet_shell_activated": True,
+        "final_evidence_selected": False,
+        "citation_eligible": False,
+        "citations_rendered": False,
+        "author_payload_created": False,
+        "analyst_activation_allowed": False,
+        "analyst_handoff_created": False,
+        "economist_activation_allowed": False,
+        "economist_handoff_created": False,
+        "economist_code_execution_allowed": False,
+        "answer_ready": False,
+        "prompt_behavior_changed": False,
+        **followup_closed_flags(
+            *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS
+        ),
+        "author_activation_allowed": False,
+        "author_execution_deferred": True,
+        "citation_rendering_changed": False,
+        "citation_formatter_invoked": False,
+        "product_answer_behavior_changed": False,
+        "live_validation_not_run": True,
+        "not_role_consumption_payload": True,
+        "final_evidence_selection_deferred": True,
+        "citation_eligibility_deferred": True,
+    }
+
+
 def _closed_surface_false_flags() -> tuple[str, ...]:
     return (
         *FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS[1:],
@@ -1945,6 +3039,20 @@ def _readiness_redaction_posture() -> dict[str, bool]:
         "raw_prompt_retained": False,
         "raw_trace_retained": False,
         "private_payload_retained": False,
+        "citation_eligibility_retained": False,
+        "author_payload_retained": False,
+    }
+
+
+def _blocked_shell_redaction_posture() -> dict[str, bool]:
+    return {
+        **followup_common_redaction_posture(),
+        "raw_text_retained": False,
+        "provider_payload_retained": False,
+        "raw_prompt_retained": False,
+        "raw_trace_retained": False,
+        "private_payload_retained": False,
+        "final_evidence_refs_retained": False,
         "citation_eligibility_retained": False,
         "author_payload_retained": False,
     }
@@ -2285,6 +3393,11 @@ def _requirement_token(value: Any) -> str:
 
 __all__ = [
     "AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE",
+    "AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE",
+    "FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_GATE_REASON",
+    "FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_SCHEMA_VERSION",
+    "FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE",
+    "FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_TRACE_KEY",
     "FOLLOWUP_FINAL_ANSWER_PACKET_GATE_REASON",
     "FOLLOWUP_FINAL_ANSWER_PACKET_MODE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_GATE_REASON",
@@ -2295,6 +3408,11 @@ __all__ = [
     "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_TRACE_KEY",
     "FollowupFinalAnswerPacketActionResult",
+    "FollowupBlockedFinalAnswerPacketShellActionResult",
+    "FollowupBlockedFinalAnswerPacketShellConsumptionRecord",
+    "FollowupBlockedFinalAnswerPacketShellObservation",
+    "FollowupBlockedFinalAnswerPacketShellRequest",
+    "FollowupBlockedFinalAnswerPacketShellResult",
     "FollowupFinalAnswerPacketConsumptionRecord",
     "FollowupFinalAnswerPacketObservation",
     "FollowupFinalAnswerPacketRequest",
@@ -2304,8 +3422,10 @@ __all__ = [
     "FollowupFinalAnswerPacketReadinessObservation",
     "FollowupFinalAnswerPacketReadinessRequest",
     "FollowupFinalAnswerPacketReadinessResult",
+    "build_followup_blocked_final_answer_packet_shell_record",
     "build_followup_final_answer_packet_record",
     "build_followup_final_answer_packet_readiness_record",
+    "execute_followup_blocked_final_answer_packet_shell_action",
     "execute_followup_final_answer_packet_prepare_action",
     "execute_followup_final_answer_packet_readiness_action",
     "followup_projection_digest",
