@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -30,11 +29,16 @@ from core.run_kernel import (
     RunKernel,
     RunKernelTransitionError,
 )
+from tests.ag96_static_guards import imported_modules
+from tests.ag96i3_assertions import (
+    assert_no_sensitive_payload,
+    assert_q1_boundary_snapshot_unchanged,
+    snapshot_q1_boundary_state,
+)
 from tests.test_ag96i3p1_final_evidence_selection import (
     OFFICIAL_CANDIDATE_ID,
     OFFICIAL_REQUIREMENT_ID,
     _add_secondary_candidate,
-    _assert_no_sensitive_payload,
     _consume_p1,
     _execute_o2,
     _execute_p1,
@@ -176,8 +180,8 @@ def test_q1_happy_path_rebuilds_packet_local_citation_eligibility() -> None:
 
     with pytest.raises(RunKernelTransitionError, match="reduced follow-up FinalAnswerPacket"):
         kernel.authorize_followup_author_gate()
-    _assert_no_sensitive_payload(packet)
-    _assert_no_sensitive_payload(q1_state)
+    assert_no_sensitive_payload(packet)
+    assert_no_sensitive_payload(q1_state)
 
 
 @pytest.mark.parametrize(
@@ -215,7 +219,7 @@ def test_q1_marks_selected_evidence_ineligible_for_missing_prerequisites(
     assert packet["citation_ineligible"][0]["reason"] == reason
     assert "citation_eligible_source_ids" not in packet
     assert "citation_eligibility_refs" not in packet
-    _assert_no_sensitive_payload(packet["citation_ineligible"][0])
+    assert_no_sensitive_payload(packet["citation_ineligible"][0])
 
 
 def test_q1_marks_selected_evidence_ineligible_when_custody_no_longer_backs_it() -> None:
@@ -343,12 +347,12 @@ def test_q1_reducer_rejects_stale_digests(mutation: str, match: str) -> None:
         ] = "test"
     else:
         kernel.state.final_answer_packet["digest_mutation"] = "test"
-    snapshot = _q1_state_snapshot(kernel)
+    snapshot = snapshot_q1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match=match):
         kernel.reduce(result.observation)
 
-    _assert_q1_snapshot_unchanged(kernel, snapshot)
+    assert_q1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 @pytest.mark.parametrize(
@@ -412,7 +416,7 @@ def test_q1_reducer_rebuilds_packet_and_ignores_caller_citation_arrays() -> None
 def test_q1_malformed_observation_rejects_before_bookkeeping_or_mutation() -> None:
     kernel = _kernel_through_p1()
     action = kernel.authorize_followup_citation_eligibility()
-    snapshot = _q1_state_snapshot(kernel)
+    snapshot = snapshot_q1_boundary_state(kernel)
     bad_observation = Observation.from_action(
         action,
         observation_type="followup_citation_eligibility_prepared",
@@ -423,7 +427,7 @@ def test_q1_malformed_observation_rejects_before_bookkeeping_or_mutation() -> No
     with pytest.raises(RunKernelTransitionError, match="requires followup"):
         kernel.reduce(bad_observation)
 
-    _assert_q1_snapshot_unchanged(kernel, snapshot)
+    assert_q1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_duplicate_q1_activation_for_same_p1_packet_rejects() -> None:
@@ -441,12 +445,12 @@ def test_pre_authorized_duplicate_q1_reduce_rejects_after_q1_without_state_chang
     duplicate_result = _execute_q1(kernel, action=duplicate_action)
 
     kernel.reduce(first_result.observation)
-    snapshot = _q1_state_snapshot(kernel)
+    snapshot = snapshot_q1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="duplicate|AG-96I3Q1"):
         kernel.reduce(duplicate_result.observation)
 
-    _assert_q1_snapshot_unchanged(kernel, snapshot)
+    assert_q1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_legacy_i2e_authorize_rejects_after_q1() -> None:
@@ -484,13 +488,13 @@ def test_stale_legacy_i2e_reduce_rejects_after_q1_without_state_change() -> None
         legacy_action,
         legacy_result.observation,
     )
-    snapshot = _q1_state_snapshot(kernel)
+    snapshot = snapshot_q1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3Q1"):
         kernel.reduce(stale_observation)
 
     assert _stale_action
-    _assert_q1_snapshot_unchanged(kernel, snapshot)
+    assert_q1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_stale_o2_reduce_rejects_after_q1_without_state_change() -> None:
@@ -505,13 +509,13 @@ def test_stale_o2_reduce_rejects_after_q1_without_state_change() -> None:
         stale_o2_action,
         stale_o2_result.observation,
     )
-    snapshot = _q1_state_snapshot(kernel)
+    snapshot = snapshot_q1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3Q1"):
         kernel.reduce(stale_observation)
 
     assert _stale_action
-    _assert_q1_snapshot_unchanged(kernel, snapshot)
+    assert_q1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_stale_p1_reduce_rejects_after_q1_without_state_change() -> None:
@@ -525,13 +529,13 @@ def test_stale_p1_reduce_rejects_after_q1_without_state_change() -> None:
         stale_p1_action,
         stale_p1_result.observation,
     )
-    snapshot = _q1_state_snapshot(kernel)
+    snapshot = snapshot_q1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3Q1"):
         kernel.reduce(stale_observation)
 
     assert _stale_action
-    _assert_q1_snapshot_unchanged(kernel, snapshot)
+    assert_q1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_static_guards_keep_q1_closed_to_rendering_handoffs_roles_and_pipeline() -> None:
@@ -558,7 +562,7 @@ def test_static_guards_keep_q1_closed_to_rendering_handoffs_roles_and_pipeline()
     for path in module_paths:
         source = path.read_text(encoding="utf-8")
         assert passive_module_static_guard(source, module_name=path.name) == ()
-        assert _imports(path).isdisjoint(forbidden_imports)
+        assert imported_modules(path).isdisjoint(forbidden_imports)
         for forbidden in (
             "AuthorExecutor(",
             "AnalystExecutor",
@@ -652,83 +656,3 @@ def _inject_external_stale_action_and_observation(
         action.action_id
     ]
     return stale_action, stale_observation
-
-
-def _q1_state_snapshot(kernel: RunKernel) -> dict[str, Any]:
-    return {
-        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
-        "final_answer_authority_projection": deepcopy(
-            kernel.state.final_answer_authority_projection
-        ),
-        "followup_citation_eligibility_state": deepcopy(
-            kernel.state.followup_citation_eligibility_state
-        ),
-        "followup_citation_eligibility_projection": deepcopy(
-            kernel.state.followup_citation_eligibility_projection
-        ),
-        "followup_citation_eligibility_history": deepcopy(
-            kernel.state.followup_citation_eligibility_history
-        ),
-        "followup_final_evidence_selection_state": deepcopy(
-            kernel.state.followup_final_evidence_selection_state
-        ),
-        "followup_final_answer_packet_state": deepcopy(
-            kernel.state.followup_final_answer_packet_state
-        ),
-        "followup_blocked_final_answer_packet_shell_state": deepcopy(
-            kernel.state.followup_blocked_final_answer_packet_shell_state
-        ),
-        "projections": deepcopy(kernel.state.projections),
-        "action_statuses": deepcopy(kernel.state.action_statuses),
-        "stage_statuses": deepcopy(kernel.state.stage_statuses),
-        "reduced_action_ids": deepcopy(kernel.state.reduced_action_ids),
-        "observations": deepcopy(kernel.state.observations),
-        "next_observation_sequence": kernel.state.next_observation_sequence,
-    }
-
-
-def _assert_q1_snapshot_unchanged(
-    kernel: RunKernel,
-    snapshot: dict[str, Any],
-) -> None:
-    assert kernel.state.final_answer_packet == snapshot["final_answer_packet"]
-    assert kernel.state.final_answer_authority_projection == snapshot[
-        "final_answer_authority_projection"
-    ]
-    assert kernel.state.followup_citation_eligibility_state == snapshot[
-        "followup_citation_eligibility_state"
-    ]
-    assert kernel.state.followup_citation_eligibility_projection == snapshot[
-        "followup_citation_eligibility_projection"
-    ]
-    assert kernel.state.followup_citation_eligibility_history == snapshot[
-        "followup_citation_eligibility_history"
-    ]
-    assert kernel.state.followup_final_evidence_selection_state == snapshot[
-        "followup_final_evidence_selection_state"
-    ]
-    assert kernel.state.followup_final_answer_packet_state == snapshot[
-        "followup_final_answer_packet_state"
-    ]
-    assert kernel.state.followup_blocked_final_answer_packet_shell_state == snapshot[
-        "followup_blocked_final_answer_packet_shell_state"
-    ]
-    assert kernel.state.projections == snapshot["projections"]
-    assert kernel.state.action_statuses == snapshot["action_statuses"]
-    assert kernel.state.stage_statuses == snapshot["stage_statuses"]
-    assert kernel.state.reduced_action_ids == snapshot["reduced_action_ids"]
-    assert kernel.state.observations == snapshot["observations"]
-    assert kernel.state.next_observation_sequence == snapshot[
-        "next_observation_sequence"
-    ]
-
-
-def _imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    return imported

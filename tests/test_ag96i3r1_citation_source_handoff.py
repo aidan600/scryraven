@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -21,11 +20,16 @@ from core.run_kernel import (
     RunKernel,
     RunKernelTransitionError,
 )
+from tests.ag96_static_guards import imported_modules
+from tests.ag96i3_assertions import (
+    assert_no_sensitive_payload,
+    assert_r1_boundary_snapshot_unchanged,
+    snapshot_r1_boundary_state,
+)
 from tests.test_ag96i3p1_final_evidence_selection import (
     OFFICIAL_CANDIDATE_ID,
     OFFICIAL_REQUIREMENT_ID,
     _add_secondary_candidate,
-    _assert_no_sensitive_payload,
     _consume_p1,
     _execute_o2,
     _execute_p1,
@@ -120,8 +124,8 @@ def test_r1_happy_path_creates_q1_bound_source_handoff_only() -> None:
 
     with pytest.raises(RunKernelTransitionError, match="FinalAnswerPacket"):
         kernel.authorize_followup_author_gate()
-    _assert_no_sensitive_payload(state)
-    _assert_no_sensitive_payload(projection)
+    assert_no_sensitive_payload(state)
+    assert_no_sensitive_payload(projection)
 
 
 def test_r1_uses_only_q1_eligible_packet_records() -> None:
@@ -151,7 +155,7 @@ def test_r1_uses_only_q1_eligible_packet_records() -> None:
     assert kernel.state.followup_citation_source_handoff_state[
         "citation_eligible_source_ids"
     ] == [OFFICIAL_CANDIDATE_ID]
-    _assert_no_sensitive_payload(identities)
+    assert_no_sensitive_payload(identities)
 
 
 def test_r1_keeps_rendering_output_and_role_surfaces_closed() -> None:
@@ -290,12 +294,12 @@ def test_r1_reducer_rejects_stale_digests(
         ] = "test"
     else:
         kernel.state.final_answer_packet["digest_mutation"] = "test"
-    snapshot = _r1_state_snapshot(kernel)
+    snapshot = snapshot_r1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match=match):
         kernel.reduce(result.observation)
 
-    _assert_r1_snapshot_unchanged(kernel, snapshot)
+    assert_r1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 @pytest.mark.parametrize(
@@ -379,7 +383,7 @@ def test_r1_reducer_rebuilds_handoff_and_ignores_caller_records() -> None:
 def test_r1_malformed_observation_rejects_before_bookkeeping_or_mutation() -> None:
     kernel = _kernel_through_q1()
     action = kernel.authorize_followup_citation_source_handoff()
-    snapshot = _r1_state_snapshot(kernel)
+    snapshot = snapshot_r1_boundary_state(kernel)
     bad_observation = Observation.from_action(
         action,
         observation_type="followup_citation_source_handoff_prepared",
@@ -390,7 +394,7 @@ def test_r1_malformed_observation_rejects_before_bookkeeping_or_mutation() -> No
     with pytest.raises(RunKernelTransitionError, match="requires followup"):
         kernel.reduce(bad_observation)
 
-    _assert_r1_snapshot_unchanged(kernel, snapshot)
+    assert_r1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_duplicate_r1_activation_for_same_q1_packet_rejects() -> None:
@@ -409,12 +413,12 @@ def test_pre_authorized_duplicate_r1_reduce_rejects_after_r1() -> None:
     duplicate_result = _execute_r1(kernel, action=duplicate_action)
 
     kernel.reduce(first_result.observation)
-    snapshot = _r1_state_snapshot(kernel)
+    snapshot = snapshot_r1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="duplicate|AG-96I3R1"):
         kernel.reduce(duplicate_result.observation)
 
-    _assert_r1_snapshot_unchanged(kernel, snapshot)
+    assert_r1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_stale_legacy_i2e_reduce_rejects_after_r1_without_state_change() -> None:
@@ -443,13 +447,13 @@ def test_stale_legacy_i2e_reduce_rejects_after_r1_without_state_change() -> None
         legacy_action,
         legacy_result.observation,
     )
-    snapshot = _r1_state_snapshot(kernel)
+    snapshot = snapshot_r1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3R1"):
         kernel.reduce(stale_observation)
 
     assert _stale_action
-    _assert_r1_snapshot_unchanged(kernel, snapshot)
+    assert_r1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_stale_o2_reduce_rejects_after_r1_without_state_change() -> None:
@@ -465,13 +469,13 @@ def test_stale_o2_reduce_rejects_after_r1_without_state_change() -> None:
         stale_o2_action,
         stale_o2_result.observation,
     )
-    snapshot = _r1_state_snapshot(kernel)
+    snapshot = snapshot_r1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3R1"):
         kernel.reduce(stale_observation)
 
     assert _stale_action
-    _assert_r1_snapshot_unchanged(kernel, snapshot)
+    assert_r1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_stale_p1_reduce_rejects_after_r1_without_state_change() -> None:
@@ -486,13 +490,13 @@ def test_stale_p1_reduce_rejects_after_r1_without_state_change() -> None:
         stale_p1_action,
         stale_p1_result.observation,
     )
-    snapshot = _r1_state_snapshot(kernel)
+    snapshot = snapshot_r1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3R1"):
         kernel.reduce(stale_observation)
 
     assert _stale_action
-    _assert_r1_snapshot_unchanged(kernel, snapshot)
+    assert_r1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_stale_q1_reduce_rejects_after_r1_without_state_change() -> None:
@@ -508,13 +512,13 @@ def test_stale_q1_reduce_rejects_after_r1_without_state_change() -> None:
         stale_q1_action,
         stale_q1_result.observation,
     )
-    snapshot = _r1_state_snapshot(kernel)
+    snapshot = snapshot_r1_boundary_state(kernel)
 
     with pytest.raises(RunKernelTransitionError, match="AG-96I3R1"):
         kernel.reduce(stale_observation)
 
     assert _stale_action
-    _assert_r1_snapshot_unchanged(kernel, snapshot)
+    assert_r1_boundary_snapshot_unchanged(kernel, snapshot)
 
 
 def test_static_guards_keep_r1_closed_to_rendering_roles_provider_and_pipeline() -> None:
@@ -542,7 +546,7 @@ def test_static_guards_keep_r1_closed_to_rendering_roles_provider_and_pipeline()
         "subprocess",
         "os",
     }
-    assert _imports(runtime_path).isdisjoint(forbidden_imports)
+    assert imported_modules(runtime_path).isdisjoint(forbidden_imports)
     runtime_source = runtime_path.read_text(encoding="utf-8")
     assert "format_citation(" not in runtime_source
     assert "render_citation(" not in runtime_source
@@ -674,83 +678,3 @@ def _kernel_through_p1_for_stale_q1() -> RunKernel:
     kernel = _kernel_through_o2()
     _consume_p1(kernel)
     return kernel
-
-
-def _r1_state_snapshot(kernel: RunKernel) -> dict[str, Any]:
-    return {
-        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
-        "final_answer_authority_projection": deepcopy(
-            kernel.state.final_answer_authority_projection
-        ),
-        "followup_citation_source_handoff_state": deepcopy(
-            kernel.state.followup_citation_source_handoff_state
-        ),
-        "followup_citation_source_handoff_projection": deepcopy(
-            kernel.state.followup_citation_source_handoff_projection
-        ),
-        "followup_citation_source_handoff_history": deepcopy(
-            kernel.state.followup_citation_source_handoff_history
-        ),
-        "followup_citation_eligibility_state": deepcopy(
-            kernel.state.followup_citation_eligibility_state
-        ),
-        "followup_citation_eligibility_projection": deepcopy(
-            kernel.state.followup_citation_eligibility_projection
-        ),
-        "followup_citation_eligibility_history": deepcopy(
-            kernel.state.followup_citation_eligibility_history
-        ),
-        "projections": deepcopy(kernel.state.projections),
-        "action_statuses": deepcopy(kernel.state.action_statuses),
-        "stage_statuses": deepcopy(kernel.state.stage_statuses),
-        "reduced_action_ids": deepcopy(kernel.state.reduced_action_ids),
-        "observations": deepcopy(kernel.state.observations),
-        "next_observation_sequence": kernel.state.next_observation_sequence,
-    }
-
-
-def _assert_r1_snapshot_unchanged(
-    kernel: RunKernel,
-    snapshot: dict[str, Any],
-) -> None:
-    assert kernel.state.final_answer_packet == snapshot["final_answer_packet"]
-    assert kernel.state.final_answer_authority_projection == snapshot[
-        "final_answer_authority_projection"
-    ]
-    assert kernel.state.followup_citation_source_handoff_state == snapshot[
-        "followup_citation_source_handoff_state"
-    ]
-    assert kernel.state.followup_citation_source_handoff_projection == snapshot[
-        "followup_citation_source_handoff_projection"
-    ]
-    assert kernel.state.followup_citation_source_handoff_history == snapshot[
-        "followup_citation_source_handoff_history"
-    ]
-    assert kernel.state.followup_citation_eligibility_state == snapshot[
-        "followup_citation_eligibility_state"
-    ]
-    assert kernel.state.followup_citation_eligibility_projection == snapshot[
-        "followup_citation_eligibility_projection"
-    ]
-    assert kernel.state.followup_citation_eligibility_history == snapshot[
-        "followup_citation_eligibility_history"
-    ]
-    assert kernel.state.projections == snapshot["projections"]
-    assert kernel.state.action_statuses == snapshot["action_statuses"]
-    assert kernel.state.stage_statuses == snapshot["stage_statuses"]
-    assert kernel.state.reduced_action_ids == snapshot["reduced_action_ids"]
-    assert kernel.state.observations == snapshot["observations"]
-    assert kernel.state.next_observation_sequence == snapshot[
-        "next_observation_sequence"
-    ]
-
-
-def _imports(path: Path) -> set[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    return imported
