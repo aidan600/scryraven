@@ -32,10 +32,16 @@ from core.followup_author_observation_runtime import (
 )
 from core.followup_final_answer_packet_runtime import (
     AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE,
+    AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE,
+    FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_GATE_REASON,
     FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
+    build_followup_blocked_final_answer_packet_shell_record,
     build_followup_final_answer_packet_readiness_record,
     build_followup_final_answer_packet_record,
     followup_projection_digest,
+)
+from core.followup_final_answer_packet_runtime import (
+    FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE as FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE_NAME,
 )
 from core.followup_final_answer_packet_runtime import (
     FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_STAGE as FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_STAGE_NAME,
@@ -57,6 +63,7 @@ from core.followup_runkernel_reducers import (
     build_followup_author_gate_projection,
     build_followup_author_observation_projection,
     build_followup_authorization_projection,
+    build_followup_blocked_final_answer_packet_shell_projection,
     build_followup_evidence_intake_ledger_observation,
     build_followup_evidence_intake_projection,
     build_followup_execution_projection,
@@ -69,6 +76,7 @@ from core.followup_runkernel_reducers import (
     require_followup_flags_false,
     validate_followup_author_gate_observation_binding,
     validate_followup_author_observation_binding,
+    validate_followup_blocked_final_answer_packet_shell_observation_binding,
     validate_followup_evidence_intake_action_binding,
     validate_followup_execution_action_binding,
     validate_followup_final_answer_packet_observation_binding,
@@ -81,6 +89,9 @@ from core.followup_runkernel_reducers import (
 )
 from core.followup_runkernel_reducers import (
     FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS as _FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_BLOCKED_PACKET_SHELL_FALSE_FLAGS as _FOLLOWUP_BLOCKED_PACKET_SHELL_FALSE_FLAGS,
 )
 from core.followup_runkernel_reducers import (
     FOLLOWUP_EXECUTION_FALSE_FLAGS as _FOLLOWUP_EXECUTION_FALSE_FLAGS,
@@ -131,6 +142,9 @@ FOLLOWUP_EVIDENCE_INTAKE_STAGE = "followup_evidence_intake"
 FOLLOWUP_SUFFICIENCY_RECHECK_STAGE = FOLLOWUP_SUFFICIENCY_RECHECK_STAGE_NAME
 FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_STAGE = (
     FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_STAGE_NAME
+)
+FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE = (
+    FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE_NAME
 )
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
@@ -186,6 +200,9 @@ class ActionType(str, Enum):
     FOLLOWUP_FINAL_ANSWER_PACKET_READINESS = (
         "followup_final_answer_packet_readiness"
     )
+    FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL = (
+        "followup_blocked_final_answer_packet_shell"
+    )
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -220,6 +237,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_PREPARED = (
         "followup_final_answer_packet_readiness_prepared"
+    )
+    FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_PREPARED = (
+        "followup_blocked_final_answer_packet_shell_prepared"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -483,6 +503,15 @@ class RunState:
     followup_final_answer_packet_readiness_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_blocked_final_answer_packet_shell_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_blocked_final_answer_packet_shell_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_blocked_final_answer_packet_shell_history: list[
+        dict[str, Any]
+    ] = field(default_factory=list)
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -587,6 +616,15 @@ class RunState:
             followup_final_answer_packet_readiness_history=deepcopy(
                 self.followup_final_answer_packet_readiness_history
             ),
+            followup_blocked_final_answer_packet_shell_state=deepcopy(
+                self.followup_blocked_final_answer_packet_shell_state
+            ),
+            followup_blocked_final_answer_packet_shell_projection=deepcopy(
+                self.followup_blocked_final_answer_packet_shell_projection
+            ),
+            followup_blocked_final_answer_packet_shell_history=deepcopy(
+                self.followup_blocked_final_answer_packet_shell_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -661,6 +699,9 @@ class KernelTraceProjection:
     followup_final_answer_packet_readiness_state: Mapping[str, Any]
     followup_final_answer_packet_readiness_projection: Mapping[str, Any]
     followup_final_answer_packet_readiness_history: Sequence[Mapping[str, Any]]
+    followup_blocked_final_answer_packet_shell_state: Mapping[str, Any]
+    followup_blocked_final_answer_packet_shell_projection: Mapping[str, Any]
+    followup_blocked_final_answer_packet_shell_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -760,6 +801,16 @@ class KernelTraceProjection:
             "followup_final_answer_packet_readiness_history": [
                 _safe_mapping(item)
                 for item in self.followup_final_answer_packet_readiness_history
+            ],
+            "followup_blocked_final_answer_packet_shell_state": _safe_mapping(
+                self.followup_blocked_final_answer_packet_shell_state
+            ),
+            "followup_blocked_final_answer_packet_shell_projection": _safe_mapping(
+                self.followup_blocked_final_answer_packet_shell_projection
+            ),
+            "followup_blocked_final_answer_packet_shell_history": [
+                _safe_mapping(item)
+                for item in self.followup_blocked_final_answer_packet_shell_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -1650,12 +1701,238 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_blocked_final_answer_packet_shell(
+        self,
+        *,
+        reason: str = FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_GATE_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        readiness_state = self.state.followup_final_answer_packet_readiness_state
+        if not readiness_state:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires O1 readiness state"
+            )
+        if readiness_state.get("owner") != (
+            "RunKernel.FollowupFinalAnswerPacketReadiness"
+        ):
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires RunKernel readiness owner"
+            )
+        if readiness_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires canonical readiness"
+            )
+        if readiness_state.get("diagnostic_only") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires diagnostic readiness"
+            )
+        if readiness_state.get("not_final_answer_packet_authority") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires non-authority readiness"
+            )
+        if readiness_state.get("not_role_consumption_payload") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires non-role readiness"
+            )
+        for boundary_field in (
+            "canonical_final_answer_packet_mutated",
+            "final_evidence_selected",
+            "citation_eligible",
+            "citations_rendered",
+            "citation_rendering_changed",
+            "citation_behavior_changed",
+            "citation_formatter_invoked",
+            "author_activation_allowed",
+            "author_payload_created",
+            "analyst_activation_allowed",
+            "analyst_handoff_created",
+            "economist_activation_allowed",
+            "economist_handoff_created",
+            "economist_code_execution_allowed",
+            "answer_ready",
+            "prompt_behavior_changed",
+            "product_answer_behavior_changed",
+        ):
+            if readiness_state.get(boundary_field) is not False:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell requires readiness "
+                    f"{boundary_field}=False"
+                )
+        if readiness_state.get("author_execution_deferred") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires Author deferred"
+            )
+        if readiness_state.get("live_validation_not_run") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires no live validation"
+            )
+        if self.state.followup_blocked_final_answer_packet_shell_state.get(
+            "packet_preparation_readiness_id"
+        ) == readiness_state.get("packet_preparation_readiness_id"):
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell already activated for this readiness"
+            )
+        if self.state.final_answer_packet:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires no existing canonical "
+                "FinalAnswerPacket"
+            )
+        if self.state.final_answer_authority_projection:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires final-answer authority "
+                "projection unchanged"
+            )
+        recheck_state = self.state.followup_sufficiency_recheck_state
+        if recheck_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires canonical recheck state"
+            )
+        if recheck_state.get("owner") != "RunKernel.FollowupSufficiencyRecheck":
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires RunKernel recheck state"
+            )
+        if recheck_state.get("evidence_ledger_intake_mode") != (
+            AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+        ):
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires AG-96I3M2 intake mode"
+            )
+        if not self.state.sufficiency_judgment_projection:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires canonical SufficiencyJudgment"
+            )
+        sufficiency = self.state.sufficiency_judgment_projection
+        if sufficiency.get("owner") != "RunKernel.RunAuthoritySufficiencyJudgment":
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires RunAuthority SufficiencyJudgment"
+            )
+        if sufficiency.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires canonical SufficiencyJudgment"
+            )
+        ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+        if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires EvidenceLedger projection"
+            )
+        if ledger_projection.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires canonical EvidenceLedger"
+            )
+        intake_state = self.state.followup_evidence_intake_state
+        if intake_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "blocked FinalAnswerPacket shell requires canonical intake state"
+            )
+        readiness_id = readiness_state.get("packet_preparation_readiness_id")
+        shell_id = f"followup-blocked-final-answer-packet-shell:{readiness_id}"
+        canonical_inputs = {
+            "run_id": readiness_state.get("run_id"),
+            "checkpoint_id": readiness_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": readiness_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": readiness_state.get("sealed_candidate_id"),
+            "followup_execution_id": readiness_state.get("followup_execution_id"),
+            "execution_id": readiness_state.get("execution_id"),
+            "followup_execution_observation_id": readiness_state.get(
+                "followup_execution_observation_id"
+            ),
+            "followup_evidence_intake_id": readiness_state.get(
+                "followup_evidence_intake_id"
+            ),
+            "intake_id": readiness_state.get("intake_id"),
+            "followup_evidence_intake_observation_id": readiness_state.get(
+                "followup_evidence_intake_observation_id"
+            ),
+            "followup_sufficiency_recheck_id": readiness_state.get(
+                "followup_sufficiency_recheck_id"
+            ),
+            "recheck_id": readiness_state.get("recheck_id"),
+            "followup_sufficiency_recheck_observation_id": readiness_state.get(
+                "followup_sufficiency_recheck_observation_id"
+            ),
+            "packet_preparation_readiness_id": readiness_id,
+            "readiness_observation_id": readiness_state.get("observation_id"),
+            "blocked_final_answer_packet_shell_id": shell_id,
+            "provider_job_kind": readiness_state.get("provider_job_kind"),
+            "component_id": readiness_state.get("component_id"),
+            "source_obligation_id": readiness_state.get("source_obligation_id"),
+            "requirement_ids": readiness_state.get("requirement_ids", []),
+            "expected_source_classes": readiness_state.get(
+                "expected_source_classes",
+                [],
+            ),
+            "fixture_execution_mode": readiness_state.get("fixture_execution_mode"),
+            "execution_mode": readiness_state.get("execution_mode")
+            or readiness_state.get("fixture_execution_mode"),
+            "evidence_ledger_intake_mode": readiness_state.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": readiness_state.get(
+                "sufficiency_recheck_mode"
+            ),
+            "provider_execution_licensed": False,
+            "packet_preparation_readiness_mode": (
+                AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+            ),
+            "blocked_final_answer_packet_mode": (
+                AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE
+            ),
+            "evidence_ledger_projection_digest": (
+                evidence_ledger_projection_digest(ledger_projection)
+            ),
+            "sufficiency_judgment_digest": followup_projection_digest(sufficiency),
+            "followup_sufficiency_recheck_digest": followup_projection_digest(
+                recheck_state
+            ),
+            "followup_final_answer_packet_readiness_digest": (
+                followup_projection_digest(readiness_state)
+            ),
+            "final_evidence_selected": False,
+            "citation_eligible": False,
+            "citations_rendered": False,
+            "citation_rendering_changed": False,
+            "citation_behavior_changed": False,
+            "citation_formatter_invoked": False,
+            "author_activation_allowed": False,
+            "author_payload_created": False,
+            "author_execution_deferred": True,
+            "analyst_activation_allowed": False,
+            "analyst_handoff_created": False,
+            "economist_activation_allowed": False,
+            "economist_handoff_created": False,
+            "economist_code_execution_allowed": False,
+            "answer_ready": False,
+            "prompt_behavior_changed": False,
+            "product_answer_behavior_changed": False,
+            "live_validation_not_run": True,
+            "expected_observation_record_type": (
+                "followup_blocked_final_answer_packet_shell_consumption_record"
+            ),
+        }
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        return self.authorize(
+            stage=FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE,
+            action_type=ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_PREPARED
+            ),
+        )
+
     def authorize_followup_final_answer_packet_prepare(
         self,
         *,
         reason: str = "ag96i2e_followup_fixture_final_answer_packet_prepare",
         inputs: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
+        if self.state.followup_blocked_final_answer_packet_shell_state:
+            raise RunKernelTransitionError(
+                "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
+                "an AG-96I3O2 blocked packet shell"
+            )
         if not self.state.followup_sufficiency_recheck_state:
             raise RunKernelTransitionError(
                 "follow-up FinalAnswerPacket preparation requires reduced "
@@ -3004,6 +3281,9 @@ class RunKernel:
                 "canonical_state": True,
                 "trace_only": False,
                 "storage_only": False,
+                "diagnostic_only": True,
+                "not_final_answer_packet_authority": True,
+                "not_role_consumption_payload": True,
                 "observation_id": observed_readiness_state.get("observation_id"),
             }
             flags = _safe_mapping(readiness_state.get("behavior_boundary_flags"))
@@ -3059,6 +3339,170 @@ class RunKernel:
             )
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_final_answer_packet_readiness_projection
+            )
+        elif (
+            action.action_type
+            is ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL
+        ):
+            observed_shell_state = _safe_mapping(
+                observation.payload.get(
+                    "followup_blocked_final_answer_packet_shell_state"
+                )
+            )
+            if not observed_shell_state:
+                raise RunKernelTransitionError(
+                    "follow-up blocked FinalAnswerPacket shell observation "
+                    "requires followup_blocked_final_answer_packet_shell_state"
+                )
+            if not self.state.followup_final_answer_packet_readiness_state:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell requires existing O1 readiness"
+                )
+            if self.state.final_answer_packet:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must not overwrite an "
+                    "existing canonical FinalAnswerPacket"
+                )
+            if self.state.final_answer_authority_projection:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must not follow final-answer "
+                    "authority projection mutation"
+                )
+            if self.state.followup_blocked_final_answer_packet_shell_state.get(
+                "packet_preparation_readiness_id"
+            ) == self.state.followup_final_answer_packet_readiness_state.get(
+                "packet_preparation_readiness_id"
+            ):
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell already activated for this readiness"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _followup_checked(
+                validate_followup_blocked_final_answer_packet_shell_observation_binding,
+                action_inputs=action_inputs,
+                observed_shell_state=observed_shell_state,
+            )
+            ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+            try:
+                canonical_record = (
+                    build_followup_blocked_final_answer_packet_shell_record(
+                        action_inputs=action_inputs,
+                        followup_final_answer_packet_readiness_state=(
+                            self.state.followup_final_answer_packet_readiness_state
+                        ),
+                        followup_sufficiency_recheck_state=(
+                            self.state.followup_sufficiency_recheck_state
+                        ),
+                        sufficiency_judgment_projection=(
+                            self.state.sufficiency_judgment_projection
+                        ),
+                        evidence_ledger_projection=ledger_projection,
+                        followup_evidence_intake_state=(
+                            self.state.followup_evidence_intake_state
+                        ),
+                    )
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            shell_state = {
+                **canonical_record.to_dict(),
+                "owner": "RunKernel.FollowupBlockedFinalAnswerPacketShell",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "observation_id": observed_shell_state.get("observation_id"),
+            }
+            packet_projection = _safe_mapping(shell_state.get("packet_projection"))
+            if not packet_projection:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell requires packet_projection"
+                )
+            flags = _safe_mapping(shell_state.get("behavior_boundary_flags"))
+            _followup_checked(
+                require_followup_flags_false,
+                flags,
+                _FOLLOWUP_BLOCKED_PACKET_SHELL_FALSE_FLAGS,
+                context="blocked FinalAnswerPacket shell",
+            )
+            if flags.get("packet_preparation_readiness_consumed") is not True:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must consume O1 readiness"
+                )
+            if flags.get("canonical_final_answer_packet_mutated") is not True:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must mutate canonical packet"
+                )
+            if packet_projection.get("owner") != "RunKernel.FinalAnswerPacket":
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell requires RunKernel packet owner"
+                )
+            if packet_projection.get("canonical_state") is not True:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell requires canonical packet"
+                )
+            if packet_projection.get("readiness_status") != "blocked":
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must keep readiness_status=blocked"
+                )
+            if packet_projection.get("final_answer_allowed") is not False:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must keep final answers disallowed"
+                )
+            if packet_projection.get("answer_ready") is not False:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must keep answer_ready false"
+                )
+            for empty_field in (
+                "evidence_allowed",
+                "evidence_excluded",
+                "author_evidence",
+                "citation_eligible",
+                "citation_ineligible",
+            ):
+                if packet_projection.get(empty_field) != []:
+                    raise RunKernelTransitionError(
+                        "blocked FinalAnswerPacket shell must keep "
+                        f"{empty_field} empty"
+                    )
+            if packet_projection.get("author_input_refs") != {}:
+                raise RunKernelTransitionError(
+                    "blocked FinalAnswerPacket shell must keep author_input_refs empty"
+                )
+            for forbidden_field in (
+                "final_evidence_refs",
+                "citation_eligible_source_ids",
+                "citation_eligibility_refs",
+                "author_payload_ref",
+            ):
+                if packet_projection.get(forbidden_field) not in (
+                    None,
+                    False,
+                    [],
+                    (),
+                    {},
+                ):
+                    raise RunKernelTransitionError(
+                        "blocked FinalAnswerPacket shell must not create "
+                        f"{forbidden_field}"
+                    )
+            self.state.followup_blocked_final_answer_packet_shell_state = (
+                shell_state
+            )
+            self.state.final_answer_packet = packet_projection
+            self.state.followup_blocked_final_answer_packet_shell_projection = (
+                build_followup_blocked_final_answer_packet_shell_projection(
+                    shell_state=shell_state,
+                    packet_projection=packet_projection,
+                    behavior_boundary_flags=flags,
+                )
+            )
+            self.state.followup_blocked_final_answer_packet_shell_history.append(
+                deepcopy(
+                    self.state.followup_blocked_final_answer_packet_shell_projection
+                )
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_blocked_final_answer_packet_shell_projection
             )
         elif (
             action.action_type
@@ -3656,6 +4100,7 @@ __all__ = [
     "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
+    "FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_SUFFICIENCY_RECHECK_STAGE",
