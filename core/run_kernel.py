@@ -30,6 +30,14 @@ from core.followup_author_observation_runtime import (
 from core.followup_author_observation_runtime import (
     FOLLOWUP_AUTHOR_OBSERVATION_STAGE as FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME,
 )
+from core.followup_citation_source_handoff_runtime import (
+    AG96I3R1_CITATION_SOURCE_HANDOFF_MODE,
+    FOLLOWUP_CITATION_SOURCE_HANDOFF_GATE_REASON,
+    build_followup_citation_source_handoff_record,
+)
+from core.followup_citation_source_handoff_runtime import (
+    FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE as FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE_NAME,
+)
 from core.followup_final_answer_packet_runtime import (
     AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE,
     AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE,
@@ -77,6 +85,7 @@ from core.followup_runkernel_reducers import (
     build_followup_authorization_projection,
     build_followup_blocked_final_answer_packet_shell_projection,
     build_followup_citation_eligibility_projection,
+    build_followup_citation_source_handoff_projection,
     build_followup_evidence_intake_ledger_observation,
     build_followup_evidence_intake_projection,
     build_followup_execution_projection,
@@ -92,6 +101,7 @@ from core.followup_runkernel_reducers import (
     validate_followup_author_observation_binding,
     validate_followup_blocked_final_answer_packet_shell_observation_binding,
     validate_followup_citation_eligibility_observation_binding,
+    validate_followup_citation_source_handoff_observation_binding,
     validate_followup_evidence_intake_action_binding,
     validate_followup_execution_action_binding,
     validate_followup_final_answer_packet_observation_binding,
@@ -111,6 +121,9 @@ from core.followup_runkernel_reducers import (
 )
 from core.followup_runkernel_reducers import (
     FOLLOWUP_CITATION_ELIGIBILITY_FALSE_FLAGS as _FOLLOWUP_CITATION_ELIGIBILITY_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
+    FOLLOWUP_CITATION_SOURCE_HANDOFF_FALSE_FLAGS as _FOLLOWUP_CITATION_SOURCE_HANDOFF_FALSE_FLAGS,
 )
 from core.followup_runkernel_reducers import (
     FOLLOWUP_EXECUTION_FALSE_FLAGS as _FOLLOWUP_EXECUTION_FALSE_FLAGS,
@@ -172,6 +185,7 @@ FOLLOWUP_FINAL_EVIDENCE_SELECTION_STAGE = (
     FOLLOWUP_FINAL_EVIDENCE_SELECTION_STAGE_NAME
 )
 FOLLOWUP_CITATION_ELIGIBILITY_STAGE = FOLLOWUP_CITATION_ELIGIBILITY_STAGE_NAME
+FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE = FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE_NAME
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -231,6 +245,7 @@ class ActionType(str, Enum):
     )
     FOLLOWUP_FINAL_EVIDENCE_SELECTION = "followup_final_evidence_selection"
     FOLLOWUP_CITATION_ELIGIBILITY = "followup_citation_eligibility"
+    FOLLOWUP_CITATION_SOURCE_HANDOFF = "followup_citation_source_handoff"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -274,6 +289,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_CITATION_ELIGIBILITY_PREPARED = (
         "followup_citation_eligibility_prepared"
+    )
+    FOLLOWUP_CITATION_SOURCE_HANDOFF_PREPARED = (
+        "followup_citation_source_handoff_prepared"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -564,6 +582,15 @@ class RunState:
     followup_citation_eligibility_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_citation_source_handoff_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_citation_source_handoff_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_citation_source_handoff_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -695,6 +722,15 @@ class RunState:
             followup_citation_eligibility_history=deepcopy(
                 self.followup_citation_eligibility_history
             ),
+            followup_citation_source_handoff_state=deepcopy(
+                self.followup_citation_source_handoff_state
+            ),
+            followup_citation_source_handoff_projection=deepcopy(
+                self.followup_citation_source_handoff_projection
+            ),
+            followup_citation_source_handoff_history=deepcopy(
+                self.followup_citation_source_handoff_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -778,6 +814,9 @@ class KernelTraceProjection:
     followup_citation_eligibility_state: Mapping[str, Any]
     followup_citation_eligibility_projection: Mapping[str, Any]
     followup_citation_eligibility_history: Sequence[Mapping[str, Any]]
+    followup_citation_source_handoff_state: Mapping[str, Any]
+    followup_citation_source_handoff_projection: Mapping[str, Any]
+    followup_citation_source_handoff_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -907,6 +946,16 @@ class KernelTraceProjection:
             "followup_citation_eligibility_history": [
                 _safe_mapping(item)
                 for item in self.followup_citation_eligibility_history
+            ],
+            "followup_citation_source_handoff_state": _safe_mapping(
+                self.followup_citation_source_handoff_state
+            ),
+            "followup_citation_source_handoff_projection": _safe_mapping(
+                self.followup_citation_source_handoff_projection
+            ),
+            "followup_citation_source_handoff_history": [
+                _safe_mapping(item)
+                for item in self.followup_citation_source_handoff_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -2600,12 +2649,388 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_citation_source_handoff(
+        self,
+        *,
+        reason: str = FOLLOWUP_CITATION_SOURCE_HANDOFF_GATE_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        q1_state = self.state.followup_citation_eligibility_state
+        if not q1_state:
+            raise RunKernelTransitionError(
+                "citation source handoff requires AG-96I3Q1 citation eligibility"
+            )
+        if q1_state.get("owner") != "RunKernel.FollowupCitationEligibility":
+            raise RunKernelTransitionError(
+                "citation source handoff requires RunKernel Q1 owner"
+            )
+        if q1_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical Q1 state"
+            )
+        if q1_state.get("citation_eligibility_mode") != (
+            AG96I3Q1_CITATION_ELIGIBILITY_MODE
+        ):
+            raise RunKernelTransitionError(
+                "citation source handoff requires AG-96I3Q1 mode"
+            )
+        q1_projection = self.state.followup_citation_eligibility_projection
+        if not q1_projection:
+            raise RunKernelTransitionError(
+                "citation source handoff requires Q1 projection"
+            )
+        if q1_projection.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical Q1 projection"
+            )
+        if not self.state.followup_citation_eligibility_history:
+            raise RunKernelTransitionError(
+                "citation source handoff requires Q1 history"
+            )
+        if self.state.followup_citation_eligibility_history[-1] != q1_projection:
+            raise RunKernelTransitionError(
+                "citation source handoff requires current Q1 history"
+            )
+        if self.state.followup_citation_source_handoff_state.get(
+            "citation_eligibility_id"
+        ) == q1_state.get("citation_eligibility_id"):
+            raise RunKernelTransitionError(
+                "citation source handoff already activated for this Q1 packet"
+            )
+        packet = self.state.final_answer_packet
+        if packet.get("owner") != "RunKernel.FinalAnswerPacket":
+            raise RunKernelTransitionError(
+                "citation source handoff requires RunKernel FinalAnswerPacket"
+            )
+        if packet.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical FinalAnswerPacket"
+            )
+        if packet.get("packet_id") != q1_state.get("packet_id"):
+            raise RunKernelTransitionError(
+                "citation source handoff requires Q1 packet ID match"
+            )
+        if packet.get("readiness_status") != "blocked":
+            raise RunKernelTransitionError(
+                "citation source handoff requires blocked FinalAnswerPacket"
+            )
+        if packet.get("final_answer_allowed") is not False:
+            raise RunKernelTransitionError(
+                "citation source handoff requires final answers disallowed"
+            )
+        if packet.get("answer_ready") is not False:
+            raise RunKernelTransitionError(
+                "citation source handoff requires answer_ready=False"
+            )
+        if packet.get("final_evidence_selected") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires selected final evidence"
+            )
+        if packet.get("packet_local_citation_eligibility_created") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires packet-local Q1 marker"
+            )
+        if not packet.get("citation_eligible"):
+            raise RunKernelTransitionError(
+                "citation source handoff requires packet-local eligible citations"
+            )
+        if packet.get("citation_rendering_deferred") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires deferred citation rendering"
+            )
+        if packet.get("citations_rendered") is not False:
+            raise RunKernelTransitionError(
+                "citation source handoff requires citations_rendered=False"
+            )
+        if packet.get("citation_formatter_invoked") is not False:
+            raise RunKernelTransitionError(
+                "citation source handoff requires formatter closed"
+            )
+        if packet.get("author_input_refs") != {}:
+            raise RunKernelTransitionError(
+                "citation source handoff requires empty author_input_refs"
+            )
+        if packet.get("author_payload_ref") not in (None, False, [], {}, ()):
+            raise RunKernelTransitionError(
+                "citation source handoff requires no author_payload_ref"
+            )
+        if self.state.final_answer_authority_projection:
+            raise RunKernelTransitionError(
+                "citation source handoff requires empty authority projection"
+            )
+        if (
+            self.state.followup_final_answer_packet_state
+            or self.state.followup_author_gate_state
+            or self.state.followup_author_observation_state
+            or self.state.author_observation
+            or self.state.final_answer_outcome
+        ):
+            raise RunKernelTransitionError(
+                "citation source handoff requires Author surfaces closed"
+            )
+        for closed_field in (
+            "citation_rendering_changed",
+            "citation_behavior_changed",
+            "author_payload_created",
+            "author_activation_allowed",
+            "analyst_activation_allowed",
+            "analyst_handoff_created",
+            "economist_activation_allowed",
+            "economist_handoff_created",
+            "economist_code_execution_allowed",
+            "prompt_behavior_changed",
+            "product_answer_behavior_changed",
+        ):
+            if packet.get(closed_field) is not False:
+                raise RunKernelTransitionError(
+                    "citation source handoff requires Q1 packet "
+                    f"{closed_field}=False"
+                )
+        if packet.get("author_execution_deferred") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires deferred Author execution"
+            )
+        if packet.get("live_validation_not_run") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires no live validation"
+            )
+        selection_state = self.state.followup_final_evidence_selection_state
+        if selection_state.get("owner") != "RunKernel.FollowupFinalEvidenceSelection":
+            raise RunKernelTransitionError(
+                "citation source handoff requires P1 selection"
+            )
+        if selection_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical P1 selection"
+            )
+        if not self.state.followup_final_evidence_selection_projection:
+            raise RunKernelTransitionError(
+                "citation source handoff requires P1 projection"
+            )
+        if not self.state.followup_final_evidence_selection_history:
+            raise RunKernelTransitionError(
+                "citation source handoff requires P1 history"
+            )
+        shell_state = self.state.followup_blocked_final_answer_packet_shell_state
+        if shell_state.get("owner") != (
+            "RunKernel.FollowupBlockedFinalAnswerPacketShell"
+        ):
+            raise RunKernelTransitionError(
+                "citation source handoff requires O2 shell"
+            )
+        if shell_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical O2 shell"
+            )
+        if not self.state.followup_blocked_final_answer_packet_shell_projection:
+            raise RunKernelTransitionError(
+                "citation source handoff requires O2 projection"
+            )
+        if not self.state.followup_blocked_final_answer_packet_shell_history:
+            raise RunKernelTransitionError(
+                "citation source handoff requires O2 history"
+            )
+        readiness_state = self.state.followup_final_answer_packet_readiness_state
+        if readiness_state.get("owner") != (
+            "RunKernel.FollowupFinalAnswerPacketReadiness"
+        ):
+            raise RunKernelTransitionError(
+                "citation source handoff requires O1 readiness"
+            )
+        if readiness_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical O1 readiness"
+            )
+        if not self.state.followup_final_answer_packet_readiness_projection:
+            raise RunKernelTransitionError(
+                "citation source handoff requires O1 projection"
+            )
+        if not self.state.followup_final_answer_packet_readiness_history:
+            raise RunKernelTransitionError(
+                "citation source handoff requires O1 history"
+            )
+        recheck_state = self.state.followup_sufficiency_recheck_state
+        if recheck_state.get("owner") != "RunKernel.FollowupSufficiencyRecheck":
+            raise RunKernelTransitionError(
+                "citation source handoff requires AG-96I3N recheck"
+            )
+        if recheck_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical AG-96I3N recheck"
+            )
+        intake_state = self.state.followup_evidence_intake_state
+        if intake_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical AG-96I3M2 intake"
+            )
+        if intake_state.get("evidence_ledger_intake_mode") != (
+            AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE
+        ):
+            raise RunKernelTransitionError(
+                "citation source handoff requires AG-96I3M2 intake mode"
+            )
+        sufficiency = self.state.sufficiency_judgment_projection
+        if sufficiency.get("owner") != "RunKernel.RunAuthoritySufficiencyJudgment":
+            raise RunKernelTransitionError(
+                "citation source handoff requires SufficiencyJudgment projection"
+            )
+        if sufficiency.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical SufficiencyJudgment"
+            )
+        ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+        if ledger_projection.get("owner") != "RunKernel.EvidenceLedger":
+            raise RunKernelTransitionError(
+                "citation source handoff requires EvidenceLedger projection"
+            )
+        if ledger_projection.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "citation source handoff requires canonical EvidenceLedger"
+            )
+        q1_digest = followup_projection_digest(q1_state)
+        packet_digest = followup_projection_digest(packet)
+        handoff_id = (
+            "followup-citation-source-handoff:"
+            f"{q1_digest[:16]}:{packet_digest[:16]}"
+        )
+        canonical_inputs = {
+            "run_id": q1_state.get("run_id"),
+            "checkpoint_id": q1_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": q1_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": q1_state.get("sealed_candidate_id"),
+            "followup_execution_id": q1_state.get("followup_execution_id"),
+            "execution_id": q1_state.get("execution_id"),
+            "followup_execution_observation_id": q1_state.get(
+                "followup_execution_observation_id"
+            ),
+            "followup_evidence_intake_id": q1_state.get(
+                "followup_evidence_intake_id"
+            ),
+            "intake_id": q1_state.get("intake_id"),
+            "followup_evidence_intake_observation_id": q1_state.get(
+                "followup_evidence_intake_observation_id"
+            ),
+            "followup_sufficiency_recheck_id": q1_state.get(
+                "followup_sufficiency_recheck_id"
+            ),
+            "recheck_id": q1_state.get("recheck_id"),
+            "followup_sufficiency_recheck_observation_id": q1_state.get(
+                "followup_sufficiency_recheck_observation_id"
+            ),
+            "packet_preparation_readiness_id": q1_state.get(
+                "packet_preparation_readiness_id"
+            ),
+            "readiness_observation_id": q1_state.get("readiness_observation_id"),
+            "blocked_final_answer_packet_shell_id": q1_state.get(
+                "blocked_final_answer_packet_shell_id"
+            ),
+            "blocked_final_answer_packet_shell_observation_id": q1_state.get(
+                "blocked_final_answer_packet_shell_observation_id"
+            ),
+            "final_evidence_selection_id": q1_state.get(
+                "final_evidence_selection_id"
+            ),
+            "final_evidence_selection_observation_id": q1_state.get(
+                "final_evidence_selection_observation_id"
+            ),
+            "citation_eligibility_id": q1_state.get("citation_eligibility_id"),
+            "citation_eligibility_observation_id": q1_state.get("observation_id"),
+            "citation_source_handoff_id": handoff_id,
+            "provider_job_kind": q1_state.get("provider_job_kind"),
+            "component_id": q1_state.get("component_id"),
+            "source_obligation_id": q1_state.get("source_obligation_id"),
+            "requirement_ids": q1_state.get("requirement_ids", []),
+            "expected_source_classes": q1_state.get("expected_source_classes", []),
+            "fixture_execution_mode": q1_state.get("fixture_execution_mode"),
+            "execution_mode": q1_state.get("execution_mode")
+            or q1_state.get("fixture_execution_mode"),
+            "evidence_ledger_intake_mode": q1_state.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": q1_state.get("sufficiency_recheck_mode"),
+            "provider_execution_licensed": False,
+            "packet_preparation_readiness_mode": (
+                AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+            ),
+            "blocked_final_answer_packet_mode": (
+                AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE
+            ),
+            "final_evidence_selection_mode": (
+                AG96I3P1_FINAL_EVIDENCE_SELECTION_MODE
+            ),
+            "citation_eligibility_mode": AG96I3Q1_CITATION_ELIGIBILITY_MODE,
+            "citation_source_handoff_mode": AG96I3R1_CITATION_SOURCE_HANDOFF_MODE,
+            "evidence_ledger_projection_digest": (
+                evidence_ledger_projection_digest(ledger_projection)
+            ),
+            "sufficiency_judgment_digest": followup_projection_digest(sufficiency),
+            "followup_sufficiency_recheck_digest": followup_projection_digest(
+                recheck_state
+            ),
+            "followup_final_answer_packet_readiness_digest": (
+                followup_projection_digest(readiness_state)
+            ),
+            "blocked_final_answer_packet_shell_digest": (
+                followup_projection_digest(shell_state)
+            ),
+            "blocked_final_answer_packet_digest": q1_state.get(
+                "blocked_final_answer_packet_digest"
+            ),
+            "followup_final_evidence_selection_digest": q1_state.get(
+                "followup_final_evidence_selection_digest"
+            ),
+            "followup_citation_eligibility_digest": q1_digest,
+            "current_final_answer_packet_digest": packet_digest,
+            "final_answer_allowed": False,
+            "answer_ready": False,
+            "citation_rendering_deferred": True,
+            "author_execution_deferred": True,
+            "author_activation_allowed": False,
+            "author_payload_created": False,
+            "analyst_activation_allowed": False,
+            "analyst_handoff_created": False,
+            "economist_activation_allowed": False,
+            "economist_handoff_created": False,
+            "economist_code_execution_allowed": False,
+            "citations_rendered": False,
+            "citation_rendering_changed": False,
+            "citation_behavior_changed": False,
+            "citation_formatter_invoked": False,
+            "canonical_final_answer_packet_mutated": False,
+            "final_answer_packet_updated": False,
+            "final_answer_packet_rebuilt": False,
+            "prompt_behavior_changed": False,
+            "product_answer_behavior_changed": False,
+            "ordered_product_source_output_created": False,
+            "live_validation_not_run": True,
+            "expected_observation_record_type": (
+                "followup_citation_source_handoff_consumption_record"
+            ),
+        }
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        return self.authorize(
+            stage=FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE,
+            action_type=ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_CITATION_SOURCE_HANDOFF_PREPARED
+            ),
+        )
+
     def authorize_followup_final_answer_packet_prepare(
         self,
         *,
         reason: str = "ag96i2e_followup_fixture_final_answer_packet_prepare",
         inputs: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
+        if self.state.followup_citation_source_handoff_state:
+            raise RunKernelTransitionError(
+                "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
+                "an AG-96I3R1 citation source handoff"
+            )
         if self.state.followup_citation_eligibility_state:
             raise RunKernelTransitionError(
                 "legacy follow-up FinalAnswerPacket preparation cannot overwrite "
@@ -3110,6 +3535,16 @@ class RunKernel:
         p1_canonical_record: Any | None = None
         q1_observed_citation_state: dict[str, Any] = {}
         q1_canonical_record: Any | None = None
+        r1_observed_handoff_state: dict[str, Any] = {}
+        r1_canonical_record: Any | None = None
+        if (
+            action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
+            and self.state.followup_citation_source_handoff_state
+        ):
+            raise RunKernelTransitionError(
+                "legacy follow-up FinalAnswerPacket preparation cannot reduce "
+                "after AG-96I3R1 citation source handoff"
+            )
         if (
             action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
             and self.state.followup_citation_eligibility_state
@@ -3137,6 +3572,15 @@ class RunKernel:
         if (
             action.action_type
             is ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL
+            and self.state.followup_citation_source_handoff_state
+        ):
+            raise RunKernelTransitionError(
+                "stale AG-96I3O2 blocked packet shell cannot reduce after "
+                "AG-96I3R1 citation source handoff"
+            )
+        if (
+            action.action_type
+            is ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL
             and self.state.followup_citation_eligibility_state
         ):
             raise RunKernelTransitionError(
@@ -3153,6 +3597,11 @@ class RunKernel:
                 "AG-96I3P1 final evidence selection"
             )
         if action.action_type is ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION:
+            if self.state.followup_citation_source_handoff_state:
+                raise RunKernelTransitionError(
+                    "stale AG-96I3P1 final evidence selection cannot reduce "
+                    "after AG-96I3R1 citation source handoff"
+                )
             if self.state.followup_citation_eligibility_state:
                 raise RunKernelTransitionError(
                     "stale AG-96I3P1 final evidence selection cannot reduce "
@@ -3207,6 +3656,11 @@ class RunKernel:
             except (PermissionError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
         if action.action_type is ActionType.FOLLOWUP_CITATION_ELIGIBILITY:
+            if self.state.followup_citation_source_handoff_state:
+                raise RunKernelTransitionError(
+                    "stale AG-96I3Q1 citation eligibility cannot reduce after "
+                    "AG-96I3R1 citation source handoff"
+                )
             if self.state.followup_citation_eligibility_state:
                 raise RunKernelTransitionError(
                     "duplicate AG-96I3Q1 citation eligibility cannot reduce"
@@ -3244,6 +3698,83 @@ class RunKernel:
                     ),
                     followup_final_answer_packet_readiness_state=(
                         self.state.followup_final_answer_packet_readiness_state
+                    ),
+                    followup_sufficiency_recheck_state=(
+                        self.state.followup_sufficiency_recheck_state
+                    ),
+                    sufficiency_judgment_projection=(
+                        self.state.sufficiency_judgment_projection
+                    ),
+                    evidence_ledger_projection=(
+                        self.state.evidence_ledger.to_projection().to_dict()
+                    ),
+                    followup_evidence_intake_state=(
+                        self.state.followup_evidence_intake_state
+                    ),
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+        if action.action_type is ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF:
+            if self.state.followup_citation_source_handoff_state:
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3R1 citation source handoff cannot reduce"
+                )
+            r1_observed_handoff_state = _safe_mapping(
+                observation.payload.get("followup_citation_source_handoff_state")
+            )
+            if not r1_observed_handoff_state:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff observation requires "
+                    "followup_citation_source_handoff_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            _followup_checked(
+                validate_followup_citation_source_handoff_observation_binding,
+                action_inputs=action_inputs,
+                observed_handoff_state=r1_observed_handoff_state,
+            )
+            try:
+                r1_canonical_record = build_followup_citation_source_handoff_record(
+                    action_inputs=action_inputs,
+                    followup_citation_eligibility_state=(
+                        self.state.followup_citation_eligibility_state
+                    ),
+                    followup_citation_eligibility_projection=(
+                        self.state.followup_citation_eligibility_projection
+                    ),
+                    followup_citation_eligibility_history=(
+                        self.state.followup_citation_eligibility_history
+                    ),
+                    final_answer_packet=self.state.final_answer_packet,
+                    final_answer_authority_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                    followup_final_evidence_selection_state=(
+                        self.state.followup_final_evidence_selection_state
+                    ),
+                    followup_final_evidence_selection_projection=(
+                        self.state.followup_final_evidence_selection_projection
+                    ),
+                    followup_final_evidence_selection_history=(
+                        self.state.followup_final_evidence_selection_history
+                    ),
+                    followup_blocked_final_answer_packet_shell_state=(
+                        self.state.followup_blocked_final_answer_packet_shell_state
+                    ),
+                    followup_blocked_final_answer_packet_shell_projection=(
+                        self.state.followup_blocked_final_answer_packet_shell_projection
+                    ),
+                    followup_blocked_final_answer_packet_shell_history=(
+                        self.state.followup_blocked_final_answer_packet_shell_history
+                    ),
+                    followup_final_answer_packet_readiness_state=(
+                        self.state.followup_final_answer_packet_readiness_state
+                    ),
+                    followup_final_answer_packet_readiness_projection=(
+                        self.state.followup_final_answer_packet_readiness_projection
+                    ),
+                    followup_final_answer_packet_readiness_history=(
+                        self.state.followup_final_answer_packet_readiness_history
                     ),
                     followup_sufficiency_recheck_state=(
                         self.state.followup_sufficiency_recheck_state
@@ -4657,6 +5188,164 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_citation_eligibility_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF:
+            observed_handoff_state = r1_observed_handoff_state or _safe_mapping(
+                observation.payload.get("followup_citation_source_handoff_state")
+            )
+            if r1_canonical_record is None:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff preflight did not rebuild "
+                    "canonical handoff"
+                )
+            handoff_state = {
+                **r1_canonical_record.to_dict(),
+                "owner": "RunKernel.FollowupCitationSourceHandoff",
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "observation_id": observed_handoff_state.get("observation_id"),
+            }
+            flags = _safe_mapping(handoff_state.get("behavior_boundary_flags"))
+            _followup_checked(
+                require_followup_flags_false,
+                flags,
+                _FOLLOWUP_CITATION_SOURCE_HANDOFF_FALSE_FLAGS,
+                context="follow-up citation source handoff",
+            )
+            for required_flag in (
+                "packet_local_citation_eligibility_consumed",
+                "citation_source_handoff_created",
+                "source_identity_records_created",
+            ):
+                if flags.get(required_flag) is not True:
+                    raise RunKernelTransitionError(
+                        "follow-up citation source handoff must set "
+                        f"{required_flag}=True"
+                    )
+            if handoff_state.get("owner") != (
+                "RunKernel.FollowupCitationSourceHandoff"
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff requires RunKernel owner"
+                )
+            if handoff_state.get("canonical_state") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff requires canonical state"
+                )
+            if handoff_state.get("trace_only") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff must not be trace-only"
+                )
+            if handoff_state.get("storage_only") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff must not be storage-only"
+                )
+            if handoff_state.get("citation_source_handoff_mode") != (
+                AG96I3R1_CITATION_SOURCE_HANDOFF_MODE
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff requires AG-96I3R1 mode"
+                )
+            packet = _safe_mapping(self.state.final_answer_packet)
+            if handoff_state.get("packet_id") != packet.get("packet_id"):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff packet mismatch"
+                )
+            if handoff_state.get("current_final_answer_packet_digest") != (
+                followup_projection_digest(packet)
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff FinalAnswerPacket "
+                    "digest mismatch"
+                )
+            if handoff_state.get("source_identity_count", 0) <= 0:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff requires source identities"
+                )
+            source_records = list(
+                handoff_state.get("source_identity_records") or []
+            )
+            if len(source_records) != handoff_state.get("source_identity_count"):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff source count mismatch"
+                )
+            source_ids = [
+                str(record.get("source_id"))
+                for record in source_records
+                if record.get("source_id")
+            ]
+            if source_ids != list(
+                handoff_state.get("citation_eligible_source_ids") or []
+            ):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff source IDs must match "
+                    "identity records"
+                )
+            citation_refs = list(
+                handoff_state.get("citation_eligibility_refs") or []
+            )
+            if len(citation_refs) != len(source_records):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff citation refs mismatch"
+                )
+            if self.state.final_answer_authority_projection:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff cannot follow authority "
+                    "projection mutation"
+                )
+            if packet.get("author_input_refs") != {}:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff requires empty "
+                    "author_input_refs"
+                )
+            if packet.get("author_payload_ref") not in (None, False, [], (), {}):
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff must not create "
+                    "author_payload_ref"
+                )
+            for closed_field in (
+                "canonical_final_answer_packet_mutated",
+                "final_answer_packet_updated",
+                "final_answer_packet_rebuilt",
+                "citations_rendered",
+                "citation_formatter_invoked",
+                "author_payload_created",
+                "author_activation_allowed",
+                "analyst_activation_allowed",
+                "analyst_handoff_created",
+                "economist_activation_allowed",
+                "economist_handoff_created",
+                "economist_code_execution_allowed",
+                "prompt_behavior_changed",
+                "product_answer_behavior_changed",
+                "ordered_product_source_output_created",
+            ):
+                if handoff_state.get(closed_field) is not False:
+                    raise RunKernelTransitionError(
+                        "follow-up citation source handoff must keep "
+                        f"{closed_field}=False"
+                    )
+            if handoff_state.get("author_execution_deferred") is not True:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff must defer Author"
+                )
+            if handoff_state.get("answer_ready") is not False:
+                raise RunKernelTransitionError(
+                    "follow-up citation source handoff must keep answer_ready=false"
+                )
+            self.state.followup_citation_source_handoff_state = handoff_state
+            self.state.followup_citation_source_handoff_projection = (
+                build_followup_citation_source_handoff_projection(
+                    handoff_state=handoff_state,
+                    behavior_boundary_flags=flags,
+                )
+            )
+            self.state.followup_citation_source_handoff_history.append(
+                deepcopy(self.state.followup_citation_source_handoff_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_citation_source_handoff_projection
+            )
         elif (
             action.action_type
             is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
@@ -5255,6 +5944,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
     "FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE",
     "FOLLOWUP_CITATION_ELIGIBILITY_STAGE",
+    "FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE",
     "FOLLOWUP_FINAL_EVIDENCE_SELECTION_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",
