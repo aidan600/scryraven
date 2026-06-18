@@ -924,9 +924,30 @@ def build_followup_sufficiency_recheck_projection(
         "expected_source_classes": recheck_state.get("expected_source_classes", []),
         "result_status": recheck_state.get("result_status"),
         "bridge_only": recheck_state.get("bridge_only"),
+        "execution_mode": recheck_state.get("execution_mode"),
+        "evidence_ledger_intake_mode": recheck_state.get(
+            "evidence_ledger_intake_mode"
+        ),
         "sufficiency_recheck_mode": recheck_state.get("sufficiency_recheck_mode"),
         "evidence_ledger_projection_digest": recheck_state.get(
             "evidence_ledger_projection_digest"
+        ),
+        "evidence_ledger_observation_id": recheck_state.get(
+            "evidence_ledger_observation_id"
+        ),
+        "evidence_ledger_counts": recheck_state.get(
+            "evidence_ledger_counts",
+            {},
+        ),
+        "ag96i3m2_admission_review_candidate": _mapping(
+            recheck_state.get("ag96i3m2_admission_review_candidate")
+        ),
+        "ag96i3m2_evidence_ledger_intake_binding": _mapping(
+            recheck_state.get("ag96i3m2_evidence_ledger_intake_binding")
+        ),
+        "official_current_custody_status": recheck_state.get(
+            "official_current_custody_status",
+            {},
         ),
         "source_requirement_status_summary": recheck_state.get(
             "source_requirement_status_summary",
