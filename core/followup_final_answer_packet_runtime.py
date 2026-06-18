@@ -27,6 +27,9 @@ from core.followup_fixture_boundaries import (
     FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
     FOLLOWUP_LIVE_SURFACE_FALSE_FLAGS,
     FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    blocked_packet_shell_boundary_flags,
+    citation_eligibility_boundary_flags,
+    final_evidence_selection_boundary_flags,
     followup_closed_flags,
     followup_common_redaction_posture,
     followup_fixture_provenance,
@@ -5859,115 +5862,15 @@ def _readiness_behavior_boundary_flags() -> dict[str, bool]:
 
 
 def _blocked_shell_behavior_boundary_flags() -> dict[str, bool]:
-    return {
-        **followup_live_surface_flags(),
-        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
-        "sufficiency_judgment_rechecked": True,
-        "packet_preparation_readiness_consumed": True,
-        "canonical_final_answer_packet_mutated": True,
-        "final_answer_packet_updated": True,
-        "final_answer_packet_rebuilt": True,
-        "blocked_final_answer_packet_shell_activated": True,
-        "final_evidence_selected": False,
-        "citation_eligible": False,
-        "citations_rendered": False,
-        "author_payload_created": False,
-        "analyst_activation_allowed": False,
-        "analyst_handoff_created": False,
-        "economist_activation_allowed": False,
-        "economist_handoff_created": False,
-        "economist_code_execution_allowed": False,
-        "answer_ready": False,
-        "prompt_behavior_changed": False,
-        **followup_closed_flags(
-            *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS
-        ),
-        "author_activation_allowed": False,
-        "author_execution_deferred": True,
-        "citation_rendering_changed": False,
-        "citation_formatter_invoked": False,
-        "product_answer_behavior_changed": False,
-        "live_validation_not_run": True,
-        "not_role_consumption_payload": True,
-        "final_evidence_selection_deferred": True,
-        "citation_eligibility_deferred": True,
-    }
+    return blocked_packet_shell_boundary_flags()
 
 
 def _final_evidence_selection_behavior_boundary_flags() -> dict[str, bool]:
-    return {
-        **followup_live_surface_flags(),
-        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
-        "sufficiency_judgment_rechecked": True,
-        "packet_preparation_readiness_consumed": True,
-        "blocked_final_answer_packet_shell_consumed": True,
-        "canonical_final_answer_packet_mutated": True,
-        "final_answer_packet_updated": True,
-        "final_answer_packet_rebuilt": True,
-        "final_evidence_selected": True,
-        "citation_eligible": False,
-        "citations_rendered": False,
-        "author_payload_created": False,
-        "analyst_activation_allowed": False,
-        "analyst_handoff_created": False,
-        "economist_activation_allowed": False,
-        "economist_handoff_created": False,
-        "economist_code_execution_allowed": False,
-        "answer_ready": False,
-        "prompt_behavior_changed": False,
-        **followup_closed_flags(
-            *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS
-        ),
-        "author_activation_allowed": False,
-        "author_execution_deferred": True,
-        "citation_rendering_changed": False,
-        "citation_formatter_invoked": False,
-        "product_answer_behavior_changed": False,
-        "live_validation_not_run": True,
-        "not_role_consumption_payload": True,
-        "final_evidence_selection_deferred": False,
-        "citation_eligibility_deferred": True,
-    }
+    return final_evidence_selection_boundary_flags()
 
 
 def _citation_eligibility_behavior_boundary_flags() -> dict[str, bool]:
-    return {
-        **followup_live_surface_flags(),
-        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
-        "sufficiency_judgment_rechecked": True,
-        "packet_preparation_readiness_consumed": True,
-        "blocked_final_answer_packet_shell_consumed": True,
-        "final_evidence_selection_consumed": True,
-        "canonical_final_answer_packet_mutated": True,
-        "final_answer_packet_updated": True,
-        "final_answer_packet_rebuilt": True,
-        "final_evidence_selected": True,
-        "citation_eligibility_created": True,
-        "citation_eligible": True,
-        "citations_rendered": False,
-        "citation_rendering_deferred": True,
-        "author_payload_created": False,
-        "analyst_activation_allowed": False,
-        "analyst_handoff_created": False,
-        "economist_activation_allowed": False,
-        "economist_handoff_created": False,
-        "economist_code_execution_allowed": False,
-        "answer_ready": False,
-        "prompt_behavior_changed": False,
-        **followup_closed_flags(
-            *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS
-        ),
-        "author_activation_allowed": False,
-        "author_execution_deferred": True,
-        "citation_rendering_changed": False,
-        "citation_formatter_invoked": False,
-        "citation_behavior_changed": False,
-        "product_answer_behavior_changed": False,
-        "live_validation_not_run": True,
-        "not_role_consumption_payload": True,
-        "final_evidence_selection_deferred": False,
-        "citation_eligibility_deferred": False,
-    }
+    return citation_eligibility_boundary_flags()
 
 
 def _closed_surface_false_flags() -> tuple[str, ...]:

@@ -20,11 +20,8 @@ from core.followup_final_answer_packet_runtime import (
     followup_projection_digest,
 )
 from core.followup_fixture_boundaries import (
-    FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
-    FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
-    followup_closed_flags,
+    citation_source_handoff_boundary_flags,
     followup_common_redaction_posture,
-    followup_live_surface_flags,
 )
 from core.followup_sufficiency_recheck_runtime import (
     AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE,
@@ -1406,46 +1403,7 @@ def _citation_source_handoff_lineage(
 
 
 def _citation_source_handoff_behavior_boundary_flags() -> dict[str, bool]:
-    return {
-        **followup_live_surface_flags(),
-        **{flag: False for flag in FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS},
-        "sufficiency_judgment_rechecked": True,
-        "packet_preparation_readiness_consumed": True,
-        "blocked_final_answer_packet_shell_consumed": True,
-        "final_evidence_selection_consumed": True,
-        "citation_eligibility_consumed": True,
-        "packet_local_citation_eligibility_consumed": True,
-        "canonical_final_answer_packet_mutated": False,
-        "final_answer_packet_updated": False,
-        "final_answer_packet_rebuilt": False,
-        "final_evidence_selected": True,
-        "citation_eligibility_created": True,
-        "citation_source_handoff_created": True,
-        "source_identity_records_created": True,
-        "citation_eligible": True,
-        "citations_rendered": False,
-        "citation_rendering_deferred": True,
-        "author_payload_created": False,
-        "analyst_activation_allowed": False,
-        "analyst_handoff_created": False,
-        "economist_activation_allowed": False,
-        "economist_handoff_created": False,
-        "economist_code_execution_allowed": False,
-        "answer_ready": False,
-        "prompt_behavior_changed": False,
-        **followup_closed_flags(
-            *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS
-        ),
-        "author_activation_allowed": False,
-        "author_execution_deferred": True,
-        "citation_rendering_changed": False,
-        "citation_formatter_invoked": False,
-        "citation_behavior_changed": False,
-        "ordered_product_source_output_created": False,
-        "product_answer_behavior_changed": False,
-        "live_validation_not_run": True,
-        "not_role_consumption_payload": True,
-    }
+    return citation_source_handoff_boundary_flags()
 
 
 def _citation_source_handoff_redaction_posture() -> dict[str, bool]:
