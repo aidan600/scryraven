@@ -433,6 +433,22 @@ def test_duplicate_q1_activation_for_same_p1_packet_rejects() -> None:
         kernel.authorize_followup_citation_eligibility()
 
 
+def test_pre_authorized_duplicate_q1_reduce_rejects_after_q1_without_state_change() -> None:
+    kernel = _kernel_through_p1()
+    first_action = kernel.authorize_followup_citation_eligibility()
+    first_result = _execute_q1(kernel, action=first_action)
+    duplicate_action = kernel.authorize_followup_citation_eligibility()
+    duplicate_result = _execute_q1(kernel, action=duplicate_action)
+
+    kernel.reduce(first_result.observation)
+    snapshot = _q1_state_snapshot(kernel)
+
+    with pytest.raises(RunKernelTransitionError, match="duplicate|AG-96I3Q1"):
+        kernel.reduce(duplicate_result.observation)
+
+    _assert_q1_snapshot_unchanged(kernel, snapshot)
+
+
 def test_legacy_i2e_authorize_rejects_after_q1() -> None:
     kernel = _kernel_through_q1()
 
