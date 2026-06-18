@@ -14,6 +14,10 @@ from core.evidence_ledger_intake_adapter import (
 )
 from core.followup_author_gate_runtime import FOLLOWUP_AUTHOR_GATE_MODE
 from core.followup_author_observation_runtime import FOLLOWUP_AUTHOR_OBSERVATION_MODE
+from core.followup_citation_rendering_runtime import (
+    AG96I3T1_CITATION_RENDERING_MODE,
+    FOLLOWUP_CITATION_RENDERING_STAGE,
+)
 from core.followup_citation_source_handoff_runtime import (
     AG96I3R1_CITATION_SOURCE_HANDOFF_MODE,
 )
@@ -124,6 +128,15 @@ FOLLOWUP_CITATION_ELIGIBILITY_FALSE_FLAGS = (
     *FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
 )
 FOLLOWUP_CITATION_SOURCE_HANDOFF_FALSE_FLAGS = (
+    *FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
+    *FOLLOWUP_FINAL_ANSWER_PACKET_MUTATION_FALSE_FLAGS,
+    "citations_rendered",
+    *FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
+    "ordered_product_source_output_created",
+)
+FOLLOWUP_CITATION_RENDERING_FALSE_FLAGS = (
     *FOLLOWUP_NO_LIVE_FALSE_FLAGS,
     *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
     *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
@@ -1545,6 +1558,243 @@ def _reject_forbidden_citation_source_handoff_payload(
         )
 
 
+def validate_followup_citation_rendering_observation_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    observed_rendering_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "run_id",
+        "checkpoint_id",
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_execution_observation_id",
+        "followup_evidence_intake_id",
+        "intake_id",
+        "followup_evidence_intake_observation_id",
+        "followup_sufficiency_recheck_id",
+        "recheck_id",
+        "followup_sufficiency_recheck_observation_id",
+        "packet_preparation_readiness_id",
+        "readiness_observation_id",
+        "blocked_final_answer_packet_shell_id",
+        "blocked_final_answer_packet_shell_observation_id",
+        "final_evidence_selection_id",
+        "final_evidence_selection_observation_id",
+        "citation_eligibility_id",
+        "citation_eligibility_observation_id",
+        "citation_source_handoff_id",
+        "citation_source_handoff_observation_id",
+        "citation_rendering_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "execution_mode",
+        "evidence_ledger_intake_mode",
+        "sufficiency_recheck_mode",
+        "packet_preparation_readiness_mode",
+        "blocked_final_answer_packet_mode",
+        "final_evidence_selection_mode",
+        "citation_eligibility_mode",
+        "citation_source_handoff_mode",
+        "citation_rendering_mode",
+        "evidence_ledger_projection_digest",
+        "sufficiency_judgment_digest",
+        "followup_sufficiency_recheck_digest",
+        "followup_final_answer_packet_readiness_digest",
+        "blocked_final_answer_packet_shell_digest",
+        "blocked_final_answer_packet_digest",
+        "followup_final_evidence_selection_digest",
+        "followup_citation_eligibility_digest",
+        "followup_citation_source_handoff_digest",
+        "source_identity_digest",
+        "current_final_answer_packet_digest",
+    ):
+        if observed_rendering_state.get(binding_field) != action_inputs.get(
+            binding_field
+        ):
+            raise FollowupRunKernelReducerError(
+                "follow-up citation rendering observation "
+                f"{binding_field} does not match authorized action"
+            )
+    if action_inputs.get("execution_mode") == "fixture_only" and (
+        observed_rendering_state.get("fixture_execution_mode")
+        != action_inputs.get("fixture_execution_mode")
+    ):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation "
+            "fixture_execution_mode does not match authorized action"
+        )
+    if followup_token_list(
+        observed_rendering_state.get("requirement_ids")
+    ) != followup_token_list(action_inputs.get("requirement_ids")):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation "
+            "requirement_ids do not match authorized action"
+        )
+    if followup_token_list(
+        observed_rendering_state.get("expected_source_classes")
+    ) != followup_token_list(action_inputs.get("expected_source_classes")):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation "
+            "expected_source_classes do not match authorized action"
+        )
+    if action_inputs.get("citation_rendering_mode") != (
+        AG96I3T1_CITATION_RENDERING_MODE
+    ):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering action must use AG-96I3T1 mode"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering must keep provider unlicensed"
+        )
+    if action_inputs.get("final_answer_allowed") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering must keep final answers disallowed"
+        )
+    if action_inputs.get("answer_ready") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering must keep answer_ready=False"
+        )
+    if action_inputs.get("citation_rendering_deferred") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering must keep final rendering deferred"
+        )
+    if action_inputs.get("author_execution_deferred") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering action must defer Author"
+        )
+    if action_inputs.get("live_validation_not_run") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering action must not run live validation"
+        )
+    if observed_rendering_state.get("rendered_source_entry_count") in (None, 0):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation requires rendered entries"
+        )
+    if not observed_rendering_state.get("rendered_source_entry_digest"):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation requires rendered digest"
+        )
+    if observed_rendering_state.get("source_identity_count") in (None, 0):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation requires source identities"
+        )
+    if observed_rendering_state.get("final_evidence_selected") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation must preserve final evidence"
+        )
+    if observed_rendering_state.get("citation_eligibility_created") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation must consume Q1"
+        )
+    if observed_rendering_state.get("citation_source_handoff_created") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation must consume R1"
+        )
+    if observed_rendering_state.get("final_answer_allowed") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation "
+            "must keep final_answer_allowed=False"
+        )
+    if observed_rendering_state.get("answer_ready") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation must keep answer_ready=False"
+        )
+    if observed_rendering_state.get("citation_rendering_deferred") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation must keep final rendering deferred"
+        )
+    if observed_rendering_state.get("not_role_consumption_payload") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation must not be role-consumable"
+        )
+    for field in (
+        "canonical_final_answer_packet_mutated",
+        "final_answer_packet_updated",
+        "final_answer_packet_rebuilt",
+        "citations_rendered",
+        "citation_rendering_changed",
+        "citation_behavior_changed",
+        "citation_formatter_invoked",
+        "author_activation_allowed",
+        "author_payload_created",
+        "analyst_activation_allowed",
+        "analyst_handoff_created",
+        "economist_activation_allowed",
+        "economist_handoff_created",
+        "economist_code_execution_allowed",
+        "prompt_behavior_changed",
+        "product_answer_behavior_changed",
+        "ordered_product_source_output_created",
+    ):
+        if (
+            action_inputs.get(field) is True
+            or observed_rendering_state.get(field) is True
+        ):
+            raise FollowupRunKernelReducerError(
+                "follow-up citation rendering observation "
+                f"must keep {field}=False"
+            )
+    _reject_forbidden_citation_rendering_payload(observed_rendering_state)
+
+
+def _reject_forbidden_citation_rendering_payload(
+    payload: Mapping[str, Any],
+) -> None:
+    forbidden = {
+        "analyst_handoff",
+        "analyst_handoff_ref",
+        "author_authority_block",
+        "author_input_payload",
+        "author_input_refs",
+        "author_payload_ref",
+        "economist_handoff",
+        "economist_handoff_ref",
+        "final_answer_authority_projection",
+        "final_answer_citation",
+        "final_answer_citation_string",
+        "final_answer_text",
+        "formatted_citation",
+        "formatted_citations",
+        "inline_citation",
+        "inline_citation_string",
+        "markdown_source_list",
+        "ordered_product_source_output",
+        "ordered_source_output",
+        "ordered_sources",
+        "prompt",
+        "prompt_text",
+        "rendered_citation",
+        "rendered_citations",
+        "source_list_prose",
+    }
+
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                token = _followup_token(key, limit=120)
+                if token in forbidden:
+                    raise FollowupRunKernelReducerError(
+                        "follow-up citation rendering observation "
+                        f"must not carry {token}"
+                    )
+                walk(child, f"{path}.{key}")
+        elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            for index, child in enumerate(value):
+                walk(child, f"{path}[{index}]")
+
+    walk(payload, "citation_rendering")
+    if _contains_sensitive_payload_field(payload):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation rendering observation contains "
+            "raw/private payload fields"
+        )
+
+
 def validate_followup_author_gate_observation_binding(
     *,
     action_inputs: Mapping[str, Any],
@@ -2919,6 +3169,194 @@ def build_followup_citation_source_handoff_projection(
     }
 
 
+def build_followup_citation_rendering_projection(
+    *,
+    rendering_state: Mapping[str, Any],
+    behavior_boundary_flags: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "owner": "RunKernel.FollowupCitationRendering",
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "schema_version": rendering_state.get("schema_version"),
+        "citation_rendering_id": rendering_state.get("citation_rendering_id"),
+        "citation_rendering_mode": rendering_state.get("citation_rendering_mode"),
+        "observation_id": rendering_state.get("observation_id"),
+        "run_id": rendering_state.get("run_id"),
+        "checkpoint_id": rendering_state.get("checkpoint_id"),
+        "followup_authorization_consumption_id": rendering_state.get(
+            "followup_authorization_consumption_id"
+        ),
+        "sealed_candidate_id": rendering_state.get("sealed_candidate_id"),
+        "followup_execution_id": rendering_state.get("followup_execution_id"),
+        "execution_id": rendering_state.get("execution_id"),
+        "followup_execution_observation_id": rendering_state.get(
+            "followup_execution_observation_id"
+        ),
+        "followup_evidence_intake_id": rendering_state.get(
+            "followup_evidence_intake_id"
+        ),
+        "intake_id": rendering_state.get("intake_id"),
+        "followup_evidence_intake_observation_id": rendering_state.get(
+            "followup_evidence_intake_observation_id"
+        ),
+        "followup_sufficiency_recheck_id": rendering_state.get(
+            "followup_sufficiency_recheck_id"
+        ),
+        "recheck_id": rendering_state.get("recheck_id"),
+        "followup_sufficiency_recheck_observation_id": rendering_state.get(
+            "followup_sufficiency_recheck_observation_id"
+        ),
+        "packet_preparation_readiness_id": rendering_state.get(
+            "packet_preparation_readiness_id"
+        ),
+        "readiness_observation_id": rendering_state.get("readiness_observation_id"),
+        "blocked_final_answer_packet_shell_id": rendering_state.get(
+            "blocked_final_answer_packet_shell_id"
+        ),
+        "blocked_final_answer_packet_shell_observation_id": rendering_state.get(
+            "blocked_final_answer_packet_shell_observation_id"
+        ),
+        "final_evidence_selection_id": rendering_state.get(
+            "final_evidence_selection_id"
+        ),
+        "final_evidence_selection_observation_id": rendering_state.get(
+            "final_evidence_selection_observation_id"
+        ),
+        "citation_eligibility_id": rendering_state.get("citation_eligibility_id"),
+        "citation_eligibility_observation_id": rendering_state.get(
+            "citation_eligibility_observation_id"
+        ),
+        "citation_source_handoff_id": rendering_state.get(
+            "citation_source_handoff_id"
+        ),
+        "citation_source_handoff_observation_id": rendering_state.get(
+            "citation_source_handoff_observation_id"
+        ),
+        "provider_job_kind": rendering_state.get("provider_job_kind"),
+        "component_id": rendering_state.get("component_id"),
+        "source_obligation_id": rendering_state.get("source_obligation_id"),
+        "requirement_ids": rendering_state.get("requirement_ids", []),
+        "expected_source_classes": rendering_state.get("expected_source_classes", []),
+        "evidence_ledger_intake_mode": rendering_state.get(
+            "evidence_ledger_intake_mode"
+        ),
+        "sufficiency_recheck_mode": rendering_state.get("sufficiency_recheck_mode"),
+        "packet_preparation_readiness_mode": rendering_state.get(
+            "packet_preparation_readiness_mode"
+        ),
+        "blocked_final_answer_packet_mode": rendering_state.get(
+            "blocked_final_answer_packet_mode"
+        ),
+        "final_evidence_selection_mode": rendering_state.get(
+            "final_evidence_selection_mode"
+        ),
+        "citation_eligibility_mode": rendering_state.get(
+            "citation_eligibility_mode"
+        ),
+        "citation_source_handoff_mode": rendering_state.get(
+            "citation_source_handoff_mode"
+        ),
+        "evidence_ledger_projection_digest": rendering_state.get(
+            "evidence_ledger_projection_digest"
+        ),
+        "sufficiency_judgment_digest": rendering_state.get(
+            "sufficiency_judgment_digest"
+        ),
+        "followup_sufficiency_recheck_digest": rendering_state.get(
+            "followup_sufficiency_recheck_digest"
+        ),
+        "followup_final_answer_packet_readiness_digest": rendering_state.get(
+            "followup_final_answer_packet_readiness_digest"
+        ),
+        "blocked_final_answer_packet_shell_digest": rendering_state.get(
+            "blocked_final_answer_packet_shell_digest"
+        ),
+        "blocked_final_answer_packet_digest": rendering_state.get(
+            "blocked_final_answer_packet_digest"
+        ),
+        "followup_final_evidence_selection_digest": rendering_state.get(
+            "followup_final_evidence_selection_digest"
+        ),
+        "followup_citation_eligibility_digest": rendering_state.get(
+            "followup_citation_eligibility_digest"
+        ),
+        "followup_citation_source_handoff_digest": rendering_state.get(
+            "followup_citation_source_handoff_digest"
+        ),
+        "source_identity_digest": rendering_state.get("source_identity_digest"),
+        "current_final_answer_packet_digest": rendering_state.get(
+            "current_final_answer_packet_digest"
+        ),
+        "packet_id": rendering_state.get("packet_id"),
+        "citation_eligible_source_ids": rendering_state.get(
+            "citation_eligible_source_ids",
+            [],
+        ),
+        "citation_eligibility_refs": rendering_state.get(
+            "citation_eligibility_refs",
+            [],
+        ),
+        "source_identity_count": rendering_state.get("source_identity_count", 0),
+        "rendered_source_entries": rendering_state.get(
+            "rendered_source_entries",
+            [],
+        ),
+        "rendered_source_entry_count": rendering_state.get(
+            "rendered_source_entry_count",
+            0,
+        ),
+        "rendered_source_entry_digest": rendering_state.get(
+            "rendered_source_entry_digest"
+        ),
+        "citation_rendering_summary": _mapping(
+            rendering_state.get("citation_rendering_summary")
+        ),
+        "citation_rendering_lineage": _mapping(
+            rendering_state.get("citation_rendering_lineage")
+        ),
+        "rendering_policy": rendering_state.get("rendering_policy"),
+        "final_answer_allowed": False,
+        "answer_ready": False,
+        "final_evidence_selected": True,
+        "citation_eligibility_created": True,
+        "citation_source_handoff_created": True,
+        "citations_rendered": False,
+        "citation_rendering_deferred": True,
+        "citation_rendering_changed": False,
+        "citation_behavior_changed": False,
+        "citation_formatter_invoked": False,
+        "author_payload_created": False,
+        "author_activation_allowed": False,
+        "author_execution_deferred": True,
+        "analyst_activation_allowed": False,
+        "analyst_handoff_created": False,
+        "economist_activation_allowed": False,
+        "economist_handoff_created": False,
+        "economist_code_execution_allowed": False,
+        "prompt_behavior_changed": False,
+        "product_answer_behavior_changed": False,
+        "ordered_product_source_output_created": False,
+        "live_validation_not_run": True,
+        "not_role_consumption_payload": True,
+        "canonical_final_answer_packet_ref": {
+            "owner": "RunKernel.FinalAnswerPacket",
+            "canonical_state": True,
+            "packet_id": rendering_state.get("packet_id"),
+            "final_answer_packet_digest": rendering_state.get(
+                "current_final_answer_packet_digest"
+            ),
+            "packet_mutated_by_t1": False,
+            "authority_projection_created": False,
+            "author_payload_created": False,
+            "citations_rendered": False,
+        },
+        "stage": FOLLOWUP_CITATION_RENDERING_STAGE,
+        "behavior_boundary_flags": dict(behavior_boundary_flags),
+    }
+
+
 def build_followup_author_gate_projection(
     *,
     gate_state: Mapping[str, Any],
@@ -3903,6 +4341,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS",
     "FOLLOWUP_BLOCKED_PACKET_SHELL_FALSE_FLAGS",
     "FOLLOWUP_CITATION_ELIGIBILITY_FALSE_FLAGS",
+    "FOLLOWUP_CITATION_RENDERING_FALSE_FLAGS",
     "FOLLOWUP_CITATION_SOURCE_HANDOFF_FALSE_FLAGS",
     "FOLLOWUP_EXECUTION_FALSE_FLAGS",
     "FOLLOWUP_FINAL_EVIDENCE_SELECTION_FALSE_FLAGS",
@@ -3921,6 +4360,7 @@ __all__ = [
     "build_followup_authorization_projection",
     "build_followup_blocked_final_answer_packet_shell_projection",
     "build_followup_citation_eligibility_projection",
+    "build_followup_citation_rendering_projection",
     "build_followup_citation_source_handoff_projection",
     "build_followup_author_observation_projection",
     "build_followup_evidence_intake_ledger_observation",
@@ -3938,6 +4378,7 @@ __all__ = [
     "validate_followup_author_observation_binding",
     "validate_followup_blocked_final_answer_packet_shell_observation_binding",
     "validate_followup_citation_eligibility_observation_binding",
+    "validate_followup_citation_rendering_observation_binding",
     "validate_followup_citation_source_handoff_observation_binding",
     "validate_followup_evidence_intake_action_binding",
     "validate_followup_execution_action_binding",
