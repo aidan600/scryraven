@@ -327,6 +327,93 @@ def assert_r1_boundary_snapshot_unchanged(
     ]
 
 
+def snapshot_t1_boundary_state(kernel: Any) -> dict[str, Any]:
+    return {
+        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
+        "final_answer_authority_projection": deepcopy(
+            kernel.state.final_answer_authority_projection
+        ),
+        "followup_citation_rendering_state": deepcopy(
+            kernel.state.followup_citation_rendering_state
+        ),
+        "followup_citation_rendering_projection": deepcopy(
+            kernel.state.followup_citation_rendering_projection
+        ),
+        "followup_citation_rendering_history": deepcopy(
+            kernel.state.followup_citation_rendering_history
+        ),
+        "followup_citation_source_handoff_state": deepcopy(
+            kernel.state.followup_citation_source_handoff_state
+        ),
+        "followup_citation_source_handoff_projection": deepcopy(
+            kernel.state.followup_citation_source_handoff_projection
+        ),
+        "followup_citation_source_handoff_history": deepcopy(
+            kernel.state.followup_citation_source_handoff_history
+        ),
+        "followup_citation_eligibility_state": deepcopy(
+            kernel.state.followup_citation_eligibility_state
+        ),
+        "followup_citation_eligibility_projection": deepcopy(
+            kernel.state.followup_citation_eligibility_projection
+        ),
+        "followup_citation_eligibility_history": deepcopy(
+            kernel.state.followup_citation_eligibility_history
+        ),
+        "projections": deepcopy(kernel.state.projections),
+        "action_statuses": deepcopy(kernel.state.action_statuses),
+        "stage_statuses": deepcopy(kernel.state.stage_statuses),
+        "reduced_action_ids": deepcopy(kernel.state.reduced_action_ids),
+        "observations": deepcopy(kernel.state.observations),
+        "next_observation_sequence": kernel.state.next_observation_sequence,
+    }
+
+
+def assert_t1_boundary_snapshot_unchanged(
+    kernel: Any,
+    snapshot: dict[str, Any],
+) -> None:
+    assert kernel.state.final_answer_packet == snapshot["final_answer_packet"]
+    assert kernel.state.final_answer_authority_projection == snapshot[
+        "final_answer_authority_projection"
+    ]
+    assert kernel.state.followup_citation_rendering_state == snapshot[
+        "followup_citation_rendering_state"
+    ]
+    assert kernel.state.followup_citation_rendering_projection == snapshot[
+        "followup_citation_rendering_projection"
+    ]
+    assert kernel.state.followup_citation_rendering_history == snapshot[
+        "followup_citation_rendering_history"
+    ]
+    assert kernel.state.followup_citation_source_handoff_state == snapshot[
+        "followup_citation_source_handoff_state"
+    ]
+    assert kernel.state.followup_citation_source_handoff_projection == snapshot[
+        "followup_citation_source_handoff_projection"
+    ]
+    assert kernel.state.followup_citation_source_handoff_history == snapshot[
+        "followup_citation_source_handoff_history"
+    ]
+    assert kernel.state.followup_citation_eligibility_state == snapshot[
+        "followup_citation_eligibility_state"
+    ]
+    assert kernel.state.followup_citation_eligibility_projection == snapshot[
+        "followup_citation_eligibility_projection"
+    ]
+    assert kernel.state.followup_citation_eligibility_history == snapshot[
+        "followup_citation_eligibility_history"
+    ]
+    assert kernel.state.projections == snapshot["projections"]
+    assert kernel.state.action_statuses == snapshot["action_statuses"]
+    assert kernel.state.stage_statuses == snapshot["stage_statuses"]
+    assert kernel.state.reduced_action_ids == snapshot["reduced_action_ids"]
+    assert kernel.state.observations == snapshot["observations"]
+    assert kernel.state.next_observation_sequence == snapshot[
+        "next_observation_sequence"
+    ]
+
+
 def assert_no_sensitive_payload(value: Any) -> None:
     markers = (
         "raw_page_text",

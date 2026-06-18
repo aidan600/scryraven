@@ -178,6 +178,30 @@ def citation_source_handoff_boundary_flags() -> dict[str, bool]:
     }
 
 
+def citation_rendering_boundary_flags() -> dict[str, bool]:
+    return {
+        **followup_closed_surface_boundary_flags(),
+        "sufficiency_judgment_rechecked": True,
+        "packet_preparation_readiness_consumed": True,
+        "blocked_final_answer_packet_shell_consumed": True,
+        "final_evidence_selection_consumed": True,
+        "citation_eligibility_consumed": True,
+        "packet_local_citation_eligibility_consumed": True,
+        "citation_source_handoff_consumed": True,
+        "r1_source_identity_records_consumed": True,
+        **{name: False for name in FOLLOWUP_FINAL_ANSWER_PACKET_MUTATION_FALSE_FLAGS},
+        "final_evidence_selected": True,
+        "citation_eligibility_created": True,
+        "citation_source_handoff_created": True,
+        "source_identity_records_created": True,
+        "machine_readable_rendered_source_entries_created": True,
+        "citation_eligible": True,
+        "citations_rendered": False,
+        "citation_rendering_deferred": True,
+        "ordered_product_source_output_created": False,
+    }
+
+
 def followup_fixture_provenance(
     *,
     intake_bridge: str | None = None,
@@ -233,6 +257,7 @@ __all__ = [
     "FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS",
     "blocked_packet_shell_boundary_flags",
     "citation_eligibility_boundary_flags",
+    "citation_rendering_boundary_flags",
     "citation_source_handoff_boundary_flags",
     "final_evidence_selection_boundary_flags",
     "followup_closed_flags",
