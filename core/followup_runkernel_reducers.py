@@ -18,6 +18,8 @@ from core.followup_final_answer_packet_runtime import (
     AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE,
     AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE,
     AG96I3P1_FINAL_EVIDENCE_SELECTION_MODE,
+    AG96I3Q1_CITATION_ELIGIBILITY_MODE,
+    FOLLOWUP_CITATION_ELIGIBILITY_STAGE,
     FOLLOWUP_FINAL_ANSWER_PACKET_MODE,
 )
 from core.followup_fixture_boundaries import (
@@ -114,6 +116,20 @@ FOLLOWUP_FINAL_EVIDENCE_SELECTION_FALSE_FLAGS = (
     *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
     *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
     "citation_eligible",
+    "citations_rendered",
+    "author_payload_created",
+    "analyst_activation_allowed",
+    "analyst_handoff_created",
+    "economist_activation_allowed",
+    "economist_handoff_created",
+    "economist_code_execution_allowed",
+    "answer_ready",
+    "prompt_behavior_changed",
+)
+FOLLOWUP_CITATION_ELIGIBILITY_FALSE_FLAGS = (
+    *FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
     "citations_rendered",
     "author_payload_created",
     "analyst_activation_allowed",
@@ -1089,6 +1105,224 @@ def _reject_forbidden_final_evidence_selection_refs(
     if _contains_sensitive_payload_field(payload):
         raise FollowupRunKernelReducerError(
             "follow-up final evidence selection observation contains "
+            "raw/private payload fields"
+        )
+
+
+def validate_followup_citation_eligibility_observation_binding(
+    *,
+    action_inputs: Mapping[str, Any],
+    observed_citation_state: Mapping[str, Any],
+) -> None:
+    for binding_field in (
+        "run_id",
+        "checkpoint_id",
+        "followup_authorization_consumption_id",
+        "sealed_candidate_id",
+        "followup_execution_id",
+        "execution_id",
+        "followup_execution_observation_id",
+        "followup_evidence_intake_id",
+        "intake_id",
+        "followup_evidence_intake_observation_id",
+        "followup_sufficiency_recheck_id",
+        "recheck_id",
+        "followup_sufficiency_recheck_observation_id",
+        "packet_preparation_readiness_id",
+        "readiness_observation_id",
+        "blocked_final_answer_packet_shell_id",
+        "blocked_final_answer_packet_shell_observation_id",
+        "final_evidence_selection_id",
+        "final_evidence_selection_observation_id",
+        "citation_eligibility_id",
+        "provider_job_kind",
+        "component_id",
+        "source_obligation_id",
+        "execution_mode",
+        "evidence_ledger_intake_mode",
+        "sufficiency_recheck_mode",
+        "packet_preparation_readiness_mode",
+        "blocked_final_answer_packet_mode",
+        "final_evidence_selection_mode",
+        "citation_eligibility_mode",
+        "evidence_ledger_projection_digest",
+        "sufficiency_judgment_digest",
+        "followup_sufficiency_recheck_digest",
+        "followup_final_answer_packet_readiness_digest",
+        "blocked_final_answer_packet_shell_digest",
+        "blocked_final_answer_packet_digest",
+        "followup_final_evidence_selection_digest",
+        "current_final_answer_packet_digest",
+    ):
+        if observed_citation_state.get(binding_field) != action_inputs.get(
+            binding_field
+        ):
+            raise FollowupRunKernelReducerError(
+                "follow-up citation eligibility observation "
+                f"{binding_field} does not match authorized action"
+            )
+    if action_inputs.get("execution_mode") == "fixture_only" and (
+        observed_citation_state.get("fixture_execution_mode")
+        != action_inputs.get("fixture_execution_mode")
+    ):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation "
+            "fixture_execution_mode does not match authorized action"
+        )
+    if followup_token_list(
+        observed_citation_state.get("requirement_ids")
+    ) != followup_token_list(action_inputs.get("requirement_ids")):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation "
+            "requirement_ids do not match authorized action"
+        )
+    if followup_token_list(
+        observed_citation_state.get("expected_source_classes")
+    ) != followup_token_list(action_inputs.get("expected_source_classes")):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation "
+            "expected_source_classes do not match authorized action"
+        )
+    if action_inputs.get("provider_execution_licensed") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must keep provider unlicensed"
+        )
+    if action_inputs.get("packet_preparation_readiness_mode") != (
+        AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+    ):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must consume AG-96I3O1 readiness"
+        )
+    if action_inputs.get("blocked_final_answer_packet_mode") != (
+        AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE
+    ):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must consume AG-96I3O2 shell"
+        )
+    if action_inputs.get("final_evidence_selection_mode") != (
+        AG96I3P1_FINAL_EVIDENCE_SELECTION_MODE
+    ):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must consume AG-96I3P1 selection"
+        )
+    if action_inputs.get("citation_eligibility_mode") != (
+        AG96I3Q1_CITATION_ELIGIBILITY_MODE
+    ):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility action must use AG-96I3Q1 mode"
+        )
+    if action_inputs.get("final_answer_allowed") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must keep final answers disallowed"
+        )
+    if action_inputs.get("answer_ready") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must keep answer_ready=False"
+        )
+    if action_inputs.get("citation_eligibility_deferred_before_q1") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must consume deferred P1 packet"
+        )
+    if action_inputs.get("citation_rendering_deferred") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility must defer citation rendering"
+        )
+    if action_inputs.get("author_execution_deferred") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility action must defer Author"
+        )
+    if action_inputs.get("live_validation_not_run") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility action must not run live validation"
+        )
+    if observed_citation_state.get("final_evidence_selected") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation must preserve final evidence"
+        )
+    if observed_citation_state.get("final_answer_allowed") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation "
+            "must keep final_answer_allowed=False"
+        )
+    if observed_citation_state.get("answer_ready") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation must keep answer_ready=False"
+        )
+    if observed_citation_state.get("citation_eligibility_deferred") is not False:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation must close eligibility deferral"
+        )
+    if observed_citation_state.get("citation_rendering_deferred") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation must defer rendering"
+        )
+    if observed_citation_state.get("not_role_consumption_payload") is not True:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation must not be role-consumable"
+        )
+    for field in (
+        "citations_rendered",
+        "citation_rendering_changed",
+        "citation_behavior_changed",
+        "citation_formatter_invoked",
+        "author_activation_allowed",
+        "author_payload_created",
+        "analyst_activation_allowed",
+        "analyst_handoff_created",
+        "economist_activation_allowed",
+        "economist_handoff_created",
+        "economist_code_execution_allowed",
+        "prompt_behavior_changed",
+        "product_answer_behavior_changed",
+    ):
+        if action_inputs.get(field) is True or observed_citation_state.get(field) is True:
+            raise FollowupRunKernelReducerError(
+                "follow-up citation eligibility observation "
+                f"must keep {field}=False"
+            )
+    if observed_citation_state.get("author_input_refs") != {}:
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation "
+            "must keep author_input_refs empty"
+        )
+    _reject_forbidden_citation_eligibility_refs(observed_citation_state)
+    packet_projection = _mapping(observed_citation_state.get("packet_projection"))
+    if packet_projection:
+        _reject_forbidden_citation_eligibility_refs(packet_projection)
+
+
+def _reject_forbidden_citation_eligibility_refs(
+    payload: Mapping[str, Any],
+) -> None:
+    forbidden = {
+        "author_payload_ref",
+        "citation_eligible_source_ids",
+        "citation_eligibility_refs",
+        "citation_source_handoff",
+        "citation_source_handoff_state",
+        "rendered_citation",
+        "rendered_citations",
+        "ordered_sources",
+    }
+
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                token = _followup_token(key, limit=120)
+                if token in forbidden:
+                    raise FollowupRunKernelReducerError(
+                        "follow-up citation eligibility observation "
+                        f"must not carry {token}"
+                    )
+                walk(child, f"{path}.{key}")
+        elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+            for index, child in enumerate(value):
+                walk(child, f"{path}[{index}]")
+
+    walk(payload, "citation_eligibility")
+    if _contains_sensitive_payload_field(payload):
+        raise FollowupRunKernelReducerError(
+            "follow-up citation eligibility observation contains "
             "raw/private payload fields"
         )
 
@@ -2141,6 +2375,159 @@ def build_followup_final_evidence_selection_projection(
     }
 
 
+def build_followup_citation_eligibility_projection(
+    *,
+    citation_state: Mapping[str, Any],
+    packet_projection: Mapping[str, Any],
+    behavior_boundary_flags: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "owner": "RunKernel.FollowupCitationEligibility",
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "schema_version": citation_state.get("schema_version"),
+        "citation_eligibility_id": citation_state.get("citation_eligibility_id"),
+        "observation_id": citation_state.get("observation_id"),
+        "run_id": citation_state.get("run_id"),
+        "checkpoint_id": citation_state.get("checkpoint_id"),
+        "followup_authorization_consumption_id": citation_state.get(
+            "followup_authorization_consumption_id"
+        ),
+        "sealed_candidate_id": citation_state.get("sealed_candidate_id"),
+        "followup_execution_id": citation_state.get("followup_execution_id"),
+        "execution_id": citation_state.get("execution_id"),
+        "followup_execution_observation_id": citation_state.get(
+            "followup_execution_observation_id"
+        ),
+        "followup_evidence_intake_id": citation_state.get(
+            "followup_evidence_intake_id"
+        ),
+        "intake_id": citation_state.get("intake_id"),
+        "followup_evidence_intake_observation_id": citation_state.get(
+            "followup_evidence_intake_observation_id"
+        ),
+        "followup_sufficiency_recheck_id": citation_state.get(
+            "followup_sufficiency_recheck_id"
+        ),
+        "recheck_id": citation_state.get("recheck_id"),
+        "followup_sufficiency_recheck_observation_id": citation_state.get(
+            "followup_sufficiency_recheck_observation_id"
+        ),
+        "packet_preparation_readiness_id": citation_state.get(
+            "packet_preparation_readiness_id"
+        ),
+        "readiness_observation_id": citation_state.get("readiness_observation_id"),
+        "blocked_final_answer_packet_shell_id": citation_state.get(
+            "blocked_final_answer_packet_shell_id"
+        ),
+        "blocked_final_answer_packet_shell_observation_id": citation_state.get(
+            "blocked_final_answer_packet_shell_observation_id"
+        ),
+        "final_evidence_selection_id": citation_state.get(
+            "final_evidence_selection_id"
+        ),
+        "final_evidence_selection_observation_id": citation_state.get(
+            "final_evidence_selection_observation_id"
+        ),
+        "provider_job_kind": citation_state.get("provider_job_kind"),
+        "component_id": citation_state.get("component_id"),
+        "source_obligation_id": citation_state.get("source_obligation_id"),
+        "requirement_ids": citation_state.get("requirement_ids", []),
+        "expected_source_classes": citation_state.get("expected_source_classes", []),
+        "evidence_ledger_intake_mode": citation_state.get(
+            "evidence_ledger_intake_mode"
+        ),
+        "sufficiency_recheck_mode": citation_state.get("sufficiency_recheck_mode"),
+        "packet_preparation_readiness_mode": citation_state.get(
+            "packet_preparation_readiness_mode"
+        ),
+        "blocked_final_answer_packet_mode": citation_state.get(
+            "blocked_final_answer_packet_mode"
+        ),
+        "final_evidence_selection_mode": citation_state.get(
+            "final_evidence_selection_mode"
+        ),
+        "citation_eligibility_mode": citation_state.get(
+            "citation_eligibility_mode"
+        ),
+        "evidence_ledger_projection_digest": citation_state.get(
+            "evidence_ledger_projection_digest"
+        ),
+        "sufficiency_judgment_digest": citation_state.get(
+            "sufficiency_judgment_digest"
+        ),
+        "followup_sufficiency_recheck_digest": citation_state.get(
+            "followup_sufficiency_recheck_digest"
+        ),
+        "followup_final_answer_packet_readiness_digest": citation_state.get(
+            "followup_final_answer_packet_readiness_digest"
+        ),
+        "blocked_final_answer_packet_shell_digest": citation_state.get(
+            "blocked_final_answer_packet_shell_digest"
+        ),
+        "blocked_final_answer_packet_digest": citation_state.get(
+            "blocked_final_answer_packet_digest"
+        ),
+        "followup_final_evidence_selection_digest": citation_state.get(
+            "followup_final_evidence_selection_digest"
+        ),
+        "current_final_answer_packet_digest": citation_state.get(
+            "current_final_answer_packet_digest"
+        ),
+        "packet_id": packet_projection.get("packet_id"),
+        "packet_projection": _mapping(packet_projection),
+        "readiness_status": packet_projection.get("readiness_status"),
+        "readiness_reasons": packet_projection.get("readiness_reasons", []),
+        "final_answer_allowed": False,
+        "answer_ready": False,
+        "evidence_allowed": packet_projection.get("evidence_allowed", []),
+        "evidence_excluded": packet_projection.get("evidence_excluded", []),
+        "citation_eligible": packet_projection.get("citation_eligible", []),
+        "citation_ineligible": packet_projection.get("citation_ineligible", []),
+        "citation_eligibility_summary": _mapping(
+            citation_state.get("citation_eligibility_summary")
+        ),
+        "citation_eligibility_lineage": _mapping(
+            citation_state.get("citation_eligibility_lineage")
+        ),
+        "author_input_refs": {},
+        "final_evidence_selected": True,
+        "citation_eligible_flag": bool(packet_projection.get("citation_eligible")),
+        "citation_eligibility_created": True,
+        "citations_rendered": False,
+        "citation_rendering_deferred": True,
+        "citation_rendering_changed": False,
+        "citation_behavior_changed": False,
+        "citation_formatter_invoked": False,
+        "author_payload_created": False,
+        "author_activation_allowed": False,
+        "author_execution_deferred": True,
+        "analyst_activation_allowed": False,
+        "analyst_handoff_created": False,
+        "economist_activation_allowed": False,
+        "economist_handoff_created": False,
+        "economist_code_execution_allowed": False,
+        "prompt_behavior_changed": False,
+        "product_answer_behavior_changed": False,
+        "live_validation_not_run": True,
+        "not_role_consumption_payload": True,
+        "final_evidence_selection_deferred": False,
+        "citation_eligibility_deferred": False,
+        "canonical_final_answer_packet_ref": {
+            "owner": "RunKernel.FinalAnswerPacket",
+            "canonical_state": True,
+            "packet_id": packet_projection.get("packet_id"),
+            "authority_projection_created": False,
+            "author_payload_created": False,
+            "citation_source_handoff_created": False,
+            "citations_rendered": False,
+        },
+        "stage": FOLLOWUP_CITATION_ELIGIBILITY_STAGE,
+        "behavior_boundary_flags": dict(behavior_boundary_flags),
+    }
+
+
 def build_followup_author_gate_projection(
     *,
     gate_state: Mapping[str, Any],
@@ -3124,6 +3511,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS",
     "FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS",
     "FOLLOWUP_BLOCKED_PACKET_SHELL_FALSE_FLAGS",
+    "FOLLOWUP_CITATION_ELIGIBILITY_FALSE_FLAGS",
     "FOLLOWUP_EXECUTION_FALSE_FLAGS",
     "FOLLOWUP_FINAL_EVIDENCE_SELECTION_FALSE_FLAGS",
     "FOLLOWUP_INTAKE_FALSE_FLAGS",
@@ -3140,6 +3528,7 @@ __all__ = [
     "build_followup_author_gate_projection",
     "build_followup_authorization_projection",
     "build_followup_blocked_final_answer_packet_shell_projection",
+    "build_followup_citation_eligibility_projection",
     "build_followup_author_observation_projection",
     "build_followup_evidence_intake_ledger_observation",
     "build_followup_evidence_intake_projection",
@@ -3155,6 +3544,7 @@ __all__ = [
     "validate_followup_author_gate_observation_binding",
     "validate_followup_author_observation_binding",
     "validate_followup_blocked_final_answer_packet_shell_observation_binding",
+    "validate_followup_citation_eligibility_observation_binding",
     "validate_followup_evidence_intake_action_binding",
     "validate_followup_execution_action_binding",
     "validate_followup_final_evidence_selection_observation_binding",
