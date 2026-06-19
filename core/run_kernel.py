@@ -87,6 +87,20 @@ from core.followup_author_observation_runtime import (
 from core.followup_author_observation_runtime import (
     FOLLOWUP_AUTHOR_OBSERVATION_STAGE as FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME,
 )
+from core.followup_author_payload_authority_runtime import (
+    FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_REASON,
+    ac_authority_projection_from_record,
+    ac_packet_projection_from_record,
+    build_followup_author_payload_authority_action_inputs,
+    build_followup_author_payload_authority_projection,
+    build_followup_author_payload_authority_record,
+    build_run_kernel_followup_author_payload_authority_state,
+    reject_followup_author_payload_authority_input_spoof,
+    validate_followup_author_payload_authority_observation_binding,
+)
+from core.followup_author_payload_authority_runtime import (
+    FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE as FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE_NAME,
+)
 from core.followup_author_prompt_assembly_manifest_runtime import (
     FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_REASON,
     build_followup_author_prompt_assembly_manifest_action_inputs,
@@ -287,6 +301,7 @@ FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE = (
 FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE = (
     FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE_NAME
 )
+FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE = FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE_NAME
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -359,6 +374,7 @@ class ActionType(str, Enum):
     FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST = (
         "followup_author_prompt_assembly_manifest"
     )
+    FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY = "followup_author_payload_authority"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -423,6 +439,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_PREPARED = (
         "followup_author_prompt_assembly_manifest_prepared"
+    )
+    FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_PREPARED = (
+        "followup_author_payload_authority_prepared"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -776,6 +795,15 @@ class RunState:
     followup_author_prompt_assembly_manifest_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_payload_authority_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_payload_authority_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_payload_authority_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -970,6 +998,15 @@ class RunState:
             followup_author_prompt_assembly_manifest_history=deepcopy(
                 self.followup_author_prompt_assembly_manifest_history
             ),
+            followup_author_payload_authority_state=deepcopy(
+                self.followup_author_payload_authority_state
+            ),
+            followup_author_payload_authority_projection=deepcopy(
+                self.followup_author_payload_authority_projection
+            ),
+            followup_author_payload_authority_history=deepcopy(
+                self.followup_author_payload_authority_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -1074,6 +1111,9 @@ class KernelTraceProjection:
     followup_author_prompt_assembly_manifest_state: Mapping[str, Any]
     followup_author_prompt_assembly_manifest_projection: Mapping[str, Any]
     followup_author_prompt_assembly_manifest_history: Sequence[Mapping[str, Any]]
+    followup_author_payload_authority_state: Mapping[str, Any]
+    followup_author_payload_authority_projection: Mapping[str, Any]
+    followup_author_payload_authority_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1273,6 +1313,16 @@ class KernelTraceProjection:
             "followup_author_prompt_assembly_manifest_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_prompt_assembly_manifest_history
+            ],
+            "followup_author_payload_authority_state": _safe_mapping(
+                self.followup_author_payload_authority_state
+            ),
+            "followup_author_payload_authority_projection": _safe_mapping(
+                self.followup_author_payload_authority_projection
+            ),
+            "followup_author_payload_authority_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_payload_authority_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -1556,6 +1606,11 @@ class RunKernel:
         reason: str = "author_execution_from_final_answer_packet_payload",
         inputs: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
+        if self.state.followup_author_payload_authority_state:
+            raise RunKernelTransitionError(
+                "AG-96I3 Author execution must consume AG-96I3AC Author "
+                "payload authority in a future execution phase"
+            )
         if not self.state.final_answer_packet:
             raise RunKernelTransitionError(
                 "author execution requires a reduced FinalAnswerPacket"
@@ -1597,6 +1652,7 @@ class RunKernel:
             or self.state.followup_author_input_materialization_state
             or self.state.followup_author_execution_activation_state
             or self.state.followup_author_prompt_assembly_manifest_state
+            or self.state.followup_author_payload_authority_state
             or self.state.followup_author_gate_state.get("author_gate_mode")
             == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
         )
@@ -5053,6 +5109,101 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_author_payload_authority(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        z_state = self.state.followup_author_prompt_assembly_manifest_state
+        if not z_state:
+            raise RunKernelTransitionError(
+                "AC Author payload authority requires reduced Z prompt manifest"
+            )
+        if (
+            self.state.followup_author_payload_authority_state
+            or self.state.followup_author_payload_authority_projection
+            or self.state.followup_author_payload_authority_history
+        ):
+            raise RunKernelTransitionError("AC Author payload authority already prepared")
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "AC Author payload authority requires no Author observation"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "AC Author payload authority requires Author/final output closed"
+            )
+        if (
+            getattr(self.state, "analyst_author_handoff_state", {})
+            or getattr(self.state, "economist_handoff_state", {})
+        ):
+            raise RunKernelTransitionError(
+                "AC Author payload authority requires Analyst/Economist closed"
+            )
+
+        packet = self.state.final_answer_packet
+        authority = self.state.final_answer_authority_projection
+        author_payload_ref = _safe_mapping(packet.get("author_payload_ref"))
+        if author_payload_ref.get("status") == "author_input_ready":
+            raise RunKernelTransitionError(
+                "AC Author payload authority rejects executable payload status"
+            )
+        if author_payload_ref.get("status") != FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS:
+            raise RunKernelTransitionError(
+                "AC Author payload authority requires deferred payload status"
+            )
+        try:
+            reject_followup_author_payload_authority_input_spoof(inputs)
+        except PermissionError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        canonical_inputs = build_followup_author_payload_authority_action_inputs(
+            followup_author_prompt_assembly_manifest_state=z_state,
+            followup_author_prompt_assembly_manifest_projection=(
+                self.state.followup_author_prompt_assembly_manifest_projection
+            ),
+            final_answer_packet=packet,
+            final_answer_authority_projection=authority,
+        )
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        try:
+            build_followup_author_payload_authority_record(
+                action_inputs=merged_inputs,
+                followup_author_prompt_assembly_manifest_state=z_state,
+                followup_author_prompt_assembly_manifest_projection=(
+                    self.state.followup_author_prompt_assembly_manifest_projection
+                ),
+                followup_author_prompt_assembly_manifest_history=(
+                    self.state.followup_author_prompt_assembly_manifest_history
+                ),
+                followup_author_execution_activation_state=(
+                    self.state.followup_author_execution_activation_state
+                ),
+                followup_author_input_materialization_state=(
+                    self.state.followup_author_input_materialization_state
+                ),
+                followup_author_execution_readiness_state=(
+                    self.state.followup_author_execution_readiness_state
+                ),
+                followup_author_gate_state=self.state.followup_author_gate_state,
+                followup_author_input_authority_state=(
+                    self.state.followup_author_input_authority_state
+                ),
+                final_answer_packet=packet,
+                final_answer_authority_projection=authority,
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_PREPARED
+            ),
+        )
+
     def authorize_followup_author_observation(
         self,
         *,
@@ -5276,6 +5427,35 @@ class RunKernel:
         z_packet_projection: dict[str, Any] = {}
         z_authority_projection: dict[str, Any] = {}
         z_manifest_projection: dict[str, Any] = {}
+        ac_observed_payload_authority_state: dict[str, Any] = {}
+        ac_canonical_payload_authority_state: dict[str, Any] = {}
+        ac_packet_projection: dict[str, Any] = {}
+        ac_authority_projection: dict[str, Any] = {}
+        ac_payload_authority_projection: dict[str, Any] = {}
+        if self.state.followup_author_payload_authority_state:
+            if action.action_type in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_GATE,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION,
+                ActionType.FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST,
+                ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
+            }:
+                raise RunKernelTransitionError(
+                    "stale upstream follow-up action cannot reduce after "
+                    "AG-96I3AC Author payload authority"
+                )
+            if action.action_type is ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY:
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3AC Author payload authority cannot reduce"
+                )
         if self.state.followup_author_prompt_assembly_manifest_state:
             if action.action_type in {
                 ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
@@ -6407,6 +6587,95 @@ class RunKernel:
                         followup_author_gate_stage=FOLLOWUP_AUTHOR_GATE_STAGE,
                         followup_author_input_authority_stage=(
                             FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE
+                        ),
+                    )
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY:
+            ac_observed_payload_authority_state = _safe_mapping(
+                observation.payload.get("followup_author_payload_authority_state")
+            )
+            if not ac_observed_payload_authority_state:
+                raise RunKernelTransitionError(
+                    "AC Author payload authority observation requires "
+                    "followup_author_payload_authority_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_payload_authority_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_payload_authority_state=(
+                        ac_observed_payload_authority_state
+                    ),
+                )
+                ac_canonical_payload_authority_record = (
+                    build_followup_author_payload_authority_record(
+                        action_inputs=action_inputs,
+                        followup_author_prompt_assembly_manifest_state=(
+                            self.state.followup_author_prompt_assembly_manifest_state
+                        ),
+                        followup_author_prompt_assembly_manifest_projection=(
+                            self.state.followup_author_prompt_assembly_manifest_projection
+                        ),
+                        followup_author_prompt_assembly_manifest_history=(
+                            self.state.followup_author_prompt_assembly_manifest_history
+                        ),
+                        followup_author_execution_activation_state=(
+                            self.state.followup_author_execution_activation_state
+                        ),
+                        followup_author_input_materialization_state=(
+                            self.state.followup_author_input_materialization_state
+                        ),
+                        followup_author_execution_readiness_state=(
+                            self.state.followup_author_execution_readiness_state
+                        ),
+                        followup_author_gate_state=(
+                            self.state.followup_author_gate_state
+                        ),
+                        followup_author_input_authority_state=(
+                            self.state.followup_author_input_authority_state
+                        ),
+                        final_answer_packet=self.state.final_answer_packet,
+                        final_answer_authority_projection=(
+                            self.state.final_answer_authority_projection
+                        ),
+                    )
+                )
+                ac_canonical_payload_authority_state = (
+                    build_run_kernel_followup_author_payload_authority_state(
+                        payload_authority_record_state=(
+                            ac_canonical_payload_authority_record.to_dict()
+                        ),
+                        observation_id=ac_observed_payload_authority_state.get(
+                            "observation_id"
+                        ),
+                    )
+                )
+                ac_packet_projection = ac_packet_projection_from_record(
+                    current_packet=self.state.final_answer_packet,
+                    record_state=ac_canonical_payload_authority_state,
+                )
+                ac_authority_projection = ac_authority_projection_from_record(
+                    current_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                    record_state=ac_canonical_payload_authority_state,
+                )
+                ac_payload_authority_projection = (
+                    build_followup_author_payload_authority_projection(
+                        payload_authority_state=(
+                            ac_canonical_payload_authority_state
+                        ),
+                        behavior_boundary_flags=_safe_mapping(
+                            ac_canonical_payload_authority_state.get(
+                                "behavior_boundary_flags"
+                            )
+                        ),
+                        final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
+                        followup_author_prompt_assembly_manifest_stage=(
+                            FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE
                         ),
                     )
                 )
@@ -8489,6 +8758,21 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_prompt_assembly_manifest_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY:
+            self.state.final_answer_packet = ac_packet_projection
+            self.state.final_answer_authority_projection = ac_authority_projection
+            self.state.followup_author_payload_authority_state = (
+                ac_canonical_payload_authority_state
+            )
+            self.state.followup_author_payload_authority_projection = (
+                ac_payload_authority_projection
+            )
+            self.state.followup_author_payload_authority_history.append(
+                deepcopy(self.state.followup_author_payload_authority_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_payload_authority_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION:
             observed_author_state = _safe_mapping(
                 observation.payload.get("followup_author_observation_state")
@@ -8881,6 +9165,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE",
     "FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE",
     "FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE",
+    "FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE",
     "FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
