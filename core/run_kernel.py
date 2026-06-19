@@ -28,6 +28,20 @@ from core.followup_author_execution_activation_runtime import (
 from core.followup_author_execution_activation_runtime import (
     FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE as FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE_NAME,
 )
+from core.followup_author_execution_from_ad_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_REASON,
+    ae_authority_projection_from_record,
+    ae_packet_projection_from_record,
+    build_followup_author_execution_from_ad_action_inputs,
+    build_followup_author_execution_from_ad_projection,
+    build_followup_author_execution_from_ad_record,
+    build_run_kernel_followup_author_execution_from_ad_state,
+    reject_followup_author_execution_from_ad_input_spoof,
+    validate_followup_author_execution_from_ad_observation_binding,
+)
+from core.followup_author_execution_from_ad_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE as FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE_NAME,
+)
 from core.followup_author_execution_readiness_runtime import (
     FOLLOWUP_AUTHOR_EXECUTION_READINESS_REASON,
     FOLLOWUP_AUTHOR_EXECUTION_READINESS_STATUS,
@@ -319,6 +333,9 @@ FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE = FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAG
 FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE = (
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE_NAME
 )
+FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE = (
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE_NAME
+)
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -393,6 +410,7 @@ class ActionType(str, Enum):
     )
     FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY = "followup_author_payload_authority"
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION = "followup_author_payload_construction"
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AD = "followup_author_execution_from_ad"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -463,6 +481,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTED = (
         "followup_author_payload_constructed"
+    )
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_OBSERVED = (
+        "followup_author_execution_from_ad_observed"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -834,6 +855,15 @@ class RunState:
     followup_author_payload_construction_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_execution_from_ad_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_from_ad_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_from_ad_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1046,6 +1076,15 @@ class RunState:
             followup_author_payload_construction_history=deepcopy(
                 self.followup_author_payload_construction_history
             ),
+            followup_author_execution_from_ad_state=deepcopy(
+                self.followup_author_execution_from_ad_state
+            ),
+            followup_author_execution_from_ad_projection=deepcopy(
+                self.followup_author_execution_from_ad_projection
+            ),
+            followup_author_execution_from_ad_history=deepcopy(
+                self.followup_author_execution_from_ad_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -1156,6 +1195,9 @@ class KernelTraceProjection:
     followup_author_payload_construction_state: Mapping[str, Any]
     followup_author_payload_construction_projection: Mapping[str, Any]
     followup_author_payload_construction_history: Sequence[Mapping[str, Any]]
+    followup_author_execution_from_ad_state: Mapping[str, Any]
+    followup_author_execution_from_ad_projection: Mapping[str, Any]
+    followup_author_execution_from_ad_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1375,6 +1417,16 @@ class KernelTraceProjection:
             "followup_author_payload_construction_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_payload_construction_history
+            ],
+            "followup_author_execution_from_ad_state": _safe_mapping(
+                self.followup_author_execution_from_ad_state
+            ),
+            "followup_author_execution_from_ad_projection": _safe_mapping(
+                self.followup_author_execution_from_ad_projection
+            ),
+            "followup_author_execution_from_ad_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_execution_from_ad_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -1711,6 +1763,7 @@ class RunKernel:
             or self.state.followup_author_prompt_assembly_manifest_state
             or self.state.followup_author_payload_authority_state
             or self.state.followup_author_payload_construction_state
+            or self.state.followup_author_execution_from_ad_state
             or self.state.followup_author_gate_state.get("author_gate_mode")
             == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
         )
@@ -5360,6 +5413,103 @@ class RunKernel:
             ),
         )
 
+    def _followup_author_execution_from_ad_runtime_inputs(self) -> dict[str, Any]:
+        state = self.state
+        prefixes = (
+            "followup_author_payload_construction",
+            "followup_author_payload_authority",
+            "followup_author_prompt_assembly_manifest",
+            "followup_author_execution_activation",
+            "followup_author_input_materialization",
+            "followup_author_execution_readiness",
+            "followup_author_gate",
+            "followup_author_input_authority",
+        )
+        runtime_inputs = {
+            f"{prefix}_{suffix}": getattr(state, f"{prefix}_{suffix}")
+            for prefix in prefixes
+            for suffix in ("state", "projection", "history")
+        }
+        runtime_inputs["final_answer_packet"] = state.final_answer_packet
+        runtime_inputs["final_answer_authority_projection"] = (
+            state.final_answer_authority_projection
+        )
+        return runtime_inputs
+
+    def authorize_followup_author_execution_from_ad(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        ad_state = self.state.followup_author_payload_construction_state
+        if not ad_state:
+            raise RunKernelTransitionError(
+                "AE Author execution requires reduced AD payload envelope"
+            )
+        if (
+            self.state.followup_author_execution_from_ad_state
+            or self.state.followup_author_execution_from_ad_projection
+            or self.state.followup_author_execution_from_ad_history
+        ):
+            raise RunKernelTransitionError("AE Author execution already observed")
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "AE Author execution requires legacy fixture observation closed"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "AE Author execution requires no prior Author/final outcome"
+            )
+        if (
+            getattr(self.state, "analyst_author_handoff_state", {})
+            or getattr(self.state, "economist_handoff_state", {})
+        ):
+            raise RunKernelTransitionError(
+                "AE Author execution requires Analyst/Economist closed"
+            )
+
+        packet = self.state.final_answer_packet
+        authority = self.state.final_answer_authority_projection
+        author_payload_ref = _safe_mapping(packet.get("author_payload_ref"))
+        if author_payload_ref.get("status") == "author_input_ready":
+            raise RunKernelTransitionError(
+                "AE Author execution rejects executable payload status"
+            )
+        if author_payload_ref.get("status") != FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS:
+            raise RunKernelTransitionError(
+                "AE Author execution requires deferred payload status"
+            )
+        try:
+            reject_followup_author_execution_from_ad_input_spoof(inputs)
+        except PermissionError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        canonical_inputs = build_followup_author_execution_from_ad_action_inputs(
+            followup_author_payload_construction_state=ad_state,
+            followup_author_payload_construction_projection=(
+                self.state.followup_author_payload_construction_projection
+            ),
+            final_answer_packet=packet,
+            final_answer_authority_projection=authority,
+        )
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        try:
+            build_followup_author_execution_from_ad_record(
+                action_inputs=merged_inputs,
+                **self._followup_author_execution_from_ad_runtime_inputs(),
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_OBSERVED
+            ),
+        )
+
     def authorize_followup_author_observation(
         self,
         *,
@@ -5593,6 +5743,39 @@ class RunKernel:
         ad_packet_projection: dict[str, Any] = {}
         ad_authority_projection: dict[str, Any] = {}
         ad_payload_construction_projection: dict[str, Any] = {}
+        ae_observed_execution_state: dict[str, Any] = {}
+        ae_canonical_execution_state: dict[str, Any] = {}
+        ae_packet_projection: dict[str, Any] = {}
+        ae_authority_projection: dict[str, Any] = {}
+        ae_execution_projection: dict[str, Any] = {}
+        ae_author_observation: dict[str, Any] = {}
+        ae_final_answer_outcome: dict[str, Any] = {}
+        if self.state.followup_author_execution_from_ad_state:
+            if action.action_type in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_GATE,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION,
+                ActionType.FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
+            }:
+                raise RunKernelTransitionError(
+                    "stale upstream follow-up action cannot reduce after "
+                    "AG-96I3AE Author execution from AD"
+                )
+            if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD:
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3AE Author execution from AD cannot reduce"
+                )
         if self.state.followup_author_payload_construction_state:
             if action.action_type in {
                 ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
@@ -6956,6 +7139,70 @@ class RunKernel:
                         final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
                         followup_author_payload_authority_stage=(
                             FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE
+                        ),
+                    )
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD:
+            ae_observed_execution_state = _safe_mapping(
+                observation.payload.get("followup_author_execution_from_ad_state")
+            )
+            if not ae_observed_execution_state:
+                raise RunKernelTransitionError(
+                    "AE Author execution observation requires "
+                    "followup_author_execution_from_ad_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_execution_from_ad_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_execution_state=ae_observed_execution_state,
+                )
+                ae_canonical_execution_record = (
+                    build_followup_author_execution_from_ad_record(
+                        action_inputs=action_inputs,
+                        **self._followup_author_execution_from_ad_runtime_inputs(),
+                    )
+                )
+                ae_canonical_execution_state = (
+                    build_run_kernel_followup_author_execution_from_ad_state(
+                        execution_record_state=(
+                            ae_canonical_execution_record.to_dict()
+                        ),
+                        observation_id=ae_observed_execution_state.get(
+                            "observation_id"
+                        ),
+                    )
+                )
+                ae_packet_projection = ae_packet_projection_from_record(
+                    current_packet=self.state.final_answer_packet,
+                    record_state=ae_canonical_execution_state,
+                )
+                ae_authority_projection = ae_authority_projection_from_record(
+                    current_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                    record_state=ae_canonical_execution_state,
+                )
+                ae_author_observation = _safe_mapping(
+                    ae_canonical_execution_state.get("author_observation")
+                )
+                ae_final_answer_outcome = _safe_mapping(
+                    ae_canonical_execution_state.get("final_answer_outcome")
+                )
+                ae_execution_projection = (
+                    build_followup_author_execution_from_ad_projection(
+                        execution_state=ae_canonical_execution_state,
+                        behavior_boundary_flags=_safe_mapping(
+                            ae_canonical_execution_state.get(
+                                "behavior_boundary_flags"
+                            )
+                        ),
+                        final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
+                        followup_author_payload_construction_stage=(
+                            FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE
                         ),
                     )
                 )
@@ -9068,6 +9315,23 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_payload_construction_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD:
+            self.state.final_answer_packet = ae_packet_projection
+            self.state.final_answer_authority_projection = ae_authority_projection
+            self.state.author_observation = ae_author_observation
+            self.state.final_answer_outcome = ae_final_answer_outcome
+            self.state.followup_author_execution_from_ad_state = (
+                ae_canonical_execution_state
+            )
+            self.state.followup_author_execution_from_ad_projection = (
+                ae_execution_projection
+            )
+            self.state.followup_author_execution_from_ad_history.append(
+                deepcopy(self.state.followup_author_execution_from_ad_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_execution_from_ad_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION:
             observed_author_state = _safe_mapping(
                 observation.payload.get("followup_author_observation_state")
@@ -9462,6 +9726,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE",
     "FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE",
     "FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE",
+    "FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE",
     "FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
