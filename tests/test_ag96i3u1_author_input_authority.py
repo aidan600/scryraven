@@ -8,6 +8,7 @@ from typing import Any, Callable
 import pytest
 
 from core.evidence_ledger import SourceRequirementStatus
+from core.followup_author_gate_runtime import AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
 from core.followup_author_input_authority_runtime import (
     AG96I3U1_AUTHOR_INPUT_AUTHORITY_MODE,
     FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS,
@@ -122,8 +123,8 @@ def test_u1_happy_path_creates_author_input_authority_refs_only() -> None:
     assert kernel.state.final_answer_outcome == {}
     assert getattr(kernel.state, "analyst_author_handoff_state", {}) == {}
     assert getattr(kernel.state, "economist_handoff_state", {}) == {}
-    with pytest.raises(RunKernelTransitionError, match="deferred after AG-96I3U1"):
-        kernel.authorize_followup_author_gate()
+    gate_action = kernel.authorize_followup_author_gate()
+    assert gate_action.inputs["author_gate_mode"] == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
     with pytest.raises(RunKernelTransitionError, match="packet-ready author input"):
         kernel.authorize_author_execution()
 

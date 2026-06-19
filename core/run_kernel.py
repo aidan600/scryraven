@@ -15,8 +15,12 @@ from typing import Any, Mapping, Sequence
 
 from core.evidence_ledger import EvidenceLedger
 from core.followup_author_gate_runtime import (
+    AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE,
+    AG96I3V1_U1_BOUND_AUTHOR_GATE_REASON,
     FOLLOWUP_AUTHOR_GATE_MODE,
     build_followup_author_gate_record,
+    build_followup_u1_bound_author_gate_record,
+    validate_followup_u1_bound_author_gate_observation_binding,
 )
 from core.followup_author_gate_runtime import (
     FOLLOWUP_AUTHOR_GATE_STAGE as FOLLOWUP_AUTHOR_GATE_STAGE_NAME,
@@ -24,6 +28,8 @@ from core.followup_author_gate_runtime import (
 from core.followup_author_input_authority_runtime import (
     AG96I3U1_AUTHOR_INPUT_AUTHORITY_MODE,
     FOLLOWUP_AUTHOR_INPUT_AUTHORITY_GATE_REASON,
+    FOLLOWUP_AUTHOR_INPUT_REFS_STATUS,
+    FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS,
     build_followup_author_input_authority_record,
     u1_packet_projection_from_record,
     validate_followup_author_input_authority_observation_binding,
@@ -3959,9 +3965,14 @@ class RunKernel:
         inputs: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
         if self.state.followup_author_input_authority_state:
-            raise RunKernelTransitionError(
-                "follow-up Author gate consumption is deferred after "
-                "AG-96I3U1 author input authority"
+            gate_reason = (
+                AG96I3V1_U1_BOUND_AUTHOR_GATE_REASON
+                if reason == "ag96i2f_followup_fixture_author_gate_consumption"
+                else reason
+            )
+            return self._authorize_followup_u1_bound_author_gate(
+                reason=gate_reason,
+                inputs=inputs,
             )
         if not self.state.followup_final_answer_packet_state:
             raise RunKernelTransitionError(
@@ -4093,6 +4104,270 @@ class RunKernel:
             "citation_rendering_changed": False,
             "citation_formatter_invoked": False,
             "product_answer_behavior_changed": False,
+            "live_validation_not_run": True,
+            "expected_observation_record_type": (
+                "followup_author_gate_consumption_record"
+            ),
+        }
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_GATE_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_GATE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.FOLLOWUP_AUTHOR_GATE_OBSERVED,
+        )
+
+    def _authorize_followup_u1_bound_author_gate(
+        self,
+        *,
+        reason: str,
+        inputs: Mapping[str, Any] | None,
+    ) -> AuthorizedAction:
+        u1_state = self.state.followup_author_input_authority_state
+        u1_projection = self.state.followup_author_input_authority_projection
+        u1_history = self.state.followup_author_input_authority_history
+        if u1_state.get("owner") != "RunKernel.FollowupAuthorInputAuthority":
+            raise RunKernelTransitionError(
+                "V1 Author gate requires RunKernel U1 authority state"
+            )
+        if u1_state.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires canonical U1 authority state"
+            )
+        if u1_state.get("author_input_authority_mode") != (
+            AG96I3U1_AUTHOR_INPUT_AUTHORITY_MODE
+        ):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires AG-96I3U1 authority mode"
+            )
+        if not u1_projection:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires U1 authority projection"
+            )
+        if u1_projection.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires canonical U1 authority projection"
+            )
+        if not u1_history:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires U1 authority history"
+            )
+        if _safe_mapping(u1_history[-1]) != u1_projection:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires current U1 authority history"
+            )
+        authority = self.state.final_answer_authority_projection
+        if not authority:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires final_answer_authority_projection"
+            )
+        if authority != u1_projection:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires final_answer_authority_projection "
+                "equal to U1 projection"
+            )
+        if _safe_mapping(u1_state.get("final_answer_authority_projection")) != (
+            u1_projection
+        ):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires U1 state/projection binding"
+            )
+        packet = self.state.final_answer_packet
+        if not packet:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires canonical FinalAnswerPacket"
+            )
+        if packet.get("owner") != "RunKernel.FinalAnswerPacket":
+            raise RunKernelTransitionError(
+                "V1 Author gate requires RunKernel FinalAnswerPacket"
+            )
+        if packet.get("canonical_state") is not True:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires canonical FinalAnswerPacket"
+            )
+        if packet.get("readiness_status") != "blocked":
+            raise RunKernelTransitionError(
+                "V1 Author gate requires blocked FinalAnswerPacket"
+            )
+        if packet.get("final_answer_allowed") is not False:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires final_answer_allowed=false"
+            )
+        if packet.get("answer_ready") is not False:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires answer_ready=false"
+            )
+        if packet.get("product_answer_ready") is not False:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires product_answer_ready=false"
+            )
+        author_input_refs = _safe_mapping(packet.get("author_input_refs"))
+        if author_input_refs.get("status") != FOLLOWUP_AUTHOR_INPUT_REFS_STATUS:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires U1 packet author_input_refs"
+            )
+        author_payload_ref = _safe_mapping(packet.get("author_payload_ref"))
+        if author_payload_ref.get("status") != FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires deferred U1 author_payload_ref"
+            )
+        if author_payload_ref.get("status") == "author_input_ready":
+            raise RunKernelTransitionError(
+                "V1 Author gate requires non-executable Author payload"
+            )
+        if author_input_refs != _safe_mapping(u1_state.get("author_input_refs")):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires packet author_input_refs to match U1"
+            )
+        if author_payload_ref != _safe_mapping(u1_state.get("author_payload_ref")):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires packet author_payload_ref to match U1"
+            )
+        if author_payload_ref != _safe_mapping(u1_projection.get("author_payload_ref")):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires U1 projection payload ref"
+            )
+        if author_input_refs.get("author_input_authority_id") != u1_state.get(
+            "author_input_authority_id"
+        ):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires U1 authority id in packet refs"
+            )
+        if author_input_refs.get("final_answer_authority_projection_digest") != (
+            followup_projection_digest(authority)
+        ):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires current U1 projection digest in packet refs"
+            )
+        if author_input_refs.get("author_payload_ref_id") != (
+            author_payload_ref.get("payload_ref_id")
+        ):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires packet ref/payload ref match"
+            )
+        if self.state.followup_author_gate_state:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires no existing Author gate state"
+            )
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires no Author observation state"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "V1 Author gate requires Author/final answer output closed"
+            )
+        if (
+            getattr(self.state, "analyst_author_handoff_state", {})
+            or getattr(self.state, "economist_handoff_state", {})
+        ):
+            raise RunKernelTransitionError(
+                "V1 Author gate requires Analyst/Economist handoff closed"
+            )
+        canonical_inputs = {
+            "run_id": u1_state.get("run_id"),
+            "checkpoint_id": u1_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": u1_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": u1_state.get("sealed_candidate_id"),
+            "followup_execution_id": u1_state.get("followup_execution_id"),
+            "execution_id": u1_state.get("execution_id"),
+            "followup_execution_observation_id": u1_state.get(
+                "followup_execution_observation_id"
+            ),
+            "followup_evidence_intake_id": u1_state.get(
+                "followup_evidence_intake_id"
+            ),
+            "intake_id": u1_state.get("intake_id"),
+            "followup_sufficiency_recheck_id": u1_state.get(
+                "followup_sufficiency_recheck_id"
+            ),
+            "recheck_id": u1_state.get("recheck_id"),
+            "packet_preparation_readiness_id": u1_state.get(
+                "packet_preparation_readiness_id"
+            ),
+            "blocked_final_answer_packet_shell_id": u1_state.get(
+                "blocked_final_answer_packet_shell_id"
+            ),
+            "final_evidence_selection_id": u1_state.get(
+                "final_evidence_selection_id"
+            ),
+            "citation_eligibility_id": u1_state.get("citation_eligibility_id"),
+            "citation_source_handoff_id": u1_state.get(
+                "citation_source_handoff_id"
+            ),
+            "citation_rendering_id": u1_state.get("citation_rendering_id"),
+            "packet_id": packet.get("packet_id"),
+            "provider_job_kind": u1_state.get("provider_job_kind"),
+            "component_id": u1_state.get("component_id"),
+            "source_obligation_id": u1_state.get("source_obligation_id"),
+            "requirement_ids": u1_state.get("requirement_ids", []),
+            "expected_source_classes": u1_state.get("expected_source_classes", []),
+            "evidence_ledger_intake_mode": u1_state.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": u1_state.get("sufficiency_recheck_mode"),
+            "packet_preparation_readiness_mode": u1_state.get(
+                "packet_preparation_readiness_mode"
+            ),
+            "blocked_final_answer_packet_mode": u1_state.get(
+                "blocked_final_answer_packet_mode"
+            ),
+            "final_evidence_selection_mode": u1_state.get(
+                "final_evidence_selection_mode"
+            ),
+            "citation_eligibility_mode": u1_state.get("citation_eligibility_mode"),
+            "citation_source_handoff_mode": u1_state.get(
+                "citation_source_handoff_mode"
+            ),
+            "citation_rendering_mode": u1_state.get("citation_rendering_mode"),
+            "author_input_authority_id": u1_state.get("author_input_authority_id"),
+            "author_input_authority_mode": AG96I3U1_AUTHOR_INPUT_AUTHORITY_MODE,
+            "author_gate_id": (
+                "followup-author-gate:"
+                f"{u1_state.get('author_input_authority_id')}"
+            ),
+            "author_gate_mode": AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE,
+            "followup_author_input_authority_digest": followup_projection_digest(
+                u1_state
+            ),
+            "followup_author_input_authority_projection_digest": (
+                followup_projection_digest(u1_projection)
+            ),
+            "final_answer_authority_projection_digest": followup_projection_digest(
+                authority
+            ),
+            "final_answer_packet_digest": followup_projection_digest(packet),
+            "current_final_answer_packet_digest": followup_projection_digest(packet),
+            "author_input_refs_digest": followup_projection_digest(
+                author_input_refs
+            ),
+            "author_payload_ref_id": author_payload_ref.get("payload_ref_id"),
+            "author_payload_ref_status": author_payload_ref.get("status"),
+            "rendered_source_entry_digest": author_input_refs.get(
+                "rendered_source_entry_digest"
+            ),
+            "packet_authority_consumed": True,
+            "author_input_authority_consumed": True,
+            "author_gate_consumed": True,
+            "author_activation_allowed": False,
+            "author_execution_allowed": False,
+            "author_execution_deferred": True,
+            "author_executor_invoked": False,
+            "model_called": False,
+            "prompt_text_included": False,
+            "final_text_included": False,
+            "author_prompt_changed": False,
+            "author_prose_behavior_changed": False,
+            "citation_rendering_changed": False,
+            "citation_formatter_invoked": False,
+            "citation_behavior_changed": False,
+            "product_answer_behavior_changed": False,
+            "product_answer_ready": False,
+            "final_answer_behavior_changed": False,
+            "provider_execution_licensed": False,
             "live_validation_not_run": True,
             "expected_observation_record_type": (
                 "followup_author_gate_consumption_record"
@@ -4313,6 +4588,38 @@ class RunKernel:
         u1_authority_state: dict[str, Any] = {}
         u1_authority_projection: dict[str, Any] = {}
         u1_packet_projection: dict[str, Any] = {}
+        v1_canonical_gate_record: Any | None = None
+        if (
+            self.state.followup_author_gate_state.get("author_gate_mode")
+            == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
+            and action.action_type
+            in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+            }
+        ):
+            raise RunKernelTransitionError(
+                "stale upstream follow-up action cannot reduce after AG-96I3V1 "
+                "U1-bound Author gate"
+            )
+        if (
+            self.state.followup_author_gate_state
+            and action.action_type is ActionType.FOLLOWUP_AUTHOR_GATE
+        ):
+            if self.state.followup_author_gate_state.get("author_gate_mode") == (
+                AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
+            ):
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3V1 U1-bound Author gate cannot reduce"
+                )
+            raise RunKernelTransitionError(
+                "duplicate follow-up Author gate cannot reduce"
+            )
         if self.state.followup_author_input_authority_state and action.action_type in {
             ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
             ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
@@ -4825,6 +5132,45 @@ class RunKernel:
                     )
             except (PermissionError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_GATE:
+            action_inputs = _safe_mapping(action.inputs)
+            if action_inputs.get("author_gate_mode") == (
+                AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
+            ):
+                observed_gate_state = _safe_mapping(
+                    observation.payload.get("followup_author_gate_state")
+                )
+                if not observed_gate_state:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate observation requires "
+                        "followup_author_gate_state"
+                    )
+                try:
+                    validate_followup_u1_bound_author_gate_observation_binding(
+                        action_inputs=action_inputs,
+                        observed_gate_state=observed_gate_state,
+                    )
+                    v1_canonical_gate_record = (
+                        build_followup_u1_bound_author_gate_record(
+                            action_inputs=action_inputs,
+                            followup_author_input_authority_state=(
+                                self.state.followup_author_input_authority_state
+                            ),
+                            followup_author_input_authority_projection=(
+                                self.state.followup_author_input_authority_projection
+                            ),
+                            followup_author_input_authority_history=(
+                                self.state.followup_author_input_authority_history
+                            ),
+                            final_answer_packet=self.state.final_answer_packet,
+                            final_answer_authority_projection=(
+                                self.state.final_answer_authority_projection
+                            ),
+                        )
+                    )
+                except (PermissionError, ValueError) as exc:
+                    raise RunKernelTransitionError(str(exc)) from exc
 
         self.state.reduced_action_ids.add(action.action_id)
         self.state.action_statuses[action.action_id] = observation.status
@@ -6697,29 +7043,38 @@ class RunKernel:
                     "follow-up Author gate observation requires "
                     "followup_author_gate_state"
                 )
-            if not self.state.followup_final_answer_packet_state:
-                raise RunKernelTransitionError(
-                    "follow-up Author gate requires existing packet state"
-                )
             action_inputs = _safe_mapping(action.inputs)
-            _followup_checked(
-                validate_followup_author_gate_observation_binding,
-                action_inputs=action_inputs,
-                observed_gate_state=observed_gate_state,
-            )
-            try:
-                canonical_record = build_followup_author_gate_record(
+            if action_inputs.get("author_gate_mode") == (
+                AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
+            ):
+                if v1_canonical_gate_record is None:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate canonical record was not validated"
+                    )
+                canonical_record = v1_canonical_gate_record
+            else:
+                if not self.state.followup_final_answer_packet_state:
+                    raise RunKernelTransitionError(
+                        "follow-up Author gate requires existing packet state"
+                    )
+                _followup_checked(
+                    validate_followup_author_gate_observation_binding,
                     action_inputs=action_inputs,
-                    followup_final_answer_packet_state=(
-                        self.state.followup_final_answer_packet_state
-                    ),
-                    final_answer_packet=self.state.final_answer_packet,
-                    final_answer_authority_projection=(
-                        self.state.final_answer_authority_projection
-                    ),
+                    observed_gate_state=observed_gate_state,
                 )
-            except (PermissionError, ValueError) as exc:
-                raise RunKernelTransitionError(str(exc)) from exc
+                try:
+                    canonical_record = build_followup_author_gate_record(
+                        action_inputs=action_inputs,
+                        followup_final_answer_packet_state=(
+                            self.state.followup_final_answer_packet_state
+                        ),
+                        final_answer_packet=self.state.final_answer_packet,
+                        final_answer_authority_projection=(
+                            self.state.final_answer_authority_projection
+                        ),
+                    )
+                except (PermissionError, ValueError) as exc:
+                    raise RunKernelTransitionError(str(exc)) from exc
             gate_state = {
                 **canonical_record.to_dict(),
                 "owner": "RunKernel.FollowupAuthorGate",
@@ -6750,6 +7105,33 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "follow-up Author gate must defer Author execution"
                 )
+            if action_inputs.get("author_gate_mode") == (
+                AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
+            ):
+                if gate_state.get("author_input_authority_consumed") is not True:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate must consume U1 authority"
+                    )
+                if flags.get("author_input_authority_consumed") is not True:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate flags must consume U1 authority"
+                    )
+                if gate_state.get("author_gate_consumed") is not True:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate must record gate consumption"
+                    )
+                if gate_state.get("author_execution_allowed") is not False:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate must keep Author execution disallowed"
+                    )
+                if gate_state.get("prompt_text_included") is not False:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate must not include prompt text"
+                    )
+                if gate_state.get("product_answer_ready") is not False:
+                    raise RunKernelTransitionError(
+                        "V1 Author gate must not ready product answer"
+                    )
             if gate_state.get("final_text_included") is not False:
                 raise RunKernelTransitionError(
                     "follow-up Author gate must not include final text"
