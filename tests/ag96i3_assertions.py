@@ -583,6 +583,36 @@ def assert_x_boundary_snapshot_unchanged(
     ]
 
 
+def snapshot_y_boundary_state(kernel: Any) -> dict[str, Any]:
+    snapshot = snapshot_x_boundary_state(kernel)
+    snapshot["followup_author_execution_activation_state"] = deepcopy(
+        kernel.state.followup_author_execution_activation_state
+    )
+    snapshot["followup_author_execution_activation_projection"] = deepcopy(
+        kernel.state.followup_author_execution_activation_projection
+    )
+    snapshot["followup_author_execution_activation_history"] = deepcopy(
+        kernel.state.followup_author_execution_activation_history
+    )
+    return snapshot
+
+
+def assert_y_boundary_snapshot_unchanged(
+    kernel: Any,
+    snapshot: dict[str, Any],
+) -> None:
+    assert_x_boundary_snapshot_unchanged(kernel, snapshot)
+    assert kernel.state.followup_author_execution_activation_state == snapshot[
+        "followup_author_execution_activation_state"
+    ]
+    assert kernel.state.followup_author_execution_activation_projection == snapshot[
+        "followup_author_execution_activation_projection"
+    ]
+    assert kernel.state.followup_author_execution_activation_history == snapshot[
+        "followup_author_execution_activation_history"
+    ]
+
+
 def assert_no_sensitive_payload(value: Any) -> None:
     markers = (
         "raw_page_text",
@@ -626,6 +656,7 @@ __all__ = [
     "assert_v1_boundary_snapshot_unchanged",
     "assert_w_boundary_snapshot_unchanged",
     "assert_x_boundary_snapshot_unchanged",
+    "assert_y_boundary_snapshot_unchanged",
     "snapshot_o2_boundary_state",
     "snapshot_o2_closed_surfaces",
     "snapshot_p1_boundary_state",
@@ -636,4 +667,5 @@ __all__ = [
     "snapshot_v1_boundary_state",
     "snapshot_w_boundary_state",
     "snapshot_x_boundary_state",
+    "snapshot_y_boundary_state",
 ]
