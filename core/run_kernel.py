@@ -14,6 +14,20 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from core.evidence_ledger import EvidenceLedger
+from core.followup_author_execution_activation_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_REASON,
+    build_followup_author_execution_activation_action_inputs,
+    build_followup_author_execution_activation_projection,
+    build_followup_author_execution_activation_record,
+    build_run_kernel_followup_author_execution_activation_state,
+    reject_followup_author_execution_activation_input_spoof,
+    validate_followup_author_execution_activation_observation_binding,
+    y_authority_projection_from_record,
+    y_packet_projection_from_record,
+)
+from core.followup_author_execution_activation_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE as FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE_NAME,
+)
 from core.followup_author_execution_readiness_runtime import (
     FOLLOWUP_AUTHOR_EXECUTION_READINESS_REASON,
     FOLLOWUP_AUTHOR_EXECUTION_READINESS_STATUS,
@@ -253,6 +267,9 @@ FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE = (
 FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE = (
     FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE_NAME
 )
+FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE = (
+    FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE_NAME
+)
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -319,6 +336,9 @@ class ActionType(str, Enum):
     FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION = (
         "followup_author_input_materialization"
     )
+    FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION = (
+        "followup_author_execution_activation"
+    )
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -377,6 +397,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_AUTHOR_INPUT_MATERIALIZED = (
         "followup_author_input_materialized"
+    )
+    FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_PREPARED = (
+        "followup_author_execution_activation_prepared"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -712,6 +735,15 @@ class RunState:
     followup_author_input_materialization_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_execution_activation_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_activation_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_activation_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -888,6 +920,15 @@ class RunState:
             followup_author_input_materialization_history=deepcopy(
                 self.followup_author_input_materialization_history
             ),
+            followup_author_execution_activation_state=deepcopy(
+                self.followup_author_execution_activation_state
+            ),
+            followup_author_execution_activation_projection=deepcopy(
+                self.followup_author_execution_activation_projection
+            ),
+            followup_author_execution_activation_history=deepcopy(
+                self.followup_author_execution_activation_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -986,6 +1027,9 @@ class KernelTraceProjection:
     followup_author_input_materialization_state: Mapping[str, Any]
     followup_author_input_materialization_projection: Mapping[str, Any]
     followup_author_input_materialization_history: Sequence[Mapping[str, Any]]
+    followup_author_execution_activation_state: Mapping[str, Any]
+    followup_author_execution_activation_projection: Mapping[str, Any]
+    followup_author_execution_activation_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1165,6 +1209,16 @@ class KernelTraceProjection:
             "followup_author_input_materialization_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_input_materialization_history
+            ],
+            "followup_author_execution_activation_state": _safe_mapping(
+                self.followup_author_execution_activation_state
+            ),
+            "followup_author_execution_activation_projection": _safe_mapping(
+                self.followup_author_execution_activation_projection
+            ),
+            "followup_author_execution_activation_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_execution_activation_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -1460,6 +1514,11 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "author execution requires packet-ready author input payload"
             )
+        if self._ag96i3_author_execution_lane_active():
+            raise RunKernelTransitionError(
+                "AG-96I3 Author execution is subordinated to a future "
+                "X-bound activation consumer"
+            )
         merged_inputs = {
             "packet_id": self.state.final_answer_packet.get("packet_id"),
             "author_payload_status": payload_ref.get("status"),
@@ -1475,6 +1534,16 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.AUTHOR_OUTPUT_OBSERVED,
+        )
+
+    def _ag96i3_author_execution_lane_active(self) -> bool:
+        return bool(
+            self.state.followup_author_input_authority_state
+            or self.state.followup_author_execution_readiness_state
+            or self.state.followup_author_input_materialization_state
+            or self.state.followup_author_execution_activation_state
+            or self.state.followup_author_gate_state.get("author_gate_mode")
+            == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
         )
 
     def authorize_followup_authorization_consumption(
@@ -4682,6 +4751,127 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_author_execution_activation(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        x_state = self.state.followup_author_input_materialization_state
+        if not x_state:
+            raise RunKernelTransitionError(
+                "Y Author execution activation requires reduced X materialization"
+            )
+        if (
+            self.state.followup_author_execution_activation_state
+            or self.state.followup_author_execution_activation_projection
+            or self.state.followup_author_execution_activation_history
+        ):
+            raise RunKernelTransitionError(
+                "Y Author execution activation already prepared"
+            )
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "Y Author execution activation requires no Author observation"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "Y Author execution activation requires Author/final output closed"
+            )
+        if (
+            getattr(self.state, "analyst_author_handoff_state", {})
+            or getattr(self.state, "economist_handoff_state", {})
+        ):
+            raise RunKernelTransitionError(
+                "Y Author execution activation requires Analyst/Economist closed"
+            )
+
+        packet = self.state.final_answer_packet
+        authority = self.state.final_answer_authority_projection
+        author_payload_ref = _safe_mapping(packet.get("author_payload_ref"))
+        if author_payload_ref.get("status") == "author_input_ready":
+            raise RunKernelTransitionError(
+                "Y Author execution activation rejects executable payload status"
+            )
+        if author_payload_ref.get("status") != FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS:
+            raise RunKernelTransitionError(
+                "Y Author execution activation requires deferred U1 payload status"
+            )
+        try:
+            reject_followup_author_execution_activation_input_spoof(inputs)
+        except PermissionError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        canonical_inputs = build_followup_author_execution_activation_action_inputs(
+            followup_author_input_materialization_state=x_state,
+            followup_author_input_materialization_projection=(
+                self.state.followup_author_input_materialization_projection
+            ),
+            followup_author_execution_readiness_state=(
+                self.state.followup_author_execution_readiness_state
+            ),
+            followup_author_execution_readiness_projection=(
+                self.state.followup_author_execution_readiness_projection
+            ),
+            followup_author_gate_state=self.state.followup_author_gate_state,
+            followup_author_gate_projection=self.state.followup_author_gate_projection,
+            followup_author_input_authority_state=(
+                self.state.followup_author_input_authority_state
+            ),
+            followup_author_input_authority_projection=(
+                self.state.followup_author_input_authority_projection
+            ),
+            final_answer_packet=packet,
+            final_answer_authority_projection=authority,
+        )
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        try:
+            build_followup_author_execution_activation_record(
+                action_inputs=merged_inputs,
+                followup_author_input_materialization_state=x_state,
+                followup_author_input_materialization_projection=(
+                    self.state.followup_author_input_materialization_projection
+                ),
+                followup_author_input_materialization_history=(
+                    self.state.followup_author_input_materialization_history
+                ),
+                followup_author_execution_readiness_state=(
+                    self.state.followup_author_execution_readiness_state
+                ),
+                followup_author_execution_readiness_projection=(
+                    self.state.followup_author_execution_readiness_projection
+                ),
+                followup_author_execution_readiness_history=(
+                    self.state.followup_author_execution_readiness_history
+                ),
+                followup_author_gate_state=self.state.followup_author_gate_state,
+                followup_author_gate_projection=(
+                    self.state.followup_author_gate_projection
+                ),
+                followup_author_gate_history=self.state.followup_author_gate_history,
+                followup_author_input_authority_state=(
+                    self.state.followup_author_input_authority_state
+                ),
+                followup_author_input_authority_projection=(
+                    self.state.followup_author_input_authority_projection
+                ),
+                followup_author_input_authority_history=(
+                    self.state.followup_author_input_authority_history
+                ),
+                final_answer_packet=packet,
+                final_answer_authority_projection=authority,
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_PREPARED
+            ),
+        )
+
     def authorize_followup_author_observation(
         self,
         *,
@@ -4895,6 +5085,36 @@ class RunKernel:
         x_observed_materialization_state: dict[str, Any] = {}
         x_canonical_materialization_state: dict[str, Any] = {}
         x_materialization_flags: dict[str, Any] = {}
+        y_observed_activation_state: dict[str, Any] = {}
+        y_canonical_activation_state: dict[str, Any] = {}
+        y_activation_flags: dict[str, Any] = {}
+        y_packet_projection: dict[str, Any] = {}
+        y_authority_projection: dict[str, Any] = {}
+        if self.state.followup_author_execution_activation_state:
+            if action.action_type in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_GATE,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION,
+                ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
+            }:
+                raise RunKernelTransitionError(
+                    "stale upstream follow-up action cannot reduce after "
+                    "AG-96I3Y Author execution activation"
+                )
+            if (
+                action.action_type
+                is ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION
+            ):
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3Y Author execution activation cannot reduce"
+                )
         if self.state.followup_author_input_materialization_state:
             if action.action_type in {
                 ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
@@ -5771,6 +5991,92 @@ class RunKernel:
                     raise PermissionError(
                         "X Author input materialization must not make payload executable"
                     )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION:
+            y_observed_activation_state = _safe_mapping(
+                observation.payload.get("followup_author_execution_activation_state")
+            )
+            if not y_observed_activation_state:
+                raise RunKernelTransitionError(
+                    "Y Author execution activation observation requires "
+                    "followup_author_execution_activation_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_execution_activation_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_activation_state=y_observed_activation_state,
+                )
+                y_canonical_activation_record = (
+                    build_followup_author_execution_activation_record(
+                        action_inputs=action_inputs,
+                        followup_author_input_materialization_state=(
+                            self.state.followup_author_input_materialization_state
+                        ),
+                        followup_author_input_materialization_projection=(
+                            self.state.followup_author_input_materialization_projection
+                        ),
+                        followup_author_input_materialization_history=(
+                            self.state.followup_author_input_materialization_history
+                        ),
+                        followup_author_execution_readiness_state=(
+                            self.state.followup_author_execution_readiness_state
+                        ),
+                        followup_author_execution_readiness_projection=(
+                            self.state.followup_author_execution_readiness_projection
+                        ),
+                        followup_author_execution_readiness_history=(
+                            self.state.followup_author_execution_readiness_history
+                        ),
+                        followup_author_gate_state=(
+                            self.state.followup_author_gate_state
+                        ),
+                        followup_author_gate_projection=(
+                            self.state.followup_author_gate_projection
+                        ),
+                        followup_author_gate_history=(
+                            self.state.followup_author_gate_history
+                        ),
+                        followup_author_input_authority_state=(
+                            self.state.followup_author_input_authority_state
+                        ),
+                        followup_author_input_authority_projection=(
+                            self.state.followup_author_input_authority_projection
+                        ),
+                        followup_author_input_authority_history=(
+                            self.state.followup_author_input_authority_history
+                        ),
+                        final_answer_packet=self.state.final_answer_packet,
+                        final_answer_authority_projection=(
+                            self.state.final_answer_authority_projection
+                        ),
+                    )
+                )
+                y_canonical_activation_state = (
+                    build_run_kernel_followup_author_execution_activation_state(
+                        activation_record_state=(
+                            y_canonical_activation_record.to_dict()
+                        ),
+                        observation_id=y_observed_activation_state.get(
+                            "observation_id"
+                        ),
+                    )
+                )
+                y_activation_flags = _safe_mapping(
+                    y_canonical_activation_state.get("behavior_boundary_flags")
+                )
+                y_packet_projection = y_packet_projection_from_record(
+                    current_packet=self.state.final_answer_packet,
+                    record_state=y_canonical_activation_state,
+                )
+                y_authority_projection = y_authority_projection_from_record(
+                    current_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                    record_state=y_canonical_activation_state,
+                )
             except (PermissionError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
 
@@ -7801,6 +8107,35 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_input_materialization_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION:
+            self.state.final_answer_packet = y_packet_projection
+            self.state.final_answer_authority_projection = y_authority_projection
+            self.state.followup_author_execution_activation_state = (
+                y_canonical_activation_state
+            )
+            self.state.followup_author_execution_activation_projection = (
+                build_followup_author_execution_activation_projection(
+                    activation_state=y_canonical_activation_state,
+                    behavior_boundary_flags=y_activation_flags,
+                    final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
+                    followup_author_input_materialization_stage=(
+                        FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE
+                    ),
+                    followup_author_execution_readiness_stage=(
+                        FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE
+                    ),
+                    followup_author_gate_stage=FOLLOWUP_AUTHOR_GATE_STAGE,
+                    followup_author_input_authority_stage=(
+                        FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE
+                    ),
+                )
+            )
+            self.state.followup_author_execution_activation_history.append(
+                deepcopy(self.state.followup_author_execution_activation_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_execution_activation_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION:
             observed_author_state = _safe_mapping(
                 observation.payload.get("followup_author_observation_state")
@@ -8191,6 +8526,7 @@ __all__ = [
     "FOLLOWUP_EXECUTION_STAGE",
     "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",
     "FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE",
+    "FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_STAGE",
     "FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
