@@ -3397,15 +3397,52 @@ def build_followup_author_gate_projection(
         "expected_source_classes": gate_state.get("expected_source_classes", []),
         "final_answer_packet_mode": gate_state.get("final_answer_packet_mode"),
         "author_gate_mode": gate_state.get("author_gate_mode"),
+        "author_input_authority_mode": gate_state.get("author_input_authority_mode"),
+        "author_input_authority_id": gate_state.get("author_input_authority_id"),
+        "author_input_authority_digest": gate_state.get(
+            "author_input_authority_digest"
+        ),
+        "followup_author_input_authority_digest": gate_state.get(
+            "followup_author_input_authority_digest"
+        ),
+        "followup_author_input_authority_projection_digest": gate_state.get(
+            "followup_author_input_authority_projection_digest"
+        ),
         "final_answer_packet_digest": gate_state.get("final_answer_packet_digest"),
+        "current_final_answer_packet_digest": gate_state.get(
+            "current_final_answer_packet_digest"
+        ),
         "final_answer_authority_projection_digest": gate_state.get(
             "final_answer_authority_projection_digest"
+        ),
+        "u1_original_final_answer_packet_digest": gate_state.get(
+            "u1_original_final_answer_packet_digest"
         ),
         "author_gate_decision": gate_state.get("author_gate_decision"),
         "author_gate_reason": gate_state.get("author_gate_reason"),
         "packet_authority_consumed": True,
+        "author_input_authority_consumed": gate_state.get(
+            "author_input_authority_consumed",
+            False,
+        ),
+        "author_gate_consumed": gate_state.get("author_gate_consumed", False),
         "answer_readiness_posture": gate_state.get("answer_readiness_posture", {}),
         "author_payload_ref": gate_state.get("author_payload_ref", {}),
+        "author_payload_ref_id": gate_state.get("author_payload_ref_id"),
+        "author_payload_ref_status": gate_state.get("author_payload_ref_status"),
+        "author_input_refs": gate_state.get("author_input_refs", {}),
+        "author_input_refs_digest": gate_state.get("author_input_refs_digest"),
+        "rendered_source_entry_digest": gate_state.get(
+            "rendered_source_entry_digest"
+        ),
+        "rendered_source_entry_refs": gate_state.get(
+            "rendered_source_entry_refs",
+            [],
+        ),
+        "rendered_source_entry_count": gate_state.get(
+            "rendered_source_entry_count",
+            0,
+        ),
         "final_answer_authority_payload_ref": gate_state.get(
             "final_answer_authority_payload_ref",
             {},
@@ -3426,13 +3463,17 @@ def build_followup_author_gate_projection(
             [],
         ),
         "author_activation_allowed": False,
+        "author_execution_allowed": gate_state.get("author_execution_allowed", False),
         "author_execution_deferred": True,
         "author_executor_invoked": False,
+        "model_called": gate_state.get("model_called", False),
+        "prompt_text_included": gate_state.get("prompt_text_included", False),
         "author_prompt_changed": False,
         "author_prose_behavior_changed": False,
         "citation_rendering_changed": False,
         "citation_formatter_invoked": False,
         "product_answer_behavior_changed": False,
+        "product_answer_ready": gate_state.get("product_answer_ready", False),
         "final_text_included": False,
         "live_validation_not_run": True,
         "behavior_boundary_flags": dict(behavior_boundary_flags),
