@@ -414,6 +414,91 @@ def assert_t1_boundary_snapshot_unchanged(
     ]
 
 
+def snapshot_u1_boundary_state(kernel: Any) -> dict[str, Any]:
+    return {
+        "trace_projection": deepcopy(kernel.state.to_trace_projection().to_dict()),
+        "final_answer_packet": deepcopy(kernel.state.final_answer_packet),
+        "final_answer_authority_projection": deepcopy(
+            kernel.state.final_answer_authority_projection
+        ),
+        "followup_author_input_authority_state": deepcopy(
+            kernel.state.followup_author_input_authority_state
+        ),
+        "followup_author_input_authority_projection": deepcopy(
+            kernel.state.followup_author_input_authority_projection
+        ),
+        "followup_author_input_authority_history": deepcopy(
+            kernel.state.followup_author_input_authority_history
+        ),
+        "followup_citation_rendering_state": deepcopy(
+            kernel.state.followup_citation_rendering_state
+        ),
+        "followup_citation_rendering_projection": deepcopy(
+            kernel.state.followup_citation_rendering_projection
+        ),
+        "followup_citation_rendering_history": deepcopy(
+            kernel.state.followup_citation_rendering_history
+        ),
+        "followup_author_gate_state": deepcopy(kernel.state.followup_author_gate_state),
+        "followup_author_observation_state": deepcopy(
+            kernel.state.followup_author_observation_state
+        ),
+        "author_observation": deepcopy(kernel.state.author_observation),
+        "final_answer_outcome": deepcopy(kernel.state.final_answer_outcome),
+        "projections": deepcopy(kernel.state.projections),
+        "action_statuses": deepcopy(kernel.state.action_statuses),
+        "stage_statuses": deepcopy(kernel.state.stage_statuses),
+        "reduced_action_ids": deepcopy(kernel.state.reduced_action_ids),
+        "observations": deepcopy(kernel.state.observations),
+        "next_observation_sequence": kernel.state.next_observation_sequence,
+    }
+
+
+def assert_u1_boundary_snapshot_unchanged(
+    kernel: Any,
+    snapshot: dict[str, Any],
+) -> None:
+    assert kernel.state.to_trace_projection().to_dict() == snapshot["trace_projection"]
+    assert kernel.state.final_answer_packet == snapshot["final_answer_packet"]
+    assert kernel.state.final_answer_authority_projection == snapshot[
+        "final_answer_authority_projection"
+    ]
+    assert kernel.state.followup_author_input_authority_state == snapshot[
+        "followup_author_input_authority_state"
+    ]
+    assert kernel.state.followup_author_input_authority_projection == snapshot[
+        "followup_author_input_authority_projection"
+    ]
+    assert kernel.state.followup_author_input_authority_history == snapshot[
+        "followup_author_input_authority_history"
+    ]
+    assert kernel.state.followup_citation_rendering_state == snapshot[
+        "followup_citation_rendering_state"
+    ]
+    assert kernel.state.followup_citation_rendering_projection == snapshot[
+        "followup_citation_rendering_projection"
+    ]
+    assert kernel.state.followup_citation_rendering_history == snapshot[
+        "followup_citation_rendering_history"
+    ]
+    assert kernel.state.followup_author_gate_state == snapshot[
+        "followup_author_gate_state"
+    ]
+    assert kernel.state.followup_author_observation_state == snapshot[
+        "followup_author_observation_state"
+    ]
+    assert kernel.state.author_observation == snapshot["author_observation"]
+    assert kernel.state.final_answer_outcome == snapshot["final_answer_outcome"]
+    assert kernel.state.projections == snapshot["projections"]
+    assert kernel.state.action_statuses == snapshot["action_statuses"]
+    assert kernel.state.stage_statuses == snapshot["stage_statuses"]
+    assert kernel.state.reduced_action_ids == snapshot["reduced_action_ids"]
+    assert kernel.state.observations == snapshot["observations"]
+    assert kernel.state.next_observation_sequence == snapshot[
+        "next_observation_sequence"
+    ]
+
+
 def assert_no_sensitive_payload(value: Any) -> None:
     markers = (
         "raw_page_text",
@@ -452,9 +537,13 @@ __all__ = [
     "assert_p1_boundary_snapshot_unchanged",
     "assert_q1_boundary_snapshot_unchanged",
     "assert_r1_boundary_snapshot_unchanged",
+    "assert_t1_boundary_snapshot_unchanged",
+    "assert_u1_boundary_snapshot_unchanged",
     "snapshot_o2_boundary_state",
     "snapshot_o2_closed_surfaces",
     "snapshot_p1_boundary_state",
     "snapshot_q1_boundary_state",
     "snapshot_r1_boundary_state",
+    "snapshot_t1_boundary_state",
+    "snapshot_u1_boundary_state",
 ]
