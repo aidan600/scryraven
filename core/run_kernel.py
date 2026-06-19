@@ -14,6 +14,17 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from core.evidence_ledger import EvidenceLedger
+from core.followup_author_execution_readiness_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_READINESS_REASON,
+    FOLLOWUP_AUTHOR_EXECUTION_READINESS_STATUS,
+    build_followup_author_execution_readiness_action_inputs,
+    build_followup_author_execution_readiness_projection,
+    build_followup_author_execution_readiness_record,
+    validate_followup_author_execution_readiness_observation_binding,
+)
+from core.followup_author_execution_readiness_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE as FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE_NAME,
+)
 from core.followup_author_gate_runtime import (
     AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE,
     AG96I3V1_U1_BOUND_AUTHOR_GATE_REASON,
@@ -137,6 +148,9 @@ from core.followup_runkernel_reducers import (
     validate_followup_sufficiency_recheck_observation_binding,
 )
 from core.followup_runkernel_reducers import (
+    FOLLOWUP_AUTHOR_EXECUTION_READINESS_FALSE_FLAGS as _FOLLOWUP_AUTHOR_EXECUTION_READINESS_FALSE_FLAGS,
+)
+from core.followup_runkernel_reducers import (
     FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS as _FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS,
 )
 from core.followup_runkernel_reducers import (
@@ -217,6 +231,9 @@ FOLLOWUP_CITATION_ELIGIBILITY_STAGE = FOLLOWUP_CITATION_ELIGIBILITY_STAGE_NAME
 FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE = FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE_NAME
 FOLLOWUP_CITATION_RENDERING_STAGE = FOLLOWUP_CITATION_RENDERING_STAGE_NAME
 FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE = FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE_NAME
+FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE = (
+    FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE_NAME
+)
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -279,6 +296,7 @@ class ActionType(str, Enum):
     FOLLOWUP_CITATION_SOURCE_HANDOFF = "followup_citation_source_handoff"
     FOLLOWUP_CITATION_RENDERING = "followup_citation_rendering"
     FOLLOWUP_AUTHOR_INPUT_AUTHORITY = "followup_author_input_authority"
+    FOLLOWUP_AUTHOR_EXECUTION_READINESS = "followup_author_execution_readiness"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -331,6 +349,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_AUTHOR_INPUT_AUTHORITY_PREPARED = (
         "followup_author_input_authority_prepared"
+    )
+    FOLLOWUP_AUTHOR_EXECUTION_READINESS_PREPARED = (
+        "followup_author_execution_readiness_prepared"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -648,6 +669,15 @@ class RunState:
     followup_author_input_authority_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_execution_readiness_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_readiness_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_readiness_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -806,6 +836,15 @@ class RunState:
             followup_author_input_authority_history=deepcopy(
                 self.followup_author_input_authority_history
             ),
+            followup_author_execution_readiness_state=deepcopy(
+                self.followup_author_execution_readiness_state
+            ),
+            followup_author_execution_readiness_projection=deepcopy(
+                self.followup_author_execution_readiness_projection
+            ),
+            followup_author_execution_readiness_history=deepcopy(
+                self.followup_author_execution_readiness_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -898,6 +937,9 @@ class KernelTraceProjection:
     followup_author_input_authority_state: Mapping[str, Any]
     followup_author_input_authority_projection: Mapping[str, Any]
     followup_author_input_authority_history: Sequence[Mapping[str, Any]]
+    followup_author_execution_readiness_state: Mapping[str, Any]
+    followup_author_execution_readiness_projection: Mapping[str, Any]
+    followup_author_execution_readiness_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1057,6 +1099,16 @@ class KernelTraceProjection:
             "followup_author_input_authority_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_input_authority_history
+            ],
+            "followup_author_execution_readiness_state": _safe_mapping(
+                self.followup_author_execution_readiness_state
+            ),
+            "followup_author_execution_readiness_projection": _safe_mapping(
+                self.followup_author_execution_readiness_projection
+            ),
+            "followup_author_execution_readiness_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_execution_readiness_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -4382,6 +4434,92 @@ class RunKernel:
             expected_observation_type=ObservationType.FOLLOWUP_AUTHOR_GATE_OBSERVED,
         )
 
+    def authorize_followup_author_execution_readiness(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_EXECUTION_READINESS_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        v1_state = self.state.followup_author_gate_state
+        if not v1_state:
+            raise RunKernelTransitionError(
+                "W Author execution readiness requires reduced V1 Author gate"
+            )
+        if (
+            self.state.followup_author_execution_readiness_state
+            or self.state.followup_author_execution_readiness_projection
+            or self.state.followup_author_execution_readiness_history
+        ):
+            raise RunKernelTransitionError(
+                "W Author execution readiness already prepared"
+            )
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "W Author execution readiness requires no Author observation"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "W Author execution readiness requires Author/final output closed"
+            )
+        if (
+            getattr(self.state, "analyst_author_handoff_state", {})
+            or getattr(self.state, "economist_handoff_state", {})
+        ):
+            raise RunKernelTransitionError(
+                "W Author execution readiness requires Analyst/Economist closed"
+            )
+
+        packet = self.state.final_answer_packet
+        authority = self.state.final_answer_authority_projection
+        author_payload_ref = _safe_mapping(packet.get("author_payload_ref"))
+        if author_payload_ref.get("status") == "author_input_ready":
+            raise RunKernelTransitionError(
+                "W Author execution readiness rejects executable payload status"
+            )
+        if author_payload_ref.get("status") != FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS:
+            raise RunKernelTransitionError(
+                "W Author execution readiness requires deferred U1 payload status"
+            )
+
+        u1_state = self.state.followup_author_input_authority_state
+        u1_projection = self.state.followup_author_input_authority_projection
+        canonical_inputs = build_followup_author_execution_readiness_action_inputs(
+            followup_author_gate_state=v1_state,
+            followup_author_gate_projection=self.state.followup_author_gate_projection,
+            followup_author_input_authority_state=u1_state,
+            followup_author_input_authority_projection=u1_projection,
+            final_answer_packet=packet,
+            final_answer_authority_projection=authority,
+        )
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        try:
+            build_followup_author_execution_readiness_record(
+                action_inputs=merged_inputs,
+                followup_author_gate_state=v1_state,
+                followup_author_gate_projection=(
+                    self.state.followup_author_gate_projection
+                ),
+                followup_author_gate_history=self.state.followup_author_gate_history,
+                followup_author_input_authority_state=u1_state,
+                followup_author_input_authority_projection=u1_projection,
+                followup_author_input_authority_history=(
+                    self.state.followup_author_input_authority_history
+                ),
+                final_answer_packet=packet,
+                final_answer_authority_projection=authority,
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_EXECUTION_READINESS_PREPARED
+            ),
+        )
+
     def authorize_followup_author_observation(
         self,
         *,
@@ -4589,6 +4727,31 @@ class RunKernel:
         u1_authority_projection: dict[str, Any] = {}
         u1_packet_projection: dict[str, Any] = {}
         v1_canonical_gate_record: Any | None = None
+        w_observed_readiness_state: dict[str, Any] = {}
+        w_canonical_readiness_state: dict[str, Any] = {}
+        w_readiness_flags: dict[str, Any] = {}
+        if self.state.followup_author_execution_readiness_state:
+            if action.action_type in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_GATE,
+            }:
+                raise RunKernelTransitionError(
+                    "stale upstream follow-up action cannot reduce after "
+                    "AG-96I3W Author execution readiness"
+                )
+            if (
+                action.action_type
+                is ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS
+            ):
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3W Author execution readiness cannot reduce"
+                )
         if (
             self.state.followup_author_gate_state.get("author_gate_mode")
             == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
@@ -5171,6 +5334,118 @@ class RunKernel:
                     )
                 except (PermissionError, ValueError) as exc:
                     raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS:
+            w_observed_readiness_state = _safe_mapping(
+                observation.payload.get("followup_author_execution_readiness_state")
+            )
+            if not w_observed_readiness_state:
+                raise RunKernelTransitionError(
+                    "W Author execution readiness observation requires "
+                    "followup_author_execution_readiness_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_execution_readiness_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_readiness_state=w_observed_readiness_state,
+                )
+                w_canonical_readiness_record = (
+                    build_followup_author_execution_readiness_record(
+                        action_inputs=action_inputs,
+                        followup_author_gate_state=(
+                            self.state.followup_author_gate_state
+                        ),
+                        followup_author_gate_projection=(
+                            self.state.followup_author_gate_projection
+                        ),
+                        followup_author_gate_history=(
+                            self.state.followup_author_gate_history
+                        ),
+                        followup_author_input_authority_state=(
+                            self.state.followup_author_input_authority_state
+                        ),
+                        followup_author_input_authority_projection=(
+                            self.state.followup_author_input_authority_projection
+                        ),
+                        followup_author_input_authority_history=(
+                            self.state.followup_author_input_authority_history
+                        ),
+                        final_answer_packet=self.state.final_answer_packet,
+                        final_answer_authority_projection=(
+                            self.state.final_answer_authority_projection
+                        ),
+                    )
+                )
+                w_canonical_readiness_state = {
+                    **w_canonical_readiness_record.to_dict(),
+                    "owner": "RunKernel.FollowupAuthorExecutionReadiness",
+                    "canonical_state": True,
+                    "trace_only": False,
+                    "storage_only": False,
+                    "observation_id": w_observed_readiness_state.get(
+                        "observation_id"
+                    ),
+                }
+                w_readiness_flags = _safe_mapping(
+                    w_canonical_readiness_state.get("behavior_boundary_flags")
+                )
+                _followup_checked(
+                    require_followup_flags_false,
+                    w_readiness_flags,
+                    _FOLLOWUP_AUTHOR_EXECUTION_READINESS_FALSE_FLAGS,
+                    context="W Author execution readiness",
+                )
+                if w_canonical_readiness_state.get("status") != (
+                    FOLLOWUP_AUTHOR_EXECUTION_READINESS_STATUS
+                ):
+                    raise PermissionError(
+                        "W Author execution readiness status mismatch"
+                    )
+                for field in (
+                    "v1_author_gate_consumed",
+                    "u1_authority_consumed",
+                    "packet_authority_consumed",
+                    "author_execution_readiness_recorded",
+                    "author_execution_deferred",
+                    "live_validation_not_run",
+                    "not_for_product_answer_activation",
+                ):
+                    if w_canonical_readiness_state.get(field) is not True:
+                        raise PermissionError(
+                            "W Author execution readiness requires "
+                            f"{field}=True"
+                        )
+                for field in (
+                    "author_execution_allowed",
+                    "author_activation_allowed",
+                    "author_payload_status_changed",
+                    "prompt_text_included",
+                    "final_text_included",
+                    "product_answer_ready",
+                    "model_called",
+                    "author_executor_invoked",
+                    "provider_execution_licensed",
+                ):
+                    if w_canonical_readiness_state.get(field) is not False:
+                        raise PermissionError(
+                            "W Author execution readiness requires "
+                            f"{field}=False"
+                        )
+                if w_canonical_readiness_state.get("author_payload_ref_status") != (
+                    FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS
+                ):
+                    raise PermissionError(
+                        "W Author execution readiness requires deferred payload status"
+                    )
+                if w_canonical_readiness_state.get("author_payload_ref_status") == (
+                    "author_input_ready"
+                ):
+                    raise PermissionError(
+                        "W Author execution readiness must not make payload executable"
+                    )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
 
         self.state.reduced_action_ids.add(action.action_id)
         self.state.action_statuses[action.action_id] = observation.status
@@ -7154,6 +7429,27 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_gate_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS:
+            self.state.followup_author_execution_readiness_state = (
+                w_canonical_readiness_state
+            )
+            self.state.followup_author_execution_readiness_projection = (
+                build_followup_author_execution_readiness_projection(
+                    readiness_state=w_canonical_readiness_state,
+                    behavior_boundary_flags=w_readiness_flags,
+                    final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
+                    followup_author_gate_stage=FOLLOWUP_AUTHOR_GATE_STAGE,
+                    followup_author_input_authority_stage=(
+                        FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE
+                    ),
+                )
+            )
+            self.state.followup_author_execution_readiness_history.append(
+                deepcopy(self.state.followup_author_execution_readiness_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_execution_readiness_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION:
             observed_author_state = _safe_mapping(
                 observation.payload.get("followup_author_observation_state")
@@ -7543,6 +7839,7 @@ __all__ = [
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",
+    "FOLLOWUP_AUTHOR_EXECUTION_READINESS_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
     "FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL_STAGE",
