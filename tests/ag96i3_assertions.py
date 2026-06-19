@@ -703,6 +703,40 @@ def assert_ad_boundary_snapshot_unchanged(
     ]
 
 
+def snapshot_ae_boundary_state(kernel: Any) -> dict[str, Any]:
+    snapshot = snapshot_ad_boundary_state(kernel)
+    snapshot["followup_author_execution_from_ad_state"] = deepcopy(
+        kernel.state.followup_author_execution_from_ad_state
+    )
+    snapshot["followup_author_execution_from_ad_projection"] = deepcopy(
+        kernel.state.followup_author_execution_from_ad_projection
+    )
+    snapshot["followup_author_execution_from_ad_history"] = deepcopy(
+        kernel.state.followup_author_execution_from_ad_history
+    )
+    snapshot["author_observation"] = deepcopy(kernel.state.author_observation)
+    snapshot["final_answer_outcome"] = deepcopy(kernel.state.final_answer_outcome)
+    return snapshot
+
+
+def assert_ae_boundary_snapshot_unchanged(
+    kernel: Any,
+    snapshot: dict[str, Any],
+) -> None:
+    assert_ad_boundary_snapshot_unchanged(kernel, snapshot)
+    assert kernel.state.followup_author_execution_from_ad_state == snapshot[
+        "followup_author_execution_from_ad_state"
+    ]
+    assert kernel.state.followup_author_execution_from_ad_projection == snapshot[
+        "followup_author_execution_from_ad_projection"
+    ]
+    assert kernel.state.followup_author_execution_from_ad_history == snapshot[
+        "followup_author_execution_from_ad_history"
+    ]
+    assert kernel.state.author_observation == snapshot["author_observation"]
+    assert kernel.state.final_answer_outcome == snapshot["final_answer_outcome"]
+
+
 def assert_no_sensitive_payload(value: Any) -> None:
     markers = (
         "raw_page_text",
@@ -750,6 +784,7 @@ __all__ = [
     "assert_z_boundary_snapshot_unchanged",
     "assert_ac_boundary_snapshot_unchanged",
     "assert_ad_boundary_snapshot_unchanged",
+    "assert_ae_boundary_snapshot_unchanged",
     "snapshot_o2_boundary_state",
     "snapshot_o2_closed_surfaces",
     "snapshot_p1_boundary_state",
@@ -764,4 +799,5 @@ __all__ = [
     "snapshot_z_boundary_state",
     "snapshot_ac_boundary_state",
     "snapshot_ad_boundary_state",
+    "snapshot_ae_boundary_state",
 ]
