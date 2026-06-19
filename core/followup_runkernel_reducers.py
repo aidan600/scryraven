@@ -162,6 +162,19 @@ FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS = (
     *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
     "final_text_included",
 )
+FOLLOWUP_AUTHOR_EXECUTION_READINESS_FALSE_FLAGS = (
+    *FOLLOWUP_NO_LIVE_FALSE_FLAGS,
+    *FOLLOWUP_SEARCH_RECHECK_FALSE_FLAGS,
+    "sufficiency_judgment_rechecked",
+    *FOLLOWUP_FINAL_ANSWER_PACKET_MUTATION_FALSE_FLAGS,
+    *FOLLOWUP_AUTHOR_CITATION_PRODUCT_RUNTIME_FALSE_FLAGS,
+    *FOLLOWUP_ROLE_HANDOFF_RUNTIME_FALSE_FLAGS,
+    "author_execution_allowed",
+    "author_payload_status_changed",
+    "prompt_text_included",
+    "final_text_included",
+    "product_answer_ready",
+)
 
 AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE = (
     "ag96i3m2_admission_review_followup_intake"
@@ -4378,6 +4391,7 @@ def _mapping(value: Any) -> dict[str, Any]:
 
 __all__ = [
     "AG96I3M2_EVIDENCE_LEDGER_INTAKE_MODE",
+    "FOLLOWUP_AUTHOR_EXECUTION_READINESS_FALSE_FLAGS",
     "FOLLOWUP_AUTHOR_GATE_FALSE_FLAGS",
     "FOLLOWUP_AUTHOR_OBSERVATION_FALSE_FLAGS",
     "FOLLOWUP_BLOCKED_PACKET_SHELL_FALSE_FLAGS",
