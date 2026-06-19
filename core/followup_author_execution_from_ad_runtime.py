@@ -9,6 +9,7 @@ IDs/digests only, and returns hash-only Author observation/final outcome state.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import partial
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
@@ -38,13 +39,43 @@ from core.followup_author_payload_construction_runtime import (
     FOLLOWUP_AUTHOR_PAYLOAD_ENVELOPE_REF_STATUS,
     validate_run_kernel_followup_author_payload_construction_state,
 )
+from core.followup_author_payload_safety import (
+    boundary_flags_from_tokens,
+    reject_caller_controlled_inputs,
+    validate_expected_action_fields,
+    validate_no_existing_prefixed_fields,
+    validate_packet_authority_currentness,
+    validate_packet_projection_base,
+)
+from core.followup_author_payload_safety import (
+    projection_digest as _digest,
+)
+from core.followup_author_payload_safety import (
+    projection_from_record_mutation as _projection_from_record_mutation,
+)
+from core.followup_author_payload_safety import (
+    reject_closed_surface_payload as _reject_closed_surface_payload,
+)
+from core.followup_author_payload_safety import (
+    require as _require,
+)
+from core.followup_author_payload_safety import (
+    safe_mapping as _mapping,
+)
+from core.followup_author_payload_safety import (
+    updated_with_mutation as _updated_with_mutation,
+)
+from core.followup_author_payload_safety import (
+    validate_closed_flags as _shared_validate_closed_flags,
+)
+from core.followup_author_payload_safety import (
+    validate_projection_update as _shared_validate_projection_update,
+)
 from core.followup_author_prompt_assembly_manifest_runtime import (
     AG96I3Z_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_MODE,
 )
 from core.followup_deliberation import safe_json
-from core.followup_final_answer_packet_runtime import followup_projection_digest
 from core.followup_fixture_boundaries import (
-    followup_closed_surface_boundary_flags,
     followup_common_redaction_posture,
 )
 
@@ -214,6 +245,42 @@ _CLOSED_STRING_PARTS = (
     "raw_provider",
     "author_input_ready",
 )
+_CLOSED_KEY_ALLOWED_TOKENS = frozenset(
+    {
+        "prompt_text_digest",
+        "prompt_text_length",
+        "author_report_text_digest",
+        "author_report_text_length",
+        "report_hash",
+        "report_length",
+        "report_text_retained",
+        "final_text_retained",
+        "final_text_included",
+        "fake_invocation_digest",
+        "fake_invocation_length",
+        "authority_block_text_digest",
+        "authority_block_text_length",
+        "payload_section_digests",
+        "current_final_answer_packet_digest",
+        "updated_final_answer_packet_digest",
+    }
+)
+_reject_forbidden_payload = partial(
+    _reject_closed_surface_payload,
+    false_fields=_FALSE_FIELDS,
+    allowed_key_tokens=_CLOSED_KEY_ALLOWED_TOKENS,
+    closed_key_parts=_CLOSED_KEY_PARTS,
+    closed_string_parts=_CLOSED_STRING_PARTS,
+    context_label="AE Author execution",
+)
+_validate_projection_update = partial(
+    _shared_validate_projection_update,
+    allowed_mutation_fields=AE_PACKET_MUTATION_FIELDS,
+    phase_label="AE",
+    ref_field="ag96i3_author_execution_from_ad_ref",
+    ref_label="execution ref",
+    author_payload_ref_status=FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS,
+)
 _PROJECTED_FIELDS = (
     "schema_version",
     "status",
@@ -277,6 +344,7 @@ _PROJECTED_FIELDS = (
     *_TRUE_FIELDS,
     *_FALSE_FIELDS,
 )
+_BOUNDARY_FLAG_TOKENS = "+canonical_final_answer_packet_mutated +final_answer_packet_updated +final_answer_authority_projection_mutated +ad_author_payload_envelope_consumed +ac_payload_authority_consumed +z_author_prompt_assembly_manifest_consumed +y_author_execution_activation_consumed +x_author_input_materialization_consumed +w_author_execution_readiness_consumed +v1_author_gate_consumed +u1_authority_consumed +packet_authority_consumed +fake_model_used +legacy_author_payload_ref_subordinated +author_execution_observed -real_model_called -ask_model_called -execute_author_action_called -author_model_called -model_called -author_executor_invoked -provider_payloads_retained -prompts_retained -model_responses_retained -unsanitized_text_retained -private_records_or_complete_traces_retained +author_observation_created +final_answer_outcome_created -author_input_ready -author_execution_allowed -author_activation_allowed +author_execution_deferred -final_answer_author_input_payload_created -prompt_text_included -prompt_text_retained -authority_block_text_retained -report_text_retained -final_text_retained -final_text_included -product_answer_ready -citation_strings_included -ordered_product_source_output_created +live_validation_not_run +not_for_product_answer_activation".split()
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,16 +364,7 @@ class FollowupAuthorExecutionFromADRecord:
 def reject_followup_author_execution_from_ad_input_spoof(
     inputs: Mapping[str, Any] | None,
 ) -> None:
-    raw_inputs = dict(inputs) if isinstance(inputs, Mapping) else {}
-    for key in raw_inputs:
-        token = str(key or "").casefold()
-        if token in _CALLER_CONTROLLED_KEYS:
-            raise PermissionError(
-                "AE Author execution action cannot accept caller-supplied "
-                f"{key!r}"
-            )
-    action_inputs = _mapping(raw_inputs)
-    _reject_forbidden_payload(action_inputs)
+    reject_caller_controlled_inputs(inputs, caller_controlled_keys=_CALLER_CONTROLLED_KEYS, context_label="AE Author execution action", closed_surface_rejector=_reject_forbidden_payload, check_raw_keys=True)
 
 
 def build_followup_author_execution_from_ad_action_inputs(
@@ -792,17 +851,9 @@ def ae_packet_projection_from_record(
     current_packet: Mapping[str, Any],
     record_state: Mapping[str, Any],
 ) -> dict[str, Any]:
-    packet = _mapping(current_packet)
-    record = _mapping(record_state)
-    mutation = _mapping(record.get("packet_mutation"))
-    _require(set(mutation) == set(AE_PACKET_MUTATION_FIELDS), "AE mutation mismatch")
-    _require(
-        _digest(packet) == record.get("current_final_answer_packet_digest"),
-        "AE stale packet",
+    return _projection_from_record_mutation(
+        current_packet, record_state, "packet", "packet_mutation", AE_PACKET_MUTATION_FIELDS, "current_final_answer_packet_digest", "AE mutation mismatch", "AE stale packet", _validate_projection_update
     )
-    updated = _updated_with_mutation(packet, mutation)
-    _validate_projection_update(packet, updated, record, "packet")
-    return safe_json(updated)
 
 
 def ae_authority_projection_from_record(
@@ -810,70 +861,22 @@ def ae_authority_projection_from_record(
     current_projection: Mapping[str, Any],
     record_state: Mapping[str, Any],
 ) -> dict[str, Any]:
-    projection = _mapping(current_projection)
-    record = _mapping(record_state)
-    mutation = _mapping(record.get("final_answer_authority_projection_mutation"))
-    _require(
-        set(mutation) == set(AE_AUTHORITY_PROJECTION_MUTATION_FIELDS),
-        "AE authority mutation mismatch",
+    return _projection_from_record_mutation(
+        current_projection, record_state, "authority", "final_answer_authority_projection_mutation", AE_AUTHORITY_PROJECTION_MUTATION_FIELDS, "final_answer_authority_projection_digest", "AE authority mutation mismatch", "AE stale authority projection", _validate_projection_update
     )
-    _require(
-        _digest(projection) == record.get("final_answer_authority_projection_digest"),
-        "AE stale authority projection",
-    )
-    updated = _updated_with_mutation(projection, mutation)
-    _validate_projection_update(projection, updated, record, "authority")
-    return safe_json(updated)
 
 
 def author_execution_from_ad_boundary_flags() -> dict[str, bool]:
-    return {
-        **followup_closed_surface_boundary_flags(),
-        "canonical_final_answer_packet_mutated": True,
-        "final_answer_packet_updated": True,
-        "final_answer_authority_projection_mutated": True,
-        "ad_author_payload_envelope_consumed": True,
-        "ac_payload_authority_consumed": True,
-        "z_author_prompt_assembly_manifest_consumed": True,
-        "y_author_execution_activation_consumed": True,
-        "x_author_input_materialization_consumed": True,
-        "w_author_execution_readiness_consumed": True,
-        "v1_author_gate_consumed": True,
-        "u1_authority_consumed": True,
-        "packet_authority_consumed": True,
-        "fake_model_used": True,
-        "legacy_author_payload_ref_subordinated": True,
-        "author_execution_observed": True,
-        "real_model_called": False,
-        "ask_model_called": False,
-        "execute_author_action_called": False,
-        "author_model_called": False,
-        "model_called": False,
-        "author_executor_invoked": False,
-        "provider_payloads_retained": False,
-        "prompts_retained": False,
-        "model_responses_retained": False,
-        "unsanitized_text_retained": False,
-        "private_records_or_complete_traces_retained": False,
-        "author_observation_created": True,
-        "final_answer_outcome_created": True,
-        "author_input_ready": False,
-        "author_execution_allowed": False,
-        "author_activation_allowed": False,
-        "author_execution_deferred": True,
-        "final_answer_author_input_payload_created": False,
-        "prompt_text_included": False,
-        "prompt_text_retained": False,
-        "authority_block_text_retained": False,
-        "report_text_retained": False,
-        "final_text_retained": False,
-        "final_text_included": False,
-        "product_answer_ready": False,
-        "citation_strings_included": False,
-        "ordered_product_source_output_created": False,
-        "live_validation_not_run": True,
-        "not_for_product_answer_activation": True,
-    }
+    return boundary_flags_from_tokens(_BOUNDARY_FLAG_TOKENS)
+
+
+_validate_closed_flags = partial(
+    _shared_validate_closed_flags,
+    true_fields=_TRUE_FIELDS,
+    false_fields=_FALSE_FIELDS,
+    boundary_flags=author_execution_from_ad_boundary_flags,
+    context_label="AE",
+)
 
 
 def _validate_ad_current(
@@ -1138,36 +1141,17 @@ def _validate_packet_and_projection(
     authority: Mapping[str, Any],
     u1_state: Mapping[str, Any],
 ) -> None:
-    legacy_payload_ref = _mapping(packet.get("author_payload_ref"))
-    authority_payload_ref = _mapping(authority.get("author_payload_ref"))
-    author_input_refs = _mapping(packet.get("author_input_refs"))
-    envelope_ref = _mapping(ad_state.get("ag96i3_author_payload_envelope_ref"))
-    _require(packet.get("owner") == "RunKernel.FinalAnswerPacket", "AE packet owner")
-    _require(packet.get("canonical_state") is True, "AE packet canonical")
-    _require(packet.get("readiness_status") == "blocked", "AE packet must be blocked")
-    _require(packet.get("final_answer_allowed") is False, "AE final answer closed")
-    _require(packet.get("answer_ready") is False, "AE answer not ready")
-    _require(authority.get("canonical_state") is True, "AE authority canonical")
-    _require(
-        legacy_payload_ref.get("status") == FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS,
-        "AE requires deferred author_payload_ref",
-    )
-    _require(
-        legacy_payload_ref.get("status") != "author_input_ready",
-        "AE rejects ready ref",
-    )
-    _require(
-        legacy_payload_ref == authority_payload_ref,
+    legacy_payload_ref, author_input_refs = validate_packet_projection_base(
+        packet,
+        authority,
+        u1_state,
+        "AE",
+        FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS,
+        FOLLOWUP_AUTHOR_INPUT_REFS_STATUS,
         "AE packet/authority payload ref mismatch",
-    )
-    _require(
-        legacy_payload_ref == _mapping(u1_state.get("author_payload_ref")),
         "AE U1 payload ref mismatch",
     )
-    _require(
-        author_input_refs.get("status") == FOLLOWUP_AUTHOR_INPUT_REFS_STATUS,
-        "AE requires U1 author_input_refs",
-    )
+    envelope_ref = _mapping(ad_state.get("ag96i3_author_payload_envelope_ref"))
     _require(
         packet.get("ag96i3_author_payload_envelope_ref") == envelope_ref,
         "AE packet AD payload envelope ref mismatch",
@@ -1186,36 +1170,44 @@ def _validate_packet_and_projection(
         == ad_state.get("ag96i3_author_payload_digest"),
         "AE authority AD payload digest mismatch",
     )
-    _require(
-        _digest(packet) == ad_state.get("updated_final_answer_packet_digest"),
+    validate_packet_authority_currentness(
+        packet,
+        authority,
+        ad_state,
+        "updated_final_answer_packet_digest",
+        "updated_final_answer_authority_projection_digest",
         "AE stale packet from AD",
-    )
-    _require(
-        _digest(authority)
-        == ad_state.get("updated_final_answer_authority_projection_digest"),
         "AE stale authority projection from AD",
     )
-    for key in AE_PACKET_MUTATION_FIELDS:
-        if key.startswith("ag96i3_author_execution_from_ad"):
-            _require(not packet.get(key), "AE packet already has execution ref")
-            _require(not authority.get(key), "AE authority already has execution ref")
+    validate_no_existing_prefixed_fields(
+        packet,
+        authority,
+        AE_PACKET_MUTATION_FIELDS,
+        "ag96i3_author_execution_from_ad",
+        "AE packet already has execution ref",
+        "AE authority already has execution ref",
+    )
     expected = build_followup_author_execution_from_ad_action_inputs(
         followup_author_payload_construction_state=ad_state,
         followup_author_payload_construction_projection={},
         final_answer_packet=packet,
         final_answer_authority_projection=authority,
     )
-    for key in (
-        "current_final_answer_packet_digest",
-        "final_answer_authority_projection_digest",
-        "author_input_refs_digest",
-        "legacy_author_payload_ref_id",
-        "legacy_author_payload_ref_status",
-        "payload_envelope_digest",
-        "payload_envelope_ref_digest",
-        "ad_payload_construction_digest",
-    ):
-        _require(action.get(key) == expected.get(key), f"AE action {key} mismatch")
+    validate_expected_action_fields(
+        action,
+        expected,
+        (
+            "current_final_answer_packet_digest",
+            "final_answer_authority_projection_digest",
+            "author_input_refs_digest",
+            "legacy_author_payload_ref_id",
+            "legacy_author_payload_ref_status",
+            "payload_envelope_digest",
+            "payload_envelope_ref_digest",
+            "ad_payload_construction_digest",
+        ),
+        "AE",
+    )
 
 
 def _author_observation(
@@ -1356,45 +1348,6 @@ def _execution_mutation(
     }
 
 
-def _validate_projection_update(
-    before: Mapping[str, Any],
-    updated: Mapping[str, Any],
-    record: Mapping[str, Any],
-    context: str,
-) -> None:
-    changed = {
-        key for key in set(before) | set(updated) if before.get(key) != updated.get(key)
-    }
-    allowed = set(AE_PACKET_MUTATION_FIELDS)
-    _require(changed <= allowed, f"AE {context} changed non-AE fields")
-    _require(
-        _mapping(updated.get("author_payload_ref"))
-        == _mapping(before.get("author_payload_ref")),
-        f"AE {context} must not change author_payload_ref",
-    )
-    _require(
-        _mapping(updated.get("author_payload_ref")).get("status")
-        == FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS,
-        f"AE {context} must keep author_payload_ref deferred",
-    )
-    _require(
-        _mapping(updated.get("ag96i3_author_execution_from_ad_ref"))
-        == _mapping(record.get("ag96i3_author_execution_from_ad_ref")),
-        f"AE {context} execution ref mismatch",
-    )
-
-
-def _validate_closed_flags(state: Mapping[str, Any]) -> None:
-    for field in _TRUE_FIELDS:
-        _require(state.get(field) is True, f"AE requires {field}=True")
-    for field in _FALSE_FIELDS:
-        _require(state.get(field) is False, f"AE requires {field}=False")
-    flags = _mapping(state.get("behavior_boundary_flags"))
-    if flags:
-        for field, expected in author_execution_from_ad_boundary_flags().items():
-            _require(flags.get(field) is expected, f"AE boundary {field} mismatch")
-
-
 def _fake_invocation_ref(ad_state: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "mode": AG96I3AE_AD_CONSUMING_AUTHOR_EXECUTION_FAKE_MODEL_MODE,
@@ -1426,13 +1379,6 @@ def _fake_report_facts(invocation_ref: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _updated_with_mutation(
-    value: Mapping[str, Any],
-    mutation: Mapping[str, Any],
-) -> dict[str, Any]:
-    return safe_json({**_mapping(value), **_mapping(mutation)})
-
-
 def _execution_id(ad_state: Mapping[str, Any]) -> str:
     return (
         "followup-author-execution-from-ad:"
@@ -1459,70 +1405,8 @@ def _redaction_posture() -> dict[str, bool]:
     return posture
 
 
-def _reject_forbidden_payload(value: Any) -> None:
-    if isinstance(value, Mapping):
-        for key, child in value.items():
-            token = str(key or "").casefold()
-            if child is False and (
-                token in _FALSE_FIELDS
-                or token.endswith(
-                    ("allowed", "called", "created", "included", "ready", "retained")
-                )
-            ):
-                continue
-            if _closed_text_key(token):
-                raise PermissionError(f"AE Author execution cannot retain {key!r}")
-            _reject_forbidden_payload(child)
-    elif isinstance(value, str):
-        lowered = value.casefold()
-        for token in _CLOSED_STRING_PARTS:
-            if token in lowered:
-                raise PermissionError("AE Author execution contains closed text")
-    elif isinstance(value, Sequence) and not isinstance(value, bytes | str):
-        for child in value:
-            _reject_forbidden_payload(child)
-
-
-def _closed_text_key(token: str) -> bool:
-    if token in {
-        "prompt_text_digest",
-        "prompt_text_length",
-        "author_report_text_digest",
-        "author_report_text_length",
-        "report_hash",
-        "report_length",
-        "report_text_retained",
-        "final_text_retained",
-        "final_text_included",
-        "fake_invocation_digest",
-        "fake_invocation_length",
-        "authority_block_text_digest",
-        "authority_block_text_length",
-        "payload_section_digests",
-        "current_final_answer_packet_digest",
-        "updated_final_answer_packet_digest",
-    }:
-        return False
-    return any(part in token for part in _CLOSED_KEY_PARTS)
-
-
-def _mapping(value: Any) -> dict[str, Any]:
-    if isinstance(value, Mapping):
-        return dict(safe_json(value))
-    return {}
-
-
 def _history(runtime_inputs: Mapping[str, Any], prefix: str) -> list[dict[str, Any]]:
     return [_mapping(item) for item in runtime_inputs.get(f"{prefix}_history", [])]
-
-
-def _digest(value: Mapping[str, Any]) -> str:
-    return followup_projection_digest(_mapping(value))
-
-
-def _require(condition: bool, message: str) -> None:
-    if not condition:
-        raise PermissionError(message)
 
 
 __all__ = [
