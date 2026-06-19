@@ -21,6 +21,16 @@ from core.followup_author_gate_runtime import (
 from core.followup_author_gate_runtime import (
     FOLLOWUP_AUTHOR_GATE_STAGE as FOLLOWUP_AUTHOR_GATE_STAGE_NAME,
 )
+from core.followup_author_input_authority_runtime import (
+    AG96I3U1_AUTHOR_INPUT_AUTHORITY_MODE,
+    FOLLOWUP_AUTHOR_INPUT_AUTHORITY_GATE_REASON,
+    build_followup_author_input_authority_record,
+    u1_packet_projection_from_record,
+    validate_followup_author_input_authority_observation_binding,
+)
+from core.followup_author_input_authority_runtime import (
+    FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE as FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE_NAME,
+)
 from core.followup_author_observation_runtime import (
     FOLLOWUP_AUTHOR_OBSERVATION_MODE,
     build_followup_author_observation_record,
@@ -200,6 +210,7 @@ FOLLOWUP_FINAL_EVIDENCE_SELECTION_STAGE = (
 FOLLOWUP_CITATION_ELIGIBILITY_STAGE = FOLLOWUP_CITATION_ELIGIBILITY_STAGE_NAME
 FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE = FOLLOWUP_CITATION_SOURCE_HANDOFF_STAGE_NAME
 FOLLOWUP_CITATION_RENDERING_STAGE = FOLLOWUP_CITATION_RENDERING_STAGE_NAME
+FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE = FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE_NAME
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -261,6 +272,7 @@ class ActionType(str, Enum):
     FOLLOWUP_CITATION_ELIGIBILITY = "followup_citation_eligibility"
     FOLLOWUP_CITATION_SOURCE_HANDOFF = "followup_citation_source_handoff"
     FOLLOWUP_CITATION_RENDERING = "followup_citation_rendering"
+    FOLLOWUP_AUTHOR_INPUT_AUTHORITY = "followup_author_input_authority"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -310,6 +322,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_CITATION_RENDERING_PREPARED = (
         "followup_citation_rendering_prepared"
+    )
+    FOLLOWUP_AUTHOR_INPUT_AUTHORITY_PREPARED = (
+        "followup_author_input_authority_prepared"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -618,6 +633,15 @@ class RunState:
     followup_citation_rendering_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_input_authority_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_input_authority_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_input_authority_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -767,6 +791,15 @@ class RunState:
             followup_citation_rendering_history=deepcopy(
                 self.followup_citation_rendering_history
             ),
+            followup_author_input_authority_state=deepcopy(
+                self.followup_author_input_authority_state
+            ),
+            followup_author_input_authority_projection=deepcopy(
+                self.followup_author_input_authority_projection
+            ),
+            followup_author_input_authority_history=deepcopy(
+                self.followup_author_input_authority_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -856,6 +889,9 @@ class KernelTraceProjection:
     followup_citation_rendering_state: Mapping[str, Any]
     followup_citation_rendering_projection: Mapping[str, Any]
     followup_citation_rendering_history: Sequence[Mapping[str, Any]]
+    followup_author_input_authority_state: Mapping[str, Any]
+    followup_author_input_authority_projection: Mapping[str, Any]
+    followup_author_input_authority_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1005,6 +1041,16 @@ class KernelTraceProjection:
             "followup_citation_rendering_history": [
                 _safe_mapping(item)
                 for item in self.followup_citation_rendering_history
+            ],
+            "followup_author_input_authority_state": _safe_mapping(
+                self.followup_author_input_authority_state
+            ),
+            "followup_author_input_authority_projection": _safe_mapping(
+                self.followup_author_input_authority_projection
+            ),
+            "followup_author_input_authority_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_input_authority_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -3480,6 +3526,259 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_author_input_authority(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_INPUT_AUTHORITY_GATE_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        t1_state = self.state.followup_citation_rendering_state
+        if not t1_state:
+            raise RunKernelTransitionError(
+                "author input authority requires AG-96I3T1 citation rendering"
+            )
+        if (
+            self.state.followup_author_input_authority_state
+            or self.state.followup_author_input_authority_projection
+            or self.state.followup_author_input_authority_history
+        ):
+            raise RunKernelTransitionError(
+                "author input authority already prepared for this packet"
+            )
+        if (
+            self.state.followup_final_answer_packet_state
+            or self.state.followup_author_gate_state
+            or self.state.followup_author_observation_state
+            or self.state.author_observation
+            or self.state.final_answer_outcome
+            or getattr(self.state, "analyst_author_handoff_state", {})
+            or getattr(self.state, "economist_handoff_state", {})
+        ):
+            raise RunKernelTransitionError(
+                "author input authority requires Author/Analyst/Economist surfaces closed"
+            )
+        packet = self.state.final_answer_packet
+        packet_digest = followup_projection_digest(packet)
+        t1_digest = followup_projection_digest(t1_state)
+        authority_id = (
+            "followup-author-input-authority:"
+            f"{t1_digest[:16]}:{packet_digest[:16]}"
+        )
+        ledger_projection = self.state.evidence_ledger.to_projection().to_dict()
+        canonical_inputs = {
+            "run_id": t1_state.get("run_id"),
+            "checkpoint_id": t1_state.get("checkpoint_id"),
+            "followup_authorization_consumption_id": t1_state.get(
+                "followup_authorization_consumption_id"
+            ),
+            "sealed_candidate_id": t1_state.get("sealed_candidate_id"),
+            "followup_execution_id": t1_state.get("followup_execution_id"),
+            "execution_id": t1_state.get("execution_id"),
+            "followup_execution_observation_id": t1_state.get(
+                "followup_execution_observation_id"
+            ),
+            "followup_evidence_intake_id": t1_state.get(
+                "followup_evidence_intake_id"
+            ),
+            "intake_id": t1_state.get("intake_id"),
+            "followup_evidence_intake_observation_id": t1_state.get(
+                "followup_evidence_intake_observation_id"
+            ),
+            "followup_sufficiency_recheck_id": t1_state.get(
+                "followup_sufficiency_recheck_id"
+            ),
+            "recheck_id": t1_state.get("recheck_id"),
+            "followup_sufficiency_recheck_observation_id": t1_state.get(
+                "followup_sufficiency_recheck_observation_id"
+            ),
+            "packet_preparation_readiness_id": t1_state.get(
+                "packet_preparation_readiness_id"
+            ),
+            "readiness_observation_id": t1_state.get("readiness_observation_id"),
+            "blocked_final_answer_packet_shell_id": t1_state.get(
+                "blocked_final_answer_packet_shell_id"
+            ),
+            "blocked_final_answer_packet_shell_observation_id": t1_state.get(
+                "blocked_final_answer_packet_shell_observation_id"
+            ),
+            "final_evidence_selection_id": t1_state.get(
+                "final_evidence_selection_id"
+            ),
+            "final_evidence_selection_observation_id": t1_state.get(
+                "final_evidence_selection_observation_id"
+            ),
+            "citation_eligibility_id": t1_state.get("citation_eligibility_id"),
+            "citation_eligibility_observation_id": t1_state.get(
+                "citation_eligibility_observation_id"
+            ),
+            "citation_source_handoff_id": t1_state.get(
+                "citation_source_handoff_id"
+            ),
+            "citation_source_handoff_observation_id": t1_state.get(
+                "citation_source_handoff_observation_id"
+            ),
+            "citation_rendering_id": t1_state.get("citation_rendering_id"),
+            "citation_rendering_observation_id": t1_state.get("observation_id"),
+            "author_input_authority_id": authority_id,
+            "provider_job_kind": t1_state.get("provider_job_kind"),
+            "component_id": t1_state.get("component_id"),
+            "source_obligation_id": t1_state.get("source_obligation_id"),
+            "requirement_ids": t1_state.get("requirement_ids", []),
+            "expected_source_classes": t1_state.get("expected_source_classes", []),
+            "fixture_execution_mode": t1_state.get("fixture_execution_mode"),
+            "execution_mode": t1_state.get("execution_mode")
+            or t1_state.get("fixture_execution_mode"),
+            "evidence_ledger_intake_mode": t1_state.get(
+                "evidence_ledger_intake_mode"
+            ),
+            "sufficiency_recheck_mode": t1_state.get("sufficiency_recheck_mode"),
+            "packet_preparation_readiness_mode": (
+                AG96I3O1_FINAL_ANSWER_PACKET_READINESS_MODE
+            ),
+            "blocked_final_answer_packet_mode": (
+                AG96I3O2_BLOCKED_FINAL_ANSWER_PACKET_MODE
+            ),
+            "final_evidence_selection_mode": (
+                AG96I3P1_FINAL_EVIDENCE_SELECTION_MODE
+            ),
+            "citation_eligibility_mode": AG96I3Q1_CITATION_ELIGIBILITY_MODE,
+            "citation_source_handoff_mode": AG96I3R1_CITATION_SOURCE_HANDOFF_MODE,
+            "citation_rendering_mode": AG96I3T1_CITATION_RENDERING_MODE,
+            "author_input_authority_mode": AG96I3U1_AUTHOR_INPUT_AUTHORITY_MODE,
+            "evidence_ledger_projection_digest": evidence_ledger_projection_digest(
+                ledger_projection
+            ),
+            "sufficiency_judgment_digest": followup_projection_digest(
+                self.state.sufficiency_judgment_projection
+            ),
+            "followup_evidence_intake_digest": followup_projection_digest(
+                self.state.followup_evidence_intake_state
+            ),
+            "followup_sufficiency_recheck_digest": followup_projection_digest(
+                self.state.followup_sufficiency_recheck_state
+            ),
+            "followup_final_answer_packet_readiness_digest": (
+                followup_projection_digest(
+                    self.state.followup_final_answer_packet_readiness_state
+                )
+            ),
+            "blocked_final_answer_packet_shell_digest": (
+                followup_projection_digest(
+                    self.state.followup_blocked_final_answer_packet_shell_state
+                )
+            ),
+            "blocked_final_answer_packet_digest": t1_state.get(
+                "blocked_final_answer_packet_digest"
+            ),
+            "followup_final_evidence_selection_digest": followup_projection_digest(
+                self.state.followup_final_evidence_selection_state
+            ),
+            "followup_citation_eligibility_digest": followup_projection_digest(
+                self.state.followup_citation_eligibility_state
+            ),
+            "followup_citation_source_handoff_digest": followup_projection_digest(
+                self.state.followup_citation_source_handoff_state
+            ),
+            "followup_citation_rendering_digest": t1_digest,
+            "source_identity_digest": t1_state.get("source_identity_digest"),
+            "rendered_source_entry_digest": t1_state.get(
+                "rendered_source_entry_digest"
+            ),
+            "current_final_answer_packet_digest": packet_digest,
+            "prompt_text_included": False,
+            "final_text_included": False,
+            "author_activation_allowed": False,
+            "author_execution_deferred": True,
+            "author_gate_deferred": True,
+            "product_answer_ready": False,
+            "live_validation_not_run": True,
+            "expected_observation_record_type": (
+                "followup_author_input_authority_record"
+            ),
+        }
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        try:
+            build_followup_author_input_authority_record(
+                action_inputs=merged_inputs,
+                evidence_ledger_projection=ledger_projection,
+                sufficiency_judgment_projection=(
+                    self.state.sufficiency_judgment_projection
+                ),
+                followup_evidence_intake_state=(
+                    self.state.followup_evidence_intake_state
+                ),
+                followup_sufficiency_recheck_state=(
+                    self.state.followup_sufficiency_recheck_state
+                ),
+                followup_final_answer_packet_readiness_state=(
+                    self.state.followup_final_answer_packet_readiness_state
+                ),
+                followup_final_answer_packet_readiness_projection=(
+                    self.state.followup_final_answer_packet_readiness_projection
+                ),
+                followup_final_answer_packet_readiness_history=(
+                    self.state.followup_final_answer_packet_readiness_history
+                ),
+                followup_blocked_final_answer_packet_shell_state=(
+                    self.state.followup_blocked_final_answer_packet_shell_state
+                ),
+                followup_blocked_final_answer_packet_shell_projection=(
+                    self.state.followup_blocked_final_answer_packet_shell_projection
+                ),
+                followup_blocked_final_answer_packet_shell_history=(
+                    self.state.followup_blocked_final_answer_packet_shell_history
+                ),
+                followup_final_evidence_selection_state=(
+                    self.state.followup_final_evidence_selection_state
+                ),
+                followup_final_evidence_selection_projection=(
+                    self.state.followup_final_evidence_selection_projection
+                ),
+                followup_final_evidence_selection_history=(
+                    self.state.followup_final_evidence_selection_history
+                ),
+                followup_citation_eligibility_state=(
+                    self.state.followup_citation_eligibility_state
+                ),
+                followup_citation_eligibility_projection=(
+                    self.state.followup_citation_eligibility_projection
+                ),
+                followup_citation_eligibility_history=(
+                    self.state.followup_citation_eligibility_history
+                ),
+                followup_citation_source_handoff_state=(
+                    self.state.followup_citation_source_handoff_state
+                ),
+                followup_citation_source_handoff_projection=(
+                    self.state.followup_citation_source_handoff_projection
+                ),
+                followup_citation_source_handoff_history=(
+                    self.state.followup_citation_source_handoff_history
+                ),
+                followup_citation_rendering_state=t1_state,
+                followup_citation_rendering_projection=(
+                    self.state.followup_citation_rendering_projection
+                ),
+                followup_citation_rendering_history=(
+                    self.state.followup_citation_rendering_history
+                ),
+                final_answer_packet=packet,
+                final_answer_authority_projection=(
+                    self.state.final_answer_authority_projection
+                ),
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_INPUT_AUTHORITY_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY_PREPARED
+            ),
+        )
+
     def authorize_followup_final_answer_packet_prepare(
         self,
         *,
@@ -3659,6 +3958,11 @@ class RunKernel:
         reason: str = "ag96i2f_followup_fixture_author_gate_consumption",
         inputs: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
+        if self.state.followup_author_input_authority_state:
+            raise RunKernelTransitionError(
+                "follow-up Author gate consumption is deferred after "
+                "AG-96I3U1 author input authority"
+            )
         if not self.state.followup_final_answer_packet_state:
             raise RunKernelTransitionError(
                 "follow-up Author gate requires reduced follow-up FinalAnswerPacket state"
@@ -4004,6 +4308,30 @@ class RunKernel:
         r1_canonical_record: Any | None = None
         t1_observed_rendering_state: dict[str, Any] = {}
         t1_canonical_record: Any | None = None
+        u1_observed_authority_state: dict[str, Any] = {}
+        u1_canonical_record: Any | None = None
+        u1_authority_state: dict[str, Any] = {}
+        u1_authority_projection: dict[str, Any] = {}
+        u1_packet_projection: dict[str, Any] = {}
+        if self.state.followup_author_input_authority_state and action.action_type in {
+            ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+            ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+            ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+            ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+            ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+            ActionType.FOLLOWUP_CITATION_RENDERING,
+        }:
+            raise RunKernelTransitionError(
+                "stale upstream follow-up action cannot reduce after AG-96I3U1 "
+                "author input authority"
+            )
+        if (
+            self.state.followup_author_input_authority_state
+            and action.action_type is ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY
+        ):
+            raise RunKernelTransitionError(
+                "duplicate AG-96I3U1 author input authority cannot reduce"
+            )
         if (
             action.action_type is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
             and self.state.followup_citation_rendering_state
@@ -4374,6 +4702,127 @@ class RunKernel:
                         self.state.followup_evidence_intake_state
                     ),
                 )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY:
+            if (
+                self.state.followup_author_input_authority_state
+                or self.state.followup_author_input_authority_projection
+                or self.state.followup_author_input_authority_history
+            ):
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3U1 author input authority cannot reduce"
+                )
+            u1_observed_authority_state = _safe_mapping(
+                observation.payload.get("followup_author_input_authority_state")
+            )
+            if not u1_observed_authority_state:
+                raise RunKernelTransitionError(
+                    "follow-up author input authority observation requires "
+                    "followup_author_input_authority_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_input_authority_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_author_input_authority_state=(
+                        u1_observed_authority_state
+                    ),
+                )
+                u1_canonical_record = build_followup_author_input_authority_record(
+                    action_inputs=action_inputs,
+                    evidence_ledger_projection=(
+                        self.state.evidence_ledger.to_projection().to_dict()
+                    ),
+                    sufficiency_judgment_projection=(
+                        self.state.sufficiency_judgment_projection
+                    ),
+                    followup_evidence_intake_state=(
+                        self.state.followup_evidence_intake_state
+                    ),
+                    followup_sufficiency_recheck_state=(
+                        self.state.followup_sufficiency_recheck_state
+                    ),
+                    followup_final_answer_packet_readiness_state=(
+                        self.state.followup_final_answer_packet_readiness_state
+                    ),
+                    followup_final_answer_packet_readiness_projection=(
+                        self.state.followup_final_answer_packet_readiness_projection
+                    ),
+                    followup_final_answer_packet_readiness_history=(
+                        self.state.followup_final_answer_packet_readiness_history
+                    ),
+                    followup_blocked_final_answer_packet_shell_state=(
+                        self.state.followup_blocked_final_answer_packet_shell_state
+                    ),
+                    followup_blocked_final_answer_packet_shell_projection=(
+                        self.state.followup_blocked_final_answer_packet_shell_projection
+                    ),
+                    followup_blocked_final_answer_packet_shell_history=(
+                        self.state.followup_blocked_final_answer_packet_shell_history
+                    ),
+                    followup_final_evidence_selection_state=(
+                        self.state.followup_final_evidence_selection_state
+                    ),
+                    followup_final_evidence_selection_projection=(
+                        self.state.followup_final_evidence_selection_projection
+                    ),
+                    followup_final_evidence_selection_history=(
+                        self.state.followup_final_evidence_selection_history
+                    ),
+                    followup_citation_eligibility_state=(
+                        self.state.followup_citation_eligibility_state
+                    ),
+                    followup_citation_eligibility_projection=(
+                        self.state.followup_citation_eligibility_projection
+                    ),
+                    followup_citation_eligibility_history=(
+                        self.state.followup_citation_eligibility_history
+                    ),
+                    followup_citation_source_handoff_state=(
+                        self.state.followup_citation_source_handoff_state
+                    ),
+                    followup_citation_source_handoff_projection=(
+                        self.state.followup_citation_source_handoff_projection
+                    ),
+                    followup_citation_source_handoff_history=(
+                        self.state.followup_citation_source_handoff_history
+                    ),
+                    followup_citation_rendering_state=(
+                        self.state.followup_citation_rendering_state
+                    ),
+                    followup_citation_rendering_projection=(
+                        self.state.followup_citation_rendering_projection
+                    ),
+                    followup_citation_rendering_history=(
+                        self.state.followup_citation_rendering_history
+                    ),
+                    final_answer_packet=self.state.final_answer_packet,
+                    final_answer_authority_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                )
+                u1_packet_projection = u1_packet_projection_from_record(
+                    current_packet=self.state.final_answer_packet,
+                    record_state=u1_canonical_record.to_dict(),
+                )
+                u1_authority_state = {
+                    **u1_canonical_record.to_dict(),
+                    "owner": "RunKernel.FollowupAuthorInputAuthority",
+                    "canonical_state": True,
+                    "trace_only": False,
+                    "storage_only": False,
+                    "observation_id": u1_observed_authority_state.get(
+                        "observation_id"
+                    ),
+                }
+                u1_authority_projection = _safe_mapping(
+                    u1_authority_state.get("final_answer_authority_projection")
+                )
+                if not u1_authority_projection:
+                    raise PermissionError(
+                        "U1 requires canonical final answer authority projection"
+                    )
             except (PermissionError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
 
@@ -6102,6 +6551,22 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_citation_rendering_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY:
+            self.state.followup_author_input_authority_state = u1_authority_state
+            self.state.followup_author_input_authority_projection = (
+                u1_authority_projection
+            )
+            self.state.followup_author_input_authority_history.append(
+                deepcopy(u1_authority_projection)
+            )
+            self.state.final_answer_authority_projection = deepcopy(
+                u1_authority_projection
+            )
+            self.state.final_answer_packet = u1_packet_projection
+            self.state.projections[FINAL_ANSWER_PACKET_STAGE] = deepcopy(
+                self.state.final_answer_authority_projection
+            )
+            self.state.projections[action.stage] = deepcopy(u1_authority_projection)
         elif (
             action.action_type
             is ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE
