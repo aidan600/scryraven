@@ -89,7 +89,8 @@ jobs:
               "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_rejects_stale_upstream_reductions_after_success",
               "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_duplicate_and_old_ready_status_guards",
               "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_requires_ad_before_authorization",
-              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_static_guards_keep_legacy_model_product_pipeline_and_live_closed"
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_static_guards_keep_legacy_model_product_pipeline_and_live_closed",
+              "tests/test_ag96i3af4_author_invocation_construction.py::test_af4a_consumes_ad_into_blocked_manifest_model_closed"
             )
             python -m pytest -q @fastCustodyTests
             python -m pytest -q tests/test_final_answer_author_runkernel_ag91k.py tests/test_run_kernel_ag91h.py
