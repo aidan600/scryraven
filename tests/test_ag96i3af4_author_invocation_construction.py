@@ -97,6 +97,10 @@ def test_af4a_consumes_ad_into_blocked_manifest_model_closed() -> None:
     assert kernel.state.final_answer_outcome == {}
     assert kernel.state.followup_author_invocation_construction_history == [projection]
     assert kernel.state.projections[FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION_STAGE] == projection
+    trace = kernel.state.to_trace_projection().to_dict()
+    assert trace["followup_author_invocation_construction_state"] == state
+    assert trace["followup_author_invocation_construction_projection"] == projection
+    assert trace["followup_author_invocation_construction_history"] == [projection]
 
 
 @pytest.mark.parametrize(

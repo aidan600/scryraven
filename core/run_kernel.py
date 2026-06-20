@@ -1117,6 +1117,15 @@ class RunState:
             followup_author_execution_from_ad_history=deepcopy(
                 self.followup_author_execution_from_ad_history
             ),
+            followup_author_invocation_construction_state=deepcopy(
+                self.followup_author_invocation_construction_state
+            ),
+            followup_author_invocation_construction_projection=deepcopy(
+                self.followup_author_invocation_construction_projection
+            ),
+            followup_author_invocation_construction_history=deepcopy(
+                self.followup_author_invocation_construction_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -1230,6 +1239,9 @@ class KernelTraceProjection:
     followup_author_execution_from_ad_state: Mapping[str, Any]
     followup_author_execution_from_ad_projection: Mapping[str, Any]
     followup_author_execution_from_ad_history: Sequence[Mapping[str, Any]]
+    followup_author_invocation_construction_state: Mapping[str, Any]
+    followup_author_invocation_construction_projection: Mapping[str, Any]
+    followup_author_invocation_construction_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1459,6 +1471,16 @@ class KernelTraceProjection:
             "followup_author_execution_from_ad_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_execution_from_ad_history
+            ],
+            "followup_author_invocation_construction_state": _safe_mapping(
+                self.followup_author_invocation_construction_state
+            ),
+            "followup_author_invocation_construction_projection": _safe_mapping(
+                self.followup_author_invocation_construction_projection
+            ),
+            "followup_author_invocation_construction_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_invocation_construction_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
