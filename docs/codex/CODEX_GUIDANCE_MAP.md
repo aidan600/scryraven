@@ -14,6 +14,8 @@ are repo files; use repo-visible files and the current phase prompt.
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - **Reusable phase prompt shape:** read
   [PHASE_BRIEF_TEMPLATE.md](PHASE_BRIEF_TEMPLATE.md).
+- **High-custody validation tiers and timeout reporting:** read
+  [CI_VALIDATION_ERGONOMICS.md](CI_VALIDATION_ERGONOMICS.md).
 - **Developer commands and project overview:** read the repo `README.md`,
   `.github/workflows/ci.yml`, `scripts/check.ps1`, `scripts/test.ps1`,
   `scripts/lint.ps1`, `pytest.ini`, `ruff.toml`, and `.pre-commit-config.yaml`

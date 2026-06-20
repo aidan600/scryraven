@@ -269,6 +269,9 @@ Testing expectations:
 - diff check
 - focused new tests
 - relevant existing tests
+- For validation, prefer focused test -> impacted slice -> full
+  suite/manual dispatch. If an impacted slice times out, split it instead of
+  repeated monolithic reruns.
 - full offline pytest if practical
 
 Final bundle:

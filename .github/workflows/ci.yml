@@ -2,7 +2,21 @@ name: CI
 
 on:
   workflow_dispatch:
+    inputs:
+      validation_scope:
+        description: "Validation scope to run"
+        required: true
+        default: full
+        type: choice
+        options:
+          - full
+          - fast
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   push:
     branches:
       - main
@@ -20,6 +34,7 @@ jobs:
       PYTHONUNBUFFERED: "1"
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
       PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+      VALIDATION_SCOPE: ${{ github.event.inputs.validation_scope || 'full' }}
 
     steps:
       - name: Check out repository
@@ -57,7 +72,17 @@ jobs:
       - name: Run offline pytest
         shell: pwsh
         run: |
+          # Pull requests and manual fast validation run the representative custody lane.
+          # Pushes to main and manual full validation run the complete offline suite.
+          $runFastCustodyLane = $false
           if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $runFastCustodyLane = $true
+          }
+          if ($env:GITHUB_EVENT_NAME -eq "workflow_dispatch" -and $env:VALIDATION_SCOPE -eq "fast") {
+            $runFastCustodyLane = $true
+          }
+
+          if ($runFastCustodyLane) {
             $fastCustodyTests = @(
               "tests/test_ag96i3u1_author_input_authority.py::test_u1_happy_path_creates_author_input_authority_refs_only",
               "tests/test_ag96i3v1_author_gate.py::test_v1_happy_path_consumes_u1_authority_without_author_execution",
