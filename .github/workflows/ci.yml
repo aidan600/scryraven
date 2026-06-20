@@ -118,7 +118,8 @@ jobs:
               "tests/test_ag96i3af4_author_invocation_construction.py::test_af4a_consumes_ad_into_blocked_manifest_model_closed",
               "tests/test_ag96i3af4_author_invocation_construction.py::test_af4c_consumes_af4b2_bridge_into_model_ready_invocation_closed",
               "tests/test_ag96i3af4b2_author_evidence_content_bridge.py::test_af4b2_positive_path_binds_sanitized_excerpt_content_model_closed",
-              "tests/test_ag96i3af4d_author_model_request_assembly.py::test_af4d_happy_path_assembles_transient_model_request_model_closed"
+              "tests/test_ag96i3af4d_author_model_request_assembly.py::test_af4d_happy_path_assembles_transient_model_request_model_closed",
+              "tests/test_ag96i3af5a_author_execution_from_af4d.py::test_af5a_happy_path_calls_fake_adapter_once_and_retains_bounded_candidate"
             )
             python -m pytest -q @fastCustodyTests
             python -m pytest -q tests/test_final_answer_author_runkernel_ag91k.py tests/test_run_kernel_ag91h.py
