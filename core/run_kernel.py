@@ -14,6 +14,20 @@ from enum import Enum
 from typing import Any, Mapping, Sequence
 
 from core.evidence_ledger import EvidenceLedger
+from core.followup_author_evidence_content_bridge_runtime import (
+    FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_REASON,
+    af4b2_authority_projection_from_record,
+    af4b2_packet_projection_from_record,
+    build_followup_author_evidence_content_bridge_action_inputs,
+    build_followup_author_evidence_content_bridge_projection,
+    build_followup_author_evidence_content_bridge_record,
+    build_run_kernel_followup_author_evidence_content_bridge_state,
+    reject_followup_author_evidence_content_bridge_input_spoof,
+    validate_followup_author_evidence_content_bridge_observation_binding,
+)
+from core.followup_author_evidence_content_bridge_runtime import (
+    FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE as FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE_NAME,
+)
 from core.followup_author_execution_activation_runtime import (
     FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION_REASON,
     build_followup_author_execution_activation_action_inputs,
@@ -347,6 +361,9 @@ FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE = FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAG
 FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE = (
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE_NAME
 )
+FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE = (
+    FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE_NAME
+)
 FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE = (
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE_NAME
 )
@@ -427,6 +444,9 @@ class ActionType(str, Enum):
     )
     FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY = "followup_author_payload_authority"
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION = "followup_author_payload_construction"
+    FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE = (
+        "followup_author_evidence_content_bridge"
+    )
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AD = "followup_author_execution_from_ad"
     FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION = (
         "followup_author_invocation_construction"
@@ -501,6 +521,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTED = (
         "followup_author_payload_constructed"
+    )
+    FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGED = (
+        "followup_author_evidence_content_bridged"
     )
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_OBSERVED = (
         "followup_author_execution_from_ad_observed"
@@ -878,6 +901,15 @@ class RunState:
     followup_author_payload_construction_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_evidence_content_bridge_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_evidence_content_bridge_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_evidence_content_bridge_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_author_execution_from_ad_state: dict[str, Any] = field(
         default_factory=dict
     )
@@ -1108,6 +1140,15 @@ class RunState:
             followup_author_payload_construction_history=deepcopy(
                 self.followup_author_payload_construction_history
             ),
+            followup_author_evidence_content_bridge_state=deepcopy(
+                self.followup_author_evidence_content_bridge_state
+            ),
+            followup_author_evidence_content_bridge_projection=deepcopy(
+                self.followup_author_evidence_content_bridge_projection
+            ),
+            followup_author_evidence_content_bridge_history=deepcopy(
+                self.followup_author_evidence_content_bridge_history
+            ),
             followup_author_execution_from_ad_state=deepcopy(
                 self.followup_author_execution_from_ad_state
             ),
@@ -1236,6 +1277,9 @@ class KernelTraceProjection:
     followup_author_payload_construction_state: Mapping[str, Any]
     followup_author_payload_construction_projection: Mapping[str, Any]
     followup_author_payload_construction_history: Sequence[Mapping[str, Any]]
+    followup_author_evidence_content_bridge_state: Mapping[str, Any]
+    followup_author_evidence_content_bridge_projection: Mapping[str, Any]
+    followup_author_evidence_content_bridge_history: Sequence[Mapping[str, Any]]
     followup_author_execution_from_ad_state: Mapping[str, Any]
     followup_author_execution_from_ad_projection: Mapping[str, Any]
     followup_author_execution_from_ad_history: Sequence[Mapping[str, Any]]
@@ -1461,6 +1505,16 @@ class KernelTraceProjection:
             "followup_author_payload_construction_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_payload_construction_history
+            ],
+            "followup_author_evidence_content_bridge_state": _safe_mapping(
+                self.followup_author_evidence_content_bridge_state
+            ),
+            "followup_author_evidence_content_bridge_projection": _safe_mapping(
+                self.followup_author_evidence_content_bridge_projection
+            ),
+            "followup_author_evidence_content_bridge_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_evidence_content_bridge_history
             ],
             "followup_author_execution_from_ad_state": _safe_mapping(
                 self.followup_author_execution_from_ad_state
@@ -1817,6 +1871,7 @@ class RunKernel:
             or self.state.followup_author_prompt_assembly_manifest_state
             or self.state.followup_author_payload_authority_state
             or self.state.followup_author_payload_construction_state
+            or self.state.followup_author_evidence_content_bridge_state
             or self.state.followup_author_execution_from_ad_state
             or self.state.followup_author_gate_state.get("author_gate_mode")
             == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
@@ -5490,6 +5545,124 @@ class RunKernel:
         )
         return runtime_inputs
 
+    def _followup_author_evidence_content_bridge_runtime_inputs(
+        self,
+    ) -> dict[str, Any]:
+        state = self.state
+        prefixes = (
+            "followup_author_payload_construction",
+            "followup_author_payload_authority",
+            "followup_author_prompt_assembly_manifest",
+            "followup_author_execution_activation",
+            "followup_author_input_materialization",
+            "followup_author_execution_readiness",
+            "followup_author_gate",
+            "followup_author_input_authority",
+            "followup_final_evidence_selection",
+            "followup_citation_eligibility",
+            "followup_citation_source_handoff",
+            "followup_citation_rendering",
+        )
+        runtime_inputs = {
+            f"{prefix}_{suffix}": getattr(state, f"{prefix}_{suffix}")
+            for prefix in prefixes
+            for suffix in ("state", "projection", "history")
+        }
+        runtime_inputs["final_answer_packet"] = state.final_answer_packet
+        runtime_inputs["final_answer_authority_projection"] = (
+            state.final_answer_authority_projection
+        )
+        return runtime_inputs
+
+    def authorize_followup_author_evidence_content_bridge(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        ad_state = self.state.followup_author_payload_construction_state
+        if not ad_state:
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge requires reduced AD payload envelope"
+            )
+        if (
+            self.state.followup_author_evidence_content_bridge_state
+            or self.state.followup_author_evidence_content_bridge_projection
+            or self.state.followup_author_evidence_content_bridge_history
+        ):
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge already prepared"
+            )
+        if (
+            self.state.followup_author_invocation_construction_state
+            or self.state.followup_author_invocation_construction_projection
+            or self.state.followup_author_invocation_construction_history
+        ):
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge requires AF4a absent"
+            )
+        if (
+            self.state.followup_author_execution_from_ad_state
+            or self.state.followup_author_execution_from_ad_projection
+            or self.state.followup_author_execution_from_ad_history
+        ):
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge requires AE execution absent"
+            )
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge requires legacy fixture observation closed"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge requires no Author/final outcome"
+            )
+
+        packet = self.state.final_answer_packet
+        authority = self.state.final_answer_authority_projection
+        author_payload_ref = _safe_mapping(packet.get("author_payload_ref"))
+        if author_payload_ref.get("status") == "author_input_ready":
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge rejects executable payload status"
+            )
+        if author_payload_ref.get("status") != FOLLOWUP_AUTHOR_PAYLOAD_REF_STATUS:
+            raise RunKernelTransitionError(
+                "AF4B2 Author evidence-content bridge requires deferred payload status"
+            )
+        try:
+            reject_followup_author_evidence_content_bridge_input_spoof(inputs)
+            canonical_inputs = (
+                build_followup_author_evidence_content_bridge_action_inputs(
+                    followup_author_payload_construction_state=ad_state,
+                    followup_author_payload_construction_projection=(
+                        self.state.followup_author_payload_construction_projection
+                    ),
+                    final_answer_packet=packet,
+                    final_answer_authority_projection=authority,
+                    sanitized_author_evidence_excerpt_candidates=(
+                        dict(inputs or {}).get(
+                            "sanitized_author_evidence_excerpt_candidates"
+                        )
+                    ),
+                )
+            )
+            merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+            build_followup_author_evidence_content_bridge_record(
+                action_inputs=merged_inputs,
+                **self._followup_author_evidence_content_bridge_runtime_inputs(),
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGED
+            ),
+        )
+
     def authorize_followup_author_execution_from_ad(
         self,
         *,
@@ -5507,6 +5680,14 @@ class RunKernel:
             or self.state.followup_author_execution_from_ad_history
         ):
             raise RunKernelTransitionError("AE Author execution already observed")
+        if (
+            self.state.followup_author_evidence_content_bridge_state
+            or self.state.followup_author_evidence_content_bridge_projection
+            or self.state.followup_author_evidence_content_bridge_history
+        ):
+            raise RunKernelTransitionError(
+                "AE Author execution requires AF4B2 bridge consumption in a later phase"
+            )
         if (
             self.state.followup_author_invocation_construction_state
             or self.state.followup_author_invocation_construction_projection
@@ -5590,6 +5771,14 @@ class RunKernel:
         ):
             raise RunKernelTransitionError(
                 "AF4 Author invocation construction already prepared"
+            )
+        if (
+            self.state.followup_author_evidence_content_bridge_state
+            or self.state.followup_author_evidence_content_bridge_projection
+            or self.state.followup_author_evidence_content_bridge_history
+        ):
+            raise RunKernelTransitionError(
+                "AF4 Author invocation construction requires AF4B2 bridge consumption in a later phase"
             )
         if (
             self.state.followup_author_execution_from_ad_state
@@ -5890,6 +6079,11 @@ class RunKernel:
         ad_packet_projection: dict[str, Any] = {}
         ad_authority_projection: dict[str, Any] = {}
         ad_payload_construction_projection: dict[str, Any] = {}
+        af4b2_observed_bridge_state: dict[str, Any] = {}
+        af4b2_canonical_bridge_state: dict[str, Any] = {}
+        af4b2_packet_projection: dict[str, Any] = {}
+        af4b2_authority_projection: dict[str, Any] = {}
+        af4b2_bridge_projection: dict[str, Any] = {}
         ae_observed_execution_state: dict[str, Any] = {}
         ae_canonical_execution_state: dict[str, Any] = {}
         ae_packet_projection: dict[str, Any] = {}
@@ -5902,6 +6096,37 @@ class RunKernel:
         af4_packet_projection: dict[str, Any] = {}
         af4_authority_projection: dict[str, Any] = {}
         af4_invocation_projection: dict[str, Any] = {}
+        if self.state.followup_author_evidence_content_bridge_state:
+            if action.action_type in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_GATE,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION,
+                ActionType.FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD,
+                ActionType.FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
+            }:
+                raise RunKernelTransitionError(
+                    "stale upstream follow-up action cannot reduce after "
+                    "AG-96I3AF4B2 Author evidence-content bridge"
+                )
+            if (
+                action.action_type
+                is ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE
+            ):
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3AF4B2 Author evidence-content bridge cannot reduce"
+                )
         if self.state.followup_author_invocation_construction_state:
             if action.action_type in {
                 ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
@@ -5918,6 +6143,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST,
                 ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
                 ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE,
                 ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD,
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
@@ -5948,6 +6174,7 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST,
                 ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
                 ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE,
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
@@ -7321,6 +7548,59 @@ class RunKernel:
                         final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
                         followup_author_payload_authority_stage=(
                             FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE
+                        ),
+                    )
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE:
+            af4b2_observed_bridge_state = _safe_mapping(
+                observation.payload.get("followup_author_evidence_content_bridge_state")
+            )
+            if not af4b2_observed_bridge_state:
+                raise RunKernelTransitionError(
+                    "AF4B2 Author evidence-content bridge observation requires "
+                    "followup_author_evidence_content_bridge_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_evidence_content_bridge_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_bridge_state=af4b2_observed_bridge_state,
+                )
+                af4b2_canonical_bridge_record = (
+                    build_followup_author_evidence_content_bridge_record(
+                        action_inputs=action_inputs,
+                        **self._followup_author_evidence_content_bridge_runtime_inputs(),
+                    )
+                )
+                af4b2_canonical_bridge_state = (
+                    build_run_kernel_followup_author_evidence_content_bridge_state(
+                        bridge_record_state=af4b2_canonical_bridge_record.to_dict(),
+                        observation_id=af4b2_observed_bridge_state.get(
+                            "observation_id"
+                        ),
+                    )
+                )
+                af4b2_packet_projection = af4b2_packet_projection_from_record(
+                    current_packet=self.state.final_answer_packet,
+                    record_state=af4b2_canonical_bridge_state,
+                )
+                af4b2_authority_projection = (
+                    af4b2_authority_projection_from_record(
+                        current_projection=(
+                            self.state.final_answer_authority_projection
+                        ),
+                        record_state=af4b2_canonical_bridge_state,
+                    )
+                )
+                af4b2_bridge_projection = (
+                    build_followup_author_evidence_content_bridge_projection(
+                        bridge_state=af4b2_canonical_bridge_state,
+                        final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
+                        followup_author_payload_construction_stage=(
+                            FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE
                         ),
                     )
                 )
@@ -9555,6 +9835,28 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_payload_construction_projection
             )
+        elif (
+            action.action_type
+            is ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE
+        ):
+            self.state.final_answer_packet = af4b2_packet_projection
+            self.state.final_answer_authority_projection = (
+                af4b2_authority_projection
+            )
+            self.state.followup_author_evidence_content_bridge_state = (
+                af4b2_canonical_bridge_state
+            )
+            self.state.followup_author_evidence_content_bridge_projection = (
+                af4b2_bridge_projection
+            )
+            self.state.followup_author_evidence_content_bridge_history.append(
+                deepcopy(
+                    self.state.followup_author_evidence_content_bridge_projection
+                )
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_evidence_content_bridge_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD:
             self.state.final_answer_packet = ae_packet_projection
             self.state.final_answer_authority_projection = ae_authority_projection
@@ -9986,6 +10288,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE",
     "FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY_STAGE",
     "FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION_STAGE",
+    "FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE",
     "FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE",
     "FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION_STAGE",
     "FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE",
