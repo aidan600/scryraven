@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pytest
 
@@ -9,35 +9,16 @@ import scripts.ag96i3af6a_brokered_author_lane_smoke as af6a
 from tests.ag96_static_guards import imported_modules
 
 ROOT = Path(__file__).resolve().parents[1]
-ANSWER_TEXT = "AF6A mocked broker-live Author-lane answer."
+ANSWER_TEXT = "AF6A fake mode answer."
 
 
-class MockBrokerLiveAdapter:
-    def __init__(self, answer_text: str = ANSWER_TEXT) -> None:
-        self.answer_text = answer_text
-        self.calls: list[dict[str, Any]] = []
+class MustNotCallAdapter:
+    def __init__(self) -> None:
+        self.calls = 0
 
-    def __call__(
-        self,
-        request_text: str,
-        *,
-        request_digest: str,
-        request_length: int,
-        request_metadata: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        self.calls.append(
-            {
-                "saw_request_text": bool(request_text),
-                "request_digest": request_digest,
-                "request_length": request_length,
-                "request_metadata": dict(request_metadata),
-            }
-        )
-        return {
-            "final_answer_text": self.answer_text,
-            "raw_model_response": "not retained",
-            "provider_payload": {"not": "retained"},
-        }
+    def __call__(self, *_args: Any, **_kwargs: Any) -> str:
+        self.calls += 1
+        raise AssertionError("tracked AF6A code must not call live adapters")
 
 
 @pytest.mark.parametrize(
@@ -46,7 +27,7 @@ class MockBrokerLiveAdapter:
         ({"job_id": "wrong-job"}, "unknown AF6A job id"),
         ({"broker_live_mode": False}, "broker live mode"),
         ({"confirm_live_provider_call": False}, "confirmation"),
-        ({"adapter": None}, "adapter factory"),
+        ({}, "deferred"),
     ],
 )
 def test_af6a_absent_broker_live_guard_fails_closed(
@@ -57,48 +38,37 @@ def test_af6a_absent_broker_live_guard_fails_closed(
         "job_id": af6a.JOB_ID,
         "broker_live_mode": True,
         "confirm_live_provider_call": True,
-        "adapter": MockBrokerLiveAdapter(),
     }
     params.update(overrides)
     with pytest.raises(af6a.AF6AFailClosed, match=match):
         af6a.run_af6a_smoke(**params)
 
 
-def test_af6a_mocked_broker_live_path_calls_adapter_exactly_once() -> None:
-    adapter = MockBrokerLiveAdapter()
-    result = af6a.run_af6a_smoke(
-        job_id=af6a.JOB_ID,
-        broker_live_mode=True,
-        confirm_live_provider_call=True,
-        adapter=adapter,
-    )
-    packet = result.packet
-
-    assert len(adapter.calls) == 1
-    assert adapter.calls[0]["saw_request_text"] is True
-    assert adapter.calls[0]["request_metadata"]["job_id"] == af6a.JOB_ID
-    assert packet["mode"] == "broker_live"
-    assert packet["budget"]["max_model_calls"] == 1
-    assert packet["budget"]["model_calls_used"] == 1
-    assert packet["final_answer_text"] == ANSWER_TEXT
-    _assert_sanitized_shape(packet, expected_model_calls=1)
+def test_af6a_broker_live_path_is_deferred_and_does_not_call_adapter() -> None:
+    adapter = MustNotCallAdapter()
+    with pytest.raises(af6a.AF6AFailClosed, match="deferred"):
+        af6a.run_af6a_smoke(
+            job_id=af6a.JOB_ID,
+            broker_live_mode=True,
+            confirm_live_provider_call=True,
+        )
+    assert adapter.calls == 0
 
 
 def test_af6a_fake_mode_has_sanitized_output_without_model_call_budget() -> None:
     result = af6a.run_af6a_smoke(
-        job_id="fake-mode-job",
+        job_id=af6a.JOB_ID,
         broker_live_mode=False,
         confirm_live_provider_call=False,
-        adapter=None,
         fake_mode=True,
-        fake_answer="AF6A fake mode answer.",
+        fake_answer=ANSWER_TEXT,
     )
     packet = result.packet
 
     assert packet["mode"] == "fake"
     assert packet["budget"]["max_model_calls"] == 0
     assert packet["budget"]["model_calls_used"] == 0
-    assert packet["final_answer_text"] == "AF6A fake mode answer."
+    assert packet["final_answer_text"] == ANSWER_TEXT
     _assert_sanitized_shape(packet, expected_model_calls=0)
 
 
@@ -133,6 +103,8 @@ def test_af6a_static_guards_no_search_fetch_retrieval_citation_or_pipeline() -> 
         "fetch(",
         "render_citation",
         "format_citation",
+        "importlib",
+        "adapter(",
     ):
         assert token not in source
 
