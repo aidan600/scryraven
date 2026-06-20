@@ -56,6 +56,19 @@ from core.followup_author_execution_from_ad_runtime import (
 from core.followup_author_execution_from_ad_runtime import (
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE as FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE_NAME,
 )
+from core.followup_author_execution_from_af4d_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_REASON,
+    build_followup_author_execution_from_af4d_action_inputs,
+    build_followup_author_execution_from_af4d_projection,
+    build_followup_author_execution_from_af4d_record,
+    build_run_kernel_followup_author_execution_from_af4d_state,
+    reject_followup_author_execution_from_af4d_input_spoof,
+    validate_followup_author_execution_from_af4d_authorization,
+    validate_followup_author_execution_from_af4d_observation_binding,
+)
+from core.followup_author_execution_from_af4d_runtime import (
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE as FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE_NAME,
+)
 from core.followup_author_execution_readiness_runtime import (
     FOLLOWUP_AUTHOR_EXECUTION_READINESS_REASON,
     FOLLOWUP_AUTHOR_EXECUTION_READINESS_STATUS,
@@ -386,6 +399,9 @@ FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION_STAGE = (
 FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY_STAGE = (
     FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY_STAGE_NAME
 )
+FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE = (
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE_NAME
+)
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -470,6 +486,7 @@ class ActionType(str, Enum):
     FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY = (
         "followup_author_model_request_assembly"
     )
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D = "followup_author_execution_from_af4d"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -552,6 +569,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLED = (
         "followup_author_model_request_assembled"
+    )
+    FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_OBSERVED = (
+        "followup_author_execution_from_af4d_observed"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -959,6 +979,15 @@ class RunState:
     followup_author_model_request_assembly_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_execution_from_af4d_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_from_af4d_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_execution_from_af4d_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1207,6 +1236,15 @@ class RunState:
             followup_author_model_request_assembly_history=deepcopy(
                 self.followup_author_model_request_assembly_history
             ),
+            followup_author_execution_from_af4d_state=deepcopy(
+                self.followup_author_execution_from_af4d_state
+            ),
+            followup_author_execution_from_af4d_projection=deepcopy(
+                self.followup_author_execution_from_af4d_projection
+            ),
+            followup_author_execution_from_af4d_history=deepcopy(
+                self.followup_author_execution_from_af4d_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -1329,6 +1367,9 @@ class KernelTraceProjection:
     followup_author_model_request_assembly_state: Mapping[str, Any]
     followup_author_model_request_assembly_projection: Mapping[str, Any]
     followup_author_model_request_assembly_history: Sequence[Mapping[str, Any]]
+    followup_author_execution_from_af4d_state: Mapping[str, Any]
+    followup_author_execution_from_af4d_projection: Mapping[str, Any]
+    followup_author_execution_from_af4d_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1588,6 +1629,16 @@ class KernelTraceProjection:
             "followup_author_model_request_assembly_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_model_request_assembly_history
+            ],
+            "followup_author_execution_from_af4d_state": _safe_mapping(
+                self.followup_author_execution_from_af4d_state
+            ),
+            "followup_author_execution_from_af4d_projection": _safe_mapping(
+                self.followup_author_execution_from_af4d_projection
+            ),
+            "followup_author_execution_from_af4d_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_execution_from_af4d_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -1929,6 +1980,7 @@ class RunKernel:
             or self.state.followup_author_gate_state.get("author_gate_mode")
             == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
             or self.state.followup_author_model_request_assembly_state
+            or self.state.followup_author_execution_from_af4d_state
         )
 
     def authorize_followup_authorization_consumption(
@@ -5671,6 +5723,23 @@ class RunKernel:
         runtime_inputs["run_request"] = state.request
         return runtime_inputs
 
+    def _followup_author_execution_from_af4d_runtime_inputs(
+        self,
+    ) -> dict[str, Any]:
+        state = self.state
+        prefixes = (
+            "followup_author_evidence_content_bridge",
+            "followup_author_invocation_construction",
+            "followup_author_model_request_assembly",
+        )
+        runtime_inputs = {
+            f"{prefix}_{suffix}": getattr(state, f"{prefix}_{suffix}")
+            for prefix in prefixes
+            for suffix in ("state", "projection", "history")
+        }
+        runtime_inputs["run_request"] = state.request
+        return runtime_inputs
+
     def authorize_followup_author_evidence_content_bridge(
         self,
         *,
@@ -6028,6 +6097,90 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_author_execution_from_af4d(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        af4d_state = self.state.followup_author_model_request_assembly_state
+        if not af4d_state:
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D requires canonical AF4D model request assembly"
+            )
+        if af4d_state.get("author_model_request_ready_for_execution") is not True:
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D requires execution-ready AF4D"
+            )
+        if af4d_state.get("model_execution_allowed") is not False:
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D requires live execution disabled"
+            )
+        if (
+            self.state.followup_author_execution_from_af4d_state
+            or self.state.followup_author_execution_from_af4d_projection
+            or self.state.followup_author_execution_from_af4d_history
+        ):
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D already completed"
+            )
+        if (
+            self.state.followup_author_execution_from_ad_state
+            or self.state.followup_author_execution_from_ad_projection
+            or self.state.followup_author_execution_from_ad_history
+        ):
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D rejects old AE execution"
+            )
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D requires legacy fixture observation closed"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D requires no Author/final outcome"
+            )
+        if (
+            getattr(self.state, "analyst_author_handoff_state", {})
+            or getattr(self.state, "economist_handoff_state", {})
+        ):
+            raise RunKernelTransitionError(
+                "AF5A Author execution from AF4D requires Analyst/Economist closed"
+            )
+        try:
+            reject_followup_author_execution_from_af4d_input_spoof(inputs)
+        except PermissionError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        runtime_inputs = self._followup_author_execution_from_af4d_runtime_inputs()
+        canonical_inputs = build_followup_author_execution_from_af4d_action_inputs(
+            followup_author_model_request_assembly_state=(
+                self.state.followup_author_model_request_assembly_state
+            ),
+            followup_author_model_request_assembly_projection=(
+                self.state.followup_author_model_request_assembly_projection
+            ),
+            followup_author_model_request_assembly_history=(
+                self.state.followup_author_model_request_assembly_history
+            ),
+        )
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        try:
+            validate_followup_author_execution_from_af4d_authorization(
+                action_inputs=merged_inputs,
+                **runtime_inputs,
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_OBSERVED
+            ),
+        )
+
     def authorize_followup_author_observation(
         self,
         *,
@@ -6281,6 +6434,39 @@ class RunKernel:
         af4d_observed_model_request_state: dict[str, Any] = {}
         af4d_canonical_model_request_state: dict[str, Any] = {}
         af4d_model_request_projection: dict[str, Any] = {}
+        af5a_observed_execution_state: dict[str, Any] = {}
+        af5a_canonical_execution_state: dict[str, Any] = {}
+        af5a_execution_projection: dict[str, Any] = {}
+        if self.state.followup_author_execution_from_af4d_state:
+            if action.action_type in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_GATE,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION,
+                ActionType.FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE,
+                ActionType.FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD,
+                ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
+            }:
+                raise RunKernelTransitionError(
+                    "stale upstream follow-up action cannot reduce after "
+                    "AG-96I3AF5A Author execution from AF4D"
+                )
+            if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D:
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3AF5A Author execution from AF4D cannot reduce"
+                )
         if self.state.followup_author_model_request_assembly_state:
             if action.action_type in {
                 ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
@@ -7985,6 +8171,50 @@ class RunKernel:
                         ),
                         followup_author_evidence_content_bridge_stage=(
                             FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_STAGE
+                        ),
+                    )
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D:
+            af5a_observed_execution_state = _safe_mapping(
+                observation.payload.get("followup_author_execution_from_af4d_state")
+            )
+            if not af5a_observed_execution_state:
+                raise RunKernelTransitionError(
+                    "AF5A Author execution from AF4D observation requires "
+                    "followup_author_execution_from_af4d_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_execution_from_af4d_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_execution_state=af5a_observed_execution_state,
+                )
+                af5a_canonical_execution_record = (
+                    build_followup_author_execution_from_af4d_record(
+                        action_inputs=action_inputs,
+                        observed_execution_state=af5a_observed_execution_state,
+                        **self._followup_author_execution_from_af4d_runtime_inputs(),
+                    )
+                )
+                af5a_canonical_execution_state = (
+                    build_run_kernel_followup_author_execution_from_af4d_state(
+                        execution_record_state=(
+                            af5a_canonical_execution_record.to_dict()
+                        ),
+                        observation_id=af5a_observed_execution_state.get(
+                            "observation_id"
+                        ),
+                    )
+                )
+                af5a_execution_projection = (
+                    build_followup_author_execution_from_af4d_projection(
+                        execution_state=af5a_canonical_execution_state,
+                        final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
+                        followup_author_model_request_assembly_stage=(
+                            FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY_STAGE
                         ),
                     )
                 )
@@ -10174,6 +10404,19 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_model_request_assembly_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D:
+            self.state.followup_author_execution_from_af4d_state = (
+                af5a_canonical_execution_state
+            )
+            self.state.followup_author_execution_from_af4d_projection = (
+                af5a_execution_projection
+            )
+            self.state.followup_author_execution_from_af4d_history.append(
+                deepcopy(self.state.followup_author_execution_from_af4d_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_execution_from_af4d_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION:
             observed_author_state = _safe_mapping(
                 observation.payload.get("followup_author_observation_state")
@@ -10572,6 +10815,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_EXECUTION_FROM_AD_STAGE",
     "FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION_STAGE",
     "FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY_STAGE",
+    "FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE",
     "FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
