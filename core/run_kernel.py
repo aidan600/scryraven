@@ -197,6 +197,19 @@ from core.followup_author_prompt_assembly_manifest_runtime import (
 from core.followup_author_prompt_assembly_manifest_runtime import (
     FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE as FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST_STAGE_NAME,
 )
+from core.followup_author_response_finalization_runtime import (
+    FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_REASON,
+    build_followup_author_response_finalization_action_inputs,
+    build_followup_author_response_finalization_projection,
+    build_followup_author_response_finalization_record,
+    build_run_kernel_followup_author_response_finalization_state,
+    reject_followup_author_response_finalization_input_spoof,
+    validate_followup_author_response_finalization_authorization,
+    validate_followup_author_response_finalization_observation_binding,
+)
+from core.followup_author_response_finalization_runtime import (
+    FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE as FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE_NAME,
+)
 from core.followup_citation_rendering_runtime import (
     AG96I3T1_CITATION_RENDERING_MODE,
     FOLLOWUP_CITATION_RENDERING_GATE_REASON,
@@ -402,6 +415,9 @@ FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY_STAGE = (
 FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE = (
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE_NAME
 )
+FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE = (
+    FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE_NAME
+)
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
@@ -487,6 +503,7 @@ class ActionType(str, Enum):
         "followup_author_model_request_assembly"
     )
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D = "followup_author_execution_from_af4d"
+    FOLLOWUP_AUTHOR_RESPONSE_FINALIZE = "followup_author_response_finalize"
     FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE = "followup_final_answer_packet_prepare"
     FOLLOWUP_AUTHOR_GATE = "followup_author_gate"
     FOLLOWUP_AUTHOR_OBSERVATION = "followup_author_observation"
@@ -572,6 +589,9 @@ class ObservationType(str, Enum):
     )
     FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_OBSERVED = (
         "followup_author_execution_from_af4d_observed"
+    )
+    FOLLOWUP_AUTHOR_RESPONSE_FINALIZED = (
+        "followup_author_response_finalized"
     )
     FOLLOWUP_AUTHOR_GATE_OBSERVED = "followup_author_gate_observed"
     FOLLOWUP_AUTHOR_OBSERVATION_OBSERVED = (
@@ -988,6 +1008,15 @@ class RunState:
     followup_author_execution_from_af4d_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    followup_author_response_finalization_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_response_finalization_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    followup_author_response_finalization_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     followup_final_answer_packet_state: dict[str, Any] = field(default_factory=dict)
     followup_final_answer_packet_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1245,6 +1274,15 @@ class RunState:
             followup_author_execution_from_af4d_history=deepcopy(
                 self.followup_author_execution_from_af4d_history
             ),
+            followup_author_response_finalization_state=deepcopy(
+                self.followup_author_response_finalization_state
+            ),
+            followup_author_response_finalization_projection=deepcopy(
+                self.followup_author_response_finalization_projection
+            ),
+            followup_author_response_finalization_history=deepcopy(
+                self.followup_author_response_finalization_history
+            ),
             followup_final_answer_packet_state=deepcopy(
                 self.followup_final_answer_packet_state
             ),
@@ -1370,6 +1408,9 @@ class KernelTraceProjection:
     followup_author_execution_from_af4d_state: Mapping[str, Any]
     followup_author_execution_from_af4d_projection: Mapping[str, Any]
     followup_author_execution_from_af4d_history: Sequence[Mapping[str, Any]]
+    followup_author_response_finalization_state: Mapping[str, Any]
+    followup_author_response_finalization_projection: Mapping[str, Any]
+    followup_author_response_finalization_history: Sequence[Mapping[str, Any]]
     followup_final_answer_packet_state: Mapping[str, Any]
     followup_final_answer_packet_projection: Mapping[str, Any]
     followup_final_answer_packet_history: Sequence[Mapping[str, Any]]
@@ -1639,6 +1680,16 @@ class KernelTraceProjection:
             "followup_author_execution_from_af4d_history": [
                 _safe_mapping(item)
                 for item in self.followup_author_execution_from_af4d_history
+            ],
+            "followup_author_response_finalization_state": _safe_mapping(
+                self.followup_author_response_finalization_state
+            ),
+            "followup_author_response_finalization_projection": _safe_mapping(
+                self.followup_author_response_finalization_projection
+            ),
+            "followup_author_response_finalization_history": [
+                _safe_mapping(item)
+                for item in self.followup_author_response_finalization_history
             ],
             "followup_final_answer_packet_state": _safe_mapping(
                 self.followup_final_answer_packet_state
@@ -1981,6 +2032,7 @@ class RunKernel:
             == AG96I3V1_U1_BOUND_AUTHOR_GATE_MODE
             or self.state.followup_author_model_request_assembly_state
             or self.state.followup_author_execution_from_af4d_state
+            or self.state.followup_author_response_finalization_state
         )
 
     def authorize_followup_authorization_consumption(
@@ -5740,6 +5792,22 @@ class RunKernel:
         runtime_inputs["run_request"] = state.request
         return runtime_inputs
 
+    def _followup_author_response_finalization_runtime_inputs(
+        self,
+    ) -> dict[str, Any]:
+        state = self.state
+        prefixes = ("followup_author_execution_from_af4d",)
+        runtime_inputs = {
+            f"{prefix}_{suffix}": getattr(state, f"{prefix}_{suffix}")
+            for prefix in prefixes
+            for suffix in ("state", "projection", "history")
+        }
+        runtime_inputs["final_answer_packet"] = state.final_answer_packet
+        runtime_inputs["final_answer_authority_projection"] = (
+            state.final_answer_authority_projection
+        )
+        return runtime_inputs
+
     def authorize_followup_author_evidence_content_bridge(
         self,
         *,
@@ -6181,6 +6249,89 @@ class RunKernel:
             ),
         )
 
+    def authorize_followup_author_response_finalization(
+        self,
+        *,
+        reason: str = FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        af5a_state = self.state.followup_author_execution_from_af4d_state
+        if not af5a_state:
+            raise RunKernelTransitionError(
+                "AF5B Author response finalization requires canonical AF5A state"
+            )
+        if (
+            self.state.followup_author_response_finalization_state
+            or self.state.followup_author_response_finalization_projection
+            or self.state.followup_author_response_finalization_history
+        ):
+            raise RunKernelTransitionError(
+                "AF5B Author response finalization already completed"
+            )
+        if (
+            self.state.followup_author_execution_from_ad_state
+            or self.state.followup_author_execution_from_ad_projection
+            or self.state.followup_author_execution_from_ad_history
+        ):
+            raise RunKernelTransitionError(
+                "AF5B Author response finalization rejects old AE execution"
+            )
+        if self.state.followup_author_observation_state:
+            raise RunKernelTransitionError(
+                "AF5B Author response finalization requires legacy fixture observation closed"
+            )
+        if self.state.author_observation or self.state.final_answer_outcome:
+            raise RunKernelTransitionError(
+                "AF5B Author response finalization requires no prior Author/final outcome"
+            )
+        if not self.state.final_answer_packet:
+            raise RunKernelTransitionError(
+                "AF5B Author response finalization requires FinalAnswerPacket"
+            )
+        if not self.state.final_answer_authority_projection:
+            raise RunKernelTransitionError(
+                "AF5B Author response finalization requires final-answer authority projection"
+            )
+        try:
+            reject_followup_author_response_finalization_input_spoof(inputs)
+        except PermissionError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        runtime_inputs = self._followup_author_response_finalization_runtime_inputs()
+        canonical_inputs = (
+            build_followup_author_response_finalization_action_inputs(
+                followup_author_execution_from_af4d_state=(
+                    self.state.followup_author_execution_from_af4d_state
+                ),
+                followup_author_execution_from_af4d_projection=(
+                    self.state.followup_author_execution_from_af4d_projection
+                ),
+                followup_author_execution_from_af4d_history=(
+                    self.state.followup_author_execution_from_af4d_history
+                ),
+                final_answer_packet=self.state.final_answer_packet,
+                final_answer_authority_projection=(
+                    self.state.final_answer_authority_projection
+                ),
+            )
+        )
+        merged_inputs = {**dict(inputs or {}), **canonical_inputs}
+        try:
+            validate_followup_author_response_finalization_authorization(
+                action_inputs=merged_inputs,
+                **runtime_inputs,
+            )
+        except (PermissionError, ValueError) as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE,
+            action_type=ActionType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZED
+            ),
+        )
+
     def authorize_followup_author_observation(
         self,
         *,
@@ -6437,6 +6588,42 @@ class RunKernel:
         af5a_observed_execution_state: dict[str, Any] = {}
         af5a_canonical_execution_state: dict[str, Any] = {}
         af5a_execution_projection: dict[str, Any] = {}
+        af5b_observed_finalization_state: dict[str, Any] = {}
+        af5b_canonical_finalization_state: dict[str, Any] = {}
+        af5b_finalization_projection: dict[str, Any] = {}
+        af5b_author_observation: dict[str, Any] = {}
+        af5b_final_answer_outcome: dict[str, Any] = {}
+        if self.state.followup_author_response_finalization_state:
+            if action.action_type in {
+                ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
+                ActionType.FOLLOWUP_BLOCKED_FINAL_ANSWER_PACKET_SHELL,
+                ActionType.FOLLOWUP_FINAL_EVIDENCE_SELECTION,
+                ActionType.FOLLOWUP_CITATION_ELIGIBILITY,
+                ActionType.FOLLOWUP_CITATION_SOURCE_HANDOFF,
+                ActionType.FOLLOWUP_CITATION_RENDERING,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_GATE,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_READINESS,
+                ActionType.FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_ACTIVATION,
+                ActionType.FOLLOWUP_AUTHOR_PROMPT_ASSEMBLY_MANIFEST,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
+                ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE,
+                ActionType.FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION,
+                ActionType.FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD,
+                ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D,
+                ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
+            }:
+                raise RunKernelTransitionError(
+                    "stale upstream follow-up action cannot reduce after "
+                    "AG-96I3AF5B Author response finalization"
+                )
+            if action.action_type is ActionType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZE:
+                raise RunKernelTransitionError(
+                    "duplicate AG-96I3AF5B Author response finalization cannot reduce"
+                )
         if self.state.followup_author_execution_from_af4d_state:
             if action.action_type in {
                 ActionType.FOLLOWUP_FINAL_ANSWER_PACKET_PREPARE,
@@ -8217,6 +8404,56 @@ class RunKernel:
                             FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY_STAGE
                         ),
                     )
+                )
+            except (PermissionError, ValueError) as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+
+        if action.action_type is ActionType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZE:
+            af5b_observed_finalization_state = _safe_mapping(
+                observation.payload.get("followup_author_response_finalization_state")
+            )
+            if not af5b_observed_finalization_state:
+                raise RunKernelTransitionError(
+                    "AF5B Author response finalization observation requires "
+                    "followup_author_response_finalization_state"
+                )
+            action_inputs = _safe_mapping(action.inputs)
+            try:
+                validate_followup_author_response_finalization_observation_binding(
+                    action_inputs=action_inputs,
+                    observed_finalization_state=af5b_observed_finalization_state,
+                )
+                af5b_canonical_finalization_record = (
+                    build_followup_author_response_finalization_record(
+                        action_inputs=action_inputs,
+                        observed_finalization_state=af5b_observed_finalization_state,
+                        **self._followup_author_response_finalization_runtime_inputs(),
+                    )
+                )
+                af5b_canonical_finalization_state = (
+                    build_run_kernel_followup_author_response_finalization_state(
+                        finalization_record_state=(
+                            af5b_canonical_finalization_record.to_dict()
+                        ),
+                        observation_id=af5b_observed_finalization_state.get(
+                            "observation_id"
+                        ),
+                    )
+                )
+                af5b_finalization_projection = (
+                    build_followup_author_response_finalization_projection(
+                        finalization_state=af5b_canonical_finalization_state,
+                        final_answer_packet_stage=FINAL_ANSWER_PACKET_STAGE,
+                        followup_author_execution_from_af4d_stage=(
+                            FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE
+                        ),
+                    )
+                )
+                af5b_author_observation = _safe_mapping(
+                    af5b_canonical_finalization_state.get("author_observation")
+                )
+                af5b_final_answer_outcome = _safe_mapping(
+                    af5b_canonical_finalization_state.get("final_answer_outcome")
                 )
             except (PermissionError, ValueError) as exc:
                 raise RunKernelTransitionError(str(exc)) from exc
@@ -10417,6 +10654,23 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_execution_from_af4d_projection
             )
+        elif action.action_type is ActionType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZE:
+            self.state.author_observation = af5b_author_observation
+            self.state.final_answer_outcome = af5b_final_answer_outcome
+            self.state.followup_author_response_finalization_state = (
+                af5b_canonical_finalization_state
+            )
+            self.state.followup_author_response_finalization_projection = (
+                af5b_finalization_projection
+            )
+            self.state.followup_author_response_finalization_history.append(
+                deepcopy(
+                    self.state.followup_author_response_finalization_projection
+                )
+            )
+            self.state.projections[action.stage] = deepcopy(
+                self.state.followup_author_response_finalization_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION:
             observed_author_state = _safe_mapping(
                 observation.payload.get("followup_author_observation_state")
@@ -10816,6 +11070,7 @@ __all__ = [
     "FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION_STAGE",
     "FOLLOWUP_AUTHOR_MODEL_REQUEST_ASSEMBLY_STAGE",
     "FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE",
+    "FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE",
     "FOLLOWUP_AUTHOR_INPUT_MATERIALIZATION_STAGE",
     "FOLLOWUP_AUTHOR_GATE_STAGE",
     "FOLLOWUP_AUTHOR_OBSERVATION_STAGE",
