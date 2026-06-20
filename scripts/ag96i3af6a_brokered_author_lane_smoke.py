@@ -1,18 +1,16 @@
 from __future__ import annotations
 
 import argparse
-import importlib
 import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.followup_deliberation import clean_text  # noqa: E402
 from scripts.ag96i3af5c_offline_author_lane_smoke import (  # noqa: E402
     FALSE_BOUNDARY_FLAGS,
     build_smoke_summary,
@@ -50,61 +48,11 @@ class AF6ASmokeResult:
     packet: dict[str, Any]
 
 
-class OneCallAdapter:
-    def __init__(
-        self,
-        adapter: Callable[..., Mapping[str, Any] | str],
-        *,
-        mode: str,
-    ) -> None:
-        self._adapter = adapter
-        self.mode = mode
-        self.calls = 0
-
-    def __call__(
-        self,
-        request_text: str,
-        *,
-        request_digest: str,
-        request_length: int,
-        request_metadata: Mapping[str, Any],
-    ) -> dict[str, Any]:
-        if self.calls >= 1:
-            raise AF6AFailClosed("refusing second AF6A adapter call")
-        self.calls += 1
-        response = self._adapter(
-            request_text,
-            request_digest=request_digest,
-            request_length=request_length,
-            request_metadata={
-                "job_id": JOB_ID,
-                "mode": self.mode,
-                "request_digest": request_digest,
-                "request_length": request_length,
-                "af4d_author_model_request_digest": clean_text(
-                    request_metadata.get("af4d_author_model_request_digest"),
-                    limit=160,
-                ),
-            },
-        )
-        return {
-            "candidate_text": _candidate_text(response),
-            "metadata": {
-                "adapter_kind": f"ag96i3af6a_{self.mode}_adapter",
-                "adapter_invocation_count": self.calls,
-                "fake_adapter_used": True,
-                "request_digest_seen": request_digest,
-                "request_length_seen": request_length,
-            },
-        }
-
-
 def run_af6a_smoke(
     *,
     job_id: str,
     broker_live_mode: bool,
     confirm_live_provider_call: bool,
-    adapter: Callable[..., Mapping[str, Any] | str] | None,
     fake_mode: bool = False,
     fake_answer: str = DEFAULT_FAKE_ANSWER,
 ) -> AF6ASmokeResult:
@@ -113,24 +61,16 @@ def run_af6a_smoke(
         adapter_calls = 0
         mode = "fake"
     else:
-        _require_broker_live_gate(
+        _reject_broker_live_until_truthful_custody_exists(
             job_id=job_id,
             broker_live_mode=broker_live_mode,
             confirm_live_provider_call=confirm_live_provider_call,
-            adapter=adapter,
         )
-        model_adapter = OneCallAdapter(adapter, mode="broker_live")
-        mode = "broker_live"
 
     kernel = _kernel_through_af4d()
     af5a_action = kernel.authorize_followup_author_execution_from_af4d()
     af5a_result = _execute_af5a(kernel, action=af5a_action, adapter=model_adapter)
     kernel.reduce(af5a_result.observation)
-
-    if not fake_mode:
-        adapter_calls = model_adapter.calls
-        if adapter_calls != 1:
-            raise AF6AFailClosed("AF6A broker-live adapter must be called exactly once")
 
     af5b_action = kernel.authorize_followup_author_response_finalization()
     af5b_result = _execute_af5b(kernel, action=af5b_action)
@@ -154,23 +94,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
     parser.add_argument("--broker-live-mode", action="store_true")
     parser.add_argument("--confirm-live-provider-call", action="store_true")
-    parser.add_argument(
-        "--adapter-factory",
-        help="Operator-private injection seam as module:function; no provider ships in repo.",
-    )
     parser.add_argument("--fake-mode", action="store_true")
     parser.add_argument("--fake-answer", default=DEFAULT_FAKE_ANSWER)
     args = parser.parse_args(argv)
 
     try:
-        adapter = None
-        if not args.fake_mode:
-            adapter = _load_adapter_factory(args.adapter_factory)()
         result = run_af6a_smoke(
             job_id=args.job_id,
             broker_live_mode=args.broker_live_mode,
             confirm_live_provider_call=args.confirm_live_provider_call,
-            adapter=adapter,
             fake_mode=args.fake_mode,
             fake_answer=args.fake_answer,
         )
@@ -206,7 +138,7 @@ def _sanitized_packet(
         "status": "completed",
         "chain": ["AF4B2", "AF4C", "AF4D", "AF5A", "AF5B"],
         "budget": {
-            "max_model_calls": 1 if mode == "broker_live" else 0,
+            "max_model_calls": 0,
             "model_calls_used": adapter_calls,
             "max_provider_search_calls": 0,
             "max_fetch_read_attempts": 0,
@@ -241,12 +173,11 @@ def _sanitized_packet(
     }
 
 
-def _require_broker_live_gate(
+def _reject_broker_live_until_truthful_custody_exists(
     *,
     job_id: str,
     broker_live_mode: bool,
     confirm_live_provider_call: bool,
-    adapter: Callable[..., Mapping[str, Any] | str] | None,
 ) -> None:
     if job_id != JOB_ID:
         raise AF6AFailClosed(f"unknown AF6A job id: {job_id}")
@@ -254,40 +185,7 @@ def _require_broker_live_gate(
         raise AF6AFailClosed("broker live mode is required")
     if not confirm_live_provider_call:
         raise AF6AFailClosed("live model-call confirmation is required")
-    if adapter is None:
-        raise AF6AFailClosed("operator-private adapter factory is required")
-
-
-def _load_adapter_factory(factory_ref: str | None) -> Callable[[], Callable[..., Any]]:
-    if not factory_ref:
-        raise AF6AFailClosed("missing operator-private adapter factory")
-    module_name, separator, function_name = factory_ref.partition(":")
-    if not separator or not module_name or not function_name:
-        raise AF6AFailClosed("adapter factory must be module:function")
-    try:
-        module = importlib.import_module(module_name)
-        factory = getattr(module, function_name)
-    except Exception as exc:
-        raise AF6AFailClosed("operator-private adapter factory unavailable") from exc
-    if not callable(factory):
-        raise AF6AFailClosed("operator-private adapter factory is not callable")
-    return factory
-
-
-def _candidate_text(response: Mapping[str, Any] | str) -> str:
-    if isinstance(response, Mapping):
-        text = (
-            response.get("final_answer_text")
-            or response.get("answer_text")
-            or response.get("candidate_text")
-            or response.get("text")
-        )
-    else:
-        text = response
-    candidate = clean_text(text, limit=800)
-    if not candidate:
-        raise AF6AFailClosed("adapter returned no bounded answer text")
-    return candidate
+    raise AF6AFailClosed("AF6A broker-live model adapter deferred until truthful live-call custody fields exist")
 
 
 def _output_path(output: str) -> Path:
