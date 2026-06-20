@@ -36,6 +36,7 @@ def test_af4b2_positive_path_binds_sanitized_excerpt_content_model_closed() -> N
     kernel = _kernel_through_ad()
     packet_before = deepcopy(kernel.state.final_answer_packet)
     authority_before = deepcopy(kernel.state.final_answer_authority_projection)
+    allowed_ref = kernel.state.followup_author_payload_construction_state["allowed_evidence_refs"][0]
     candidate = _candidate(kernel)
 
     action = _auth(kernel, [candidate])
@@ -50,7 +51,11 @@ def test_af4b2_positive_path_binds_sanitized_excerpt_content_model_closed() -> N
         assert surface["ag96i3_author_evidence_content_sufficient"] is True
         _assert_closed(surface)
     assert state["owner"] == "RunKernel.FollowupAuthorEvidenceContentBridge"
+    assert "citation_id" not in candidate
     assert state["sanitized_author_evidence_content_payload"][0]["sanitized_excerpt_text"] == candidate["sanitized_excerpt_text"]
+    if allowed_ref.get("citation_id"):
+        assert state["sanitized_author_evidence_content_payload"][0]["citation_id"] == allowed_ref["citation_id"]
+        assert state["answer_bearing_sanitized_excerpt_refs"][0]["citation_id"] == allowed_ref["citation_id"]
     assert state["answer_bearing_sanitized_excerpt_refs"][0]["excerpt_digest"]
     assert state["ac_ad_bound_digest"] == followup_projection_digest(kernel.state.followup_author_payload_authority_state)
     assert state["u1_ad_bound_digest"] == followup_projection_digest(kernel.state.followup_author_input_authority_state)
@@ -108,6 +113,24 @@ def test_af4b2_rejects_duplicate_excerpt_ref_id() -> None:
     second = _candidate(kernel, ref_id="dup")
     with pytest.raises(RunKernelTransitionError, match="duplicate excerpt_ref_id"):
         _auth(kernel, [first, second])
+
+
+def test_af4b2_rejects_caller_supplied_excerpt_digest_proof() -> None:
+    kernel = _kernel_through_ad()
+    candidate = _candidate(kernel)
+    candidate["excerpt_digest"] = "caller-controlled-bogus-digest"
+    with pytest.raises(RunKernelTransitionError, match="excerpt_digest"):
+        _auth(kernel, [candidate])
+    assert kernel.state.followup_author_evidence_content_bridge_state == {}
+
+
+def test_af4b2_rejects_spoofed_caller_supplied_citation_id_proof() -> None:
+    kernel = _kernel_through_ad()
+    candidate = _candidate(kernel)
+    candidate["citation_id"] = "spoofed-citation"
+    with pytest.raises(RunKernelTransitionError, match="citation_id"):
+        _auth(kernel, [candidate])
+    assert kernel.state.followup_author_evidence_content_bridge_state == {}
 
 
 @pytest.mark.parametrize(
@@ -182,7 +205,7 @@ def test_af4b2_static_guards_and_fast_custody_lane() -> None:
 
 def _candidate(kernel: Any, *, ref_id: str = "excerpt-1") -> dict[str, Any]:
     ref = kernel.state.followup_author_payload_construction_state["allowed_evidence_refs"][0]
-    candidate = {key: ref[key] for key in ("evidence_id", "candidate_id", "source_id", "citation_id") if ref.get(key)}
+    candidate = {key: ref[key] for key in ("evidence_id", "candidate_id", "source_id") if ref.get(key)}
     return {**candidate, "excerpt_ref_id": ref_id, "sanitized_excerpt_text": "Bounded sanitized answer-bearing excerpt for Author content custody.", "excerpt_char_limit": 800, "content_class": ANSWER_BEARING_SANITIZED_EXCERPT, "sanitization_status": "sanitized", "evidence_binding_status": "bound_to_ad_authorized_evidence_ref", "source_binding_status": "bound_to_ad_authorized_evidence_ref"}
 
 

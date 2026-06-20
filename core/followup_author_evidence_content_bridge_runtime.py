@@ -502,15 +502,21 @@ def _bound_content(
         char_limit = _candidate_char_limit(candidate)
         require(len(text) <= char_limit, "AF4B2 sanitized excerpt exceeds limit")
         allowed_ref = _matching_allowed_ref(candidate, allowed)
+        caller_digest = clean_text(candidate.get("excerpt_digest"), limit=220)
+        require(not caller_digest, "AF4B2 caller-supplied excerpt_digest rejected")
+        allowed_citation_id = clean_text(allowed_ref.get("citation_id"), limit=220)
+        caller_citation_id = clean_text(candidate.get("citation_id"), limit=220)
+        require(not caller_citation_id or caller_citation_id == allowed_citation_id, "AF4B2 caller-supplied citation_id mismatch")
+        excerpt_digest = _digest({"sanitized_excerpt_text": text, "excerpt_ref_id": excerpt_ref_id})
         ref = {
             "excerpt_ref_id": excerpt_ref_id,
             "evidence_id": candidate.get("evidence_id"),
             "candidate_id": candidate.get("candidate_id"),
             "source_id": candidate.get("source_id"),
-            "citation_id": candidate.get("citation_id") or allowed_ref.get("citation_id"),
+            "citation_id": allowed_citation_id,
             "content_class": ANSWER_BEARING_SANITIZED_EXCERPT,
             "sanitization_status": "sanitized",
-            "excerpt_digest": candidate.get("excerpt_digest") or _digest({"sanitized_excerpt_text": text, "excerpt_ref_id": excerpt_ref_id}),
+            "excerpt_digest": excerpt_digest,
             "excerpt_length": len(text),
             "excerpt_char_limit": char_limit,
             "bound_allowed_evidence_ref_digest": _digest(allowed_ref),
