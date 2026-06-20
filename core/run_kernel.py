@@ -5574,6 +5574,36 @@ class RunKernel:
         )
         return runtime_inputs
 
+    def _followup_author_invocation_construction_runtime_inputs(
+        self,
+    ) -> dict[str, Any]:
+        state = self.state
+        prefixes = (
+            "followup_author_payload_construction",
+            "followup_author_payload_authority",
+            "followup_author_prompt_assembly_manifest",
+            "followup_author_execution_activation",
+            "followup_author_input_materialization",
+            "followup_author_execution_readiness",
+            "followup_author_gate",
+            "followup_author_input_authority",
+            "followup_author_evidence_content_bridge",
+            "followup_final_evidence_selection",
+            "followup_citation_eligibility",
+            "followup_citation_source_handoff",
+            "followup_citation_rendering",
+        )
+        runtime_inputs = {
+            f"{prefix}_{suffix}": getattr(state, f"{prefix}_{suffix}")
+            for prefix in prefixes
+            for suffix in ("state", "projection", "history")
+        }
+        runtime_inputs["final_answer_packet"] = state.final_answer_packet
+        runtime_inputs["final_answer_authority_projection"] = (
+            state.final_answer_authority_projection
+        )
+        return runtime_inputs
+
     def authorize_followup_author_evidence_content_bridge(
         self,
         *,
@@ -5773,14 +5803,6 @@ class RunKernel:
                 "AF4 Author invocation construction already prepared"
             )
         if (
-            self.state.followup_author_evidence_content_bridge_state
-            or self.state.followup_author_evidence_content_bridge_projection
-            or self.state.followup_author_evidence_content_bridge_history
-        ):
-            raise RunKernelTransitionError(
-                "AF4 Author invocation construction requires AF4B2 bridge consumption in a later phase"
-            )
-        if (
             self.state.followup_author_execution_from_ad_state
             or self.state.followup_author_execution_from_ad_projection
             or self.state.followup_author_execution_from_ad_history
@@ -5819,7 +5841,7 @@ class RunKernel:
             reject_followup_author_invocation_construction_input_spoof(inputs)
         except PermissionError as exc:
             raise RunKernelTransitionError(str(exc)) from exc
-        runtime_inputs = self._followup_author_execution_from_ad_runtime_inputs()
+        runtime_inputs = self._followup_author_invocation_construction_runtime_inputs()
         canonical_inputs = build_followup_author_invocation_construction_action_inputs(
             followup_author_payload_construction_state=ad_state,
             followup_author_payload_construction_projection=(
@@ -5827,6 +5849,15 @@ class RunKernel:
             ),
             final_answer_packet=packet,
             final_answer_authority_projection=authority,
+            followup_author_evidence_content_bridge_state=(
+                self.state.followup_author_evidence_content_bridge_state
+            ),
+            followup_author_evidence_content_bridge_projection=(
+                self.state.followup_author_evidence_content_bridge_projection
+            ),
+            followup_author_evidence_content_bridge_history=(
+                self.state.followup_author_evidence_content_bridge_history
+            ),
         )
         merged_inputs = {**dict(inputs or {}), **canonical_inputs}
         try:
@@ -6113,7 +6144,6 @@ class RunKernel:
                 ActionType.FOLLOWUP_AUTHOR_PAYLOAD_AUTHORITY,
                 ActionType.FOLLOWUP_AUTHOR_PAYLOAD_CONSTRUCTION,
                 ActionType.FOLLOWUP_AUTHOR_EXECUTION_FROM_AD,
-                ActionType.FOLLOWUP_AUTHOR_INVOCATION_CONSTRUCTION,
                 ActionType.FOLLOWUP_AUTHOR_OBSERVATION,
             }:
                 raise RunKernelTransitionError(
@@ -7689,7 +7719,7 @@ class RunKernel:
                 af4_canonical_invocation_record = (
                     build_followup_author_invocation_construction_record(
                         action_inputs=action_inputs,
-                        **self._followup_author_execution_from_ad_runtime_inputs(),
+                        **self._followup_author_invocation_construction_runtime_inputs(),
                     )
                 )
                 af4_canonical_invocation_state = (

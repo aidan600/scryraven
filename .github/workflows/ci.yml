@@ -91,6 +91,7 @@ jobs:
               "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_requires_ad_before_authorization",
               "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_static_guards_keep_legacy_model_product_pipeline_and_live_closed",
               "tests/test_ag96i3af4_author_invocation_construction.py::test_af4a_consumes_ad_into_blocked_manifest_model_closed",
+              "tests/test_ag96i3af4_author_invocation_construction.py::test_af4c_consumes_af4b2_bridge_into_model_ready_invocation_closed",
               "tests/test_ag96i3af4b2_author_evidence_content_bridge.py::test_af4b2_positive_path_binds_sanitized_excerpt_content_model_closed"
             )
             python -m pytest -q @fastCustodyTests
