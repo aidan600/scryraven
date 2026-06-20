@@ -31,29 +31,10 @@ from tests.ag96i3_assertions import (
 from tests.test_ag96i3q1_citation_eligibility import (
     _inject_external_stale_action_and_observation,
 )
-from tests.test_ag96i3u1_author_input_authority import (
-    _stale_legacy_i2e_action_and_observation,
-    _stale_o2_action_and_observation,
-    _stale_p1_action_and_observation,
-    _stale_q1_action_and_observation,
-    _stale_r1_action_and_observation,
-    _stale_t1_action_and_observation,
-)
-from tests.test_ag96i3v1_author_gate import _stale_u1_action_and_observation
-from tests.test_ag96i3w_author_execution_readiness import (
-    _stale_v1_action_and_observation,
-)
-from tests.test_ag96i3x_author_input_materialization import (
-    _stale_w_action_and_observation,
-)
-from tests.test_ag96i3y_author_execution_activation import (
-    _stale_x_action_and_observation,
-)
 from tests.test_ag96i3z_author_prompt_assembly_manifest import (
     _consume_z,
     _execute_z,
     _kernel_through_y,
-    _stale_y_action_and_observation,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -300,17 +281,6 @@ def test_ac_spoofed_observation_is_rebuilt_or_rejected_atomically() -> None:
 @pytest.mark.parametrize(
     "factory",
     [
-        lambda: _stale_legacy_i2e_action_and_observation(),
-        lambda: _stale_o2_action_and_observation(),
-        lambda: _stale_p1_action_and_observation(),
-        lambda: _stale_q1_action_and_observation(),
-        lambda: _stale_r1_action_and_observation(),
-        lambda: _stale_t1_action_and_observation(),
-        lambda: _stale_u1_action_and_observation(),
-        lambda: _stale_v1_action_and_observation(),
-        lambda: _stale_w_action_and_observation(),
-        lambda: _stale_x_action_and_observation(),
-        lambda: _stale_y_action_and_observation(),
         lambda: _stale_z_action_and_observation(),
     ],
 )

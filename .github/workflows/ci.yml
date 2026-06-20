@@ -57,4 +57,42 @@ jobs:
       - name: Run offline pytest
         shell: pwsh
         run: |
-          python -m pytest -q
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $fastCustodyTests = @(
+              "tests/test_ag96i3u1_author_input_authority.py::test_u1_happy_path_creates_author_input_authority_refs_only",
+              "tests/test_ag96i3v1_author_gate.py::test_v1_happy_path_consumes_u1_authority_without_author_execution",
+              "tests/test_ag96i3w_author_execution_readiness.py::test_w_happy_path_records_author_execution_readiness_execution_closed",
+              "tests/test_ag96i3x_author_input_materialization.py::test_x_happy_path_materializes_non_executable_author_input_manifest",
+              "tests/test_ag96i3y_author_execution_activation.py::test_y_happy_path_creates_x_bound_author_execution_activation_ref",
+              "tests/test_ag96i3y_author_execution_activation.py::test_y_blocks_ready_status_only_author_execution_bypass",
+              "tests/test_ag96i3z_author_prompt_assembly_manifest.py::test_z_happy_path_creates_y_bound_prompt_assembly_manifest",
+              "tests/test_ag96i3z_author_prompt_assembly_manifest.py::test_z_prompt_and_authority_text_are_not_retained_anywhere",
+              "tests/test_ag96i3ac_author_payload_authority.py::test_ac_happy_path_consumes_z_and_creates_future_payload_authority",
+              "tests/test_ag96i3ac_author_payload_authority.py::test_ac_missing_stale_or_noncanonical_inputs_reject_atomically",
+              "tests/test_ag96i3ac_author_payload_authority.py::test_ac_caller_supplied_closed_payload_fields_are_rejected",
+              "tests/test_ag96i3ac_author_payload_authority.py::test_ac_spoofed_observation_is_rebuilt_or_rejected_atomically",
+              "tests/test_ag96i3ac_author_payload_authority.py::test_ac_duplicate_and_future_execution_guards",
+              "tests/test_ag96i3ac_author_payload_authority.py::test_ac_static_guards_keep_legacy_execution_product_and_pipeline_closed",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_happy_path_constructs_ac_bound_author_payload_envelope",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_payload_envelope_contains_consumable_sections_without_prompt_text",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_missing_stale_or_noncanonical_inputs_reject_atomically",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_caller_supplied_closed_payload_fields_are_rejected",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_spoofed_observation_is_rebuilt_or_rejected_atomically",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_duplicate_and_future_execution_guards",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_requires_ac_before_authorization",
+              "tests/test_ag96i3ad_author_payload_construction.py::test_ad_static_guards_keep_legacy_execution_product_and_pipeline_closed",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_happy_path_executes_ad_payload_with_fake_model_hash_only",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_packet_and_authority_mutation_boundary_is_only_ae_fields",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_missing_stale_or_noncanonical_inputs_reject_atomically",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_caller_supplied_prompt_payload_model_response_and_output_rejected",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_spoofed_observation_is_rebuilt_or_rejected_atomically",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_rejects_stale_upstream_reductions_after_success",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_duplicate_and_old_ready_status_guards",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_requires_ad_before_authorization",
+              "tests/test_ag96i3ae_author_execution_from_ad.py::test_ae_static_guards_keep_legacy_model_product_pipeline_and_live_closed"
+            )
+            python -m pytest -q @fastCustodyTests
+            python -m pytest -q tests/test_final_answer_author_runkernel_ag91k.py tests/test_run_kernel_ag91h.py
+          } else {
+            python -m pytest -q
+          }
