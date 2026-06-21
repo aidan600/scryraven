@@ -22,9 +22,27 @@ from tests.test_ag96i3af5a_author_execution_from_af4d import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-ANSWER_TEXT = (
-    "AF5B product answer exists from the bounded AF5A fake-adapter candidate."
-)
+ANSWER_TEXT = "AF5B product answer exists from the bounded AF5A fake-adapter candidate."
+FAKE_MODEL_CALL_CUSTODY = {
+    "author_model_call_mode": "fake",
+    "author_model_call_status": "completed_fake",
+    "author_model_call_source": "injected_fake_model_adapter",
+    "max_model_calls": 0,
+    "model_calls_used": 0,
+    "live_model_call_performed": False,
+    "fake_adapter_used": True,
+    "broker_live_adapter_deferred": False,
+    "broker_live_requested": False,
+    "broker_live_execution_enabled": False,
+    "prompt_raw_payload_retained": False,
+    "model_request_raw_payload_retained": False,
+    "provider_raw_payload_retained": False,
+    "payload_raw_retained": False,
+    "model_response_raw_payload_retained": False,
+    "private_logs_retained": False,
+    "db_cache_rows_retained": False,
+    "full_trace_retained": False,
+}
 
 
 def test_af5b_converts_af5a_fake_adapter_candidate_to_product_answer_text() -> None:
@@ -37,12 +55,8 @@ def test_af5b_converts_af5a_fake_adapter_candidate_to_product_answer_text() -> N
     action = kernel.authorize_followup_author_response_finalization()
     assert action.stage == af5b.FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE
     assert action.action_type is ActionType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZE
-    assert action.expected_observation_type is (
-        ObservationType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZED
-    )
-    assert action.inputs["af5a_author_response_candidate_digest"] == (
-        af5a_state["author_response_candidate_digest"]
-    )
+    assert action.expected_observation_type is (ObservationType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZED)
+    assert action.inputs["af5a_author_response_candidate_digest"] == (af5a_state["author_response_candidate_digest"])
     assert action.inputs["followup_author_execution_from_ad_consumed"] is False
 
     result = _execute_af5b(kernel, action=action)
@@ -67,18 +81,16 @@ def test_af5b_converts_af5a_fake_adapter_candidate_to_product_answer_text() -> N
     assert final_answer_outcome["final_answer_output"]["answer_text"] == ANSWER_TEXT
     assert final_answer_outcome["product_answer_ready"] is True
     assert final_answer_outcome["final_text_included"] is True
-    assert final_answer_outcome["final_answer_packet_ref"] == (
-        state["final_answer_packet_ref"]
-    )
+    assert final_answer_outcome["final_answer_packet_ref"] == (state["final_answer_packet_ref"])
     assert final_answer_outcome["source_refs"] == state["source_refs"]
     assert final_answer_outcome["citation_refs"] == state["citation_refs"]
     assert final_answer_outcome["caveat_refs"] == state["caveat_refs"]
     assert state["final_answer_packet_ref"]["packet_id"] == packet_before["packet_id"]
     assert state["final_answer_packet_ref"]["packet_id"] == authority_before["packet_id"]
+    for surface in (state, projection, author_observation, final_answer_outcome):
+        _assert_fake_model_call_custody(surface)
     assert kernel.state.followup_author_response_finalization_history == [projection]
-    assert kernel.state.projections[af5b.FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE] == (
-        projection
-    )
+    assert kernel.state.projections[af5b.FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE] == (projection)
     assert kernel.state.final_answer_packet == packet_before
     assert kernel.state.final_answer_authority_projection == authority_before
 
@@ -120,14 +132,12 @@ def test_af5b_static_guards_keep_live_provider_search_and_old_ae_closed() -> Non
         core.followup_author_execution_from_ad_runtime core.author_execution_runtime
         core.final_answer_runtime_assembly core.final_answer_runtime_adapter
         core.pipeline_orchestrator core.runtime_prompt_assembly core.llm openai
-        requests httpx urllib dotenv os subprocess
+        requests httpx urllib dotenv importlib os subprocess
         """.split()
     )
     assert imported_modules(runtime_path).isdisjoint(forbidden_imports)
     runtime_source = runtime_path.read_text(encoding="utf-8")
-    run_kernel_source = (ROOT / "core" / "run_kernel.py").read_text(
-        encoding="utf-8"
-    )
+    run_kernel_source = (ROOT / "core" / "run_kernel.py").read_text(encoding="utf-8")
     af5b_sections = [
         run_kernel_source.split(
             "def authorize_followup_author_response_finalization",
@@ -154,14 +164,21 @@ def test_af5b_static_guards_keep_live_provider_search_and_old_ae_closed() -> Non
         "followup_author_execution_from_ad_runtime",
         "pipeline_orchestrator",
         "build_ordered_sources",
+        "adapter_factory",
+        "create_model_adapter",
+        "request_live_validation_broker",
+        "importlib",
     ):
         assert token not in runtime_source
         for section in af5b_sections:
             assert token not in section
+    assert "python scripts/validation/run_bucket.py fast_pr" in (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
     assert (
         "tests/test_ag96i3af5b_author_response_finalization.py::"
         "test_af5b_converts_af5a_fake_adapter_candidate_to_product_answer_text"
-    ) in (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    ) in (ROOT / "tests" / "buckets" / "author_lane.txt").read_text(encoding="utf-8")
 
 
 def _consume_af5a_with_text(kernel: RunKernel, text: str) -> None:
@@ -180,15 +197,9 @@ def _execute_af5b(kernel: RunKernel, *, action: Any) -> Any:
 def _af5b_runtime_kwargs(kernel: RunKernel) -> dict[str, Any]:
     state = kernel.state
     return {
-        "followup_author_execution_from_af4d_state": (
-            state.followup_author_execution_from_af4d_state
-        ),
-        "followup_author_execution_from_af4d_projection": (
-            state.followup_author_execution_from_af4d_projection
-        ),
-        "followup_author_execution_from_af4d_history": (
-            state.followup_author_execution_from_af4d_history
-        ),
+        "followup_author_execution_from_af4d_state": (state.followup_author_execution_from_af4d_state),
+        "followup_author_execution_from_af4d_projection": (state.followup_author_execution_from_af4d_projection),
+        "followup_author_execution_from_af4d_history": (state.followup_author_execution_from_af4d_history),
         "final_answer_packet": state.final_answer_packet,
         "final_answer_authority_projection": state.final_answer_authority_projection,
     }
@@ -208,11 +219,20 @@ def _assert_live_model_provider_flags_false(surface: dict[str, Any]) -> None:
         model_execution_allowed live_provider_call_allowed real_model_called
         ask_model_called execute_author_action_called author_executor_invoked
         model_response_retained provider_payload_retained
+        prompt_raw_payload_retained model_request_raw_payload_retained
+        provider_raw_payload_retained payload_raw_retained
+        model_response_raw_payload_retained private_logs_retained
+        db_cache_rows_retained full_trace_retained live_model_call_performed
         prompt_text_retained request_text_retained
         search_executed retrieval_executed fetch_executed evidence_reselected
         citation_rendering_changed citation_formatter_invoked
     """.split():
         assert surface[flag] is False
+
+
+def _assert_fake_model_call_custody(surface: dict[str, Any]) -> None:
+    for field, expected in FAKE_MODEL_CALL_CUSTODY.items():
+        assert surface[field] == expected
 
 
 def _assert_no_raw_prompt_request_provider_payload(value: Any) -> None:

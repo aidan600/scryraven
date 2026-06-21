@@ -46,13 +46,29 @@ def test_af6a_absent_broker_live_guard_fails_closed(
 
 def test_af6a_broker_live_path_is_deferred_and_does_not_call_adapter() -> None:
     adapter = MustNotCallAdapter()
-    with pytest.raises(af6a.AF6AFailClosed, match="deferred"):
+    with pytest.raises(af6a.AF6AFailClosed, match="deferred") as exc_info:
         af6a.run_af6a_smoke(
             job_id=af6a.JOB_ID,
             broker_live_mode=True,
             confirm_live_provider_call=True,
         )
     assert adapter.calls == 0
+    packet = exc_info.value.packet
+    assert packet is not None
+    assert packet["status"] == "deferred"
+    assert packet["deferred_reason"] == "broker_live_execution_not_enabled"
+    assert packet["final_answer_created"] is False
+    _assert_model_call_custody(
+        packet,
+        expected_mode="broker_live_deferred",
+        expected_status="deferred",
+        expected_source="broker_live_adapter_deferred",
+        expected_max_model_calls=1,
+        expected_fake_adapter_used=False,
+        expected_broker_live_adapter_deferred=True,
+        expected_broker_live_requested=True,
+    )
+    _assert_deferred_sanitized_shape(packet)
 
 
 def test_af6a_fake_mode_has_sanitized_output_without_model_call_budget() -> None:
@@ -68,6 +84,16 @@ def test_af6a_fake_mode_has_sanitized_output_without_model_call_budget() -> None
     assert packet["mode"] == "fake"
     assert packet["budget"]["max_model_calls"] == 0
     assert packet["budget"]["model_calls_used"] == 0
+    _assert_model_call_custody(
+        packet,
+        expected_mode="fake",
+        expected_status="completed_fake",
+        expected_source="injected_fake_model_adapter",
+        expected_max_model_calls=0,
+        expected_fake_adapter_used=True,
+        expected_broker_live_adapter_deferred=False,
+        expected_broker_live_requested=False,
+    )
     assert packet["final_answer_text"] == ANSWER_TEXT
     _assert_sanitized_shape(packet, expected_model_calls=0)
 
@@ -89,6 +115,7 @@ def test_af6a_static_guards_no_search_fetch_retrieval_citation_or_pipeline() -> 
         "httpx",
         "urllib",
         "dotenv",
+        "importlib",
         "subprocess",
     }
     assert imported_modules(script_path).isdisjoint(forbidden_imports)
@@ -104,6 +131,9 @@ def test_af6a_static_guards_no_search_fetch_retrieval_citation_or_pipeline() -> 
         "render_citation",
         "format_citation",
         "importlib",
+        "adapter_factory",
+        "create_model_adapter",
+        "request_live_validation_broker",
         "adapter(",
     ):
         assert token not in source
@@ -118,6 +148,7 @@ def _assert_sanitized_shape(
     assert packet["record_type"] == "ag96i3af6a_brokered_author_lane_smoke_packet"
     assert packet["chain"] == ["AF4B2", "AF4C", "AF4D", "AF5A", "AF5B"]
     assert packet["budget"]["model_calls_used"] == expected_model_calls
+    assert packet["budget"]["live_model_call_performed"] is False
     assert packet["budget"]["max_provider_search_calls"] == 0
     assert packet["budget"]["max_fetch_read_attempts"] == 0
     assert packet["budget"]["max_retrieval_calls"] == 0
@@ -129,10 +160,69 @@ def _assert_sanitized_shape(
     assert packet["citation_ref_count"] > 0
     assert packet["caveat_ref_count"] > 0
     assert packet["closed_surface_flags"]["raw_prompt_retained"] is False
+    assert packet["closed_surface_flags"]["raw_model_request_retained"] is False
     assert packet["closed_surface_flags"]["raw_provider_payload_retained"] is False
+    assert packet["closed_surface_flags"]["raw_payload_retained"] is False
     assert packet["closed_surface_flags"]["raw_model_response_retained"] is False
+    assert packet["closed_surface_flags"]["private_logs_retained"] is False
+    assert packet["closed_surface_flags"]["db_cache_rows_retained"] is False
+    assert packet["closed_surface_flags"]["full_trace_retained"] is False
     assert packet["closed_surface_flags"]["search_fetch_retrieval_executed"] is False
     _assert_no_forbidden_packet_fields(packet)
+
+
+def _assert_deferred_sanitized_shape(packet: dict[str, Any]) -> None:
+    assert packet["schema_version"] == af6a.SCHEMA_VERSION
+    assert packet["record_type"] == "ag96i3af6a_brokered_author_lane_smoke_packet"
+    assert packet["chain"] == []
+    assert packet["budget"]["max_model_calls"] == 1
+    assert packet["budget"]["model_calls_used"] == 0
+    assert packet["budget"]["live_model_call_performed"] is False
+    assert packet["budget"]["max_provider_search_calls"] == 0
+    assert packet["budget"]["max_fetch_read_attempts"] == 0
+    assert packet["budget"]["max_retrieval_calls"] == 0
+    assert packet["budget"]["retries_allowed"] is False
+    assert packet["closed_surface_flags"]["raw_prompt_retained"] is False
+    assert packet["closed_surface_flags"]["raw_model_request_retained"] is False
+    assert packet["closed_surface_flags"]["raw_provider_payload_retained"] is False
+    assert packet["closed_surface_flags"]["raw_payload_retained"] is False
+    assert packet["closed_surface_flags"]["raw_model_response_retained"] is False
+    assert packet["closed_surface_flags"]["private_logs_retained"] is False
+    assert packet["closed_surface_flags"]["db_cache_rows_retained"] is False
+    assert packet["closed_surface_flags"]["full_trace_retained"] is False
+    assert packet["closed_surface_flags"]["search_fetch_retrieval_executed"] is False
+    _assert_no_forbidden_packet_fields(packet)
+
+
+def _assert_model_call_custody(
+    packet: dict[str, Any],
+    *,
+    expected_mode: str,
+    expected_status: str,
+    expected_source: str,
+    expected_max_model_calls: int,
+    expected_fake_adapter_used: bool,
+    expected_broker_live_adapter_deferred: bool,
+    expected_broker_live_requested: bool,
+) -> None:
+    assert packet["author_model_call_mode"] == expected_mode
+    assert packet["author_model_call_status"] == expected_status
+    assert packet["author_model_call_source"] == expected_source
+    assert packet["max_model_calls"] == expected_max_model_calls
+    assert packet["model_calls_used"] == 0
+    assert packet["live_model_call_performed"] is False
+    assert packet["fake_adapter_used"] is expected_fake_adapter_used
+    assert packet["broker_live_adapter_deferred"] is expected_broker_live_adapter_deferred
+    assert packet["broker_live_requested"] is expected_broker_live_requested
+    assert packet["broker_live_execution_enabled"] is False
+    assert packet["prompt_raw_payload_retained"] is False
+    assert packet["model_request_raw_payload_retained"] is False
+    assert packet["provider_raw_payload_retained"] is False
+    assert packet["payload_raw_retained"] is False
+    assert packet["model_response_raw_payload_retained"] is False
+    assert packet["private_logs_retained"] is False
+    assert packet["db_cache_rows_retained"] is False
+    assert packet["full_trace_retained"] is False
 
 
 def _assert_no_forbidden_packet_fields(value: Any) -> None:
