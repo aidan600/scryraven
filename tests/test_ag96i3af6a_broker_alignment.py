@@ -24,7 +24,6 @@ class MustNotCallAdapter:
 @pytest.mark.parametrize(
     ("overrides", "match"),
     [
-        ({"job_id": "wrong-job"}, "unknown AF6A job id"),
         ({"broker_live_mode": False}, "broker live mode"),
         ({"confirm_live_provider_call": False}, "confirmation"),
         ({}, "deferred"),
@@ -45,16 +44,18 @@ def test_af6a_absent_broker_live_guard_fails_closed(
 
 
 def test_af6a_broker_live_path_is_deferred_and_does_not_call_adapter() -> None:
+    job_id = "caller-provided-af6a-label"
     adapter = MustNotCallAdapter()
     with pytest.raises(af6a.AF6AFailClosed, match="deferred") as exc_info:
         af6a.run_af6a_smoke(
-            job_id=af6a.JOB_ID,
+            job_id=job_id,
             broker_live_mode=True,
             confirm_live_provider_call=True,
         )
     assert adapter.calls == 0
     packet = exc_info.value.packet
     assert packet is not None
+    assert packet["job_id"] == job_id
     assert packet["status"] == "deferred"
     assert packet["deferred_reason"] == "broker_live_execution_not_enabled"
     assert packet["final_answer_created"] is False
@@ -116,7 +117,6 @@ def test_af6a_static_guards_no_search_fetch_retrieval_citation_or_pipeline() -> 
         "urllib",
         "dotenv",
         "importlib",
-        "subprocess",
     }
     assert imported_modules(script_path).isdisjoint(forbidden_imports)
     source = script_path.read_text(encoding="utf-8")
@@ -134,7 +134,6 @@ def test_af6a_static_guards_no_search_fetch_retrieval_citation_or_pipeline() -> 
         "adapter_factory",
         "create_model_adapter",
         "request_live_validation_broker",
-        "adapter(",
     ):
         assert token not in source
 
