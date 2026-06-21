@@ -28,6 +28,7 @@ JOB_ID = "ag96i3af6a-live-author-lane-smoke-once"
 SCHEMA_VERSION = "ag96i3af6a_brokered_author_lane_smoke_v1"
 DEFAULT_OUTPUT = Path("output/ag96i3af6a_live_author_lane_smoke_packet.json")
 DEFAULT_FAKE_ANSWER = "AF6A fake Author-lane smoke answer."
+BROKER_LIVE_DEFERRED_MAX_MODEL_CALLS = 1
 FORBIDDEN_PACKET_KEYS = frozenset(
     """
     prompt raw_prompt prompt_text request_text raw_request_text model_request_text
@@ -39,7 +40,9 @@ FORBIDDEN_PACKET_KEYS = frozenset(
 
 
 class AF6AFailClosed(RuntimeError):
-    pass
+    def __init__(self, message: str, *, packet: dict[str, Any] | None = None) -> None:
+        super().__init__(message)
+        self.packet = packet
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,10 +61,9 @@ def run_af6a_smoke(
 ) -> AF6ASmokeResult:
     if fake_mode:
         model_adapter: Any = FakeAF5AAdapter(fake_answer)
-        adapter_calls = 0
         mode = "fake"
     else:
-        _reject_broker_live_until_truthful_custody_exists(
+        _reject_broker_live_until_live_adapter_is_enabled(
             job_id=job_id,
             broker_live_mode=broker_live_mode,
             confirm_live_provider_call=confirm_live_provider_call,
@@ -80,7 +82,7 @@ def run_af6a_smoke(
         kernel,
         job_id=job_id,
         mode=mode,
-        adapter_calls=adapter_calls,
+        model_call_custody=_fake_model_call_custody(),
     )
     _reject_forbidden_packet(packet)
     return AF6ASmokeResult(kernel=kernel, packet=packet)
@@ -113,6 +115,14 @@ def main(argv: list[str] | None = None) -> int:
             encoding="utf-8",
         )
     except AF6AFailClosed as exc:
+        if exc.packet is not None:
+            output_path = _output_path(args.output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(
+                json.dumps(exc.packet, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            print(f"wrote sanitized AF6A deferred packet to {output_path}", file=sys.stderr)
         print(f"AF6A fail closed: {exc}", file=sys.stderr)
         return 2
     print(f"wrote sanitized AF6A smoke packet to {output_path}")
@@ -124,8 +134,9 @@ def _sanitized_packet(
     *,
     job_id: str,
     mode: str,
-    adapter_calls: int,
+    model_call_custody: Mapping[str, Any],
 ) -> dict[str, Any]:
+    custody = dict(model_call_custody)
     summary = build_smoke_summary(kernel)
     af5a_state = dict(kernel.state.followup_author_execution_from_af4d_state)
     af5b_state = dict(kernel.state.followup_author_response_finalization_state)
@@ -136,14 +147,16 @@ def _sanitized_packet(
         "job_id": job_id,
         "mode": mode,
         "status": "completed",
+        **custody,
         "chain": ["AF4B2", "AF4C", "AF4D", "AF5A", "AF5B"],
         "budget": {
-            "max_model_calls": 0,
-            "model_calls_used": adapter_calls,
+            "max_model_calls": custody["max_model_calls"],
+            "model_calls_used": custody["model_calls_used"],
             "max_provider_search_calls": 0,
             "max_fetch_read_attempts": 0,
             "max_retrieval_calls": 0,
             "retries_allowed": False,
+            "live_model_call_performed": custody["live_model_call_performed"],
         },
         "final_answer_text": summary["answer_text"],
         "final_answer_outcome_id": summary["final_answer_outcome_id"],
@@ -154,16 +167,14 @@ def _sanitized_packet(
         "caveat_ref_count": summary["caveat_ref_count"],
         "af5a_execution_id": af5a_state.get("author_execution_from_af4d_id"),
         "af5b_finalization_id": af5b_state.get("author_response_finalization_id"),
-        "author_response_candidate_ref_id": candidate.get(
-            "author_response_candidate_ref_id"
-        ),
-        "author_response_candidate_digest": candidate.get(
-            "author_response_candidate_digest"
-        ),
+        "author_response_candidate_ref_id": candidate.get("author_response_candidate_ref_id"),
+        "author_response_candidate_digest": candidate.get("author_response_candidate_digest"),
         "closed_surface_flags": {
             **{flag: summary["boundary_flags"].get(flag) for flag in FALSE_BOUNDARY_FLAGS},
             "raw_prompt_retained": False,
+            "raw_model_request_retained": False,
             "raw_provider_payload_retained": False,
+            "raw_payload_retained": False,
             "raw_model_response_retained": False,
             "private_logs_retained": False,
             "db_cache_rows_retained": False,
@@ -173,7 +184,7 @@ def _sanitized_packet(
     }
 
 
-def _reject_broker_live_until_truthful_custody_exists(
+def _reject_broker_live_until_live_adapter_is_enabled(
     *,
     job_id: str,
     broker_live_mode: bool,
@@ -185,7 +196,116 @@ def _reject_broker_live_until_truthful_custody_exists(
         raise AF6AFailClosed("broker live mode is required")
     if not confirm_live_provider_call:
         raise AF6AFailClosed("live model-call confirmation is required")
-    raise AF6AFailClosed("AF6A broker-live model adapter deferred until truthful live-call custody fields exist")
+    raise AF6AFailClosed(
+        "AF6A broker-live model adapter deferred; no live model call performed",
+        packet=_deferred_broker_live_packet(job_id=job_id),
+    )
+
+
+def _deferred_broker_live_packet(*, job_id: str) -> dict[str, Any]:
+    custody = _broker_live_deferred_model_call_custody()
+    packet = {
+        "schema_version": SCHEMA_VERSION,
+        "record_type": "ag96i3af6a_brokered_author_lane_smoke_packet",
+        "job_id": job_id,
+        "mode": custody["author_model_call_mode"],
+        "status": custody["author_model_call_status"],
+        **custody,
+        "chain": [],
+        "deferred_reason": "broker_live_execution_not_enabled",
+        "final_answer_created": False,
+        "budget": {
+            "max_model_calls": custody["max_model_calls"],
+            "model_calls_used": custody["model_calls_used"],
+            "max_provider_search_calls": 0,
+            "max_fetch_read_attempts": 0,
+            "max_retrieval_calls": 0,
+            "retries_allowed": False,
+            "live_model_call_performed": custody["live_model_call_performed"],
+        },
+        "closed_surface_flags": _closed_surface_flags(custody),
+    }
+    _reject_forbidden_packet(packet)
+    return packet
+
+
+def _fake_model_call_custody() -> dict[str, Any]:
+    return {
+        "author_model_call_mode": "fake",
+        "author_model_call_status": "completed_fake",
+        "author_model_call_source": "injected_fake_model_adapter",
+        "max_model_calls": 0,
+        "model_calls_used": 0,
+        "live_model_call_performed": False,
+        "fake_adapter_used": True,
+        "broker_live_adapter_deferred": False,
+        "broker_live_requested": False,
+        "broker_live_execution_enabled": False,
+        "prompt_raw_payload_retained": False,
+        "model_request_raw_payload_retained": False,
+        "provider_raw_payload_retained": False,
+        "payload_raw_retained": False,
+        "model_response_raw_payload_retained": False,
+        "private_logs_retained": False,
+        "db_cache_rows_retained": False,
+        "full_trace_retained": False,
+    }
+
+
+def _broker_live_deferred_model_call_custody() -> dict[str, Any]:
+    return {
+        "author_model_call_mode": "broker_live_deferred",
+        "author_model_call_status": "deferred",
+        "author_model_call_source": "broker_live_adapter_deferred",
+        "max_model_calls": BROKER_LIVE_DEFERRED_MAX_MODEL_CALLS,
+        "model_calls_used": 0,
+        "live_model_call_performed": False,
+        "fake_adapter_used": False,
+        "broker_live_adapter_deferred": True,
+        "broker_live_requested": True,
+        "broker_live_execution_enabled": False,
+        "prompt_raw_payload_retained": False,
+        "model_request_raw_payload_retained": False,
+        "provider_raw_payload_retained": False,
+        "payload_raw_retained": False,
+        "model_response_raw_payload_retained": False,
+        "private_logs_retained": False,
+        "db_cache_rows_retained": False,
+        "full_trace_retained": False,
+    }
+
+
+def _closed_surface_flags(custody: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "model_execution_allowed": False,
+        "live_provider_call_allowed": False,
+        "real_model_called": False,
+        "ask_model_called": False,
+        "execute_author_action_called": False,
+        "author_executor_invoked": False,
+        "model_response_retained": False,
+        "provider_payload_retained": False,
+        "prompt_text_retained": False,
+        "request_text_retained": False,
+        "search_executed": False,
+        "retrieval_executed": False,
+        "fetch_executed": False,
+        "provider_search_changed": False,
+        "retrieval_ranking_filtering_changed": False,
+        "evidence_reselected": False,
+        "citation_rendering_changed": False,
+        "citation_formatter_invoked": False,
+        "citation_reselection_changed": False,
+        "raw_prompt_retained": custody["prompt_raw_payload_retained"],
+        "raw_model_request_retained": custody["model_request_raw_payload_retained"],
+        "raw_provider_payload_retained": custody["provider_raw_payload_retained"],
+        "raw_payload_retained": custody["payload_raw_retained"],
+        "raw_model_response_retained": custody["model_response_raw_payload_retained"],
+        "private_logs_retained": custody["private_logs_retained"],
+        "db_cache_rows_retained": custody["db_cache_rows_retained"],
+        "full_trace_retained": custody["full_trace_retained"],
+        "search_fetch_retrieval_executed": False,
+    }
 
 
 def _output_path(output: str) -> Path:

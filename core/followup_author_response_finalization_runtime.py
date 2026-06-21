@@ -21,21 +21,11 @@ from core.followup_author_payload_safety import (
 )
 from core.followup_deliberation import clean_text, safe_json
 
-FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_SCHEMA_VERSION = (
-    "followup_author_response_finalization_ag96i3af5b_v1"
-)
-FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE = (
-    "followup_author_response_finalization"
-)
-AG96I3AF5B_AF5A_RESPONSE_CANDIDATE_FINAL_ANSWER_MODE = (
-    "ag96i3af5b_af5a_response_candidate_final_answer_output"
-)
-FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STATUS = (
-    "author_response_finalized_from_af5a"
-)
-FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_REASON = (
-    AG96I3AF5B_AF5A_RESPONSE_CANDIDATE_FINAL_ANSWER_MODE
-)
+FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_SCHEMA_VERSION = "followup_author_response_finalization_ag96i3af5b_v1"
+FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE = "followup_author_response_finalization"
+AG96I3AF5B_AF5A_RESPONSE_CANDIDATE_FINAL_ANSWER_MODE = "ag96i3af5b_af5a_response_candidate_final_answer_output"
+FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STATUS = "author_response_finalized_from_af5a"
+FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_REASON = AG96I3AF5B_AF5A_RESPONSE_CANDIDATE_FINAL_ANSWER_MODE
 
 _FALSE_FLAGS = {
     field: False
@@ -83,6 +73,14 @@ _CALLER_CONTROLLED_KEYS = frozenset(
         author_observation final_answer_outcome final_answer_text
         product_answer_text answer_text report output product_output
         final_answer_output product_answer
+        author_model_call_mode author_model_call_status
+        author_model_call_source max_model_calls model_calls_used
+        live_model_call_performed fake_adapter_used
+        broker_live_adapter_deferred broker_live_requested
+        broker_live_execution_enabled prompt_raw_payload_retained
+        model_request_raw_payload_retained provider_raw_payload_retained
+        payload_raw_retained model_response_raw_payload_retained
+        private_logs_retained db_cache_rows_retained full_trace_retained
         """.split(),
     }
 )
@@ -95,6 +93,46 @@ _PRIVATE_TEXT_MARKERS = (
     "api_key",
     "secret",
 )
+_MODEL_CALL_CUSTODY_FIELDS = (
+    "author_model_call_mode",
+    "author_model_call_status",
+    "author_model_call_source",
+    "max_model_calls",
+    "model_calls_used",
+    "live_model_call_performed",
+    "fake_adapter_used",
+    "broker_live_adapter_deferred",
+    "broker_live_requested",
+    "broker_live_execution_enabled",
+    "prompt_raw_payload_retained",
+    "model_request_raw_payload_retained",
+    "provider_raw_payload_retained",
+    "payload_raw_retained",
+    "model_response_raw_payload_retained",
+    "private_logs_retained",
+    "db_cache_rows_retained",
+    "full_trace_retained",
+)
+_FAKE_MODEL_CALL_CUSTODY = {
+    "author_model_call_mode": "fake",
+    "author_model_call_status": "completed_fake",
+    "author_model_call_source": "injected_fake_model_adapter",
+    "max_model_calls": 0,
+    "model_calls_used": 0,
+    "live_model_call_performed": False,
+    "fake_adapter_used": True,
+    "broker_live_adapter_deferred": False,
+    "broker_live_requested": False,
+    "broker_live_execution_enabled": False,
+    "prompt_raw_payload_retained": False,
+    "model_request_raw_payload_retained": False,
+    "provider_raw_payload_retained": False,
+    "payload_raw_retained": False,
+    "model_response_raw_payload_retained": False,
+    "private_logs_retained": False,
+    "db_cache_rows_retained": False,
+    "full_trace_retained": False,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +181,7 @@ def build_followup_author_response_finalization_action_inputs(
         final_answer_authority_projection,
     )
     candidate = _candidate_from_af5a(af5a["state"])
+    model_call_custody = _model_call_custody_from_af5a(af5a["state"])
     refs = _packet_output_refs(packet, authority)
     finalization_id = _finalization_id(af5a["state"], candidate)
     return {
@@ -150,41 +189,24 @@ def build_followup_author_response_finalization_action_inputs(
         "checkpoint_id": af5a["state"].get("checkpoint_id"),
         "packet_id": packet.get("packet_id") or authority.get("packet_id"),
         "author_response_finalization_id": finalization_id,
-        "author_response_finalization_stage": (
-            FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE
-        ),
-        "author_response_finalization_mode": (
-            AG96I3AF5B_AF5A_RESPONSE_CANDIDATE_FINAL_ANSWER_MODE
-        ),
+        "author_response_finalization_stage": (FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE),
+        "author_response_finalization_mode": (AG96I3AF5B_AF5A_RESPONSE_CANDIDATE_FINAL_ANSWER_MODE),
         "status": FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STATUS,
-        "af5a_author_execution_from_af4d_id": af5a["state"].get(
-            "author_execution_from_af4d_id"
-        ),
+        "af5a_author_execution_from_af4d_id": af5a["state"].get("author_execution_from_af4d_id"),
         "af5a_author_execution_from_af4d_status": af5a["state"].get("status"),
-        "af5a_author_execution_from_af4d_mode": af5a["state"].get(
-            "author_execution_from_af4d_mode"
-        ),
-        "af5a_author_response_candidate_ref_id": candidate.get(
-            "author_response_candidate_ref_id"
-        ),
-        "af5a_author_response_candidate_digest": candidate.get(
-            "author_response_candidate_digest"
-        ),
-        "af5a_author_response_candidate_length": candidate.get(
-            "author_response_candidate_length"
-        ),
+        "af5a_author_execution_from_af4d_mode": af5a["state"].get("author_execution_from_af4d_mode"),
+        "af5a_author_response_candidate_ref_id": candidate.get("author_response_candidate_ref_id"),
+        "af5a_author_response_candidate_digest": candidate.get("author_response_candidate_digest"),
+        "af5a_author_response_candidate_length": candidate.get("author_response_candidate_length"),
         "af5a_execution_projection_digest": _digest(af5a["projection"]),
-        "af5a_execution_history_projection_digest": _digest(
-            af5a["history"][-1]
-        ),
+        "af5a_execution_history_projection_digest": _digest(af5a["history"][-1]),
         "current_final_answer_packet_digest": _digest(packet),
         "final_answer_authority_projection_digest": _digest(authority),
-        "final_answer_packet_ref_digest": _digest(
-            refs["final_answer_packet_ref"]
-        ),
+        "final_answer_packet_ref_digest": _digest(refs["final_answer_packet_ref"]),
         "source_refs_digest": _digest(refs["source_refs"]),
         "citation_refs_digest": _digest(refs["citation_refs"]),
         "caveat_refs_digest": _digest(refs["caveat_refs"]),
+        **model_call_custody,
         **_FALSE_FLAGS,
         **_TRUE_FLAGS,
     }
@@ -210,9 +232,7 @@ def execute_followup_author_response_finalization_action(
     action.validate(
         action_type=ActionType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZE,
         stage=FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE,
-        expected_observation_type=(
-            ObservationType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZED
-        ),
+        expected_observation_type=(ObservationType.FOLLOWUP_AUTHOR_RESPONSE_FINALIZED),
     )
     record = build_followup_author_response_finalization_record(
         action_inputs=action.inputs,
@@ -243,14 +263,8 @@ def build_followup_author_response_finalization_record(
     action = context["action"]
     answer_text = context["answer_text"]
     answer_digest = _hash_text(answer_text)
-    author_observation_id = (
-        "af5b-author-observation:"
-        f"{action.get('author_response_finalization_id')}"
-    )
-    final_answer_outcome_id = (
-        "af5b-final-answer-outcome:"
-        f"{action.get('author_response_finalization_id')}"
-    )
+    author_observation_id = f"af5b-author-observation:{action.get('author_response_finalization_id')}"
+    final_answer_outcome_id = f"af5b-final-answer-outcome:{action.get('author_response_finalization_id')}"
     refs = context["refs"]
     author_observation = _author_observation(
         action=action,
@@ -275,9 +289,7 @@ def build_followup_author_response_finalization_record(
         "canonical_state": False,
         "trace_only": False,
         "storage_only": False,
-        "af5a_author_response_candidate_consumed_ref": _candidate_ref(
-            context["candidate"]
-        ),
+        "af5a_author_response_candidate_consumed_ref": _candidate_ref(context["candidate"]),
         "final_answer_text_digest": answer_digest,
         "final_answer_text_length": len(answer_text),
         "product_answer_text_digest": answer_digest,
@@ -298,6 +310,7 @@ def build_followup_author_response_finalization_record(
             "final_answer_text_length": len(answer_text),
             "product_answer_ready": True,
         },
+        **_model_call_custody_from_action(action),
         **_FALSE_FLAGS,
         **_TRUE_FLAGS,
     }
@@ -322,9 +335,7 @@ def build_run_kernel_followup_author_response_finalization_state(
         "canonical_state": True,
         "observation_id": observation_id,
     }
-    validate_run_kernel_followup_author_response_finalization_state(
-        finalization_state=state
-    )
+    validate_run_kernel_followup_author_response_finalization_state(finalization_state=state)
     return safe_json(state)
 
 
@@ -379,7 +390,14 @@ def build_followup_author_response_finalization_projection(
         author_observation_id author_observation_digest
         final_answer_outcome_id final_answer_outcome_digest
         final_answer_packet_ref source_refs citation_refs caveat_refs
-        output_surface
+        output_surface author_model_call_mode author_model_call_status
+        author_model_call_source max_model_calls model_calls_used
+        live_model_call_performed fake_adapter_used
+        broker_live_adapter_deferred broker_live_requested
+        broker_live_execution_enabled prompt_raw_payload_retained
+        model_request_raw_payload_retained provider_raw_payload_retained
+        payload_raw_retained model_response_raw_payload_retained
+        private_logs_retained db_cache_rows_retained full_trace_retained
     """.split()
     projection = {
         "owner": "RunKernel.FollowupAuthorResponseFinalization",
@@ -436,8 +454,7 @@ def _validated_context(
     answer_text = _answer_text(candidate)
     refs = _packet_output_refs(packet, authority)
     require(
-        action.get("final_answer_packet_ref_digest")
-        == _digest(refs["final_answer_packet_ref"]),
+        action.get("final_answer_packet_ref_digest") == _digest(refs["final_answer_packet_ref"]),
         "AF5B stale FinalAnswerPacket ref digest",
     )
     require(
@@ -470,15 +487,9 @@ def _current_af5a(
 ) -> dict[str, Any]:
     state = safe_mapping(state_value)
     projection = safe_mapping(projection_value)
-    history = [
-        safe_mapping(item)
-        for item in (history_value or [])
-        if isinstance(item, Mapping)
-    ]
+    history = [safe_mapping(item) for item in (history_value or []) if isinstance(item, Mapping)]
     require(state, "AF5B requires canonical AF5A state")
-    validate_run_kernel_followup_author_execution_from_af4d_state(
-        execution_state=state
-    )
+    validate_run_kernel_followup_author_execution_from_af4d_state(execution_state=state)
     require(
         projection.get("owner") == "RunKernel.FollowupAuthorExecutionFromAF4D",
         "AF5B AF5A projection owner",
@@ -486,8 +497,7 @@ def _current_af5a(
     require(projection.get("canonical_state") is True, "AF5B canonical AF5A")
     require(history and history[-1] == projection, "AF5B current AF5A history")
     require(
-        projection.get("author_response_candidate_digest")
-        == state.get("author_response_candidate_digest"),
+        projection.get("author_response_candidate_digest") == state.get("author_response_candidate_digest"),
         "AF5B stale AF5A candidate digest",
     )
     return {"state": state, "projection": projection, "history": history}
@@ -530,16 +540,12 @@ def _current_packet_authority(
 
 
 def _candidate_from_af5a(af5a_state: Mapping[str, Any]) -> dict[str, Any]:
-    candidate = safe_mapping(
-        safe_mapping(af5a_state).get("bounded_sanitized_author_response_candidate")
-    )
+    candidate = safe_mapping(safe_mapping(af5a_state).get("bounded_sanitized_author_response_candidate"))
     text = _answer_text(candidate)
     digest = _digest(
         {
             "bounded_sanitized_author_response_candidate_text": text,
-            "af4d_author_model_request_digest": af5a_state.get(
-                "af4d_author_model_request_digest"
-            ),
+            "af4d_author_model_request_digest": af5a_state.get("af4d_author_model_request_digest"),
         }
     )
     require(
@@ -575,9 +581,7 @@ def _packet_output_refs(
     packet: Mapping[str, Any],
     authority: Mapping[str, Any],
 ) -> dict[str, Any]:
-    payload_ref = safe_mapping(authority.get("author_payload_ref")) or safe_mapping(
-        packet.get("author_payload_ref")
-    )
+    payload_ref = safe_mapping(authority.get("author_payload_ref")) or safe_mapping(packet.get("author_payload_ref"))
     citation_source_ids = (
         safe_json(authority.get("citation_eligible_source_ids"))
         or safe_json(payload_ref.get("citation_source_ids"))
@@ -585,54 +589,40 @@ def _packet_output_refs(
     )
     final_answer_packet_ref = {
         "packet_id": packet.get("packet_id") or authority.get("packet_id"),
-        "readiness_status": packet.get("readiness_status")
-        or authority.get("readiness_status"),
+        "readiness_status": packet.get("readiness_status") or authority.get("readiness_status"),
         "readiness_reasons": safe_string_sequence(packet.get("readiness_reasons")),
         "final_answer_allowed": packet.get("final_answer_allowed"),
-        "final_answer_posture": packet.get("final_answer_posture")
-        or payload_ref.get("final_answer_posture"),
-        "sufficiency_decision": packet.get("sufficiency_decision")
-        or payload_ref.get("sufficiency_decision"),
+        "final_answer_posture": packet.get("final_answer_posture") or payload_ref.get("final_answer_posture"),
+        "sufficiency_decision": packet.get("sufficiency_decision") or payload_ref.get("sufficiency_decision"),
         "author_payload_status": payload_ref.get("status"),
     }
     source_refs = {
         "evidence_allowed": safe_mapping_sequence(packet.get("evidence_allowed")),
-        "source_obligations": safe_mapping_sequence(
-            packet.get("source_obligations")
-        ),
+        "source_obligations": safe_mapping_sequence(packet.get("source_obligations")),
         "citation_eligible_source_ids": citation_source_ids,
         "missing_source_obligations": safe_mapping_sequence(
-            payload_ref.get("missing_source_obligations")
-            or packet.get("missing_required_obligations")
+            payload_ref.get("missing_source_obligations") or packet.get("missing_required_obligations")
         ),
         "partial_source_obligations": safe_mapping_sequence(
-            payload_ref.get("partial_source_obligations")
-            or packet.get("partial_obligations")
+            payload_ref.get("partial_source_obligations") or packet.get("partial_obligations")
         ),
         "satisfied_source_obligations": safe_mapping_sequence(
-            payload_ref.get("satisfied_source_obligations")
-            or packet.get("satisfied_obligations")
+            payload_ref.get("satisfied_source_obligations") or packet.get("satisfied_obligations")
         ),
     }
     citation_refs = {
         "citation_eligible": safe_mapping_sequence(packet.get("citation_eligible")),
-        "citation_ineligible": safe_mapping_sequence(
-            packet.get("citation_ineligible")
-        ),
+        "citation_ineligible": safe_mapping_sequence(packet.get("citation_ineligible")),
         "citation_source_ids": citation_source_ids,
     }
     caveat_refs = {
         "mandatory_caveats": safe_string_sequence(packet.get("mandatory_caveats")),
-        "prohibited_upgrades": safe_string_sequence(
-            packet.get("prohibited_upgrades")
-        ),
+        "prohibited_upgrades": safe_string_sequence(packet.get("prohibited_upgrades")),
         "source_bound_numeric_unknowns": safe_mapping_sequence(
-            packet.get("source_bound_numeric_unknowns")
-            or payload_ref.get("source_bound_numeric_unknowns")
+            packet.get("source_bound_numeric_unknowns") or payload_ref.get("source_bound_numeric_unknowns")
         ),
         "source_bound_numeric_resolutions": safe_mapping_sequence(
-            packet.get("source_bound_numeric_resolutions")
-            or payload_ref.get("source_bound_numeric_resolutions")
+            packet.get("source_bound_numeric_resolutions") or payload_ref.get("source_bound_numeric_resolutions")
         ),
     }
     return safe_json(
@@ -647,15 +637,9 @@ def _packet_output_refs(
 
 def _candidate_ref(candidate: Mapping[str, Any]) -> dict[str, Any]:
     return {
-        "author_response_candidate_ref_id": candidate.get(
-            "author_response_candidate_ref_id"
-        ),
-        "author_response_candidate_digest": candidate.get(
-            "author_response_candidate_digest"
-        ),
-        "author_response_candidate_length": candidate.get(
-            "author_response_candidate_length"
-        ),
+        "author_response_candidate_ref_id": candidate.get("author_response_candidate_ref_id"),
+        "author_response_candidate_digest": candidate.get("author_response_candidate_digest"),
+        "author_response_candidate_length": candidate.get("author_response_candidate_length"),
         "content_class": candidate.get("content_class"),
         "sanitization_status": candidate.get("sanitization_status"),
         "candidate_text_retained_as_candidate": False,
@@ -678,12 +662,8 @@ def _author_observation(
         "record_type": "ag96i3af5b_author_observation",
         "author_observation_id": author_observation_id,
         "packet_id": action.get("packet_id"),
-        "af5a_author_execution_from_af4d_id": action.get(
-            "af5a_author_execution_from_af4d_id"
-        ),
-        "af5a_author_response_candidate_ref_id": action.get(
-            "af5a_author_response_candidate_ref_id"
-        ),
+        "af5a_author_execution_from_af4d_id": action.get("af5a_author_execution_from_af4d_id"),
+        "af5a_author_response_candidate_ref_id": action.get("af5a_author_response_candidate_ref_id"),
         "final_answer_text": answer_text,
         "product_answer_text": answer_text,
         "report_hash": answer_digest,
@@ -694,6 +674,7 @@ def _author_observation(
         "source_refs": refs["source_refs"],
         "citation_refs": refs["citation_refs"],
         "caveat_refs": refs["caveat_refs"],
+        **_model_call_custody_from_action(action),
         **_FALSE_FLAGS,
         **_TRUE_FLAGS,
     }
@@ -718,12 +699,8 @@ def _final_answer_outcome(
         "packet_id": action.get("packet_id"),
         "author_observation_id": author_observation.get("author_observation_id"),
         "author_observation_digest": _digest(author_observation),
-        "af5a_author_execution_from_af4d_id": action.get(
-            "af5a_author_execution_from_af4d_id"
-        ),
-        "af5a_author_response_candidate_ref_id": action.get(
-            "af5a_author_response_candidate_ref_id"
-        ),
+        "af5a_author_execution_from_af4d_id": action.get("af5a_author_execution_from_af4d_id"),
+        "af5a_author_response_candidate_ref_id": action.get("af5a_author_response_candidate_ref_id"),
         "final_answer_text": answer_text,
         "product_answer_text": answer_text,
         "final_answer_output": {
@@ -740,6 +717,7 @@ def _final_answer_outcome(
         "source_refs": refs["source_refs"],
         "citation_refs": refs["citation_refs"],
         "caveat_refs": refs["caveat_refs"],
+        **_model_call_custody_from_action(action),
         **_FALSE_FLAGS,
         **_TRUE_FLAGS,
     }
@@ -752,6 +730,8 @@ def _validate_state(state: Mapping[str, Any]) -> None:
     final_answer_outcome = safe_mapping(payload.get("final_answer_outcome"))
     require(author_observation, "AF5B requires author observation")
     require(final_answer_outcome, "AF5B requires final answer outcome")
+    _validate_flags(author_observation)
+    _validate_flags(final_answer_outcome)
     text = final_answer_outcome.get("final_answer_text")
     require(text, "AF5B final answer text exists")
     require(
@@ -776,6 +756,28 @@ def _validate_flags(payload: Mapping[str, Any]) -> None:
         require(payload.get(field) is expected, f"AF5B {field} must be {expected}")
     for field, expected in _TRUE_FLAGS.items():
         require(payload.get(field) is expected, f"AF5B {field} must be {expected}")
+    _validate_model_call_custody(payload)
+
+
+def _model_call_custody_from_af5a(af5a_state: Mapping[str, Any]) -> dict[str, Any]:
+    custody = {field: safe_json(safe_mapping(af5a_state).get(field)) for field in _MODEL_CALL_CUSTODY_FIELDS}
+    _validate_model_call_custody(custody)
+    return custody
+
+
+def _model_call_custody_from_action(action: Mapping[str, Any]) -> dict[str, Any]:
+    custody = {field: safe_json(safe_mapping(action).get(field)) for field in _MODEL_CALL_CUSTODY_FIELDS}
+    _validate_model_call_custody(custody)
+    return custody
+
+
+def _validate_model_call_custody(surface: Mapping[str, Any]) -> None:
+    current = safe_mapping(surface)
+    for field, expected in _FAKE_MODEL_CALL_CUSTODY.items():
+        require(
+            current.get(field) == expected,
+            f"AF5B {field} must be {expected!r}",
+        )
 
 
 def _validate_observed_matches_canonical(
@@ -800,8 +802,7 @@ def _validate_observed_matches_canonical(
     canonical_outcome = safe_mapping(canonical.get("final_answer_outcome"))
     if observed_outcome:
         require(
-            observed_outcome.get("final_answer_text")
-            == canonical_outcome.get("final_answer_text"),
+            observed_outcome.get("final_answer_text") == canonical_outcome.get("final_answer_text"),
             "AF5B observed final answer text mismatch",
         )
 
