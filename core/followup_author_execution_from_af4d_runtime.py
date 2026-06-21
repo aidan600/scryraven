@@ -39,13 +39,40 @@ MAX_BOUNDED_AUTHOR_RESPONSE_CANDIDATE_CHARS = 800
 AUTHOR_MODEL_CALL_MODE_FAKE = "fake"
 AUTHOR_MODEL_CALL_STATUS_COMPLETED_FAKE = "completed_fake"
 AUTHOR_MODEL_CALL_SOURCE_FAKE_ADAPTER = "injected_fake_model_adapter"
+AUTHOR_MODEL_CALL_MODE_LIVE_ADAPTER_MOCKED = "live_adapter_mocked"
+AUTHOR_MODEL_CALL_STATUS_COMPLETED_MOCK_LIVE_ADAPTER = "completed_mock_live_adapter"
+AUTHOR_MODEL_CALL_SOURCE_MOCK_LIVE_ADAPTER = "mock_live_model_adapter"
+_MODEL_CALL_CUSTODY_FIELDS = (
+    "author_model_call_mode",
+    "author_model_call_status",
+    "author_model_call_source",
+    "max_model_calls",
+    "model_calls_used",
+    "mock_model_adapter_calls_used",
+    "live_model_call_performed",
+    "live_adapter_mocked",
+    "fake_adapter_used",
+    "broker_live_adapter_deferred",
+    "broker_live_requested",
+    "broker_live_execution_enabled",
+    "prompt_raw_payload_retained",
+    "model_request_raw_payload_retained",
+    "provider_raw_payload_retained",
+    "payload_raw_retained",
+    "model_response_raw_payload_retained",
+    "private_logs_retained",
+    "db_cache_rows_retained",
+    "full_trace_retained",
+)
 _FAKE_MODEL_CALL_CUSTODY = {
     "author_model_call_mode": AUTHOR_MODEL_CALL_MODE_FAKE,
     "author_model_call_status": AUTHOR_MODEL_CALL_STATUS_COMPLETED_FAKE,
     "author_model_call_source": AUTHOR_MODEL_CALL_SOURCE_FAKE_ADAPTER,
     "max_model_calls": 0,
     "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 0,
     "live_model_call_performed": False,
+    "live_adapter_mocked": False,
     "fake_adapter_used": True,
     "broker_live_adapter_deferred": False,
     "broker_live_requested": False,
@@ -59,15 +86,36 @@ _FAKE_MODEL_CALL_CUSTODY = {
     "db_cache_rows_retained": False,
     "full_trace_retained": False,
 }
+_MOCK_LIVE_ADAPTER_MODEL_CALL_CUSTODY = {
+    "author_model_call_mode": AUTHOR_MODEL_CALL_MODE_LIVE_ADAPTER_MOCKED,
+    "author_model_call_status": AUTHOR_MODEL_CALL_STATUS_COMPLETED_MOCK_LIVE_ADAPTER,
+    "author_model_call_source": AUTHOR_MODEL_CALL_SOURCE_MOCK_LIVE_ADAPTER,
+    "max_model_calls": 0,
+    "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 1,
+    "live_model_call_performed": False,
+    "live_adapter_mocked": True,
+    "fake_adapter_used": False,
+    "broker_live_adapter_deferred": False,
+    "broker_live_requested": False,
+    "broker_live_execution_enabled": False,
+    "prompt_raw_payload_retained": False,
+    "model_request_raw_payload_retained": False,
+    "provider_raw_payload_retained": False,
+    "payload_raw_retained": False,
+    "model_response_raw_payload_retained": False,
+    "private_logs_retained": False,
+    "db_cache_rows_retained": False,
+    "full_trace_retained": False,
+}
 
-_CLOSED_FLAGS = {
+_CLOSED_BASE_FLAGS = {
     field: False
     for field in "model_execution_allowed live_provider_call_allowed real_model_called ask_model_called execute_author_action_called author_observation_created final_answer_outcome_created prompt_text_retained request_text_retained model_response_retained provider_payload_retained report_text_retained final_text_retained final_text_included product_answer_ready citation_strings_included ordered_product_source_output_created".split()
 } | {
     "author_execution_deferred": True,
     "live_validation_not_run": True,
     "not_for_product_answer_activation": True,
-    "injected_fake_model_adapter_used": True,
 }
 _FORBIDDEN_PAYLOAD_KEYS = frozenset(
     "prompt_text raw_prompt request_text raw_request_text assembled_author_model_request model_request_text invocation_text raw_invocation_text model_response raw_model_response final_answer_text report_text product_output output sanitized_excerpt_text raw_provider_payload provider_payload raw_payload db_row cache private_log full_trace secret api_key author_observation final_answer_outcome".split()
@@ -75,7 +123,7 @@ _FORBIDDEN_PAYLOAD_KEYS = frozenset(
 _CALLER_CONTROLLED_KEYS = frozenset(
     {
         *_FORBIDDEN_PAYLOAD_KEYS,
-        *_FAKE_MODEL_CALL_CUSTODY.keys(),
+        *_MODEL_CALL_CUSTODY_FIELDS,
         *"followup_author_execution_from_af4d_state followup_author_execution_from_af4d_projection followup_author_execution_from_af4d_history bounded_sanitized_author_response_candidate bounded_sanitized_author_response_candidate_text author_response_candidate_digest author_response_candidate_length adapter_receipt_metadata adapter_invocation_count fake_adapter_used reconstructed_author_model_request_digest".split(),
     }
 )
@@ -165,7 +213,7 @@ def build_followup_author_execution_from_af4d_action_inputs(
         "af4d_author_model_request_history_projection_digest": _digest(af4d_history[-1] if af4d_history else {}),
         "run_request_digest": af4d.get("run_request_digest"),
         **_FAKE_MODEL_CALL_CUSTODY,
-        **_CLOSED_FLAGS,
+        **_closed_flags_for_custody(_FAKE_MODEL_CALL_CUSTODY),
     }
 
 
@@ -196,6 +244,7 @@ def build_followup_author_execution_from_af4d_record(
         require(adapter_response is not None, "AF5A requires injected adapter response")
         candidate = _candidate_from_adapter_response(context, adapter_response)
         receipt = _receipt_from_adapter_response(context, adapter_response, candidate)
+    model_call_custody = _model_call_custody_from_receipt(receipt)
     transient = context["transient"]
     state = {
         **context["action"],
@@ -223,8 +272,8 @@ def build_followup_author_execution_from_af4d_record(
         "author_response_candidate_digest": candidate.get("author_response_candidate_digest"),
         "author_response_candidate_length": candidate.get("author_response_candidate_length"),
         "adapter_receipt_metadata": receipt,
-        **_FAKE_MODEL_CALL_CUSTODY,
-        **_CLOSED_FLAGS,
+        **model_call_custody,
+        **_closed_flags_for_custody(model_call_custody),
     }
     _validate_closed(state)
     _reject_forbidden_payload(state)
@@ -325,14 +374,14 @@ def build_followup_author_execution_from_af4d_projection(
     **_: Any,
 ) -> dict[str, Any]:
     state = safe_mapping(execution_state)
-    fields = "schema_version status author_execution_from_af4d_id author_execution_from_af4d_stage author_execution_from_af4d_mode af4d_author_model_request_assembly_id af4d_author_model_request_digest af4d_author_model_request_length af4d_author_model_request_section_count af4d_author_model_request_section_refs af4d_author_model_request_projection_digest af4c_author_invocation_construction_id af4c_author_invocation_digest af4c_author_invocation_projection_digest af4b2_author_evidence_content_bridge_id af4b2_author_evidence_content_projection_digest af4b2_author_evidence_content_bridge_digest sanitized_author_evidence_content_payload_digest answer_bearing_sanitized_excerpt_ref_count reconstructed_author_model_request_digest reconstructed_author_model_request_length af4d_reconstructed_request_digest_match digest_match_proof bounded_sanitized_author_response_candidate author_response_candidate_digest author_response_candidate_length adapter_receipt_metadata author_model_call_mode author_model_call_status author_model_call_source max_model_calls model_calls_used live_model_call_performed fake_adapter_used broker_live_adapter_deferred broker_live_requested broker_live_execution_enabled prompt_raw_payload_retained model_request_raw_payload_retained provider_raw_payload_retained payload_raw_retained model_response_raw_payload_retained private_logs_retained db_cache_rows_retained full_trace_retained".split()
+    fields = "schema_version status author_execution_from_af4d_id author_execution_from_af4d_stage author_execution_from_af4d_mode af4d_author_model_request_assembly_id af4d_author_model_request_digest af4d_author_model_request_length af4d_author_model_request_section_count af4d_author_model_request_section_refs af4d_author_model_request_projection_digest af4c_author_invocation_construction_id af4c_author_invocation_digest af4c_author_invocation_projection_digest af4b2_author_evidence_content_bridge_id af4b2_author_evidence_content_projection_digest af4b2_author_evidence_content_bridge_digest sanitized_author_evidence_content_payload_digest answer_bearing_sanitized_excerpt_ref_count reconstructed_author_model_request_digest reconstructed_author_model_request_length af4d_reconstructed_request_digest_match digest_match_proof bounded_sanitized_author_response_candidate author_response_candidate_digest author_response_candidate_length adapter_receipt_metadata author_model_call_mode author_model_call_status author_model_call_source max_model_calls model_calls_used mock_model_adapter_calls_used live_model_call_performed live_adapter_mocked fake_adapter_used broker_live_adapter_deferred broker_live_requested broker_live_execution_enabled prompt_raw_payload_retained model_request_raw_payload_retained provider_raw_payload_retained payload_raw_retained model_response_raw_payload_retained private_logs_retained db_cache_rows_retained full_trace_retained".split()
     projection = {
         "owner": "RunKernel.FollowupAuthorExecutionFromAF4D",
         "canonical_state": True,
         "trace_only": False,
         "storage_only": False,
         **{field: safe_json(state.get(field)) for field in fields},
-        **_CLOSED_FLAGS,
+        **_closed_flags_for_custody(state),
     }
     _reject_forbidden_payload(projection)
     return safe_json(projection)
@@ -347,6 +396,8 @@ def validate_followup_author_execution_from_af4d_observation_binding(
     observed = safe_mapping(observed_execution_state)
     _validate_closed(observed)
     for field, expected in action.items():
+        if field in _MODEL_CALL_CUSTODY_FIELDS or field == "injected_fake_model_adapter_used":
+            continue
         require(observed.get(field) == expected, f"AF5A observation {field} mismatch")
     _candidate_from_observed({"action": action}, observed)
     _receipt_from_observed({"action": action, "transient": _transient_from_state(observed)}, observed)
@@ -612,7 +663,6 @@ def _receipt_from_adapter_response(
         "adapter_invocation_count": _bounded_int(
             metadata.get("adapter_invocation_count") or metadata.get("invocation_count") or 1
         ),
-        "fake_adapter_used": metadata.get("fake_adapter_used", True) is not False,
         "request_digest_seen": clean_text(metadata.get("request_digest_seen") or transient.request_digest, limit=160),
         "request_length_seen": _bounded_int(metadata.get("request_length_seen") or len(transient.request_text)),
         "response_candidate_digest": candidate.get("author_response_candidate_digest"),
@@ -622,7 +672,7 @@ def _receipt_from_adapter_response(
         "live_provider_call_allowed": False,
         "real_model_called": False,
         "ask_model_called": False,
-        **_FAKE_MODEL_CALL_CUSTODY,
+        **_model_call_custody_from_adapter_metadata(metadata),
     }
     _validate_receipt(context, receipt)
     return safe_json(receipt)
@@ -649,8 +699,7 @@ def _validate_receipt(
     )
     for condition, message in (
         (receipt.get("adapter_invoked") is True, "AF5A adapter invoked"),
-        (receipt.get("adapter_invocation_count") == 1, "AF5A fake adapter must be invoked exactly once"),
-        (receipt.get("fake_adapter_used") is True, "AF5A requires fake adapter"),
+        (receipt.get("adapter_invocation_count") == 1, "AF5A adapter must be invoked exactly once"),
         (receipt.get("request_digest_seen") == request_digest, "AF5A adapter receipt request digest mismatch"),
     ):
         require(condition, message)
@@ -755,17 +804,46 @@ def _section_ref(section: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _validate_closed(state: Mapping[str, Any]) -> None:
-    for field, expected in _CLOSED_FLAGS.items():
+    for field, expected in _closed_flags_for_custody(state).items():
         require(state.get(field) is expected, f"AF5A {field} must be {expected}")
     _validate_model_call_custody(state)
 
 
 def _validate_model_call_custody(surface: Mapping[str, Any]) -> None:
-    for field, expected in _FAKE_MODEL_CALL_CUSTODY.items():
+    current = safe_mapping(surface)
+    expected = _expected_model_call_custody(current)
+    for field, expected_value in expected.items():
         require(
-            surface.get(field) == expected,
-            f"AF5A {field} must be {expected!r}",
+            current.get(field) == expected_value,
+            f"AF5A {field} must be {expected_value!r}",
         )
+
+
+def _model_call_custody_from_adapter_metadata(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    mode = clean_text(metadata.get("author_model_call_mode"), limit=100)
+    if mode == AUTHOR_MODEL_CALL_MODE_LIVE_ADAPTER_MOCKED or metadata.get("live_adapter_mocked") is True:
+        return dict(_MOCK_LIVE_ADAPTER_MODEL_CALL_CUSTODY)
+    return dict(_FAKE_MODEL_CALL_CUSTODY)
+
+
+def _model_call_custody_from_receipt(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    custody = {field: safe_json(safe_mapping(receipt).get(field)) for field in _MODEL_CALL_CUSTODY_FIELDS}
+    _validate_model_call_custody(custody)
+    return custody
+
+
+def _expected_model_call_custody(surface: Mapping[str, Any]) -> Mapping[str, Any]:
+    mode = surface.get("author_model_call_mode")
+    if mode == AUTHOR_MODEL_CALL_MODE_LIVE_ADAPTER_MOCKED:
+        return _MOCK_LIVE_ADAPTER_MODEL_CALL_CUSTODY
+    return _FAKE_MODEL_CALL_CUSTODY
+
+
+def _closed_flags_for_custody(custody: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        **_CLOSED_BASE_FLAGS,
+        "injected_fake_model_adapter_used": safe_mapping(custody).get("fake_adapter_used") is True,
+    }
 
 
 def _reject_forbidden_payload(value: Any) -> None:

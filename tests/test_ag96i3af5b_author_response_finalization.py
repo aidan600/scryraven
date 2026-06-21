@@ -17,6 +17,7 @@ from core.run_kernel import (
 from tests.ag96_static_guards import imported_modules
 from tests.test_ag96i3af5a_author_execution_from_af4d import (
     FakeAF5AAdapter,
+    MockLiveAF5AAdapter,
     _execute_af5a,
     _kernel_through_af4d,
 )
@@ -29,8 +30,32 @@ FAKE_MODEL_CALL_CUSTODY = {
     "author_model_call_source": "injected_fake_model_adapter",
     "max_model_calls": 0,
     "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 0,
     "live_model_call_performed": False,
+    "live_adapter_mocked": False,
     "fake_adapter_used": True,
+    "broker_live_adapter_deferred": False,
+    "broker_live_requested": False,
+    "broker_live_execution_enabled": False,
+    "prompt_raw_payload_retained": False,
+    "model_request_raw_payload_retained": False,
+    "provider_raw_payload_retained": False,
+    "payload_raw_retained": False,
+    "model_response_raw_payload_retained": False,
+    "private_logs_retained": False,
+    "db_cache_rows_retained": False,
+    "full_trace_retained": False,
+}
+MOCK_LIVE_MODEL_CALL_CUSTODY = {
+    "author_model_call_mode": "live_adapter_mocked",
+    "author_model_call_status": "completed_mock_live_adapter",
+    "author_model_call_source": "mock_live_model_adapter",
+    "max_model_calls": 0,
+    "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 1,
+    "live_model_call_performed": False,
+    "live_adapter_mocked": True,
+    "fake_adapter_used": False,
     "broker_live_adapter_deferred": False,
     "broker_live_requested": False,
     "broker_live_execution_enabled": False,
@@ -97,6 +122,29 @@ def test_af5b_converts_af5a_fake_adapter_candidate_to_product_answer_text() -> N
     for surface in (state, projection, author_observation, final_answer_outcome):
         _assert_live_model_provider_flags_false(surface)
         _assert_no_raw_prompt_request_provider_payload(surface)
+
+
+def test_af5b_propagates_mocked_live_adapter_accounting_to_final_outputs() -> None:
+    answer_text = "AF5B product answer exists from a bounded mocked-live adapter candidate."
+    kernel = _kernel_through_af4d()
+    _consume_af5a_with_text(kernel, answer_text, adapter_factory=MockLiveAF5AAdapter)
+
+    action = kernel.authorize_followup_author_response_finalization()
+    result = _execute_af5b(kernel, action=action)
+    kernel.reduce(result.observation)
+
+    state = kernel.state.followup_author_response_finalization_state
+    projection = kernel.state.followup_author_response_finalization_projection
+    author_observation = kernel.state.author_observation
+    final_answer_outcome = kernel.state.final_answer_outcome
+    for surface in (state, projection, author_observation, final_answer_outcome):
+        _assert_mock_live_model_call_custody(surface)
+        _assert_live_model_provider_flags_false(surface)
+        _assert_no_raw_prompt_request_provider_payload(surface)
+        assert surface["injected_fake_model_adapter_used"] is False
+    assert author_observation["final_answer_text"] == answer_text
+    assert final_answer_outcome["final_answer_output"]["answer_text"] == answer_text
+    assert state["output_surface"]["product_answer_ready"] is True
 
 
 def test_af5b_requires_af5a_and_rejects_old_ae() -> None:
@@ -181,9 +229,14 @@ def test_af5b_static_guards_keep_live_provider_search_and_old_ae_closed() -> Non
     ) in (ROOT / "tests" / "buckets" / "author_lane.txt").read_text(encoding="utf-8")
 
 
-def _consume_af5a_with_text(kernel: RunKernel, text: str) -> None:
+def _consume_af5a_with_text(
+    kernel: RunKernel,
+    text: str,
+    *,
+    adapter_factory: type[FakeAF5AAdapter] = FakeAF5AAdapter,
+) -> None:
     action = kernel.authorize_followup_author_execution_from_af4d()
-    result = _execute_af5a(kernel, action=action, adapter=FakeAF5AAdapter(text))
+    result = _execute_af5a(kernel, action=action, adapter=adapter_factory(text))
     kernel.reduce(result.observation)
 
 
@@ -232,6 +285,11 @@ def _assert_live_model_provider_flags_false(surface: dict[str, Any]) -> None:
 
 def _assert_fake_model_call_custody(surface: dict[str, Any]) -> None:
     for field, expected in FAKE_MODEL_CALL_CUSTODY.items():
+        assert surface[field] == expected
+
+
+def _assert_mock_live_model_call_custody(surface: dict[str, Any]) -> None:
+    for field, expected in MOCK_LIVE_MODEL_CALL_CUSTODY.items():
         assert surface[field] == expected
 
 

@@ -53,8 +53,32 @@ FAKE_MODEL_CALL_CUSTODY = {
     "author_model_call_source": "injected_fake_model_adapter",
     "max_model_calls": 0,
     "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 0,
     "live_model_call_performed": False,
+    "live_adapter_mocked": False,
     "fake_adapter_used": True,
+    "broker_live_adapter_deferred": False,
+    "broker_live_requested": False,
+    "broker_live_execution_enabled": False,
+    "prompt_raw_payload_retained": False,
+    "model_request_raw_payload_retained": False,
+    "provider_raw_payload_retained": False,
+    "payload_raw_retained": False,
+    "model_response_raw_payload_retained": False,
+    "private_logs_retained": False,
+    "db_cache_rows_retained": False,
+    "full_trace_retained": False,
+}
+MOCK_LIVE_MODEL_CALL_CUSTODY = {
+    "author_model_call_mode": "live_adapter_mocked",
+    "author_model_call_status": "completed_mock_live_adapter",
+    "author_model_call_source": "mock_live_model_adapter",
+    "max_model_calls": 0,
+    "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 1,
+    "live_model_call_performed": False,
+    "live_adapter_mocked": True,
+    "fake_adapter_used": False,
     "broker_live_adapter_deferred": False,
     "broker_live_requested": False,
     "broker_live_execution_enabled": False,
@@ -102,6 +126,31 @@ class FakeAF5AAdapter:
                 "request_length_seen": len(request_text),
             },
         }
+
+
+class MockLiveAF5AAdapter(FakeAF5AAdapter):
+    def __call__(
+        self,
+        request_text: str,
+        *,
+        request_digest: str,
+        request_length: int,
+        request_metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        response = super().__call__(
+            request_text,
+            request_digest=request_digest,
+            request_length=request_length,
+            request_metadata=request_metadata,
+        )
+        response["metadata"].update(
+            {
+                "adapter_kind": "mock_live_model_adapter",
+                "author_model_call_mode": "live_adapter_mocked",
+                "live_adapter_mocked": True,
+            }
+        )
+        return response
 
 
 def test_af5a_happy_path_calls_fake_adapter_once_and_retains_bounded_candidate() -> None:
@@ -159,6 +208,40 @@ def test_af5a_happy_path_calls_fake_adapter_once_and_retains_bounded_candidate()
     assert kernel.state.followup_author_execution_from_af4d_history == [projection]
     assert kernel.state.projections[af5a.FOLLOWUP_AUTHOR_EXECUTION_FROM_AF4D_STAGE] == (projection)
     assert _closed_snapshot(kernel) == before
+
+
+def test_af5a_mocked_live_adapter_records_mock_only_accounting_without_live_flags() -> None:
+    kernel = _kernel_through_af4d()
+    action = kernel.authorize_followup_author_execution_from_af4d()
+    adapter = MockLiveAF5AAdapter("Bounded sanitized mocked-live AF5A author response candidate.")
+
+    result = _execute_af5a(kernel, action=action, adapter=adapter)
+    kernel.reduce(result.observation)
+
+    state = kernel.state.followup_author_execution_from_af4d_state
+    projection = kernel.state.followup_author_execution_from_af4d_projection
+    receipt = state["adapter_receipt_metadata"]
+    candidate = state["bounded_sanitized_author_response_candidate"]
+    assert len(adapter.calls) == 1
+    assert candidate["bounded_sanitized_author_response_candidate_text"] == (
+        "Bounded sanitized mocked-live AF5A author response candidate."
+    )
+    for surface in (state, projection, receipt):
+        _assert_mock_live_model_call_custody(surface)
+        assert surface["live_model_call_performed"] is False
+        assert surface["model_calls_used"] == 0
+        assert surface["mock_model_adapter_calls_used"] == 1
+        assert surface["fake_adapter_used"] is False
+        assert surface["live_adapter_mocked"] is True
+        assert surface["prompt_raw_payload_retained"] is False
+        assert surface["model_request_raw_payload_retained"] is False
+        assert surface["provider_raw_payload_retained"] is False
+        assert surface["payload_raw_retained"] is False
+        assert surface["model_response_raw_payload_retained"] is False
+    assert state["injected_fake_model_adapter_used"] is False
+    assert projection["injected_fake_model_adapter_used"] is False
+    assert receipt["adapter_kind"] == "mock_live_model_adapter"
+    _assert_absent(state, FORBIDDEN_KEYS, FORBIDDEN_TEXT)
 
 
 def test_af5a_requires_af4d_even_if_ad_af4c_exist() -> None:
@@ -288,7 +371,7 @@ def test_af5a_static_guards_and_fast_custody_lane() -> None:
             1
         ].split("elif action.action_type is ActionType.FOLLOWUP_AUTHOR_OBSERVATION", 1)[0],
     ]
-    for token in "ask_model( execute_author_action( ActionType.AUTHOR_EXECUTE ObservationType.AUTHOR_OUTPUT_OBSERVED build_followup_author_execution_from_ad_record execute_followup_author_execution_from_ad_action author_execution_runtime core.llm pipeline_orchestrator final_answer_runtime build_ordered_sources adapter_factory create_model_adapter request_live_validation_broker importlib".split():
+    for token in "ask_model( execute_author_action( ActionType.AUTHOR_EXECUTE ObservationType.AUTHOR_OUTPUT_OBSERVED build_followup_author_execution_from_ad_record execute_followup_author_execution_from_ad_action author_execution_runtime core.llm pipeline_orchestrator final_answer_runtime build_ordered_sources adapter_factory create_model_adapter request_live_validation_broker importlib search_web retrieve( retrieval_executed=True fetch( render_citation format_citation".split():
         assert token not in runtime_source
         for section in af5a_sections:
             assert token not in section
@@ -375,6 +458,11 @@ def _assert_closed(surface: dict[str, Any]) -> None:
 
 def _assert_fake_model_call_custody(surface: dict[str, Any]) -> None:
     for field, expected in FAKE_MODEL_CALL_CUSTODY.items():
+        assert surface[field] == expected
+
+
+def _assert_mock_live_model_call_custody(surface: dict[str, Any]) -> None:
+    for field, expected in MOCK_LIVE_MODEL_CALL_CUSTODY.items():
         assert surface[field] == expected
 
 
