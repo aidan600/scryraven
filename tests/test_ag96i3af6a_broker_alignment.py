@@ -210,7 +210,9 @@ def _assert_model_call_custody(
     assert packet["author_model_call_source"] == expected_source
     assert packet["max_model_calls"] == expected_max_model_calls
     assert packet["model_calls_used"] == 0
+    assert packet["mock_model_adapter_calls_used"] == 0
     assert packet["live_model_call_performed"] is False
+    assert packet["live_adapter_mocked"] is False
     assert packet["fake_adapter_used"] is expected_fake_adapter_used
     assert packet["broker_live_adapter_deferred"] is expected_broker_live_adapter_deferred
     assert packet["broker_live_requested"] is expected_broker_live_requested

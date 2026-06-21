@@ -75,7 +75,8 @@ _CALLER_CONTROLLED_KEYS = frozenset(
         final_answer_output product_answer
         author_model_call_mode author_model_call_status
         author_model_call_source max_model_calls model_calls_used
-        live_model_call_performed fake_adapter_used
+        mock_model_adapter_calls_used live_model_call_performed
+        live_adapter_mocked fake_adapter_used
         broker_live_adapter_deferred broker_live_requested
         broker_live_execution_enabled prompt_raw_payload_retained
         model_request_raw_payload_retained provider_raw_payload_retained
@@ -99,7 +100,9 @@ _MODEL_CALL_CUSTODY_FIELDS = (
     "author_model_call_source",
     "max_model_calls",
     "model_calls_used",
+    "mock_model_adapter_calls_used",
     "live_model_call_performed",
+    "live_adapter_mocked",
     "fake_adapter_used",
     "broker_live_adapter_deferred",
     "broker_live_requested",
@@ -119,8 +122,32 @@ _FAKE_MODEL_CALL_CUSTODY = {
     "author_model_call_source": "injected_fake_model_adapter",
     "max_model_calls": 0,
     "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 0,
     "live_model_call_performed": False,
+    "live_adapter_mocked": False,
     "fake_adapter_used": True,
+    "broker_live_adapter_deferred": False,
+    "broker_live_requested": False,
+    "broker_live_execution_enabled": False,
+    "prompt_raw_payload_retained": False,
+    "model_request_raw_payload_retained": False,
+    "provider_raw_payload_retained": False,
+    "payload_raw_retained": False,
+    "model_response_raw_payload_retained": False,
+    "private_logs_retained": False,
+    "db_cache_rows_retained": False,
+    "full_trace_retained": False,
+}
+_MOCK_LIVE_ADAPTER_MODEL_CALL_CUSTODY = {
+    "author_model_call_mode": "live_adapter_mocked",
+    "author_model_call_status": "completed_mock_live_adapter",
+    "author_model_call_source": "mock_live_model_adapter",
+    "max_model_calls": 0,
+    "model_calls_used": 0,
+    "mock_model_adapter_calls_used": 1,
+    "live_model_call_performed": False,
+    "live_adapter_mocked": True,
+    "fake_adapter_used": False,
     "broker_live_adapter_deferred": False,
     "broker_live_requested": False,
     "broker_live_execution_enabled": False,
@@ -206,9 +233,9 @@ def build_followup_author_response_finalization_action_inputs(
         "source_refs_digest": _digest(refs["source_refs"]),
         "citation_refs_digest": _digest(refs["citation_refs"]),
         "caveat_refs_digest": _digest(refs["caveat_refs"]),
-        **model_call_custody,
         **_FALSE_FLAGS,
-        **_TRUE_FLAGS,
+        **model_call_custody,
+        **_true_flags_for_custody(model_call_custody),
     }
 
 
@@ -310,9 +337,9 @@ def build_followup_author_response_finalization_record(
             "final_answer_text_length": len(answer_text),
             "product_answer_ready": True,
         },
-        **_model_call_custody_from_action(action),
         **_FALSE_FLAGS,
-        **_TRUE_FLAGS,
+        **_model_call_custody_from_action(action),
+        **_true_flags_for_custody(action),
     }
     _validate_state(state)
     _reject_forbidden_payload(state)
@@ -392,7 +419,8 @@ def build_followup_author_response_finalization_projection(
         final_answer_packet_ref source_refs citation_refs caveat_refs
         output_surface author_model_call_mode author_model_call_status
         author_model_call_source max_model_calls model_calls_used
-        live_model_call_performed fake_adapter_used
+        mock_model_adapter_calls_used live_model_call_performed
+        live_adapter_mocked fake_adapter_used
         broker_live_adapter_deferred broker_live_requested
         broker_live_execution_enabled prompt_raw_payload_retained
         model_request_raw_payload_retained provider_raw_payload_retained
@@ -406,7 +434,7 @@ def build_followup_author_response_finalization_projection(
         "storage_only": False,
         **{field: safe_json(state.get(field)) for field in fields},
         **_FALSE_FLAGS,
-        **_TRUE_FLAGS,
+        **_true_flags_for_custody(state),
     }
     _reject_forbidden_payload(projection)
     return safe_json(projection)
@@ -674,9 +702,9 @@ def _author_observation(
         "source_refs": refs["source_refs"],
         "citation_refs": refs["citation_refs"],
         "caveat_refs": refs["caveat_refs"],
-        **_model_call_custody_from_action(action),
         **_FALSE_FLAGS,
-        **_TRUE_FLAGS,
+        **_model_call_custody_from_action(action),
+        **_true_flags_for_custody(action),
     }
 
 
@@ -717,9 +745,9 @@ def _final_answer_outcome(
         "source_refs": refs["source_refs"],
         "citation_refs": refs["citation_refs"],
         "caveat_refs": refs["caveat_refs"],
-        **_model_call_custody_from_action(action),
         **_FALSE_FLAGS,
-        **_TRUE_FLAGS,
+        **_model_call_custody_from_action(action),
+        **_true_flags_for_custody(action),
     }
 
 
@@ -754,7 +782,7 @@ def _validate_state(state: Mapping[str, Any]) -> None:
 def _validate_flags(payload: Mapping[str, Any]) -> None:
     for field, expected in _FALSE_FLAGS.items():
         require(payload.get(field) is expected, f"AF5B {field} must be {expected}")
-    for field, expected in _TRUE_FLAGS.items():
+    for field, expected in _true_flags_for_custody(payload).items():
         require(payload.get(field) is expected, f"AF5B {field} must be {expected}")
     _validate_model_call_custody(payload)
 
@@ -773,11 +801,25 @@ def _model_call_custody_from_action(action: Mapping[str, Any]) -> dict[str, Any]
 
 def _validate_model_call_custody(surface: Mapping[str, Any]) -> None:
     current = safe_mapping(surface)
-    for field, expected in _FAKE_MODEL_CALL_CUSTODY.items():
+    expected = _expected_model_call_custody(current)
+    for field, expected_value in expected.items():
         require(
-            current.get(field) == expected,
-            f"AF5B {field} must be {expected!r}",
+            current.get(field) == expected_value,
+            f"AF5B {field} must be {expected_value!r}",
         )
+
+
+def _expected_model_call_custody(surface: Mapping[str, Any]) -> Mapping[str, Any]:
+    if surface.get("author_model_call_mode") == "live_adapter_mocked":
+        return _MOCK_LIVE_ADAPTER_MODEL_CALL_CUSTODY
+    return _FAKE_MODEL_CALL_CUSTODY
+
+
+def _true_flags_for_custody(custody: Mapping[str, Any]) -> dict[str, bool]:
+    return {
+        **_TRUE_FLAGS,
+        "injected_fake_model_adapter_used": safe_mapping(custody).get("fake_adapter_used") is True,
+    }
 
 
 def _validate_observed_matches_canonical(
