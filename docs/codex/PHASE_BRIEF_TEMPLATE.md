@@ -265,14 +265,18 @@ Required validation cases:
 3. ...
 
 Testing expectations:
-- ruff
+- Name the required validation tier:
+  `docs_only` | `fast_pr` | `phase_focus` | `author_lane` | `full`
+- Choose the smallest valid bucket and report the exact command.
+- For ordinary PRs, prefer `fast_pr`; do not use `author_lane` or `full` unless
+  this phase explicitly licenses it.
+- Do not add every new test to `fast_pr`.
+- Do not repeatedly rerun monolithic timeouts; split the command or report the
+  timeout.
+- ruff or touched-file lint/format checks
 - diff check
 - focused new tests
 - relevant existing tests
-- For validation, prefer focused test -> impacted slice -> full
-  suite/manual dispatch. If an impacted slice times out, split it instead of
-  repeated monolithic reruns.
-- full offline pytest if practical
 
 Final bundle:
 Use the final bundle format from docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md.

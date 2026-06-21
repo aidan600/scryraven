@@ -14,8 +14,11 @@ are repo files; use repo-visible files and the current phase prompt.
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - **Reusable phase prompt shape:** read
   [PHASE_BRIEF_TEMPLATE.md](PHASE_BRIEF_TEMPLATE.md).
-- **High-custody validation tiers and timeout reporting:** read
-  [CI_VALIDATION_ERGONOMICS.md](CI_VALIDATION_ERGONOMICS.md).
+- **Validation buckets, high-custody tiers, and timeout reporting:** read
+  [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md) and
+  [CI_VALIDATION_ERGONOMICS.md](CI_VALIDATION_ERGONOMICS.md). Choose the
+  smallest valid bucket, report the exact command, and do not run full pytest
+  unless the phase requires it.
 - **Developer commands and project overview:** read the repo `README.md`,
   `.github/workflows/ci.yml`, `scripts/check.ps1`, `scripts/test.ps1`,
   `scripts/lint.ps1`, `pytest.ini`, `ruff.toml`, and `.pre-commit-config.yaml`
@@ -23,7 +26,7 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## Architecture guidance
 
-- **General architecture workflow and Path B PR process:**
+- **General architecural workflow and Path B PR process:**
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - **Current AG-96 lanes:** AG-96C `SearchWorkPlan` is a passive model through
   runtime shadow projection only; QueryPlan, provider/search behavior, citation
@@ -117,6 +120,8 @@ are repo files; use repo-visible files and the current phase prompt.
   in [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - If the phase is AG-89+ authority-collapse work, also include the final bundle
   fields from [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
+- Always report the validation bucket used. For PRs, `fast_pr` is the normal
+  non-docs target unless the phase explicitly licenses `author_lane` or `full`.
 
 ## Surface Boundary Vocabulary
 

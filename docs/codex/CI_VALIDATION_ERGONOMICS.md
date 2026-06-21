@@ -1,17 +1,35 @@
 # CI Validation Ergonomics
 
-Status: Codex-visible validation guidance for high-custody phases.
+Status: Codex-visible validation guidance for tiered validation.
 
 Use this file to keep phase prompts compact. Phase prompts should name unusual
 validation needs, not restate the standing validation ladder.
 
-## PR fast custody lane
+For the bucket reference table and promotion rules, read
+[VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md).
 
-- Used for `pull_request` events.
-- Intended to prove representative high-custody seams quickly.
-- Not the full suite.
-- Kept in `.github/workflows/ci.yml` so review PRs get a predictable visible
-  check.
+## Bucket selection
+
+- Choose the smallest valid bucket.
+- Report the exact bucket and command used.
+- For PRs, `fast_pr` is the normal target unless the phase explicitly licenses
+  `author_lane` or `full`.
+- Do not add every new test to `fast_pr`; only true sentinels belong there.
+- Do not run full pytest unless the phase requires it.
+- Do not repeatedly rerun monolithic timeouts. Split the command or report the
+  timeout with the exact command and bucket.
+
+## PR validation buckets
+
+- `docs_only` is used for docs/runbooks/prompts/operator-only markdown/text
+  changes and runs changed-file pre-commit/diff checks without pytest by
+  default.
+- `fast_pr` is used for ordinary code pull requests and runs the tiny manifest
+  in `tests/buckets/fast_pr.txt`.
+- `author_lane` is not a default PR bucket. Use it only through manual
+  `workflow_dispatch` or when a phase explicitly licenses it.
+- `full` is not a default PR bucket. It is for pushes to `main` and manual
+  serious validation.
 
 ## Focused phase validation
 
@@ -19,6 +37,7 @@ validation needs, not restate the standing validation ladder.
 - Run immediate producer/consumer tests next.
 - Prefer exact test node IDs or file paths over broad test globs when proving a
   narrow custody change.
+- Name this as `phase_focus` in the phase prompt or final bundle.
 
 ## Impacted custody slice
 
@@ -30,12 +49,12 @@ validation needs, not restate the standing validation ladder.
 
 ## Full suite
 
-- Run near the end locally when feasible.
 - Run on push to `main`.
 - Run via `workflow_dispatch` with `validation_scope=full` when PR check
   visibility is confusing or when a reviewer asks.
-- Use `workflow_dispatch` with `validation_scope=fast` to rerun the PR fast
-  custody lane manually.
+- Use `workflow_dispatch` with `validation_scope=fast_pr` to rerun the PR fast
+  bucket manually.
+- Do not make full-suite pytest the default PR tax.
 
 ## Reporting rule
 
