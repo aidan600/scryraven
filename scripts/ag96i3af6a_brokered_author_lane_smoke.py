@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,6 +53,57 @@ class AF6ASmokeResult:
     packet: dict[str, Any]
 
 
+def _external_author_live_adapter(adapter_path: str) -> Any:
+    resolved_adapter_path = _author_live_adapter_path(adapter_path)
+
+    def call(
+        request_text: str,
+        *,
+        request_digest: str,
+        request_length: int,
+        request_metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        adapter_input = {
+            "request_text": request_text,
+            "request_digest": request_digest,
+            "request_length": request_length,
+            "request_metadata": request_metadata,
+        }
+        try:
+            completed = subprocess.run(
+                [sys.executable, str(resolved_adapter_path)],
+                input=json.dumps(adapter_input),
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise AF6AFailClosed("external Author live adapter failed") from exc
+        try:
+            adapter_output = json.loads(completed.stdout)
+        except json.JSONDecodeError as exc:
+            raise AF6AFailClosed("external Author live adapter returned invalid JSON") from exc
+        if not isinstance(adapter_output, Mapping):
+            raise AF6AFailClosed("external Author live adapter output must be a JSON object")
+        metadata = dict(adapter_output.get("metadata") or {})
+        metadata.update(
+            {
+                "adapter_kind": "external_live_model_adapter",
+                "adapter_invocation_count": 1,
+                "author_model_call_mode": "live_adapter",
+                "request_digest_seen": request_digest,
+                "request_length_seen": request_length,
+            }
+        )
+        return {
+            "candidate_text": adapter_output.get("candidate_text"),
+            "metadata": metadata,
+        }
+
+    return call
+
+
 def run_af6a_smoke(
     *,
     job_id: str,
@@ -58,16 +111,21 @@ def run_af6a_smoke(
     confirm_live_provider_call: bool,
     fake_mode: bool = False,
     fake_answer: str = DEFAULT_FAKE_ANSWER,
+    author_live_adapter_py: str | None = None,
 ) -> AF6ASmokeResult:
     if fake_mode:
         model_adapter: Any = FakeAF5AAdapter(fake_answer)
         mode = "fake"
     else:
+        adapter_path = author_live_adapter_py or os.environ.get("SCRYRAVEN_AUTHOR_LIVE_ADAPTER_PY")
         _reject_broker_live_until_live_adapter_is_enabled(
             job_id=job_id,
             broker_live_mode=broker_live_mode,
             confirm_live_provider_call=confirm_live_provider_call,
+            author_live_adapter_py=adapter_path,
         )
+        model_adapter = _external_author_live_adapter(adapter_path or "")
+        mode = "live_adapter"
 
     kernel = _kernel_through_af4d()
     af5a_action = kernel.authorize_followup_author_execution_from_af4d()
@@ -82,7 +140,7 @@ def run_af6a_smoke(
         kernel,
         job_id=job_id,
         mode=mode,
-        model_call_custody=_fake_model_call_custody(),
+        model_call_custody=_fake_model_call_custody() if fake_mode else _live_adapter_model_call_custody(),
     )
     _reject_forbidden_packet(packet)
     return AF6ASmokeResult(kernel=kernel, packet=packet)
@@ -98,6 +156,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--confirm-live-provider-call", action="store_true")
     parser.add_argument("--fake-mode", action="store_true")
     parser.add_argument("--fake-answer", default=DEFAULT_FAKE_ANSWER)
+    parser.add_argument("--author-live-adapter-py")
     args = parser.parse_args(argv)
 
     try:
@@ -107,6 +166,7 @@ def main(argv: list[str] | None = None) -> int:
             confirm_live_provider_call=args.confirm_live_provider_call,
             fake_mode=args.fake_mode,
             fake_answer=args.fake_answer,
+            author_live_adapter_py=args.author_live_adapter_py,
         )
         output_path = _output_path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,6 +207,7 @@ def _sanitized_packet(
         "job_id": job_id,
         "mode": mode,
         "status": "completed",
+        "ok": True,
         **custody,
         "chain": ["AF4B2", "AF4C", "AF4D", "AF5A", "AF5B"],
         "budget": {
@@ -181,6 +242,7 @@ def _sanitized_packet(
             "full_trace_retained": False,
             "search_fetch_retrieval_executed": False,
         },
+        **_top_level_false_retention_flags(),
     }
 
 
@@ -189,6 +251,7 @@ def _reject_broker_live_until_live_adapter_is_enabled(
     job_id: str,
     broker_live_mode: bool,
     confirm_live_provider_call: bool,
+    author_live_adapter_py: str | None,
 ) -> None:
     if job_id != JOB_ID:
         raise AF6AFailClosed(f"unknown AF6A job id: {job_id}")
@@ -196,10 +259,12 @@ def _reject_broker_live_until_live_adapter_is_enabled(
         raise AF6AFailClosed("broker live mode is required")
     if not confirm_live_provider_call:
         raise AF6AFailClosed("live model-call confirmation is required")
-    raise AF6AFailClosed(
-        "AF6A broker-live model adapter deferred; no live model call performed",
-        packet=_deferred_broker_live_packet(job_id=job_id),
-    )
+    if not author_live_adapter_py:
+        raise AF6AFailClosed(
+            "AF6A broker-live model adapter deferred; no live adapter path configured",
+            packet=_deferred_broker_live_packet(job_id=job_id),
+        )
+    _author_live_adapter_path(author_live_adapter_py)
 
 
 def _deferred_broker_live_packet(*, job_id: str) -> dict[str, Any]:
@@ -210,6 +275,7 @@ def _deferred_broker_live_packet(*, job_id: str) -> dict[str, Any]:
         "job_id": job_id,
         "mode": custody["author_model_call_mode"],
         "status": custody["author_model_call_status"],
+        "ok": False,
         **custody,
         "chain": [],
         "deferred_reason": "broker_live_execution_not_enabled",
@@ -224,6 +290,7 @@ def _deferred_broker_live_packet(*, job_id: str) -> dict[str, Any]:
             "live_model_call_performed": custody["live_model_call_performed"],
         },
         "closed_surface_flags": _closed_surface_flags(custody),
+        **_top_level_false_retention_flags(),
     }
     _reject_forbidden_packet(packet)
     return packet
@@ -279,6 +346,22 @@ def _broker_live_deferred_model_call_custody() -> dict[str, Any]:
     }
 
 
+def _live_adapter_model_call_custody() -> dict[str, Any]:
+    custody = _broker_live_deferred_model_call_custody()
+    custody.update(
+        {
+            "author_model_call_mode": "live_adapter",
+            "author_model_call_status": "completed_live_adapter",
+            "author_model_call_source": "external_live_model_adapter",
+            "model_calls_used": 1,
+            "live_model_call_performed": True,
+            "broker_live_adapter_deferred": False,
+            "broker_live_execution_enabled": True,
+        }
+    )
+    return custody
+
+
 def _closed_surface_flags(custody: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "model_execution_allowed": False,
@@ -310,6 +393,22 @@ def _closed_surface_flags(custody: Mapping[str, Any]) -> dict[str, Any]:
         "full_trace_retained": custody["full_trace_retained"],
         "search_fetch_retrieval_executed": False,
     }
+
+
+def _top_level_false_retention_flags() -> dict[str, bool]:
+    return dict.fromkeys(
+        "raw_prompt_retained raw_provider_payload_retained raw_model_response_retained private_logs_retained db_cache_rows_retained full_trace_retained secrets_returned".split(),
+        False,
+    )
+
+
+def _author_live_adapter_path(adapter_path: str) -> Path:
+    candidate = Path(adapter_path).expanduser().resolve()
+    if not candidate.is_file():
+        raise AF6AFailClosed("configured Author live adapter path is not a file")
+    if candidate.suffix.casefold() != ".py":
+        raise AF6AFailClosed("configured Author live adapter must be a Python file")
+    return candidate
 
 
 def _output_path(output: str) -> Path:

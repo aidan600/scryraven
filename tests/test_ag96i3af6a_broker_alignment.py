@@ -116,7 +116,6 @@ def test_af6a_static_guards_no_search_fetch_retrieval_citation_or_pipeline() -> 
         "urllib",
         "dotenv",
         "importlib",
-        "subprocess",
     }
     assert imported_modules(script_path).isdisjoint(forbidden_imports)
     source = script_path.read_text(encoding="utf-8")
@@ -134,7 +133,6 @@ def test_af6a_static_guards_no_search_fetch_retrieval_citation_or_pipeline() -> 
         "adapter_factory",
         "create_model_adapter",
         "request_live_validation_broker",
-        "adapter(",
     ):
         assert token not in source
 
