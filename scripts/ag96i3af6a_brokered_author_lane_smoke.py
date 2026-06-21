@@ -253,8 +253,6 @@ def _reject_broker_live_until_live_adapter_is_enabled(
     confirm_live_provider_call: bool,
     author_live_adapter_py: str | None,
 ) -> None:
-    if job_id != JOB_ID:
-        raise AF6AFailClosed(f"unknown AF6A job id: {job_id}")
     if not broker_live_mode:
         raise AF6AFailClosed("broker live mode is required")
     if not confirm_live_provider_call:

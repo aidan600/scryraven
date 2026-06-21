@@ -6,6 +6,8 @@ from typing import Any
 
 import scripts.ag96i3af6a_brokered_author_lane_smoke as af6a
 
+JOB_LABEL = "ag96i3af6d-live-author-smoke"
+
 
 def test_broker_live_without_adapter_path_fails_closed_and_writes_sanitized_json(
     tmp_path: Path, monkeypatch: Any
@@ -19,6 +21,7 @@ def test_broker_live_without_adapter_path_fails_closed_and_writes_sanitized_json
         packet["model_calls_used"],
         packet["live_model_call_performed"],
     ) == (False, "deferred", "broker_live_deferred", 0, False)
+    assert packet["job_id"] == JOB_LABEL
     _assert_sanitized(packet)
 
 
@@ -36,6 +39,7 @@ def test_broker_live_with_external_adapter_completes_author_chain_and_writes_san
     assert packet["ok"] is True
     assert packet["status"] == "completed"
     assert packet["mode"] == "live_adapter"
+    assert packet["job_id"] == JOB_LABEL
     assert packet["chain"] == ["AF4B2", "AF4C", "AF4D", "AF5A", "AF5B"]
     assert all(
         packet[field]
@@ -59,7 +63,7 @@ def _run(tmp_path: Path, monkeypatch: Any, *, adapter: Path | None = None) -> tu
     output = tmp_path / "output" / "packet.json"
     argv = [
         "--job-id",
-        af6a.JOB_ID,
+        JOB_LABEL,
         "--broker-live-mode",
         "--confirm-live-provider-call",
         "--output",
