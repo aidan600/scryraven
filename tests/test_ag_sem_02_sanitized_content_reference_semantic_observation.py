@@ -213,10 +213,10 @@ def test_sensitive_metadata_and_raw_payload_fields_are_scrubbed_or_rejected() ->
         structured_value={
             "safe_value": "$184,500",
             "raw_page": "SENTINEL_RAW_PAGE",
-            "nested": {"api_key": "SENTINEL_API_KEY", "safe_nested": "kept"},
+            "nested": {"api_key": "SENTINEL_API_KEY", "safe_nested": "kept"},  # pragma: allowlist secret
         },
         metadata={
-            "password": "SENTINEL_PASSWORD",
+            "password": "SENTINEL_PASSWORD",  # pragma: allowlist secret
             "safe_metadata": "kept",
         },
     ).require_valid()
