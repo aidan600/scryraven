@@ -351,6 +351,15 @@ from core.followup_sufficiency_recheck_runtime import (
 from core.followup_sufficiency_recheck_runtime import (
     FOLLOWUP_SUFFICIENCY_RECHECK_STAGE as FOLLOWUP_SUFFICIENCY_RECHECK_STAGE_NAME,
 )
+from core.initial_answer_contract_acceptance_runtime import (
+    INITIAL_ANSWER_CONTRACT_ACCEPTANCE_REASON,
+    InitialAnswerContractAcceptanceError,
+    build_initial_answer_contract_acceptance_projection,
+    build_initial_answer_contract_acceptance_state,
+)
+from core.initial_answer_contract_acceptance_runtime import (
+    INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE as INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME,
+)
 
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
@@ -358,6 +367,9 @@ ROUTE_REQUEST_STAGE = "route_request"
 QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 RUN_CONTRACT_STAGE = "run_contract"
+INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
+    INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
+)
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
@@ -454,6 +466,7 @@ class ActionType(str, Enum):
 
     ROUTE_REQUEST = "route_request"
     RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
+    INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -514,6 +527,7 @@ class ObservationType(str, Enum):
 
     ROUTE_RESULT = "route_result"
     RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
+    INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -816,6 +830,11 @@ class RunState:
     run_contract: dict[str, Any] = field(default_factory=dict)
     run_contract_projection: dict[str, Any] = field(default_factory=dict)
     run_contract_validation: dict[str, Any] = field(default_factory=dict)
+    initial_answer_contract: dict[str, Any] = field(default_factory=dict)
+    initial_answer_contract_projection: dict[str, Any] = field(default_factory=dict)
+    initial_answer_contract_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     search_work_plan: dict[str, Any] = field(default_factory=dict)
     search_work_plan_projection: dict[str, Any] = field(default_factory=dict)
     search_work_plan_validation: dict[str, Any] = field(default_factory=dict)
@@ -1062,6 +1081,13 @@ class RunState:
             run_contract=deepcopy(self.run_contract),
             run_contract_projection=deepcopy(self.run_contract_projection),
             run_contract_validation=deepcopy(self.run_contract_validation),
+            initial_answer_contract=deepcopy(self.initial_answer_contract),
+            initial_answer_contract_projection=deepcopy(
+                self.initial_answer_contract_projection
+            ),
+            initial_answer_contract_history=deepcopy(
+                self.initial_answer_contract_history
+            ),
             search_work_plan=deepcopy(self.search_work_plan),
             search_work_plan_projection=deepcopy(self.search_work_plan_projection),
             search_work_plan_validation=deepcopy(self.search_work_plan_validation),
@@ -1328,6 +1354,9 @@ class KernelTraceProjection:
     run_contract: Mapping[str, Any]
     run_contract_projection: Mapping[str, Any]
     run_contract_validation: Mapping[str, Any]
+    initial_answer_contract: Mapping[str, Any]
+    initial_answer_contract_projection: Mapping[str, Any]
+    initial_answer_contract_history: Sequence[Mapping[str, Any]]
     search_work_plan: Mapping[str, Any]
     search_work_plan_projection: Mapping[str, Any]
     search_work_plan_validation: Mapping[str, Any]
@@ -1438,6 +1467,14 @@ class KernelTraceProjection:
             "run_contract": _safe_mapping(self.run_contract),
             "run_contract_projection": _safe_mapping(self.run_contract_projection),
             "run_contract_validation": _safe_mapping(self.run_contract_validation),
+            "initial_answer_contract": _safe_mapping(self.initial_answer_contract),
+            "initial_answer_contract_projection": _safe_mapping(
+                self.initial_answer_contract_projection
+            ),
+            "initial_answer_contract_history": [
+                _safe_mapping(item)
+                for item in self.initial_answer_contract_history
+            ],
             "search_work_plan": _safe_mapping(self.search_work_plan),
             "search_work_plan_projection": _safe_mapping(
                 self.search_work_plan_projection
@@ -1804,6 +1841,41 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.RUN_CONTRACT_SYNTHESIZED,
+        )
+
+    def authorize_initial_answer_contract_acceptance(
+        self,
+        *,
+        parent_question_meaning_record_id: str,
+        parent_proposal_digest: str,
+        request_id: str | None = None,
+        reason: str = INITIAL_ANSWER_CONTRACT_ACCEPTANCE_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not _clean_text(parent_question_meaning_record_id, limit=160):
+            raise RunKernelTransitionError(
+                "initial answer contract acceptance requires a parent "
+                "QuestionMeaningRecord id binding"
+            )
+        if not _clean_text(parent_proposal_digest, limit=128):
+            raise RunKernelTransitionError(
+                "initial answer contract acceptance requires a parent proposal "
+                "digest binding"
+            )
+        merged_inputs = {
+            "parent_question_meaning_record_id": parent_question_meaning_record_id,
+            "parent_proposal_digest": parent_proposal_digest,
+            "request_id": request_id or self.state.request_id,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE,
+            action_type=ActionType.INITIAL_ANSWER_CONTRACT_ACCEPT,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED
+            ),
         )
 
     def authorize_search_work_plan_construction(
@@ -8522,6 +8594,40 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.run_contract_projection
             )
+        elif action.action_type is ActionType.INITIAL_ANSWER_CONTRACT_ACCEPT:
+            proposal_payload = _safe_mapping(
+                observation.payload.get("question_meaning_record")
+            )
+            if not proposal_payload:
+                raise RunKernelTransitionError(
+                    "initial answer contract acceptance observation requires a "
+                    "question_meaning_record proposal payload"
+                )
+            if self.state.initial_answer_contract_projection:
+                raise RunKernelTransitionError(
+                    "initial answer contract has already been accepted for this run"
+                )
+            try:
+                acceptance_state = build_initial_answer_contract_acceptance_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    question_meaning_record=proposal_payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                )
+                acceptance_projection = (
+                    build_initial_answer_contract_acceptance_projection(
+                        acceptance_state=acceptance_state
+                    )
+                )
+            except InitialAnswerContractAcceptanceError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.initial_answer_contract = acceptance_state
+            self.state.initial_answer_contract_projection = acceptance_projection
+            self.state.initial_answer_contract_history.append(
+                deepcopy(acceptance_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(acceptance_projection)
         elif action.action_type is ActionType.SEARCH_WORK_PLAN_CONSTRUCT:
             construction_result = _safe_mapping(
                 observation.payload.get("construction_result")
