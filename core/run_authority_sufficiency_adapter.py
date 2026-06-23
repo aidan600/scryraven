@@ -11,6 +11,9 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from core.run_authority_sufficiency import RunSufficiencyJudgmentInput
+from core.sufficiency_semantic_state_consumption_runtime import (
+    build_semantic_state_facts_for_sufficiency,
+)
 
 
 def build_sufficiency_judgment_input_from_runtime(
@@ -33,8 +36,17 @@ def build_sufficiency_judgment_input_from_runtime(
     iterations_run: int,
     max_iterations: int,
     recovery_attempt_count: int,
+    initial_answer_contract: Mapping[str, Any] | None = None,
+    component_coverage_history: Sequence[Mapping[str, Any]] = (),
+    contract_amendment_admission_history: Sequence[Mapping[str, Any]] = (),
 ) -> RunSufficiencyJudgmentInput:
     """Build the AG-92C sufficiency input from runtime facts."""
+
+    semantic_state_facts = build_semantic_state_facts_for_sufficiency(
+        initial_answer_contract=initial_answer_contract or {},
+        component_coverage_history=component_coverage_history,
+        contract_amendment_admission_history=contract_amendment_admission_history,
+    )
 
     return RunSufficiencyJudgmentInput(
         contract_projection=contract_projection,
@@ -70,6 +82,7 @@ def build_sufficiency_judgment_input_from_runtime(
             "recovery_attempts": recovery_attempt_count,
             "budget_exhausted": iterations_run >= max_iterations,
         },
+        semantic_state_facts=semantic_state_facts,
     )
 
 

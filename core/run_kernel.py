@@ -11583,6 +11583,11 @@ def _canonical_sufficiency_judgment_projection(
         "mandatory_caveats": judgment_projection.get("mandatory_caveats", []),
         "prohibited_upgrades": judgment_projection.get("prohibited_upgrades", []),
         "readiness_reasons": judgment_projection.get("readiness_reasons", []),
+        "semantic_consumption": judgment_projection.get("semantic_consumption", {}),
+        "semantic_state_facts_summary": judgment_projection.get(
+            "semantic_state_facts_summary",
+            {},
+        ),
         "final_packet_inputs": judgment_projection.get("final_packet_inputs", {}),
         "rationale": judgment_projection.get("rationale"),
         "validation_status": validation_mapping.get("status")
