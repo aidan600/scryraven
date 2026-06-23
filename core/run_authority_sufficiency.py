@@ -263,6 +263,7 @@ class RunSufficiencyJudgmentInput:
     indirect_inference_facts: Mapping[str, Any] = field(default_factory=dict)
     weak_failure_facts: Mapping[str, Any] = field(default_factory=dict)
     budget: Mapping[str, Any] = field(default_factory=dict)
+    semantic_state_facts: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
         contract = _safe_mapping(self.contract_projection)
@@ -334,6 +335,29 @@ class RunSufficiencyJudgmentInput:
             "indirect_inference_facts": _safe_mapping(self.indirect_inference_facts),
             "weak_failure_facts": _safe_mapping(self.weak_failure_facts),
             "budget": _safe_mapping(self.budget),
+            "semantic_state_ref": self._semantic_state_model_ref(),
+        }
+
+    def _semantic_state_model_ref(self) -> dict[str, Any]:
+        facts = _safe_mapping(self.semantic_state_facts)
+        blockers = facts.get("blockers") if isinstance(facts.get("blockers"), list) else []
+        blocker_codes = [
+            clean_token(item.get("code"))
+            for item in blockers
+            if isinstance(item, Mapping) and clean_token(item.get("code"))
+        ]
+        return {
+            "schema_version": clean_token(facts.get("schema_version")),
+            "accepted_contract_version": clean_token(facts.get("accepted_contract_version")),
+            "accepted_contract_digest": clean_token(facts.get("accepted_contract_digest")),
+            "required_component_count": facts.get("required_component_count", 0),
+            "covered_component_count": facts.get("covered_component_count", 0),
+            "blocker_count": len(blockers),
+            "blocker_codes": blocker_codes[:_MAX_LIST_ITEMS],
+            "direct_answer_blocked": bool(facts.get("direct_answer_blocked")),
+            "finalization_blocked": bool(facts.get("finalization_blocked")),
+            "component_summary_count": len(facts.get("component_summaries") or []),
+            "amendment_summary_count": len(facts.get("amendment_summaries") or []),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -369,6 +393,7 @@ class RunSufficiencyJudgment:
     prompt_hash: str | None = None
     prompt_length: int = 0
     model_identity: Mapping[str, Any] = field(default_factory=dict)
+    semantic_consumption: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         decision = (
@@ -450,6 +475,11 @@ class RunSufficiencyJudgment:
         object.__setattr__(self, "model_identity", _safe_mapping(self.model_identity))
         object.__setattr__(
             self,
+            "semantic_consumption",
+            _safe_mapping(self.semantic_consumption),
+        )
+        object.__setattr__(
+            self,
             "final_packet_inputs",
             _safe_mapping(self.final_packet_inputs)
             or self._default_final_packet_inputs(),
@@ -512,6 +542,7 @@ class RunSufficiencyJudgment:
             prompt_hash=clean_token(payload.get("prompt_hash")),
             prompt_length=int(payload.get("prompt_length") or 0),
             model_identity=_safe_mapping(payload.get("model_identity")),
+            semantic_consumption=_safe_mapping(payload.get("semantic_consumption")),
         )
 
     def _default_final_packet_inputs(self) -> dict[str, Any]:
@@ -643,11 +674,34 @@ class RunSufficiencyJudgment:
                 "prompt_hash": clean_token(self.prompt_hash),
                 "prompt_length": int(self.prompt_length or 0),
                 "model_identity": dict(self.model_identity),
+                "semantic_consumption": dict(self.semantic_consumption),
+                "semantic_state_facts_summary": self._semantic_state_facts_summary(),
                 "prompt_text_retained": False,
                 "model_response_text_retained": False,
                 "provider_payload_retained": False,
             }
         )
+
+    def _semantic_state_facts_summary(self) -> dict[str, Any]:
+        consumption = _safe_mapping(self.semantic_consumption)
+        if consumption:
+            return {
+                "schema_version": clean_token(consumption.get("schema_version")),
+                "semantic_state_facts_digest": clean_token(
+                    consumption.get("semantic_state_facts_digest"),
+                    limit=128,
+                ),
+                "direct_answer_blocked": bool(consumption.get("direct_answer_blocked")),
+                "finalization_blocked": bool(consumption.get("finalization_blocked")),
+                "blocker_codes": list(consumption.get("blocker_codes") or []),
+                "required_component_count": consumption.get("required_component_count", 0),
+                "covered_component_count": consumption.get("covered_component_count", 0),
+                "amendment_admission_count": consumption.get(
+                    "amendment_admission_count",
+                    0,
+                ),
+            }
+        return {}
 
 
 __all__ = [

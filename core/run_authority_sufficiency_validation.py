@@ -19,6 +19,11 @@ from core.run_authority_sufficiency import (
     clean_token,
     stable_hash,
 )
+from core.sufficiency_semantic_state_consumption_runtime import (
+    SemanticSufficiencyOverlay,
+    build_semantic_consumption_summary,
+    evaluate_semantic_sufficiency_overlay,
+)
 
 _PROTECTED_KINDS = frozenset(
     {
@@ -988,6 +993,72 @@ def _decision_and_posture(
     )
 
 
+def _semantic_assessment(payload: Mapping[str, Any]) -> SufficiencyRequirementAssessment:
+    return SufficiencyRequirementAssessment(
+        requirement_id=str(payload.get("requirement_id") or "semantic:unknown"),
+        requirement_kind=str(payload.get("requirement_kind") or "semantic_component_coverage"),
+        component_id=clean_token(payload.get("component_id")),
+        status=str(payload.get("status") or "missing"),
+        reason=clean_text(payload.get("reason"), limit=260),
+    )
+
+
+def _apply_semantic_decision_overlay(
+    decision: RunSufficiencyDecision,
+    posture: SufficiencyPosture,
+    final_allowed: bool,
+    rationale: str,
+    overlay: SemanticSufficiencyOverlay,
+) -> tuple[RunSufficiencyDecision, SufficiencyPosture, bool, str]:
+    if overlay.finalization_blocked:
+        return (
+            RunSufficiencyDecision.BLOCK_FINALIZATION,
+            SufficiencyPosture.BLOCKED,
+            False,
+            "semantic_state_blocks_finalization",
+        )
+    if not overlay.direct_answer_blocked:
+        return decision, posture, final_allowed, rationale
+    if decision is RunSufficiencyDecision.READY_DIRECT:
+        return (
+            RunSufficiencyDecision.INSUFFICIENT_EVIDENCE,
+            SufficiencyPosture.INSUFFICIENT_ANSWER,
+            False,
+            "semantic_state_blocks_direct_answer",
+        )
+    if posture is SufficiencyPosture.DIRECT_ANSWER:
+        return (
+            decision,
+            SufficiencyPosture.INSUFFICIENT_ANSWER,
+            False,
+            "semantic_state_blocks_direct_answer",
+        )
+    if decision in {
+        RunSufficiencyDecision.READY_WITH_CAVEATS,
+        RunSufficiencyDecision.PARTIAL_ANSWER_AUTHORIZED,
+    } and posture is SufficiencyPosture.DIRECT_ANSWER:
+        return (
+            decision,
+            SufficiencyPosture.ANSWER_WITH_CAVEATS,
+            False,
+            "semantic_state_blocks_direct_answer",
+        )
+    return decision, posture, False, rationale or "semantic_state_blocks_direct_answer"
+
+
+def _semantic_readiness_reasons(overlay: SemanticSufficiencyOverlay) -> tuple[str, ...]:
+    reasons = [
+        clean_token(item.get("code"))
+        for item in overlay.blockers
+        if isinstance(item, Mapping) and clean_token(item.get("code"))
+    ]
+    if overlay.direct_answer_blocked:
+        reasons.append("semantic_direct_answer_blocked")
+    if overlay.finalization_blocked:
+        reasons.append("semantic_finalization_blocked")
+    return tuple(dict.fromkeys(reason for reason in reasons if reason))
+
+
 def build_deterministic_sufficiency_judgment(
     judgment_input: RunSufficiencyJudgmentInput,
 ) -> RunSufficiencyJudgment:
@@ -1002,6 +1073,9 @@ def build_deterministic_sufficiency_judgment(
     inference_facts = _mapping(judgment_input.indirect_inference_facts)
     weak_facts = _mapping(judgment_input.weak_failure_facts)
     budget = _mapping(judgment_input.budget)
+    semantic_overlay = evaluate_semantic_sufficiency_overlay(
+        judgment_input.semantic_state_facts,
+    )
 
     ledger_requirements = _ledger_requirements(ledger)
     missing: list[SufficiencyRequirementAssessment] = []
@@ -1043,6 +1117,13 @@ def build_deterministic_sufficiency_judgment(
                     ledger_requirement=ledger_requirement,
                 )
             )
+
+    for semantic_missing in semantic_overlay.missing_assessments:
+        assessment = _semantic_assessment(semantic_missing)
+        if not any(
+            existing.requirement_id == assessment.requirement_id for existing in missing
+        ):
+            missing.append(assessment)
 
     for item in _answer_contract_missing(answer_contract):
         if not any(
@@ -1112,6 +1193,13 @@ def build_deterministic_sufficiency_judgment(
         search_satisfied=search_satisfied,
         final_evidence_count=final_evidence_count,
     )
+    decision, posture, final_allowed, rationale = _apply_semantic_decision_overlay(
+        decision,
+        posture,
+        final_allowed,
+        rationale,
+        semantic_overlay,
+    )
     readiness_reasons = _readiness_reasons(
         missing=missing,
         partial=partial,
@@ -1121,6 +1209,9 @@ def build_deterministic_sufficiency_judgment(
         weak=weak,
         failure_card=failure_card,
         search_insufficient=search_insufficient,
+    )
+    readiness_reasons = tuple(
+        dict.fromkeys((*readiness_reasons, *_semantic_readiness_reasons(semantic_overlay)))
     )
     mandatory = _mandatory_caveats(
         contract=contract,
@@ -1133,6 +1224,9 @@ def build_deterministic_sufficiency_judgment(
         failure_card=failure_card,
         failure_card_reason=failure_reason,
     )
+    mandatory = tuple(
+        dict.fromkeys((*mandatory, *semantic_overlay.mandatory_caveats))
+    )
     prohibited = _prohibited_upgrades(
         contract=contract,
         missing=missing,
@@ -1142,12 +1236,22 @@ def build_deterministic_sufficiency_judgment(
         weak=weak,
         failure_card=failure_card,
     )
+    prohibited = tuple(
+        dict.fromkeys((*prohibited, *semantic_overlay.prohibited_upgrades))
+    )
     required_satisfied = not missing and not any(
         item.status == "partial" and item.requirement_kind != "reputable_secondary"
         for item in partial
     )
     if not _required_contract_requirements(contract) and final_evidence_count > 0:
         required_satisfied = True
+    if semantic_overlay.direct_answer_blocked or semantic_overlay.finalization_blocked:
+        required_satisfied = False
+
+    semantic_consumption = build_semantic_consumption_summary(
+        judgment_input.semantic_state_facts,
+        overlay=semantic_overlay,
+    )
 
     judgment = RunSufficiencyJudgment(
         judgment_id=f"sufficiency:{stable_hash(judgment_input.to_model_payload())[:16]}",
@@ -1172,6 +1276,7 @@ def build_deterministic_sufficiency_judgment(
         prohibited_upgrades=prohibited,
         readiness_reasons=readiness_reasons,
         rationale=rationale,
+        semantic_consumption=semantic_consumption,
     )
     final_packet_inputs = dict(judgment.final_packet_inputs)
     existing_flags = _mapping(final_packet_inputs.get("behavior_boundary_flags"))
@@ -1204,6 +1309,13 @@ def _unsafe_direct_model_posture(
         return "model_ready_direct_launders_inference"
     if deterministic.weak_or_thin_evidence or deterministic.failure_card_authorized:
         return "model_ready_direct_ignores_weak_or_failure_posture"
+    semantic_consumption = _mapping(deterministic.semantic_consumption)
+    if semantic_consumption.get("direct_answer_blocked") or semantic_consumption.get(
+        "finalization_blocked"
+    ):
+        return "model_ready_direct_with_semantic_blockers"
+    if deterministic.decision is RunSufficiencyDecision.BLOCK_FINALIZATION:
+        return "model_ready_direct_with_semantic_finalization_block"
     return None
 
 
@@ -1361,6 +1473,24 @@ def validate_or_repair_sufficiency_judgment(
         reasons.append("restored_weak_or_thin_evidence")
     if failure_card and not model_judgment.failure_card_authorized:
         reasons.append("restored_failure_card_authorization")
+    semantic_consumption = _mapping(deterministic_judgment.semantic_consumption)
+    if semantic_consumption.get("direct_answer_blocked") and model_judgment.final_answer_allowed:
+        reasons.append("restored_semantic_direct_answer_block")
+    if semantic_consumption.get("finalization_blocked") and (
+        model_judgment.decision is not RunSufficiencyDecision.BLOCK_FINALIZATION
+        or model_judgment.final_answer_posture is not SufficiencyPosture.BLOCKED
+    ):
+        reasons.append("restored_semantic_finalization_block")
+    semantic_missing = tuple(
+        item
+        for item in deterministic_judgment.missing_required_obligations
+        if str(item.requirement_kind).startswith("semantic_")
+    )
+    if semantic_missing and not any(
+        str(item.requirement_kind).startswith("semantic_")
+        for item in model_judgment.missing_required_obligations
+    ):
+        reasons.append("restored_semantic_missing_obligations")
 
     if reasons:
         repaired = replace(
@@ -1394,6 +1524,23 @@ def validate_or_repair_sufficiency_judgment(
                     + tuple(deterministic_judgment.readiness_reasons)
                 )
             ),
+            final_answer_allowed=(
+                False
+                if semantic_consumption.get("direct_answer_blocked")
+                or semantic_consumption.get("finalization_blocked")
+                else model_judgment.final_answer_allowed
+            ),
+            decision=(
+                RunSufficiencyDecision.BLOCK_FINALIZATION
+                if semantic_consumption.get("finalization_blocked")
+                else model_judgment.decision
+            ),
+            final_answer_posture=(
+                SufficiencyPosture.BLOCKED
+                if semantic_consumption.get("finalization_blocked")
+                else model_judgment.final_answer_posture
+            ),
+            semantic_consumption=semantic_consumption,
             final_packet_inputs={},
         )
         validation = SufficiencyValidationResult(
