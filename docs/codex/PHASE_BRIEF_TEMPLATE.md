@@ -48,7 +48,7 @@ Phase-end publication:
 - For Git metadata or publication, request approval for the exact command only.
 - Do not request Full Access or repair auth/ACL/sandbox during the phase.
 - After implementation, tests, and self-review, exact-approved commands may push the completed phase branch and create a pull request into main.
-- Do not merge, squash, rebase, force-push, delete branches, reset, clean destructively, or alter main.
+- Do not merge, squash, rebase, force-push, delete remote branches, delete non-temporary branches, reset, clean destructively, or alter main. Exact-approved deletion of a local temporary cleanup branch is allowed only under docs/codex/CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md.
 
 Primary outcome:
 <One sentence: what this phase must accomplish.>
