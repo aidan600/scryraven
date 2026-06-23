@@ -89,6 +89,50 @@ _FORBIDDEN_AUTHORITY_FIELDS = frozenset(
 _SUPPORT_BEARING_STATUSES = frozenset({"supports", "contradicts", "qualifies"})
 _ANSWER_BEARING_KINDS = frozenset({"support", "contradiction", "qualification"})
 
+# Closed posture flags that must never arrive truthy / present-as-authority on a
+# passive observation payload. Reconstructing the AG-SEM-02 record would force
+# these back to their safe defaults, so they are inspected and rejected on the
+# raw payload *before* reconstruction rather than silently cleaned.
+_OBSERVATION_UNSAFE_POSTURE_KEYS = (
+    "canonical_state",
+    "coverage_decision",
+    "component_satisfied",
+    "final_answer_authority",
+    "author_input_created",
+    "runtime_behavior_changed",
+    "accepted_authority",
+    "accepted_contract_amendment",
+    "final_answer_decision",
+    "answer_decision",
+    "sufficiency_decision",
+    "sufficiency_judgment",
+    "final_answer_packet",
+    "author_input",
+    "canonical_coverage",
+    "component_coverage_record",
+    "contract_amendment_record",
+)
+
+# Content-reference posture flags that must be safe before reconstruction. The
+# retention/authority flags must never be unsafe; the bounded/sanitized/trace
+# guards must never be explicitly disabled.
+_CONTENT_REF_UNSAFE_IF_TRUE = (
+    "accepted_authority",
+    "raw_content_retained",
+    "raw_provider_payload_retained",
+    "raw_prompt_retained",
+    "raw_model_response_retained",
+    "private_logs_retained",
+    "db_cache_rows_retained",
+    "full_trace_retained",
+    "secrets_returned",
+)
+_CONTENT_REF_UNSAFE_IF_DISABLED = (
+    "sanitized",
+    "bounded",
+    "trace_only",
+)
+
 # Action-input keys that must bind the admission to the observation and the
 # accepted initial answer contract.
 _REQUIRED_INPUT_KEYS = (
@@ -202,6 +246,40 @@ def _safe_mapping(value: Any) -> dict[str, Any]:
         return {}
     safe = _json_safe(dict(value))
     return dict(safe) if isinstance(safe, Mapping) else {}
+
+
+def _reject_unsafe_observation_posture(payload: Mapping[str, Any]) -> None:
+    """Reject an authority-tainted observation payload before reconstruction.
+
+    Reconstructing the AG-SEM-02 ``SemanticObservation`` would normalize closed
+    posture flags back to their safe defaults; this guard inspects the raw
+    payload first so a tainted proposal is rejected rather than silently cleaned.
+    """
+
+    tainted = sorted(key for key in _OBSERVATION_UNSAFE_POSTURE_KEYS if payload.get(key))
+    if tainted:
+        raise SemanticObservationAdmissionError(
+            "semantic observation payload carries closed authority posture: " + ", ".join(tainted)
+        )
+
+
+def _reject_unsafe_content_reference_posture(payload: Mapping[str, Any]) -> None:
+    """Reject an authority/retention-tainted content-ref payload before reconstruction.
+
+    Reconstructing the AG-SEM-02 ``SanitizedContentReference`` would force the
+    retention/sanitization posture back to safe defaults; this guard inspects the
+    raw payload first so an unsafe content ref is rejected rather than cleaned.
+    """
+
+    content_ref_id = _clean_token(payload.get("content_ref_id")) or "<unknown>"
+    tainted = sorted(key for key in _CONTENT_REF_UNSAFE_IF_TRUE if payload.get(key))
+    disabled = sorted(key for key in _CONTENT_REF_UNSAFE_IF_DISABLED if key in payload and not payload.get(key))
+    problems = tainted + [f"{key}_disabled" for key in disabled]
+    if problems:
+        raise SemanticObservationAdmissionError(
+            f"sanitized content reference {content_ref_id} carries unsafe retention/authority posture: "
+            + ", ".join(problems)
+        )
 
 
 def _reconstruct_content_reference(payload: Mapping[str, Any]) -> SanitizedContentReference:
@@ -424,32 +502,47 @@ def build_semantic_observation_admission_state(
             "accepted initial answer contract has no accepted answer component refs"
         )
 
-    # 2. Parse the passive observation proposal and its content references.
-    payload = _safe_mapping(observation_payload)
-    if not payload:
+    # 2. Parse the passive observation proposal and its content references. The
+    #    raw incoming mappings are retained so posture/retention flags can be
+    #    inspected before any sensitive-key scrubbing normalizes them away.
+    raw_payload = observation_payload if isinstance(observation_payload, Mapping) else {}
+    if not raw_payload:
         raise SemanticObservationAdmissionError("semantic observation admission requires an observation payload")
-    observation_dict = _safe_mapping(payload.get("semantic_observation"))
-    if not observation_dict:
+    raw_observation_dict = raw_payload.get("semantic_observation")
+    raw_observation_dict = dict(raw_observation_dict) if isinstance(raw_observation_dict, Mapping) else {}
+    if not raw_observation_dict:
         raise SemanticObservationAdmissionError(
             "semantic observation admission requires a semantic_observation proposal payload"
         )
-    raw_content_refs = payload.get("sanitized_content_references")
+    raw_content_refs = raw_payload.get("sanitized_content_references")
     if raw_content_refs is None:
-        raw_content_refs = payload.get("content_references")
-    content_ref_dicts: list[dict[str, Any]] = []
+        raw_content_refs = raw_payload.get("content_references")
+    raw_content_ref_dicts: list[dict[str, Any]] = []
     for ref in raw_content_refs or ():
+        if isinstance(ref, Mapping):
+            raw_content_ref_dicts.append(dict(ref))
+
+    # 3. Reject authority/retention-tainted payloads *before* any scrubbing or
+    #    reconstruction so closed posture flags are not silently normalized back
+    #    to safe defaults (reconstruction would otherwise clean them).
+    _reject_unsafe_observation_posture(raw_observation_dict)
+    for ref_dict in raw_content_ref_dicts:
+        _reject_unsafe_content_reference_posture(ref_dict)
+
+    # 4. Sanitize the payloads, then re-check closed authority surfaces on the
+    #    sanitized view and reconstruct records so digests recompute from content.
+    payload = _safe_mapping(raw_payload)
+    observation_dict = _safe_mapping(raw_observation_dict)
+    content_ref_dicts: list[dict[str, Any]] = []
+    for ref in raw_content_ref_dicts:
         ref_mapping = _safe_mapping(ref)
         if ref_mapping:
             content_ref_dicts.append(ref_mapping)
-
-    # 3. Closed authority surfaces must never appear in the admitted payload.
     forbidden = sorted(_collect_keys(payload) & _FORBIDDEN_AUTHORITY_FIELDS)
     if forbidden:
         raise SemanticObservationAdmissionError(
             "observation payload includes closed authority fields: " + ", ".join(forbidden)
         )
-
-    # 4. Reconstruct records so digests are recomputed from actual content.
     observation = _reconstruct_observation(observation_dict)
     content_references = [_reconstruct_content_reference(ref) for ref in content_ref_dicts]
 

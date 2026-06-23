@@ -579,13 +579,107 @@ def test_sensitive_fields_are_scrubbed_and_closed_authority_is_rejected() -> Non
     content_ref = _content_ref(accepted)
     observation = _observation(accepted)
     tainted_observation = observation.to_dict()
-    tainted_observation["sufficiency_judgment"] = {"decision": "sufficient"}
+    # "coverage" is a closed authority surface caught by the forbidden-fields
+    # check (it is not one of the pre-reconstruction posture flags).
+    tainted_observation["coverage"] = {"decision": "covered"}
     tainted = {
         "semantic_observation": tainted_observation,
         "sanitized_content_references": [content_ref.to_dict()],
     }
     with pytest.raises(RunKernelTransitionError, match="closed authority fields"):
         _admit(kernel, observation, (content_ref,), payload=tainted)
+
+
+def test_observation_with_coverage_decision_is_rejected_before_reconstruction() -> None:
+    kernel, accepted = _start_accepted_kernel()
+    _seed_evidence_ledger(kernel)
+    content_ref = _content_ref(accepted)
+    observation = _observation(accepted)
+    tainted = observation.to_dict()
+    tainted["coverage_decision"] = True
+    payload = {
+        "semantic_observation": tainted,
+        "sanitized_content_references": [content_ref.to_dict()],
+    }
+    with pytest.raises(RunKernelTransitionError, match="closed authority posture"):
+        _admit(kernel, observation, (content_ref,), payload=payload)
+
+
+def test_observation_with_accepted_authority_or_runtime_behavior_changed_is_rejected() -> None:
+    for flag in ("accepted_authority", "runtime_behavior_changed"):
+        kernel, accepted = _start_accepted_kernel()
+        _seed_evidence_ledger(kernel)
+        content_ref = _content_ref(accepted)
+        observation = _observation(accepted)
+        tainted = observation.to_dict()
+        tainted[flag] = True
+        payload = {
+            "semantic_observation": tainted,
+            "sanitized_content_references": [content_ref.to_dict()],
+        }
+        with pytest.raises(RunKernelTransitionError, match="closed authority posture"):
+            _admit(kernel, observation, (content_ref,), payload=payload)
+
+
+def test_observation_with_component_satisfied_or_final_answer_authority_is_rejected() -> None:
+    for flag in ("component_satisfied", "final_answer_authority"):
+        kernel, accepted = _start_accepted_kernel()
+        _seed_evidence_ledger(kernel)
+        content_ref = _content_ref(accepted)
+        observation = _observation(accepted)
+        tainted = observation.to_dict()
+        tainted[flag] = True
+        payload = {
+            "semantic_observation": tainted,
+            "sanitized_content_references": [content_ref.to_dict()],
+        }
+        with pytest.raises(RunKernelTransitionError, match="closed authority posture"):
+            _admit(kernel, observation, (content_ref,), payload=payload)
+
+
+def test_content_ref_with_unsafe_retention_or_authority_posture_is_rejected() -> None:
+    for flag in ("raw_content_retained", "accepted_authority"):
+        kernel, accepted = _start_accepted_kernel()
+        _seed_evidence_ledger(kernel)
+        content_ref = _content_ref(accepted)
+        observation = _observation(accepted)
+        tainted_ref = content_ref.to_dict()
+        tainted_ref[flag] = True
+        payload = {
+            "semantic_observation": observation.to_dict(),
+            "sanitized_content_references": [tainted_ref],
+        }
+        with pytest.raises(RunKernelTransitionError, match="unsafe retention/authority posture"):
+            _admit(kernel, observation, (content_ref,), payload=payload)
+
+
+def test_content_ref_with_sanitized_or_bounded_disabled_is_rejected() -> None:
+    for flag in ("sanitized", "bounded"):
+        kernel, accepted = _start_accepted_kernel()
+        _seed_evidence_ledger(kernel)
+        content_ref = _content_ref(accepted)
+        observation = _observation(accepted)
+        tainted_ref = content_ref.to_dict()
+        tainted_ref[flag] = False
+        payload = {
+            "semantic_observation": observation.to_dict(),
+            "sanitized_content_references": [tainted_ref],
+        }
+        with pytest.raises(RunKernelTransitionError, match="unsafe retention/authority posture"):
+            _admit(kernel, observation, (content_ref,), payload=payload)
+
+
+def test_clean_observation_and_content_ref_still_admits_after_posture_guard() -> None:
+    kernel, accepted = _start_accepted_kernel()
+    _seed_evidence_ledger(kernel)
+    content_ref = _content_ref(accepted)
+    observation = _observation(accepted)
+
+    _admit(kernel, observation, (content_ref,))
+
+    state = kernel.state.semantic_observation_admission_state
+    assert state["canonical_state"] is True
+    assert state["observation_id"] == observation.observation_id
 
 
 def test_static_guard_keeps_live_and_authority_surfaces_closed() -> None:
