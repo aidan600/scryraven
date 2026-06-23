@@ -1481,6 +1481,8 @@ def validate_or_repair_sufficiency_judgment(
         or model_judgment.final_answer_posture is not SufficiencyPosture.BLOCKED
     ):
         reasons.append("restored_semantic_finalization_block")
+    if semantic_consumption.get("finalization_blocked") and model_judgment.final_answer_allowed:
+        reasons.append("restored_semantic_finalization_answer_allowed_false")
     semantic_missing = tuple(
         item
         for item in deterministic_judgment.missing_required_obligations

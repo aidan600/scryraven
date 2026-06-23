@@ -891,6 +891,36 @@ def test_model_ready_direct_over_semantic_blockers_is_repaired() -> None:
     assert repaired.final_answer_allowed is False
 
 
+def test_model_block_finalization_with_answer_allowed_true_is_repaired() -> None:
+    from core.run_authority_sufficiency_validation import validate_or_repair_sufficiency_judgment
+
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    accepted = _accept_contract(kernel)
+    deterministic = _judgment_with_semantic(
+        accepted,
+        coverage_history=[
+            _coverage_history_entry(
+                accepted,
+                stale=True,
+                coverage_state="stale",
+            )
+        ],
+    )
+    model_payload = dict(deterministic.to_projection())
+    model_payload["final_answer_allowed"] = True
+
+    repaired, validation = validate_or_repair_sufficiency_judgment(
+        model_payload,
+        deterministic_judgment=deterministic,
+        model_attempted=True,
+    )
+
+    assert validation.status.value == "repaired"
+    assert repaired.final_answer_allowed is False
+    assert "restored_semantic_finalization_answer_allowed_false" in validation.reasons
+    assert repaired.semantic_consumption["finalization_blocked"] is True
+
+
 def test_projection_digest_is_deterministic() -> None:
     kernel = _kernel_with_semantic()
     one = _judgment(kernel).to_projection()["semantic_state_facts_summary"]["semantic_state_facts_digest"]
