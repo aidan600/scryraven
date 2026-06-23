@@ -389,12 +389,15 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     for forbidden in (
         harness.author_prompts[0],
         "FINAL ANSWER PACKET AUTHORITY",
-        "official current rule says the program uses the current eligibility rule",
         "provider_payload_text",
         "OPENAI_API_KEY",
         "TAVILY_API_KEY",
     ):
         assert forbidden not in canonical_trace
+    assert state.initial_answer_contract
+    assert state.semantic_observation_admission_history
+    assert state.component_coverage_history
+    assert "bounded_excerpt" in canonical_trace
     assert RAW_AUTHOR_RESPONSE not in canonical_trace
     assert harness.author_prompts[0] not in execution_trace
     for retained_flag in (

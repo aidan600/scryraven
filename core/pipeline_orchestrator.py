@@ -135,6 +135,9 @@ from core.ordinary_continuation_spine_gate import (
     scout_continuation_spine_gate_defaults,
     scout_continuation_spine_gate_exception_trace,
 )
+from core.ordinary_semantic_producer_runtime import (
+    execute_ordinary_semantic_producer_handoff_from_scope,
+)
 from core.persistence_side_effects import execute_persistence_side_effects
 from core.pipeline import (
     _quant_retrieval_sufficiency_shadow_telemetry,
@@ -3487,6 +3490,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_notes = author_prompt_assembly.author_notes
 
     status.step("Judging final answer sufficiency...")
+    execute_ordinary_semantic_producer_handoff_from_scope(run_kernel, locals())
     sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
         run_kernel,
         locals(),
