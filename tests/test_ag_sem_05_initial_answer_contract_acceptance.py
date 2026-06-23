@@ -10,6 +10,7 @@ import pytest
 from core.initial_answer_contract_acceptance_runtime import (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_SCHEMA_VERSION,
     InitialAnswerContractAcceptanceError,
+    _recompute_proposal_digest,
     build_initial_answer_contract_acceptance_projection,
     build_initial_answer_contract_acceptance_state,
 )
@@ -114,6 +115,20 @@ def _qmr(
 
 def _start_kernel() -> RunKernel:
     return RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+
+
+def _reseal(payload: dict[str, object]) -> str:
+    """Recompute and re-stamp a payload's content digest after a mutation.
+
+    Defense-in-depth tests mutate a proposal payload to probe a specific
+    downstream check (component shape, run/request binding). The content
+    integrity check now fires first on any altered content, so these tests must
+    re-seal the payload with a digest that matches its mutated content.
+    """
+
+    digest = _recompute_proposal_digest(payload)
+    payload["record_digest"] = digest
+    return digest
 
 
 def _accept(
@@ -223,24 +238,32 @@ def test_empty_or_invalid_answer_components_are_rejected() -> None:
 
     empty_payload = deepcopy(base_payload)
     empty_payload["answer_components"] = []
+    empty_digest = _reseal(empty_payload)
     kernel = _start_kernel()
     with pytest.raises(RunKernelTransitionError, match="at least one accepted answer component"):
-        _accept(kernel, qmr, payload={"question_meaning_record": empty_payload})
+        _accept(kernel, qmr, parent_digest=empty_digest, payload={"question_meaning_record": empty_payload})
 
     missing_field_payload = deepcopy(base_payload)
     missing_field_payload["answer_components"][0].pop("component_digest")
+    missing_field_digest = _reseal(missing_field_payload)
     kernel = _start_kernel()
     with pytest.raises(RunKernelTransitionError, match="component_digest"):
-        _accept(kernel, qmr, payload={"question_meaning_record": missing_field_payload})
+        _accept(
+            kernel,
+            qmr,
+            parent_digest=missing_field_digest,
+            payload={"question_meaning_record": missing_field_payload},
+        )
 
     duplicate_payload = deepcopy(base_payload)
     duplicate_payload["answer_components"] = [
         deepcopy(base_payload["answer_components"][0]),
         deepcopy(base_payload["answer_components"][0]),
     ]
+    duplicate_digest = _reseal(duplicate_payload)
     kernel = _start_kernel()
     with pytest.raises(RunKernelTransitionError, match="duplicate answer component"):
-        _accept(kernel, qmr, payload={"question_meaning_record": duplicate_payload})
+        _accept(kernel, qmr, parent_digest=duplicate_digest, payload={"question_meaning_record": duplicate_payload})
 
 
 def test_mismatched_proposal_action_run_request_binding_is_rejected() -> None:
@@ -256,15 +279,74 @@ def test_mismatched_proposal_action_run_request_binding_is_rejected() -> None:
 
     wrong_run_payload = qmr.to_dict()
     wrong_run_payload["run_id"] = "run:some-other-run"
+    wrong_run_digest = _reseal(wrong_run_payload)
     kernel = _start_kernel()
     with pytest.raises(RunKernelTransitionError, match="run_id does not match"):
-        _accept(kernel, qmr, payload={"question_meaning_record": wrong_run_payload})
+        _accept(kernel, qmr, parent_digest=wrong_run_digest, payload={"question_meaning_record": wrong_run_payload})
 
     wrong_request_payload = qmr.to_dict()
     wrong_request_payload["request_id"] = "request:other"
+    wrong_request_digest = _reseal(wrong_request_payload)
     kernel = _start_kernel()
     with pytest.raises(RunKernelTransitionError, match="request_id does not match"):
-        _accept(kernel, qmr, payload={"question_meaning_record": wrong_request_payload})
+        _accept(
+            kernel,
+            qmr,
+            parent_digest=wrong_request_digest,
+            payload={"question_meaning_record": wrong_request_payload},
+        )
+
+
+def test_tampered_proposal_with_stale_record_digest_is_rejected() -> None:
+    qmr = _qmr()
+
+    # Tamper with proposal content while keeping the original, content-derived
+    # record_digest and the action's bound parent_proposal_digest unchanged.
+    payload = qmr.to_dict()
+    payload["answer_components"][0]["component_digest"] = "tampered-component-digest"
+    payload["answer_components"][0]["mandatory_caveats"] = ["Injected caveat."]
+    payload["semantic_slots"][0]["selected_value"] = "tampered value"
+    payload["answer_components"].append(
+        {
+            "component_id": "component:injected",
+            "component_revision": "1",
+            "component_digest": "deadbeef" * 8,
+            "requirement_posture": "required",
+            "materiality": "material",
+        }
+    )
+    # The declared digest is the stale original; the content no longer matches it.
+    assert payload["record_digest"] == qmr.record_digest
+
+    kernel = _start_kernel()
+    with pytest.raises(RunKernelTransitionError, match="proposal digest does not match payload content"):
+        _accept(kernel, qmr, payload={"question_meaning_record": payload})
+
+    # The clean, unmodified proposal still accepts.
+    clean_kernel = _start_kernel()
+    _accept(clean_kernel, qmr)
+    assert clean_kernel.state.initial_answer_contract["canonical_state"] is True
+
+
+def test_builder_rejects_tampered_payload_with_stale_digest() -> None:
+    qmr = _qmr()
+    payload = qmr.to_dict()
+    payload["answer_components"][0]["mandatory_caveats"] = ["Injected caveat."]
+    # record_digest and the bound parent_proposal_digest remain the original.
+    assert payload["record_digest"] == qmr.record_digest
+
+    with pytest.raises(InitialAnswerContractAcceptanceError, match="payload content"):
+        build_initial_answer_contract_acceptance_state(
+            action_id="action:sem-05",
+            action_inputs={
+                "parent_question_meaning_record_id": qmr.record_id,
+                "parent_proposal_digest": qmr.record_digest,
+                "request_id": REQUEST_ID,
+            },
+            question_meaning_record=payload,
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+        )
 
 
 def test_duplicate_and_stale_reduction_is_rejected() -> None:

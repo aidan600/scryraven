@@ -221,6 +221,55 @@ def _contract_content_digest_payload(state_core: Mapping[str, Any]) -> dict[str,
     }
 
 
+def _proposal_record_digest_payload(record: Mapping[str, Any]) -> dict[str, Any]:
+    """Rebuild the content-derived digest payload of a QuestionMeaningRecord.
+
+    This mirrors ``QuestionMeaningRecord._record_digest``: it covers the same
+    semantic-contract fields, excludes volatile wrapper fields (``trace_key``,
+    ``record_digest``, ``validation``), and drops ``contract_lineage``'s
+    ``proposal_digest``. Keys absent from the trimmed ``to_dict`` payload fall
+    back to the defaults the record digest was computed over.
+    """
+
+    lineage = dict(record.get("contract_lineage") or {})
+    lineage.pop("proposal_digest", None)
+    return {
+        "schema_version": record.get("schema_version"),
+        "record_id": record.get("record_id"),
+        "run_id": record.get("run_id"),
+        "request_id": record.get("request_id"),
+        "request_digest": record.get("request_digest"),
+        "requested_mode": record.get("requested_mode"),
+        "resolver_kind": record.get("resolver_kind"),
+        "resolver_version": record.get("resolver_version"),
+        "intent": record.get("intent"),
+        "requested_output": record.get("requested_output"),
+        "semantic_slots": record.get("semantic_slots", []),
+        "answer_components": record.get("answer_components", []),
+        "source_obligation_candidate_refs": record.get("source_obligation_candidate_refs", []),
+        "query_shape_assessment_ref": record.get("query_shape_assessment_ref"),
+        "search_work_plan_ref": record.get("search_work_plan_ref"),
+        "material_ambiguity_count": record.get("material_ambiguity_count", 0),
+        "user_confirmation_required": record.get("user_confirmation_required", False),
+        "contract_lineage": lineage,
+        "materiality_policy": record.get("materiality_policy", {}),
+        "metadata": record.get("metadata", {}),
+        "passive": record.get("passive", True),
+        "canonical_state": record.get("canonical_state", False),
+        "runtime_behavior_changed": record.get("runtime_behavior_changed", False),
+        "accepted_authority": record.get("accepted_authority", False),
+        "runtime_consumed": record.get("runtime_consumed", False),
+        "constructs_search_work_plan": record.get("constructs_search_work_plan", False),
+        "provider_search_behavior_changed": record.get("provider_search_behavior_changed", False),
+    }
+
+
+def _recompute_proposal_digest(record: Mapping[str, Any]) -> str:
+    """Recompute the content-derived proposal digest from the payload itself."""
+
+    return _digest_json(_proposal_record_digest_payload(record))
+
+
 def build_initial_answer_contract_acceptance_state(
     *,
     action_id: str,
@@ -289,6 +338,19 @@ def build_initial_answer_contract_acceptance_state(
         raise InitialAnswerContractAcceptanceError("parent proposal id binding does not match the proposal record_id")
     if expected_parent_digest != parent_digest:
         raise InitialAnswerContractAcceptanceError("parent proposal digest binding does not match the proposal digest")
+
+    # The proposal digest is content-derived; recompute it from the payload to
+    # reject a stale or tampered proposal that keeps the declared record_digest
+    # while altering answer components, slots, caveats, or other content.
+    recomputed_digest = _recompute_proposal_digest(record)
+    if recomputed_digest != parent_digest:
+        raise InitialAnswerContractAcceptanceError(
+            "stale proposal payload: proposal digest does not match payload content"
+        )
+    if recomputed_digest != expected_parent_digest:
+        raise InitialAnswerContractAcceptanceError(
+            "parent proposal digest binding does not match recomputed proposal digest"
+        )
 
     record_run_id = _clean_token(record.get("run_id"))
     if record_run_id and record_run_id != clean_run_id:
