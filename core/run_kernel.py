@@ -8,6 +8,7 @@ ranking/citation/final-answer code.
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
@@ -387,6 +388,15 @@ from core.semantic_observation_admission_runtime import (
 from core.semantic_observation_admission_runtime import (
     SEMANTIC_OBSERVATION_ADMISSION_STAGE as SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME,
 )
+from core.sufficiency_semantic_consumption_runtime import (
+    SUFFICIENCY_SEMANTIC_CONSUMPTION_REASON,
+    SufficiencySemanticConsumptionError,
+    build_sufficiency_semantic_consumption_projection,
+    build_sufficiency_semantic_consumption_state,
+)
+from core.sufficiency_semantic_consumption_runtime import (
+    SUFFICIENCY_SEMANTIC_CONSUMPTION_STAGE as SUFFICIENCY_SEMANTIC_CONSUMPTION_STAGE_NAME,
+)
 
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
@@ -402,6 +412,7 @@ SEMANTIC_OBSERVATION_ADMISSION_STAGE = (
 )
 COMPONENT_COVERAGE_REDUCTION_STAGE = COMPONENT_COVERAGE_REDUCTION_STAGE_NAME
 CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
+SUFFICIENCY_SEMANTIC_CONSUMPTION_STAGE = SUFFICIENCY_SEMANTIC_CONSUMPTION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
@@ -502,6 +513,7 @@ class ActionType(str, Enum):
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
+    SUFFICIENCY_SEMANTIC_CONSUME = "sufficiency_semantic_consume"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -566,6 +578,7 @@ class ObservationType(str, Enum):
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
+    SUFFICIENCY_SEMANTIC_CONSUMED = "sufficiency_semantic_consumed"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -892,6 +905,15 @@ class RunState:
     contract_amendment_admission_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    sufficiency_semantic_consumption_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    sufficiency_semantic_consumption_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    sufficiency_semantic_consumption_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     search_work_plan: dict[str, Any] = field(default_factory=dict)
     search_work_plan_projection: dict[str, Any] = field(default_factory=dict)
     search_work_plan_validation: dict[str, Any] = field(default_factory=dict)
@@ -1165,6 +1187,15 @@ class RunState:
             ),
             contract_amendment_admission_history=deepcopy(
                 self.contract_amendment_admission_history
+            ),
+            sufficiency_semantic_consumption_state=deepcopy(
+                self.sufficiency_semantic_consumption_state
+            ),
+            sufficiency_semantic_consumption_projection=deepcopy(
+                self.sufficiency_semantic_consumption_projection
+            ),
+            sufficiency_semantic_consumption_history=deepcopy(
+                self.sufficiency_semantic_consumption_history
             ),
             search_work_plan=deepcopy(self.search_work_plan),
             search_work_plan_projection=deepcopy(self.search_work_plan_projection),
@@ -1444,6 +1475,9 @@ class KernelTraceProjection:
     contract_amendment_admission_state: Mapping[str, Any]
     contract_amendment_admission_projection: Mapping[str, Any]
     contract_amendment_admission_history: Sequence[Mapping[str, Any]]
+    sufficiency_semantic_consumption_state: Mapping[str, Any]
+    sufficiency_semantic_consumption_projection: Mapping[str, Any]
+    sufficiency_semantic_consumption_history: Sequence[Mapping[str, Any]]
     search_work_plan: Mapping[str, Any]
     search_work_plan_projection: Mapping[str, Any]
     search_work_plan_validation: Mapping[str, Any]
@@ -1588,6 +1622,16 @@ class KernelTraceProjection:
             "contract_amendment_admission_history": [
                 _safe_mapping(item)
                 for item in self.contract_amendment_admission_history
+            ],
+            "sufficiency_semantic_consumption_state": _safe_mapping(
+                self.sufficiency_semantic_consumption_state
+            ),
+            "sufficiency_semantic_consumption_projection": _safe_mapping(
+                self.sufficiency_semantic_consumption_projection
+            ),
+            "sufficiency_semantic_consumption_history": [
+                _safe_mapping(item)
+                for item in self.sufficiency_semantic_consumption_history
             ],
             "search_work_plan": _safe_mapping(self.search_work_plan),
             "search_work_plan_projection": _safe_mapping(
@@ -2173,6 +2217,61 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.CONTRACT_AMENDMENT_ADMITTED,
+        )
+
+    def authorize_sufficiency_semantic_consumption(
+        self,
+        *,
+        semantic_consumption_id: str,
+        accepted_contract_digest: str | None = None,
+        accepted_contract_version: str | None = None,
+        request_id: str | None = None,
+        reason: str = SUFFICIENCY_SEMANTIC_CONSUMPTION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.initial_answer_contract_projection:
+            raise RunKernelTransitionError(
+                "sufficiency semantic consumption requires an accepted initial answer contract"
+            )
+        if not self.state.semantic_observation_admission_history:
+            raise RunKernelTransitionError(
+                "sufficiency semantic consumption requires at least one admitted "
+                "SemanticObservation"
+            )
+        if not self.state.component_coverage_history:
+            raise RunKernelTransitionError(
+                "sufficiency semantic consumption requires at least one reduced "
+                "ComponentCoverageRecord"
+            )
+        accepted = self.state.initial_answer_contract
+        resolved_contract_digest = (
+            accepted_contract_digest or accepted.get("accepted_contract_digest")
+        )
+        resolved_contract_version = (
+            accepted_contract_version or accepted.get("accepted_contract_version")
+        )
+        for label, value in (
+            ("semantic_consumption_id", semantic_consumption_id),
+            ("accepted_contract_digest", resolved_contract_digest),
+            ("accepted_contract_version", resolved_contract_version),
+        ):
+            if not _clean_text(value, limit=200):
+                raise RunKernelTransitionError(
+                    "sufficiency semantic consumption requires " f"{label} binding"
+                )
+        merged_inputs = {
+            "semantic_consumption_id": semantic_consumption_id,
+            "accepted_contract_digest": resolved_contract_digest,
+            "accepted_contract_version": resolved_contract_version,
+            "request_id": request_id or self.state.request_id,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=SUFFICIENCY_SEMANTIC_CONSUMPTION_STAGE,
+            action_type=ActionType.SUFFICIENCY_SEMANTIC_CONSUME,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.SUFFICIENCY_SEMANTIC_CONSUMED,
         )
 
     def authorize_search_work_plan_construction(
@@ -9072,6 +9171,67 @@ class RunKernel:
                 deepcopy(amendment_projection)
             )
             self.state.projections[action.stage] = deepcopy(amendment_projection)
+        elif action.action_type is ActionType.SUFFICIENCY_SEMANTIC_CONSUME:
+            if not self.state.initial_answer_contract_projection:
+                raise RunKernelTransitionError(
+                    "sufficiency semantic consumption requires an accepted "
+                    "initial answer contract"
+                )
+            consumption_payload = _safe_mapping(observation.payload)
+            existing_ids = [
+                _safe_mapping(item).get("semantic_consumption_id")
+                for item in self.state.sufficiency_semantic_consumption_history
+            ]
+            existing_digests = [
+                _safe_mapping(item).get("semantic_consumption_digest")
+                for item in self.state.sufficiency_semantic_consumption_history
+            ]
+            contract_before = json.dumps(
+                self.state.initial_answer_contract,
+                sort_keys=True,
+            )
+            coverage_before = json.dumps(
+                self.state.component_coverage_history,
+                sort_keys=True,
+            )
+            try:
+                consumption_state = build_sufficiency_semantic_consumption_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    consumption_payload=consumption_payload,
+                    accepted_contract=self.state.initial_answer_contract,
+                    admission_history=self.state.semantic_observation_admission_history,
+                    coverage_history=self.state.component_coverage_history,
+                    amendment_admission_history=(
+                        self.state.contract_amendment_admission_history
+                    ),
+                    evidence_ledger_projection=(
+                        self.state.evidence_ledger.to_projection().to_dict()
+                    ),
+                    existing_semantic_consumption_ids=existing_ids,
+                    existing_semantic_consumption_digests=existing_digests,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                )
+                consumption_projection = build_sufficiency_semantic_consumption_projection(
+                    consumption_state=consumption_state
+                )
+            except SufficiencySemanticConsumptionError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            if json.dumps(self.state.initial_answer_contract, sort_keys=True) != contract_before:
+                raise RunKernelTransitionError(
+                    "sufficiency semantic consumption must not mutate initial_answer_contract"
+                )
+            if json.dumps(self.state.component_coverage_history, sort_keys=True) != coverage_before:
+                raise RunKernelTransitionError(
+                    "sufficiency semantic consumption must not mutate component coverage history"
+                )
+            self.state.sufficiency_semantic_consumption_state = consumption_state
+            self.state.sufficiency_semantic_consumption_projection = consumption_projection
+            self.state.sufficiency_semantic_consumption_history.append(
+                deepcopy(consumption_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(consumption_projection)
         elif action.action_type is ActionType.SEARCH_WORK_PLAN_CONSTRUCT:
             construction_result = _safe_mapping(
                 observation.payload.get("construction_result")
