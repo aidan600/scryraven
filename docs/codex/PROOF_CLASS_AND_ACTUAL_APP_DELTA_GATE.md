@@ -138,6 +138,10 @@ Do not deepen the Author harness by default.
 
 ## Semantic-contract phase example
 
+For the current AG-SEM-05 through AG-SEM-10 completion checkpoint and next gates,
+see
+`docs/architecture/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md`.
+
 For AG-SEM-01 Passive Semantic Contract Foundation:
 
 ```text

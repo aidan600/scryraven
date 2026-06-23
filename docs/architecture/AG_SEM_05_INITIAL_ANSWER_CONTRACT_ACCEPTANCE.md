@@ -4,7 +4,9 @@ Status: Canonical authority bridge. First canonical semantic authority bridge.
 
 ## Proof Class
 
-`offline_product_path_proof`
+`offline_product_path_proof`, qualified as a canonical RunKernel reducer proof
+only. This is not ordinary semantic producer activation and must not be described
+as ordinary product-path completion.
 
 ## Scope
 
@@ -16,7 +18,9 @@ canonical initial answer-component contract state owned by RunKernel.
 The product-path delta is limited to RunKernel canonical state. Given an
 authorized action and a validated passive proposal, RunKernel creates canonical
 initial answer-component contract state with exact component IDs, revisions,
-digests, parent proposal binding, lineage, projection, and history.
+digests, parent proposal binding, lineage, projection, and history. Ordinary
+product execution does not yet create these semantic records by itself; the
+bridge condition is a future ordinary semantic producer vertical slice.
 
 ## Actual App Delta
 
@@ -67,6 +71,9 @@ question, invent answer components, resolve material ambiguity, add assumptions,
 remove or weaken requirements, create coverage, create amendments, decide
 Sufficiency, authorize follow-up, or create Author input. Material ambiguity in
 the proposal is preserved as unresolved or ambiguous and is never resolved.
+
+This phase proves a real canonical RunKernel reducer/authority bridge, not a
+mere passive schema. It does not prove ordinary semantic producer activation.
 
 ## Validation And Rejection
 
