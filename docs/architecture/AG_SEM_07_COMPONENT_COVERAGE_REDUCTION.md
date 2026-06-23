@@ -4,7 +4,9 @@ Status: Canonical authority bridge. Third canonical semantic authority bridge.
 
 ## Proof Class
 
-`offline_product_path_proof`
+`offline_product_path_proof`, qualified as a canonical RunKernel reducer proof
+only. This is not ordinary semantic producer activation and must not be described
+as ordinary product-path completion.
 
 ## Scope
 
@@ -22,6 +24,9 @@ This phase reduces coverage only. It does not consume coverage in Sufficiency,
 amend the contract, decide SearchJudgment, activate QueryPlan/SearchWorkPlan,
 authorize follow-up, create Author input, change search/provider behavior, or
 change final-answer or citation behavior.
+
+Ordinary product execution does not yet create these semantic records by itself;
+the bridge condition is a future ordinary semantic producer vertical slice.
 
 ## Actual App Delta
 
@@ -93,6 +98,9 @@ the accepted component carries a stronger source obligation. Partial,
 unsupported, unknown, or insufficient coverage may still report weak evidence
 honestly without claiming satisfied readiness.
 
+For the compact completion status and next gates after AG-SEM-10, see
+[`AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md`](AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md).
+
 ## Validation And Rejection
 
 Reduction requires an accepted AG-SEM-05 initial answer contract, at least one
@@ -125,6 +133,9 @@ no SearchJudgment / QueryPlan / SearchWorkPlan / follow-up behavior, no
 FinalAnswerPacket or Author behavior, no provider/search/retrieval/fetch/read
 behavior, no citation behavior, no live validation, and no
 `core/pipeline_orchestrator.py` changes (expected delta 0).
+
+This phase proves a real canonical RunKernel reducer/authority bridge, not a
+mere passive schema. It does not prove ordinary semantic producer activation.
 
 ## Relationship To Prior AG-SEM Phases
 

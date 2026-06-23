@@ -49,6 +49,12 @@ Phase-end publication:
 - Do not request Full Access or repair auth/ACL/sandbox during the phase.
 - After implementation, tests, and self-review, exact-approved commands may push the completed phase branch and create a pull request into main.
 - Do not merge, squash, rebase, force-push, delete remote branches, delete non-temporary branches, reset, clean destructively, or alter main. Exact-approved deletion of a local temporary cleanup branch is allowed only under docs/codex/CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md.
+- Local Codex hard stop: do not use PowerShell here-strings, Set-Content,
+  Add-Content, Out-File, generated shell scripts, encoded commands,
+  Invoke-Expression, git apply fallback, Defender exclusions,
+  ACL/auth/sandbox repair, or Full Access as implementation workarounds. If
+  native patch/edit, Git publication, or PR creation fails, stop and report the
+  exact command/error.
 
 Primary outcome:
 <One sentence: what this phase must accomplish.>

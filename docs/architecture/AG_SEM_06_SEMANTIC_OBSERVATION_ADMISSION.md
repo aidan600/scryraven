@@ -4,7 +4,9 @@ Status: Canonical authority bridge. Second canonical semantic authority bridge.
 
 ## Proof Class
 
-`offline_product_path_proof`
+`offline_product_path_proof`, qualified as a canonical RunKernel reducer proof
+only. This is not ordinary semantic producer activation and must not be described
+as ordinary product-path completion.
 
 ## Scope
 
@@ -21,6 +23,9 @@ canonical semantic-observation admission state, projection, and history.
 This phase admits observations only. It does not reduce coverage, amend the
 contract, decide Sufficiency, create Author input, change search/provider
 behavior, or change final-answer behavior.
+
+Ordinary product execution does not yet create these semantic records by itself;
+the bridge condition is a future ordinary semantic producer vertical slice.
 
 ## Actual App Delta
 
@@ -121,6 +126,13 @@ ledger casefolds candidate ids and maps hyphens/spaces to underscores; the
 admission bridge normalizes cited refs into that same identity space before
 comparison.
 
+This identity/custody presence check is an admission integrity rule only. It is
+not final coverage qualification. After AG-SEM-10, satisfied component coverage
+requires ledger-qualified, source-obligation-compatible evidence, including
+current custody facts, readable/fetchable candidate posture, relevant
+requirement links, source-obligation satisfaction, and official/current
+compatibility when the accepted component demands it.
+
 ## Closed Surfaces
 
 This phase does not add a `ComponentCoverageRecord` reducer, a
@@ -130,6 +142,9 @@ This phase does not add a `ComponentCoverageRecord` reducer, a
 behavior, provider/search/retrieval/fetch/read behavior, or citation behavior. It
 does not turn `SemanticObservation` into coverage or satisfaction authority and
 does not introduce a generic semantic framework.
+
+This phase proves a real canonical RunKernel reducer/authority bridge, not a
+mere passive schema. It does not prove ordinary semantic producer activation.
 
 No live validation is allowed. `core/pipeline_orchestrator.py` is unchanged
 (expected delta 0). No package/CLI/env rename is performed.

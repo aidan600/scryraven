@@ -38,10 +38,13 @@ are repo files; use repo-visible files and the current phase prompt.
 
 - **General architecural workflow and Path B PR process:**
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
-- **Current AG-SEM posture:** AG-SEM-01 and AG-SEM-02 are merged. AG-SEM-03
-  `ComponentCoverageRecord` schema is the next likely passive semantic phase.
-  Name the proof class and validation bucket before implementation. For
-  historical AG-96 context, read
+- **Current AG-SEM posture:** AG-SEM-05 through AG-SEM-10 have completed the
+  canonical reducer and conditional Sufficiency-consumption chain. Start with
+  `docs/architecture/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md`. The next
+  recommended gate is an ordinary semantic producer vertical slice. Balanced,
+  follow-up, and Author semantic payloads remain closed until specifically
+  licensed. Name the proof class and validation bucket before implementation.
+  For historical AG-96 context, read
   `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
 - **AG-89+ RunAuthority / authority-collapse work:**
   [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).

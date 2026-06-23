@@ -17,10 +17,12 @@ judgment, model repair guards, and Sufficiency projection pass-through. Semantic
 blockers are enforced in `build_deterministic_sufficiency_judgment` and preserved
 by `validate_or_repair_sufficiency_judgment`.
 
-This phase consumes semantic state in Sufficiency only. It does not mutate accepted
-contracts, apply amendments, invalidate coverage, authorize follow-up, decide
-SearchJudgment, activate QueryPlan/SearchWorkPlan, create Author input, change
-search/provider behavior, or change FinalAnswerPacket behavior.
+This phase consumes semantic state in the real Sufficiency path only when
+canonical semantic state exists. It does not activate ordinary semantic
+producers. It does not mutate accepted contracts, apply amendments, invalidate
+coverage, authorize follow-up, decide SearchJudgment, activate
+QueryPlan/SearchWorkPlan, create Author input, change search/provider behavior,
+or change FinalAnswerPacket behavior.
 
 ## What Was Not Built
 
@@ -50,6 +52,11 @@ search/provider behavior, or change FinalAnswerPacket behavior.
 `RunKernel.RunAuthoritySufficiencyJudgment` is the immediate consumer. Semantic
 facts affect actual Sufficiency judgment input, deterministic decision, repair
 guards, and canonical projection.
+
+The product delta is conditional: ordinary runs without canonical semantic state
+do not gain new semantic producer behavior. Direct-answer versus
+partial/finalization behavior remains a follow-on policy gate after the producer
+path and Sufficiency integrity are stable.
 
 ## Semantic Blocker Rules
 
@@ -97,6 +104,9 @@ Sufficiency consumption repair only: it does not activate ordinary semantic
 producers, Balanced, Deep, follow-up, Author semantic payloads,
 provider/search/retrieval behavior, FinalAnswerPacket selection, citation
 behavior, or live validation.
+
+For the compact completion status and next gates after AG-SEM-10, see
+[`AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md`](AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md).
 
 ## Projection Fields
 
