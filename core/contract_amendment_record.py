@@ -563,16 +563,7 @@ class ContractAmendmentRecord:
     def _requires_user_confirmation(self) -> bool:
         if self.materiality is MaterialityPosture.MATERIAL:
             return True
-        return any(
-            operation.operation_kind
-            in {
-                AmendmentOperationKind.RESOLVE_SLOT,
-                AmendmentOperationKind.REVISE_COMPONENT,
-                AmendmentOperationKind.CHANGE_ANSWER_POSTURE,
-            }
-            and operation.touches_material_choice
-            for operation in self.operations
-        )
+        return any(operation.touches_material_choice for operation in self.operations)
 
     def _has_confirmation_or_scenario(self) -> bool:
         return self.user_confirmation_posture in {

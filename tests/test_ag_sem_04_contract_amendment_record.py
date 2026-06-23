@@ -291,6 +291,38 @@ def test_material_slot_change_requires_user_confirmation_or_scenario_treatment()
     assert valid.to_dict()["user_confirmation_posture"] == "explicit_user_confirmation"
 
 
+def test_material_slot_confirmation_applies_to_any_operation_kind() -> None:
+    invalid = _record(
+        operations=(
+            _operation(
+                operation_kind=AmendmentOperationKind.ADD_ASSUMPTION,
+                material_slot_kinds=("load_factor",),
+                payload={"assumption": "assume 85% passenger load factor"},
+            ),
+        ),
+        materiality=MaterialityPosture.NON_MATERIAL,
+        confirmation=UserConfirmationPosture.NOT_REQUIRED,
+        coverage_candidates=(_coverage_candidate(),),
+        stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
+    )
+    valid = _record(
+        operations=(
+            _operation(
+                operation_kind=AmendmentOperationKind.ADD_ASSUMPTION,
+                material_slot_kinds=("load_factor",),
+                payload={"assumption": "assume 85% passenger load factor"},
+            ),
+        ),
+        materiality=MaterialityPosture.NON_MATERIAL,
+        confirmation=UserConfirmationPosture.LABELED_SCENARIO_TREATMENT,
+        coverage_candidates=(_coverage_candidate(),),
+        stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
+    ).require_valid()
+
+    assert any("requires user confirmation" in error for error in invalid.validate().errors)
+    assert valid.to_dict()["user_confirmation_posture"] == "labeled_scenario_treatment"
+
+
 def test_weakening_requires_explicit_user_authority_and_is_not_auto_eligible() -> None:
     invalid = _record(
         operations=(
