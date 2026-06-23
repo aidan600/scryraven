@@ -65,6 +65,13 @@ Coverage-derived blockers (from latest per-component coverage history):
 - missing/unreadable/stale/unknown content availability blocks direct answer
 - evidence not custodied blocks direct answer
 - weak-only evidence basis blocks direct answer
+- AG-SEM-10 ledger qualification blockers block direct answer when satisfied
+  coverage is backed only by evidence identity/custody presence, missing current
+  candidate or custody facts, rejected/dropped/unreadable/unfetchable facts,
+  unqualified or lower-tier/contextual facts, missing relevant requirement links,
+  unsatisfied source requirements, stale/currentness-incompatible evidence, or a
+  `not_applicable` source-obligation posture on a component that carries accepted
+  source obligations
 
 Amendment-derived blockers (from admission history):
 
@@ -80,6 +87,16 @@ Amendment-derived blockers (from admission history):
 
 Semantic `required_caveats` and `prohibited_upgrades` merge into Sufficiency
 `mandatory_caveats` and `prohibited_upgrades`.
+
+AG-SEM-10 revalidates only the current EvidenceLedger facts relevant to the
+latest satisfied coverage record: coverage-bound evidence refs, accepted custody
+facts, source requirement links, and source-obligation statuses. It does not
+require global EvidenceLedger projection digest equality, so unrelated monotonic
+ledger additions do not invalidate satisfied coverage. This remains a
+Sufficiency consumption repair only: it does not activate ordinary semantic
+producers, Balanced, Deep, follow-up, Author semantic payloads,
+provider/search/retrieval behavior, FinalAnswerPacket selection, citation
+behavior, or live validation.
 
 ## Projection Fields
 

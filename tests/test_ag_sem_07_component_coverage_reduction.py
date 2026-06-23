@@ -84,7 +84,10 @@ def _slot() -> SemanticSlot:
     )
 
 
-def _component() -> AnswerComponentContract:
+def _component(
+    *,
+    source_obligation_candidate_ids: tuple[str, ...] = (),
+) -> AnswerComponentContract:
     return AnswerComponentContract(
         component_id=COMPONENT_ID,
         component_revision="1",
@@ -93,13 +96,17 @@ def _component() -> AnswerComponentContract:
         requirement_posture=RequirementPosture.REQUIRED,
         acceptance_criteria=("state the bounded value", "bind it to evidence"),
         semantic_slot_ids=("slot:reporting-period",),
+        source_obligation_candidate_ids=source_obligation_candidate_ids,
         allowed_support_kinds=(SupportKind.DIRECT,),
         max_inference_depth=0,
         materiality=Materiality.MATERIAL,
     )
 
 
-def _qmr() -> QuestionMeaningRecord:
+def _qmr(
+    *,
+    source_obligation_candidate_ids: tuple[str, ...] = (),
+) -> QuestionMeaningRecord:
     return QuestionMeaningRecord(
         record_id="qmr:reported-total",
         run_id=RUN_ID,
@@ -111,13 +118,19 @@ def _qmr() -> QuestionMeaningRecord:
         intent="Answer the reported-total question.",
         requested_output="Concise answer with primary-source support.",
         semantic_slots=(_slot(),),
-        answer_components=(_component(),),
+        answer_components=(
+            _component(source_obligation_candidate_ids=source_obligation_candidate_ids),
+        ),
         metadata={"safe_note": "kept"},
     ).require_valid()
 
 
-def _accept_contract(kernel: RunKernel) -> dict[str, object]:
-    qmr = _qmr()
+def _accept_contract(
+    kernel: RunKernel,
+    *,
+    source_obligation_candidate_ids: tuple[str, ...] = (),
+) -> dict[str, object]:
+    qmr = _qmr(source_obligation_candidate_ids=source_obligation_candidate_ids)
     action = kernel.authorize_initial_answer_contract_acceptance(
         parent_question_meaning_record_id=qmr.record_id,
         parent_proposal_digest=qmr.record_digest,
@@ -132,19 +145,50 @@ def _accept_contract(kernel: RunKernel) -> dict[str, object]:
     return kernel.state.initial_answer_contract
 
 
-def _seed_evidence_ledger(kernel: RunKernel, *, candidate_id: str = EVIDENCE_ID) -> None:
+def _seed_evidence_ledger(
+    kernel: RunKernel,
+    *,
+    candidate_id: str = EVIDENCE_ID,
+    disposition: str = "accepted",
+    source_class: str = "primary_source_documents",
+    source_tier: str = "primary",
+    currentness_signal: str = "current",
+    readable_status: str = "readable",
+    fetchable_status: str = "fetchable",
+    eligible_for_stronger_obligation: bool = True,
+    contextual_only: bool = False,
+    lower_tier: bool = False,
+    final_evidence_eligible: bool = True,
+    requirement_id: str | None = None,
+    requirements: tuple[dict[str, object], ...] = (),
+    requirement_links: tuple[dict[str, object], ...] = (),
+    observation_id: str | None = None,
+) -> None:
+    candidate: dict[str, object] = {
+        "candidate_id": candidate_id,
+        "url": "https://example.org/public-record-notice",
+        "title": "Public record notice",
+        "source_class": source_class,
+        "source_tier": source_tier,
+        "currentness_signal": currentness_signal,
+        "readable_status": readable_status,
+        "fetchable_status": fetchable_status,
+        "disposition": disposition,
+        "record_kind": "fact",
+        "eligible_for_stronger_obligation": eligible_for_stronger_obligation,
+        "contextual_only": contextual_only,
+        "lower_tier": lower_tier,
+        "final_evidence_eligible": final_evidence_eligible,
+    }
+    if requirement_id is not None:
+        candidate["requirement_id"] = requirement_id
     kernel.state.evidence_ledger.reduce_observation(
         {
-            "observation_id": f"evidence-seed:{candidate_id}",
+            "observation_id": observation_id or f"evidence-seed:{candidate_id}",
             "observation_source": "offline_fixture",
-            "candidates": [
-                {
-                    "candidate_id": candidate_id,
-                    "url": "https://example.org/public-record-notice",
-                    "title": "Public record notice",
-                    "source_class": "primary",
-                }
-            ],
+            "requirements": list(requirements),
+            "candidates": [candidate],
+            "requirement_links": list(requirement_links),
         }
     )
 
@@ -231,17 +275,28 @@ def _admit(
     kernel.reduce(reduce_observation)
 
 
-def _start_admitted_kernel() -> tuple[RunKernel, dict[str, object], SemanticObservation, SanitizedContentReference]:
+def _start_admitted_kernel(
+    *,
+    source_obligation_candidate_ids: tuple[str, ...] = (),
+    seed_kwargs: dict[str, object] | None = None,
+) -> tuple[RunKernel, dict[str, object], SemanticObservation, SanitizedContentReference]:
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
-    accepted = _accept_contract(kernel)
-    _seed_evidence_ledger(kernel)
+    accepted = _accept_contract(
+        kernel,
+        source_obligation_candidate_ids=source_obligation_candidate_ids,
+    )
+    _seed_evidence_ledger(kernel, **(seed_kwargs or {}))
     content_ref = _content_ref(accepted)
     observation = _observation(accepted)
     _admit(kernel, accepted, observation, content_ref)
     return kernel, accepted, observation, content_ref
 
 
-def _ledger_binding(kernel: RunKernel) -> EvidenceLedgerSnapshotBinding:
+def _ledger_binding(
+    kernel: RunKernel,
+    *,
+    source_requirement_ids: tuple[str, ...] = (),
+) -> EvidenceLedgerSnapshotBinding:
     projection = kernel.state.evidence_ledger.to_projection().to_dict()
     digest = evidence_ledger_projection_digest(projection)
     observation_refs = tuple(
@@ -254,7 +309,7 @@ def _ledger_binding(kernel: RunKernel) -> EvidenceLedgerSnapshotBinding:
         ledger_schema_version=EVIDENCE_LEDGER_SCHEMA_VERSION,
         ledger_digest=digest,
         custody_status=EvidenceCustodyStatus.CUSTODIED,
-        source_requirement_ids=(),
+        source_requirement_ids=source_requirement_ids,
         ledger_observation_refs=observation_refs,
         version_validity=VersionValidity.VALID,
     )
@@ -281,6 +336,7 @@ def _coverage_record(
     conflict_posture: ConflictPosture = ConflictPosture.NONE,
     currentness_posture: CurrentnessPosture = CurrentnessPosture.CURRENT,
     stale: bool = False,
+    source_requirement_ids: tuple[str, ...] = (),
 ) -> ComponentCoverageRecord:
     component_ref = accepted["accepted_answer_component_refs"][0]
     obs_ref = SemanticObservationCoverageRef(
@@ -305,7 +361,10 @@ def _coverage_record(
         answer_component_id=component_ref["component_id"],
         component_revision=component_ref["component_revision"],
         component_digest=component_ref["component_digest"],
-        evidence_ledger_binding=_ledger_binding(kernel),
+        evidence_ledger_binding=_ledger_binding(
+            kernel,
+            source_requirement_ids=source_requirement_ids,
+        ),
         coverage_state=coverage_state,
         semantic_support_status=semantic_support_status,
         support_posture=SupportPosture.DIRECT,
@@ -684,6 +743,177 @@ def test_satisfied_coverage_without_evidence_ledger_custody_is_rejected() -> Non
     )
     with pytest.raises(RunKernelTransitionError, match="EvidenceLedger custody"):
         _reduce(kernel, accepted, record)
+
+
+OFFICIAL_REQUIREMENT_ID = "source_requirement:official_current_rules"
+
+
+def _official_requirement() -> dict[str, object]:
+    return {
+        "requirement_id": OFFICIAL_REQUIREMENT_ID,
+        "requirement_kind": "official_current",
+        "required_source_class": "official_current_rules",
+        "required_source_tier": "official",
+        "required_currentness": "current",
+    }
+
+
+@pytest.mark.parametrize(
+    ("seed_kwargs", "expected_code"),
+    [
+        ({"disposition": "unknown"}, "ledger_candidate_not_qualified"),
+        ({"disposition": "observed"}, "ledger_candidate_not_qualified"),
+        ({"disposition": "rejected"}, "ledger_candidate_rejected_or_unavailable"),
+        ({"disposition": "dropped"}, "ledger_candidate_rejected_or_unavailable"),
+        (
+            {"readable_status": "unreadable"},
+            "ledger_candidate_unreadable_or_unfetchable",
+        ),
+        (
+            {"fetchable_status": "unfetchable"},
+            "ledger_candidate_unreadable_or_unfetchable",
+        ),
+        (
+            {"final_evidence_eligible": False},
+            "ledger_candidate_not_final_evidence_eligible",
+        ),
+    ],
+)
+def test_satisfied_coverage_rejects_unqualified_ledger_candidate_facts(
+    seed_kwargs: dict[str, object],
+    expected_code: str,
+) -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel(
+        seed_kwargs=seed_kwargs,
+    )
+    record = _coverage_record(accepted, observation, content_ref, kernel)
+
+    with pytest.raises(RunKernelTransitionError, match=f"{expected_code}|custody gaps"):
+        _reduce(kernel, accepted, record)
+
+
+def test_satisfied_coverage_rejects_lower_tier_evidence_for_stronger_source_obligation() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel(
+        source_obligation_candidate_ids=(OFFICIAL_REQUIREMENT_ID,),
+        seed_kwargs={
+            "requirements": (_official_requirement(),),
+            "requirement_id": OFFICIAL_REQUIREMENT_ID,
+            "source_class": "secondary_analysis",
+            "source_tier": "secondary",
+            "lower_tier": True,
+            "eligible_for_stronger_obligation": False,
+        },
+    )
+    record = _coverage_record(
+        accepted,
+        observation,
+        content_ref,
+        kernel,
+        source_obligation_status=SourceObligationStatus.SATISFIED,
+        source_requirement_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="custody gaps|ledger_candidate_too_weak_for_source_obligation",
+    ):
+        _reduce(kernel, accepted, record)
+
+
+def test_satisfied_coverage_rejects_unlinked_relevant_source_requirement() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel(
+        source_obligation_candidate_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+    kernel.state.evidence_ledger.reduce_observation(
+        {
+            "observation_id": "evidence-seed:unlinked-official-requirement",
+            "observation_source": "offline_fixture",
+            "requirements": [_official_requirement()],
+        }
+    )
+    record = _coverage_record(
+        accepted,
+        observation,
+        content_ref,
+        kernel,
+        source_obligation_status=SourceObligationStatus.SATISFIED,
+        source_requirement_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="custody gaps|ledger_candidate_not_linked_to_requirement",
+    ):
+        _reduce(kernel, accepted, record)
+
+
+def test_satisfied_coverage_rejects_unsatisfied_or_stale_source_requirement() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel(
+        source_obligation_candidate_ids=(OFFICIAL_REQUIREMENT_ID,),
+        seed_kwargs={
+            "requirements": (_official_requirement(),),
+            "requirement_id": OFFICIAL_REQUIREMENT_ID,
+            "source_class": "official_current_rules",
+            "source_tier": "official",
+            "currentness_signal": "stale",
+        },
+    )
+    record = _coverage_record(
+        accepted,
+        observation,
+        content_ref,
+        kernel,
+        source_obligation_status=SourceObligationStatus.SATISFIED,
+        source_requirement_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="custody gaps|ledger_candidate_currentness_incompatible",
+    ):
+        _reduce(kernel, accepted, record)
+
+
+def test_satisfied_coverage_rejects_not_applicable_when_component_has_source_obligation() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel(
+        source_obligation_candidate_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+    record = _coverage_record(
+        accepted,
+        observation,
+        content_ref,
+        kernel,
+        source_obligation_status=SourceObligationStatus.NOT_APPLICABLE,
+    )
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="source_obligation_not_applicable_but_required|source_requirement_link_missing",
+    ):
+        _reduce(kernel, accepted, record)
+
+
+def test_satisfied_coverage_accepts_qualified_linked_source_obligation_evidence() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel(
+        source_obligation_candidate_ids=(OFFICIAL_REQUIREMENT_ID,),
+        seed_kwargs={
+            "requirements": (_official_requirement(),),
+            "requirement_id": OFFICIAL_REQUIREMENT_ID,
+            "source_class": "official_current_rules",
+            "source_tier": "official",
+        },
+    )
+    record = _coverage_record(
+        accepted,
+        observation,
+        content_ref,
+        kernel,
+        source_obligation_status=SourceObligationStatus.SATISFIED,
+        source_requirement_ids=(OFFICIAL_REQUIREMENT_ID,),
+    )
+
+    _reduce(kernel, accepted, record)
+    assert kernel.state.component_coverage_projection["coverage_state"] == "satisfied"
 
 
 def test_conflicted_or_followup_required_coverage_cannot_present_as_satisfied() -> None:
