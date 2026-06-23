@@ -1,0 +1,1007 @@
+"""Ordinary semantic producer runtime for AG-SEM-11.
+
+Builds passive AG-SEM-01..03 proposals from ordinary offline runtime facts and
+commits them transactionally through existing AG-SEM-05/06/07 reducers
+immediately before RunAuthority Sufficiency. Partial canonical semantic state is
+prevented by preflight only; this module does not perform compensating mutation.
+"""
+
+from __future__ import annotations
+
+import hashlib
+from dataclasses import dataclass
+from enum import Enum
+from typing import Any, Mapping, Sequence
+from urllib.parse import urlparse
+
+from core.component_coverage_record import (
+    ComponentCoverageRecord,
+    ConflictPosture,
+    ContentAvailabilityStatus,
+    ContentReferenceCoverageBinding,
+    CoverageState,
+    CurrentnessPosture,
+    DerivedSupportStatus,
+    EvidenceBasis,
+    EvidenceCustodyStatus,
+    EvidenceLedgerSnapshotBinding,
+    ExplicitnessPosture,
+    FollowupNeed,
+    ModeBudgetPosture,
+    SemanticObservationCoverageRef,
+    SemanticSupportStatus,
+    SourceObligationStatus,
+    SupportPosture,
+    VersionValidity,
+)
+from core.component_coverage_reduction_runtime import (
+    build_component_coverage_reduction_state,
+    evidence_ledger_projection_digest,
+    ledger_qualification_blockers_for_satisfied_coverage,
+)
+from core.evidence_ledger import EVIDENCE_LEDGER_SCHEMA_VERSION
+from core.initial_answer_contract_acceptance_runtime import (
+    build_initial_answer_contract_acceptance_state,
+)
+from core.query_shape_contract_resolution import ComponentCandidate, QueryShapeAssessment
+from core.search_work_query_shape_runtime import (
+    DeterministicSearchWorkRuntimeInput,
+    build_deterministic_search_work_runtime_records,
+)
+from core.semantic_contract_foundation import (
+    AnswerComponentContract,
+    Materiality,
+    QuestionMeaningRecord,
+    RequirementPosture,
+    SemanticSlot,
+    SemanticSlotKind,
+    SemanticSlotStatus,
+    SupportKind,
+)
+from core.semantic_observation_admission_runtime import (
+    build_semantic_observation_admission_state,
+)
+from core.semantic_observation_foundation import (
+    MAX_BOUNDED_TEXT_CHARS,
+    ContentKind,
+    ObservationKind,
+    SanitizedContentReference,
+    SemanticObservation,
+    SupportDirectness,
+    SupportStatus,
+)
+
+ORDINARY_SEMANTIC_PRODUCER_SCHEMA_VERSION = "ordinary_semantic_producer_ag_sem_11_v1"
+ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION = "ag-sem-11-query-shape-seeded"
+_PREFLIGHT_ACTION_ID = "preflight:ag-sem-11-ordinary-semantic-producer"
+
+_ACCEPTED_DISPOSITIONS = frozenset({"accepted", "observed", "partially_accepted"})
+_READABLE_STATUSES = frozenset({"readable", "available", "ok"})
+
+
+class OrdinarySemanticProducerHandoffStatus(str, Enum):
+    SKIPPED = "skipped"
+    COMMITTED = "committed"
+
+
+class OrdinarySemanticProducerTransactionError(RuntimeError):
+    """Raised when a transactional semantic producer commit fails mid-chain."""
+
+
+@dataclass(frozen=True, slots=True)
+class BindableFinalPassage:
+    passage: dict[str, Any]
+    evidence_ref_id: str
+    candidate_record: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class OrdinarySemanticProducerBundle:
+    question_meaning_record: QuestionMeaningRecord
+    semantic_observation: SemanticObservation
+    sanitized_content_references: tuple[SanitizedContentReference, ...]
+    component_coverage_record: ComponentCoverageRecord
+    dry_run_accepted_contract: dict[str, Any]
+    dry_run_admission_projection: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class OrdinarySemanticProducerHandoffResult:
+    status: OrdinarySemanticProducerHandoffStatus
+    skipped_reason: str | None = None
+
+
+def _clean_text(value: Any, *, limit: int = 500) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).strip().split())
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _clean_token(value: Any, *, limit: int = 160) -> str | None:
+    return _clean_text(value, limit=limit)
+
+
+def _safe_mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _normalize_url(value: Any) -> str | None:
+    text = _clean_text(value, limit=400)
+    if not text:
+        return None
+    return text.casefold().rstrip("/")
+
+
+def _domain_from_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        host = urlparse(url).hostname
+    except ValueError:
+        return None
+    return _clean_token(host, limit=120)
+
+
+def _request_digest(*, query: str, run_id: str) -> str:
+    payload = f"{_clean_text(query, limit=360) or ''}|{run_id}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
+
+
+def _passage_candidate_id(passage: Mapping[str, Any], *, index: int) -> str | None:
+    explicit = _clean_token(passage.get("candidate_id"))
+    if explicit:
+        return explicit
+    for key in ("url", "source_url", "normalized_source_identity", "source_identity"):
+        value = _normalize_url(passage.get(key))
+        if value:
+            return f"candidate:{hashlib.sha256(value.encode('utf-8')).hexdigest()[:16]}"
+    source_id = _clean_token(passage.get("source_id"))
+    if source_id:
+        return f"source-id:{source_id}"
+    title = _clean_text(passage.get("title"))
+    if title:
+        return f"title:{hashlib.sha256(title.encode('utf-8')).hexdigest()[:16]}"
+    if index > 0:
+        return f"passage:{index}"
+    return None
+
+
+def _search_work_plan_uses_real_query_shape_classifier(
+    search_work_plan: Mapping[str, Any],
+) -> bool:
+    metadata = _safe_mapping(search_work_plan.get("metadata"))
+    construction_metadata = _safe_mapping(metadata.get("construction_metadata"))
+    if construction_metadata.get("implements_query_shape_classifier") is True:
+        return True
+    if construction_metadata.get("runtime_shadow_scaffolding") is True:
+        return False
+    if _clean_token(construction_metadata.get("fallback_reason")):
+        return False
+    return metadata.get("implements_query_shape_classifier") is True
+
+
+def _semantic_slot_for_component(
+    *,
+    component: ComponentCandidate,
+    route_facts: Mapping[str, Any],
+) -> SemanticSlot:
+    topic = (
+        _clean_text(route_facts.get("core_topic"), limit=220)
+        or _clean_text(component.user_facing_subquestion, limit=220)
+        or "primary topic"
+    )
+    return SemanticSlot(
+        slot_id=f"slot:{component.component_id}:entity",
+        slot_kind=SemanticSlotKind.ENTITY,
+        status=SemanticSlotStatus.EXPLICIT,
+        selected_value=topic,
+        materiality=Materiality.MATERIAL,
+    )
+
+
+def _answer_component_from_candidate(
+    candidate: ComponentCandidate,
+    *,
+    semantic_slot_ids: tuple[str, ...],
+) -> AnswerComponentContract:
+    label = _clean_text(candidate.user_facing_subquestion, limit=120) or "Primary component"
+    question = _clean_text(candidate.user_facing_subquestion, limit=300) or label
+    component_id = _clean_token(candidate.component_id) or "component-1"
+    if not component_id.startswith("component:"):
+        component_id = f"component:{component_id}"
+    obligation_ids = tuple(
+        obligation_id
+        for obligation_id in (
+            _clean_token(item) for item in candidate.source_obligation_candidate_ids
+        )
+        if obligation_id
+    )
+    return AnswerComponentContract(
+        component_id=component_id,
+        user_facing_label=label,
+        user_facing_question=question,
+        requirement_posture=RequirementPosture.REQUIRED,
+        acceptance_criteria=(
+            "state the bounded official answer",
+            "bind it to custodied evidence",
+        ),
+        semantic_slot_ids=semantic_slot_ids,
+        source_obligation_candidate_ids=obligation_ids,
+        allowed_support_kinds=(SupportKind.DIRECT,),
+        max_inference_depth=0,
+        mandatory_caveats=("Answer remains evidence-bound.",),
+        prohibited_upgrades=("Do not replace official wording with an estimate.",),
+        materiality=Materiality.MATERIAL,
+        metadata={"phase": "AG-SEM-11", "deterministic_runtime": True},
+    )
+
+
+def build_question_meaning_record_from_search_work_plan(
+    *,
+    assessment: QueryShapeAssessment,
+    route_facts: Mapping[str, Any],
+    run_contract_projection: Mapping[str, Any],
+    run_id: str,
+    request_id: str,
+    query: str,
+    requested_mode: str,
+) -> QuestionMeaningRecord | None:
+    if len(assessment.component_candidates) != 1:
+        return None
+    candidate = assessment.component_candidates[0]
+    slot = _semantic_slot_for_component(component=candidate, route_facts=route_facts)
+    component = _answer_component_from_candidate(candidate, semantic_slot_ids=(slot.slot_id,))
+    intent = (
+        _clean_text(route_facts.get("intent"), limit=200)
+        or _clean_text(query, limit=200)
+        or "Answer the user question."
+    )
+    contract_id = _clean_token(run_contract_projection.get("contract_id")) or run_id
+    return QuestionMeaningRecord.from_query_shape_assessment(
+        record_id=f"qmr:{contract_id}:ag-sem-11",
+        run_id=run_id,
+        request_id=request_id,
+        request_digest=_request_digest(query=query, run_id=run_id),
+        requested_mode=_clean_token(requested_mode) or "balanced",
+        intent=intent,
+        requested_output="Concise evidence-bound answer for the primary component.",
+        semantic_slots=(slot,),
+        answer_components=(component,),
+        assessment=assessment,
+        resolver_version=ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION,
+        metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
+    ).require_valid()
+
+
+def _ledger_candidate_index(
+    evidence_ledger_projection: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    index: dict[str, dict[str, Any]] = {}
+    for record in evidence_ledger_projection.get("candidate_records") or ():
+        if not isinstance(record, Mapping):
+            continue
+        candidate_id = _clean_token(record.get("candidate_id"))
+        if candidate_id:
+            index[candidate_id] = dict(record)
+        url = _normalize_url(record.get("url"))
+        if url:
+            index.setdefault(url, dict(record))
+    return index
+
+
+_STALE_CURRENTNESS_SIGNALS = frozenset({"stale", "outdated", "expired", "superseded"})
+
+
+def _candidate_is_bindable(
+    candidate: Mapping[str, Any],
+    *,
+    passage: Mapping[str, Any] | None = None,
+) -> bool:
+    disposition = (_clean_token(candidate.get("fact_disposition")) or "unknown").casefold()
+    if disposition in {"rejected", "dropped", "unreadable", "unfetchable"}:
+        return False
+    if disposition and disposition not in _ACCEPTED_DISPOSITIONS and disposition != "unknown":
+        return False
+    readable = (_clean_token(candidate.get("readable_status")) or "readable").casefold()
+    if readable not in _READABLE_STATUSES:
+        return False
+    if candidate.get("contextual_only") is True:
+        return False
+    if candidate.get("lower_tier") is True:
+        return False
+    currentness = (
+        _clean_token(candidate.get("currentness_signal"))
+        or (_clean_token(passage.get("currentness_signal")) if passage else None)
+        or (_clean_token(passage.get("currentness")) if passage else None)
+    )
+    if currentness and currentness.casefold() in _STALE_CURRENTNESS_SIGNALS:
+        return False
+    return True
+
+
+def select_bindable_final_passage(
+    final_top_evidence: Sequence[Mapping[str, Any]],
+    evidence_ledger_projection: Mapping[str, Any],
+) -> BindableFinalPassage | None:
+    if not final_top_evidence:
+        return None
+    candidate_index = _ledger_candidate_index(evidence_ledger_projection)
+    for index, raw_passage in enumerate(final_top_evidence, start=1):
+        if not isinstance(raw_passage, Mapping):
+            continue
+        passage = dict(raw_passage)
+        bounded_text = _clean_text(passage.get("text"), limit=MAX_BOUNDED_TEXT_CHARS)
+        if not bounded_text:
+            continue
+        candidate_id = _passage_candidate_id(passage, index=index)
+        if not candidate_id:
+            continue
+        candidate = candidate_index.get(candidate_id)
+        if candidate is None:
+            url = _normalize_url(passage.get("url"))
+            if url:
+                candidate = candidate_index.get(url)
+        if candidate is None or not _candidate_is_bindable(candidate, passage=passage):
+            continue
+        evidence_ref_id = _clean_token(candidate.get("candidate_id")) or candidate_id
+        return BindableFinalPassage(
+            passage=passage,
+            evidence_ref_id=evidence_ref_id,
+            candidate_record=dict(candidate),
+        )
+    return None
+
+
+def build_sanitized_content_reference_from_passage(
+    *,
+    passage: Mapping[str, Any],
+    evidence_ref_id: str,
+    accepted_contract: Mapping[str, Any],
+    content_ref_id: str,
+) -> SanitizedContentReference:
+    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    url = _clean_text(passage.get("url"), limit=400)
+    title = _clean_text(passage.get("title"), limit=220) or "Selected evidence"
+    source_id = _clean_token(passage.get("source_id"))
+    bounded_text = _clean_text(passage.get("text"), limit=MAX_BOUNDED_TEXT_CHARS)
+    if not bounded_text:
+        raise ValueError("sanitized content reference requires bounded passage text")
+    return SanitizedContentReference(
+        content_ref_id=content_ref_id,
+        evidence_ref_id=evidence_ref_id,
+        admitted_evidence_ref=evidence_ref_id,
+        source_id=source_id,
+        source_digest=(
+            hashlib.sha256(f"{url or title}".encode("utf-8")).hexdigest()[:16]
+            if url or title
+            else None
+        ),
+        source_url=url,
+        source_title=title,
+        source_domain=_domain_from_url(url),
+        answer_component_id=component_ref["component_id"],
+        component_revision=component_ref["component_revision"],
+        component_contract_digest=component_ref["component_digest"],
+        question_meaning_record_id=accepted_contract["parent_question_meaning_record_id"],
+        question_meaning_record_digest=accepted_contract["parent_question_meaning_record_digest"],
+        content_kind=ContentKind.BOUNDED_EXCERPT,
+        bounded_text=bounded_text,
+        extraction_method="ordinary_semantic_producer_final_top_evidence",
+        worker_kind="bounded_passage_projection",
+        currentness=_clean_token(passage.get("currentness_signal") or passage.get("currentness")),
+        metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
+    ).require_valid()
+
+
+def _requirement_ids_blocked_by_custody_gaps(
+    evidence_ledger_projection: Mapping[str, Any],
+) -> set[str]:
+    blocked: set[str] = set()
+    for gap in evidence_ledger_projection.get("custody_gaps") or ():
+        if not isinstance(gap, Mapping):
+            continue
+        requirement_id = _clean_token(gap.get("requirement_id"))
+        if requirement_id:
+            blocked.add(requirement_id)
+    return blocked
+
+
+def _requirement_matches_obligation_candidate(
+    requirement: Mapping[str, Any],
+    obligation_candidate_id: str,
+) -> bool:
+    obligation = (_clean_token(obligation_candidate_id) or "").casefold()
+    if not obligation:
+        return False
+    requirement_id = (_clean_token(requirement.get("requirement_id")) or "").casefold()
+    if obligation in requirement_id or obligation.removeprefix("obligation:") in requirement_id:
+        return True
+    obligation_kind = obligation.split(":", 1)[-1]
+    requirement_kind = (_clean_token(requirement.get("requirement_kind")) or "").casefold()
+    if obligation_kind and requirement_kind == obligation_kind:
+        return True
+    origin_ref = (_clean_token(requirement.get("origin_ref")) or "").casefold()
+    if obligation_kind and obligation_kind in origin_ref:
+        return True
+    return False
+
+
+def _source_requirement_ids_for_candidate(
+    evidence_ledger_projection: Mapping[str, Any],
+    *,
+    evidence_ref_id: str,
+    source_obligation_candidate_ids: Sequence[str] = (),
+) -> tuple[str, ...]:
+    normalized_evidence_ref = _clean_token(evidence_ref_id) or ""
+    if not normalized_evidence_ref:
+        return ()
+
+    requirements_by_id: dict[str, dict[str, Any]] = {}
+    for requirement in evidence_ledger_projection.get("source_requirements") or ():
+        if not isinstance(requirement, Mapping):
+            continue
+        requirement_id = _clean_token(requirement.get("requirement_id"))
+        if requirement_id:
+            requirements_by_id[requirement_id] = dict(requirement)
+
+    linked_requirement_ids: list[str] = []
+    for link in evidence_ledger_projection.get("requirement_links") or ():
+        if not isinstance(link, Mapping):
+            continue
+        if _clean_token(link.get("candidate_id")) != normalized_evidence_ref:
+            continue
+        requirement_id = _clean_token(link.get("requirement_id"))
+        if requirement_id:
+            linked_requirement_ids.append(requirement_id)
+
+    if not linked_requirement_ids:
+        for requirement_id, requirement in requirements_by_id.items():
+            linked_candidates = requirement.get("linked_candidate_ids") or ()
+            if normalized_evidence_ref in {
+                _clean_token(candidate_id)
+                for candidate_id in linked_candidates
+                if _clean_token(candidate_id)
+            }:
+                linked_requirement_ids.append(requirement_id)
+
+    ordered_linked: list[str] = []
+    seen: set[str] = set()
+    for requirement_id in linked_requirement_ids:
+        if requirement_id not in seen:
+            seen.add(requirement_id)
+            ordered_linked.append(requirement_id)
+
+    obligation_ids = tuple(
+        obligation_id
+        for obligation_id in (_clean_token(item) for item in source_obligation_candidate_ids)
+        if obligation_id
+    )
+    satisfied_linked: list[str] = []
+    for requirement_id in ordered_linked:
+        requirement = requirements_by_id.get(requirement_id)
+        if requirement is None:
+            continue
+        if (_clean_token(requirement.get("status")) or "").casefold() != "satisfied":
+            continue
+        if obligation_ids and not any(
+            _requirement_matches_obligation_candidate(requirement, obligation_id)
+            for obligation_id in obligation_ids
+        ):
+            continue
+        satisfied_linked.append(requirement_id)
+    blocked_requirement_ids = _requirement_ids_blocked_by_custody_gaps(
+        evidence_ledger_projection
+    )
+    return tuple(
+        requirement_id
+        for requirement_id in dict.fromkeys(satisfied_linked)
+        if requirement_id not in blocked_requirement_ids
+    )
+
+
+def build_semantic_observation_and_content_refs(
+    *,
+    accepted_contract: Mapping[str, Any],
+    bindable: BindableFinalPassage,
+) -> tuple[SemanticObservation, tuple[SanitizedContentReference, ...]]:
+    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    content_ref_id = f"content:{bindable.evidence_ref_id}"
+    content_ref = build_sanitized_content_reference_from_passage(
+        passage=bindable.passage,
+        evidence_ref_id=bindable.evidence_ref_id,
+        accepted_contract=accepted_contract,
+        content_ref_id=content_ref_id,
+    )
+    claim = _clean_text(bindable.passage.get("text"), limit=180) or "supported by selected evidence"
+    observation = SemanticObservation(
+        observation_id=f"observation:{bindable.evidence_ref_id}",
+        observation_kind=ObservationKind.SUPPORT,
+        question_meaning_record_id=accepted_contract["parent_question_meaning_record_id"],
+        question_meaning_record_digest=accepted_contract["parent_question_meaning_record_digest"],
+        contract_version=accepted_contract["accepted_contract_version"],
+        contract_digest=accepted_contract["accepted_contract_digest"],
+        answer_component_id=component_ref["component_id"],
+        component_revision=component_ref["component_revision"],
+        component_contract_digest=component_ref["component_digest"],
+        evidence_refs=(bindable.evidence_ref_id,),
+        content_refs=(content_ref_id,),
+        support_kind=SupportDirectness.DIRECT,
+        directness=SupportDirectness.DIRECT,
+        support_status=SupportStatus.SUPPORTS,
+        claim_or_value=claim,
+        normalization_fit="official rule wording",
+        scope_fit="primary component",
+        assumption_fit="bounded selected evidence excerpt",
+        inference_depth=0,
+        metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
+    ).require_valid()
+    return observation, (content_ref,)
+
+
+def build_component_coverage_proposal(
+    *,
+    accepted_contract: Mapping[str, Any],
+    observation: SemanticObservation,
+    content_ref: SanitizedContentReference,
+    evidence_ledger_projection: Mapping[str, Any],
+    run_id: str,
+    request_id: str,
+    query: str,
+) -> ComponentCoverageRecord | None:
+    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    source_obligation_candidate_ids = tuple(
+        obligation_id
+        for obligation_id in (
+            _clean_token(item)
+            for item in (
+                component_ref.get("source_obligation_candidate_ids")
+                or component_ref.get("source_obligation_candidate_refs")
+                or ()
+            )
+        )
+        if obligation_id
+    )
+    has_source_obligations = bool(source_obligation_candidate_ids)
+    if has_source_obligations:
+        if not observation.evidence_refs:
+            return None
+        source_requirement_ids = _source_requirement_ids_for_candidate(
+            evidence_ledger_projection,
+            evidence_ref_id=observation.evidence_refs[0],
+            source_obligation_candidate_ids=source_obligation_candidate_ids,
+        )
+        if not source_requirement_ids:
+            return None
+        source_obligation_status = SourceObligationStatus.SATISFIED
+    else:
+        source_requirement_ids = ()
+        source_obligation_status = SourceObligationStatus.NOT_APPLICABLE
+    ledger_digest = evidence_ledger_projection_digest(evidence_ledger_projection)
+    observation_refs = (
+        SemanticObservationCoverageRef(
+            observation_id=observation.observation_id,
+            observation_digest=observation.observation_digest,
+            answer_component_id=component_ref["component_id"],
+            component_revision=component_ref["component_revision"],
+            component_contract_digest=component_ref["component_digest"],
+            support_status="supports",
+            support_posture=SupportPosture.DIRECT,
+            content_refs=(content_ref.content_ref_id,),
+            accepted=True,
+        ),
+    )
+    content_binding = ContentReferenceCoverageBinding.from_content_reference(content_ref)
+    ledger_binding = EvidenceLedgerSnapshotBinding(
+        ledger_snapshot_id=f"evidence-ledger:{run_id}:{ledger_digest[:32]}",
+        ledger_schema_version=EVIDENCE_LEDGER_SCHEMA_VERSION,
+        ledger_digest=ledger_digest,
+        custody_status=EvidenceCustodyStatus.CUSTODIED,
+        source_requirement_ids=source_requirement_ids,
+        ledger_observation_refs=tuple(
+            _clean_token(ref.get("observation_id"))
+            for ref in evidence_ledger_projection.get("observation_refs") or ()
+            if isinstance(ref, Mapping) and _clean_token(ref.get("observation_id"))
+        ),
+        version_validity=VersionValidity.VALID,
+    )
+    record = ComponentCoverageRecord(
+        record_id=f"coverage:{component_ref['component_id']}",
+        run_id=run_id,
+        request_id=request_id,
+        request_digest=_request_digest(query=query, run_id=run_id),
+        accepted_contract_version=accepted_contract["accepted_contract_version"],
+        accepted_contract_digest=accepted_contract["accepted_contract_digest"],
+        answer_component_id=component_ref["component_id"],
+        component_revision=component_ref["component_revision"],
+        component_digest=component_ref["component_digest"],
+        evidence_ledger_binding=ledger_binding,
+        coverage_state=CoverageState.SATISFIED,
+        semantic_support_status=SemanticSupportStatus.SUPPORTED,
+        support_posture=SupportPosture.DIRECT,
+        derived_support_status=DerivedSupportStatus.NOT_APPLICABLE,
+        source_obligation_status=source_obligation_status,
+        content_availability_status=ContentAvailabilityStatus.AVAILABLE,
+        evidence_custody_status=EvidenceCustodyStatus.CUSTODIED,
+        version_validity=VersionValidity.VALID,
+        accepted_observation_refs=observation_refs,
+        content_reference_bindings=(content_binding,),
+        evidence_basis=(
+            EvidenceBasis.SEMANTIC_OBSERVATION,
+            EvidenceBasis.ANSWER_BEARING_CONTENT,
+            EvidenceBasis.EVIDENCE_LEDGER_CUSTODY,
+        ),
+        normalization_posture=ExplicitnessPosture.NOT_APPLICABLE,
+        assumption_posture=ExplicitnessPosture.NOT_APPLICABLE,
+        conflict_posture=ConflictPosture.NONE,
+        currentness_posture=CurrentnessPosture.CURRENT,
+        required_caveats=("Currentness remains evidence-bound.",),
+        prohibited_upgrades=("Do not replace official wording with an estimate.",),
+        followup_need=FollowupNeed.NONE,
+        mode_budget_posture=ModeBudgetPosture.AVAILABLE,
+        stale=False,
+        metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
+    ).require_valid()
+    blockers = ledger_qualification_blockers_for_satisfied_coverage(
+        coverage={
+            "coverage_state": record.coverage_state.value,
+            "content_reference_bindings": [
+                {"evidence_ref_id": content_ref.evidence_ref_id},
+            ],
+            "evidence_ledger_binding": {
+                "source_requirement_ids": list(source_requirement_ids),
+            },
+            "source_obligation_status": record.source_obligation_status.value,
+        },
+        evidence_ledger_projection=evidence_ledger_projection,
+        accepted_component=component_ref,
+        extra_evidence_refs=observation.evidence_refs,
+    )
+    if blockers:
+        return None
+    return record
+
+
+def _dry_run_accepted_contract(
+    *,
+    qmr: QuestionMeaningRecord,
+    run_id: str,
+    request_id: str,
+) -> dict[str, Any] | None:
+    try:
+        return build_initial_answer_contract_acceptance_state(
+            action_id=_PREFLIGHT_ACTION_ID,
+            action_inputs={
+                "parent_question_meaning_record_id": qmr.record_id,
+                "parent_proposal_digest": qmr.record_digest,
+                "request_id": request_id,
+            },
+            question_meaning_record=qmr.to_dict(),
+            run_id=run_id,
+            request_id=request_id,
+        )
+    except Exception:
+        return None
+
+
+def _dry_run_admission_projection(
+    *,
+    accepted_contract: Mapping[str, Any],
+    observation: SemanticObservation,
+    content_refs: Sequence[SanitizedContentReference],
+    evidence_ledger_projection: Mapping[str, Any],
+    run_id: str,
+    request_id: str,
+) -> dict[str, Any] | None:
+    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    try:
+        state = build_semantic_observation_admission_state(
+            action_id=_PREFLIGHT_ACTION_ID,
+            action_inputs={
+                "semantic_observation_id": observation.observation_id,
+                "semantic_observation_digest": observation.observation_digest,
+                "accepted_contract_digest": accepted_contract["accepted_contract_digest"],
+                "accepted_contract_version": accepted_contract["accepted_contract_version"],
+                "answer_component_id": component_ref["component_id"],
+                "component_revision": component_ref["component_revision"],
+                "component_digest": component_ref["component_digest"],
+                "request_id": request_id,
+            },
+            observation_payload={
+                "semantic_observation": observation.to_dict(),
+                "sanitized_content_references": [ref.to_dict() for ref in content_refs],
+            },
+            accepted_contract=accepted_contract,
+            evidence_ledger_projection=evidence_ledger_projection,
+            run_id=run_id,
+            request_id=request_id,
+        )
+    except Exception:
+        return None
+    return dict(state)
+
+
+def _dry_run_coverage_state(
+    *,
+    accepted_contract: Mapping[str, Any],
+    admission_projection: Mapping[str, Any],
+    coverage_record: ComponentCoverageRecord,
+    evidence_ledger_projection: Mapping[str, Any],
+    run_id: str,
+    request_id: str,
+) -> dict[str, Any] | None:
+    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    try:
+        return build_component_coverage_reduction_state(
+            action_id=_PREFLIGHT_ACTION_ID,
+            action_inputs={
+                "coverage_record_id": coverage_record.record_id,
+                "coverage_record_digest": coverage_record.record_digest,
+                "accepted_contract_digest": accepted_contract["accepted_contract_digest"],
+                "accepted_contract_version": accepted_contract["accepted_contract_version"],
+                "answer_component_id": component_ref["component_id"],
+                "component_revision": component_ref["component_revision"],
+                "component_digest": component_ref["component_digest"],
+                "request_id": request_id,
+            },
+            coverage_payload={"component_coverage_record": coverage_record.to_dict()},
+            accepted_contract=accepted_contract,
+            admission_history=[admission_projection],
+            evidence_ledger_projection=evidence_ledger_projection,
+            run_id=run_id,
+            request_id=request_id,
+        )
+    except Exception:
+        return None
+
+
+def build_ordinary_semantic_producer_bundle(
+    *,
+    search_work_plan: Mapping[str, Any],
+    route_projection: Mapping[str, Any] | None,
+    run_contract_projection: Mapping[str, Any],
+    final_top_evidence: Sequence[Mapping[str, Any]],
+    evidence_ledger_projection: Mapping[str, Any],
+    run_id: str,
+    request_id: str,
+    query: str,
+    requested_mode: str | None = None,
+) -> OrdinarySemanticProducerBundle | None:
+    if not _search_work_plan_uses_real_query_shape_classifier(search_work_plan):
+        return None
+    contract_id = _clean_token(run_contract_projection.get("contract_id")) or run_id
+    route_facts = _safe_mapping(route_projection)
+    try:
+        records = build_deterministic_search_work_runtime_records(
+            DeterministicSearchWorkRuntimeInput(
+                contract_id=contract_id,
+                run_contract_projection=run_contract_projection,
+                route_facts=route_facts,
+                requested_mode=requested_mode or run_contract_projection.get("selected_depth"),
+                selected_depth=run_contract_projection.get("selected_depth"),
+                safe_query_preview=query,
+            )
+        )
+    except Exception:
+        return None
+    qmr = build_question_meaning_record_from_search_work_plan(
+        assessment=records.query_shape_assessment,
+        route_facts=route_facts,
+        run_contract_projection=run_contract_projection,
+        run_id=run_id,
+        request_id=request_id,
+        query=query,
+        requested_mode=requested_mode or str(run_contract_projection.get("selected_depth") or "balanced"),
+    )
+    if qmr is None:
+        return None
+    accepted_contract = _dry_run_accepted_contract(
+        qmr=qmr,
+        run_id=run_id,
+        request_id=request_id,
+    )
+    if accepted_contract is None:
+        return None
+    bindable = select_bindable_final_passage(final_top_evidence, evidence_ledger_projection)
+    if bindable is None:
+        return None
+    try:
+        observation, content_refs = build_semantic_observation_and_content_refs(
+            accepted_contract=accepted_contract,
+            bindable=bindable,
+        )
+    except Exception:
+        return None
+    admission_projection = _dry_run_admission_projection(
+        accepted_contract=accepted_contract,
+        observation=observation,
+        content_refs=content_refs,
+        evidence_ledger_projection=evidence_ledger_projection,
+        run_id=run_id,
+        request_id=request_id,
+    )
+    if admission_projection is None:
+        return None
+    coverage_record = build_component_coverage_proposal(
+        accepted_contract=accepted_contract,
+        observation=observation,
+        content_ref=content_refs[0],
+        evidence_ledger_projection=evidence_ledger_projection,
+        run_id=run_id,
+        request_id=request_id,
+        query=query,
+    )
+    if coverage_record is None:
+        return None
+    if (
+        _dry_run_coverage_state(
+            accepted_contract=accepted_contract,
+            admission_projection=admission_projection,
+            coverage_record=coverage_record,
+            evidence_ledger_projection=evidence_ledger_projection,
+            run_id=run_id,
+            request_id=request_id,
+        )
+        is None
+    ):
+        return None
+    return OrdinarySemanticProducerBundle(
+        question_meaning_record=qmr,
+        semantic_observation=observation,
+        sanitized_content_references=content_refs,
+        component_coverage_record=coverage_record,
+        dry_run_accepted_contract=accepted_contract,
+        dry_run_admission_projection=admission_projection,
+    )
+
+
+def _semantic_state_already_present(run_kernel: Any) -> bool:
+    state = run_kernel.state
+    return bool(
+        state.initial_answer_contract
+        or state.semantic_observation_admission_history
+        or state.component_coverage_history
+    )
+
+
+def execute_ordinary_semantic_producer_handoff_from_scope(
+    run_kernel: Any,
+    runtime_scope: Mapping[str, Any],
+) -> OrdinarySemanticProducerHandoffResult:
+    from core.run_kernel import Observation, ObservationType, RunStageStatus
+
+    if _semantic_state_already_present(run_kernel):
+        return OrdinarySemanticProducerHandoffResult(
+            status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
+            skipped_reason="canonical_semantic_state_already_present",
+        )
+
+    run_id = run_kernel.state.run_id
+    request_id = run_kernel.state.request_id
+    search_work_plan = _safe_mapping(run_kernel.state.search_work_plan)
+    if not search_work_plan:
+        return OrdinarySemanticProducerHandoffResult(
+            status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
+            skipped_reason="search_work_plan_missing",
+        )
+
+    final_top_evidence = [
+        dict(item)
+        for item in runtime_scope.get("final_top_evidence") or ()
+        if isinstance(item, Mapping)
+    ]
+    evidence_ledger_projection = _safe_mapping(runtime_scope.get("evidence_ledger_projection"))
+    if not evidence_ledger_projection:
+        evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+
+    bundle = build_ordinary_semantic_producer_bundle(
+        search_work_plan=search_work_plan,
+        route_projection=run_kernel.state.projections.get("route_request"),
+        run_contract_projection=_safe_mapping(runtime_scope.get("run_contract_projection")),
+        final_top_evidence=final_top_evidence,
+        evidence_ledger_projection=evidence_ledger_projection,
+        run_id=run_id,
+        request_id=request_id,
+        query=str(runtime_scope.get("query") or ""),
+        requested_mode=str(runtime_scope.get("strategy") or runtime_scope.get("mode") or ""),
+    )
+    if bundle is None:
+        return OrdinarySemanticProducerHandoffResult(
+            status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
+            skipped_reason="preflight_failed",
+        )
+
+    qmr = bundle.question_meaning_record
+    try:
+        accept_action = run_kernel.authorize_initial_answer_contract_acceptance(
+            parent_question_meaning_record_id=qmr.record_id,
+            parent_proposal_digest=qmr.record_digest,
+        )
+        accept_observation = Observation.from_action(
+            accept_action,
+            observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
+            status=RunStageStatus.COMPLETED,
+            payload={"question_meaning_record": qmr.to_dict()},
+        )
+        run_kernel.reduce(accept_observation)
+        accepted_contract = dict(run_kernel.state.initial_answer_contract)
+        if not accepted_contract:
+            raise OrdinarySemanticProducerTransactionError(
+                "AG-SEM-05 reduce completed without initial_answer_contract state"
+            )
+
+        component_ref = accepted_contract["accepted_answer_component_refs"][0]
+        observation = bundle.semantic_observation
+        admit_action = run_kernel.authorize_semantic_observation_admission(
+            semantic_observation_id=observation.observation_id,
+            semantic_observation_digest=observation.observation_digest,
+            answer_component_id=component_ref["component_id"],
+            component_revision=component_ref["component_revision"],
+            component_digest=component_ref["component_digest"],
+        )
+        admit_observation = Observation.from_action(
+            admit_action,
+            observation_type=ObservationType.SEMANTIC_OBSERVATION_ADMITTED,
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "semantic_observation": observation.to_dict(),
+                "sanitized_content_references": [
+                    ref.to_dict() for ref in bundle.sanitized_content_references
+                ],
+            },
+        )
+        run_kernel.reduce(admit_observation)
+        if not run_kernel.state.semantic_observation_admission_history:
+            raise OrdinarySemanticProducerTransactionError(
+                "AG-SEM-06 reduce completed without semantic_observation_admission_history"
+            )
+
+        coverage_record = bundle.component_coverage_record
+        coverage_action = run_kernel.authorize_component_coverage_reduction(
+            coverage_record_id=coverage_record.record_id,
+            coverage_record_digest=coverage_record.record_digest,
+            answer_component_id=component_ref["component_id"],
+            component_revision=component_ref["component_revision"],
+            component_digest=component_ref["component_digest"],
+        )
+        coverage_observation = Observation.from_action(
+            coverage_action,
+            observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
+            status=RunStageStatus.COMPLETED,
+            payload={"component_coverage_record": coverage_record.to_dict()},
+        )
+        run_kernel.reduce(coverage_observation)
+        if not run_kernel.state.component_coverage_history:
+            raise OrdinarySemanticProducerTransactionError(
+                "AG-SEM-07 reduce completed without component_coverage_history"
+            )
+    except OrdinarySemanticProducerTransactionError:
+        raise
+    except Exception as exc:
+        raise OrdinarySemanticProducerTransactionError(
+            "ordinary semantic producer transactional handoff failed mid-chain"
+        ) from exc
+
+    return OrdinarySemanticProducerHandoffResult(
+        status=OrdinarySemanticProducerHandoffStatus.COMMITTED,
+    )
+
+
+__all__ = [
+    "ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION",
+    "ORDINARY_SEMANTIC_PRODUCER_SCHEMA_VERSION",
+    "BindableFinalPassage",
+    "OrdinarySemanticProducerBundle",
+    "OrdinarySemanticProducerHandoffResult",
+    "OrdinarySemanticProducerHandoffStatus",
+    "OrdinarySemanticProducerTransactionError",
+    "build_component_coverage_proposal",
+    "build_ordinary_semantic_producer_bundle",
+    "build_question_meaning_record_from_search_work_plan",
+    "build_sanitized_content_reference_from_passage",
+    "build_semantic_observation_and_content_refs",
+    "execute_ordinary_semantic_producer_handoff_from_scope",
+    "select_bindable_final_passage",
+]
