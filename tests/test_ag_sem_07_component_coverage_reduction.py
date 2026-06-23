@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -441,6 +442,35 @@ def test_action_binding_for_record_id_digest_contract_component_is_exact() -> No
     record = _coverage_record(accepted, observation, content_ref, kernel)
     with pytest.raises(RunKernelTransitionError, match="coverage_record_digest binding"):
         _reduce(kernel, accepted, record, coverage_record_digest="0" * 64)
+
+
+def test_coverage_record_foreign_run_id_is_rejected() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel()
+    record = _coverage_record(accepted, observation, content_ref, kernel)
+    foreign = replace(record, run_id="run:foreign")
+    payload = _reseal_coverage(foreign)
+    with pytest.raises(RunKernelTransitionError, match="run_id does not match"):
+        _reduce(kernel, accepted, record, payload={"component_coverage_record": payload})
+
+
+def test_coverage_record_foreign_request_id_is_rejected() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel()
+    record = _coverage_record(accepted, observation, content_ref, kernel)
+    foreign = replace(record, request_id="request:foreign")
+    payload = _reseal_coverage(foreign)
+    with pytest.raises(RunKernelTransitionError, match="request_id does not match"):
+        _reduce(kernel, accepted, record, payload={"component_coverage_record": payload})
+
+
+def test_coverage_record_matching_run_and_request_reduces_successfully() -> None:
+    kernel, accepted, observation, content_ref = _start_admitted_kernel()
+    record = _coverage_record(accepted, observation, content_ref, kernel)
+    assert record.run_id == RUN_ID
+    assert record.request_id == REQUEST_ID
+    _reduce(kernel, accepted, record)
+    state = kernel.state.component_coverage_state
+    assert state["run_id"] == RUN_ID
+    assert state["request_id"] == REQUEST_ID
 
 
 def test_recomputed_coverage_record_digest_rejects_tampered_payload() -> None:

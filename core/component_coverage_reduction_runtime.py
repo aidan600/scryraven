@@ -701,6 +701,11 @@ def build_component_coverage_reduction_state(
             "component coverage record must not have changed runtime behavior"
         )
 
+    if record.run_id != clean_run_id:
+        raise ComponentCoverageReductionError("coverage record run_id does not match the run")
+    if record.request_id != clean_request_id:
+        raise ComponentCoverageReductionError("coverage record request_id does not match the request")
+
     recomputed_digest = record.record_digest
     declared_digest = _clean_token(record_dict.get("record_digest"), limit=128)
     if declared_digest and declared_digest != recomputed_digest:
