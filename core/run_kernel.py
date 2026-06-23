@@ -22,6 +22,15 @@ from core.component_coverage_reduction_runtime import (
 from core.component_coverage_reduction_runtime import (
     COMPONENT_COVERAGE_REDUCTION_STAGE as COMPONENT_COVERAGE_REDUCTION_STAGE_NAME,
 )
+from core.contract_amendment_admission_runtime import (
+    CONTRACT_AMENDMENT_ADMISSION_REASON,
+    ContractAmendmentAdmissionError,
+    build_contract_amendment_admission_projection,
+    build_contract_amendment_admission_state,
+)
+from core.contract_amendment_admission_runtime import (
+    CONTRACT_AMENDMENT_ADMISSION_STAGE as CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME,
+)
 from core.evidence_ledger import EvidenceLedger
 from core.followup_author_evidence_content_bridge_runtime import (
     FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_REASON,
@@ -392,6 +401,7 @@ SEMANTIC_OBSERVATION_ADMISSION_STAGE = (
     SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME
 )
 COMPONENT_COVERAGE_REDUCTION_STAGE = COMPONENT_COVERAGE_REDUCTION_STAGE_NAME
+CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
@@ -491,6 +501,7 @@ class ActionType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
+    CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -554,6 +565,7 @@ class ObservationType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
+    CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -873,6 +885,13 @@ class RunState:
     component_coverage_state: dict[str, Any] = field(default_factory=dict)
     component_coverage_projection: dict[str, Any] = field(default_factory=dict)
     component_coverage_history: list[dict[str, Any]] = field(default_factory=list)
+    contract_amendment_admission_state: dict[str, Any] = field(default_factory=dict)
+    contract_amendment_admission_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    contract_amendment_admission_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     search_work_plan: dict[str, Any] = field(default_factory=dict)
     search_work_plan_projection: dict[str, Any] = field(default_factory=dict)
     search_work_plan_validation: dict[str, Any] = field(default_factory=dict)
@@ -1138,6 +1157,15 @@ class RunState:
             component_coverage_state=deepcopy(self.component_coverage_state),
             component_coverage_projection=deepcopy(self.component_coverage_projection),
             component_coverage_history=deepcopy(self.component_coverage_history),
+            contract_amendment_admission_state=deepcopy(
+                self.contract_amendment_admission_state
+            ),
+            contract_amendment_admission_projection=deepcopy(
+                self.contract_amendment_admission_projection
+            ),
+            contract_amendment_admission_history=deepcopy(
+                self.contract_amendment_admission_history
+            ),
             search_work_plan=deepcopy(self.search_work_plan),
             search_work_plan_projection=deepcopy(self.search_work_plan_projection),
             search_work_plan_validation=deepcopy(self.search_work_plan_validation),
@@ -1413,6 +1441,9 @@ class KernelTraceProjection:
     component_coverage_state: Mapping[str, Any]
     component_coverage_projection: Mapping[str, Any]
     component_coverage_history: Sequence[Mapping[str, Any]]
+    contract_amendment_admission_state: Mapping[str, Any]
+    contract_amendment_admission_projection: Mapping[str, Any]
+    contract_amendment_admission_history: Sequence[Mapping[str, Any]]
     search_work_plan: Mapping[str, Any]
     search_work_plan_projection: Mapping[str, Any]
     search_work_plan_validation: Mapping[str, Any]
@@ -1547,6 +1578,16 @@ class KernelTraceProjection:
             ),
             "component_coverage_history": [
                 _safe_mapping(item) for item in self.component_coverage_history
+            ],
+            "contract_amendment_admission_state": _safe_mapping(
+                self.contract_amendment_admission_state
+            ),
+            "contract_amendment_admission_projection": _safe_mapping(
+                self.contract_amendment_admission_projection
+            ),
+            "contract_amendment_admission_history": [
+                _safe_mapping(item)
+                for item in self.contract_amendment_admission_history
             ],
             "search_work_plan": _safe_mapping(self.search_work_plan),
             "search_work_plan_projection": _safe_mapping(
@@ -2076,6 +2117,62 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
+        )
+
+    def authorize_contract_amendment_admission(
+        self,
+        *,
+        amendment_record_id: str,
+        amendment_record_digest: str,
+        parent_contract_digest: str | None = None,
+        parent_contract_version: str | None = None,
+        accepted_contract_digest: str | None = None,
+        accepted_contract_version: str | None = None,
+        request_id: str | None = None,
+        reason: str = CONTRACT_AMENDMENT_ADMISSION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.initial_answer_contract_projection:
+            raise RunKernelTransitionError(
+                "contract amendment admission requires an accepted initial answer contract"
+            )
+        accepted = self.state.initial_answer_contract
+        resolved_contract_digest = (
+            accepted_contract_digest or accepted.get("accepted_contract_digest")
+        )
+        resolved_contract_version = (
+            accepted_contract_version or accepted.get("accepted_contract_version")
+        )
+        resolved_parent_digest = parent_contract_digest or resolved_contract_digest
+        resolved_parent_version = parent_contract_version or resolved_contract_version
+        for label, value in (
+            ("amendment_record_id", amendment_record_id),
+            ("amendment_record_digest", amendment_record_digest),
+            ("parent_contract_digest", resolved_parent_digest),
+            ("parent_contract_version", resolved_parent_version),
+            ("accepted_contract_digest", resolved_contract_digest),
+            ("accepted_contract_version", resolved_contract_version),
+        ):
+            if not _clean_text(value, limit=200):
+                raise RunKernelTransitionError(
+                    "contract amendment admission requires " f"{label} binding"
+                )
+        merged_inputs = {
+            "amendment_record_id": amendment_record_id,
+            "amendment_record_digest": amendment_record_digest,
+            "parent_contract_digest": resolved_parent_digest,
+            "parent_contract_version": resolved_parent_version,
+            "accepted_contract_digest": resolved_contract_digest,
+            "accepted_contract_version": resolved_contract_version,
+            "request_id": request_id or self.state.request_id,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=CONTRACT_AMENDMENT_ADMISSION_STAGE,
+            action_type=ActionType.CONTRACT_AMENDMENT_ADMIT,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.CONTRACT_AMENDMENT_ADMITTED,
         )
 
     def authorize_search_work_plan_construction(
@@ -8928,6 +9025,53 @@ class RunKernel:
             self.state.component_coverage_projection = coverage_projection
             self.state.component_coverage_history.append(deepcopy(coverage_projection))
             self.state.projections[action.stage] = deepcopy(coverage_projection)
+        elif action.action_type is ActionType.CONTRACT_AMENDMENT_ADMIT:
+            if not self.state.initial_answer_contract_projection:
+                raise RunKernelTransitionError(
+                    "contract amendment admission requires an accepted "
+                    "initial answer contract"
+                )
+            admission_payload = _safe_mapping(observation.payload)
+            if not admission_payload.get("contract_amendment_record"):
+                raise RunKernelTransitionError(
+                    "contract amendment admission observation requires a "
+                    "contract_amendment_record proposal payload"
+                )
+            existing_ids = [
+                _safe_mapping(item).get("amendment_record_id")
+                for item in self.state.contract_amendment_admission_history
+            ]
+            existing_digests = [
+                _safe_mapping(item).get("amendment_record_digest")
+                for item in self.state.contract_amendment_admission_history
+            ]
+            try:
+                amendment_state = build_contract_amendment_admission_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    amendment_payload=admission_payload,
+                    accepted_contract=self.state.initial_answer_contract,
+                    admission_history=self.state.semantic_observation_admission_history,
+                    coverage_history=self.state.component_coverage_history,
+                    evidence_ledger_projection=(
+                        self.state.evidence_ledger.to_projection().to_dict()
+                    ),
+                    existing_amendment_record_ids=existing_ids,
+                    existing_amendment_record_digests=existing_digests,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                )
+                amendment_projection = build_contract_amendment_admission_projection(
+                    admission_state=amendment_state
+                )
+            except ContractAmendmentAdmissionError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.contract_amendment_admission_state = amendment_state
+            self.state.contract_amendment_admission_projection = amendment_projection
+            self.state.contract_amendment_admission_history.append(
+                deepcopy(amendment_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(amendment_projection)
         elif action.action_type is ActionType.SEARCH_WORK_PLAN_CONSTRUCT:
             construction_result = _safe_mapping(
                 observation.payload.get("construction_result")
