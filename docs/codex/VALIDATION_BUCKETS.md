@@ -6,6 +6,9 @@ ScryRaven validation is tiered so ordinary pull requests stay fast while
 high-custody phases can still request broader proof explicitly. Choose the
 smallest bucket that can prove the current change.
 
+Use [TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md) when a
+phase adds, promotes, demotes, or retires tests.
+
 | Bucket | Use when | Contents | Default routing |
 | --- | --- | --- | --- |
 | `docs_only` | Docs, runbooks, prompts, or operator-only markdown/text changed, with no code, test, manifest, script, or workflow changes. | Changed-file pre-commit and diff checks. No pytest by default. | Pull requests only when changed files are documentation/operator-only. |
@@ -13,6 +16,22 @@ smallest bucket that can prove the current change.
 | `phase_focus` | Local/Codex phase-specific proof. | The current phase test plus immediate producer/consumer tests chosen by the phase prompt. | Not a GitHub default bucket. Run locally with exact pytest node IDs or paths. |
 | `author_lane` | Comprehensive Author-lane custody validation. | `tests/buckets/author_lane.txt`, including the former inline AF/U/V/W/X/Y/Z/AC/AD/AE/AF4/AF5 custody set and adjacent RunKernel/final-answer files. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. |
 | `full` | Complete offline suite. | `python -m pytest -q` across the repo. | Push to `main` and manual serious validation only. |
+
+## Required New-Test Classification
+
+Adding a test requires stating whether it is `phase_focus`, a `fast_pr`
+sentinel candidate, `author_lane`, or full-only before adding it to any
+permanent bucket manifest.
+
+New tests start as `phase_focus` unless explicitly justified otherwise. Use the
+required fields in
+[TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md), including the
+proof class, protected surface, runtime/product path guarded, expected cost,
+promotion posture, demotion or retirement condition, and why the test is or is
+not a `fast_pr` candidate.
+
+Do not add a test to `fast_pr` merely because the phase added it. A promoted
+`fast_pr` entry must be a cheap broad sentinel, not a phase-detail test.
 
 ## Promotion Rules
 

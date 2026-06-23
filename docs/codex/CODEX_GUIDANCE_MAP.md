@@ -14,11 +14,21 @@ are repo files; use repo-visible files and the current phase prompt.
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - **Reusable phase prompt shape:** read
   [PHASE_BRIEF_TEMPLATE.md](PHASE_BRIEF_TEMPLATE.md).
+- **Local Windows sandbox and publication rule:** read
+  [CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
+  Codex edits and tests in the workspace sandbox; exact-approved Git commands
+  publish.
+- **Proof class and actual app delta questions:** read
+  [PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md).
 - **Validation buckets, high-custody tiers, and timeout reporting:** read
   [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md) and
   [CI_VALIDATION_ERGONOMICS.md](CI_VALIDATION_ERGONOMICS.md). Choose the
   smallest valid bucket, report the exact command, and do not run full pytest
   unless the phase requires it.
+- **Test additions, promotions, demotions, or retirements:** read
+  [TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md) and
+  [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md). Classify new tests before
+  adding them to permanent bucket manifests.
 - **Developer commands and project overview:** read the repo `README.md`,
   `.github/workflows/ci.yml`, `scripts/check.ps1`, `scripts/test.ps1`,
   `scripts/lint.ps1`, `pytest.ini`, `ruff.toml`, and `.pre-commit-config.yaml`
@@ -28,18 +38,11 @@ are repo files; use repo-visible files and the current phase prompt.
 
 - **General architecural workflow and Path B PR process:**
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
-- **Current AG-96 lanes:** AG-96C `SearchWorkPlan` is a passive model through
-  runtime shadow projection only; QueryPlan, provider/search behavior, citation
-  behavior, and final answers remain unconsumed and unchanged. AG-96I3 is the
-  scout/read diagnostics lane for provider-neutral query shaping, freshness
-  policy, Serper scout diagnostics, scout-to-acquisition handoff, and offline
-  read-observation verification. For the current summary and next choices, read
+- **Current AG-SEM posture:** AG-SEM-01 and AG-SEM-02 are merged. AG-SEM-03
+  `ComponentCoverageRecord` schema is the next likely passive semantic phase.
+  Name the proof class and validation bucket before implementation. For
+  historical AG-96 context, read
   `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
-- **Next AG-96 candidate directions:** choose explicitly between a sanitized
-  read-observation adapter for handoff candidates and EvidenceLedger
-  admission-review diagnostics for verified observations. The read-observation
-  adapter is the likely next implementation step when the goal is to bridge
-  scout handoff candidates into verification without admitting evidence.
 - **AG-89+ RunAuthority / authority-collapse work:**
   [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
 - **Current source-class recovery dispatch doctrine:** use

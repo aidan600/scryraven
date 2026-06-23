@@ -21,6 +21,8 @@ docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md
 Also read when relevant:
 - docs/codex/EXECUTION_PLAN_TEMPLATE.md for bundled multi-step phases
 - docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md for AG-89+ authority-collapse phases
+- docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md for proof-class or actual-app-delta questions
+- docs/codex/TEST_CLASSIFICATION_LIBRARY.md and docs/codex/VALIDATION_BUCKETS.md for test additions, promotions, demotions, or retirements
 - docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md only for legacy Controller-handoff maintenance when explicitly selected
 
 Repository:
@@ -41,11 +43,29 @@ Suggested branch:
 codex/<phase-branch-name>
 
 Phase-end publication:
-- After implementation, tests, and self-review, you may push the completed phase branch and create a pull request into main.
+- Use docs/codex/CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md.
+- Use workspace sandbox for implementation, tests, inspection, and file edits.
+- For Git metadata or publication, request approval for the exact command only.
+- Do not request Full Access or repair auth/ACL/sandbox during the phase.
+- After implementation, tests, and self-review, exact-approved commands may push the completed phase branch and create a pull request into main.
 - Do not merge, squash, rebase, force-push, delete branches, reset, clean destructively, or alter main.
 
 Primary outcome:
 <One sentence: what this phase must accomplish.>
+
+Required proof, product, and validation posture:
+Proof class:
+Product path affected:
+Runtime consumer:
+Actual app delta:
+Validation bucket:
+Test classification / promotion posture:
+New tests:
+Fast_pr promotion rationale, if any:
+Non-proofs:
+Bridge or exit condition:
+
+New tests must be classified before being added to permanent bucket manifests.
 
 Rule 0 failure_analysis:
 - General failure class:
