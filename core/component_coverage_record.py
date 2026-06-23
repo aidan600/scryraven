@@ -714,13 +714,28 @@ class ComponentCoverageRecord:
                 errors.append(f"semantic observation ref {ref.observation_id} component digest mismatch")
             if ref.support_status not in {"supports", "qualifies"} and self.coverage_state in _SATISFIED_STATES:
                 errors.append(f"semantic observation ref {ref.observation_id} does not support satisfied coverage")
-        content_ids = {ref.content_ref_id for ref in self.content_reference_bindings}
+        content_by_id = {binding.content_ref_id: binding for binding in self.content_reference_bindings}
+        content_ids = set(content_by_id)
         for ref in self.accepted_observation_refs:
             missing_refs = [content_ref for content_ref in ref.content_refs if content_ref not in content_ids]
             if missing_refs and self.coverage_state is CoverageState.SATISFIED:
                 errors.append(
                     f"semantic observation ref {ref.observation_id} has unbound content refs: "
                     + ", ".join(missing_refs)
+                )
+            if (
+                self.coverage_state is CoverageState.SATISFIED
+                and ref.support_status in {"supports", "qualifies"}
+                and not any(
+                    (binding := content_by_id.get(content_ref))
+                    and binding.answer_bearing
+                    and binding.availability_status is ContentAvailabilityStatus.AVAILABLE
+                    for content_ref in ref.content_refs
+                )
+            ):
+                errors.append(
+                    f"semantic observation ref {ref.observation_id} requires at least one "
+                    "answer-bearing available content ref for satisfied coverage"
                 )
         for binding in self.content_reference_bindings:
             if binding.answer_component_id != self.answer_component_id:

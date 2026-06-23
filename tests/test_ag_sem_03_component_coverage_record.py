@@ -342,6 +342,42 @@ def test_satisfied_coverage_rejects_missing_answer_bearing_content_reference() -
     assert any("answer-bearing content reference" in error for error in record.validate().errors)
 
 
+def test_supporting_observation_requires_own_answer_bearing_available_content_ref() -> None:
+    component = _component()
+    qmr = _qmr(component)
+    context_content = _content_ref(
+        component=component,
+        qmr=qmr,
+        content_ref_id="content:context-only",
+    )
+    observation = _observation(component=component, qmr=qmr, content_ref=context_content)
+    context_binding = ContentReferenceCoverageBinding.from_content_reference(
+        context_content,
+        answer_bearing=False,
+    )
+    unrelated_answer_binding = ContentReferenceCoverageBinding(
+        content_ref_id="content:unrelated-answer-bearing",
+        content_digest="content-digest-unrelated",
+        evidence_ref_id="evidence:unrelated",
+        answer_component_id=component.component_id,
+        component_revision=component.component_revision,
+        component_contract_digest=component.component_digest or "",
+        answer_bearing=True,
+        availability_status=ContentAvailabilityStatus.AVAILABLE,
+    )
+    record = _coverage(
+        component=component,
+        qmr=qmr,
+        content_ref=context_content,
+        observation=observation,
+        content_bindings=(context_binding, unrelated_answer_binding),
+    )
+
+    errors = record.validate().errors
+
+    assert any("answer-bearing available content ref" in error for error in errors)
+
+
 def test_observation_bound_to_another_component_revision_cannot_satisfy() -> None:
     component = _component(component_revision="1")
     qmr = _qmr(component)
