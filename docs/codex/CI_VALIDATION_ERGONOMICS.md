@@ -6,18 +6,23 @@ Use this file to keep phase prompts compact. Phase prompts should name unusual
 validation needs, not restate the standing validation ladder.
 
 For the bucket reference table and promotion rules, read
-[VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md).
+[VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md). For new-test classification and
+promotion posture, read
+[TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md).
 
 ## Bucket selection
 
 - Choose the smallest valid bucket.
 - Report the exact bucket and command used.
+- Ordinary PR test execution targets the fast bucket: `fast_pr` should stay
+  under about 3 minutes after dependency setup/cache.
 - For PRs, `fast_pr` is the normal target unless the phase explicitly licenses
   `author_lane` or `full`.
 - Do not add every new test to `fast_pr`; only true sentinels belong there.
 - Do not run full pytest unless the phase requires it.
-- Do not repeatedly rerun monolithic timeouts. Split the command or report the
-  timeout with the exact command and bucket.
+- Do not respond to timeouts by expanding CI scope or rerunning monolithic
+  commands repeatedly. Split the command or report the timeout with the exact
+  command and bucket.
 
 ## PR validation buckets
 
