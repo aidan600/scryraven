@@ -372,12 +372,24 @@ def _operation(
     )
 
 
-def _coverage_candidate() -> CoverageInvalidationCandidateRef:
+def _coverage_candidate(
+    kernel: RunKernel | None = None,
+    *,
+    coverage_record_digest: str | None = None,
+    coverage_record_id: str = COVERAGE_RECORD_ID,
+    answer_component_id: str = COMPONENT_ID,
+    reason: str = "component revision or material slot changed",
+) -> CoverageInvalidationCandidateRef:
+    digest = coverage_record_digest
+    if digest is None and kernel is not None and kernel.state.component_coverage_history:
+        digest = str(kernel.state.component_coverage_history[-1]["coverage_record_digest"])
+    if digest is None:
+        raise ValueError("coverage candidate requires kernel or explicit coverage_record_digest")
     return CoverageInvalidationCandidateRef(
-        coverage_record_id=COVERAGE_RECORD_ID,
-        coverage_record_digest="coverage-digest-placeholder",
-        answer_component_id=COMPONENT_ID,
-        reason="component revision or material slot changed",
+        coverage_record_id=coverage_record_id,
+        coverage_record_digest=digest,
+        answer_component_id=answer_component_id,
+        reason=reason,
     )
 
 
@@ -392,9 +404,18 @@ def _amendment_record(
     accepted_contract_ref: str | None = None,
     rejection_reasons: tuple[str, ...] = (),
     blocking_reasons: tuple[str, ...] = (),
+    operations: tuple[AmendmentOperation, ...] | None = None,
+    affected_component_refs: tuple[AffectedComponentRef, ...] | None = None,
 ) -> ContractAmendmentRecord:
     component_ref = accepted["accepted_answer_component_refs"][0]
     contract_version = str(accepted["accepted_contract_version"])
+    default_affected = (
+        AffectedComponentRef(
+            component_id=component_ref["component_id"],
+            component_revision=component_ref["component_revision"],
+            component_digest=component_ref["component_digest"],
+        ),
+    )
     return ContractAmendmentRecord(
         amendment_record_id=AMENDMENT_RECORD_ID,
         run_id=RUN_ID,
@@ -409,13 +430,9 @@ def _amendment_record(
         else f"contract:{contract_version}:accepted",
         trigger_refs=trigger_refs if trigger_refs is not None else _trigger_refs(),
         affected_component_refs=(
-            AffectedComponentRef(
-                component_id=component_ref["component_id"],
-                component_revision=component_ref["component_revision"],
-                component_digest=component_ref["component_digest"],
-            ),
+            affected_component_refs if affected_component_refs is not None else default_affected
         ),
-        operations=(_operation(),),
+        operations=operations if operations is not None else (_operation(),),
         materiality=materiality,
         user_confirmation_posture=UserConfirmationPosture.NOT_REQUIRED,
         monotonicity=MonotonicityPosture.PRESERVES,
@@ -611,7 +628,7 @@ def test_unadmitted_content_ref_trigger_is_rejected() -> None:
         component_coverage_refs=(COVERAGE_RECORD_ID,),
     )
     bad_record = _amendment_record(accepted, trigger_refs=bad_trigger)
-    with pytest.raises(RunKernelTransitionError, match="is not admitted"):
+    with pytest.raises(RunKernelTransitionError, match="is not cited"):
         _admit_amendment(kernel, accepted, bad_record)
 
 
@@ -648,7 +665,7 @@ def test_blocked_disposition_may_be_admitted_when_valid() -> None:
         disposition=ProposalDisposition.BLOCKED,
         blocking_reasons=("Mode budget exhausted for material amendment.",),
         materiality=MaterialityPosture.MATERIAL,
-        coverage_candidates=(_coverage_candidate(),),
+        coverage_candidates=(_coverage_candidate(kernel),),
         stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
     )
     blocked = replace(
@@ -673,7 +690,7 @@ def test_candidate_invalidated_coverage_refs_remain_represented_only() -> None:
     material = _amendment_record(
         accepted,
         materiality=MaterialityPosture.MATERIAL,
-        coverage_candidates=(_coverage_candidate(),),
+        coverage_candidates=(_coverage_candidate(kernel),),
         stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
     )
     material = replace(
@@ -814,6 +831,222 @@ def test_record_failing_validate_is_rejected() -> None:
     invalid = _amendment_record(accepted, trigger_refs=AmendmentTriggerRefs())
     with pytest.raises(RunKernelTransitionError, match="trigger ref|trigger_refs"):
         _admit_amendment(kernel, accepted, invalid)
+
+
+def _secondary_observation(
+    accepted: dict[str, object],
+    *,
+    observation_id: str = "observation:secondary-support",
+    content_ref_id: str = "content:secondary-value",
+) -> tuple[SemanticObservation, SanitizedContentReference]:
+    component_ref = accepted["accepted_answer_component_refs"][0]
+    content_ref = SanitizedContentReference(
+        content_ref_id=content_ref_id,
+        evidence_ref_id=EVIDENCE_ID,
+        admitted_evidence_ref=EVIDENCE_ID,
+        source_id="source:public-record-secondary",
+        source_digest="source-digest-sem-08-secondary",
+        source_url="https://example.org/public-record-notice-secondary",
+        source_title="Public record notice secondary",
+        source_domain="example.org",
+        answer_component_id=component_ref["component_id"],
+        component_revision=component_ref["component_revision"],
+        component_contract_digest=component_ref["component_digest"],
+        question_meaning_record_id=accepted["parent_question_meaning_record_id"],
+        question_meaning_record_digest=accepted["parent_question_meaning_record_digest"],
+        content_kind=ContentKind.BOUNDED_EXCERPT,
+        bounded_text="Secondary bounded excerpt.",
+        page=2,
+        section="Secondary totals",
+        char_range_start=5,
+        char_range_end=40,
+        extraction_method="offline_fixture",
+        worker_kind="bounded_reader",
+        currentness="current_for_2026",
+        observed_at="2026-06-22T00:00:00Z",
+        metadata={"safe_note": "secondary"},
+    )
+    observation = SemanticObservation(
+        observation_id=observation_id,
+        observation_kind=ObservationKind.SUPPORT,
+        question_meaning_record_id=accepted["parent_question_meaning_record_id"],
+        question_meaning_record_digest=accepted["parent_question_meaning_record_digest"],
+        contract_version=accepted["accepted_contract_version"],
+        contract_digest=accepted["accepted_contract_digest"],
+        answer_component_id=component_ref["component_id"],
+        component_revision=component_ref["component_revision"],
+        component_contract_digest=component_ref["component_digest"],
+        evidence_refs=(EVIDENCE_ID,),
+        content_refs=(content_ref_id,),
+        support_kind=SupportDirectness.DIRECT,
+        directness=SupportDirectness.DIRECT,
+        support_status=SupportStatus.SUPPORTS,
+        claim_or_value="secondary value",
+        normalization_fit="secondary normalization",
+        scope_fit="calendar year 2026 secondary",
+        assumption_fit="secondary assumption",
+        inference_depth=0,
+        metadata={"safe_review_note": "secondary observation"},
+    )
+    return observation, content_ref
+
+
+def test_content_ref_from_non_cited_admitted_observation_is_rejected() -> None:
+    kernel, accepted, _record = _start_admitted_kernel_with_coverage()
+    secondary_observation, secondary_content_ref = _secondary_observation(accepted)
+    _admit(kernel, accepted, secondary_observation, secondary_content_ref)
+    bad_trigger = AmendmentTriggerRefs(
+        semantic_observation_refs=("observation:supports-reported-total",),
+        evidence_refs=(EVIDENCE_ID,),
+        sanitized_content_refs=("content:secondary-value",),
+        component_coverage_refs=(COVERAGE_RECORD_ID,),
+    )
+    bad_record = _amendment_record(accepted, trigger_refs=bad_trigger)
+    with pytest.raises(RunKernelTransitionError, match="is not cited"):
+        _admit_amendment(kernel, accepted, bad_record)
+
+
+def test_candidate_invalidated_coverage_ref_missing_coverage_record_id_is_rejected() -> None:
+    kernel, accepted, _record = _start_admitted_kernel_with_coverage()
+    missing_id = CoverageInvalidationCandidateRef(
+        coverage_record_id="",
+        coverage_record_digest=kernel.state.component_coverage_history[-1]["coverage_record_digest"],
+        answer_component_id=COMPONENT_ID,
+        reason="component revision or material slot changed",
+    )
+    material = _amendment_record(
+        accepted,
+        materiality=MaterialityPosture.MATERIAL,
+        coverage_candidates=(missing_id,),
+        stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
+    )
+    material = replace(
+        material,
+        user_confirmation_posture=UserConfirmationPosture.EXPLICIT_USER_CONFIRMATION,
+    )
+    with pytest.raises(RunKernelTransitionError, match="requires coverage_record_id"):
+        _admit_amendment(kernel, accepted, material)
+
+
+def test_candidate_invalidated_coverage_ref_stale_digest_is_rejected() -> None:
+    kernel, accepted, _record = _start_admitted_kernel_with_coverage()
+    stale = CoverageInvalidationCandidateRef(
+        coverage_record_id=COVERAGE_RECORD_ID,
+        coverage_record_digest="0" * 64,
+        answer_component_id=COMPONENT_ID,
+        reason="component revision or material slot changed",
+    )
+    material = _amendment_record(
+        accepted,
+        materiality=MaterialityPosture.MATERIAL,
+        coverage_candidates=(stale,),
+        stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
+    )
+    material = replace(
+        material,
+        user_confirmation_posture=UserConfirmationPosture.EXPLICIT_USER_CONFIRMATION,
+    )
+    with pytest.raises(RunKernelTransitionError, match="stale coverage digest"):
+        _admit_amendment(kernel, accepted, material)
+
+
+def test_affected_component_unknown_component_id_rejected_for_revise() -> None:
+    kernel, accepted, _record = _start_admitted_kernel_with_coverage()
+    revise = _amendment_record(
+        accepted,
+        materiality=MaterialityPosture.MATERIAL,
+        coverage_candidates=(_coverage_candidate(kernel),),
+        stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
+        operations=(
+            AmendmentOperation(
+                operation_id="operation:revise_component",
+                operation_kind=AmendmentOperationKind.REVISE_COMPONENT,
+                operation_payload={"component_change": "revise wording"},
+                component_revision_changed=True,
+                component_digest_changed=True,
+            ),
+        ),
+        affected_component_refs=(
+            AffectedComponentRef(
+                component_id="component:unknown",
+                component_revision="1",
+                component_digest="d" * 64,
+            ),
+        ),
+    )
+    revise = replace(
+        revise,
+        user_confirmation_posture=UserConfirmationPosture.EXPLICIT_USER_CONFIRMATION,
+    )
+    with pytest.raises(RunKernelTransitionError, match="is not in accepted contract"):
+        _admit_amendment(kernel, accepted, revise)
+
+
+def test_affected_component_wrong_revision_digest_rejected_without_change_flags() -> None:
+    kernel, accepted, _record = _start_admitted_kernel_with_coverage()
+    component_ref = accepted["accepted_answer_component_refs"][0]
+    revise = _amendment_record(
+        accepted,
+        materiality=MaterialityPosture.MATERIAL,
+        coverage_candidates=(_coverage_candidate(kernel),),
+        stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
+        operations=(
+            AmendmentOperation(
+                operation_id="operation:revise_component",
+                operation_kind=AmendmentOperationKind.REVISE_COMPONENT,
+                operation_payload={"component_change": "revise wording"},
+            ),
+        ),
+        affected_component_refs=(
+            AffectedComponentRef(
+                component_id=component_ref["component_id"],
+                component_revision="99",
+                component_digest="f" * 64,
+            ),
+        ),
+    )
+    revise = replace(
+        revise,
+        user_confirmation_posture=UserConfirmationPosture.EXPLICIT_USER_CONFIRMATION,
+    )
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="revision does not match|digest does not match",
+    ):
+        _admit_amendment(kernel, accepted, revise)
+
+
+def test_add_component_new_id_allowed_without_contract_mutation() -> None:
+    kernel, accepted, _record = _start_admitted_kernel_with_coverage()
+    new_component_id = "component:new-reporting-slot"
+    add_component = _amendment_record(
+        accepted,
+        materiality=MaterialityPosture.MATERIAL,
+        coverage_candidates=(_coverage_candidate(kernel),),
+        stale_posture=StaleCoverageCandidatePosture.CANDIDATE_STALE,
+        operations=(
+            AmendmentOperation(
+                operation_id="operation:add_component",
+                operation_kind=AmendmentOperationKind.ADD_COMPONENT,
+                operation_payload={"component_id": new_component_id},
+            ),
+        ),
+        affected_component_refs=(
+            AffectedComponentRef(
+                component_id=new_component_id,
+                component_revision="1",
+                component_digest="a" * 64,
+            ),
+        ),
+    )
+    add_component = replace(
+        add_component,
+        user_confirmation_posture=UserConfirmationPosture.EXPLICIT_USER_CONFIRMATION,
+    )
+    contract_before = json.dumps(kernel.state.initial_answer_contract, sort_keys=True)
+    _admit_amendment(kernel, accepted, add_component)
+    assert json.dumps(kernel.state.initial_answer_contract, sort_keys=True) == contract_before
+    assert kernel.state.contract_amendment_admission_state["amendment_record_id"] == AMENDMENT_RECORD_ID
 
 
 def test_static_guard_keeps_live_and_authority_surfaces_closed() -> None:

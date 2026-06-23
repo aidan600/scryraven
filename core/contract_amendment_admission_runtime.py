@@ -476,36 +476,55 @@ def _evidence_custody_refs(evidence_ledger_projection: Mapping[str, Any]) -> set
     return allowed
 
 
-def _admitted_observation_ids(admission_history: Sequence[Mapping[str, Any]]) -> set[str]:
-    ids: set[str] = set()
+def _accepted_component_index(accepted_contract: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    index: dict[str, Mapping[str, Any]] = {}
+    for ref in accepted_contract.get("accepted_answer_component_refs") or ():
+        if isinstance(ref, Mapping):
+            component_id = _clean_token(ref.get("component_id"))
+            if component_id:
+                index[component_id] = ref
+    return index
+
+
+def _admission_index(
+    admission_history: Sequence[Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    index: dict[str, Mapping[str, Any]] = {}
     for item in admission_history:
         mapping = _safe_mapping(item)
         observation_id = _clean_token(mapping.get("observation_id"))
         if observation_id:
-            ids.add(observation_id)
-    return ids
+            index[observation_id] = mapping
+    return index
 
 
-def _admitted_content_ref_ids(admission_history: Sequence[Mapping[str, Any]]) -> set[str]:
-    ids: set[str] = set()
-    for item in admission_history:
-        mapping = _safe_mapping(item)
-        ids.update(_text_list(mapping.get("content_refs")))
-        for record in mapping.get("content_ref_records") or ():
-            if isinstance(record, Mapping):
-                content_ref_id = _clean_token(record.get("content_ref_id"))
-                if content_ref_id:
-                    ids.add(content_ref_id)
-    return ids
-
-
-def _reduced_coverage_record_ids(coverage_history: Sequence[Mapping[str, Any]]) -> set[str]:
-    ids: set[str] = set()
+def _coverage_index(
+    coverage_history: Sequence[Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    index: dict[str, Mapping[str, Any]] = {}
     for item in coverage_history:
         mapping = _safe_mapping(item)
         coverage_record_id = _clean_token(mapping.get("coverage_record_id"))
         if coverage_record_id:
-            ids.add(coverage_record_id)
+            index[coverage_record_id] = mapping
+    return index
+
+
+def _cited_observation_content_ref_ids(
+    admission_index: Mapping[str, Mapping[str, Any]],
+    cited_observation_ids: Sequence[str],
+) -> set[str]:
+    ids: set[str] = set()
+    for observation_id in cited_observation_ids:
+        admission = admission_index.get(observation_id)
+        if admission is None:
+            continue
+        ids.update(_text_list(admission.get("content_refs")))
+        for record in admission.get("content_ref_records") or ():
+            if isinstance(record, Mapping):
+                content_ref_id = _clean_token(record.get("content_ref_id"))
+                if content_ref_id:
+                    ids.add(content_ref_id)
     return ids
 
 
@@ -516,25 +535,46 @@ def _validate_trigger_refs(
     coverage_history: Sequence[Mapping[str, Any]],
     evidence_ledger_projection: Mapping[str, Any],
 ) -> None:
-    admitted_observations = _admitted_observation_ids(admission_history)
-    admitted_content_refs = _admitted_content_ref_ids(admission_history)
-    reduced_coverage_ids = _reduced_coverage_record_ids(coverage_history)
+    admission_by_id = _admission_index(admission_history)
+    coverage_by_id = _coverage_index(coverage_history)
+    cited_content_refs = _cited_observation_content_ref_ids(
+        admission_by_id,
+        trigger_refs.semantic_observation_refs,
+    )
     allowed_evidence_refs = _evidence_custody_refs(_safe_mapping(evidence_ledger_projection))
 
+    coverage_digests: dict[str, str] = {}
+    metadata = trigger_refs.metadata if isinstance(trigger_refs.metadata, Mapping) else {}
+    raw_digests = metadata.get("component_coverage_digests")
+    if isinstance(raw_digests, Mapping):
+        for key, value in raw_digests.items():
+            coverage_id = _clean_token(key)
+            digest = _clean_token(value, limit=128)
+            if coverage_id and digest:
+                coverage_digests[coverage_id] = digest
+
     for observation_id in trigger_refs.semantic_observation_refs:
-        if observation_id not in admitted_observations:
+        if observation_id not in admission_by_id:
             raise ContractAmendmentAdmissionError(
                 f"trigger semantic observation ref {observation_id} is not admitted"
             )
     for coverage_record_id in trigger_refs.component_coverage_refs:
-        if coverage_record_id not in reduced_coverage_ids:
+        coverage_entry = coverage_by_id.get(coverage_record_id)
+        if coverage_entry is None:
             raise ContractAmendmentAdmissionError(
                 f"trigger component coverage ref {coverage_record_id} is not reduced"
             )
+        if coverage_record_id in coverage_digests:
+            expected_digest = coverage_digests[coverage_record_id]
+            actual_digest = _clean_token(coverage_entry.get("coverage_record_digest"), limit=128)
+            if expected_digest != actual_digest:
+                raise ContractAmendmentAdmissionError(
+                    f"trigger component coverage ref {coverage_record_id} has stale coverage digest"
+                )
     for content_ref_id in trigger_refs.sanitized_content_refs:
-        if content_ref_id not in admitted_content_refs:
+        if content_ref_id not in cited_content_refs:
             raise ContractAmendmentAdmissionError(
-                f"trigger sanitized content ref {content_ref_id} is not admitted"
+                f"trigger sanitized content ref {content_ref_id} is not cited by admitted semantic observation refs"
             )
     foreign_evidence = sorted(
         ref
@@ -546,6 +586,76 @@ def _validate_trigger_refs(
             "trigger evidence refs absent from EvidenceLedger custody: "
             + ", ".join(foreign_evidence)
         )
+
+
+def _validate_affected_components(
+    affected_component_refs: Sequence[AffectedComponentRef],
+    operations: Sequence[AmendmentOperation],
+    *,
+    accepted_contract: Mapping[str, Any],
+) -> None:
+    component_index = _accepted_component_index(accepted_contract)
+    for operation in operations:
+        if not operation.changes_component:
+            continue
+        if operation.operation_kind is AmendmentOperationKind.ADD_COMPONENT:
+            continue
+        for ref in affected_component_refs:
+            accepted = component_index.get(ref.component_id)
+            if accepted is None:
+                raise ContractAmendmentAdmissionError(
+                    f"affected component ref {ref.component_id} is not in accepted contract"
+                )
+            if not operation.component_revision_changed:
+                _require_match(
+                    ref.component_revision
+                    == _clean_token(accepted.get("component_revision")),
+                    f"affected component ref {ref.component_id} revision does not match accepted component",
+                )
+            if not operation.component_digest_changed:
+                _require_match(
+                    ref.component_digest
+                    == _clean_token(accepted.get("component_digest"), limit=128),
+                    f"affected component ref {ref.component_id} digest does not match accepted component",
+                )
+
+
+def _validate_candidate_invalidated_coverage_refs(
+    candidates: Sequence[CoverageInvalidationCandidateRef],
+    *,
+    coverage_history: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    coverage_by_id = _coverage_index(coverage_history)
+    represented: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if not candidate.coverage_record_id:
+            raise ContractAmendmentAdmissionError(
+                "candidate invalidated coverage ref requires coverage_record_id"
+            )
+        coverage_entry = coverage_by_id.get(candidate.coverage_record_id)
+        if coverage_entry is None:
+            raise ContractAmendmentAdmissionError(
+                f"candidate invalidated coverage ref {candidate.coverage_record_id} is not reduced"
+            )
+        if candidate.coverage_record_digest:
+            history_digest = _clean_token(
+                coverage_entry.get("coverage_record_digest"), limit=128
+            )
+            if candidate.coverage_record_digest != history_digest:
+                raise ContractAmendmentAdmissionError(
+                    f"candidate invalidated coverage ref {candidate.coverage_record_id} has stale coverage digest"
+                )
+        candidate_dict = candidate.to_dict()
+        if candidate_dict.get("represented_only") is not True:
+            raise ContractAmendmentAdmissionError(
+                "candidate invalidated coverage refs must remain represented_only"
+            )
+        if candidate_dict.get("coverage_invalidation_applied") is True:
+            raise ContractAmendmentAdmissionError(
+                "candidate invalidated coverage refs must not apply invalidation"
+            )
+        represented.append(candidate_dict)
+    return represented
 
 
 def _expected_accepted_contract_ref(accepted_contract_version: str) -> str:
@@ -749,18 +859,16 @@ def build_contract_amendment_admission_state(
         evidence_ledger_projection=_safe_mapping(evidence_ledger_projection),
     )
 
-    represented_coverage_candidates: list[dict[str, Any]] = []
-    for candidate in record.candidate_invalidated_coverage_refs:
-        candidate_dict = candidate.to_dict()
-        if candidate_dict.get("represented_only") is not True:
-            raise ContractAmendmentAdmissionError(
-                "candidate invalidated coverage refs must remain represented_only"
-            )
-        if candidate_dict.get("coverage_invalidation_applied") is True:
-            raise ContractAmendmentAdmissionError(
-                "candidate invalidated coverage refs must not apply invalidation"
-            )
-        represented_coverage_candidates.append(candidate_dict)
+    _validate_affected_components(
+        record.affected_component_refs,
+        record.operations,
+        accepted_contract=contract,
+    )
+
+    represented_coverage_candidates = _validate_candidate_invalidated_coverage_refs(
+        record.candidate_invalidated_coverage_refs,
+        coverage_history=coverage_history,
+    )
 
     if record.amendment_record_id in {
         _clean_token(item) for item in existing_amendment_record_ids if item
