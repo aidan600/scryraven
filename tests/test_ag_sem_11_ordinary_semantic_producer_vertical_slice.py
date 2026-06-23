@@ -56,6 +56,7 @@ class _OfflineOrdinaryHarness:
         self._DEFAULT_SYSTEM = DEFAULT_SYSTEM
         self.search_calls: list[dict[str, Any]] = []
         self.weakened_evidence = False
+        self.stale_readable_official = False
 
     def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
         if system_prompt == self._DEFAULT_SYSTEM["router"]:
@@ -148,7 +149,10 @@ class _OfflineOrdinaryHarness:
                     "_provider": "offline_fake_search",
                 }
             )
-        else:
+        if self.stale_readable_official:
+            for passage in passages:
+                passage["currentness_signal"] = "stale"
+        elif self.weakened_evidence:
             for passage in passages:
                 passage["source_tier"] = "weak"
                 passage["source_class"] = "contextual_secondary"
@@ -221,10 +225,12 @@ def _run_offline_pipeline(
     monkeypatch: pytest.MonkeyPatch,
     *,
     weakened_evidence: bool = False,
+    stale_readable_official: bool = False,
 ) -> dict[str, Any]:
     captured = _install_handoff_capture(monkeypatch)
     harness = _OfflineOrdinaryHarness(tmp_path)
     harness.weakened_evidence = weakened_evidence
+    harness.stale_readable_official = stale_readable_official
     orchestrator.run_pipeline(
         RunConfig(
             query=harness.query,
@@ -262,6 +268,15 @@ def test_offline_run_pipeline_transactional_semantic_chain_reaches_real_sufficie
     assert state.semantic_observation_admission_history
     assert state.component_coverage_history
 
+    component_ref = state.initial_answer_contract["accepted_answer_component_refs"][0]
+    assert component_ref.get("source_obligation_candidate_ids")
+    assert "obligation:official_current" in component_ref["source_obligation_candidate_ids"]
+
+    coverage = state.component_coverage_history[-1]
+    assert coverage.get("source_obligation_status") == "satisfied"
+    ledger_binding = coverage.get("evidence_ledger_binding") or {}
+    assert ledger_binding.get("source_requirement_ids")
+
     sufficiency_projection = captured["sufficiency_projection"]
     assert sufficiency_projection.get("semantic_consumption")
     assert sufficiency_projection.get("semantic_state_facts_summary")
@@ -269,6 +284,22 @@ def test_offline_run_pipeline_transactional_semantic_chain_reaches_real_sufficie
     assert sufficiency_projection["semantic_state_facts_summary"].get(
         "semantic_state_facts_digest"
     )
+
+
+def test_stale_readable_official_evidence_blocks_satisfied_source_obligation_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _run_offline_pipeline(tmp_path, monkeypatch, stale_readable_official=True)
+    kernel = captured["run_kernel"]
+    state = kernel.state
+
+    assert not state.initial_answer_contract
+    assert not state.semantic_observation_admission_history
+    assert not state.component_coverage_history
+
+    decision = captured["sufficiency_projection"].get("decision")
+    assert decision != RunSufficiencyDecision.READY_DIRECT.value
 
 
 def test_unqualified_or_stale_evidence_blocks_ready_direct(
@@ -325,7 +356,12 @@ def test_preflight_bundle_builds_for_ag_check_01_scope(
     )
     assert bundle is not None
     assert bundle.question_meaning_record.record_id.startswith("qmr:")
+    component = bundle.question_meaning_record.answer_components[0]
+    assert component.source_obligation_candidate_ids
+    assert "obligation:official_current" in component.source_obligation_candidate_ids
     assert bundle.component_coverage_record.coverage_state.value == "satisfied"
+    assert bundle.component_coverage_record.source_obligation_status.value == "satisfied"
+    assert bundle.component_coverage_record.evidence_ledger_binding.source_requirement_ids
 
 
 def test_static_guard_no_new_run_kernel_semantic_authority() -> None:

@@ -212,6 +212,13 @@ def _answer_component_from_candidate(
     component_id = _clean_token(candidate.component_id) or "component-1"
     if not component_id.startswith("component:"):
         component_id = f"component:{component_id}"
+    obligation_ids = tuple(
+        obligation_id
+        for obligation_id in (
+            _clean_token(item) for item in candidate.source_obligation_candidate_ids
+        )
+        if obligation_id
+    )
     return AnswerComponentContract(
         component_id=component_id,
         user_facing_label=label,
@@ -222,7 +229,7 @@ def _answer_component_from_candidate(
             "bind it to custodied evidence",
         ),
         semantic_slot_ids=semantic_slot_ids,
-        source_obligation_candidate_ids=(),
+        source_obligation_candidate_ids=obligation_ids,
         allowed_support_kinds=(SupportKind.DIRECT,),
         max_inference_depth=0,
         mandatory_caveats=("Answer remains evidence-bound.",),
@@ -285,7 +292,14 @@ def _ledger_candidate_index(
     return index
 
 
-def _candidate_is_bindable(candidate: Mapping[str, Any]) -> bool:
+_STALE_CURRENTNESS_SIGNALS = frozenset({"stale", "outdated", "expired", "superseded"})
+
+
+def _candidate_is_bindable(
+    candidate: Mapping[str, Any],
+    *,
+    passage: Mapping[str, Any] | None = None,
+) -> bool:
     disposition = (_clean_token(candidate.get("fact_disposition")) or "unknown").casefold()
     if disposition in {"rejected", "dropped", "unreadable", "unfetchable"}:
         return False
@@ -297,6 +311,13 @@ def _candidate_is_bindable(candidate: Mapping[str, Any]) -> bool:
     if candidate.get("contextual_only") is True:
         return False
     if candidate.get("lower_tier") is True:
+        return False
+    currentness = (
+        _clean_token(candidate.get("currentness_signal"))
+        or (_clean_token(passage.get("currentness_signal")) if passage else None)
+        or (_clean_token(passage.get("currentness")) if passage else None)
+    )
+    if currentness and currentness.casefold() in _STALE_CURRENTNESS_SIGNALS:
         return False
     return True
 
@@ -323,7 +344,7 @@ def select_bindable_final_passage(
             url = _normalize_url(passage.get("url"))
             if url:
                 candidate = candidate_index.get(url)
-        if candidate is None or not _candidate_is_bindable(candidate):
+        if candidate is None or not _candidate_is_bindable(candidate, passage=passage):
             continue
         evidence_ref_id = _clean_token(candidate.get("candidate_id")) or candidate_id
         return BindableFinalPassage(
@@ -375,28 +396,110 @@ def build_sanitized_content_reference_from_passage(
     ).require_valid()
 
 
+def _requirement_ids_blocked_by_custody_gaps(
+    evidence_ledger_projection: Mapping[str, Any],
+) -> set[str]:
+    blocked: set[str] = set()
+    for gap in evidence_ledger_projection.get("custody_gaps") or ():
+        if not isinstance(gap, Mapping):
+            continue
+        requirement_id = _clean_token(gap.get("requirement_id"))
+        if requirement_id:
+            blocked.add(requirement_id)
+    return blocked
+
+
+def _requirement_matches_obligation_candidate(
+    requirement: Mapping[str, Any],
+    obligation_candidate_id: str,
+) -> bool:
+    obligation = (_clean_token(obligation_candidate_id) or "").casefold()
+    if not obligation:
+        return False
+    requirement_id = (_clean_token(requirement.get("requirement_id")) or "").casefold()
+    if obligation in requirement_id or obligation.removeprefix("obligation:") in requirement_id:
+        return True
+    obligation_kind = obligation.split(":", 1)[-1]
+    requirement_kind = (_clean_token(requirement.get("requirement_kind")) or "").casefold()
+    if obligation_kind and requirement_kind == obligation_kind:
+        return True
+    origin_ref = (_clean_token(requirement.get("origin_ref")) or "").casefold()
+    if obligation_kind and obligation_kind in origin_ref:
+        return True
+    return False
+
+
 def _source_requirement_ids_for_candidate(
     evidence_ledger_projection: Mapping[str, Any],
     *,
     evidence_ref_id: str,
+    source_obligation_candidate_ids: Sequence[str] = (),
 ) -> tuple[str, ...]:
-    requirement_ids: list[str] = []
+    normalized_evidence_ref = _clean_token(evidence_ref_id) or ""
+    if not normalized_evidence_ref:
+        return ()
+
+    requirements_by_id: dict[str, dict[str, Any]] = {}
+    for requirement in evidence_ledger_projection.get("source_requirements") or ():
+        if not isinstance(requirement, Mapping):
+            continue
+        requirement_id = _clean_token(requirement.get("requirement_id"))
+        if requirement_id:
+            requirements_by_id[requirement_id] = dict(requirement)
+
+    linked_requirement_ids: list[str] = []
     for link in evidence_ledger_projection.get("requirement_links") or ():
         if not isinstance(link, Mapping):
             continue
-        if _clean_token(link.get("candidate_id")) != evidence_ref_id:
+        if _clean_token(link.get("candidate_id")) != normalized_evidence_ref:
             continue
         requirement_id = _clean_token(link.get("requirement_id"))
         if requirement_id:
-            requirement_ids.append(requirement_id)
-    if requirement_ids:
-        return tuple(dict.fromkeys(requirement_ids))
-    for requirement in evidence_ledger_projection.get("source_requirements") or ():
-        if isinstance(requirement, Mapping):
-            requirement_id = _clean_token(requirement.get("requirement_id"))
-            if requirement_id:
-                return (requirement_id,)
-    return ()
+            linked_requirement_ids.append(requirement_id)
+
+    if not linked_requirement_ids:
+        for requirement_id, requirement in requirements_by_id.items():
+            linked_candidates = requirement.get("linked_candidate_ids") or ()
+            if normalized_evidence_ref in {
+                _clean_token(candidate_id)
+                for candidate_id in linked_candidates
+                if _clean_token(candidate_id)
+            }:
+                linked_requirement_ids.append(requirement_id)
+
+    ordered_linked: list[str] = []
+    seen: set[str] = set()
+    for requirement_id in linked_requirement_ids:
+        if requirement_id not in seen:
+            seen.add(requirement_id)
+            ordered_linked.append(requirement_id)
+
+    obligation_ids = tuple(
+        obligation_id
+        for obligation_id in (_clean_token(item) for item in source_obligation_candidate_ids)
+        if obligation_id
+    )
+    satisfied_linked: list[str] = []
+    for requirement_id in ordered_linked:
+        requirement = requirements_by_id.get(requirement_id)
+        if requirement is None:
+            continue
+        if (_clean_token(requirement.get("status")) or "").casefold() != "satisfied":
+            continue
+        if obligation_ids and not any(
+            _requirement_matches_obligation_candidate(requirement, obligation_id)
+            for obligation_id in obligation_ids
+        ):
+            continue
+        satisfied_linked.append(requirement_id)
+    blocked_requirement_ids = _requirement_ids_blocked_by_custody_gaps(
+        evidence_ledger_projection
+    )
+    return tuple(
+        requirement_id
+        for requirement_id in dict.fromkeys(satisfied_linked)
+        if requirement_id not in blocked_requirement_ids
+    )
 
 
 def build_semantic_observation_and_content_refs(
@@ -449,14 +552,26 @@ def build_component_coverage_proposal(
     query: str,
 ) -> ComponentCoverageRecord | None:
     component_ref = accepted_contract["accepted_answer_component_refs"][0]
-    has_source_obligations = bool(
-        component_ref.get("source_obligation_candidate_ids")
-        or component_ref.get("source_obligation_candidate_refs")
+    source_obligation_candidate_ids = tuple(
+        obligation_id
+        for obligation_id in (
+            _clean_token(item)
+            for item in (
+                component_ref.get("source_obligation_candidate_ids")
+                or component_ref.get("source_obligation_candidate_refs")
+                or ()
+            )
+        )
+        if obligation_id
     )
+    has_source_obligations = bool(source_obligation_candidate_ids)
     if has_source_obligations:
+        if not observation.evidence_refs:
+            return None
         source_requirement_ids = _source_requirement_ids_for_candidate(
             evidence_ledger_projection,
             evidence_ref_id=observation.evidence_refs[0],
+            source_obligation_candidate_ids=source_obligation_candidate_ids,
         )
         if not source_requirement_ids:
             return None

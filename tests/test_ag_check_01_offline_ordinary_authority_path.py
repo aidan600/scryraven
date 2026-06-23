@@ -397,6 +397,11 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.initial_answer_contract
     assert state.semantic_observation_admission_history
     assert state.component_coverage_history
+    component_ref = state.initial_answer_contract["accepted_answer_component_refs"][0]
+    assert component_ref.get("source_obligation_candidate_ids")
+    coverage = state.component_coverage_history[-1]
+    assert coverage.get("source_obligation_status") == "satisfied"
+    assert coverage.get("evidence_ledger_binding", {}).get("source_requirement_ids")
     assert "bounded_excerpt" in canonical_trace
     assert RAW_AUTHOR_RESPONSE not in canonical_trace
     assert harness.author_prompts[0] not in execution_trace
