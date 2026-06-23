@@ -13,6 +13,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
+from core.component_coverage_reduction_runtime import (
+    COMPONENT_COVERAGE_REDUCTION_REASON,
+    ComponentCoverageReductionError,
+    build_component_coverage_reduction_projection,
+    build_component_coverage_reduction_state,
+)
+from core.component_coverage_reduction_runtime import (
+    COMPONENT_COVERAGE_REDUCTION_STAGE as COMPONENT_COVERAGE_REDUCTION_STAGE_NAME,
+)
 from core.evidence_ledger import EvidenceLedger
 from core.followup_author_evidence_content_bridge_runtime import (
     FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_REASON,
@@ -382,6 +391,7 @@ INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
 SEMANTIC_OBSERVATION_ADMISSION_STAGE = (
     SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME
 )
+COMPONENT_COVERAGE_REDUCTION_STAGE = COMPONENT_COVERAGE_REDUCTION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
@@ -480,6 +490,7 @@ class ActionType(str, Enum):
     RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
+    COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -542,6 +553,7 @@ class ObservationType(str, Enum):
     RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
+    COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -858,6 +870,9 @@ class RunState:
     semantic_observation_admission_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    component_coverage_state: dict[str, Any] = field(default_factory=dict)
+    component_coverage_projection: dict[str, Any] = field(default_factory=dict)
+    component_coverage_history: list[dict[str, Any]] = field(default_factory=list)
     search_work_plan: dict[str, Any] = field(default_factory=dict)
     search_work_plan_projection: dict[str, Any] = field(default_factory=dict)
     search_work_plan_validation: dict[str, Any] = field(default_factory=dict)
@@ -1120,6 +1135,9 @@ class RunState:
             semantic_observation_admission_history=deepcopy(
                 self.semantic_observation_admission_history
             ),
+            component_coverage_state=deepcopy(self.component_coverage_state),
+            component_coverage_projection=deepcopy(self.component_coverage_projection),
+            component_coverage_history=deepcopy(self.component_coverage_history),
             search_work_plan=deepcopy(self.search_work_plan),
             search_work_plan_projection=deepcopy(self.search_work_plan_projection),
             search_work_plan_validation=deepcopy(self.search_work_plan_validation),
@@ -1392,6 +1410,9 @@ class KernelTraceProjection:
     semantic_observation_admission_state: Mapping[str, Any]
     semantic_observation_admission_projection: Mapping[str, Any]
     semantic_observation_admission_history: Sequence[Mapping[str, Any]]
+    component_coverage_state: Mapping[str, Any]
+    component_coverage_projection: Mapping[str, Any]
+    component_coverage_history: Sequence[Mapping[str, Any]]
     search_work_plan: Mapping[str, Any]
     search_work_plan_projection: Mapping[str, Any]
     search_work_plan_validation: Mapping[str, Any]
@@ -1519,6 +1540,13 @@ class KernelTraceProjection:
             "semantic_observation_admission_history": [
                 _safe_mapping(item)
                 for item in self.semantic_observation_admission_history
+            ],
+            "component_coverage_state": _safe_mapping(self.component_coverage_state),
+            "component_coverage_projection": _safe_mapping(
+                self.component_coverage_projection
+            ),
+            "component_coverage_history": [
+                _safe_mapping(item) for item in self.component_coverage_history
             ],
             "search_work_plan": _safe_mapping(self.search_work_plan),
             "search_work_plan_projection": _safe_mapping(
@@ -1984,6 +2012,70 @@ class RunKernel:
             expected_observation_type=(
                 ObservationType.SEMANTIC_OBSERVATION_ADMITTED
             ),
+        )
+
+    def authorize_component_coverage_reduction(
+        self,
+        *,
+        coverage_record_id: str,
+        coverage_record_digest: str,
+        answer_component_id: str,
+        component_revision: str,
+        component_digest: str,
+        accepted_contract_digest: str | None = None,
+        accepted_contract_version: str | None = None,
+        request_id: str | None = None,
+        reason: str = COMPONENT_COVERAGE_REDUCTION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.initial_answer_contract_projection:
+            raise RunKernelTransitionError(
+                "component coverage reduction requires an accepted initial answer contract"
+            )
+        if not self.state.semantic_observation_admission_history:
+            raise RunKernelTransitionError(
+                "component coverage reduction requires at least one admitted "
+                "SemanticObservation"
+            )
+        accepted = self.state.initial_answer_contract
+        resolved_contract_digest = (
+            accepted_contract_digest
+            or accepted.get("accepted_contract_digest")
+        )
+        resolved_contract_version = (
+            accepted_contract_version
+            or accepted.get("accepted_contract_version")
+        )
+        for label, value in (
+            ("coverage_record_id", coverage_record_id),
+            ("coverage_record_digest", coverage_record_digest),
+            ("answer_component_id", answer_component_id),
+            ("component_revision", component_revision),
+            ("component_digest", component_digest),
+            ("accepted_contract_digest", resolved_contract_digest),
+            ("accepted_contract_version", resolved_contract_version),
+        ):
+            if not _clean_text(value, limit=200):
+                raise RunKernelTransitionError(
+                    "component coverage reduction requires " f"{label} binding"
+                )
+        merged_inputs = {
+            "coverage_record_id": coverage_record_id,
+            "coverage_record_digest": coverage_record_digest,
+            "answer_component_id": answer_component_id,
+            "component_revision": component_revision,
+            "component_digest": component_digest,
+            "accepted_contract_digest": resolved_contract_digest,
+            "accepted_contract_version": resolved_contract_version,
+            "request_id": request_id or self.state.request_id,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=COMPONENT_COVERAGE_REDUCTION_STAGE,
+            action_type=ActionType.COMPONENT_COVERAGE_REDUCE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
         )
 
     def authorize_search_work_plan_construction(
@@ -8792,6 +8884,50 @@ class RunKernel:
                 deepcopy(admission_projection)
             )
             self.state.projections[action.stage] = deepcopy(admission_projection)
+        elif action.action_type is ActionType.COMPONENT_COVERAGE_REDUCE:
+            if not self.state.initial_answer_contract_projection:
+                raise RunKernelTransitionError(
+                    "component coverage reduction requires an accepted "
+                    "initial answer contract"
+                )
+            reduction_payload = _safe_mapping(observation.payload)
+            if not reduction_payload.get("component_coverage_record"):
+                raise RunKernelTransitionError(
+                    "component coverage reduction observation requires a "
+                    "component_coverage_record proposal payload"
+                )
+            existing_ids = [
+                _safe_mapping(item).get("coverage_record_id")
+                for item in self.state.component_coverage_history
+            ]
+            existing_digests = [
+                _safe_mapping(item).get("coverage_record_digest")
+                for item in self.state.component_coverage_history
+            ]
+            try:
+                coverage_state = build_component_coverage_reduction_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    coverage_payload=reduction_payload,
+                    accepted_contract=self.state.initial_answer_contract,
+                    admission_history=self.state.semantic_observation_admission_history,
+                    evidence_ledger_projection=(
+                        self.state.evidence_ledger.to_projection().to_dict()
+                    ),
+                    existing_coverage_record_ids=existing_ids,
+                    existing_coverage_record_digests=existing_digests,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                )
+                coverage_projection = build_component_coverage_reduction_projection(
+                    coverage_state=coverage_state
+                )
+            except ComponentCoverageReductionError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.component_coverage_state = coverage_state
+            self.state.component_coverage_projection = coverage_projection
+            self.state.component_coverage_history.append(deepcopy(coverage_projection))
+            self.state.projections[action.stage] = deepcopy(coverage_projection)
         elif action.action_type is ActionType.SEARCH_WORK_PLAN_CONSTRUCT:
             construction_result = _safe_mapping(
                 observation.payload.get("construction_result")
