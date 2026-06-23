@@ -46,6 +46,7 @@ def build_sufficiency_judgment_input_from_runtime(
         initial_answer_contract=initial_answer_contract or {},
         component_coverage_history=component_coverage_history,
         contract_amendment_admission_history=contract_amendment_admission_history,
+        evidence_ledger_projection=evidence_ledger_projection,
     )
 
     return RunSufficiencyJudgmentInput(

@@ -14,6 +14,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Sequence
 
+from core.component_coverage_reduction_runtime import (
+    ledger_qualification_blockers_for_satisfied_coverage,
+)
+
 SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION = (
     "sufficiency_semantic_state_consumption_ag_sem_09_v1"
 )
@@ -273,6 +277,7 @@ def build_semantic_state_facts_for_sufficiency(
     initial_answer_contract: Mapping[str, Any] | None,
     component_coverage_history: Sequence[Mapping[str, Any]],
     contract_amendment_admission_history: Sequence[Mapping[str, Any]],
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build compact semantic facts consumed by RunAuthority Sufficiency."""
 
@@ -317,6 +322,15 @@ def build_semantic_state_facts_for_sufficiency(
         if coverage_record_id:
             suspect_reasons.extend(invalidation_suspects.get(coverage_record_id, []))
         coverage_suspect = bool(suspect_reasons)
+        ledger_qualification_blockers: list[dict[str, str]] = []
+        if coverage and isinstance(evidence_ledger_projection, Mapping):
+            ledger_qualification_blockers = (
+                ledger_qualification_blockers_for_satisfied_coverage(
+                    coverage=coverage,
+                    evidence_ledger_projection=evidence_ledger_projection,
+                    accepted_component=ref,
+                )
+            )
 
         summary = {
             "component_id": component_id,
@@ -342,6 +356,10 @@ def build_semantic_state_facts_for_sufficiency(
             "followup_need": _clean_token(coverage.get("followup_need")),
             "coverage_suspect": coverage_suspect,
             "coverage_suspect_reasons": suspect_reasons[:10],
+            "ledger_qualification_status": (
+                "blocked" if ledger_qualification_blockers else "qualified_or_not_applicable"
+            ),
+            "ledger_qualification_blockers": ledger_qualification_blockers[:10],
             "blockers": [],
         }
         component_blockers: list[str] = []
@@ -485,6 +503,21 @@ def build_semantic_state_facts_for_sufficiency(
                     code="coverage_suspect_from_amendment",
                     scope="component",
                     ref_id=component_id,
+                )
+                direct_answer_blocked = True
+
+            for ledger_blocker in ledger_qualification_blockers:
+                code = _clean_token(ledger_blocker.get("code")) or (
+                    "ledger_qualification_blocked"
+                )
+                component_blockers.append(code)
+                _append_blocker(
+                    blockers,
+                    code=code,
+                    scope="component",
+                    ref_id=component_id,
+                    reason=_clean_text(ledger_blocker.get("reason"), limit=260)
+                    or "satisfied_coverage_lacks_current_ledger_qualification",
                 )
                 direct_answer_blocked = True
 

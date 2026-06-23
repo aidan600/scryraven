@@ -97,7 +97,13 @@ def _contract() -> dict[str, Any]:
     ).to_projection()
 
 
-def _ledger_projection(contract: dict[str, Any], *, satisfied: bool = True) -> dict[str, Any]:
+def _ledger_projection(
+    contract: dict[str, Any],
+    *,
+    satisfied: bool = True,
+    semantic_candidate_disposition: str = "accepted",
+    include_semantic_candidate: bool = True,
+) -> dict[str, Any]:
     from core.evidence_ledger import (
         CandidateDisposition,
         EvidenceLedger,
@@ -138,6 +144,29 @@ def _ledger_projection(contract: dict[str, Any], *, satisfied: bool = True) -> d
                 "observation_source": "ag_sem_09_fixture",
                 "candidates": [candidate],
                 "requirement_links": links,
+            }
+        )
+    if include_semantic_candidate:
+        ledger.reduce_observation(
+            {
+                "observation_id": "ag-sem-09:ledger:semantic-coverage-candidate",
+                "observation_source": "ag_sem_09_fixture",
+                "candidates": [
+                    {
+                        "candidate_id": EVIDENCE_ID,
+                        "url": "https://example.org/public-record-notice",
+                        "title": "Public record notice",
+                        "source_class": "primary_source_documents",
+                        "source_tier": "primary",
+                        "currentness_signal": "current",
+                        "readable_status": "readable",
+                        "fetchable_status": "fetchable",
+                        "disposition": semantic_candidate_disposition,
+                        "record_kind": "fact",
+                        "eligible_for_stronger_obligation": True,
+                        "final_evidence_eligible": True,
+                    }
+                ],
             }
         )
     return ledger.to_projection().to_dict()
@@ -213,7 +242,15 @@ def _seed_evidence_ledger(kernel: RunKernel) -> None:
                     "candidate_id": EVIDENCE_ID,
                     "url": "https://example.org/public-record-notice",
                     "title": "Public record notice",
-                    "source_class": "primary",
+                    "source_class": "primary_source_documents",
+                    "source_tier": "primary",
+                    "currentness_signal": "current",
+                    "readable_status": "readable",
+                    "fetchable_status": "fetchable",
+                    "disposition": "accepted",
+                    "record_kind": "fact",
+                    "eligible_for_stronger_obligation": True,
+                    "final_evidence_eligible": True,
                 }
             ],
         }
@@ -518,6 +555,27 @@ def _coverage_history_entry(accepted: dict[str, Any], **overrides: Any) -> dict[
         "conflict_posture": "none",
         "required_caveats": [],
         "prohibited_upgrades": [],
+        "evidence_ledger_binding": {
+            "ledger_snapshot_id": "fixture-ledger",
+            "ledger_schema_version": EVIDENCE_LEDGER_SCHEMA_VERSION,
+            "ledger_digest": "fixture-ledger-digest",
+            "custody_status": "custodied",
+            "source_requirement_ids": [],
+            "ledger_observation_refs": [],
+            "version_validity": "valid",
+        },
+        "content_reference_bindings": [
+            {
+                "content_ref_id": "content:reported-total-value",
+                "content_digest": "fixture-content-digest",
+                "evidence_ref_id": EVIDENCE_ID,
+                "answer_component_id": component_ref["component_id"],
+                "component_revision": component_ref["component_revision"],
+                "component_contract_digest": component_ref["component_digest"],
+                "answer_bearing": True,
+                "availability_status": "available",
+            }
+        ],
     }
     entry.update(overrides)
     if isinstance(entry.get("remaining_unknowns"), tuple):
@@ -568,13 +626,15 @@ def _judgment_with_semantic(
     *,
     coverage_history: list[dict[str, Any]] | None = None,
     amendment_history: list[dict[str, Any]] | None = None,
+    ledger: dict[str, Any] | None = None,
 ) -> Any:
     contract = _contract()
-    ledger = _ledger_projection(contract)
+    ledger = ledger or _ledger_projection(contract)
     facts = build_semantic_state_facts_for_sufficiency(
         initial_answer_contract=accepted,
         component_coverage_history=coverage_history or [],
         contract_amendment_admission_history=amendment_history or [],
+        evidence_ledger_projection=ledger,
     )
     return build_deterministic_sufficiency_judgment(
         _input(contract, ledger, semantic_state_facts=facts)
@@ -618,6 +678,7 @@ def _input(
             initial_answer_contract=kernel.state.initial_answer_contract,
             component_coverage_history=kernel.state.component_coverage_history,
             contract_amendment_admission_history=kernel.state.contract_amendment_admission_history,
+            evidence_ledger_projection=ledger,
         )
     return RunSufficiencyJudgmentInput(
         contract_projection=contract,
@@ -632,6 +693,48 @@ def _judgment(kernel: RunKernel | None, *, contract: dict[str, Any] | None = Non
     contract = contract or _contract()
     ledger = _ledger_projection(contract, satisfied=True)
     return build_deterministic_sufficiency_judgment(_input(contract, ledger, kernel))
+
+
+def _adapter_input_for_kernel(
+    kernel: RunKernel,
+    *,
+    ledger: dict[str, Any] | None = None,
+) -> RunSufficiencyJudgmentInput:
+    contract = _contract()
+    ledger = ledger or _ledger_projection(contract)
+    return build_sufficiency_judgment_input_from_runtime(
+        contract_projection=contract,
+        evidence_ledger_projection=ledger,
+        search_judgment_projection={"decision": "stop_satisfied"},
+        search_judgment_history=[],
+        answer_contract_projection={},
+        final_evidence_count=1,
+        author_evidence_count=1,
+        citation_eligible_candidate_count=1,
+        conflicts_present=False,
+        scrutineer_flag_count=0,
+        corpus_weak=False,
+        weak_corpus_reason=None,
+        synth_was_insufficient=False,
+        failure_card_show=False,
+        failure_card_reason=None,
+        iterations_run=1,
+        max_iterations=3,
+        recovery_attempt_count=0,
+        initial_answer_contract=kernel.state.initial_answer_contract,
+        component_coverage_history=kernel.state.component_coverage_history,
+        contract_amendment_admission_history=kernel.state.contract_amendment_admission_history,
+    )
+
+
+def _adapter_judgment_for_kernel(
+    kernel: RunKernel,
+    *,
+    ledger: dict[str, Any] | None = None,
+) -> Any:
+    return build_deterministic_sufficiency_judgment(
+        _adapter_input_for_kernel(kernel, ledger=ledger)
+    )
 
 
 def test_semantic_facts_in_input_and_projection_exclude_sensitive_data() -> None:
@@ -686,6 +789,132 @@ def test_all_required_components_satisfied_preserves_ready_direct() -> None:
     assert judgment.decision is RunSufficiencyDecision.READY_DIRECT
     assert judgment.final_answer_allowed is True
     assert not judgment.semantic_consumption.get("direct_answer_blocked")
+
+
+def test_ready_direct_is_repaired_when_coverage_has_only_unqualified_ledger_presence() -> None:
+    from core.run_authority_sufficiency_validation import validate_or_repair_sufficiency_judgment
+
+    kernel = _kernel_with_semantic()
+    ledger = _ledger_projection(_contract(), semantic_candidate_disposition="observed")
+    deterministic = _adapter_judgment_for_kernel(kernel, ledger=ledger)
+    unsafe = {
+        "decision": RunSufficiencyDecision.READY_DIRECT.value,
+        "final_answer_posture": SufficiencyPosture.DIRECT_ANSWER.value,
+        "contract_fulfilled": True,
+        "required_obligations_satisfied": True,
+        "final_answer_allowed": True,
+    }
+
+    repaired, validation = validate_or_repair_sufficiency_judgment(
+        unsafe,
+        deterministic_judgment=deterministic,
+        model_attempted=True,
+    )
+
+    assert "ledger_candidate_not_qualified" in deterministic.semantic_consumption["blocker_codes"]
+    assert deterministic.semantic_consumption["direct_answer_blocked"] is True
+    assert validation.status.value == "repaired"
+    assert repaired.final_answer_allowed is False
+    assert repaired.decision is not RunSufficiencyDecision.READY_DIRECT
+
+
+def test_ready_direct_is_blocked_when_current_relevant_ledger_facts_weaken() -> None:
+    kernel = _kernel_with_semantic()
+    weakened_ledger = _ledger_projection(
+        _contract(),
+        semantic_candidate_disposition="rejected",
+    )
+
+    judgment = _adapter_judgment_for_kernel(kernel, ledger=weakened_ledger)
+
+    assert "ledger_candidate_rejected_or_unavailable" in judgment.semantic_consumption["blocker_codes"]
+    assert judgment.semantic_consumption["direct_answer_blocked"] is True
+    assert judgment.final_answer_allowed is False
+    assert judgment.decision is not RunSufficiencyDecision.READY_DIRECT
+
+
+def test_unrelated_evidence_ledger_additions_do_not_block_satisfied_coverage() -> None:
+    kernel = _kernel_with_semantic()
+    ledger = _ledger_projection(_contract())
+    ledger["candidate_records"].append(
+        {
+            "candidate_id": "evidence:unrelated-rejected",
+            "fact_disposition": "rejected",
+            "readable_status": "unreadable",
+            "fetchable_status": "unfetchable",
+        }
+    )
+    ledger["custody_records"].append(
+        {
+            "candidate_id": "evidence:unrelated-rejected",
+            "record_kind": "fact",
+            "disposition": "rejected",
+        }
+    )
+    ledger["candidate_count"] = int(ledger.get("candidate_count") or 0) + 1
+    ledger["custody_record_count"] = int(ledger.get("custody_record_count") or 0) + 1
+
+    judgment = _adapter_judgment_for_kernel(kernel, ledger=ledger)
+
+    assert judgment.decision is RunSufficiencyDecision.READY_DIRECT
+    assert judgment.final_answer_allowed is True
+    assert not judgment.semantic_consumption.get("direct_answer_blocked")
+
+
+@pytest.mark.parametrize(
+    ("ledger_mutation", "expected_code"),
+    [
+        ("missing_candidate", "ledger_candidate_missing"),
+        ("missing_custody", "ledger_candidate_custody_fact_missing"),
+        ("missing_requirement", "ledger_source_requirement_missing"),
+    ],
+)
+def test_missing_relevant_candidate_custody_or_requirement_facts_block(
+    ledger_mutation: str,
+    expected_code: str,
+) -> None:
+    kernel = _kernel_with_semantic()
+    ledger = _ledger_projection(_contract())
+    normalized_evidence_id = EVIDENCE_ID.replace("-", "_")
+    if ledger_mutation == "missing_candidate":
+        ledger["candidate_records"] = [
+            item
+            for item in ledger["candidate_records"]
+            if item.get("candidate_id") != normalized_evidence_id
+        ]
+    elif ledger_mutation == "missing_custody":
+        ledger["custody_records"] = [
+            item
+            for item in ledger["custody_records"]
+            if item.get("candidate_id") != normalized_evidence_id
+        ]
+    else:
+        coverage = dict(kernel.state.component_coverage_history[-1])
+        binding = dict(coverage["evidence_ledger_binding"])
+        binding["source_requirement_ids"] = ["source_requirement:official_current_rules"]
+        coverage["evidence_ledger_binding"] = binding
+        coverage["source_obligation_status"] = "satisfied"
+        kernel.state.component_coverage_history[-1] = coverage
+
+    judgment = _adapter_judgment_for_kernel(kernel, ledger=ledger)
+
+    assert expected_code in judgment.semantic_consumption["blocker_codes"]
+    assert judgment.semantic_consumption["direct_answer_blocked"] is True
+    assert judgment.final_answer_allowed is False
+
+
+def test_semantic_state_facts_record_bounded_ledger_blocker_without_raw_retention() -> None:
+    kernel = _kernel_with_semantic()
+    coverage = dict(kernel.state.component_coverage_history[-1])
+    coverage["raw_content"] = "SENTINEL_RAW_CONTENT"
+    kernel.state.component_coverage_history[-1] = coverage
+    ledger = _ledger_projection(_contract(), semantic_candidate_disposition="observed")
+    judgment_input = _adapter_input_for_kernel(kernel, ledger=ledger)
+    serialized = json.dumps(judgment_input.semantic_state_facts, sort_keys=True)
+
+    assert "ledger_candidate_not_qualified" in serialized
+    assert "coverage-bound evidence is only observed" in serialized
+    assert "SENTINEL_RAW_CONTENT" not in serialized
 
 
 @pytest.mark.parametrize(
@@ -870,6 +1099,7 @@ def test_model_ready_direct_over_semantic_blockers_is_repaired() -> None:
         initial_answer_contract=accepted,
         component_coverage_history=[],
         contract_amendment_admission_history=[],
+        evidence_ledger_projection=ledger,
     )
     deterministic = build_deterministic_sufficiency_judgment(
         _input(contract, ledger, semantic_state_facts=facts)
@@ -940,4 +1170,6 @@ def test_static_guards_no_pipeline_orchestrator_or_forbidden_imports() -> None:
     assert "core.run_kernel" not in imports
     assert "sufficiency_semantic_consume" not in RUN_KERNEL.read_text(encoding="utf-8")
     assert "semantic_consumption_history" not in RUN_KERNEL.read_text(encoding="utf-8")
+    assert "ledger_qualification_history" not in RUN_KERNEL.read_text(encoding="utf-8")
+    assert "semantic_ledger_bridge" not in RUN_KERNEL.read_text(encoding="utf-8")
     assert "build_deterministic_sufficiency_judgment" not in PIPELINE.read_text(encoding="utf-8")

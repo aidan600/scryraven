@@ -158,7 +158,15 @@ def _seed_evidence_ledger(kernel: RunKernel, *, candidate_id: str = EVIDENCE_ID)
                     "candidate_id": candidate_id,
                     "url": "https://example.org/public-record-notice",
                     "title": "Public record notice",
-                    "source_class": "primary",
+                    "source_class": "primary_source_documents",
+                    "source_tier": "primary",
+                    "currentness_signal": "current",
+                    "readable_status": "readable",
+                    "fetchable_status": "fetchable",
+                    "disposition": "accepted",
+                    "record_kind": "fact",
+                    "eligible_for_stronger_obligation": True,
+                    "final_evidence_eligible": True,
                 }
             ],
         }

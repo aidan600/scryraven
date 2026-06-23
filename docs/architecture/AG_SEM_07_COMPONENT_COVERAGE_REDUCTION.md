@@ -83,6 +83,16 @@ content basis, EvidenceLedger custody, supported semantic status, available
 answer-bearing content, valid versions, and no unresolved conflict, remaining
 unknowns, follow-up requirement, or exhausted/blocked mode budget.
 
+AG-SEM-10 tightens the satisfied-coverage invariant: EvidenceLedger custody or
+ID/digest presence is necessary but not sufficient. Satisfied coverage now also
+requires coverage-bound evidence refs to be relevantly qualified by the current
+EvidenceLedger projection, including accepted custody facts, readable/fetchable
+candidate posture, final-evidence eligibility when marked, relevant requirement
+links, source-obligation satisfaction, and official/current compatibility when
+the accepted component carries a stronger source obligation. Partial,
+unsupported, unknown, or insufficient coverage may still report weak evidence
+honestly without claiming satisfied readiness.
+
 ## Validation And Rejection
 
 Reduction requires an accepted AG-SEM-05 initial answer contract, at least one
@@ -98,7 +108,12 @@ reference bindings backed only by admitted observations cited in the coverage
 record (not merely any global admission history entry). It validates
 EvidenceLedger binding via a local projection digest helper and a canonical
 `snapshot_id` convention; satisfied coverage rejects only custody gaps relevant to
-the coverage record's linked requirements or cited evidence refs.
+the coverage record's linked requirements or cited evidence refs. Satisfied
+coverage also rejects evidence that is merely identity-present, stale,
+unreadable, unfetchable, rejected, dropped, unqualified, lower-tier/contextual
+against a stronger obligation, unlinked from the relevant source requirement, or
+declared `source_obligation_status = not_applicable` when the accepted component
+still carries source obligations.
 
 It rejects duplicate coverage record ids/digests and stale/replayed reductions,
 and stores only sanitized, bounded, projection-safe fields.
