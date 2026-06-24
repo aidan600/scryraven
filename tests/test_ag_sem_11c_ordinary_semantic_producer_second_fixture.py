@@ -194,6 +194,16 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert semantic_consumption["required_component_count"] == 1
     assert semantic_consumption["covered_component_count"] == 1
     assert semantic_summary["semantic_state_facts_digest"]
+    semantic_ref_projection = semantic_consumption["semantic_ref_projection"]
+    assert semantic_ref_projection["available"] is True
+    assert semantic_ref_projection["semantic_state_facts_digest"] == semantic_summary[
+        "semantic_state_facts_digest"
+    ]
+    assert semantic_ref_projection["content_refs_available"] is True
+    assert semantic_ref_projection["coverage_refs_available"] is True
+    assert semantic_ref_projection["sanitized_content_ref_ids"]
+    assert semantic_ref_projection["content_ref_digests"]
+    assert semantic_ref_projection["coverage_record_refs"]
 
     packet_handoff = captured["packet_handoff"]
     packet = packet_handoff.packet
@@ -222,9 +232,9 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     for record in packet.source_obligations:
         expected_status_summary[record.status.value] += 1
     assert manifest["source_obligation_status_summary"] == expected_status_summary
-    manifest_trace_ref = packet_handoff.author_payload.to_trace_ref()[
-        MANIFEST_TRACE_REF_KEY
-    ]
+    author_payload_trace_ref = packet_handoff.author_payload.to_trace_ref()
+    assert "semantic_ref_projection" not in author_payload_trace_ref
+    manifest_trace_ref = author_payload_trace_ref[MANIFEST_TRACE_REF_KEY]
     assert manifest_trace_ref["available"] is True
     assert manifest_trace_ref["semantic_state_facts_digest"] == (
         manifest["semantic_state_facts_digest"]
@@ -233,6 +243,7 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "evidence_ids" not in manifest_trace_ref
     assert "citation_source_ids" not in manifest_trace_ref
     assert "source_obligation_status_summary" not in manifest_trace_ref
+    assert "semantic_ref_projection" not in manifest_trace_ref
     assert state.final_answer_authority_projection["author_payload_ref"][
         MANIFEST_TRACE_REF_KEY
     ] == manifest_trace_ref
@@ -255,6 +266,7 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     )
     assert "semantic_authority_ref" not in state.author_observation
     assert "semantic_authority_trace_ref" not in state.author_observation
+    assert "semantic_ref_projection" not in state.author_observation
     assert MANIFEST_TRACE_REF_KEY not in state.author_observation
 
     assert outcome.report == RAW_AUTHOR_RESPONSE

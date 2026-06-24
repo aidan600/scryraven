@@ -21,6 +21,9 @@ from core.component_coverage_reduction_runtime import (
 SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION = (
     "sufficiency_semantic_state_consumption_ag_sem_09_v1"
 )
+SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION = (
+    "sufficiency_semantic_ref_projection_ag_sem_proj_01_v1"
+)
 
 _MAX_LIST_ITEMS = 80
 _MAX_BLOCKERS = 80
@@ -190,6 +193,17 @@ def _normalized_token(value: Any) -> str | None:
     return token.casefold().replace("-", "_").replace(" ", "_")
 
 
+def _append_unique_token(items: list[str], value: Any, *, limit: int = 160) -> None:
+    token = _clean_token(value, limit=limit)
+    if token and token not in items:
+        items.append(token)
+
+
+def _append_unique_mapping(items: list[dict[str, Any]], value: dict[str, Any]) -> None:
+    if value and value not in items:
+        items.append(value)
+
+
 def _latest_coverage_by_component(
     coverage_history: Sequence[Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
@@ -202,6 +216,262 @@ def _latest_coverage_by_component(
             continue
         latest[component_id] = dict(item)
     return latest
+
+
+def _coverage_safe_for_ref_projection(coverage: Mapping[str, Any]) -> bool:
+    if coverage.get("canonical_state") is not True:
+        return False
+    if coverage.get("trace_only") is not False:
+        return False
+    if coverage.get("storage_only") is not False:
+        return False
+    if _normalized_token(coverage.get("coverage_state")) != "satisfied":
+        return False
+    if bool(coverage.get("stale")):
+        return False
+    if _normalized_token(coverage.get("conflict_posture")) not in {"none", "resolved"}:
+        return False
+    if _normalized_token(coverage.get("semantic_support_status")) != "supported":
+        return False
+    if _normalized_token(coverage.get("content_availability_status")) != "available":
+        return False
+    if _normalized_token(coverage.get("evidence_custody_status")) != "custodied":
+        return False
+    source_obligation = _normalized_token(coverage.get("source_obligation_status"))
+    if source_obligation not in {"satisfied", "not_applicable"}:
+        return False
+    version_validity = _normalized_token(coverage.get("version_validity"))
+    if version_validity and version_validity != "valid":
+        return False
+    if _token_list(coverage.get("remaining_unknowns")):
+        return False
+    if _normalized_token(coverage.get("followup_need")) in {"required", "blocked"}:
+        return False
+    if _is_weak_only_evidence_basis(_list(coverage.get("evidence_basis"))):
+        return False
+    if not _clean_token(coverage.get("coverage_record_id")):
+        return False
+    if not _clean_token(coverage.get("coverage_record_digest"), limit=128):
+        return False
+
+    content_bindings = [
+        item for item in _list(coverage.get("content_reference_bindings")) if isinstance(item, Mapping)
+    ]
+    if not content_bindings:
+        return False
+    binding_ids: set[str] = set()
+    for binding in content_bindings:
+        content_ref_id = _clean_token(binding.get("content_ref_id"))
+        if not content_ref_id:
+            return False
+        binding_ids.add(content_ref_id)
+        if not _clean_token(binding.get("content_digest"), limit=128):
+            return False
+        if not _clean_token(binding.get("evidence_ref_id")):
+            return False
+        if binding.get("answer_bearing") is not True:
+            return False
+        if _normalized_token(binding.get("availability_status")) != "available":
+            return False
+
+    observation_refs = [
+        item for item in _list(coverage.get("accepted_observation_refs")) if isinstance(item, Mapping)
+    ]
+    if not observation_refs:
+        return False
+    for observation in observation_refs:
+        if observation.get("accepted") is False:
+            return False
+        if not _clean_token(observation.get("observation_id")):
+            return False
+        if not _clean_token(observation.get("observation_digest"), limit=128):
+            return False
+        observation_content_refs = _token_list(observation.get("content_refs"))
+        if not observation_content_refs:
+            return False
+        for content_ref_id in observation_content_refs:
+            if content_ref_id not in binding_ids:
+                return False
+    return True
+
+
+def _build_semantic_ref_projection(
+    *,
+    accepted_contract: Mapping[str, Any],
+    latest_coverage: Mapping[str, Mapping[str, Any]],
+    required_component_ids: Sequence[str],
+    semantic_state_facts_digest: str,
+) -> dict[str, Any]:
+    component_refs: list[dict[str, Any]] = []
+    coverage_record_refs: list[dict[str, Any]] = []
+    semantic_observation_refs: list[dict[str, Any]] = []
+    sanitized_content_ref_ids: list[str] = []
+    content_ref_digests: list[str] = []
+    evidence_ids: list[str] = []
+    source_obligation_refs: list[str] = []
+    required_ids = [item for item in required_component_ids if item]
+    safe_required_ids: set[str] = set()
+    component_ref_index = {
+        _clean_token(ref.get("component_id")): ref
+        for ref in _list(accepted_contract.get("accepted_answer_component_refs"))
+        if isinstance(ref, Mapping) and _clean_token(ref.get("component_id"))
+    }
+
+    for component_id in required_ids:
+        coverage = _mapping(latest_coverage.get(component_id))
+        if not coverage or not _coverage_safe_for_ref_projection(coverage):
+            continue
+        safe_required_ids.add(component_id)
+        component_ref = _mapping(component_ref_index.get(component_id))
+        component_digest = _clean_token(
+            coverage.get("component_digest") or component_ref.get("component_digest"),
+            limit=128,
+        )
+        if component_digest:
+            _append_unique_mapping(
+                component_refs,
+                {
+                    "component_id": component_id,
+                    "component_digest": component_digest,
+                },
+            )
+
+        _append_unique_mapping(
+            coverage_record_refs,
+            {
+                "coverage_record_id": _clean_token(coverage.get("coverage_record_id")),
+                "coverage_record_digest": _clean_token(coverage.get("coverage_record_digest"), limit=128),
+                "answer_component_id": component_id,
+            },
+        )
+
+        for observation in _list(coverage.get("accepted_observation_refs")):
+            if isinstance(observation, Mapping):
+                _append_unique_mapping(
+                    semantic_observation_refs,
+                    {
+                        "observation_id": _clean_token(observation.get("observation_id")),
+                        "observation_digest": _clean_token(observation.get("observation_digest"), limit=128),
+                    },
+                )
+
+        for binding in _list(coverage.get("content_reference_bindings")):
+            if not isinstance(binding, Mapping):
+                continue
+            _append_unique_token(sanitized_content_ref_ids, binding.get("content_ref_id"))
+            _append_unique_token(content_ref_digests, binding.get("content_digest"), limit=128)
+            _append_unique_token(evidence_ids, binding.get("evidence_ref_id"))
+
+        ledger_binding = _mapping(coverage.get("evidence_ledger_binding"))
+        for requirement_id in _token_list(ledger_binding.get("source_requirement_ids")):
+            _append_unique_token(source_obligation_refs, requirement_id)
+
+    available = bool(required_ids) and len(safe_required_ids) == len(set(required_ids))
+    projection: dict[str, Any] = {
+        "schema_version": SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
+        "available": available,
+        "semantic_state_facts_digest": _clean_token(semantic_state_facts_digest, limit=128),
+        "accepted_contract_version": _clean_token(accepted_contract.get("accepted_contract_version")),
+        "accepted_contract_digest": _clean_token(accepted_contract.get("accepted_contract_digest"), limit=128),
+        "content_refs_available": bool(available and sanitized_content_ref_ids and content_ref_digests),
+        "coverage_refs_available": bool(available and coverage_record_refs),
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "prompt_visible": False,
+        "author_payload_visible": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+    }
+    if component_refs:
+        projection["component_refs"] = component_refs
+    if coverage_record_refs:
+        projection["coverage_record_refs"] = coverage_record_refs
+    if semantic_observation_refs:
+        projection["semantic_observation_refs"] = semantic_observation_refs
+    if sanitized_content_ref_ids:
+        projection["sanitized_content_ref_ids"] = sanitized_content_ref_ids
+    if content_ref_digests:
+        projection["content_ref_digests"] = content_ref_digests
+    if evidence_ids:
+        projection["evidence_ids"] = evidence_ids
+    if source_obligation_refs:
+        projection["source_obligation_refs"] = source_obligation_refs
+    return projection
+
+
+def _safe_semantic_ref_projection(value: Any) -> dict[str, Any]:
+    projection = _mapping(value)
+    if projection.get("schema_version") != SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION:
+        return {}
+    safe: dict[str, Any] = {
+        "schema_version": SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
+        "available": bool(projection.get("available")),
+        "semantic_state_facts_digest": _clean_token(
+            projection.get("semantic_state_facts_digest"),
+            limit=128,
+        ),
+        "accepted_contract_version": _clean_token(projection.get("accepted_contract_version")),
+        "accepted_contract_digest": _clean_token(projection.get("accepted_contract_digest"), limit=128),
+        "content_refs_available": bool(projection.get("content_refs_available")),
+        "coverage_refs_available": bool(projection.get("coverage_refs_available")),
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "prompt_visible": False,
+        "author_payload_visible": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+    }
+
+    component_refs = []
+    for ref in _list(projection.get("component_refs")):
+        if not isinstance(ref, Mapping):
+            continue
+        component_id = _clean_token(ref.get("component_id"))
+        component_digest = _clean_token(ref.get("component_digest"), limit=128)
+        if component_id and component_digest:
+            component_refs.append({"component_id": component_id, "component_digest": component_digest})
+    if component_refs:
+        safe["component_refs"] = component_refs[:_MAX_LIST_ITEMS]
+
+    coverage_refs = []
+    for ref in _list(projection.get("coverage_record_refs")):
+        if not isinstance(ref, Mapping):
+            continue
+        coverage_record_id = _clean_token(ref.get("coverage_record_id"))
+        coverage_record_digest = _clean_token(ref.get("coverage_record_digest"), limit=128)
+        answer_component_id = _clean_token(ref.get("answer_component_id"))
+        if coverage_record_id and coverage_record_digest and answer_component_id:
+            coverage_refs.append(
+                {
+                    "coverage_record_id": coverage_record_id,
+                    "coverage_record_digest": coverage_record_digest,
+                    "answer_component_id": answer_component_id,
+                }
+            )
+    if coverage_refs:
+        safe["coverage_record_refs"] = coverage_refs[:_MAX_LIST_ITEMS]
+
+    observation_refs = []
+    for ref in _list(projection.get("semantic_observation_refs")):
+        if not isinstance(ref, Mapping):
+            continue
+        observation_id = _clean_token(ref.get("observation_id"))
+        observation_digest = _clean_token(ref.get("observation_digest"), limit=128)
+        if observation_id and observation_digest:
+            observation_refs.append({"observation_id": observation_id, "observation_digest": observation_digest})
+    if observation_refs:
+        safe["semantic_observation_refs"] = observation_refs[:_MAX_LIST_ITEMS]
+
+    for key in (
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "evidence_ids",
+        "source_obligation_refs",
+    ):
+        items = _token_list(projection.get(key), limit=128 if key.endswith("digests") else 160)
+        if items:
+            safe[key] = items[:_MAX_LIST_ITEMS]
+    return {key: value for key, value in safe.items() if value not in (None, "", [], {})}
 
 
 def _invalidated_coverage_ids(
@@ -306,6 +576,11 @@ def build_semantic_state_facts_for_sufficiency(
         for ref in _list(contract.get("accepted_answer_component_refs"))
         if isinstance(ref, Mapping)
         and _normalized_token(ref.get("requirement_posture")) in _REQUIRED_POSTURE
+    ]
+    required_component_ids = [
+        _clean_token(ref.get("component_id")) or ""
+        for ref in required_refs
+        if isinstance(ref, Mapping)
     ]
     component_summaries: list[dict[str, Any]] = []
     blockers: list[dict[str, Any]] = []
@@ -659,6 +934,12 @@ def build_semantic_state_facts_for_sufficiency(
             )
         }
     )
+    facts_core["semantic_ref_projection"] = _build_semantic_ref_projection(
+        accepted_contract=contract,
+        latest_coverage=latest_coverage,
+        required_component_ids=required_component_ids,
+        semantic_state_facts_digest=facts_core["semantic_state_facts_digest"],
+    )
     return facts_core
 
 
@@ -753,7 +1034,7 @@ def build_semantic_consumption_summary(
             if isinstance(item, Mapping) and _clean_token(item.get("code"))
         )
     )
-    return {
+    summary = {
         "schema_version": SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION,
         "semantic_state_facts_digest": facts.get("semantic_state_facts_digest")
         or _digest_json(facts),
@@ -769,6 +1050,10 @@ def build_semantic_consumption_summary(
         "covered_component_count": int(facts.get("covered_component_count") or 0),
         "amendment_admission_count": len(_list(facts.get("amendment_summaries"))),
     }
+    semantic_ref_projection = _safe_semantic_ref_projection(facts.get("semantic_ref_projection"))
+    if semantic_ref_projection:
+        summary["semantic_ref_projection"] = semantic_ref_projection
+    return summary
 
 
 def build_semantic_state_facts_summary(
@@ -798,6 +1083,7 @@ def build_semantic_state_facts_summary(
 
 
 __all__ = [
+    "SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION",
     "SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION",
     "SemanticSufficiencyOverlay",
     "build_semantic_consumption_summary",

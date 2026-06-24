@@ -45,6 +45,11 @@ _SENSITIVE_KEYS = frozenset(
         "token",
     }
 )
+_PUBLIC_BOOLEAN_KEYS = frozenset(
+    {
+        "raw_content_included",
+    }
+)
 
 
 class SufficiencyJudgmentMode(str, Enum):
@@ -110,7 +115,10 @@ def safe_json(value: Any, *, depth: int = 0) -> Any:
             if not clean_key:
                 continue
             key_folded = clean_key.casefold()
-            if key_folded in _SENSITIVE_KEYS or key_folded.startswith("raw_"):
+            if (
+                key_folded in _SENSITIVE_KEYS
+                or (key_folded.startswith("raw_") and key_folded not in _PUBLIC_BOOLEAN_KEYS)
+            ):
                 out[clean_key] = "[redacted]"
             else:
                 out[clean_key] = safe_json(item, depth=depth + 1)
