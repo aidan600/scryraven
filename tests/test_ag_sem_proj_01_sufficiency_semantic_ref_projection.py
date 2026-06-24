@@ -158,6 +158,18 @@ def test_semantic_ref_projection_carries_canonical_refs_and_digests_only() -> No
     assert ref_projection["sanitized_content_ref_ids"] == [CONTENT_REF_ID]
     assert ref_projection["content_ref_digests"] == [CONTENT_DIGEST]
     assert ref_projection["evidence_ids"] == [EVIDENCE_ID]
+    assert ref_projection["semantic_source_ref_bindings"] == [
+        {
+            "origin_evidence_ref_id": EVIDENCE_ID,
+            "origin_evidence_ref_kind": "evidence_ledger_candidate",
+            "content_ref_id": CONTENT_REF_ID,
+            "content_digest": CONTENT_DIGEST,
+            "coverage_record_id": COVERAGE_RECORD_ID,
+            "coverage_record_digest": COVERAGE_RECORD_DIGEST,
+            "component_id": COMPONENT_ID,
+            "component_digest": COMPONENT_DIGEST,
+        }
+    ]
     assert ref_projection["source_obligation_refs"] == [SOURCE_OBLIGATION_ID]
     assert ref_projection["content_refs_available"] is True
     assert ref_projection["coverage_refs_available"] is True

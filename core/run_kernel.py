@@ -704,6 +704,24 @@ def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(safe) if isinstance(safe, Mapping) else {}
 
 
+def _safe_semantic_consumption(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    if not isinstance(value, Mapping):
+        return safe
+    raw_projection = value.get("semantic_ref_projection")
+    if not isinstance(raw_projection, Mapping):
+        return safe
+
+    from core.sufficiency_semantic_state_consumption_runtime import (
+        _safe_semantic_ref_projection,
+    )
+
+    semantic_ref_projection = _safe_semantic_ref_projection(raw_projection)
+    if semantic_ref_projection:
+        safe["semantic_ref_projection"] = semantic_ref_projection
+    return safe
+
+
 def _validation_status(validation: Mapping[str, Any]) -> str | None:
     status = validation.get("status")
     if status:
@@ -817,7 +835,21 @@ class Observation:
             raise ValueError("observation sequence must be positive")
         object.__setattr__(self, "observation_type", ObservationType(self.observation_type))
         object.__setattr__(self, "status", RunStageStatus(self.status))
-        object.__setattr__(self, "payload", _safe_mapping(self.payload))
+        payload = _safe_mapping(self.payload)
+        if (
+            self.observation_type is ObservationType.SUFFICIENCY_JUDGMENT_DECIDED
+            and isinstance(self.payload, Mapping)
+        ):
+            raw_judgment_projection = self.payload.get("judgment_projection")
+            if isinstance(raw_judgment_projection, Mapping):
+                judgment_projection = _safe_mapping(raw_judgment_projection)
+                semantic_consumption = _safe_semantic_consumption(
+                    raw_judgment_projection.get("semantic_consumption")
+                )
+                if semantic_consumption:
+                    judgment_projection["semantic_consumption"] = semantic_consumption
+                payload["judgment_projection"] = judgment_projection
+        object.__setattr__(self, "payload", payload)
 
     @classmethod
     def from_action(
@@ -9207,9 +9239,14 @@ class RunKernel:
                 self.state.search_judgment_projection
             )
         elif action.action_type is ActionType.SUFFICIENCY_JUDGMENT_DECIDE:
-            judgment_projection = _safe_mapping(
-                observation.payload.get("judgment_projection")
-            )
+            raw_judgment_projection = observation.payload.get("judgment_projection")
+            judgment_projection = _safe_mapping(raw_judgment_projection)
+            if isinstance(raw_judgment_projection, Mapping):
+                semantic_consumption = _safe_semantic_consumption(
+                    raw_judgment_projection.get("semantic_consumption")
+                )
+                if semantic_consumption:
+                    judgment_projection["semantic_consumption"] = semantic_consumption
             if not judgment_projection:
                 raise RunKernelTransitionError(
                     "sufficiency judgment observation requires judgment_projection"

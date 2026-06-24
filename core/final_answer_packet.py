@@ -36,6 +36,9 @@ FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION = (
 FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION = (
     "final_answer_packet_semantic_content_coverage_ref_projection_ag_sem_fap_01_v1"
 )
+FINAL_ANSWER_PACKET_SEMANTIC_PACKET_EVIDENCE_BINDING_SCHEMA_VERSION = (
+    "final_answer_packet_semantic_packet_evidence_binding_ag_sem_evid_bind_01_v1"
+)
 FINAL_ANSWER_PACKET_TRACE_KEY = "final_answer_packet"
 
 
@@ -145,6 +148,9 @@ _AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_KEYS = (
     "semantic_state_facts_digest",
     "content_refs_available",
     "coverage_refs_available",
+    "semantic_packet_evidence_binding_available",
+    "semantic_packet_evidence_binding_count",
+    "semantic_packet_evidence_binding_digest",
     "prompt_visible",
     "author_payload_content_included",
     "model_request_visible",
@@ -159,6 +165,7 @@ _AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_BOOL_KEYS = frozenset(
         "available",
         "content_refs_available",
         "coverage_refs_available",
+        "semantic_packet_evidence_binding_available",
         "prompt_visible",
         "author_payload_content_included",
         "model_request_visible",
@@ -187,6 +194,9 @@ _AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_KEYS = (
     "content_ref_digest_count",
     "semantic_ref_evidence_id_count",
     "source_obligation_ref_count",
+    "semantic_packet_evidence_binding_available",
+    "semantic_packet_evidence_binding_count",
+    "semantic_packet_evidence_binding_digest",
     "author_payload_visible",
     "authority_payload_visible",
     "authority_block_visible",
@@ -203,6 +213,7 @@ _AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_BOOL_KEYS = frozenset(
         "available",
         "content_refs_available",
         "coverage_refs_available",
+        "semantic_packet_evidence_binding_available",
         "author_payload_visible",
         "authority_payload_visible",
         "authority_block_visible",
@@ -228,6 +239,12 @@ def _stable_safe_json_digest(value: Any) -> str:
         separators=(",", ":"),
     )
     return sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def semantic_packet_evidence_binding_digest(row: Mapping[str, Any]) -> str:
+    digest_row = dict(row)
+    digest_row.pop("binding_digest", None)
+    return _stable_safe_json_digest(digest_row)
 
 
 def _clean_text(value: Any, *, limit: int = 500) -> str | None:
@@ -374,6 +391,8 @@ class FinalEvidenceRecord:
     text_length: int | None = None
     reason: str | None = None
     query_refs: tuple[str, ...] = ()
+    origin_evidence_ref_id: str | None = None
+    origin_evidence_ref_kind: str | None = None
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, EvidenceAuthorityStatus) else str(self.status)
@@ -402,6 +421,14 @@ class FinalEvidenceRecord:
             "text_length": self.text_length,
             "reason": _clean_text(self.reason, limit=220),
             "query_refs": list(self.query_refs),
+            "origin_evidence_ref_id": _clean_token(
+                self.origin_evidence_ref_id,
+                limit=200,
+            ),
+            "origin_evidence_ref_kind": _clean_token(
+                self.origin_evidence_ref_kind,
+                limit=120,
+            ),
         }
         return {key: value for key, value in payload.items() if value not in (None, [], {})}
 
@@ -617,6 +644,14 @@ class FinalAnswerAuthorInputPayload:
                 "raw_prompt_included": False,
                 "provider_payload_included": False,
             }
+            if envelope.get("semantic_packet_evidence_binding_available"):
+                trace_ref["semantic_packet_evidence_binding_available"] = True
+                trace_ref["semantic_packet_evidence_binding_count"] = envelope.get(
+                    "semantic_packet_evidence_binding_count"
+                )
+                trace_ref["semantic_packet_evidence_binding_digest"] = envelope.get(
+                    "semantic_packet_evidence_binding_digest"
+                )
             payload["semantic_content_coverage_ref_envelope_trace_ref"] = (
                 _safe_author_semantic_content_coverage_ref_envelope_trace_ref(
                     trace_ref
@@ -655,6 +690,7 @@ class FinalAnswerPacket:
     semantic_content_coverage_ref_projection: Mapping[str, Any] = field(
         default_factory=dict
     )
+    semantic_packet_evidence_bindings: tuple[Mapping[str, Any], ...] = ()
     schema_version: str = FINAL_ANSWER_PACKET_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -672,6 +708,53 @@ class FinalAnswerPacket:
             "readiness_status",
             FinalAnswerReadinessStatus(raw_status),
         )
+        self._validate_semantic_packet_evidence_bindings()
+
+    def _validate_semantic_packet_evidence_bindings(self) -> None:
+        if not self.semantic_packet_evidence_bindings:
+            return
+        allowed_ids = {record.evidence_id for record in self.evidence_allowed}
+        required = {
+            "schema_version",
+            "origin_evidence_ref_id",
+            "origin_evidence_ref_kind",
+            "packet_evidence_id",
+            "content_ref_id",
+            "content_digest",
+            "coverage_record_id",
+            "coverage_record_digest",
+            "component_id",
+            "component_digest",
+            "binding_digest",
+        }
+        for raw_row in self.semantic_packet_evidence_bindings:
+            row = dict(raw_row)
+            if row.get("schema_version") != (
+                FINAL_ANSWER_PACKET_SEMANTIC_PACKET_EVIDENCE_BINDING_SCHEMA_VERSION
+            ):
+                raise ValueError(
+                    "semantic packet evidence binding schema_version is invalid"
+                )
+            missing = [
+                key
+                for key in sorted(required)
+                if _safe_json(row.get(key)) in (None, "", [], {})
+            ]
+            if missing:
+                raise ValueError(
+                    "semantic packet evidence binding missing required fields: "
+                    + ", ".join(missing)
+                )
+            if row.get("packet_evidence_id") not in allowed_ids:
+                raise ValueError(
+                    "semantic packet evidence binding packet_evidence_id is not allowed"
+                )
+            if row.get("binding_digest") != semantic_packet_evidence_binding_digest(
+                row
+            ):
+                raise ValueError(
+                    "semantic packet evidence binding_digest does not match row"
+                )
 
     @property
     def evidence_allowed(self) -> tuple[FinalEvidenceRecord, ...]:
@@ -758,6 +841,7 @@ class FinalAnswerPacket:
                 "sanitized_content_ref_ids",
                 "content_ref_digests",
                 "semantic_ref_evidence_ids",
+                "semantic_source_ref_bindings",
                 "source_obligation_refs",
             ):
                 value = _safe_json(ref_projection.get(key))
@@ -797,6 +881,14 @@ class FinalAnswerPacket:
             )
             manifest["model_request_visible"] = False
             manifest["final_text_included"] = False
+        binding_rows = _safe_json(self.semantic_packet_evidence_bindings) or []
+        if binding_rows:
+            manifest["semantic_packet_evidence_binding_available"] = True
+            manifest["semantic_packet_evidence_binding_count"] = len(binding_rows)
+            manifest["semantic_packet_evidence_binding_digest"] = (
+                _stable_safe_json_digest(binding_rows)
+            )
+            manifest["semantic_packet_evidence_bindings"] = binding_rows
         excluded_evidence_ids = [
             record.evidence_id
             for record in self.evidence_excluded
@@ -1013,7 +1105,7 @@ class FinalAnswerPacket:
         manifest = self.semantic_evidence_authority_manifest
         if not manifest:
             return {}
-        return {
+        trace_ref = {
             "schema_version": (
                 FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION
             ),
@@ -1039,6 +1131,15 @@ class FinalAnswerPacket:
             "raw_prompt_included": False,
             "provider_payload_included": False,
         }
+        if manifest.get("semantic_packet_evidence_binding_available"):
+            trace_ref["semantic_packet_evidence_binding_available"] = True
+            trace_ref["semantic_packet_evidence_binding_count"] = manifest.get(
+                "semantic_packet_evidence_binding_count"
+            )
+            trace_ref["semantic_packet_evidence_binding_digest"] = manifest.get(
+                "semantic_packet_evidence_binding_digest"
+            )
+        return trace_ref
 
     def _semantic_content_coverage_ref_envelope(self) -> dict[str, Any]:
         ref_projection = dict(self.semantic_content_coverage_ref_projection or {})
@@ -1099,7 +1200,7 @@ class FinalAnswerPacket:
         ):
             return {}
 
-        return {
+        envelope: dict[str, Any] = {
             "schema_version": (
                 FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_SCHEMA_VERSION
             ),
@@ -1131,6 +1232,14 @@ class FinalAnswerPacket:
             "raw_prompt_included": False,
             "provider_payload_included": False,
         }
+        binding_rows = _safe_json(self.semantic_packet_evidence_bindings) or []
+        if binding_rows:
+            envelope["semantic_packet_evidence_binding_available"] = True
+            envelope["semantic_packet_evidence_binding_count"] = len(binding_rows)
+            envelope["semantic_packet_evidence_binding_digest"] = (
+                _stable_safe_json_digest(binding_rows)
+            )
+        return envelope
 
     def to_author_authority_block(
         self,
@@ -1289,6 +1398,10 @@ class FinalAnswerPacket:
             payload["semantic_content_coverage_ref_projection"] = _safe_json(
                 self.semantic_content_coverage_ref_projection
             )
+        if self.semantic_packet_evidence_bindings:
+            payload["semantic_packet_evidence_bindings"] = _safe_json(
+                self.semantic_packet_evidence_bindings
+            )
         manifest = self.semantic_evidence_authority_manifest
         if manifest:
             payload["semantic_evidence_authority_manifest"] = _safe_json(manifest)
@@ -1305,6 +1418,7 @@ __all__ = [
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_SCHEMA_VERSION",
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION",
+    "FINAL_ANSWER_PACKET_SEMANTIC_PACKET_EVIDENCE_BINDING_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_TRACE_KEY",
@@ -1320,4 +1434,5 @@ __all__ = [
     "FinalEvidenceRecord",
     "SourceObligationRecord",
     "SourceObligationStatus",
+    "semantic_packet_evidence_binding_digest",
 ]

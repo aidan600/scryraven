@@ -50,6 +50,16 @@ CONTENT_REF_ID = "content:current-rule"
 CONTENT_DIGEST = "f" * 64
 SEMANTIC_EVIDENCE_ID = "evidence:current-rule"
 SOURCE_OBLIGATION_REF = "source-obligation:official-current"
+SEMANTIC_SOURCE_BINDING = {
+    "origin_evidence_ref_id": SEMANTIC_EVIDENCE_ID,
+    "origin_evidence_ref_kind": "evidence_ledger_candidate",
+    "content_ref_id": CONTENT_REF_ID,
+    "content_digest": CONTENT_DIGEST,
+    "coverage_record_id": COVERAGE_REF["coverage_record_id"],
+    "coverage_record_digest": COVERAGE_REF["coverage_record_digest"],
+    "component_id": COMPONENT_REF["component_id"],
+    "component_digest": COMPONENT_REF["component_digest"],
+}
 
 
 def _passage(**overrides: Any) -> dict[str, Any]:
@@ -65,6 +75,32 @@ def _passage(**overrides: Any) -> dict[str, Any]:
     return passage
 
 
+def _evidence_ledger_projection() -> dict[str, Any]:
+    return {
+        "owner": "RunKernel.EvidenceLedger",
+        "schema_version": "evidence_ledger_ag91j_v1",
+        "candidate_records": [
+            {
+                "candidate_id": SEMANTIC_EVIDENCE_ID,
+                "url": "https://example.gov/current-rule",
+                "normalized_source_identity": "https://example.gov/current-rule",
+                "title": "Current rule",
+                "source_tier": "official",
+                "source_class": "official_current_rules",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "fact_disposition": "accepted",
+                "contextual_only": False,
+                "lower_tier": False,
+                "final_evidence_eligible": True,
+            }
+        ],
+        "source_requirements": [],
+        "requirement_links": [],
+        "custody_gaps": [],
+    }
+
+
 def _semantic_ref_projection(**overrides: Any) -> dict[str, Any]:
     projection = {
         "schema_version": SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
@@ -77,6 +113,7 @@ def _semantic_ref_projection(**overrides: Any) -> dict[str, Any]:
         "sanitized_content_ref_ids": [CONTENT_REF_ID],
         "content_ref_digests": [CONTENT_DIGEST],
         "evidence_ids": [SEMANTIC_EVIDENCE_ID],
+        "semantic_source_ref_bindings": [SEMANTIC_SOURCE_BINDING],
         "source_obligation_refs": [SOURCE_OBLIGATION_REF],
         "content_refs_available": True,
         "coverage_refs_available": True,
@@ -122,6 +159,7 @@ def _packet(semantic_ref_projection: Mapping[str, Any] | None = None):
         run_id="ag-sem-fap-01",
         final_evidence=[_passage()],
         author_evidence=[_passage()],
+        source_obligation_projection=_evidence_ledger_projection(),
         sufficiency_judgment_projection=_sufficiency_projection(
             _semantic_ref_projection()
             if semantic_ref_projection is None
@@ -183,6 +221,7 @@ def test_fap_projection_derives_refs_and_digests_from_sufficiency_only() -> None
     assert projection["sanitized_content_ref_ids"] == [CONTENT_REF_ID]
     assert projection["content_ref_digests"] == [CONTENT_DIGEST]
     assert projection["semantic_ref_evidence_ids"] == [SEMANTIC_EVIDENCE_ID]
+    assert projection["semantic_source_ref_bindings"] == [SEMANTIC_SOURCE_BINDING]
     assert projection["source_obligation_refs"] == [SOURCE_OBLIGATION_REF]
     assert projection["content_refs_available"] is True
     assert projection["coverage_refs_available"] is True
@@ -222,8 +261,18 @@ def test_fap_manifest_enriches_available_content_and_coverage_refs() -> None:
     assert manifest["sanitized_content_ref_ids"] == [CONTENT_REF_ID]
     assert manifest["content_ref_digests"] == [CONTENT_DIGEST]
     assert manifest["semantic_ref_evidence_ids"] == [SEMANTIC_EVIDENCE_ID]
+    assert manifest["semantic_source_ref_bindings"] == [SEMANTIC_SOURCE_BINDING]
     assert manifest["source_obligation_refs"] == [SOURCE_OBLIGATION_REF]
     assert manifest["evidence_ids"] == [packet.evidence_allowed[0].evidence_id]
+    assert manifest["semantic_packet_evidence_binding_available"] is True
+    assert manifest["semantic_packet_evidence_binding_count"] == 1
+    assert manifest["semantic_packet_evidence_binding_digest"]
+    assert manifest["semantic_packet_evidence_bindings"][0][
+        "origin_evidence_ref_id"
+    ] == SEMANTIC_EVIDENCE_ID
+    assert manifest["semantic_packet_evidence_bindings"][0][
+        "packet_evidence_id"
+    ] == packet.evidence_allowed[0].evidence_id
     assert manifest["citation_source_ids"] == [101]
     assert manifest["raw_content_included"] is False
     assert manifest["bounded_text_included"] is False

@@ -140,6 +140,24 @@ def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     return dict(safe) if isinstance(safe, Mapping) else {}
 
 
+def _safe_semantic_consumption(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    if not isinstance(value, Mapping):
+        return safe
+    raw_projection = value.get("semantic_ref_projection")
+    if not isinstance(raw_projection, Mapping):
+        return safe
+
+    from core.sufficiency_semantic_state_consumption_runtime import (
+        _safe_semantic_ref_projection,
+    )
+
+    semantic_ref_projection = _safe_semantic_ref_projection(raw_projection)
+    if semantic_ref_projection:
+        safe["semantic_ref_projection"] = semantic_ref_projection
+    return safe
+
+
 def _list(value: Any) -> list[Any]:
     if value is None:
         return []
@@ -484,7 +502,7 @@ class RunSufficiencyJudgment:
         object.__setattr__(
             self,
             "semantic_consumption",
-            _safe_mapping(self.semantic_consumption),
+            _safe_semantic_consumption(self.semantic_consumption),
         )
         object.__setattr__(
             self,
@@ -550,7 +568,9 @@ class RunSufficiencyJudgment:
             prompt_hash=clean_token(payload.get("prompt_hash")),
             prompt_length=int(payload.get("prompt_length") or 0),
             model_identity=_safe_mapping(payload.get("model_identity")),
-            semantic_consumption=_safe_mapping(payload.get("semantic_consumption")),
+            semantic_consumption=_safe_semantic_consumption(
+                payload.get("semantic_consumption")
+            ),
         )
 
     def _default_final_packet_inputs(self) -> dict[str, Any]:
@@ -636,7 +656,7 @@ class RunSufficiencyJudgment:
         }
 
     def to_projection(self) -> dict[str, Any]:
-        return safe_json(
+        projection = safe_json(
             {
                 "owner": "RunKernel.RunAuthoritySufficiencyJudgment",
                 "canonical_state": True,
@@ -689,9 +709,19 @@ class RunSufficiencyJudgment:
                 "provider_payload_retained": False,
             }
         )
+        if not isinstance(projection, Mapping):
+            return {}
+        safe_projection = dict(projection)
+        safe_projection["semantic_consumption"] = _safe_semantic_consumption(
+            self.semantic_consumption
+        )
+        safe_projection["semantic_state_facts_summary"] = (
+            self._semantic_state_facts_summary()
+        )
+        return safe_projection
 
     def _semantic_state_facts_summary(self) -> dict[str, Any]:
-        consumption = _safe_mapping(self.semantic_consumption)
+        consumption = _safe_semantic_consumption(self.semantic_consumption)
         if consumption:
             return {
                 "schema_version": clean_token(consumption.get("schema_version")),

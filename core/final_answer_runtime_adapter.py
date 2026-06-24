@@ -4,10 +4,12 @@ from __future__ import annotations
 import json
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
+from urllib.parse import urlparse, urlunparse
 
 from core.citation_source_handoff_contract import build_citation_source_handoff_state
 from core.final_answer_packet import (
     FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION,
+    FINAL_ANSWER_PACKET_SEMANTIC_PACKET_EVIDENCE_BINDING_SCHEMA_VERSION,
     FINAL_ANSWER_PACKET_TRACE_KEY,
     FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION,
     CitationEligibilityRecord,
@@ -21,6 +23,7 @@ from core.final_answer_packet import (
     FinalEvidenceRecord,
     SourceObligationRecord,
     SourceObligationStatus,
+    semantic_packet_evidence_binding_digest,
 )
 from core.official_current_source_custody import OfficialCurrentSourceCustodyState
 from core.run_authority_projection_refs import (
@@ -33,6 +36,29 @@ from core.sufficiency_semantic_state_consumption_runtime import (
 )
 
 _MAX_SEMANTIC_REF_ITEMS = 80
+_ORIGIN_EVIDENCE_REF_KIND = "evidence_ledger_candidate"
+_ORIGIN_ID_KEYS = (
+    "evidence_ref_id",
+    "evidence_id",
+    "candidate_id",
+    "evidence_ledger_candidate_id",
+    "candidate_ref_id",
+    "source_candidate_id",
+)
+_SOURCE_IDENTITY_KEYS = (
+    "url",
+    "source_url",
+    "normalized_source_identity",
+    "source_identity",
+)
+_ACCEPTED_CANDIDATE_DISPOSITIONS = frozenset(
+    {"accepted", "observed", "partially_accepted", "unknown"}
+)
+_REJECTED_CANDIDATE_DISPOSITIONS = frozenset(
+    {"rejected", "dropped", "unreadable", "unfetchable"}
+)
+_READABLE_CANDIDATE_STATUSES = frozenset({"readable", "available", "ok", "unknown"})
+_STALE_CURRENTNESS_SIGNALS = frozenset({"stale", "outdated", "expired", "superseded"})
 
 
 def _hash_or_none(text: Any) -> tuple[str | None, int | None]:
@@ -46,17 +72,151 @@ def _hash_or_none(text: Any) -> tuple[str | None, int | None]:
     return sha256(value.encode("utf-8")).hexdigest(), len(value)
 
 
+def _normalize_source_identity(value: Any) -> str:
+    text = _clean_text(value, limit=500) or ""
+    if not text:
+        return ""
+    parsed = urlparse(text)
+    if not parsed.netloc:
+        return text.casefold().rstrip("/")
+    return urlunparse(
+        (
+            parsed.scheme.casefold() or "https",
+            parsed.netloc.casefold(),
+            parsed.path.rstrip("/"),
+            "",
+            parsed.query,
+            "",
+        )
+    )
+
+
+def _passage_candidate_identity_keys(passage: Mapping[str, Any]) -> frozenset[str]:
+    keys = {
+        token
+        for token in (_clean_token(passage.get(key), limit=200) for key in _ORIGIN_ID_KEYS)
+        if token
+    }
+    for key in _SOURCE_IDENTITY_KEYS:
+        identity = _normalize_source_identity(passage.get(key))
+        if identity:
+            keys.add(f"candidate:{sha256(identity.encode('utf-8')).hexdigest()[:16]}")
+    source_id = _clean_token(passage.get("source_id"), limit=120)
+    if source_id:
+        keys.add(f"source-id:{source_id}")
+    return frozenset(keys)
+
+
+def _candidate_record_is_bindable(
+    candidate: Mapping[str, Any],
+    *,
+    passage: Mapping[str, Any],
+) -> bool:
+    disposition = (
+        _clean_token(
+            candidate.get("fact_disposition")
+            or candidate.get("disposition")
+            or candidate.get("status")
+        )
+        or "unknown"
+    ).casefold()
+    if disposition in _REJECTED_CANDIDATE_DISPOSITIONS:
+        return False
+    if disposition not in _ACCEPTED_CANDIDATE_DISPOSITIONS:
+        return False
+    readable = (
+        _clean_token(
+            candidate.get("readable_status") or candidate.get("readability_status")
+        )
+        or "readable"
+    ).casefold()
+    if readable not in _READABLE_CANDIDATE_STATUSES:
+        return False
+    if candidate.get("contextual_only") is True:
+        return False
+    if candidate.get("lower_tier") is True:
+        return False
+    currentness = (
+        _clean_token(candidate.get("currentness_signal"))
+        or _clean_token(passage.get("currentness_signal"))
+        or _clean_token(passage.get("currentness"))
+    )
+    if currentness and currentness.casefold() in _STALE_CURRENTNESS_SIGNALS:
+        return False
+    return True
+
+
+def _candidate_records_from_ledger(projection: Any) -> tuple[Mapping[str, Any], ...]:
+    ledger = _evidence_ledger_projection_from_any(projection)
+    if not ledger:
+        return ()
+    records = ledger.get("candidate_records")
+    if not isinstance(records, Sequence) or isinstance(records, (str, bytes)):
+        return ()
+    return tuple(dict(item) for item in records if isinstance(item, Mapping))
+
+
+def _origin_evidence_ref_from_ledger_candidate(
+    passage: Mapping[str, Any],
+    *,
+    evidence_ledger_projection: Any,
+) -> tuple[str | None, str | None]:
+    candidates = _candidate_records_from_ledger(evidence_ledger_projection)
+    if not candidates:
+        return None, None
+
+    passage_candidate_keys = _passage_candidate_identity_keys(passage)
+    source_id = _clean_token(passage.get("source_id"), limit=120)
+    passage_identities = {
+        identity
+        for identity in (
+            _normalize_source_identity(passage.get(key))
+            for key in _SOURCE_IDENTITY_KEYS
+        )
+        if identity
+    }
+
+    for candidate in candidates:
+        candidate_id = _clean_token(candidate.get("candidate_id"), limit=200)
+        if not candidate_id or not _candidate_record_is_bindable(
+            candidate,
+            passage=passage,
+        ):
+            continue
+        if candidate_id in passage_candidate_keys:
+            return candidate_id, _ORIGIN_EVIDENCE_REF_KIND
+        candidate_identities = {
+            identity
+            for identity in (
+                _normalize_source_identity(candidate.get(key))
+                for key in _SOURCE_IDENTITY_KEYS
+            )
+            if identity
+        }
+        if passage_identities and passage_identities.intersection(candidate_identities):
+            return candidate_id, _ORIGIN_EVIDENCE_REF_KIND
+        candidate_source_id = _clean_token(candidate.get("source_id"), limit=120)
+        if source_id and candidate_source_id and source_id == candidate_source_id:
+            return candidate_id, _ORIGIN_EVIDENCE_REF_KIND
+    return None, None
+
+
 def _evidence_record_from_passage(
     passage: Mapping[str, Any],
     *,
     position: int,
     packet_id: str,
+    evidence_ledger_projection: Any = None,
     status: EvidenceAuthorityStatus = EvidenceAuthorityStatus.EVIDENCE_ALLOWED,
     reason: str | None = None,
 ) -> FinalEvidenceRecord:
     text_hash, text_length = _hash_or_none(passage.get("text"))
     source_id = passage.get("source_id")
     evidence_id = f"{packet_id}:e{position}"
+    origin_ref_id, origin_ref_kind = _origin_evidence_ref_from_ledger_candidate(
+        passage,
+        evidence_ledger_projection=evidence_ledger_projection,
+    )
     return FinalEvidenceRecord(
         evidence_id=evidence_id,
         status=status,
@@ -69,6 +229,8 @@ def _evidence_record_from_passage(
         text_hash=text_hash,
         text_length=text_length,
         reason=reason,
+        origin_evidence_ref_id=origin_ref_id,
+        origin_evidence_ref_kind=origin_ref_kind,
     )
 
 
@@ -428,6 +590,53 @@ def _semantic_observation_refs(value: Any) -> list[dict[str, Any]]:
     return refs[:_MAX_SEMANTIC_REF_ITEMS]
 
 
+def _semantic_source_ref_bindings(value: Any) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for item in _list(value):
+        if not isinstance(item, Mapping):
+            continue
+        origin_evidence_ref_id = _clean_token(
+            item.get("origin_evidence_ref_id"),
+            limit=200,
+        )
+        origin_evidence_ref_kind = _clean_token(
+            item.get("origin_evidence_ref_kind") or _ORIGIN_EVIDENCE_REF_KIND,
+            limit=120,
+        )
+        content_ref_id = _clean_token(item.get("content_ref_id"))
+        content_digest = _clean_token(item.get("content_digest"), limit=128)
+        coverage_record_id = _clean_token(item.get("coverage_record_id"))
+        coverage_record_digest = _clean_token(
+            item.get("coverage_record_digest"),
+            limit=128,
+        )
+        component_id = _clean_token(item.get("component_id"))
+        component_digest = _clean_token(item.get("component_digest"), limit=128)
+        if (
+            origin_evidence_ref_id
+            and origin_evidence_ref_kind
+            and content_ref_id
+            and content_digest
+            and coverage_record_id
+            and coverage_record_digest
+            and component_id
+            and component_digest
+        ):
+            refs.append(
+                {
+                    "origin_evidence_ref_id": origin_evidence_ref_id,
+                    "origin_evidence_ref_kind": origin_evidence_ref_kind,
+                    "content_ref_id": content_ref_id,
+                    "content_digest": content_digest,
+                    "coverage_record_id": coverage_record_id,
+                    "coverage_record_digest": coverage_record_digest,
+                    "component_id": component_id,
+                    "component_digest": component_digest,
+                }
+            )
+    return refs[:_MAX_SEMANTIC_REF_ITEMS]
+
+
 def _semantic_state_facts_digest(
     *,
     summary: Mapping[str, Any],
@@ -485,6 +694,9 @@ def _semantic_ref_projection_from_sufficiency(projection: Any) -> dict[str, Any]
     semantic_ref_evidence_ids = _token_list(
         semantic_ref_projection.get("evidence_ids")
     )
+    semantic_source_ref_bindings = _semantic_source_ref_bindings(
+        semantic_ref_projection.get("semantic_source_ref_bindings")
+    )
     source_obligation_refs = _token_list(
         semantic_ref_projection.get("source_obligation_refs")
     )
@@ -509,6 +721,7 @@ def _semantic_ref_projection_from_sufficiency(projection: Any) -> dict[str, Any]
         "sanitized_content_ref_ids": content_ref_ids,
         "content_ref_digests": content_ref_digests,
         "evidence_ids": semantic_ref_evidence_ids,
+        "semantic_source_ref_bindings": semantic_source_ref_bindings,
         "source_obligation_refs": source_obligation_refs,
         "content_refs_available": True,
         "coverage_refs_available": True,
@@ -558,12 +771,104 @@ def _fap_semantic_content_coverage_projection(projection: Any) -> dict[str, Any]
         ("sanitized_content_ref_ids", "sanitized_content_ref_ids"),
         ("content_ref_digests", "content_ref_digests"),
         ("evidence_ids", "semantic_ref_evidence_ids"),
+        ("semantic_source_ref_bindings", "semantic_source_ref_bindings"),
         ("source_obligation_refs", "source_obligation_refs"),
     ):
         value = source_projection.get(source_key)
         if value not in (None, "", [], {}):
             fap_projection[packet_key] = value
     return fap_projection
+
+
+def _semantic_packet_evidence_bindings(
+    *,
+    evidence_records: Sequence[FinalEvidenceRecord],
+    semantic_content_coverage_ref_projection: Mapping[str, Any],
+) -> tuple[Mapping[str, Any], ...]:
+    if semantic_content_coverage_ref_projection.get("available") is not True:
+        return ()
+
+    allowed_by_origin: dict[str, FinalEvidenceRecord] = {}
+    for record in evidence_records:
+        if record.status is not EvidenceAuthorityStatus.EVIDENCE_ALLOWED:
+            continue
+        origin_id = _clean_token(record.origin_evidence_ref_id, limit=200)
+        if origin_id and origin_id not in allowed_by_origin:
+            allowed_by_origin[origin_id] = record
+
+    semantic_origin_ids = _token_list(
+        semantic_content_coverage_ref_projection.get("semantic_ref_evidence_ids"),
+        limit=200,
+    )
+    source_bindings = _semantic_source_ref_bindings(
+        semantic_content_coverage_ref_projection.get("semantic_source_ref_bindings")
+    )
+    source_origin_ids = [
+        row["origin_evidence_ref_id"]
+        for row in source_bindings
+        if row.get("origin_evidence_ref_id")
+    ]
+    required_origin_ids = tuple(
+        dict.fromkeys([*semantic_origin_ids, *source_origin_ids])
+    )
+    if not required_origin_ids:
+        raise ValueError(
+            "available semantic content coverage projection requires semantic evidence refs"
+        )
+    if not source_bindings:
+        raise ValueError(
+            "available semantic content coverage projection requires row-wise semantic source bindings"
+        )
+
+    missing = [
+        origin_id
+        for origin_id in required_origin_ids
+        if origin_id not in allowed_by_origin
+    ]
+    if missing:
+        raise ValueError(
+            "semantic packet evidence binding mismatch: unresolved origin evidence refs "
+            + ", ".join(missing)
+        )
+
+    rows: list[Mapping[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for source_row in source_bindings:
+        origin_id = source_row["origin_evidence_ref_id"]
+        record = allowed_by_origin.get(origin_id)
+        if record is None:
+            raise ValueError(
+                "semantic packet evidence binding mismatch: unresolved origin evidence ref "
+                + origin_id
+            )
+        row = {
+            "schema_version": (
+                FINAL_ANSWER_PACKET_SEMANTIC_PACKET_EVIDENCE_BINDING_SCHEMA_VERSION
+            ),
+            "origin_evidence_ref_id": origin_id,
+            "origin_evidence_ref_kind": (
+                source_row.get("origin_evidence_ref_kind")
+                or _ORIGIN_EVIDENCE_REF_KIND
+            ),
+            "packet_evidence_id": record.evidence_id,
+            "content_ref_id": source_row["content_ref_id"],
+            "content_digest": source_row["content_digest"],
+            "coverage_record_id": source_row["coverage_record_id"],
+            "coverage_record_digest": source_row["coverage_record_digest"],
+            "component_id": source_row["component_id"],
+            "component_digest": source_row["component_digest"],
+        }
+        row["binding_digest"] = semantic_packet_evidence_binding_digest(row)
+        dedupe_key = (
+            str(row["origin_evidence_ref_id"]),
+            str(row["packet_evidence_id"]),
+            str(row["content_ref_id"]),
+            str(row["coverage_record_id"]),
+        )
+        if dedupe_key not in seen:
+            rows.append(row)
+            seen.add(dedupe_key)
+    return tuple(rows)
 
 
 def _semantic_field_from_sources(
@@ -1155,8 +1460,16 @@ def build_final_answer_packet(
         for item in sufficiency_satisfied
         if isinstance(item, Mapping)
     )
+    evidence_ledger_projection = _evidence_ledger_projection_from_any(
+        source_obligation_projection
+    )
     evidence_records = tuple(
-        _evidence_record_from_passage(passage, position=index, packet_id=packet_id)
+        _evidence_record_from_passage(
+            passage,
+            position=index,
+            packet_id=packet_id,
+            evidence_ledger_projection=evidence_ledger_projection,
+        )
         for index, passage in enumerate(final_evidence or (), start=1)
     )
     citation_records = tuple(
@@ -1309,6 +1622,12 @@ def build_final_answer_packet(
     semantic_content_coverage_ref_projection = (
         _fap_semantic_content_coverage_projection(sufficiency_judgment_projection)
     )
+    semantic_packet_evidence_bindings = _semantic_packet_evidence_bindings(
+        evidence_records=evidence_records,
+        semantic_content_coverage_ref_projection=(
+            semantic_content_coverage_ref_projection
+        ),
+    )
     return FinalAnswerPacket(
         packet_id=packet_id,
         evidence_records=evidence_records,
@@ -1351,6 +1670,7 @@ def build_final_answer_packet(
         semantic_content_coverage_ref_projection=(
             semantic_content_coverage_ref_projection
         ),
+        semantic_packet_evidence_bindings=semantic_packet_evidence_bindings,
     )
 
 

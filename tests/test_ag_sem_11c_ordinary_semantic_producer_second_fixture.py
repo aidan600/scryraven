@@ -227,6 +227,7 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert fap_ref_projection["content_ref_digests"]
     assert fap_ref_projection["coverage_record_refs"]
     assert fap_ref_projection["semantic_observation_refs"]
+    assert fap_ref_projection["semantic_source_ref_bindings"]
     assert fap_ref_projection["raw_content_included"] is False
     assert fap_ref_projection["bounded_text_included"] is False
     assert fap_ref_projection["prompt_visible"] is False
@@ -251,7 +252,25 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert manifest["semantic_observation_refs"]
     assert manifest["component_refs"]
     assert manifest["semantic_ref_evidence_ids"]
+    assert manifest["semantic_source_ref_bindings"]
     assert manifest["source_obligation_refs"]
+    assert all(
+        record.origin_evidence_ref_id and record.origin_evidence_ref_kind
+        for record in packet.evidence_allowed
+    )
+    bindings = tuple(dict(row) for row in packet.semantic_packet_evidence_bindings)
+    assert bindings
+    allowed_packet_evidence_ids = {
+        record.evidence_id for record in packet.evidence_allowed
+    }
+    binding_origin_ids = {row["origin_evidence_ref_id"] for row in bindings}
+    assert set(manifest["semantic_ref_evidence_ids"]).issubset(binding_origin_ids)
+    assert all(
+        row["packet_evidence_id"] in allowed_packet_evidence_ids for row in bindings
+    )
+    assert manifest["semantic_packet_evidence_binding_available"] is True
+    assert manifest["semantic_packet_evidence_binding_count"] == len(bindings)
+    assert manifest["semantic_packet_evidence_binding_digest"]
     assert manifest["raw_content_included"] is False
     assert manifest["bounded_text_included"] is False
     assert manifest["prompt_visible"] is False
@@ -289,6 +308,14 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "component_refs" not in manifest_trace_ref
     assert "semantic_ref_evidence_ids" not in manifest_trace_ref
     assert "source_obligation_refs" not in manifest_trace_ref
+    assert "semantic_packet_evidence_bindings" not in manifest_trace_ref
+    assert manifest_trace_ref["semantic_packet_evidence_binding_available"] is True
+    assert manifest_trace_ref["semantic_packet_evidence_binding_count"] == len(
+        bindings
+    )
+    assert manifest_trace_ref["semantic_packet_evidence_binding_digest"] == (
+        manifest["semantic_packet_evidence_binding_digest"]
+    )
     envelope = packet_handoff.author_payload.semantic_content_coverage_ref_envelope
     assert envelope["available"] is True
     assert envelope["semantic_state_facts_digest"] == (
@@ -299,6 +326,12 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert envelope["coverage_record_refs"]
     assert envelope["semantic_observation_refs"]
     assert envelope["component_refs"]
+    assert envelope["semantic_packet_evidence_binding_available"] is True
+    assert envelope["semantic_packet_evidence_binding_count"] == len(bindings)
+    assert envelope["semantic_packet_evidence_binding_digest"] == (
+        manifest["semantic_packet_evidence_binding_digest"]
+    )
+    assert "semantic_packet_evidence_bindings" not in envelope
     assert envelope["author_payload_visible"] is True
     assert envelope["authority_payload_visible"] is False
     assert envelope["authority_block_visible"] is False
@@ -314,6 +347,13 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert envelope_trace_ref["content_ref_digest_count"] > 0
     assert envelope_trace_ref["semantic_ref_evidence_id_count"] > 0
     assert envelope_trace_ref["source_obligation_ref_count"] > 0
+    assert envelope_trace_ref["semantic_packet_evidence_binding_available"] is True
+    assert envelope_trace_ref["semantic_packet_evidence_binding_count"] == len(
+        bindings
+    )
+    assert envelope_trace_ref["semantic_packet_evidence_binding_digest"] == (
+        manifest["semantic_packet_evidence_binding_digest"]
+    )
     for forbidden_ref_key in (
         "component_refs",
         "coverage_record_refs",
@@ -322,6 +362,7 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
         "content_ref_digests",
         "semantic_ref_evidence_ids",
         "source_obligation_refs",
+        "semantic_packet_evidence_bindings",
     ):
         assert forbidden_ref_key not in envelope_trace_ref
     assert state.final_answer_authority_projection["author_payload_ref"][
@@ -345,6 +386,8 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
         "content_ref_digests",
         "coverage_record_refs",
         "semantic_observation_refs",
+        "semantic_packet_evidence_bindings",
+        "semantic_packet_evidence_binding_digest",
         MANIFEST_TRACE_REF_KEY,
         ENVELOPE_TRACE_REF_KEY,
         ENVELOPE_KEY,
@@ -365,6 +408,7 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "semantic_authority_trace_ref" not in state.author_observation
     assert "semantic_ref_projection" not in state.author_observation
     assert "semantic_content_coverage_ref_projection" not in state.author_observation
+    assert "semantic_packet_evidence_bindings" not in state.author_observation
     assert ENVELOPE_TRACE_REF_KEY not in state.author_observation
     assert ENVELOPE_KEY not in state.author_observation
     assert "sanitized_content_ref_ids" not in state.author_observation
