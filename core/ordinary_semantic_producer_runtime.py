@@ -237,13 +237,14 @@ def _answer_component_from_candidate(
         )
         if obligation_id
     )
+    source_obligation_label = _direct_source_obligation_label(obligation_ids)
     return AnswerComponentContract(
         component_id=component_id,
         user_facing_label=label,
         user_facing_question=question,
         requirement_posture=RequirementPosture.REQUIRED,
         acceptance_criteria=(
-            "state the bounded official answer",
+            f"state the bounded {source_obligation_label} answer",
             "bind it to custodied evidence",
         ),
         semantic_slot_ids=semantic_slot_ids,
@@ -251,10 +252,28 @@ def _answer_component_from_candidate(
         allowed_support_kinds=(SupportKind.DIRECT,),
         max_inference_depth=0,
         mandatory_caveats=("Answer remains evidence-bound.",),
-        prohibited_upgrades=("Do not replace official wording with an estimate.",),
+        prohibited_upgrades=(f"Do not replace {source_obligation_label} evidence with an estimate.",),
         materiality=Materiality.MATERIAL,
         metadata={"phase": "AG-SEM-11", "deterministic_runtime": True},
     )
+
+
+def _direct_source_obligation_label(obligation_ids: Sequence[str]) -> str:
+    normalized = {
+        (obligation_id or "").casefold().removeprefix("obligation:")
+        for obligation_id in obligation_ids
+    }
+    if "official_current" in normalized:
+        return "official current"
+    if "legal_current_primary" in normalized:
+        return "primary legal"
+    if "canonical_documentation" in normalized:
+        return "canonical documentation"
+    if "source_bound_numeric" in normalized:
+        return "source-bound numeric"
+    if "reputable_secondary" in normalized:
+        return "reputable source-bound"
+    return "source-bound"
 
 
 def build_question_meaning_record_from_search_work_plan(
@@ -520,6 +539,51 @@ def _source_requirement_ids_for_candidate(
     )
 
 
+def _source_requirements_by_id(
+    evidence_ledger_projection: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    requirements: dict[str, dict[str, Any]] = {}
+    for requirement in evidence_ledger_projection.get("source_requirements") or ():
+        if not isinstance(requirement, Mapping):
+            continue
+        requirement_id = _clean_token(requirement.get("requirement_id"))
+        if requirement_id:
+            requirements[requirement_id] = dict(requirement)
+    return requirements
+
+
+def _coverage_currentness_posture(
+    evidence_ledger_projection: Mapping[str, Any],
+    *,
+    source_requirement_ids: Sequence[str],
+) -> CurrentnessPosture:
+    if not source_requirement_ids:
+        return CurrentnessPosture.NOT_TIME_SENSITIVE
+    requirements = _source_requirements_by_id(evidence_ledger_projection)
+    for requirement_id in source_requirement_ids:
+        requirement = requirements.get(requirement_id, {})
+        currentness = (
+            _clean_token(requirement.get("required_currentness"))
+            or _clean_token(requirement.get("currentness_requirement"))
+        )
+        if currentness and currentness.casefold() in {"current", "official_current"}:
+            return CurrentnessPosture.CURRENT
+    return CurrentnessPosture.NOT_TIME_SENSITIVE
+
+
+def _direct_coverage_boundary_text(
+    *,
+    currentness_posture: CurrentnessPosture,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    caveats = ["Answer remains evidence-bound."]
+    if currentness_posture is CurrentnessPosture.CURRENT:
+        caveats.append("Currentness remains evidence-bound.")
+    return (
+        tuple(caveats),
+        ("Do not replace direct source-bound evidence with an estimate.",),
+    )
+
+
 def build_semantic_observation_and_content_refs(
     *,
     accepted_contract: Mapping[str, Any],
@@ -550,7 +614,7 @@ def build_semantic_observation_and_content_refs(
         directness=SupportDirectness.DIRECT,
         support_status=SupportStatus.SUPPORTS,
         claim_or_value=claim,
-        normalization_fit="official rule wording",
+        normalization_fit="direct source-bound wording",
         scope_fit="primary component",
         assumption_fit="bounded selected evidence excerpt",
         inference_depth=0,
@@ -597,6 +661,13 @@ def build_component_coverage_proposal(
     else:
         source_requirement_ids = ()
         source_obligation_status = SourceObligationStatus.NOT_APPLICABLE
+    currentness_posture = _coverage_currentness_posture(
+        evidence_ledger_projection,
+        source_requirement_ids=source_requirement_ids,
+    )
+    caveats, prohibited_upgrades = _direct_coverage_boundary_text(
+        currentness_posture=currentness_posture,
+    )
     ledger_digest = evidence_ledger_projection_digest(evidence_ledger_projection)
     observation_refs = (
         SemanticObservationCoverageRef(
@@ -654,9 +725,9 @@ def build_component_coverage_proposal(
         normalization_posture=ExplicitnessPosture.NOT_APPLICABLE,
         assumption_posture=ExplicitnessPosture.NOT_APPLICABLE,
         conflict_posture=ConflictPosture.NONE,
-        currentness_posture=CurrentnessPosture.CURRENT,
-        required_caveats=("Currentness remains evidence-bound.",),
-        prohibited_upgrades=("Do not replace official wording with an estimate.",),
+        currentness_posture=currentness_posture,
+        required_caveats=caveats,
+        prohibited_upgrades=prohibited_upgrades,
         followup_need=FollowupNeed.NONE,
         mode_budget_posture=ModeBudgetPosture.AVAILABLE,
         stale=False,
