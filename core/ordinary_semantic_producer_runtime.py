@@ -82,6 +82,10 @@ SKIP_REASON_CONTRACT_PREFLIGHT_FAILED = "contract_preflight_failed"
 SKIP_REASON_ADMISSION_PREFLIGHT_FAILED = "admission_preflight_failed"
 SKIP_REASON_COVERAGE_PREFLIGHT_FAILED = "coverage_preflight_failed"
 SKIP_REASON_PREFLIGHT_FAILED = "preflight_failed"
+SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT = (
+    "canonical_semantic_state_already_present"
+)
+SKIP_REASON_SEARCH_WORK_PLAN_MISSING = "search_work_plan_missing"
 
 _ACCEPTED_DISPOSITIONS = frozenset({"accepted", "observed", "partially_accepted"})
 _READABLE_STATUSES = frozenset({"readable", "available", "ok"})
@@ -948,7 +952,7 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
     if _semantic_state_already_present(run_kernel):
         return OrdinarySemanticProducerHandoffResult(
             status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
-            skipped_reason="canonical_semantic_state_already_present",
+            skipped_reason=SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
         )
 
     run_id = run_kernel.state.run_id
@@ -957,7 +961,7 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
     if not search_work_plan:
         return OrdinarySemanticProducerHandoffResult(
             status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
-            skipped_reason="search_work_plan_missing",
+            skipped_reason=SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
         )
 
     final_top_evidence = [
@@ -1066,11 +1070,13 @@ __all__ = [
     "ORDINARY_SEMANTIC_PRODUCER_SCHEMA_VERSION",
     "SKIP_REASON_ADMISSION_PREFLIGHT_FAILED",
     "SKIP_REASON_BINDABLE_PASSAGE_MISSING",
+    "SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT",
     "SKIP_REASON_CONTRACT_PREFLIGHT_FAILED",
     "SKIP_REASON_COVERAGE_PREFLIGHT_FAILED",
     "SKIP_REASON_MULTIPART_ASSESSMENT",
     "SKIP_REASON_PREFLIGHT_FAILED",
     "SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE",
+    "SKIP_REASON_SEARCH_WORK_PLAN_MISSING",
     "BindableFinalPassage",
     "OrdinarySemanticProducerBundle",
     "OrdinarySemanticProducerHandoffResult",
