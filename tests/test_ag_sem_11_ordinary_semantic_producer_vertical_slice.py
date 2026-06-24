@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import json
-import logging
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Mapping
@@ -11,8 +9,6 @@ from unittest.mock import patch
 
 import pytest
 
-import core.pipeline_orchestrator as orchestrator
-from core.cost_accounting import CostAccumulator
 from core.evidence_ledger import CandidateDisposition
 from core.ordinary_semantic_producer_runtime import (
     SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
@@ -34,13 +30,19 @@ from core.ordinary_semantic_producer_runtime import (
     preflight_ordinary_semantic_producer_bundle,
     select_bindable_final_passage,
 )
-from core.protocols import NullStatusWriter
 from core.run_authority_sufficiency import RunSufficiencyDecision
-from core.run_config import RunConfig, RunDeps
 from core.run_kernel import RunKernel
 from core.search_work_query_shape_runtime import (
     DeterministicSearchWorkRuntimeInput,
     build_deterministic_search_work_runtime_records,
+)
+from tests.helpers.offline_ordinary_pipeline import (
+    HANDOFF_PACKET,
+    HANDOFF_SUFFICIENCY,
+    OfflineOrdinaryPipelineHarness,
+    assert_no_semantic_state,
+    run_offline_ordinary_pipeline,
+    scrub_offline_runtime,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,12 +52,6 @@ RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 
 AG_CHECK_01_QUERY = "What is the current official rule for Example Program?"
 MULTIPART_QUERY = "What are the current official fee and legal deadline?"
-
-
-def _assert_no_semantic_state(kernel: RunKernel) -> None:
-    assert not kernel.state.initial_answer_contract
-    assert not kernel.state.semantic_observation_admission_history
-    assert not kernel.state.component_coverage_history
 
 
 def _capture_ag_check_01_handoff_inputs(
@@ -102,90 +98,29 @@ def _preflight_kwargs_from_capture(
 
 @pytest.fixture(autouse=True)
 def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in (
-        "BRAVE_API_KEY",
-        "TAVILY_API_KEY",
-        "LINKUP_API_KEY",
-        "EXA_API_KEY",
-        "OPENAI_API_KEY",
-        "OPENROUTER_API_KEY",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(orchestrator, "DB_ENABLED", False)
-    monkeypatch.setattr(orchestrator, "kb_review_agent", lambda *_args, **_kwargs: {})
+    scrub_offline_runtime(monkeypatch)
 
 
-class _OfflineOrdinaryHarness:
+class _OfflineOrdinaryHarness(OfflineOrdinaryPipelineHarness):
     def __init__(self, tmp_path: Path) -> None:
-        from core.prompts import DEFAULT_SYSTEM
-
-        self.tmp_path = tmp_path
-        self.query = AG_CHECK_01_QUERY
-        self.core_topic = "Example Program current official rule"
-        self.primary_entity = "Example Program"
-        self._DEFAULT_SYSTEM = DEFAULT_SYSTEM
-        self.search_calls: list[dict[str, Any]] = []
+        super().__init__(
+            tmp_path=tmp_path,
+            query=AG_CHECK_01_QUERY,
+            core_topic="Example Program current official rule",
+            primary_entity="Example Program",
+            raw_author_response=(
+                "AG_SEM_11_AUTHOR_FINAL_REPORT: Example Program remains governed "
+                "by the retrieved official rule."
+            ),
+            analyst_response=(
+                "Analysis is limited to the retrieved official Example Program rule."
+            ),
+            logger_name="test_ag_sem_11",
+        )
         self.weakened_evidence = False
         self.stale_readable_official = False
 
-    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
-        if system_prompt == self._DEFAULT_SYSTEM["router"]:
-            return json.dumps(
-                {
-                    "intent": "general",
-                    "report_type": "general_research",
-                    "image_mode": "none",
-                    "core_topic": self.core_topic,
-                    "is_academic": False,
-                    "query_type": "other",
-                    "entities": [self.primary_entity],
-                    "primary_entity": self.primary_entity,
-                }
-            )
-        if system_prompt == "You are a concise title generator.":
-            return f"{self.primary_entity} Rule"
-        if system_prompt == self._DEFAULT_SYSTEM["researcher"]:
-            return json.dumps({"queries": [f"{self.primary_entity} official current rule"]})
-        if system_prompt in (self._DEFAULT_SYSTEM["expander"],) or "research gap detector" in system_prompt:
-            return json.dumps({"component_queries": [], "reasoning": "offline fixture sufficient"})
-        if system_prompt == self._DEFAULT_SYSTEM["evaluator"]:
-            return json.dumps({"is_sufficient": True, "new_queries": []})
-        if system_prompt == self._DEFAULT_SYSTEM["analyst"]:
-            return "Analysis is limited to the retrieved official Example Program rule."
-        if system_prompt == self._DEFAULT_SYSTEM["synth_evaluator"]:
-            return json.dumps({"is_sufficient": True, "supplemental_queries": []})
-        if kwargs.get("stream"):
-            return (
-                "AG_SEM_11_AUTHOR_FINAL_REPORT: Example Program remains governed by the "
-                "retrieved official rule."
-            )
-        raise AssertionError(f"unexpected model call: {system_prompt!r}")
-
-    def embed_texts(self, texts: list[str], **_kwargs: Any) -> list[list[float]]:
-        return [[1.0, 0.0] for _ in texts]
-
-    def process_search_queries(
-        self,
-        queries: list[str],
-        intent: str,
-        complexity: str,
-        search_depth: str,
-        results_per_query: int,
-        *_args: Any,
-        **kwargs: Any,
-    ) -> list[dict[str, Any]]:
-        self.search_calls.append(
-            {
-                "queries": list(queries),
-                "intent": intent,
-                "complexity": complexity,
-                "search_depth": search_depth,
-                "results_per_query": results_per_query,
-            }
-        )
-        seen_urls = kwargs.get("seen_urls")
-        if seen_urls is None and len(_args) >= 4:
-            seen_urls = _args[3]
+    def build_search_passages(self) -> list[dict[str, Any]]:
         passages = [
             {
                 "source_id": 1,
@@ -229,65 +164,7 @@ class _OfflineOrdinaryHarness:
                 passage["lower_tier"] = True
                 passage["currentness_signal"] = "stale"
                 passage["readable_status"] = "unreadable"
-        if seen_urls is not None:
-            for passage in passages:
-                seen_urls.add(passage["url"])
         return passages
-
-    def deps(self) -> RunDeps:
-        return RunDeps(
-            ask_model=self.ask_model,
-            embed_texts=self.embed_texts,
-            compute_similarities=lambda texts, *_args, **_kwargs: [1.0 for _ in texts],
-            process_search_queries=self.process_search_queries,
-            filter_top_evidence=lambda passages, *_args, **_kwargs: list(passages),
-            is_plausible_domain=lambda _url: True,
-            anchor_query_to_topic=lambda query, _topic: query,
-            fetch_linkup_precision_block=lambda *_args, **_kwargs: "",
-            run_economist_step=lambda *_args, **_kwargs: "",
-            run_scout=lambda *_args, **_kwargs: {},
-            should_skip_quant_scout=lambda *_args, **_kwargs: True,
-            clean_json_response=lambda value: value,
-            DEFAULT_SYSTEM=self._DEFAULT_SYSTEM,
-            NEWS_PREFERRED_DOMAINS=[],
-            ACADEMIC_DOMAINS=[],
-            QUANT_REPORT_TYPES=set(),
-            logger=logging.getLogger("test_ag_sem_11"),
-            execution_log_path=self.tmp_path / "execution.jsonl",
-            feedback_log_path=self.tmp_path / "feedback.jsonl",
-            kb_triggers_path=self.tmp_path / "kb.jsonl",
-            policy_state_path=self.tmp_path / "policy.json",
-            policy_journal_path=self.tmp_path / "policy_journal.jsonl",
-        )
-
-
-def _install_handoff_capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    captured: dict[str, Any] = {}
-    original_packet = orchestrator.prepare_final_answer_packet_author_handoff_from_scope
-    original_sufficiency = orchestrator.execute_sufficiency_judgment_handoff_from_scope
-
-    def packet_wrapper(run_kernel: Any, runtime_scope: dict[str, Any], **kwargs: Any) -> Any:
-        captured["run_kernel"] = run_kernel
-        captured["packet_runtime_scope"] = dict(runtime_scope)
-        return original_packet(run_kernel, runtime_scope, **kwargs)
-
-    def sufficiency_wrapper(run_kernel: Any, runtime_scope: dict[str, Any], **kwargs: Any) -> Any:
-        captured["sufficiency_runtime_scope"] = dict(runtime_scope)
-        handoff = original_sufficiency(run_kernel, runtime_scope, **kwargs)
-        captured["sufficiency_projection"] = dict(run_kernel.state.sufficiency_judgment_projection)
-        return handoff
-
-    monkeypatch.setattr(
-        orchestrator,
-        "prepare_final_answer_packet_author_handoff_from_scope",
-        packet_wrapper,
-    )
-    monkeypatch.setattr(
-        orchestrator,
-        "execute_sufficiency_judgment_handoff_from_scope",
-        sufficiency_wrapper,
-    )
-    return captured
 
 
 def _run_offline_pipeline(
@@ -297,31 +174,16 @@ def _run_offline_pipeline(
     weakened_evidence: bool = False,
     stale_readable_official: bool = False,
 ) -> dict[str, Any]:
-    captured = _install_handoff_capture(monkeypatch)
     harness = _OfflineOrdinaryHarness(tmp_path)
     harness.weakened_evidence = weakened_evidence
     harness.stale_readable_official = stale_readable_official
-    orchestrator.run_pipeline(
-        RunConfig(
-            query=harness.query,
-            mode="Balanced",
-            current_date="2026-06-22",
-            session_id="ag-sem-11-session",
-            run_id="ag-sem-11-run",
-            fast_provider="offline-fake-provider",
-            fast_model="offline-fake-fast-model",
-            smart_provider="offline-fake-provider",
-            smart_model="offline-fake-smart-model",
-            local_url="http://offline.invalid/v1",
-            or_api_key="",
-            use_reasoning=False,
-            run_authority_contract_smart_model=False,
-            run_authority_search_judgment_smart_model=False,
-            run_authority_sufficiency_smart_model=False,
-        ),
-        harness.deps(),
-        NullStatusWriter(),
-        CostAccumulator(),
+    captured, _outcome = run_offline_ordinary_pipeline(
+        harness,
+        monkeypatch,
+        current_date="2026-06-22",
+        session_id="ag-sem-11-session",
+        run_id="ag-sem-11-run",
+        capture_stages=(HANDOFF_SUFFICIENCY, HANDOFF_PACKET),
     )
     return captured
 
@@ -401,7 +263,7 @@ def test_prerequisites_absent_leaves_no_orphan_initial_answer_contract(
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_BINDABLE_PASSAGE_MISSING
-    _assert_no_semantic_state(kernel)
+    assert_no_semantic_state(kernel)
 
 
 def test_preflight_bundle_builds_for_ag_check_01_scope(
@@ -662,7 +524,7 @@ def test_handoff_prerequisite_guards_skip_without_reducing() -> None:
     result = execute_ordinary_semantic_producer_handoff_from_scope(missing_plan, {})
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_SEARCH_WORK_PLAN_MISSING
-    _assert_no_semantic_state(missing_plan)
+    assert_no_semantic_state(missing_plan)
 
     existing_state = RunKernel.start(
         run_id="run:sem-11-existing-state",
@@ -700,7 +562,7 @@ def test_query_shape_classifier_unavailable_skips_without_orphan_state(
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE
-    _assert_no_semantic_state(kernel)
+    assert_no_semantic_state(kernel)
 
 
 def test_multipart_assessment_skips_without_orphan_state(
@@ -714,7 +576,7 @@ def test_multipart_assessment_skips_without_orphan_state(
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_MULTIPART_ASSESSMENT
-    _assert_no_semantic_state(kernel)
+    assert_no_semantic_state(kernel)
 
 
 def _mutate_bound_candidate_in_projection(
@@ -783,7 +645,7 @@ def test_coverage_preflight_blocks_obligation_incompatible_readable_candidate(
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
-    _assert_no_semantic_state(kernel)
+    assert_no_semantic_state(kernel)
 
 
 def test_coverage_preflight_blocks_unlinked_source_requirement(
@@ -816,7 +678,7 @@ def test_coverage_preflight_blocks_unlinked_source_requirement(
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
-    _assert_no_semantic_state(kernel)
+    assert_no_semantic_state(kernel)
 
 
 def test_coverage_preflight_blocks_unsatisfied_source_requirement(
@@ -902,7 +764,7 @@ def test_coverage_preflight_blocks_observed_disposition_candidate(
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
-    _assert_no_semantic_state(kernel)
+    assert_no_semantic_state(kernel)
 
 
 def test_contract_preflight_failed_skipped_reason(

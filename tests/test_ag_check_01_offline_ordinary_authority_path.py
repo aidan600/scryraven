@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 import json
-import logging
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
-import core.pipeline_orchestrator as orchestrator
-from core.cost_accounting import CostAccumulator
 from core.final_answer_packet import SourceObligationStatus
-from core.prompts import DEFAULT_SYSTEM
-from core.protocols import NullStatusWriter
-from core.run_config import RunConfig, RunDeps
+from tests.helpers.offline_ordinary_pipeline import (
+    HANDOFF_AUTHOR,
+    HANDOFF_PACKET,
+    OfflineOrdinaryPipelineHarness,
+    run_offline_ordinary_pipeline,
+    scrub_offline_runtime,
+)
 
 CHAIN_CLASSIFICATIONS = {
     "RunAuthorityContract": "canonical_and_consumed",
@@ -38,101 +38,25 @@ RAW_AUTHOR_RESPONSE = (
 
 @pytest.fixture(autouse=True)
 def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in (
-        "BRAVE_API_KEY",
-        "TAVILY_API_KEY",
-        "LINKUP_API_KEY",
-        "EXA_API_KEY",
-        "OPENAI_API_KEY",
-        "OPENROUTER_API_KEY",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(orchestrator, "DB_ENABLED", False)
-    monkeypatch.setattr(orchestrator, "kb_review_agent", lambda *_args, **_kwargs: {})
+    scrub_offline_runtime(monkeypatch)
 
 
-@dataclass
-class _OfflineOrdinaryHarness:
-    tmp_path: Path
-    model_calls: list[dict[str, Any]] = field(default_factory=list)
-    search_calls: list[dict[str, Any]] = field(default_factory=list)
-    author_prompts: list[str] = field(default_factory=list)
-    author_kwargs: list[dict[str, Any]] = field(default_factory=list)
-    forbidden_live_calls: list[str] = field(default_factory=list)
-
-    query: str = "What is the current official rule for Example Program?"
-    core_topic: str = "Example Program current official rule"
-    primary_entity: str = "Example Program"
-
-    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
-        self.model_calls.append(
-            {
-                "system_prompt": system_prompt,
-                "stream": bool(kwargs.get("stream")),
-                "provider": kwargs.get("provider"),
-                "model": kwargs.get("model"),
-                "use_reasoning": kwargs.get("use_reasoning"),
-            }
+class _OfflineOrdinaryHarness(OfflineOrdinaryPipelineHarness):
+    def __init__(self, tmp_path: Path) -> None:
+        super().__init__(
+            tmp_path=tmp_path,
+            query="What is the current official rule for Example Program?",
+            core_topic="Example Program current official rule",
+            primary_entity="Example Program",
+            raw_author_response=RAW_AUTHOR_RESPONSE,
+            analyst_response=(
+                "Analysis is limited to the retrieved official Example Program rule."
+            ),
+            logger_name="test_ag_check_01_offline_ordinary_authority_path",
         )
-        if system_prompt == DEFAULT_SYSTEM["router"]:
-            return json.dumps(
-                {
-                    "intent": "general",
-                    "report_type": "general_research",
-                    "image_mode": "none",
-                    "core_topic": self.core_topic,
-                    "is_academic": False,
-                    "query_type": "other",
-                    "entities": [self.primary_entity],
-                    "primary_entity": self.primary_entity,
-                }
-            )
-        if system_prompt == "You are a concise title generator.":
-            return f"{self.primary_entity} Rule"
-        if system_prompt == DEFAULT_SYSTEM["researcher"]:
-            return json.dumps({"queries": [f"{self.primary_entity} official current rule"]})
-        if system_prompt == DEFAULT_SYSTEM["expander"] or "research gap detector" in system_prompt:
-            return json.dumps({"component_queries": [], "reasoning": "offline fixture sufficient"})
-        if system_prompt == DEFAULT_SYSTEM["evaluator"]:
-            return json.dumps({"is_sufficient": True, "new_queries": []})
-        if system_prompt == DEFAULT_SYSTEM["analyst"]:
-            return "Analysis is limited to the retrieved official Example Program rule."
-        if system_prompt == DEFAULT_SYSTEM["synth_evaluator"]:
-            return json.dumps({"is_sufficient": True, "supplemental_queries": []})
-        if kwargs.get("stream"):
-            self.author_prompts.append(prompt)
-            self.author_kwargs.append(dict(kwargs))
-            return RAW_AUTHOR_RESPONSE
-        raise AssertionError(f"unexpected model call in offline checkpoint: {system_prompt!r}")
 
-    def embed_texts(self, texts: list[str], **_kwargs: Any) -> list[list[float]]:
-        return [[1.0, 0.0] for _ in texts]
-
-    def process_search_queries(
-        self,
-        queries: list[str],
-        intent: str,
-        complexity: str,
-        search_depth: str,
-        results_per_query: int,
-        *_args: Any,
-        **kwargs: Any,
-    ) -> list[dict[str, Any]]:
-        self.search_calls.append(
-            {
-                "queries": list(queries),
-                "intent": intent,
-                "complexity": complexity,
-                "search_depth": search_depth,
-                "results_per_query": results_per_query,
-                "provider_role": kwargs.get("provider_role"),
-                "search_providers": list(kwargs.get("search_providers") or []),
-            }
-        )
-        seen_urls = kwargs.get("seen_urls")
-        if seen_urls is None and len(_args) >= 4:
-            seen_urls = _args[3]
-        passages = [
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        return [
             {
                 "source_id": 1,
                 "title": "Example Program official rule",
@@ -162,84 +86,11 @@ class _OfflineOrdinaryHarness:
                 "_provider": "offline_fake_search",
             },
         ]
-        if seen_urls is not None:
-            for passage in passages:
-                seen_urls.add(passage["url"])
-        return passages
-
-    def forbidden_live_dependency(self, name: str) -> Callable[..., Any]:
-        def _called(*_args: Any, **_kwargs: Any) -> Any:
-            self.forbidden_live_calls.append(name)
-            if name == "run_scout":
-                return {}
-            return ""
-
-        return _called
-
-    def deps(self) -> RunDeps:
-        return RunDeps(
-            ask_model=self.ask_model,
-            embed_texts=self.embed_texts,
-            compute_similarities=lambda texts, *_args, **_kwargs: [1.0 for _ in texts],
-            process_search_queries=self.process_search_queries,
-            filter_top_evidence=lambda passages, *_args, **_kwargs: list(passages),
-            is_plausible_domain=lambda _url: True,
-            anchor_query_to_topic=lambda query, _topic: query,
-            fetch_linkup_precision_block=self.forbidden_live_dependency("fetch_linkup_precision_block"),
-            run_economist_step=self.forbidden_live_dependency("run_economist_step"),
-            run_scout=self.forbidden_live_dependency("run_scout"),
-            should_skip_quant_scout=lambda *_args, **_kwargs: True,
-            clean_json_response=lambda value: value,
-            DEFAULT_SYSTEM=DEFAULT_SYSTEM,
-            NEWS_PREFERRED_DOMAINS=[],
-            ACADEMIC_DOMAINS=[],
-            QUANT_REPORT_TYPES=set(),
-            logger=logging.getLogger("test_ag_check_01_offline_ordinary_authority_path"),
-            execution_log_path=self.tmp_path / "execution.jsonl",
-            feedback_log_path=self.tmp_path / "feedback.jsonl",
-            kb_triggers_path=self.tmp_path / "kb.jsonl",
-            policy_state_path=self.tmp_path / "policy.json",
-            policy_journal_path=self.tmp_path / "policy_journal.jsonl",
-        )
 
 
 def _execution_event_from_log(path: Path) -> dict[str, Any]:
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     return next(row for row in rows if row.get("event") == "execution")
-
-
-def _install_handoff_capture(
-    monkeypatch: pytest.MonkeyPatch,
-) -> dict[str, Any]:
-    captured: dict[str, Any] = {
-        "packet_handoff_called": False,
-        "author_handoff_called": False,
-    }
-    original_packet = orchestrator.prepare_final_answer_packet_author_handoff_from_scope
-    original_author = orchestrator.execute_author_handoff_from_scope
-
-    def packet_wrapper(run_kernel: Any, runtime_scope: dict[str, Any], **kwargs: Any) -> Any:
-        captured["packet_handoff_called"] = True
-        captured["run_kernel"] = run_kernel
-        captured["packet_runtime_scope"] = dict(runtime_scope)
-        handoff = original_packet(run_kernel, runtime_scope, **kwargs)
-        captured["packet_handoff"] = handoff
-        return handoff
-
-    def author_wrapper(run_kernel: Any, runtime_scope: dict[str, Any], **kwargs: Any) -> Any:
-        captured["author_handoff_called"] = True
-        captured["author_runtime_scope"] = dict(runtime_scope)
-        handoff = original_author(run_kernel, runtime_scope, **kwargs)
-        captured["author_handoff"] = handoff
-        return handoff
-
-    monkeypatch.setattr(
-        orchestrator,
-        "prepare_final_answer_packet_author_handoff_from_scope",
-        packet_wrapper,
-    )
-    monkeypatch.setattr(orchestrator, "execute_author_handoff_from_scope", author_wrapper)
-    return captured
 
 
 def _classification_report(captured: dict[str, Any], outcome: Any) -> dict[str, Any]:
@@ -272,30 +123,14 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured = _install_handoff_capture(monkeypatch)
     harness = _OfflineOrdinaryHarness(tmp_path)
-
-    outcome = orchestrator.run_pipeline(
-        RunConfig(
-            query=harness.query,
-            mode="Balanced",
-            current_date="2026-06-22",
-            session_id="ag-check-01-session",
-            run_id="ag-check-01-run",
-            fast_provider="offline-fake-provider",
-            fast_model="offline-fake-fast-model",
-            smart_provider="offline-fake-provider",
-            smart_model="offline-fake-smart-model",
-            local_url="http://offline.invalid/v1",
-            or_api_key="",
-            use_reasoning=False,
-            run_authority_contract_smart_model=False,
-            run_authority_search_judgment_smart_model=False,
-            run_authority_sufficiency_smart_model=False,
-        ),
-        harness.deps(),
-        NullStatusWriter(),
-        CostAccumulator(),
+    captured, outcome = run_offline_ordinary_pipeline(
+        harness,
+        monkeypatch,
+        current_date="2026-06-22",
+        session_id="ag-check-01-session",
+        run_id="ag-check-01-run",
+        capture_stages=(HANDOFF_PACKET, HANDOFF_AUTHOR),
     )
     log_entry = _execution_event_from_log(tmp_path / "execution.jsonl")
 
