@@ -27,6 +27,9 @@ FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION = (
 FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION = (
     "final_answer_semantic_evidence_authority_manifest_v1"
 )
+FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION = (
+    "final_answer_packet_semantic_content_coverage_ref_projection_ag_sem_fap_01_v1"
+)
 FINAL_ANSWER_PACKET_TRACE_KEY = "final_answer_packet"
 
 
@@ -95,6 +98,12 @@ _SENSITIVE_KEYS = frozenset(
         "secret",
         "secrets",
         "token",
+    }
+)
+_PUBLIC_RAW_BOOLEAN_KEYS = frozenset(
+    {
+        "raw_content_included",
+        "raw_prompt_included",
     }
 )
 _PROTECTED_MARKERS = ("raw prompt", "raw_provider", "provider_payload", "secret")
@@ -215,7 +224,13 @@ def _citation_ineligible_prompt_ref(ref: Mapping[str, Any]) -> str:
 
 def _is_sensitive_key(key: Any) -> bool:
     normalized = str(key or "").strip().casefold()
-    return normalized.startswith("raw_") or normalized in _SENSITIVE_KEYS
+    return (
+        normalized in _SENSITIVE_KEYS
+        or (
+            normalized.startswith("raw_")
+            and normalized not in _PUBLIC_RAW_BOOLEAN_KEYS
+        )
+    )
 
 
 def _safe_json(value: Any, *, depth: int = 0) -> Any:
@@ -496,6 +511,9 @@ class FinalAnswerPacket:
     )
     readiness_reasons: tuple[str, ...] = ()
     semantic_authority_ref: Mapping[str, Any] = field(default_factory=dict)
+    semantic_content_coverage_ref_projection: Mapping[str, Any] = field(
+        default_factory=dict
+    )
     schema_version: str = FINAL_ANSWER_PACKET_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -582,6 +600,58 @@ class FinalAnswerPacket:
             "author_payload_visible": False,
             "model_request_visible": False,
         }
+        ref_projection = dict(self.semantic_content_coverage_ref_projection or {})
+        if ref_projection.get("available") is True:
+            manifest[
+                "semantic_content_coverage_ref_projection_schema_version"
+            ] = _clean_text(ref_projection.get("schema_version"), limit=160)
+            manifest["source_projection_digest"] = _clean_text(
+                ref_projection.get("source_projection_digest"),
+                limit=128,
+            )
+            for key in (
+                "component_refs",
+                "coverage_record_refs",
+                "semantic_observation_refs",
+                "sanitized_content_ref_ids",
+                "content_ref_digests",
+                "semantic_ref_evidence_ids",
+                "source_obligation_refs",
+            ):
+                value = _safe_json(ref_projection.get(key))
+                if value not in (None, "", [], {}):
+                    manifest[key] = value
+
+            content_refs_available = bool(
+                ref_projection.get("content_refs_available")
+                and ref_projection.get("sanitized_content_ref_ids")
+                and ref_projection.get("content_ref_digests")
+            )
+            coverage_refs_available = bool(
+                ref_projection.get("coverage_refs_available")
+                and ref_projection.get("coverage_record_refs")
+            )
+            manifest["content_refs_available"] = content_refs_available
+            manifest["coverage_refs_available"] = coverage_refs_available
+            deferred_fields = [
+                field_name
+                for field_name, available in (
+                    ("sanitized_content_ref_ids", content_refs_available),
+                    ("content_ref_digests", content_refs_available),
+                    ("coverage_record_refs", coverage_refs_available),
+                )
+                if not available
+            ]
+            if deferred_fields:
+                manifest["deferred_ref_fields"] = deferred_fields
+            else:
+                manifest.pop("deferred_ref_fields", None)
+            manifest["raw_content_included"] = False
+            manifest["bounded_text_included"] = False
+            manifest["prompt_visible"] = False
+            manifest["author_payload_visible"] = False
+            manifest["model_request_visible"] = False
+            manifest["final_text_included"] = False
         excluded_evidence_ids = [
             record.evidence_id
             for record in self.evidence_excluded
@@ -975,6 +1045,10 @@ class FinalAnswerPacket:
         }
         if self.semantic_authority_ref:
             payload["semantic_authority_ref"] = _safe_json(self.semantic_authority_ref)
+        if self.semantic_content_coverage_ref_projection:
+            payload["semantic_content_coverage_ref_projection"] = _safe_json(
+                self.semantic_content_coverage_ref_projection
+            )
         manifest = self.semantic_evidence_authority_manifest
         if manifest:
             payload["semantic_evidence_authority_manifest"] = _safe_json(manifest)
@@ -988,6 +1062,7 @@ __all__ = [
     "FINAL_ANSWER_PACKET_SCHEMA_VERSION",
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION",
+    "FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_TRACE_KEY",

@@ -190,6 +190,19 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert semantic_ref.get("sufficiency_semantic_consumed") is True
     assert "consumed" not in semantic_ref
     assert state.final_answer_packet.get("semantic_authority_ref") == semantic_ref
+    fap_ref_projection = packet_handoff.packet.semantic_content_coverage_ref_projection
+    assert fap_ref_projection.get("available") is True
+    assert fap_ref_projection.get("content_refs_available") is True
+    assert fap_ref_projection.get("coverage_refs_available") is True
+    assert fap_ref_projection.get("semantic_state_facts_digest") == (
+        semantic_ref.get("semantic_state_facts_digest")
+    )
+    assert fap_ref_projection.get("sanitized_content_ref_ids")
+    assert fap_ref_projection.get("content_ref_digests")
+    assert fap_ref_projection.get("coverage_record_refs")
+    assert state.final_answer_packet.get(
+        "semantic_content_coverage_ref_projection"
+    ) == fap_ref_projection
     manifest = packet_handoff.packet.semantic_evidence_authority_manifest
     assert manifest.get("available") is True
     assert manifest.get("semantic_state_facts_digest") == (
@@ -214,10 +227,22 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     ):
         if key in semantic_ref:
             assert manifest.get(key) == semantic_ref.get(key)
-    assert manifest.get("content_refs_available") is False
-    assert manifest.get("coverage_refs_available") is False
-    assert "sanitized_content_ref_ids" not in manifest
-    assert "content_ref_digests" not in manifest
+    assert manifest.get("content_refs_available") is True
+    assert manifest.get("coverage_refs_available") is True
+    assert "deferred_ref_fields" not in manifest
+    assert manifest.get("sanitized_content_ref_ids")
+    assert manifest.get("content_ref_digests")
+    assert manifest.get("coverage_record_refs")
+    assert manifest.get("semantic_observation_refs")
+    assert manifest.get("component_refs")
+    assert manifest.get("semantic_ref_evidence_ids")
+    assert manifest.get("source_obligation_refs")
+    assert manifest.get("raw_content_included") is False
+    assert manifest.get("bounded_text_included") is False
+    assert manifest.get("prompt_visible") is False
+    assert manifest.get("author_payload_visible") is False
+    assert manifest.get("model_request_visible") is False
+    assert manifest.get("final_text_included") is False
     assert "coverage_record_ids" not in manifest
     assert "coverage_record_digests" not in manifest
     assert state.final_answer_packet.get("semantic_evidence_authority_manifest") == (
@@ -236,6 +261,8 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
         MANIFEST_TRACE_REF_KEY
     ]
     assert manifest_trace_ref.get("available") is True
+    assert manifest_trace_ref.get("content_refs_available") is True
+    assert manifest_trace_ref.get("coverage_refs_available") is True
     assert manifest_trace_ref.get("semantic_state_facts_digest") == (
         manifest.get("semantic_state_facts_digest")
     )
@@ -243,6 +270,13 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert "evidence_ids" not in manifest_trace_ref
     assert "citation_source_ids" not in manifest_trace_ref
     assert "source_obligation_status_summary" not in manifest_trace_ref
+    assert "sanitized_content_ref_ids" not in manifest_trace_ref
+    assert "content_ref_digests" not in manifest_trace_ref
+    assert "coverage_record_refs" not in manifest_trace_ref
+    assert "semantic_observation_refs" not in manifest_trace_ref
+    assert "component_refs" not in manifest_trace_ref
+    assert "semantic_ref_evidence_ids" not in manifest_trace_ref
+    assert "source_obligation_refs" not in manifest_trace_ref
 
     assert packet_handoff.packet.packet_id == state.final_answer_packet["packet_id"]
     assert packet_handoff.author_payload.packet_id == state.final_answer_packet["packet_id"]
