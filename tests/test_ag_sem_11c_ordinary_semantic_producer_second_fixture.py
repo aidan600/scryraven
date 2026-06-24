@@ -2,26 +2,29 @@ from __future__ import annotations
 
 import ast
 import json
-import logging
 from copy import deepcopy
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 
-import core.pipeline_orchestrator as orchestrator
-from core.cost_accounting import CostAccumulator
 from core.final_answer_packet import SourceObligationStatus
 from core.ordinary_semantic_producer_runtime import (
     SKIP_REASON_BINDABLE_PASSAGE_MISSING,
     OrdinarySemanticProducerHandoffStatus,
     execute_ordinary_semantic_producer_handoff_from_scope,
 )
-from core.prompts import DEFAULT_SYSTEM
-from core.protocols import NullStatusWriter
-from core.run_config import RunConfig, RunDeps
 from core.run_kernel import RunKernel
+from tests.helpers.offline_ordinary_pipeline import (
+    HANDOFF_AUTHOR,
+    HANDOFF_PACKET,
+    HANDOFF_SEMANTIC,
+    HANDOFF_SUFFICIENCY,
+    OfflineOrdinaryPipelineHarness,
+    assert_no_semantic_state,
+    run_offline_ordinary_pipeline,
+    scrub_offline_runtime,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCER_MODULE = ROOT / "core" / "ordinary_semantic_producer_runtime.py"
@@ -43,113 +46,27 @@ RAW_AUTHOR_RESPONSE = (
 
 @pytest.fixture(autouse=True)
 def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
-    for key in (
-        "BRAVE_API_KEY",
-        "TAVILY_API_KEY",
-        "LINKUP_API_KEY",
-        "EXA_API_KEY",
-        "OPENAI_API_KEY",
-        "OPENROUTER_API_KEY",
-    ):
-        monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(orchestrator, "DB_ENABLED", False)
-    monkeypatch.setattr(orchestrator, "kb_review_agent", lambda *_args, **_kwargs: {})
+    scrub_offline_runtime(monkeypatch)
 
 
-@dataclass
-class _SecondFixtureHarness:
-    tmp_path: Path
-    model_calls: list[dict[str, Any]] = field(default_factory=list)
-    search_calls: list[dict[str, Any]] = field(default_factory=list)
-    author_prompts: list[str] = field(default_factory=list)
-    author_kwargs: list[dict[str, Any]] = field(default_factory=list)
-    forbidden_live_calls: list[str] = field(default_factory=list)
-
-    query: str = SECOND_FIXTURE_QUERY
-    core_topic: str = "Sample Relief Program current official rule"
-    primary_entity: str = "Sample Relief Program"
-
-    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
-        self.model_calls.append(
-            {
-                "system_prompt": system_prompt,
-                "stream": bool(kwargs.get("stream")),
-                "provider": kwargs.get("provider"),
-                "model": kwargs.get("model"),
-                "use_reasoning": kwargs.get("use_reasoning"),
-            }
-        )
-        if system_prompt == DEFAULT_SYSTEM["router"]:
-            return json.dumps(
-                {
-                    "intent": "general",
-                    "report_type": "general_research",
-                    "image_mode": "none",
-                    "core_topic": self.core_topic,
-                    "is_academic": False,
-                    "query_type": "other",
-                    "entities": [self.primary_entity],
-                    "primary_entity": self.primary_entity,
-                }
-            )
-        if system_prompt == "You are a concise title generator.":
-            return f"{self.primary_entity} Rule"
-        if system_prompt == DEFAULT_SYSTEM["researcher"]:
-            return json.dumps(
-                {"queries": [f"{self.primary_entity} official current rule"]}
-            )
-        if system_prompt == DEFAULT_SYSTEM["expander"] or (
-            "research gap detector" in system_prompt
-        ):
-            return json.dumps(
-                {
-                    "component_queries": [],
-                    "reasoning": "second offline fixture sufficient",
-                }
-            )
-        if system_prompt == DEFAULT_SYSTEM["evaluator"]:
-            return json.dumps({"is_sufficient": True, "new_queries": []})
-        if system_prompt == DEFAULT_SYSTEM["analyst"]:
-            return (
+class _SecondFixtureHarness(OfflineOrdinaryPipelineHarness):
+    def __init__(self, tmp_path: Path) -> None:
+        super().__init__(
+            tmp_path=tmp_path,
+            query=SECOND_FIXTURE_QUERY,
+            core_topic="Sample Relief Program current official rule",
+            primary_entity="Sample Relief Program",
+            raw_author_response=RAW_AUTHOR_RESPONSE,
+            expander_reasoning="second offline fixture sufficient",
+            analyst_response=(
                 "Analysis is limited to the retrieved official Sample Relief "
                 "Program rule."
-            )
-        if system_prompt == DEFAULT_SYSTEM["synth_evaluator"]:
-            return json.dumps({"is_sufficient": True, "supplemental_queries": []})
-        if kwargs.get("stream"):
-            self.author_prompts.append(prompt)
-            self.author_kwargs.append(dict(kwargs))
-            return RAW_AUTHOR_RESPONSE
-        raise AssertionError(f"unexpected model call in 11C fixture: {system_prompt!r}")
-
-    def embed_texts(self, texts: list[str], **_kwargs: Any) -> list[list[float]]:
-        return [[1.0, 0.0] for _ in texts]
-
-    def process_search_queries(
-        self,
-        queries: list[str],
-        intent: str,
-        complexity: str,
-        search_depth: str,
-        results_per_query: int,
-        *_args: Any,
-        **kwargs: Any,
-    ) -> list[dict[str, Any]]:
-        self.search_calls.append(
-            {
-                "queries": list(queries),
-                "intent": intent,
-                "complexity": complexity,
-                "search_depth": search_depth,
-                "results_per_query": results_per_query,
-                "provider_role": kwargs.get("provider_role"),
-                "search_providers": list(kwargs.get("search_providers") or []),
-            }
+            ),
+            logger_name="test_ag_sem_11c_second_fixture",
         )
-        seen_urls = kwargs.get("seen_urls")
-        if seen_urls is None and len(_args) >= 4:
-            seen_urls = _args[3]
-        passages = [
+
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        return [
             {
                 "source_id": 7,
                 "title": "Sample Relief Program official rule",
@@ -182,154 +99,25 @@ class _SecondFixtureHarness:
                 "_provider": "offline_fake_search",
             },
         ]
-        if seen_urls is not None:
-            for passage in passages:
-                seen_urls.add(passage["url"])
-        return passages
-
-    def forbidden_live_dependency(self, name: str) -> Callable[..., Any]:
-        def _called(*_args: Any, **_kwargs: Any) -> Any:
-            self.forbidden_live_calls.append(name)
-            if name == "run_scout":
-                return {}
-            return ""
-
-        return _called
-
-    def deps(self) -> RunDeps:
-        return RunDeps(
-            ask_model=self.ask_model,
-            embed_texts=self.embed_texts,
-            compute_similarities=lambda texts, *_args, **_kwargs: [1.0 for _ in texts],
-            process_search_queries=self.process_search_queries,
-            filter_top_evidence=lambda passages, *_args, **_kwargs: list(passages),
-            is_plausible_domain=lambda _url: True,
-            anchor_query_to_topic=lambda query, _topic: query,
-            fetch_linkup_precision_block=self.forbidden_live_dependency(
-                "fetch_linkup_precision_block"
-            ),
-            run_economist_step=self.forbidden_live_dependency("run_economist_step"),
-            run_scout=self.forbidden_live_dependency("run_scout"),
-            should_skip_quant_scout=lambda *_args, **_kwargs: True,
-            clean_json_response=lambda value: value,
-            DEFAULT_SYSTEM=DEFAULT_SYSTEM,
-            NEWS_PREFERRED_DOMAINS=[],
-            ACADEMIC_DOMAINS=[],
-            QUANT_REPORT_TYPES=set(),
-            logger=logging.getLogger("test_ag_sem_11c_second_fixture"),
-            execution_log_path=self.tmp_path / "execution.jsonl",
-            feedback_log_path=self.tmp_path / "feedback.jsonl",
-            kb_triggers_path=self.tmp_path / "kb.jsonl",
-            policy_state_path=self.tmp_path / "policy.json",
-            policy_journal_path=self.tmp_path / "policy_journal.jsonl",
-        )
-
-
-def _install_handoff_capture(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
-    captured: dict[str, Any] = {
-        "semantic_handoff_called": False,
-        "sufficiency_handoff_called": False,
-        "packet_handoff_called": False,
-        "author_handoff_called": False,
-    }
-    original_semantic = orchestrator.execute_ordinary_semantic_producer_handoff_from_scope
-    original_sufficiency = orchestrator.execute_sufficiency_judgment_handoff_from_scope
-    original_packet = orchestrator.prepare_final_answer_packet_author_handoff_from_scope
-    original_author = orchestrator.execute_author_handoff_from_scope
-
-    def semantic_wrapper(
-        run_kernel: Any,
-        runtime_scope: dict[str, Any],
-    ) -> Any:
-        captured["semantic_handoff_called"] = True
-        captured["semantic_runtime_scope"] = dict(runtime_scope)
-        result = original_semantic(run_kernel, runtime_scope)
-        captured["semantic_handoff_result"] = result
-        return result
-
-    def sufficiency_wrapper(
-        run_kernel: Any,
-        runtime_scope: dict[str, Any],
-        **kwargs: Any,
-    ) -> Any:
-        captured["sufficiency_handoff_called"] = True
-        captured["sufficiency_runtime_scope"] = dict(runtime_scope)
-        handoff = original_sufficiency(run_kernel, runtime_scope, **kwargs)
-        captured["sufficiency_handoff"] = handoff
-        captured["sufficiency_projection"] = dict(
-            run_kernel.state.sufficiency_judgment_projection
-        )
-        return handoff
-
-    def packet_wrapper(
-        run_kernel: Any,
-        runtime_scope: dict[str, Any],
-        **kwargs: Any,
-    ) -> Any:
-        captured["packet_handoff_called"] = True
-        captured["run_kernel"] = run_kernel
-        captured["packet_runtime_scope"] = dict(runtime_scope)
-        handoff = original_packet(run_kernel, runtime_scope, **kwargs)
-        captured["packet_handoff"] = handoff
-        return handoff
-
-    def author_wrapper(
-        run_kernel: Any,
-        runtime_scope: dict[str, Any],
-        **kwargs: Any,
-    ) -> Any:
-        captured["author_handoff_called"] = True
-        captured["author_runtime_scope"] = dict(runtime_scope)
-        handoff = original_author(run_kernel, runtime_scope, **kwargs)
-        captured["author_handoff"] = handoff
-        return handoff
-
-    monkeypatch.setattr(
-        orchestrator,
-        "execute_ordinary_semantic_producer_handoff_from_scope",
-        semantic_wrapper,
-    )
-    monkeypatch.setattr(
-        orchestrator,
-        "execute_sufficiency_judgment_handoff_from_scope",
-        sufficiency_wrapper,
-    )
-    monkeypatch.setattr(
-        orchestrator,
-        "prepare_final_answer_packet_author_handoff_from_scope",
-        packet_wrapper,
-    )
-    monkeypatch.setattr(orchestrator, "execute_author_handoff_from_scope", author_wrapper)
-    return captured
 
 
 def _run_second_fixture_pipeline(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[dict[str, Any], _SecondFixtureHarness, Any]:
-    captured = _install_handoff_capture(monkeypatch)
     harness = _SecondFixtureHarness(tmp_path)
-    outcome = orchestrator.run_pipeline(
-        RunConfig(
-            query=harness.query,
-            mode="Balanced",
-            current_date="2026-06-23",
-            session_id="ag-sem-11c-session",
-            run_id="ag-sem-11c-run",
-            fast_provider="offline-fake-provider",
-            fast_model="offline-fake-fast-model",
-            smart_provider="offline-fake-provider",
-            smart_model="offline-fake-smart-model",
-            local_url="http://offline.invalid/v1",
-            or_api_key="",
-            use_reasoning=False,
-            run_authority_contract_smart_model=False,
-            run_authority_search_judgment_smart_model=False,
-            run_authority_sufficiency_smart_model=False,
+    captured, outcome = run_offline_ordinary_pipeline(
+        harness,
+        monkeypatch,
+        current_date="2026-06-23",
+        session_id="ag-sem-11c-session",
+        run_id="ag-sem-11c-run",
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
         ),
-        harness.deps(),
-        NullStatusWriter(),
-        CostAccumulator(),
     )
     return captured, harness, outcome
 
@@ -343,12 +131,6 @@ def _fresh_kernel_for_handoff(source_kernel: RunKernel) -> RunKernel:
     kernel.state.evidence_ledger = deepcopy(source_kernel.state.evidence_ledger)
     kernel.state.projections = deepcopy(source_kernel.state.projections)
     return kernel
-
-
-def _assert_no_semantic_state(kernel: RunKernel) -> None:
-    assert not kernel.state.initial_answer_contract
-    assert not kernel.state.semantic_observation_admission_history
-    assert not kernel.state.component_coverage_history
 
 
 def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
@@ -480,7 +262,7 @@ def test_second_fixture_missing_evidence_skips_without_orphan_semantic_state(
 
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_BINDABLE_PASSAGE_MISSING
-    _assert_no_semantic_state(kernel)
+    assert_no_semantic_state(kernel)
 
 
 def test_ag_sem_11c_static_guards_keep_second_fixture_out_of_closed_surfaces() -> None:
