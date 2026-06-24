@@ -8,6 +8,7 @@ style behavior.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field, replace
 from enum import Enum
 from hashlib import sha256
@@ -16,6 +17,9 @@ from typing import Any, Mapping, Sequence
 FINAL_ANSWER_PACKET_SCHEMA_VERSION = "final_answer_packet_ag89d_v1"
 FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION = (
     "final_answer_semantic_authority_ref_v1"
+)
+FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION = (
+    "final_answer_author_payload_semantic_ref_v1"
 )
 FINAL_ANSWER_PACKET_TRACE_KEY = "final_answer_packet"
 
@@ -88,6 +92,27 @@ _SENSITIVE_KEYS = frozenset(
     }
 )
 _PROTECTED_MARKERS = ("raw prompt", "raw_provider", "provider_payload", "secret")
+_AUTHOR_SEMANTIC_TRACE_REF_KEYS = (
+    "schema_version",
+    "available",
+    "source_packet_id",
+    "source_packet_schema_version",
+    "semantic_authority_ref_schema_version",
+    "authority_owner",
+    "semantic_state_facts_digest",
+    "ref_digest",
+    "prompt_visible",
+    "final_text_included",
+    "raw_content_included",
+)
+_AUTHOR_SEMANTIC_TRACE_REF_BOOL_KEYS = frozenset(
+    {
+        "available",
+        "prompt_visible",
+        "final_text_included",
+        "raw_content_included",
+    }
+)
 
 
 def _hash_text(value: str) -> str:
@@ -163,6 +188,20 @@ def _safe_json(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, (list, tuple, set, frozenset)):
         return [_safe_json(item, depth=depth + 1) for item in list(value)[:50]]
     return _clean_text(value, limit=300)
+
+
+def _safe_author_semantic_trace_ref(value: Mapping[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in _AUTHOR_SEMANTIC_TRACE_REF_KEYS:
+        if key not in value:
+            continue
+        item = value[key]
+        out[key] = (
+            bool(item)
+            if key in _AUTHOR_SEMANTIC_TRACE_REF_BOOL_KEYS
+            else _safe_json(item)
+        )
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +350,7 @@ class FinalAnswerAuthorInputPayload:
     prohibited_upgrades: tuple[str, ...] = ()
     authority_payload: Mapping[str, Any] = field(default_factory=dict)
     authority_block: str = ""
+    semantic_authority_trace_ref: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, AuthorInputStatus) else str(self.status)
@@ -319,7 +359,7 @@ class FinalAnswerAuthorInputPayload:
         object.__setattr__(self, "status", AuthorInputStatus(status))
 
     def to_trace_ref(self) -> dict[str, Any]:
-        return {
+        payload = {
             "packet_id": self.packet_id,
             "status": self.status.value,
             "prompt_hash": _hash_text(self.prompt),
@@ -347,6 +387,11 @@ class FinalAnswerAuthorInputPayload:
             "authority_block_hash": _hash_text(self.authority_block) if self.authority_block else None,
             "authority_block_length": len(self.authority_block),
         }
+        if self.semantic_authority_trace_ref:
+            payload["semantic_authority_trace_ref"] = _safe_author_semantic_trace_ref(
+                self.semantic_authority_trace_ref
+            )
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,9 +613,40 @@ class FinalAnswerPacket:
             prohibited_upgrades=self.prohibited_upgrades,
             authority_payload=authority_payload,
             authority_block=authority_block,
+            semantic_authority_trace_ref=self._semantic_authority_trace_ref(),
         )
         return payload
 
+    def _semantic_authority_trace_ref(self) -> dict[str, Any]:
+        source_ref = dict(self.semantic_authority_ref or {})
+        if not source_ref:
+            return {}
+        source_schema = _clean_text(source_ref.get("schema_version"), limit=120)
+        authority_owner = _clean_text(source_ref.get("authority_owner"), limit=160)
+        semantic_digest = _clean_text(
+            source_ref.get("semantic_state_facts_digest"),
+            limit=128,
+        )
+        if not source_schema or not authority_owner or not semantic_digest:
+            return {}
+        canonical_json = json.dumps(
+            _safe_json(source_ref),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return {
+            "schema_version": FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION,
+            "available": True,
+            "source_packet_id": self.packet_id,
+            "source_packet_schema_version": self.schema_version,
+            "semantic_authority_ref_schema_version": source_schema,
+            "authority_owner": authority_owner,
+            "semantic_state_facts_digest": semantic_digest,
+            "ref_digest": sha256(canonical_json.encode("utf-8")).hexdigest(),
+            "prompt_visible": False,
+            "final_text_included": False,
+            "raw_content_included": False,
+        }
 
     def to_author_authority_block(
         self,
@@ -733,6 +809,7 @@ class FinalAnswerPacket:
 
 __all__ = [
     "FINAL_ANSWER_PACKET_SCHEMA_VERSION",
+    "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_TRACE_KEY",
     "AuthorInputStatus",

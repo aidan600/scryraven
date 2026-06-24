@@ -353,6 +353,13 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert semantic_ref.get("sufficiency_semantic_consumed") is True
     assert "consumed" not in semantic_ref
     assert state.final_answer_packet.get("semantic_authority_ref") == semantic_ref
+    semantic_trace_ref = packet_handoff.author_payload.to_trace_ref()[
+        "semantic_authority_trace_ref"
+    ]
+    assert semantic_trace_ref.get("available") is True
+    assert semantic_trace_ref.get("semantic_state_facts_digest") == (
+        semantic_ref.get("semantic_state_facts_digest")
+    )
     assert "semantic_authority_ref" not in packet_handoff.author_payload.to_trace_ref()
     assert "semantic_authority_ref" not in state.author_observation
 
@@ -364,7 +371,11 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.final_answer_authority_projection["author_payload_ref"]["packet_id"] == (
         packet_handoff.packet.packet_id
     )
+    assert state.final_answer_authority_projection["author_payload_ref"][
+        "semantic_authority_trace_ref"
+    ] == semantic_trace_ref
     assert state.final_answer_authority_projection["author_payload_ref"]["prompt_text_included"] is False
+    assert "semantic_authority_trace_ref" not in state.author_observation
 
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
     assert author_scope["final_answer_packet_action"] is packet_handoff.action

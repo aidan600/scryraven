@@ -5,13 +5,16 @@ from __future__ import annotations
 import ast
 import json
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
 
 from core.final_answer_packet import (
+    FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION,
     FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION,
     FinalAnswerPacket,
+    _safe_json,
 )
 from core.final_answer_runtime_adapter import build_final_answer_packet, derive_author_input_payload
 from core.run_authority_sufficiency import (
@@ -71,6 +74,29 @@ def _canonical_sufficiency_projection(**overrides) -> dict:
     return projection
 
 
+def _expected_author_payload_semantic_trace_ref(packet: FinalAnswerPacket) -> dict:
+    canonical_json = json.dumps(
+        _safe_json(packet.semantic_authority_ref),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return {
+        "schema_version": FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION,
+        "available": True,
+        "source_packet_id": packet.packet_id,
+        "source_packet_schema_version": packet.schema_version,
+        "semantic_authority_ref_schema_version": (
+            FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION
+        ),
+        "authority_owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "semantic_state_facts_digest": SEMANTIC_DIGEST,
+        "ref_digest": sha256(canonical_json.encode("utf-8")).hexdigest(),
+        "prompt_visible": False,
+        "final_text_included": False,
+        "raw_content_included": False,
+    }
+
+
 def test_semantic_authority_ref_schema_from_canonical_sufficiency_projection() -> None:
     projection = _canonical_sufficiency_projection()
     packet = build_final_answer_packet(
@@ -106,6 +132,83 @@ def test_semantic_authority_ref_schema_from_canonical_sufficiency_projection() -
         "provider_payload",
     ):
         assert forbidden not in encoded
+
+
+def test_author_payload_semantic_trace_ref_schema_and_digest() -> None:
+    projection = _canonical_sufficiency_projection()
+    packet = build_final_answer_packet(
+        run_id="ag-sem-12b-positive",
+        final_evidence=[_passage()],
+        sufficiency_judgment_projection=projection,
+    )
+
+    payload = packet.to_author_input_payload(
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    expected = _expected_author_payload_semantic_trace_ref(packet)
+    assert payload.semantic_authority_trace_ref == expected
+    assert payload.to_trace_ref()["semantic_authority_trace_ref"] == expected
+    assert expected["ref_digest"] == sha256(
+        json.dumps(
+            _safe_json(packet.semantic_authority_ref),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+    encoded = json.dumps(expected, sort_keys=True)
+    for forbidden in (
+        "bounded_text",
+        "component_summaries",
+        "amendment_summaries",
+        "prompt_text",
+        "raw_prompt",
+        "provider_payload",
+        "model_response",
+        "final_prose",
+    ):
+        assert forbidden not in encoded
+
+
+def test_author_payload_semantic_trace_ref_empty_when_packet_ref_empty() -> None:
+    packet = build_final_answer_packet(
+        run_id="ag-sem-12b-empty",
+        final_evidence=[_passage()],
+    )
+
+    payload = packet.to_author_input_payload(
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    assert packet.semantic_authority_ref == {}
+    assert payload.semantic_authority_trace_ref == {}
+    assert "semantic_authority_trace_ref" not in payload.to_trace_ref()
+
+
+def test_author_payload_semantic_trace_ref_merges_into_packet_author_input_refs() -> None:
+    projection = _canonical_sufficiency_projection()
+    packet = build_final_answer_packet(
+        run_id="ag-sem-12b-author-refs",
+        final_evidence=[_passage()],
+        sufficiency_judgment_projection=projection,
+    )
+    payload = packet.to_author_input_payload(
+        prompt="base prompt",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    assert "semantic_authority_trace_ref" not in packet.author_input_refs
+    packet_with_payload = packet.with_author_input_payload(payload)
+
+    assert packet_with_payload.author_input_refs["semantic_authority_trace_ref"] == (
+        payload.to_trace_ref()["semantic_authority_trace_ref"]
+    )
 
 
 def test_semantic_authority_ref_prefers_consumption_counts_over_summary_defaults() -> None:
@@ -230,8 +333,8 @@ def _author_surfaces(packet: FinalAnswerPacket) -> tuple:
     return (
         payload.prompt,
         authority_block,
+        payload.authority_payload,
         authority_payload,
-        payload.to_trace_ref(),
         packet.citation_records,
         packet.source_obligations,
     )
@@ -271,10 +374,15 @@ def test_semantic_authority_ref_absent_from_forbidden_author_surfaces() -> None:
     assert "semantic_authority_ref" not in payload.authority_payload
     assert "semantic_authority_ref" not in payload.to_trace_ref()
     assert "semantic_authority_ref" not in payload.prompt
+    assert "semantic_authority_trace_ref" not in payload.authority_payload
+    assert "semantic_authority_trace_ref" not in payload.prompt
 
 
 def test_static_guard_semantic_authority_ref_not_in_author_execution_runtime() -> None:
     assert "semantic_authority_ref" not in AUTHOR_RUNTIME.read_text(encoding="utf-8")
+    assert "semantic_authority_trace_ref" not in AUTHOR_RUNTIME.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_static_guard_semantic_authority_ref_not_in_author_payload_paths() -> None:
@@ -298,6 +406,32 @@ def test_static_guard_semantic_authority_ref_not_in_author_payload_paths() -> No
     ):
         region = packet_source[start:end]
         assert "semantic_authority_ref" not in region, region_name
+
+
+def test_static_guard_semantic_authority_trace_ref_not_prompt_visible() -> None:
+    packet_source = PACKET.read_text(encoding="utf-8")
+    for region_name, start, end in (
+        (
+            "to_authority_payload",
+            packet_source.index("def to_authority_payload("),
+            packet_source.index("def to_author_input_payload("),
+        ),
+        (
+            "to_author_authority_block",
+            packet_source.index("def to_author_authority_block("),
+            packet_source.index("def to_legacy_citation_handoff_inputs("),
+        ),
+    ):
+        region = packet_source[start:end]
+        assert "semantic_authority_trace_ref" not in region, region_name
+
+    for path in (
+        ROOT / "core" / "author_execution_runtime.py",
+        ROOT / "core" / "retrieval.py",
+        ROOT / "core" / "retrieval_dispatch_runtime.py",
+        ROOT / "core" / "search_providers.py",
+    ):
+        assert "semantic_authority_trace_ref" not in path.read_text(encoding="utf-8")
 
 
 def test_static_guard_adapter_does_not_read_run_kernel_semantic_histories() -> None:

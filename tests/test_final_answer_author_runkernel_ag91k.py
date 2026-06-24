@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,11 @@ from core.final_answer_packet import (
     FinalEvidenceRecord,
 )
 from core.final_answer_packet_runtime import execute_final_answer_packet_prepare_action
+from core.run_authority_sufficiency import (
+    RunSufficiencyDecision,
+    RunSufficiencyJudgment,
+    SufficiencyPosture,
+)
 from core.run_kernel import (
     AUTHOR_EXECUTION_STAGE,
     FINAL_ANSWER_PACKET_STAGE,
@@ -69,12 +75,32 @@ def _ledger_projection_with_gap() -> dict[str, Any]:
     return ledger.to_projection().to_dict()
 
 
+def _semantic_sufficiency_projection() -> dict[str, Any]:
+    return RunSufficiencyJudgment(
+        judgment_id="ag-sem-12b:judgment",
+        decision=RunSufficiencyDecision.READY_DIRECT,
+        final_answer_posture=SufficiencyPosture.DIRECT_ANSWER,
+        final_answer_allowed=True,
+        semantic_consumption={
+            "schema_version": "sufficiency_semantic_state_consumption_ag_sem_09_v1",
+            "semantic_state_facts_digest": "c" * 64,
+            "blocker_count": 0,
+            "blocker_codes": [],
+            "direct_answer_blocked": False,
+            "finalization_blocked": False,
+            "required_component_count": 1,
+            "covered_component_count": 1,
+        },
+    ).to_projection()
+
+
 def _prepare_packet(
     *,
     kernel: RunKernel | None = None,
     final_top_evidence: list[dict[str, Any]] | None = None,
     evidence_ledger_projection: dict[str, Any] | None = None,
     answer_contract_projection: dict[str, Any] | None = None,
+    sufficiency_judgment_projection: dict[str, Any] | None = None,
 ):
     kernel = kernel or RunKernel.start(run_id="ag91k", request_id="req-ag91k")
     final_top_evidence = final_top_evidence if final_top_evidence is not None else [_passage()]
@@ -113,6 +139,7 @@ def _prepare_packet(
         smart_model="smart-model",
         evidence_ledger_projection=evidence_ledger_projection,
         answer_contract_projection=answer_contract_projection,
+        sufficiency_judgment_projection=sufficiency_judgment_projection,
     )
     return kernel, action, result
 
@@ -162,6 +189,31 @@ def test_run_kernel_authorizes_and_reduces_final_answer_packet_preparation() -> 
     serialized = json.dumps(kernel.to_trace_fragment(), sort_keys=True)
     assert "BASE AUTHOR PROMPT" not in serialized
     assert "AUTHOR SYSTEM" not in serialized
+
+
+def test_ag_sem_12b_packet_prep_runtime_propagates_semantic_trace_ref() -> None:
+    kernel, _action, result = _prepare_packet(
+        sufficiency_judgment_projection=_semantic_sufficiency_projection(),
+    )
+    semantic_trace_ref = result.author_payload.semantic_authority_trace_ref
+
+    assert semantic_trace_ref
+    assert result.observation.payload["author_payload_ref"][
+        "semantic_authority_trace_ref"
+    ] == semantic_trace_ref
+    assert result.observation.payload["packet_projection"]["semantic_authority_ref"] == (
+        result.packet.semantic_authority_ref
+    )
+    assert "semantic_authority_trace_ref" not in PACKET_RUNTIME.read_text(
+        encoding="utf-8"
+    )
+
+    kernel.reduce(result.observation)
+
+    assert kernel.state.final_answer_authority_projection["author_payload_ref"][
+        "semantic_authority_trace_ref"
+    ] == semantic_trace_ref
+    assert "semantic_authority_trace_ref" not in RUN_KERNEL.read_text(encoding="utf-8")
 
 
 def test_run_kernel_refuses_author_execution_before_packet_readiness() -> None:
@@ -236,6 +288,58 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
     serialized = json.dumps(kernel.to_trace_fragment(), sort_keys=True)
     assert "RAW MODEL FINAL ANSWER" not in serialized
     assert "BASE AUTHOR PROMPT" not in serialized
+
+
+def test_ag_sem_12b_author_execution_ignores_semantic_trace_ref() -> None:
+    kernel, _packet_action, prepared = _prepare_packet(
+        sufficiency_judgment_projection=_semantic_sufficiency_projection(),
+    )
+    assert prepared.author_payload.semantic_authority_trace_ref
+    kernel.reduce(prepared.observation)
+    action = kernel.authorize_author_execution(inputs={})
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def fake_ask_model(*args: Any, **kwargs: Any):
+        calls.append((args, kwargs))
+        return iter(["RAW MODEL FINAL ANSWER [101]"])
+
+    result_with_ref = execute_author_action(
+        action,
+        author_payload=prepared.author_payload,
+        ask_model=fake_ask_model,
+        system_prompt_registry={"author": "AUTHOR SYSTEM"},
+        base_url="http://local",
+        api_key=None,
+        query="ordinary query",
+    )
+    result_without_ref = execute_author_action(
+        action,
+        author_payload=replace(prepared.author_payload, semantic_authority_trace_ref={}),
+        ask_model=fake_ask_model,
+        system_prompt_registry={"author": "AUTHOR SYSTEM"},
+        base_url="http://local",
+        api_key=None,
+        query="ordinary query",
+    )
+
+    assert calls[0] == calls[1]
+    assert calls[0][0] == (prepared.author_payload.prompt, "AUTHOR SYSTEM")
+    assert calls[0][1] == {
+        "provider": "fast-provider",
+        "model": "fast-model",
+        "effort": "medium",
+        "base_url": "http://local",
+        "api_key": None,
+        "stream": True,
+        "use_reasoning": False,
+    }
+    assert "semantic_authority_trace_ref" not in action.inputs
+    assert "semantic_authority_trace_ref" not in result_with_ref.observation.payload
+    with_payload = dict(result_with_ref.observation.payload)
+    without_payload = dict(result_without_ref.observation.payload)
+    with_payload["author_seconds"] = 0.0
+    without_payload["author_seconds"] = 0.0
+    assert with_payload == without_payload
 
 
 def test_packet_blocks_missing_citation_authority_and_blocked_readiness() -> None:
