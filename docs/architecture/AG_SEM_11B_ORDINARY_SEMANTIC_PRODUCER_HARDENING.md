@@ -36,7 +36,11 @@ parity risk (F15). AG-SEM-11B fixes F15 by deriving preflight ledger facts from
 
 ## Skipped Reason Values
 
-Return-only on `OrdinarySemanticProducerHandoffResult` (and tests):
+Return-only on `OrdinarySemanticProducerHandoffResult` /
+`OrdinarySemanticProducerPreflightResult` (and tests). These are not RunState,
+projection, trace, telemetry, JSONL, or user-visible output fields.
+
+Designed preflight negative paths:
 
 - `query_shape_classifier_unavailable`
 - `multipart_assessment`
@@ -45,6 +49,11 @@ Return-only on `OrdinarySemanticProducerHandoffResult` (and tests):
 - `admission_preflight_failed`
 - `coverage_preflight_failed`
 - `preflight_failed` (unexpected fallback only)
+
+Handoff-only prerequisite/idempotence skips:
+
+- `canonical_semantic_state_already_present`
+- `search_work_plan_missing`
 
 ## Closed Surfaces
 

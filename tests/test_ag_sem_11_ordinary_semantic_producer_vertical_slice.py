@@ -17,10 +17,13 @@ from core.evidence_ledger import CandidateDisposition
 from core.ordinary_semantic_producer_runtime import (
     SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
     SKIP_REASON_BINDABLE_PASSAGE_MISSING,
+    SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
     SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
     SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
     SKIP_REASON_MULTIPART_ASSESSMENT,
+    SKIP_REASON_PREFLIGHT_FAILED,
     SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
+    SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
     OrdinarySemanticProducerBundle,
     OrdinarySemanticProducerHandoffStatus,
     OrdinarySemanticProducerPreflightResult,
@@ -441,6 +444,27 @@ def test_static_guard_no_pre_sufficiency_semantic_bridge() -> None:
     assert "execute_ordinary_semantic_producer_handoff_from_scope" in source
 
 
+def test_static_guard_skip_reasons_remain_return_only_in_core() -> None:
+    skip_reason_values = (
+        SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
+        SKIP_REASON_MULTIPART_ASSESSMENT,
+        SKIP_REASON_BINDABLE_PASSAGE_MISSING,
+        SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
+        SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
+        SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
+        SKIP_REASON_PREFLIGHT_FAILED,
+        SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
+        SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
+    )
+    for path in (ROOT / "core").rglob("*.py"):
+        if path == PRODUCER_MODULE:
+            continue
+        source = path.read_text(encoding="utf-8")
+        assert "skipped_reason" not in source, str(path)
+        for value in skip_reason_values:
+            assert value not in source, str(path)
+
+
 def test_static_guard_producer_module_import_boundary() -> None:
     source = PRODUCER_MODULE.read_text(encoding="utf-8")
     tree = ast.parse(source)
@@ -628,6 +652,38 @@ def test_handoff_preflight_uses_kernel_ledger_not_stale_scope_projection(
     ledger_arg = preflight_mock.call_args.kwargs["evidence_ledger_projection"]
     assert ledger_arg == kernel.state.evidence_ledger.to_projection().to_dict()
     assert ledger_arg != poisoned_scope["evidence_ledger_projection"]
+
+
+def test_handoff_prerequisite_guards_skip_without_reducing() -> None:
+    missing_plan = RunKernel.start(
+        run_id="run:sem-11-missing-plan",
+        request_id="request:sem-11-missing-plan",
+    )
+    result = execute_ordinary_semantic_producer_handoff_from_scope(missing_plan, {})
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_SEARCH_WORK_PLAN_MISSING
+    _assert_no_semantic_state(missing_plan)
+
+    existing_state = RunKernel.start(
+        run_id="run:sem-11-existing-state",
+        request_id="request:sem-11-existing-state",
+    )
+    existing_state.state.initial_answer_contract = {"sentinel": "contract"}
+    existing_state.state.semantic_observation_admission_history = [
+        {"sentinel": "admission"}
+    ]
+    existing_state.state.component_coverage_history = [{"sentinel": "coverage"}]
+    before = (
+        dict(existing_state.state.initial_answer_contract),
+        list(existing_state.state.semantic_observation_admission_history),
+        list(existing_state.state.component_coverage_history),
+    )
+    result = execute_ordinary_semantic_producer_handoff_from_scope(existing_state, {})
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT
+    assert existing_state.state.initial_answer_contract == before[0]
+    assert existing_state.state.semantic_observation_admission_history == before[1]
+    assert existing_state.state.component_coverage_history == before[2]
 
 
 def test_query_shape_classifier_unavailable_skips_without_orphan_state(
