@@ -87,3 +87,5 @@ python -m pytest -q tests/test_ag_sem_11_ordinary_semantic_producer_vertical_sli
 
 Semantic authority handoff into FinalAnswerPacket / Author only after this
 producer path is stable on the bounded offline slice.
+
+Hardening phase: [AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md](AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md)

@@ -1,26 +1,44 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import logging
+from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 from unittest.mock import patch
 
 import pytest
 
 import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
+from core.evidence_ledger import CandidateDisposition
 from core.ordinary_semantic_producer_runtime import (
+    SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
+    SKIP_REASON_BINDABLE_PASSAGE_MISSING,
+    SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
+    SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
+    SKIP_REASON_MULTIPART_ASSESSMENT,
+    SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
+    OrdinarySemanticProducerBundle,
     OrdinarySemanticProducerHandoffStatus,
+    OrdinarySemanticProducerPreflightResult,
     OrdinarySemanticProducerTransactionError,
     build_ordinary_semantic_producer_bundle,
+    build_question_meaning_record_from_search_work_plan,
     execute_ordinary_semantic_producer_handoff_from_scope,
+    preflight_ordinary_semantic_producer_bundle,
+    select_bindable_final_passage,
 )
 from core.protocols import NullStatusWriter
 from core.run_authority_sufficiency import RunSufficiencyDecision
 from core.run_config import RunConfig, RunDeps
 from core.run_kernel import RunKernel
+from core.search_work_query_shape_runtime import (
+    DeterministicSearchWorkRuntimeInput,
+    build_deterministic_search_work_runtime_records,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCER_MODULE = ROOT / "core" / "ordinary_semantic_producer_runtime.py"
@@ -28,6 +46,55 @@ PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 
 AG_CHECK_01_QUERY = "What is the current official rule for Example Program?"
+MULTIPART_QUERY = "What are the current official fee and legal deadline?"
+
+
+def _assert_no_semantic_state(kernel: RunKernel) -> None:
+    assert not kernel.state.initial_answer_contract
+    assert not kernel.state.semantic_observation_admission_history
+    assert not kernel.state.component_coverage_history
+
+
+def _capture_ag_check_01_handoff_inputs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[RunKernel, dict[str, Any]]:
+    captured = _run_offline_pipeline(tmp_path, monkeypatch)
+    return captured["run_kernel"], dict(captured["sufficiency_runtime_scope"])
+
+
+def _fresh_kernel_for_handoff(source_kernel: RunKernel) -> RunKernel:
+    kernel = RunKernel.start(
+        run_id=f"{source_kernel.state.run_id}:handoff-retest",
+        request_id=f"{source_kernel.state.request_id}:handoff-retest",
+    )
+    kernel.state.search_work_plan = dict(source_kernel.state.search_work_plan or {})
+    kernel.state.evidence_ledger = deepcopy(source_kernel.state.evidence_ledger)
+    return kernel
+
+
+def _preflight_kwargs_from_capture(
+    kernel: RunKernel,
+    scope: Mapping[str, Any],
+    *,
+    evidence_ledger_projection: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    ledger = (
+        dict(evidence_ledger_projection)
+        if evidence_ledger_projection is not None
+        else kernel.state.evidence_ledger.to_projection().to_dict()
+    )
+    return {
+        "search_work_plan": kernel.state.search_work_plan,
+        "route_projection": kernel.state.projections.get("route_request"),
+        "run_contract_projection": scope["run_contract_projection"],
+        "final_top_evidence": scope["final_top_evidence"],
+        "evidence_ledger_projection": ledger,
+        "run_id": kernel.state.run_id,
+        "request_id": kernel.state.request_id,
+        "query": scope["query"],
+        "requested_mode": scope.get("strategy"),
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -330,10 +397,8 @@ def test_prerequisites_absent_leaves_no_orphan_initial_answer_contract(
     scope["final_top_evidence"] = []
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == "preflight_failed"
-    assert not kernel.state.initial_answer_contract
-    assert not kernel.state.semantic_observation_admission_history
-    assert not kernel.state.component_coverage_history
+    assert result.skipped_reason == SKIP_REASON_BINDABLE_PASSAGE_MISSING
+    _assert_no_semantic_state(kernel)
 
 
 def test_preflight_bundle_builds_for_ag_check_01_scope(
@@ -344,15 +409,7 @@ def test_preflight_bundle_builds_for_ag_check_01_scope(
     kernel = captured["run_kernel"]
     scope = captured["sufficiency_runtime_scope"]
     bundle = build_ordinary_semantic_producer_bundle(
-        search_work_plan=kernel.state.search_work_plan,
-        route_projection=kernel.state.projections.get("route_request"),
-        run_contract_projection=scope["run_contract_projection"],
-        final_top_evidence=scope["final_top_evidence"],
-        evidence_ledger_projection=scope["evidence_ledger_projection"],
-        run_id=kernel.state.run_id,
-        request_id=kernel.state.request_id,
-        query=scope["query"],
-        requested_mode=scope.get("strategy"),
+        **_preflight_kwargs_from_capture(kernel, scope),
     )
     assert bundle is not None
     assert bundle.question_meaning_record.record_id.startswith("qmr:")
@@ -429,8 +486,6 @@ def test_static_guard_no_compensating_rollback_paths() -> None:
 def test_transactional_handoff_raises_on_mid_chain_failure() -> None:
     from dataclasses import dataclass
 
-    from core.ordinary_semantic_producer_runtime import OrdinarySemanticProducerBundle
-
     @dataclass
     class _FakeRecord:
         record_id: str
@@ -472,8 +527,8 @@ def test_transactional_handoff_raises_on_mid_chain_failure() -> None:
         "evidence_ledger_projection": {},
     }
     with patch(
-        "core.ordinary_semantic_producer_runtime.build_ordinary_semantic_producer_bundle",
-        return_value=bundle,
+        "core.ordinary_semantic_producer_runtime.preflight_ordinary_semantic_producer_bundle",
+        return_value=OrdinarySemanticProducerPreflightResult(bundle=bundle),
     ):
         with patch.object(
             kernel,
@@ -482,3 +537,343 @@ def test_transactional_handoff_raises_on_mid_chain_failure() -> None:
         ):
             with pytest.raises(OrdinarySemanticProducerTransactionError):
                 execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+
+
+def test_unit_multipart_assessment_skips_qmr_build() -> None:
+    records = build_deterministic_search_work_runtime_records(
+        DeterministicSearchWorkRuntimeInput(
+            contract_id="ag-sem-11b-multipart",
+            run_contract_projection={},
+            route_facts={"core_topic": MULTIPART_QUERY, "primary_entity": "Example Program"},
+            requested_mode="Balanced",
+            selected_depth="Balanced",
+            safe_query_preview=MULTIPART_QUERY,
+        )
+    )
+    assert len(records.query_shape_assessment.component_candidates) >= 2
+    qmr = build_question_meaning_record_from_search_work_plan(
+        assessment=records.query_shape_assessment,
+        route_facts={"core_topic": MULTIPART_QUERY},
+        run_contract_projection={"contract_id": "ag-sem-11b-multipart"},
+        run_id="run:multipart",
+        request_id="request:multipart",
+        query=MULTIPART_QUERY,
+        requested_mode="Balanced",
+    )
+    assert qmr is None
+    preflight = preflight_ordinary_semantic_producer_bundle(
+        search_work_plan={
+            "metadata": {
+                "construction_metadata": {"implements_query_shape_classifier": True},
+            }
+        },
+        route_projection={"core_topic": MULTIPART_QUERY},
+        run_contract_projection={"contract_id": "ag-sem-11b-multipart"},
+        final_top_evidence=(),
+        evidence_ledger_projection={},
+        run_id="run:multipart",
+        request_id="request:multipart",
+        query=MULTIPART_QUERY,
+        requested_mode="Balanced",
+    )
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_MULTIPART_ASSESSMENT
+
+
+def test_unit_stale_readable_candidate_is_not_bindable() -> None:
+    url = "https://official.example/rule"
+    candidate_id = (
+        f"candidate:{hashlib.sha256(url.casefold().rstrip('/').encode()).hexdigest()[:16]}"
+    )
+    passage = {
+        "url": url,
+        "title": "Example Program official rule",
+        "text": "Example Program official current rule remains in effect.",
+        "currentness_signal": "stale",
+    }
+    projection = {
+        "candidate_records": [
+            {
+                "candidate_id": candidate_id,
+                "url": url,
+                "readable_status": "readable",
+                "fact_disposition": "accepted",
+                "source_tier": "official",
+                "source_class": "official_current_rules",
+                "currentness_signal": "stale",
+            }
+        ]
+    }
+    assert select_bindable_final_passage([passage], projection) is None
+
+
+def test_handoff_preflight_uses_kernel_ledger_not_stale_scope_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    kernel = _fresh_kernel_for_handoff(source_kernel)
+    poisoned_scope = dict(scope)
+    poisoned_scope["evidence_ledger_projection"] = {
+        "candidate_records": [],
+        "source_requirements": [],
+        "requirement_links": [],
+    }
+    with patch(
+        "core.ordinary_semantic_producer_runtime.preflight_ordinary_semantic_producer_bundle",
+        wraps=preflight_ordinary_semantic_producer_bundle,
+    ) as preflight_mock:
+        result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, poisoned_scope)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.COMMITTED
+    ledger_arg = preflight_mock.call_args.kwargs["evidence_ledger_projection"]
+    assert ledger_arg == kernel.state.evidence_ledger.to_projection().to_dict()
+    assert ledger_arg != poisoned_scope["evidence_ledger_projection"]
+
+
+def test_query_shape_classifier_unavailable_skips_without_orphan_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    kernel = _fresh_kernel_for_handoff(source_kernel)
+    kernel.state.search_work_plan = {
+        "metadata": {
+            "construction_metadata": {"runtime_shadow_scaffolding": True},
+        }
+    }
+    result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE
+    _assert_no_semantic_state(kernel)
+
+
+def test_multipart_assessment_skips_without_orphan_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    kernel = _fresh_kernel_for_handoff(source_kernel)
+    scope = dict(scope)
+    scope["query"] = MULTIPART_QUERY
+    result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_MULTIPART_ASSESSMENT
+    _assert_no_semantic_state(kernel)
+
+
+def _mutate_bound_candidate_in_projection(
+    source_kernel: RunKernel,
+    scope: Mapping[str, Any],
+    *,
+    evidence_ledger_projection: dict[str, Any] | None = None,
+    **updates: Any,
+) -> dict[str, Any]:
+    ledger = dict(
+        evidence_ledger_projection
+        or source_kernel.state.evidence_ledger.to_projection().to_dict()
+    )
+    bindable = select_bindable_final_passage(scope["final_top_evidence"], ledger)
+    assert bindable is not None
+    bound_ref = bindable.evidence_ref_id
+    bound_url = bindable.passage.get("url")
+    mutated_records: list[dict[str, Any]] = []
+    for record in ledger.get("candidate_records") or ():
+        item = dict(record)
+        candidate_id = item.get("candidate_id")
+        url = item.get("url")
+        if candidate_id == bound_ref or (bound_url and url == bound_url):
+            item.update(updates)
+        mutated_records.append(item)
+    ledger["candidate_records"] = mutated_records
+    return ledger
+
+
+def test_coverage_preflight_blocks_obligation_incompatible_readable_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    incompatible = _mutate_bound_candidate_in_projection(
+        source_kernel,
+        scope,
+        source_class="secondary_analysis",
+        source_tier="secondary",
+        readable_status="readable",
+        eligible_for_stronger_obligation=False,
+        lower_tier=False,
+    )
+    preflight = preflight_ordinary_semantic_producer_bundle(
+        **_preflight_kwargs_from_capture(
+            source_kernel,
+            scope,
+            evidence_ledger_projection=incompatible,
+        )
+    )
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+
+    kernel = _fresh_kernel_for_handoff(source_kernel)
+    bindable = select_bindable_final_passage(
+        scope["final_top_evidence"],
+        kernel.state.evidence_ledger.to_projection().to_dict(),
+    )
+    assert bindable is not None
+    candidate = kernel.state.evidence_ledger.candidates[bindable.evidence_ref_id]
+    candidate.source_class = "secondary_analysis"
+    candidate.source_tier = "secondary"
+    candidate.readable_status = "readable"
+    candidate.eligible_for_stronger_obligation = False
+    candidate.lower_tier = False
+    result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+    _assert_no_semantic_state(kernel)
+
+
+def test_coverage_preflight_blocks_unlinked_source_requirement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    ledger = dict(source_kernel.state.evidence_ledger.to_projection().to_dict())
+    ledger["requirement_links"] = []
+    ledger["source_requirements"] = [
+        {**dict(requirement), "linked_candidate_ids": []}
+        if isinstance(requirement, dict)
+        else requirement
+        for requirement in ledger.get("source_requirements") or ()
+    ]
+    preflight = preflight_ordinary_semantic_producer_bundle(
+        **_preflight_kwargs_from_capture(
+            source_kernel,
+            scope,
+            evidence_ledger_projection=ledger,
+        )
+    )
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+
+    kernel = _fresh_kernel_for_handoff(source_kernel)
+    kernel.state.evidence_ledger.links.clear()
+    for requirement in kernel.state.evidence_ledger.requirements.values():
+        requirement.linked_candidate_ids = ()
+    result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+    _assert_no_semantic_state(kernel)
+
+
+def test_coverage_preflight_blocks_unsatisfied_source_requirement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    ledger = dict(source_kernel.state.evidence_ledger.to_projection().to_dict())
+    requirements = [dict(item) for item in ledger.get("source_requirements") or ()]
+    for requirement in requirements:
+        requirement["status"] = "unsatisfied"
+    ledger["source_requirements"] = requirements
+    preflight = preflight_ordinary_semantic_producer_bundle(
+        **_preflight_kwargs_from_capture(
+            source_kernel,
+            scope,
+            evidence_ledger_projection=ledger,
+        )
+    )
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+
+
+def test_coverage_preflight_blocks_custody_gap_on_requirement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    ledger = dict(source_kernel.state.evidence_ledger.to_projection().to_dict())
+    bindable = select_bindable_final_passage(scope["final_top_evidence"], ledger)
+    assert bindable is not None
+    requirement_ids = [
+        link.get("requirement_id")
+        for link in ledger.get("requirement_links") or ()
+        if isinstance(link, dict)
+        and link.get("candidate_id") == bindable.evidence_ref_id
+        and link.get("requirement_id")
+    ]
+    assert requirement_ids
+    ledger["custody_gaps"] = [
+        {"requirement_id": requirement_id} for requirement_id in requirement_ids
+    ]
+    preflight = preflight_ordinary_semantic_producer_bundle(
+        **_preflight_kwargs_from_capture(
+            source_kernel,
+            scope,
+            evidence_ledger_projection=ledger,
+        )
+    )
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+
+
+def test_coverage_preflight_blocks_observed_disposition_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    ledger = _mutate_bound_candidate_in_projection(
+        source_kernel,
+        scope,
+        fact_disposition="observed",
+        readable_status="readable",
+    )
+    preflight = preflight_ordinary_semantic_producer_bundle(
+        **_preflight_kwargs_from_capture(
+            source_kernel,
+            scope,
+            evidence_ledger_projection=ledger,
+        )
+    )
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+
+    kernel = _fresh_kernel_for_handoff(source_kernel)
+    bindable = select_bindable_final_passage(
+        scope["final_top_evidence"],
+        kernel.state.evidence_ledger.to_projection().to_dict(),
+    )
+    assert bindable is not None
+    candidate = kernel.state.evidence_ledger.candidates[bindable.evidence_ref_id]
+    candidate.fact_disposition = CandidateDisposition.OBSERVED
+    result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
+    assert result.skipped_reason == SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+    _assert_no_semantic_state(kernel)
+
+
+def test_contract_preflight_failed_skipped_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    kwargs = _preflight_kwargs_from_capture(source_kernel, scope)
+    with patch(
+        "core.ordinary_semantic_producer_runtime._dry_run_accepted_contract",
+        return_value=None,
+    ):
+        preflight = preflight_ordinary_semantic_producer_bundle(**kwargs)
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_CONTRACT_PREFLIGHT_FAILED
+
+
+def test_admission_preflight_failed_skipped_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    kwargs = _preflight_kwargs_from_capture(source_kernel, scope)
+    with patch(
+        "core.ordinary_semantic_producer_runtime._dry_run_admission_projection",
+        return_value=None,
+    ):
+        preflight = preflight_ordinary_semantic_producer_bundle(**kwargs)
+    assert preflight.bundle is None
+    assert preflight.skipped_reason == SKIP_REASON_ADMISSION_PREFLIGHT_FAILED
