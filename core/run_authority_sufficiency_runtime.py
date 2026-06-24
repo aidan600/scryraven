@@ -177,6 +177,13 @@ def execute_run_authority_sufficiency_judgment_action(
         "model_response_text_retained": False,
         "provider_payload_retained": False,
     }
+    safe_observation_payload = safe_json(observation_payload)
+    if not isinstance(safe_observation_payload, Mapping):
+        safe_observation_payload = {}
+    else:
+        safe_observation_payload = dict(safe_observation_payload)
+    safe_observation_payload["judgment_projection"] = projection
+    safe_observation_payload["validation"] = validation_dict
     return RunSufficiencyJudgmentResult(
         judgment=committed,
         deterministic_judgment=deterministic_judgment,
@@ -185,7 +192,7 @@ def execute_run_authority_sufficiency_judgment_action(
             authorized,
             observation_type=ObservationType.SUFFICIENCY_JUDGMENT_DECIDED,
             status=RunStageStatus.COMPLETED,
-            payload=safe_json(observation_payload),
+            payload=safe_observation_payload,
         ),
         prompt_hash=prompt_hash,
         prompt_length=prompt_length,

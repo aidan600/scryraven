@@ -64,6 +64,16 @@ CONTENT_REF_ID = "content:current-rule"
 CONTENT_DIGEST = "f" * 64
 SEMANTIC_EVIDENCE_ID = "evidence:current-rule"
 SOURCE_OBLIGATION_REF = "source-obligation:official-current"
+SEMANTIC_SOURCE_BINDING = {
+    "origin_evidence_ref_id": SEMANTIC_EVIDENCE_ID,
+    "origin_evidence_ref_kind": "evidence_ledger_candidate",
+    "content_ref_id": CONTENT_REF_ID,
+    "content_digest": CONTENT_DIGEST,
+    "coverage_record_id": COVERAGE_REF["coverage_record_id"],
+    "coverage_record_digest": COVERAGE_REF["coverage_record_digest"],
+    "component_id": COMPONENT_REF["component_id"],
+    "component_digest": COMPONENT_REF["component_digest"],
+}
 FULL_ARRAY_KEYS = (
     "component_refs",
     "coverage_record_refs",
@@ -88,6 +98,32 @@ def _passage(**overrides: Any) -> dict[str, Any]:
     return passage
 
 
+def _evidence_ledger_projection() -> dict[str, Any]:
+    return {
+        "owner": "RunKernel.EvidenceLedger",
+        "schema_version": "evidence_ledger_ag91j_v1",
+        "candidate_records": [
+            {
+                "candidate_id": SEMANTIC_EVIDENCE_ID,
+                "url": "https://example.gov/current-rule",
+                "normalized_source_identity": "https://example.gov/current-rule",
+                "title": "Current rule",
+                "source_tier": "official",
+                "source_class": "official_current_rules",
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "fact_disposition": "accepted",
+                "contextual_only": False,
+                "lower_tier": False,
+                "final_evidence_eligible": True,
+            }
+        ],
+        "source_requirements": [],
+        "requirement_links": [],
+        "custody_gaps": [],
+    }
+
+
 def _semantic_ref_projection(**overrides: Any) -> dict[str, Any]:
     projection = {
         "schema_version": SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
@@ -100,6 +136,7 @@ def _semantic_ref_projection(**overrides: Any) -> dict[str, Any]:
         "sanitized_content_ref_ids": [CONTENT_REF_ID],
         "content_ref_digests": [CONTENT_DIGEST],
         "evidence_ids": [SEMANTIC_EVIDENCE_ID],
+        "semantic_source_ref_bindings": [SEMANTIC_SOURCE_BINDING],
         "source_obligation_refs": [SOURCE_OBLIGATION_REF],
         "content_refs_available": True,
         "coverage_refs_available": True,
@@ -147,6 +184,7 @@ def _packet(
         run_id="ag-sem-authenv-01",
         final_evidence=[_passage()],
         author_evidence=[_passage()],
+        source_obligation_projection=_evidence_ledger_projection(),
         sufficiency_judgment_projection=_sufficiency_projection(
             _semantic_ref_projection()
             if semantic_ref_projection is None
@@ -212,6 +250,13 @@ def _expected_envelope(packet: FinalAnswerPacket) -> dict[str, Any]:
         "source_obligation_refs": [SOURCE_OBLIGATION_REF],
         "content_refs_available": True,
         "coverage_refs_available": True,
+        "semantic_packet_evidence_binding_available": True,
+        "semantic_packet_evidence_binding_count": len(
+            packet.semantic_packet_evidence_bindings
+        ),
+        "semantic_packet_evidence_binding_digest": _stable_safe_digest(
+            packet.semantic_packet_evidence_bindings
+        ),
         "author_payload_visible": True,
         "authority_payload_visible": False,
         "authority_block_visible": False,
@@ -282,6 +327,12 @@ def test_author_payload_envelope_derives_from_fap_projection_only() -> None:
     assert envelope["content_ref_digests"] == [CONTENT_DIGEST]
     assert envelope["semantic_ref_evidence_ids"] == [SEMANTIC_EVIDENCE_ID]
     assert envelope["source_obligation_refs"] == [SOURCE_OBLIGATION_REF]
+    assert envelope["semantic_packet_evidence_binding_available"] is True
+    assert envelope["semantic_packet_evidence_binding_count"] == 1
+    assert envelope["semantic_packet_evidence_binding_digest"] == _stable_safe_digest(
+        packet.semantic_packet_evidence_bindings
+    )
+    assert "semantic_packet_evidence_bindings" not in envelope
     assert envelope["content_refs_available"] is True
     assert envelope["coverage_refs_available"] is True
     assert envelope["author_payload_visible"] is True
@@ -356,6 +407,12 @@ def test_author_payload_envelope_trace_ref_is_digest_and_counts_only() -> None:
     assert trace_ref["content_ref_digest_count"] == 1
     assert trace_ref["semantic_ref_evidence_id_count"] == 1
     assert trace_ref["source_obligation_ref_count"] == 1
+    assert trace_ref["semantic_packet_evidence_binding_available"] is True
+    assert trace_ref["semantic_packet_evidence_binding_count"] == 1
+    assert trace_ref["semantic_packet_evidence_binding_digest"] == _stable_safe_digest(
+        packet.semantic_packet_evidence_bindings
+    )
+    assert "semantic_packet_evidence_bindings" not in trace_ref
     assert trace_ref["author_payload_visible"] is True
     assert trace_ref["authority_payload_visible"] is False
     assert trace_ref["authority_block_visible"] is False
@@ -416,6 +473,7 @@ def test_author_payload_envelope_propagates_through_packet_runtime_and_kernel() 
         fast_model="fast-model",
         smart_provider="smart-provider",
         smart_model="smart-model",
+        evidence_ledger_projection=_evidence_ledger_projection(),
         sufficiency_judgment_projection=_sufficiency_projection(
             _semantic_ref_projection()
         ),

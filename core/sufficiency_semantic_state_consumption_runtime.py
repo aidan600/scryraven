@@ -308,6 +308,7 @@ def _build_semantic_ref_projection(
     sanitized_content_ref_ids: list[str] = []
     content_ref_digests: list[str] = []
     evidence_ids: list[str] = []
+    semantic_source_ref_bindings: list[dict[str, Any]] = []
     source_obligation_refs: list[str] = []
     required_ids = [item for item in required_component_ids if item]
     safe_required_ids: set[str] = set()
@@ -336,11 +337,16 @@ def _build_semantic_ref_projection(
                 },
             )
 
+        coverage_record_id = _clean_token(coverage.get("coverage_record_id"))
+        coverage_record_digest = _clean_token(
+            coverage.get("coverage_record_digest"),
+            limit=128,
+        )
         _append_unique_mapping(
             coverage_record_refs,
             {
-                "coverage_record_id": _clean_token(coverage.get("coverage_record_id")),
-                "coverage_record_digest": _clean_token(coverage.get("coverage_record_digest"), limit=128),
+                "coverage_record_id": coverage_record_id,
+                "coverage_record_digest": coverage_record_digest,
                 "answer_component_id": component_id,
             },
         )
@@ -358,9 +364,33 @@ def _build_semantic_ref_projection(
         for binding in _list(coverage.get("content_reference_bindings")):
             if not isinstance(binding, Mapping):
                 continue
-            _append_unique_token(sanitized_content_ref_ids, binding.get("content_ref_id"))
-            _append_unique_token(content_ref_digests, binding.get("content_digest"), limit=128)
-            _append_unique_token(evidence_ids, binding.get("evidence_ref_id"))
+            content_ref_id = _clean_token(binding.get("content_ref_id"))
+            content_digest = _clean_token(binding.get("content_digest"), limit=128)
+            evidence_ref_id = _clean_token(binding.get("evidence_ref_id"))
+            _append_unique_token(sanitized_content_ref_ids, content_ref_id)
+            _append_unique_token(content_ref_digests, content_digest, limit=128)
+            _append_unique_token(evidence_ids, evidence_ref_id)
+            if (
+                evidence_ref_id
+                and content_ref_id
+                and content_digest
+                and coverage_record_id
+                and coverage_record_digest
+                and component_digest
+            ):
+                _append_unique_mapping(
+                    semantic_source_ref_bindings,
+                    {
+                        "origin_evidence_ref_id": evidence_ref_id,
+                        "origin_evidence_ref_kind": "evidence_ledger_candidate",
+                        "content_ref_id": content_ref_id,
+                        "content_digest": content_digest,
+                        "coverage_record_id": coverage_record_id,
+                        "coverage_record_digest": coverage_record_digest,
+                        "component_id": component_id,
+                        "component_digest": component_digest,
+                    },
+                )
 
         ledger_binding = _mapping(coverage.get("evidence_ledger_binding"))
         for requirement_id in _token_list(ledger_binding.get("source_requirement_ids")):
@@ -394,6 +424,8 @@ def _build_semantic_ref_projection(
         projection["content_ref_digests"] = content_ref_digests
     if evidence_ids:
         projection["evidence_ids"] = evidence_ids
+    if semantic_source_ref_bindings:
+        projection["semantic_source_ref_bindings"] = semantic_source_ref_bindings
     if source_obligation_refs:
         projection["source_obligation_refs"] = source_obligation_refs
     return projection
@@ -471,6 +503,52 @@ def _safe_semantic_ref_projection(value: Any) -> dict[str, Any]:
         items = _token_list(projection.get(key), limit=128 if key.endswith("digests") else 160)
         if items:
             safe[key] = items[:_MAX_LIST_ITEMS]
+
+    semantic_source_ref_bindings = []
+    for ref in _list(projection.get("semantic_source_ref_bindings")):
+        if not isinstance(ref, Mapping):
+            continue
+        origin_evidence_ref_id = _clean_token(ref.get("origin_evidence_ref_id"))
+        origin_evidence_ref_kind = _clean_token(
+            ref.get("origin_evidence_ref_kind")
+            or "evidence_ledger_candidate",
+            limit=120,
+        )
+        content_ref_id = _clean_token(ref.get("content_ref_id"))
+        content_digest = _clean_token(ref.get("content_digest"), limit=128)
+        coverage_record_id = _clean_token(ref.get("coverage_record_id"))
+        coverage_record_digest = _clean_token(
+            ref.get("coverage_record_digest"),
+            limit=128,
+        )
+        component_id = _clean_token(ref.get("component_id"))
+        component_digest = _clean_token(ref.get("component_digest"), limit=128)
+        if (
+            origin_evidence_ref_id
+            and origin_evidence_ref_kind
+            and content_ref_id
+            and content_digest
+            and coverage_record_id
+            and coverage_record_digest
+            and component_id
+            and component_digest
+        ):
+            semantic_source_ref_bindings.append(
+                {
+                    "origin_evidence_ref_id": origin_evidence_ref_id,
+                    "origin_evidence_ref_kind": origin_evidence_ref_kind,
+                    "content_ref_id": content_ref_id,
+                    "content_digest": content_digest,
+                    "coverage_record_id": coverage_record_id,
+                    "coverage_record_digest": coverage_record_digest,
+                    "component_id": component_id,
+                    "component_digest": component_digest,
+                }
+            )
+    if semantic_source_ref_bindings:
+        safe["semantic_source_ref_bindings"] = (
+            semantic_source_ref_bindings[:_MAX_LIST_ITEMS]
+        )
     return {key: value for key, value in safe.items() if value not in (None, "", [], {})}
 
 

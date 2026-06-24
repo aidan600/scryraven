@@ -202,6 +202,7 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert fap_ref_projection.get("sanitized_content_ref_ids")
     assert fap_ref_projection.get("content_ref_digests")
     assert fap_ref_projection.get("coverage_record_refs")
+    assert fap_ref_projection.get("semantic_source_ref_bindings")
     assert state.final_answer_packet.get(
         "semantic_content_coverage_ref_projection"
     ) == fap_ref_projection
@@ -238,7 +239,29 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert manifest.get("semantic_observation_refs")
     assert manifest.get("component_refs")
     assert manifest.get("semantic_ref_evidence_ids")
+    assert manifest.get("semantic_source_ref_bindings")
     assert manifest.get("source_obligation_refs")
+    assert all(
+        record.origin_evidence_ref_id and record.origin_evidence_ref_kind
+        for record in packet_handoff.packet.evidence_allowed
+    )
+    bindings = tuple(
+        dict(row) for row in packet_handoff.packet.semantic_packet_evidence_bindings
+    )
+    assert bindings
+    allowed_packet_evidence_ids = {
+        record.evidence_id for record in packet_handoff.packet.evidence_allowed
+    }
+    binding_origin_ids = {row["origin_evidence_ref_id"] for row in bindings}
+    assert set(manifest.get("semantic_ref_evidence_ids")).issubset(
+        binding_origin_ids
+    )
+    assert all(
+        row["packet_evidence_id"] in allowed_packet_evidence_ids for row in bindings
+    )
+    assert manifest.get("semantic_packet_evidence_binding_available") is True
+    assert manifest.get("semantic_packet_evidence_binding_count") == len(bindings)
+    assert manifest.get("semantic_packet_evidence_binding_digest")
     assert manifest.get("raw_content_included") is False
     assert manifest.get("bounded_text_included") is False
     assert manifest.get("prompt_visible") is False
@@ -280,6 +303,14 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert "component_refs" not in manifest_trace_ref
     assert "semantic_ref_evidence_ids" not in manifest_trace_ref
     assert "source_obligation_refs" not in manifest_trace_ref
+    assert "semantic_packet_evidence_bindings" not in manifest_trace_ref
+    assert manifest_trace_ref.get("semantic_packet_evidence_binding_available") is True
+    assert manifest_trace_ref.get("semantic_packet_evidence_binding_count") == len(
+        bindings
+    )
+    assert manifest_trace_ref.get("semantic_packet_evidence_binding_digest") == (
+        manifest.get("semantic_packet_evidence_binding_digest")
+    )
     envelope = packet_handoff.author_payload.semantic_content_coverage_ref_envelope
     assert envelope.get("available") is True
     assert envelope.get("semantic_state_facts_digest") == (
@@ -288,6 +319,12 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert envelope.get("sanitized_content_ref_ids")
     assert envelope.get("content_ref_digests")
     assert envelope.get("coverage_record_refs")
+    assert envelope.get("semantic_packet_evidence_binding_available") is True
+    assert envelope.get("semantic_packet_evidence_binding_count") == len(bindings)
+    assert envelope.get("semantic_packet_evidence_binding_digest") == (
+        manifest.get("semantic_packet_evidence_binding_digest")
+    )
+    assert "semantic_packet_evidence_bindings" not in envelope
     assert envelope.get("author_payload_visible") is True
     assert envelope.get("authority_payload_visible") is False
     assert envelope.get("authority_block_visible") is False
@@ -305,6 +342,13 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert envelope_trace_ref.get("content_ref_digest_count") > 0
     assert envelope_trace_ref.get("semantic_ref_evidence_id_count") > 0
     assert envelope_trace_ref.get("source_obligation_ref_count") > 0
+    assert envelope_trace_ref.get("semantic_packet_evidence_binding_available") is True
+    assert envelope_trace_ref.get("semantic_packet_evidence_binding_count") == len(
+        bindings
+    )
+    assert envelope_trace_ref.get("semantic_packet_evidence_binding_digest") == (
+        manifest.get("semantic_packet_evidence_binding_digest")
+    )
     for forbidden_ref_key in (
         "component_refs",
         "coverage_record_refs",
@@ -313,6 +357,7 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
         "content_ref_digests",
         "semantic_ref_evidence_ids",
         "source_obligation_refs",
+        "semantic_packet_evidence_bindings",
     ):
         assert forbidden_ref_key not in envelope_trace_ref
 
@@ -340,11 +385,14 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert "semantic_authority_trace_ref" not in state.author_observation
     assert MANIFEST_TRACE_REF_KEY not in state.author_observation
     assert ENVELOPE_TRACE_REF_KEY not in state.author_observation
+    assert "semantic_packet_evidence_bindings" not in state.author_observation
 
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
     assert MANIFEST_TRACE_REF_KEY not in harness.author_prompts[0]
     assert ENVELOPE_TRACE_REF_KEY not in harness.author_prompts[0]
     assert ENVELOPE_KEY not in harness.author_prompts[0]
+    assert "semantic_packet_evidence_bindings" not in harness.author_prompts[0]
+    assert "semantic_packet_evidence_binding_digest" not in harness.author_prompts[0]
     assert author_scope["final_answer_packet_action"] is packet_handoff.action
     assert author_scope["final_answer_author_payload"] is packet_handoff.author_payload
     assert state.author_observation["owner"] == "RunKernel.AuthorExecutor"
