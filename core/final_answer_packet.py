@@ -14,6 +14,8 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.semantic_observation_foundation import SanitizedContentReference
+
 FINAL_ANSWER_PACKET_SCHEMA_VERSION = "final_answer_packet_ag89d_v1"
 FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION = (
     "final_answer_semantic_authority_ref_v1"
@@ -38,6 +40,12 @@ FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION = (
 )
 FINAL_ANSWER_PACKET_SEMANTIC_PACKET_EVIDENCE_BINDING_SCHEMA_VERSION = (
     "final_answer_packet_semantic_packet_evidence_binding_ag_sem_evid_bind_01_v1"
+)
+FINAL_ANSWER_SEMANTIC_AUTHOR_MATERIALIZATION_SCHEMA_VERSION = (
+    "final_answer_semantic_author_materialization_ag_auth_mat_01_v1"
+)
+FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_MATERIALIZATION_TRACE_SCHEMA_VERSION = (
+    "final_answer_author_payload_semantic_materialization_trace_ag_auth_mat_01_v1"
 )
 FINAL_ANSWER_PACKET_TRACE_KEY = "final_answer_packet"
 
@@ -226,6 +234,53 @@ _AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_BOOL_KEYS = frozenset(
         "provider_payload_included",
     }
 )
+_AUTHOR_SEMANTIC_MATERIALIZATION_TRACE_REF_KEYS = (
+    "schema_version",
+    "available",
+    "source",
+    "source_packet_id",
+    "source_packet_schema_version",
+    "materialization_digest",
+    "semantic_materialization_block_hash",
+    "semantic_materialization_block_length",
+    "component_count",
+    "excerpt_count",
+    "semantic_packet_evidence_binding_count",
+    "semantic_packet_evidence_binding_digest",
+    "prompt_visible",
+    "model_request_visible",
+    "bounded_text_included",
+    "bounded_text_retained",
+    "raw_content_included",
+    "raw_prompt_included",
+    "raw_prompt_retained",
+    "provider_payload_included",
+    "provider_payload_retained",
+    "final_text_included",
+    "unavailable_reason",
+)
+_AUTHOR_SEMANTIC_MATERIALIZATION_TRACE_BOOL_KEYS = frozenset(
+    {
+        "available",
+        "prompt_visible",
+        "model_request_visible",
+        "bounded_text_included",
+        "bounded_text_retained",
+        "raw_content_included",
+        "raw_prompt_included",
+        "raw_prompt_retained",
+        "provider_payload_included",
+        "provider_payload_retained",
+        "final_text_included",
+    }
+)
+_SEMANTIC_MATERIALIZATION_BOUNDED_REF_KEYS = (
+    "author_materialization_content_refs",
+    "semantic_author_materialization_content_refs",
+    "bounded_content_refs",
+)
+_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT = 600
+_SEMANTIC_MATERIALIZATION_DIGEST_TEXT_LIMIT = 2000
 
 
 def _hash_text(value: str) -> str:
@@ -374,6 +429,77 @@ def _safe_author_semantic_content_coverage_ref_envelope_trace_ref(
             else _safe_json(item)
         )
     return out
+
+
+def _safe_author_semantic_materialization_trace_ref(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in _AUTHOR_SEMANTIC_MATERIALIZATION_TRACE_REF_KEYS:
+        if key not in value:
+            continue
+        item = value[key]
+        out[key] = (
+            bool(item)
+            if key in _AUTHOR_SEMANTIC_MATERIALIZATION_TRACE_BOOL_KEYS
+            else _safe_json(item)
+        )
+    return out
+
+
+def _safe_semantic_content_coverage_projection_ref(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    out = {
+        "schema_version": _clean_text(value.get("schema_version"), limit=160),
+        "available": bool(value.get("available")),
+        "source_authority": _clean_text(value.get("source_authority"), limit=160),
+        "source_schema_version": _clean_text(
+            value.get("source_schema_version"),
+            limit=160,
+        ),
+        "source_projection_digest": _clean_text(
+            value.get("source_projection_digest"),
+            limit=128,
+        ),
+        "semantic_state_facts_digest": _clean_text(
+            value.get("semantic_state_facts_digest"),
+            limit=128,
+        ),
+        "accepted_contract_digest": _clean_text(
+            value.get("accepted_contract_digest"),
+            limit=128,
+        ),
+        "content_refs_available": bool(value.get("content_refs_available")),
+        "coverage_refs_available": bool(value.get("coverage_refs_available")),
+        "component_ref_count": _sequence_count(value.get("component_refs")),
+        "coverage_record_ref_count": _sequence_count(
+            value.get("coverage_record_refs")
+        ),
+        "semantic_observation_ref_count": _sequence_count(
+            value.get("semantic_observation_refs")
+        ),
+        "sanitized_content_ref_count": _sequence_count(
+            value.get("sanitized_content_ref_ids")
+        ),
+        "content_ref_digest_count": _sequence_count(value.get("content_ref_digests")),
+        "semantic_ref_evidence_id_count": _sequence_count(
+            value.get("semantic_ref_evidence_ids")
+        ),
+        "semantic_source_ref_binding_count": _sequence_count(
+            value.get("semantic_source_ref_bindings")
+        ),
+        "source_obligation_ref_count": _sequence_count(
+            value.get("source_obligation_refs")
+        ),
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "prompt_visible": False,
+        "author_payload_visible": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+    }
+    return {key: item for key, item in out.items() if item not in (None, "", [], {})}
 
 
 @dataclass(frozen=True, slots=True)
@@ -539,6 +665,9 @@ class FinalAnswerAuthorInputPayload:
     semantic_content_coverage_ref_envelope: Mapping[str, Any] = field(
         default_factory=dict
     )
+    semantic_author_materialization: Mapping[str, Any] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, AuthorInputStatus) else str(self.status)
@@ -655,6 +784,16 @@ class FinalAnswerAuthorInputPayload:
             payload["semantic_content_coverage_ref_envelope_trace_ref"] = (
                 _safe_author_semantic_content_coverage_ref_envelope_trace_ref(
                     trace_ref
+                )
+            )
+        if self.semantic_author_materialization:
+            materialization_trace_ref = dict(self.semantic_author_materialization)
+            materialization_trace_ref["schema_version"] = (
+                FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_MATERIALIZATION_TRACE_SCHEMA_VERSION
+            )
+            payload["semantic_author_materialization_trace_ref"] = (
+                _safe_author_semantic_materialization_trace_ref(
+                    materialization_trace_ref
                 )
             )
         return payload
@@ -834,19 +973,30 @@ class FinalAnswerPacket:
                 ref_projection.get("source_projection_digest"),
                 limit=128,
             )
-            for key in (
-                "component_refs",
-                "coverage_record_refs",
-                "semantic_observation_refs",
-                "sanitized_content_ref_ids",
-                "content_ref_digests",
-                "semantic_ref_evidence_ids",
-                "semantic_source_ref_bindings",
-                "source_obligation_refs",
-            ):
-                value = _safe_json(ref_projection.get(key))
-                if value not in (None, "", [], {}):
-                    manifest[key] = value
+            manifest["component_ref_count"] = _sequence_count(
+                ref_projection.get("component_refs")
+            )
+            manifest["coverage_record_ref_count"] = _sequence_count(
+                ref_projection.get("coverage_record_refs")
+            )
+            manifest["semantic_observation_ref_count"] = _sequence_count(
+                ref_projection.get("semantic_observation_refs")
+            )
+            manifest["sanitized_content_ref_count"] = _sequence_count(
+                ref_projection.get("sanitized_content_ref_ids")
+            )
+            manifest["content_ref_digest_count"] = _sequence_count(
+                ref_projection.get("content_ref_digests")
+            )
+            manifest["semantic_ref_evidence_id_count"] = _sequence_count(
+                ref_projection.get("semantic_ref_evidence_ids")
+            )
+            manifest["semantic_source_ref_binding_count"] = _sequence_count(
+                ref_projection.get("semantic_source_ref_bindings")
+            )
+            manifest["source_obligation_ref_count"] = _sequence_count(
+                ref_projection.get("source_obligation_refs")
+            )
 
             content_refs_available = bool(
                 ref_projection.get("content_refs_available")
@@ -888,7 +1038,6 @@ class FinalAnswerPacket:
             manifest["semantic_packet_evidence_binding_digest"] = (
                 _stable_safe_json_digest(binding_rows)
             )
-            manifest["semantic_packet_evidence_bindings"] = binding_rows
         excluded_evidence_ids = [
             record.evidence_id
             for record in self.evidence_excluded
@@ -1034,6 +1183,7 @@ class FinalAnswerPacket:
             partial_source_obligations=partial_source_obligations,
             satisfied_source_obligations=satisfied_source_obligations,
         )
+        semantic_author_materialization = self._semantic_author_materialization()
         authority_block = self.to_author_authority_block(
             citation_source_ids=citation_source_ids,
             citation_ineligible_refs=citation_ineligible_refs,
@@ -1041,6 +1191,7 @@ class FinalAnswerPacket:
             partial_source_obligations=partial_source_obligations,
             satisfied_source_obligations=satisfied_source_obligations,
             authority_payload=authority_payload,
+            semantic_author_materialization=semantic_author_materialization,
         )
         payload = FinalAnswerAuthorInputPayload(
             packet_id=self.packet_id,
@@ -1072,6 +1223,7 @@ class FinalAnswerPacket:
             semantic_content_coverage_ref_envelope=(
                 self._semantic_content_coverage_ref_envelope()
             ),
+            semantic_author_materialization=semantic_author_materialization,
         )
         return payload
 
@@ -1241,6 +1393,298 @@ class FinalAnswerPacket:
             )
         return envelope
 
+    def _semantic_author_materialization(self) -> dict[str, Any]:
+        ref_projection = dict(self.semantic_content_coverage_ref_projection or {})
+        if ref_projection.get("available") is not True:
+            return {}
+        binding_rows = _safe_json(self.semantic_packet_evidence_bindings) or []
+        if not binding_rows:
+            return {}
+
+        component_count = _sequence_count(ref_projection.get("component_refs"))
+        if not component_count:
+            component_count = int(
+                _safe_json(self.semantic_authority_ref.get("required_component_count"))
+                or 0
+            )
+        if not component_count:
+            return {}
+
+        excerpt = self._semantic_author_materialization_excerpt()
+        excerpt_text = _clean_text(
+            excerpt.get("text"),
+            limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
+        )
+        block_text = self._semantic_author_materialization_block(
+            component_count=component_count,
+            excerpt=excerpt,
+        )
+        block_hash = _hash_text(block_text)
+        materialization: dict[str, Any] = {
+            "schema_version": FINAL_ANSWER_SEMANTIC_AUTHOR_MATERIALIZATION_SCHEMA_VERSION,
+            "available": True,
+            "source": "FinalAnswerPacket.semantic_content_coverage_ref_projection",
+            "source_packet_id": self.packet_id,
+            "source_packet_schema_version": self.schema_version,
+            "component_count": component_count,
+            "excerpt_count": 1 if excerpt_text else 0,
+            "semantic_packet_evidence_binding_count": len(binding_rows),
+            "semantic_packet_evidence_binding_digest": _stable_safe_json_digest(
+                binding_rows
+            ),
+            "semantic_materialization_block_hash": block_hash,
+            "semantic_materialization_block_length": len(block_text),
+            "prompt_visible": True,
+            "model_request_visible": True,
+            "bounded_text_included": bool(excerpt_text),
+            "bounded_text_retained": False,
+            "raw_content_included": False,
+            "raw_prompt_included": False,
+            "raw_prompt_retained": False,
+            "provider_payload_included": False,
+            "provider_payload_retained": False,
+            "final_text_included": False,
+            "block_text": block_text,
+        }
+        if not excerpt_text:
+            materialization["unavailable_reason"] = _clean_token(
+                excerpt.get("unavailable_reason")
+                or "bounded_excerpt_not_packet_owned",
+                limit=160,
+            )
+        materialization["materialization_digest"] = _stable_safe_json_digest(
+            {
+                key: value
+                for key, value in materialization.items()
+                if key not in {"materialization_digest", "block_text"}
+            }
+        )
+        return materialization
+
+    def _semantic_author_materialization_block(
+        self,
+        *,
+        component_count: int,
+        excerpt: Mapping[str, Any],
+    ) -> str:
+        source_obligation_posture = self._semantic_materialization_source_obligation_posture()
+        component_phrase = (
+            "required component is"
+            if component_count == 1
+            else "required components are"
+        )
+        lines = [
+            "",
+            "CONTROLLED SEMANTIC CONTEXT (do not mention this block):",
+            "- Covered component: "
+            + component_phrase
+            + " supported by packet-bound semantic evidence.",
+            "- Support posture: supported; source obligation: "
+            + source_obligation_posture
+            + "; custody: custodied.",
+        ]
+        excerpt_text = _clean_text(
+            excerpt.get("text"),
+            limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
+        )
+        if excerpt_text:
+            safe_excerpt = excerpt_text.replace('"', "'")
+            lines.append(
+                "- Bounded semantic excerpt from citation-eligible Source ID "
+                + str(excerpt.get("source_id"))
+                + ': "'
+                + safe_excerpt
+                + '"'
+            )
+        if self.mandatory_caveats:
+            lines.append(
+                "- Caveats to preserve: preserve the packet-required caveats; "
+                "do not strengthen caveated claims."
+            )
+        if self.prohibited_upgrades:
+            lines.append(
+                "- Prohibited upgrades: obey the packet's prohibited upgrades; "
+                "do not strengthen or replace evidence-bound claims."
+            )
+        lines.append(
+            "- Boundary: this block supports drafting only. It does not add "
+            "citation authority, select evidence, judge sufficiency, or satisfy "
+            "missing obligations. Cite only packet-eligible Source IDs."
+        )
+        return "\n".join(lines) + "\n"
+
+    def _semantic_materialization_source_obligation_posture(self) -> str:
+        if not self.source_obligations:
+            return "unavailable"
+        if all(
+            record.status is SourceObligationStatus.SATISFIED
+            for record in self.source_obligations
+        ):
+            return "satisfied"
+        if any(
+            record.status is SourceObligationStatus.SATISFIED
+            for record in self.source_obligations
+        ):
+            return "partially satisfied"
+        return "caveated"
+
+    def _semantic_author_materialization_excerpt(self) -> dict[str, Any]:
+        ref_projection = dict(self.semantic_content_coverage_ref_projection or {})
+        content_refs = self._semantic_materialization_bounded_content_refs(
+            ref_projection
+        )
+        if not content_refs:
+            return {"unavailable_reason": "bounded_excerpt_not_packet_owned"}
+
+        eligible_citations = {
+            record.evidence_id: record
+            for record in self.citation_eligible
+            if record.source_id is not None
+        }
+        binding_by_content_ref = {
+            _clean_token(row.get("content_ref_id"), limit=160): dict(row)
+            for row in self.semantic_packet_evidence_bindings
+            if _clean_token(row.get("content_ref_id"), limit=160)
+        }
+        unavailable_reason = "bounded_excerpt_not_packet_owned"
+        for raw_ref in content_refs:
+            ref = dict(raw_ref)
+            if not self._semantic_materialization_content_ref_is_safe(ref):
+                unavailable_reason = "bounded_excerpt_not_safe"
+                continue
+            content_ref_id = _clean_token(ref.get("content_ref_id"), limit=160)
+            if not content_ref_id:
+                unavailable_reason = "bounded_excerpt_missing_content_ref"
+                continue
+            binding = binding_by_content_ref.get(content_ref_id)
+            if not binding:
+                unavailable_reason = "bounded_excerpt_unbound_to_packet_evidence"
+                continue
+            citation = eligible_citations.get(str(binding.get("packet_evidence_id")))
+            if citation is None:
+                unavailable_reason = "bounded_excerpt_evidence_not_citation_eligible"
+                continue
+            bounded_text = _clean_text(
+                ref.get("bounded_text"),
+                limit=_SEMANTIC_MATERIALIZATION_DIGEST_TEXT_LIMIT,
+            )
+            if not bounded_text:
+                unavailable_reason = "bounded_excerpt_text_unavailable"
+                continue
+            expected_digest = _clean_token(binding.get("content_digest"), limit=128)
+            supplied_digest = _clean_token(ref.get("content_digest"), limit=128)
+            recomputed_digest = self._semantic_materialization_content_digest(
+                ref,
+                binding=binding,
+                bounded_text=bounded_text,
+            )
+            if (
+                not expected_digest
+                or (supplied_digest and supplied_digest != expected_digest)
+                or recomputed_digest != expected_digest
+            ):
+                unavailable_reason = "bounded_excerpt_digest_mismatch"
+                continue
+            return {
+                "text": _clean_text(
+                    bounded_text,
+                    limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
+                ),
+                "source_id": citation.source_id,
+            }
+        return {"unavailable_reason": unavailable_reason}
+
+    def _semantic_materialization_bounded_content_refs(
+        self,
+        ref_projection: Mapping[str, Any],
+    ) -> tuple[Mapping[str, Any], ...]:
+        refs: list[Mapping[str, Any]] = []
+        for key in _SEMANTIC_MATERIALIZATION_BOUNDED_REF_KEYS:
+            value = ref_projection.get(key)
+            if isinstance(value, Mapping):
+                if "content_ref_id" in value:
+                    refs.append(value)
+                else:
+                    refs.extend(
+                        item for item in value.values() if isinstance(item, Mapping)
+                    )
+            elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+                refs.extend(item for item in value if isinstance(item, Mapping))
+        return tuple(refs)
+
+    def _semantic_materialization_content_ref_is_safe(
+        self,
+        ref: Mapping[str, Any],
+    ) -> bool:
+        if ref.get("sanitized") is False or ref.get("bounded") is False:
+            return False
+        if ref.get("accepted_authority"):
+            return False
+        forbidden_truthy = (
+            "raw_content_retained",
+            "raw_provider_payload_retained",
+            "raw_prompt_retained",
+            "raw_model_response_retained",
+            "private_logs_retained",
+            "db_cache_rows_retained",
+            "full_trace_retained",
+            "secrets_returned",
+            "raw_content_included",
+            "raw_prompt_included",
+            "provider_payload_included",
+            "final_text_included",
+        )
+        if any(bool(ref.get(key)) for key in forbidden_truthy):
+            return False
+        forbidden_keys = {
+            "raw_content",
+            "raw_source_text",
+            "text_excerpts",
+            "prompt_text",
+            "raw_prompt",
+            "provider_payload",
+            "raw_provider_payload",
+            "model_response",
+            "raw_model_response",
+            "final_prose",
+            "final_text",
+            "db_row",
+            "cache",
+            "full_trace",
+            "logs",
+        }
+        return not any(key in ref for key in forbidden_keys)
+
+    def _semantic_materialization_content_digest(
+        self,
+        ref: Mapping[str, Any],
+        *,
+        binding: Mapping[str, Any],
+        bounded_text: str,
+    ) -> str | None:
+        try:
+            content_ref = SanitizedContentReference(
+                content_ref_id=str(ref.get("content_ref_id") or ""),
+                evidence_ref_id=str(
+                    ref.get("evidence_ref_id")
+                    or binding.get("origin_evidence_ref_id")
+                    or binding.get("packet_evidence_id")
+                    or ""
+                ),
+                answer_component_id=str(
+                    ref.get("answer_component_id")
+                    or binding.get("component_id")
+                    or ""
+                ),
+                content_kind=ref.get("content_kind") or "bounded_excerpt",
+                bounded_text=bounded_text,
+                structured_value=ref.get("structured_value"),
+                admitted_evidence_ref=ref.get("admitted_evidence_ref"),
+            )
+        except ValueError:
+            return None
+        return content_ref.content_digest
+
     def to_author_authority_block(
         self,
         *,
@@ -1250,6 +1694,7 @@ class FinalAnswerPacket:
         partial_source_obligations: Sequence[Mapping[str, Any]],
         satisfied_source_obligations: Sequence[Mapping[str, Any]],
         authority_payload: Mapping[str, Any],
+        semantic_author_materialization: Mapping[str, Any] | None = None,
     ) -> str:
         lines: list[str] = [
             "",
@@ -1342,6 +1787,10 @@ class FinalAnswerPacket:
                 "- Prohibited upgrades: "
                 + "; ".join(str(item) for item in self.prohibited_upgrades)
             )
+        if semantic_author_materialization:
+            block_text = str(semantic_author_materialization.get("block_text") or "")
+            if block_text:
+                lines.append(block_text.rstrip("\n"))
         return "\n".join(lines) + "\n"
 
     def to_legacy_citation_handoff_inputs(self) -> dict[str, Any]:
@@ -1395,13 +1844,20 @@ class FinalAnswerPacket:
         if self.semantic_authority_ref:
             payload["semantic_authority_ref"] = _safe_json(self.semantic_authority_ref)
         if self.semantic_content_coverage_ref_projection:
-            payload["semantic_content_coverage_ref_projection"] = _safe_json(
-                self.semantic_content_coverage_ref_projection
+            payload["semantic_content_coverage_ref_projection"] = (
+                _safe_semantic_content_coverage_projection_ref(
+                    self.semantic_content_coverage_ref_projection
+                )
             )
         if self.semantic_packet_evidence_bindings:
-            payload["semantic_packet_evidence_bindings"] = _safe_json(
-                self.semantic_packet_evidence_bindings
-            )
+            binding_rows = _safe_json(self.semantic_packet_evidence_bindings) or []
+            payload["semantic_packet_evidence_binding_ref"] = {
+                "available": True,
+                "semantic_packet_evidence_binding_count": len(binding_rows),
+                "semantic_packet_evidence_binding_digest": (
+                    _stable_safe_json_digest(binding_rows)
+                ),
+            }
         manifest = self.semantic_evidence_authority_manifest
         if manifest:
             payload["semantic_evidence_authority_manifest"] = _safe_json(manifest)
@@ -1419,6 +1875,8 @@ __all__ = [
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_SEMANTIC_PACKET_EVIDENCE_BINDING_SCHEMA_VERSION",
+    "FINAL_ANSWER_SEMANTIC_AUTHOR_MATERIALIZATION_SCHEMA_VERSION",
+    "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_MATERIALIZATION_TRACE_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_TRACE_KEY",

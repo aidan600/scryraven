@@ -317,6 +317,14 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
     assert manifest["author_provider"] == "fast-provider"
     assert manifest["author_model"] == "fast-model"
     assert manifest["author_effort"] == "medium"
+    assert manifest["semantic_materialization_available"] is False
+    assert manifest["semantic_materialization_digest"] is None
+    assert manifest["semantic_materialization_block_hash"] is None
+    assert manifest["semantic_materialization_block_length"] == 0
+    assert manifest["semantic_materialization_component_count"] == 0
+    assert manifest["semantic_materialization_excerpt_count"] == 0
+    assert manifest["prompt_visible"] is False
+    assert manifest["model_request_visible"] is False
     assert manifest["prompt_text_included"] is False
     assert manifest["system_prompt_text_included"] is False
     assert manifest["model_request_raw_payload_retained"] is False
@@ -324,6 +332,7 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
     assert manifest["raw_prompt_included"] is False
     assert manifest["raw_content_included"] is False
     assert manifest["bounded_text_included"] is False
+    assert manifest["bounded_text_retained"] is False
     assert manifest["final_text_included"] is False
     serialized_manifest = json.dumps(manifest, sort_keys=True)
     assert "BASE AUTHOR PROMPT" not in serialized_manifest
@@ -418,6 +427,9 @@ def test_ag_sem_12b_author_execution_accountability_preserves_model_request() ->
         prepared.author_payload.semantic_authority_trace_ref
     )
     assert manifest["semantic_packet_evidence_binding_available"] is False
+    assert manifest["semantic_materialization_available"] is False
+    assert manifest["prompt_visible"] is False
+    assert manifest["model_request_visible"] is False
 
 
 def test_author_execution_rejects_tampered_semantic_payload_before_model() -> None:
