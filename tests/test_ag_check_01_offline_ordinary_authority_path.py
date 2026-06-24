@@ -35,6 +35,8 @@ RAW_AUTHOR_RESPONSE = (
     "evidence, and leaves any unresolved source obligations caveated."
 )
 MANIFEST_TRACE_REF_KEY = "semantic_evidence_authority_manifest_trace_ref"
+ENVELOPE_TRACE_REF_KEY = "semantic_content_coverage_ref_envelope_trace_ref"
+ENVELOPE_KEY = "semantic_content_coverage_ref_envelope"
 
 
 @pytest.fixture(autouse=True)
@@ -241,6 +243,7 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert manifest.get("bounded_text_included") is False
     assert manifest.get("prompt_visible") is False
     assert manifest.get("author_payload_visible") is False
+    assert manifest.get("author_payload_ref_envelope_available") is True
     assert manifest.get("model_request_visible") is False
     assert manifest.get("final_text_included") is False
     assert "coverage_record_ids" not in manifest
@@ -277,6 +280,41 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert "component_refs" not in manifest_trace_ref
     assert "semantic_ref_evidence_ids" not in manifest_trace_ref
     assert "source_obligation_refs" not in manifest_trace_ref
+    envelope = packet_handoff.author_payload.semantic_content_coverage_ref_envelope
+    assert envelope.get("available") is True
+    assert envelope.get("semantic_state_facts_digest") == (
+        fap_ref_projection.get("semantic_state_facts_digest")
+    )
+    assert envelope.get("sanitized_content_ref_ids")
+    assert envelope.get("content_ref_digests")
+    assert envelope.get("coverage_record_refs")
+    assert envelope.get("author_payload_visible") is True
+    assert envelope.get("authority_payload_visible") is False
+    assert envelope.get("authority_block_visible") is False
+    assert envelope.get("prompt_visible") is False
+    assert envelope.get("model_request_visible") is False
+    envelope_trace_ref = packet_handoff.author_payload.to_trace_ref()[
+        ENVELOPE_TRACE_REF_KEY
+    ]
+    assert envelope_trace_ref.get("available") is True
+    assert envelope_trace_ref.get("envelope_digest")
+    assert envelope_trace_ref.get("component_ref_count") > 0
+    assert envelope_trace_ref.get("coverage_record_ref_count") > 0
+    assert envelope_trace_ref.get("semantic_observation_ref_count") > 0
+    assert envelope_trace_ref.get("sanitized_content_ref_count") > 0
+    assert envelope_trace_ref.get("content_ref_digest_count") > 0
+    assert envelope_trace_ref.get("semantic_ref_evidence_id_count") > 0
+    assert envelope_trace_ref.get("source_obligation_ref_count") > 0
+    for forbidden_ref_key in (
+        "component_refs",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "semantic_ref_evidence_ids",
+        "source_obligation_refs",
+    ):
+        assert forbidden_ref_key not in envelope_trace_ref
 
     assert packet_handoff.packet.packet_id == state.final_answer_packet["packet_id"]
     assert packet_handoff.author_payload.packet_id == state.final_answer_packet["packet_id"]
@@ -292,12 +330,21 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.final_answer_authority_projection["author_payload_ref"][
         MANIFEST_TRACE_REF_KEY
     ] == manifest_trace_ref
+    assert state.final_answer_authority_projection["author_payload_ref"][
+        ENVELOPE_TRACE_REF_KEY
+    ] == envelope_trace_ref
+    assert ENVELOPE_KEY not in state.final_answer_authority_projection[
+        "author_payload_ref"
+    ]
     assert state.final_answer_authority_projection["author_payload_ref"]["prompt_text_included"] is False
     assert "semantic_authority_trace_ref" not in state.author_observation
     assert MANIFEST_TRACE_REF_KEY not in state.author_observation
+    assert ENVELOPE_TRACE_REF_KEY not in state.author_observation
 
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
     assert MANIFEST_TRACE_REF_KEY not in harness.author_prompts[0]
+    assert ENVELOPE_TRACE_REF_KEY not in harness.author_prompts[0]
+    assert ENVELOPE_KEY not in harness.author_prompts[0]
     assert author_scope["final_answer_packet_action"] is packet_handoff.action
     assert author_scope["final_answer_author_payload"] is packet_handoff.author_payload
     assert state.author_observation["owner"] == "RunKernel.AuthorExecutor"
@@ -307,6 +354,10 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.author_observation["citation_source_ids"] == list(packet_handoff.author_payload.citation_source_ids)
     assert state.author_observation["prompt_text_included"] is False
     assert state.author_observation["final_text_included"] is False
+    assert ENVELOPE_KEY not in state.author_observation
+    assert "sanitized_content_ref_ids" not in state.author_observation
+    assert "content_ref_digests" not in state.author_observation
+    assert "coverage_record_refs" not in state.author_observation
 
     trace_packet = outcome.execution_trace["final_answer_packet"]
     assert trace_packet["packet_id"] == packet_handoff.packet.packet_id

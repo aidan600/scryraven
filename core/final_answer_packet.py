@@ -24,6 +24,12 @@ FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION = (
 FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION = (
     "final_answer_author_payload_semantic_evidence_manifest_ref_v1"
 )
+FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_SCHEMA_VERSION = (
+    "final_answer_author_payload_semantic_content_coverage_ref_envelope_ag_sem_authenv_01_v1"
+)
+FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_SCHEMA_VERSION = (
+    "final_answer_author_payload_semantic_content_coverage_ref_envelope_trace_ag_sem_authenv_01_v1"
+)
 FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION = (
     "final_answer_semantic_evidence_authority_manifest_v1"
 )
@@ -163,6 +169,52 @@ _AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_BOOL_KEYS = frozenset(
         "provider_payload_included",
     }
 )
+_AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_KEYS = (
+    "schema_version",
+    "available",
+    "source_packet_id",
+    "source_packet_schema_version",
+    "source_projection_schema_version",
+    "source_projection_digest",
+    "envelope_digest",
+    "semantic_state_facts_digest",
+    "content_refs_available",
+    "coverage_refs_available",
+    "component_ref_count",
+    "coverage_record_ref_count",
+    "semantic_observation_ref_count",
+    "sanitized_content_ref_count",
+    "content_ref_digest_count",
+    "semantic_ref_evidence_id_count",
+    "source_obligation_ref_count",
+    "author_payload_visible",
+    "authority_payload_visible",
+    "authority_block_visible",
+    "prompt_visible",
+    "model_request_visible",
+    "final_text_included",
+    "raw_content_included",
+    "bounded_text_included",
+    "raw_prompt_included",
+    "provider_payload_included",
+)
+_AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_BOOL_KEYS = frozenset(
+    {
+        "available",
+        "content_refs_available",
+        "coverage_refs_available",
+        "author_payload_visible",
+        "authority_payload_visible",
+        "authority_block_visible",
+        "prompt_visible",
+        "model_request_visible",
+        "final_text_included",
+        "raw_content_included",
+        "bounded_text_included",
+        "raw_prompt_included",
+        "provider_payload_included",
+    }
+)
 
 
 def _hash_text(value: str) -> str:
@@ -280,6 +332,28 @@ def _safe_author_semantic_evidence_manifest_trace_ref(
         out[key] = (
             bool(item)
             if key in _AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_BOOL_KEYS
+            else _safe_json(item)
+        )
+    return out
+
+
+def _sequence_count(value: Any) -> int:
+    if isinstance(value, (str, bytes)) or not isinstance(value, Sequence):
+        return 0
+    return len(value)
+
+
+def _safe_author_semantic_content_coverage_ref_envelope_trace_ref(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in _AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_KEYS:
+        if key not in value:
+            continue
+        item = value[key]
+        out[key] = (
+            bool(item)
+            if key in _AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_BOOL_KEYS
             else _safe_json(item)
         )
     return out
@@ -435,6 +509,9 @@ class FinalAnswerAuthorInputPayload:
     semantic_evidence_authority_manifest_trace_ref: Mapping[str, Any] = field(
         default_factory=dict
     )
+    semantic_content_coverage_ref_envelope: Mapping[str, Any] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, AuthorInputStatus) else str(self.status)
@@ -479,6 +556,70 @@ class FinalAnswerAuthorInputPayload:
             payload["semantic_evidence_authority_manifest_trace_ref"] = (
                 _safe_author_semantic_evidence_manifest_trace_ref(
                     self.semantic_evidence_authority_manifest_trace_ref
+                )
+            )
+        if self.semantic_content_coverage_ref_envelope:
+            envelope = dict(self.semantic_content_coverage_ref_envelope)
+            trace_ref = {
+                "schema_version": (
+                    FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_SCHEMA_VERSION
+                ),
+                "available": True,
+                "source_packet_id": envelope.get("source_packet_id"),
+                "source_packet_schema_version": envelope.get(
+                    "source_packet_schema_version"
+                ),
+                "source_projection_schema_version": envelope.get(
+                    "source_projection_schema_version"
+                ),
+                "source_projection_digest": envelope.get(
+                    "source_projection_digest"
+                ),
+                "envelope_digest": _stable_safe_json_digest(envelope),
+                "semantic_state_facts_digest": envelope.get(
+                    "semantic_state_facts_digest"
+                ),
+                "content_refs_available": bool(
+                    envelope.get("content_refs_available")
+                ),
+                "coverage_refs_available": bool(
+                    envelope.get("coverage_refs_available")
+                ),
+                "component_ref_count": _sequence_count(
+                    envelope.get("component_refs")
+                ),
+                "coverage_record_ref_count": _sequence_count(
+                    envelope.get("coverage_record_refs")
+                ),
+                "semantic_observation_ref_count": _sequence_count(
+                    envelope.get("semantic_observation_refs")
+                ),
+                "sanitized_content_ref_count": _sequence_count(
+                    envelope.get("sanitized_content_ref_ids")
+                ),
+                "content_ref_digest_count": _sequence_count(
+                    envelope.get("content_ref_digests")
+                ),
+                "semantic_ref_evidence_id_count": _sequence_count(
+                    envelope.get("semantic_ref_evidence_ids")
+                ),
+                "source_obligation_ref_count": _sequence_count(
+                    envelope.get("source_obligation_refs")
+                ),
+                "author_payload_visible": True,
+                "authority_payload_visible": False,
+                "authority_block_visible": False,
+                "prompt_visible": False,
+                "model_request_visible": False,
+                "final_text_included": False,
+                "raw_content_included": False,
+                "bounded_text_included": False,
+                "raw_prompt_included": False,
+                "provider_payload_included": False,
+            }
+            payload["semantic_content_coverage_ref_envelope_trace_ref"] = (
+                _safe_author_semantic_content_coverage_ref_envelope_trace_ref(
+                    trace_ref
                 )
             )
         return payload
@@ -598,6 +739,7 @@ class FinalAnswerPacket:
             ],
             "prompt_visible": False,
             "author_payload_visible": False,
+            "author_payload_ref_envelope_available": False,
             "model_request_visible": False,
         }
         ref_projection = dict(self.semantic_content_coverage_ref_projection or {})
@@ -650,6 +792,9 @@ class FinalAnswerPacket:
             manifest["bounded_text_included"] = False
             manifest["prompt_visible"] = False
             manifest["author_payload_visible"] = False
+            manifest["author_payload_ref_envelope_available"] = bool(
+                content_refs_available and coverage_refs_available
+            )
             manifest["model_request_visible"] = False
             manifest["final_text_included"] = False
         excluded_evidence_ids = [
@@ -832,6 +977,9 @@ class FinalAnswerPacket:
             semantic_evidence_authority_manifest_trace_ref=(
                 self._semantic_evidence_authority_manifest_trace_ref()
             ),
+            semantic_content_coverage_ref_envelope=(
+                self._semantic_content_coverage_ref_envelope()
+            ),
         )
         return payload
 
@@ -884,6 +1032,98 @@ class FinalAnswerPacket:
             "coverage_refs_available": bool(manifest.get("coverage_refs_available")),
             "prompt_visible": False,
             "author_payload_content_included": False,
+            "model_request_visible": False,
+            "final_text_included": False,
+            "raw_content_included": False,
+            "bounded_text_included": False,
+            "raw_prompt_included": False,
+            "provider_payload_included": False,
+        }
+
+    def _semantic_content_coverage_ref_envelope(self) -> dict[str, Any]:
+        ref_projection = dict(self.semantic_content_coverage_ref_projection or {})
+        if ref_projection.get("available") is not True:
+            return {}
+
+        source_projection_schema = _clean_text(
+            ref_projection.get("schema_version"),
+            limit=160,
+        )
+        source_projection_digest = _clean_text(
+            ref_projection.get("source_projection_digest"),
+            limit=128,
+        )
+        semantic_state_digest = _clean_text(
+            ref_projection.get("semantic_state_facts_digest"),
+            limit=128,
+        )
+        accepted_contract_digest = _clean_text(
+            ref_projection.get("accepted_contract_digest"),
+            limit=128,
+        )
+        component_refs = _safe_json(ref_projection.get("component_refs")) or []
+        coverage_record_refs = (
+            _safe_json(ref_projection.get("coverage_record_refs")) or []
+        )
+        semantic_observation_refs = (
+            _safe_json(ref_projection.get("semantic_observation_refs")) or []
+        )
+        sanitized_content_ref_ids = (
+            _safe_json(ref_projection.get("sanitized_content_ref_ids")) or []
+        )
+        content_ref_digests = (
+            _safe_json(ref_projection.get("content_ref_digests")) or []
+        )
+        semantic_ref_evidence_ids = (
+            _safe_json(ref_projection.get("semantic_ref_evidence_ids")) or []
+        )
+        source_obligation_refs = (
+            _safe_json(ref_projection.get("source_obligation_refs")) or []
+        )
+        content_refs_available = bool(
+            ref_projection.get("content_refs_available")
+            and sanitized_content_ref_ids
+            and content_ref_digests
+        )
+        coverage_refs_available = bool(
+            ref_projection.get("coverage_refs_available")
+            and coverage_record_refs
+        )
+        if (
+            not source_projection_schema
+            or not source_projection_digest
+            or not semantic_state_digest
+            or not accepted_contract_digest
+            or not content_refs_available
+            or not coverage_refs_available
+        ):
+            return {}
+
+        return {
+            "schema_version": (
+                FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_SCHEMA_VERSION
+            ),
+            "available": True,
+            "source_packet_id": self.packet_id,
+            "source_packet_schema_version": self.schema_version,
+            "source_projection_schema_version": source_projection_schema,
+            "source_projection_digest": source_projection_digest,
+            "envelope_source": "FinalAnswerPacket.semantic_content_coverage_ref_projection",
+            "semantic_state_facts_digest": semantic_state_digest,
+            "accepted_contract_digest": accepted_contract_digest,
+            "component_refs": component_refs,
+            "coverage_record_refs": coverage_record_refs,
+            "semantic_observation_refs": semantic_observation_refs,
+            "sanitized_content_ref_ids": sanitized_content_ref_ids,
+            "content_ref_digests": content_ref_digests,
+            "semantic_ref_evidence_ids": semantic_ref_evidence_ids,
+            "source_obligation_refs": source_obligation_refs,
+            "content_refs_available": True,
+            "coverage_refs_available": True,
+            "author_payload_visible": True,
+            "authority_payload_visible": False,
+            "authority_block_visible": False,
+            "prompt_visible": False,
             "model_request_visible": False,
             "final_text_included": False,
             "raw_content_included": False,
@@ -1062,6 +1302,8 @@ __all__ = [
     "FINAL_ANSWER_PACKET_SCHEMA_VERSION",
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION",
+    "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_SCHEMA_VERSION",
+    "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",

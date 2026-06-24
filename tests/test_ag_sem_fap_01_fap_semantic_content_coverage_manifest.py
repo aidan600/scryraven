@@ -229,6 +229,7 @@ def test_fap_manifest_enriches_available_content_and_coverage_refs() -> None:
     assert manifest["bounded_text_included"] is False
     assert manifest["prompt_visible"] is False
     assert manifest["author_payload_visible"] is False
+    assert manifest["author_payload_ref_envelope_available"] is True
     assert manifest["model_request_visible"] is False
     assert manifest["final_text_included"] is False
     assert "coverage_record_ids" not in manifest
@@ -294,6 +295,8 @@ def test_fap_projection_does_not_change_author_payload_or_citation_surfaces() ->
     assert payload.prompt == payload_without_projection.prompt
     assert payload.authority_payload == payload_without_projection.authority_payload
     assert payload.authority_block == payload_without_projection.authority_block
+    assert payload.semantic_content_coverage_ref_envelope
+    assert payload_without_projection.semantic_content_coverage_ref_envelope == {}
     assert packet.citation_records == packet_without_projection.citation_records
     assert packet.source_obligations == packet_without_projection.source_obligations
     assert packet.to_authority_payload(
@@ -373,6 +376,7 @@ def test_fap_projection_raw_leakage_scan() -> None:
     scanned = (
         packet.semantic_content_coverage_ref_projection,
         packet.semantic_evidence_authority_manifest,
+        payload.semantic_content_coverage_ref_envelope,
         payload.to_trace_ref(),
     )
     encoded = json.dumps(scanned, sort_keys=True)
@@ -431,8 +435,10 @@ def test_static_guards_keep_fap_projection_out_of_closed_surfaces() -> None:
     assert "semantic_observation_admission_history" not in adapter_source
     assert "component_coverage_history" not in adapter_source
     assert "semantic_content_coverage_ref_projection" not in author_runtime
+    assert "semantic_content_coverage_ref_envelope" not in author_runtime
     assert "semantic_ref_projection" not in author_runtime
     assert "semantic_content_coverage_ref_projection" not in prompt_assembly
+    assert "semantic_content_coverage_ref_envelope" not in prompt_assembly
     assert "semantic_ref_projection" not in prompt_assembly
 
     for path in (
@@ -442,6 +448,7 @@ def test_static_guards_keep_fap_projection_out_of_closed_surfaces() -> None:
     ):
         source = path.read_text(encoding="utf-8")
         assert "semantic_content_coverage_ref_projection" not in source
+        assert "semantic_content_coverage_ref_envelope" not in source
 
     for path in (PACKET, ADAPTER):
         source = path.read_text(encoding="utf-8")
