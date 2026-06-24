@@ -36,6 +36,7 @@ RAW_AUTHOR_RESPONSE = (
 )
 MANIFEST_TRACE_REF_KEY = "semantic_evidence_authority_manifest_trace_ref"
 ENVELOPE_TRACE_REF_KEY = "semantic_content_coverage_ref_envelope_trace_ref"
+MATERIALIZATION_TRACE_REF_KEY = "semantic_author_materialization_trace_ref"
 ENVELOPE_KEY = "semantic_content_coverage_ref_envelope"
 
 
@@ -203,9 +204,41 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert fap_ref_projection.get("content_ref_digests")
     assert fap_ref_projection.get("coverage_record_refs")
     assert fap_ref_projection.get("semantic_source_ref_bindings")
-    assert state.final_answer_packet.get(
+    state_fap_ref_projection = state.final_answer_packet.get(
         "semantic_content_coverage_ref_projection"
-    ) == fap_ref_projection
+    )
+    assert state_fap_ref_projection["source_projection_digest"] == (
+        fap_ref_projection["source_projection_digest"]
+    )
+    assert state_fap_ref_projection["semantic_state_facts_digest"] == (
+        fap_ref_projection["semantic_state_facts_digest"]
+    )
+    assert state_fap_ref_projection["component_ref_count"] == len(
+        fap_ref_projection["component_refs"]
+    )
+    assert state_fap_ref_projection["coverage_record_ref_count"] == len(
+        fap_ref_projection["coverage_record_refs"]
+    )
+    assert state_fap_ref_projection["semantic_observation_ref_count"] == len(
+        fap_ref_projection["semantic_observation_refs"]
+    )
+    assert state_fap_ref_projection["sanitized_content_ref_count"] == len(
+        fap_ref_projection["sanitized_content_ref_ids"]
+    )
+    assert state_fap_ref_projection["content_ref_digest_count"] == len(
+        fap_ref_projection["content_ref_digests"]
+    )
+    for forbidden_projection_key in (
+        "component_refs",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "semantic_ref_evidence_ids",
+        "semantic_source_ref_bindings",
+        "source_obligation_refs",
+    ):
+        assert forbidden_projection_key not in state_fap_ref_projection
     manifest = packet_handoff.packet.semantic_evidence_authority_manifest
     assert manifest.get("available") is True
     assert manifest.get("semantic_state_facts_digest") == (
@@ -233,14 +266,41 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert manifest.get("content_refs_available") is True
     assert manifest.get("coverage_refs_available") is True
     assert "deferred_ref_fields" not in manifest
-    assert manifest.get("sanitized_content_ref_ids")
-    assert manifest.get("content_ref_digests")
-    assert manifest.get("coverage_record_refs")
-    assert manifest.get("semantic_observation_refs")
-    assert manifest.get("component_refs")
-    assert manifest.get("semantic_ref_evidence_ids")
-    assert manifest.get("semantic_source_ref_bindings")
-    assert manifest.get("source_obligation_refs")
+    assert manifest.get("component_ref_count") == len(
+        fap_ref_projection["component_refs"]
+    )
+    assert manifest.get("coverage_record_ref_count") == len(
+        fap_ref_projection["coverage_record_refs"]
+    )
+    assert manifest.get("semantic_observation_ref_count") == len(
+        fap_ref_projection["semantic_observation_refs"]
+    )
+    assert manifest.get("sanitized_content_ref_count") == len(
+        fap_ref_projection["sanitized_content_ref_ids"]
+    )
+    assert manifest.get("content_ref_digest_count") == len(
+        fap_ref_projection["content_ref_digests"]
+    )
+    assert manifest.get("semantic_ref_evidence_id_count") == len(
+        fap_ref_projection["semantic_ref_evidence_ids"]
+    )
+    assert manifest.get("semantic_source_ref_binding_count") == len(
+        fap_ref_projection["semantic_source_ref_bindings"]
+    )
+    assert manifest.get("source_obligation_ref_count") == len(
+        fap_ref_projection["source_obligation_refs"]
+    )
+    for forbidden_manifest_key in (
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+        "component_refs",
+        "semantic_ref_evidence_ids",
+        "semantic_source_ref_bindings",
+        "source_obligation_refs",
+    ):
+        assert forbidden_manifest_key not in manifest
     assert all(
         record.origin_evidence_ref_id and record.origin_evidence_ref_kind
         for record in packet_handoff.packet.evidence_allowed
@@ -253,7 +313,7 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
         record.evidence_id for record in packet_handoff.packet.evidence_allowed
     }
     binding_origin_ids = {row["origin_evidence_ref_id"] for row in bindings}
-    assert set(manifest.get("semantic_ref_evidence_ids")).issubset(
+    assert set(fap_ref_projection.get("semantic_ref_evidence_ids")).issubset(
         binding_origin_ids
     )
     assert all(
@@ -360,6 +420,42 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
         "semantic_packet_evidence_bindings",
     ):
         assert forbidden_ref_key not in envelope_trace_ref
+    materialization_trace_ref = packet_handoff.author_payload.to_trace_ref()[
+        MATERIALIZATION_TRACE_REF_KEY
+    ]
+    assert materialization_trace_ref.get("available") is True
+    assert materialization_trace_ref.get("materialization_digest")
+    assert materialization_trace_ref.get("semantic_materialization_block_hash")
+    assert materialization_trace_ref.get("semantic_materialization_block_length") > 0
+    assert materialization_trace_ref.get("component_count") > 0
+    assert materialization_trace_ref.get("excerpt_count") == 0
+    assert materialization_trace_ref.get("semantic_packet_evidence_binding_count") == (
+        len(bindings)
+    )
+    assert materialization_trace_ref.get("semantic_packet_evidence_binding_digest") == (
+        manifest.get("semantic_packet_evidence_binding_digest")
+    )
+    assert materialization_trace_ref.get("prompt_visible") is True
+    assert materialization_trace_ref.get("model_request_visible") is True
+    assert materialization_trace_ref.get("bounded_text_included") is False
+    assert materialization_trace_ref.get("bounded_text_retained") is False
+    assert materialization_trace_ref.get("raw_content_included") is False
+    assert materialization_trace_ref.get("raw_prompt_retained") is False
+    assert materialization_trace_ref.get("provider_payload_retained") is False
+    assert materialization_trace_ref.get("final_text_included") is False
+    assert materialization_trace_ref.get("unavailable_reason") == (
+        "bounded_excerpt_not_packet_owned"
+    )
+    for forbidden_materialization_ref_key in (
+        "block_text",
+        "component_refs",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "semantic_packet_evidence_bindings",
+    ):
+        assert forbidden_materialization_ref_key not in materialization_trace_ref
 
     assert packet_handoff.packet.packet_id == state.final_answer_packet["packet_id"]
     assert packet_handoff.author_payload.packet_id == state.final_answer_packet["packet_id"]
@@ -378,6 +474,9 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.final_answer_authority_projection["author_payload_ref"][
         ENVELOPE_TRACE_REF_KEY
     ] == envelope_trace_ref
+    assert state.final_answer_authority_projection["author_payload_ref"][
+        MATERIALIZATION_TRACE_REF_KEY
+    ] == materialization_trace_ref
     assert ENVELOPE_KEY not in state.final_answer_authority_projection[
         "author_payload_ref"
     ]
@@ -385,11 +484,15 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert "semantic_authority_trace_ref" not in state.author_observation
     assert MANIFEST_TRACE_REF_KEY not in state.author_observation
     assert ENVELOPE_TRACE_REF_KEY not in state.author_observation
+    assert MATERIALIZATION_TRACE_REF_KEY not in state.author_observation
     assert "semantic_packet_evidence_bindings" not in state.author_observation
 
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
+    assert "CONTROLLED SEMANTIC CONTEXT" in harness.author_prompts[0]
+    assert "Bounded semantic excerpt from" not in harness.author_prompts[0]
     assert MANIFEST_TRACE_REF_KEY not in harness.author_prompts[0]
     assert ENVELOPE_TRACE_REF_KEY not in harness.author_prompts[0]
+    assert MATERIALIZATION_TRACE_REF_KEY not in harness.author_prompts[0]
     assert ENVELOPE_KEY not in harness.author_prompts[0]
     assert "semantic_packet_evidence_bindings" not in harness.author_prompts[0]
     assert "semantic_packet_evidence_binding_digest" not in harness.author_prompts[0]
@@ -423,6 +526,22 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert invocation_manifest["semantic_packet_evidence_binding_digest"] == (
         manifest.get("semantic_packet_evidence_binding_digest")
     )
+    assert invocation_manifest["semantic_materialization_available"] is True
+    assert invocation_manifest["semantic_materialization_digest"] == (
+        materialization_trace_ref.get("materialization_digest")
+    )
+    assert invocation_manifest["semantic_materialization_block_hash"] == (
+        materialization_trace_ref.get("semantic_materialization_block_hash")
+    )
+    assert invocation_manifest["semantic_materialization_block_length"] == (
+        materialization_trace_ref.get("semantic_materialization_block_length")
+    )
+    assert invocation_manifest["semantic_materialization_component_count"] == (
+        materialization_trace_ref.get("component_count")
+    )
+    assert invocation_manifest["semantic_materialization_excerpt_count"] == 0
+    assert invocation_manifest["prompt_visible"] is True
+    assert invocation_manifest["model_request_visible"] is True
     assert invocation_manifest["prompt_text_included"] is False
     assert invocation_manifest["system_prompt_text_included"] is False
     assert invocation_manifest["provider_payload_retained"] is False
@@ -438,6 +557,8 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     for forbidden_manifest_key in (
         "semantic_packet_evidence_bindings",
         "semantic_content_coverage_ref_envelope",
+        "semantic_author_materialization",
+        "block_text",
         "sanitized_content_ref_ids",
         "content_ref_digests",
         "coverage_record_refs",
@@ -466,6 +587,7 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     for forbidden in (
         harness.author_prompts[0],
         "FINAL ANSWER PACKET AUTHORITY",
+        "CONTROLLED SEMANTIC CONTEXT",
         "provider_payload_text",
         "OPENAI_API_KEY",
         "TAVILY_API_KEY",

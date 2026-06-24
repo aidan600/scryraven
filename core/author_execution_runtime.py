@@ -85,6 +85,11 @@ def _digest_mapping(value: Any) -> str | None:
 
 
 def _semantic_binding_ref(trace_ref: Mapping[str, Any]) -> Mapping[str, Any]:
+    materialization = trace_ref.get("semantic_author_materialization_trace_ref")
+    if isinstance(materialization, Mapping) and materialization.get(
+        "semantic_packet_evidence_binding_count"
+    ):
+        return materialization
     envelope = trace_ref.get("semantic_content_coverage_ref_envelope_trace_ref")
     if isinstance(envelope, Mapping) and envelope.get(
         "semantic_packet_evidence_binding_available"
@@ -114,6 +119,9 @@ def _build_author_invocation_authority_manifest(
     semantic_envelope_trace_ref = trace_ref.get(
         "semantic_content_coverage_ref_envelope_trace_ref"
     )
+    semantic_materialization_trace_ref = trace_ref.get(
+        "semantic_author_materialization_trace_ref"
+    )
     return {
         "schema_version": AUTHOR_INVOCATION_AUTHORITY_MANIFEST_SCHEMA_VERSION,
         "available": True,
@@ -129,8 +137,75 @@ def _build_author_invocation_authority_manifest(
         "semantic_content_coverage_ref_envelope_trace_ref_digest": _digest_mapping(
             semantic_envelope_trace_ref
         ),
+        "semantic_author_materialization_trace_ref_digest": _digest_mapping(
+            semantic_materialization_trace_ref
+        ),
+        "semantic_materialization_available": bool(
+            isinstance(semantic_materialization_trace_ref, Mapping)
+            and semantic_materialization_trace_ref.get("available")
+        ),
+        "semantic_materialization_digest": (
+            semantic_materialization_trace_ref.get("materialization_digest")
+            if isinstance(semantic_materialization_trace_ref, Mapping)
+            else None
+        ),
+        "semantic_materialization_block_hash": (
+            semantic_materialization_trace_ref.get(
+                "semantic_materialization_block_hash"
+            )
+            if isinstance(semantic_materialization_trace_ref, Mapping)
+            else None
+        ),
+        "semantic_materialization_block_length": int(
+            (
+                semantic_materialization_trace_ref.get(
+                    "semantic_materialization_block_length"
+                )
+                if isinstance(semantic_materialization_trace_ref, Mapping)
+                else 0
+            )
+            or 0
+        ),
+        "semantic_materialization_component_count": int(
+            (
+                semantic_materialization_trace_ref.get("component_count")
+                if isinstance(semantic_materialization_trace_ref, Mapping)
+                else 0
+            )
+            or 0
+        ),
+        "semantic_materialization_excerpt_count": int(
+            (
+                semantic_materialization_trace_ref.get("excerpt_count")
+                if isinstance(semantic_materialization_trace_ref, Mapping)
+                else 0
+            )
+            or 0
+        ),
+        "semantic_materialization_prompt_visible": bool(
+            isinstance(semantic_materialization_trace_ref, Mapping)
+            and semantic_materialization_trace_ref.get("prompt_visible")
+        ),
+        "semantic_materialization_model_request_visible": bool(
+            isinstance(semantic_materialization_trace_ref, Mapping)
+            and semantic_materialization_trace_ref.get("model_request_visible")
+        ),
+        "semantic_materialization_unavailable_reason": (
+            semantic_materialization_trace_ref.get("unavailable_reason")
+            if isinstance(semantic_materialization_trace_ref, Mapping)
+            else None
+        ),
+        "prompt_visible": bool(
+            isinstance(semantic_materialization_trace_ref, Mapping)
+            and semantic_materialization_trace_ref.get("prompt_visible")
+        ),
+        "model_request_visible": bool(
+            isinstance(semantic_materialization_trace_ref, Mapping)
+            and semantic_materialization_trace_ref.get("model_request_visible")
+        ),
         "semantic_packet_evidence_binding_available": bool(
             binding_ref.get("semantic_packet_evidence_binding_available")
+            or binding_ref.get("semantic_packet_evidence_binding_count")
         ),
         "semantic_packet_evidence_binding_count": int(
             binding_ref.get("semantic_packet_evidence_binding_count") or 0
@@ -153,9 +228,15 @@ def _build_author_invocation_authority_manifest(
         "system_prompt_text_included": False,
         "model_request_raw_payload_retained": False,
         "provider_payload_retained": False,
+        "provider_payload_included": False,
         "raw_prompt_included": False,
+        "raw_prompt_retained": False,
         "raw_content_included": False,
-        "bounded_text_included": False,
+        "bounded_text_included": bool(
+            isinstance(semantic_materialization_trace_ref, Mapping)
+            and semantic_materialization_trace_ref.get("bounded_text_included")
+        ),
+        "bounded_text_retained": False,
         "final_text_included": False,
     }
 
@@ -165,6 +246,7 @@ def _semantic_authority_present(payload: FinalAnswerAuthorInputPayload) -> bool:
         payload.semantic_authority_trace_ref
         or payload.semantic_evidence_authority_manifest_trace_ref
         or payload.semantic_content_coverage_ref_envelope
+        or payload.semantic_author_materialization
     )
 
 

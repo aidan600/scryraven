@@ -251,15 +251,14 @@ def test_semantic_packet_evidence_binding_joins_semantic_refs_to_allowed_packet_
     assert manifest["semantic_packet_evidence_binding_digest"] == _stable_safe_digest(
         packet.semantic_packet_evidence_bindings
     )
-    assert manifest["semantic_packet_evidence_bindings"] == [
-        _safe_json(row)
-    ]
+    assert "semantic_packet_evidence_bindings" not in manifest
 
     payload = packet.to_author_input_payload(
         prompt="BASE AUTHOR PROMPT",
         author_system_prompt_key="author",
         author_effort="low",
     )
+    assert "CONTROLLED SEMANTIC CONTEXT" in payload.prompt
     trace_ref = payload.to_trace_ref()["semantic_content_coverage_ref_envelope_trace_ref"]
     assert trace_ref["semantic_packet_evidence_binding_count"] == 1
     assert trace_ref["semantic_packet_evidence_binding_digest"] == manifest[

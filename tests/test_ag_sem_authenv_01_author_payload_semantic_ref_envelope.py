@@ -510,9 +510,12 @@ def test_author_payload_envelope_non_delta_surfaces_and_raw_leakage_scan() -> No
     payload = _payload(packet)
     payload_without_projection = _payload(packet_without_projection)
 
-    assert payload.prompt == payload_without_projection.prompt
+    assert payload.prompt != payload_without_projection.prompt
+    assert "CONTROLLED SEMANTIC CONTEXT" in payload.prompt
+    assert "CONTROLLED SEMANTIC CONTEXT" in payload.authority_block
+    assert "CONTROLLED SEMANTIC CONTEXT" not in payload_without_projection.prompt
     assert payload.authority_payload == payload_without_projection.authority_payload
-    assert payload.authority_block == payload_without_projection.authority_block
+    assert payload.authority_block != payload_without_projection.authority_block
     assert payload.citation_source_ids == payload_without_projection.citation_source_ids
     assert packet.citation_records == packet_without_projection.citation_records
     assert packet.source_obligations == packet_without_projection.source_obligations
