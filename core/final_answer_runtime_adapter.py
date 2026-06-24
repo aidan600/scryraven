@@ -1,10 +1,13 @@
 """Runtime adapter for AG-89D FinalAnswerPacket construction and projection."""
 from __future__ import annotations
 
+import json
+from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 from core.citation_source_handoff_contract import build_citation_source_handoff_state
 from core.final_answer_packet import (
+    FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION,
     FINAL_ANSWER_PACKET_TRACE_KEY,
     FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION,
     CitationEligibilityRecord,
@@ -25,6 +28,11 @@ from core.run_authority_projection_refs import (
     canonical_sufficiency_judgment_projection,
     compact_sufficiency_judgment_ref,
 )
+from core.sufficiency_semantic_state_consumption_runtime import (
+    SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
+)
+
+_MAX_SEMANTIC_REF_ITEMS = 80
 
 
 def _hash_or_none(text: Any) -> tuple[str | None, int | None]:
@@ -326,6 +334,100 @@ def _semantic_projection_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
+def _clean_text(value: Any, *, limit: int = 500) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _clean_token(value: Any, *, limit: int = 160) -> str | None:
+    return _clean_text(value, limit=limit)
+
+
+def _list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple):
+        return list(value)
+    return [value]
+
+
+def _token_list(value: Any, *, limit: int = 160) -> list[str]:
+    out: list[str] = []
+    for item in _list(value):
+        token = _clean_token(item, limit=limit)
+        if token and token not in out:
+            out.append(token)
+    return out[:_MAX_SEMANTIC_REF_ITEMS]
+
+
+def _stable_json_digest(value: Mapping[str, Any]) -> str:
+    return sha256(
+        json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _component_refs(value: Any) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for item in _list(value):
+        if not isinstance(item, Mapping):
+            continue
+        component_id = _clean_token(item.get("component_id"))
+        component_digest = _clean_token(item.get("component_digest"), limit=128)
+        if component_id and component_digest:
+            refs.append(
+                {
+                    "component_id": component_id,
+                    "component_digest": component_digest,
+                }
+            )
+    return refs[:_MAX_SEMANTIC_REF_ITEMS]
+
+
+def _coverage_record_refs(value: Any) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for item in _list(value):
+        if not isinstance(item, Mapping):
+            continue
+        coverage_record_id = _clean_token(item.get("coverage_record_id"))
+        coverage_record_digest = _clean_token(
+            item.get("coverage_record_digest"),
+            limit=128,
+        )
+        answer_component_id = _clean_token(item.get("answer_component_id"))
+        if coverage_record_id and coverage_record_digest and answer_component_id:
+            refs.append(
+                {
+                    "coverage_record_id": coverage_record_id,
+                    "coverage_record_digest": coverage_record_digest,
+                    "answer_component_id": answer_component_id,
+                }
+            )
+    return refs[:_MAX_SEMANTIC_REF_ITEMS]
+
+
+def _semantic_observation_refs(value: Any) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for item in _list(value):
+        if not isinstance(item, Mapping):
+            continue
+        observation_id = _clean_token(item.get("observation_id"))
+        observation_digest = _clean_token(item.get("observation_digest"), limit=128)
+        if observation_id and observation_digest:
+            refs.append(
+                {
+                    "observation_id": observation_id,
+                    "observation_digest": observation_digest,
+                }
+            )
+    return refs[:_MAX_SEMANTIC_REF_ITEMS]
+
+
 def _semantic_state_facts_digest(
     *,
     summary: Mapping[str, Any],
@@ -336,6 +438,132 @@ def _semantic_state_facts_digest(
         if digest:
             return digest[:128]
     return None
+
+
+def _semantic_ref_projection_from_sufficiency(projection: Any) -> dict[str, Any]:
+    sufficiency = _sufficiency_projection_from_any(projection)
+    if not sufficiency:
+        return {}
+    consumption = _semantic_projection_mapping(sufficiency.get("semantic_consumption"))
+    semantic_ref_projection = _semantic_projection_mapping(
+        consumption.get("semantic_ref_projection")
+    )
+    if (
+        semantic_ref_projection.get("schema_version")
+        != SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION
+    ):
+        return {}
+    if semantic_ref_projection.get("available") is not True:
+        return {}
+    if semantic_ref_projection.get("content_refs_available") is not True:
+        return {}
+    if semantic_ref_projection.get("coverage_refs_available") is not True:
+        return {}
+
+    semantic_state_digest = _clean_token(
+        semantic_ref_projection.get("semantic_state_facts_digest"),
+        limit=128,
+    )
+    accepted_contract_digest = _clean_token(
+        semantic_ref_projection.get("accepted_contract_digest"),
+        limit=128,
+    )
+    component_refs = _component_refs(semantic_ref_projection.get("component_refs"))
+    coverage_refs = _coverage_record_refs(
+        semantic_ref_projection.get("coverage_record_refs")
+    )
+    observation_refs = _semantic_observation_refs(
+        semantic_ref_projection.get("semantic_observation_refs")
+    )
+    content_ref_ids = _token_list(
+        semantic_ref_projection.get("sanitized_content_ref_ids")
+    )
+    content_ref_digests = _token_list(
+        semantic_ref_projection.get("content_ref_digests"),
+        limit=128,
+    )
+    semantic_ref_evidence_ids = _token_list(
+        semantic_ref_projection.get("evidence_ids")
+    )
+    source_obligation_refs = _token_list(
+        semantic_ref_projection.get("source_obligation_refs")
+    )
+
+    if (
+        not semantic_state_digest
+        or not accepted_contract_digest
+        or not content_ref_ids
+        or not content_ref_digests
+        or not coverage_refs
+    ):
+        return {}
+
+    safe_sufficiency_projection: dict[str, Any] = {
+        "schema_version": SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
+        "available": True,
+        "semantic_state_facts_digest": semantic_state_digest,
+        "accepted_contract_digest": accepted_contract_digest,
+        "component_refs": component_refs,
+        "coverage_record_refs": coverage_refs,
+        "semantic_observation_refs": observation_refs,
+        "sanitized_content_ref_ids": content_ref_ids,
+        "content_ref_digests": content_ref_digests,
+        "evidence_ids": semantic_ref_evidence_ids,
+        "source_obligation_refs": source_obligation_refs,
+        "content_refs_available": True,
+        "coverage_refs_available": True,
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "prompt_visible": False,
+        "author_payload_visible": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+    }
+    return {
+        key: value
+        for key, value in safe_sufficiency_projection.items()
+        if value not in (None, "", [], {})
+    }
+
+
+def _fap_semantic_content_coverage_projection(projection: Any) -> dict[str, Any]:
+    source_projection = _semantic_ref_projection_from_sufficiency(projection)
+    if not source_projection:
+        return {}
+    fap_projection: dict[str, Any] = {
+        "schema_version": (
+            FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION
+        ),
+        "available": True,
+        "source_authority": "RunAuthoritySufficiency.semantic_ref_projection",
+        "source_schema_version": SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
+        "source_projection_digest": _stable_json_digest(source_projection),
+        "semantic_state_facts_digest": source_projection[
+            "semantic_state_facts_digest"
+        ],
+        "accepted_contract_digest": source_projection["accepted_contract_digest"],
+        "content_refs_available": True,
+        "coverage_refs_available": True,
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "prompt_visible": False,
+        "author_payload_visible": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+    }
+    for source_key, packet_key in (
+        ("component_refs", "component_refs"),
+        ("coverage_record_refs", "coverage_record_refs"),
+        ("semantic_observation_refs", "semantic_observation_refs"),
+        ("sanitized_content_ref_ids", "sanitized_content_ref_ids"),
+        ("content_ref_digests", "content_ref_digests"),
+        ("evidence_ids", "semantic_ref_evidence_ids"),
+        ("source_obligation_refs", "source_obligation_refs"),
+    ):
+        value = source_projection.get(source_key)
+        if value not in (None, "", [], {}):
+            fap_projection[packet_key] = value
+    return fap_projection
 
 
 def _semantic_field_from_sources(
@@ -1078,6 +1306,9 @@ def build_final_answer_packet(
     semantic_authority_ref = _compact_semantic_authority_ref(
         sufficiency_judgment_projection
     )
+    semantic_content_coverage_ref_projection = (
+        _fap_semantic_content_coverage_projection(sufficiency_judgment_projection)
+    )
     return FinalAnswerPacket(
         packet_id=packet_id,
         evidence_records=evidence_records,
@@ -1117,6 +1348,9 @@ def build_final_answer_packet(
         readiness_status=readiness_status,
         readiness_reasons=readiness_reasons,
         semantic_authority_ref=semantic_authority_ref,
+        semantic_content_coverage_ref_projection=(
+            semantic_content_coverage_ref_projection
+        ),
     )
 
 

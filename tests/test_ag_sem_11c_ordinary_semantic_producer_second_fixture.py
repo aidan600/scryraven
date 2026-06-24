@@ -214,16 +214,48 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
         "semantic_state_facts_digest"
     ]
     assert state.final_answer_packet["semantic_authority_ref"] == semantic_ref
+    fap_ref_projection = packet.semantic_content_coverage_ref_projection
+    assert fap_ref_projection["available"] is True
+    assert fap_ref_projection["content_refs_available"] is True
+    assert fap_ref_projection["coverage_refs_available"] is True
+    assert fap_ref_projection["semantic_state_facts_digest"] == semantic_summary[
+        "semantic_state_facts_digest"
+    ]
+    assert fap_ref_projection["sanitized_content_ref_ids"]
+    assert fap_ref_projection["content_ref_digests"]
+    assert fap_ref_projection["coverage_record_refs"]
+    assert fap_ref_projection["semantic_observation_refs"]
+    assert fap_ref_projection["raw_content_included"] is False
+    assert fap_ref_projection["bounded_text_included"] is False
+    assert fap_ref_projection["prompt_visible"] is False
+    assert fap_ref_projection["author_payload_visible"] is False
+    assert fap_ref_projection["model_request_visible"] is False
+    assert fap_ref_projection["final_text_included"] is False
+    assert state.final_answer_packet[
+        "semantic_content_coverage_ref_projection"
+    ] == fap_ref_projection
 
     manifest = packet.semantic_evidence_authority_manifest
     assert manifest["available"] is True
     assert manifest["semantic_state_facts_digest"] == semantic_ref[
         "semantic_state_facts_digest"
     ]
-    assert manifest["content_refs_available"] is False
-    assert manifest["coverage_refs_available"] is False
-    assert "sanitized_content_ref_ids" not in manifest
-    assert "content_ref_digests" not in manifest
+    assert manifest["content_refs_available"] is True
+    assert manifest["coverage_refs_available"] is True
+    assert "deferred_ref_fields" not in manifest
+    assert manifest["sanitized_content_ref_ids"]
+    assert manifest["content_ref_digests"]
+    assert manifest["coverage_record_refs"]
+    assert manifest["semantic_observation_refs"]
+    assert manifest["component_refs"]
+    assert manifest["semantic_ref_evidence_ids"]
+    assert manifest["source_obligation_refs"]
+    assert manifest["raw_content_included"] is False
+    assert manifest["bounded_text_included"] is False
+    assert manifest["prompt_visible"] is False
+    assert manifest["author_payload_visible"] is False
+    assert manifest["model_request_visible"] is False
+    assert manifest["final_text_included"] is False
     assert "coverage_record_ids" not in manifest
     assert "coverage_record_digests" not in manifest
     assert state.final_answer_packet["semantic_evidence_authority_manifest"] == manifest
@@ -236,6 +268,8 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "semantic_ref_projection" not in author_payload_trace_ref
     manifest_trace_ref = author_payload_trace_ref[MANIFEST_TRACE_REF_KEY]
     assert manifest_trace_ref["available"] is True
+    assert manifest_trace_ref["content_refs_available"] is True
+    assert manifest_trace_ref["coverage_refs_available"] is True
     assert manifest_trace_ref["semantic_state_facts_digest"] == (
         manifest["semantic_state_facts_digest"]
     )
@@ -244,15 +278,32 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "citation_source_ids" not in manifest_trace_ref
     assert "source_obligation_status_summary" not in manifest_trace_ref
     assert "semantic_ref_projection" not in manifest_trace_ref
+    assert "semantic_content_coverage_ref_projection" not in manifest_trace_ref
+    assert "sanitized_content_ref_ids" not in manifest_trace_ref
+    assert "content_ref_digests" not in manifest_trace_ref
+    assert "coverage_record_refs" not in manifest_trace_ref
+    assert "semantic_observation_refs" not in manifest_trace_ref
+    assert "component_refs" not in manifest_trace_ref
+    assert "semantic_ref_evidence_ids" not in manifest_trace_ref
+    assert "source_obligation_refs" not in manifest_trace_ref
     assert state.final_answer_authority_projection["author_payload_ref"][
         MANIFEST_TRACE_REF_KEY
     ] == manifest_trace_ref
 
     assert harness.author_prompts == [packet_handoff.author_prompt]
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
-    assert "semantic_authority_ref" not in harness.author_prompts[0]
-    assert "semantic_evidence_authority_manifest" not in harness.author_prompts[0]
-    assert MANIFEST_TRACE_REF_KEY not in harness.author_prompts[0]
+    for forbidden_prompt_token in (
+        "semantic_authority_ref",
+        "semantic_evidence_authority_manifest",
+        "semantic_content_coverage_ref_projection",
+        "semantic_ref_projection",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+        MANIFEST_TRACE_REF_KEY,
+    ):
+        assert forbidden_prompt_token not in harness.author_prompts[0]
     assert captured["author_runtime_scope"]["final_answer_author_payload"] is (
         packet_handoff.author_payload
     )
@@ -267,6 +318,11 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "semantic_authority_ref" not in state.author_observation
     assert "semantic_authority_trace_ref" not in state.author_observation
     assert "semantic_ref_projection" not in state.author_observation
+    assert "semantic_content_coverage_ref_projection" not in state.author_observation
+    assert "sanitized_content_ref_ids" not in state.author_observation
+    assert "content_ref_digests" not in state.author_observation
+    assert "coverage_record_refs" not in state.author_observation
+    assert "semantic_observation_refs" not in state.author_observation
     assert MANIFEST_TRACE_REF_KEY not in state.author_observation
 
     assert outcome.report == RAW_AUTHOR_RESPONSE

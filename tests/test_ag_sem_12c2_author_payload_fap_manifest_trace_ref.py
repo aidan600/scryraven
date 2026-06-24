@@ -12,6 +12,7 @@ from typing import Any
 from core.author_execution_runtime import execute_author_action
 from core.final_answer_packet import (
     FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION,
+    FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION,
     FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION,
     FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION,
     CitationEligibilityRecord,
@@ -54,10 +55,16 @@ FORBIDDEN_TRACE_REF_KEYS = (
     "citation_source_ids",
     "source_obligation_status_summary",
     "deferred_ref_fields",
+    "semantic_content_coverage_ref_projection",
     "sanitized_content_ref_ids",
     "content_ref_digests",
     "coverage_record_ids",
     "coverage_record_digests",
+    "coverage_record_refs",
+    "semantic_observation_refs",
+    "component_refs",
+    "semantic_ref_evidence_ids",
+    "source_obligation_refs",
     "raw_source_text",
     "bounded_text",
     "component_summaries",
@@ -91,8 +98,14 @@ FORBIDDEN_TRACE_REF_VALUE_TOKENS = (
     "evidence_ids",
     "citation_source_ids",
     "source_obligation_status_summary",
+    "semantic_content_coverage_ref_projection",
     "sanitized_content_ref_ids",
     "coverage_record_ids",
+    "coverage_record_refs",
+    "semantic_observation_refs",
+    "component_refs",
+    "semantic_ref_evidence_ids",
+    "source_obligation_refs",
 )
 
 
@@ -128,6 +141,7 @@ def _semantic_ref(**overrides: Any) -> dict[str, Any]:
 def _manual_packet(
     *,
     semantic_authority_ref: dict[str, Any] | None = None,
+    semantic_content_coverage_ref_projection: dict[str, Any] | None = None,
 ) -> FinalAnswerPacket:
     return FinalAnswerPacket(
         packet_id="ag-sem-12c2-manual",
@@ -193,7 +207,49 @@ def _manual_packet(
                 status=SourceObligationStatus.MISSING_REQUIRED_SOURCE,
             ),
         ),
+        semantic_content_coverage_ref_projection=(
+            semantic_content_coverage_ref_projection or {}
+        ),
     )
+
+
+def _semantic_content_coverage_ref_projection() -> dict[str, Any]:
+    return {
+        "schema_version": (
+            FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION
+        ),
+        "available": True,
+        "source_authority": "RunAuthoritySufficiency.semantic_ref_projection",
+        "source_schema_version": "sufficiency_semantic_ref_projection_ag_sem_proj_01_v1",
+        "source_projection_digest": "f" * 64,
+        "semantic_state_facts_digest": SEMANTIC_DIGEST,
+        "accepted_contract_digest": "a" * 64,
+        "component_refs": [
+            {"component_id": "component:one", "component_digest": "b" * 64}
+        ],
+        "coverage_record_refs": [
+            {
+                "coverage_record_id": "coverage:one",
+                "coverage_record_digest": "c" * 64,
+                "answer_component_id": "component:one",
+            }
+        ],
+        "semantic_observation_refs": [
+            {"observation_id": "observation:one", "observation_digest": "d" * 64}
+        ],
+        "sanitized_content_ref_ids": ["content:one"],
+        "content_ref_digests": ["e" * 64],
+        "semantic_ref_evidence_ids": ["evidence:one"],
+        "source_obligation_refs": ["source-obligation:one"],
+        "content_refs_available": True,
+        "coverage_refs_available": True,
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "prompt_visible": False,
+        "author_payload_visible": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+    }
 
 
 def _semantic_sufficiency_projection() -> dict[str, Any]:
@@ -278,8 +334,8 @@ def _expected_trace_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
         "semantic_evidence_authority_manifest_digest": _expected_digest(manifest),
         "semantic_authority_ref_digest": manifest["semantic_authority_ref_digest"],
         "semantic_state_facts_digest": manifest["semantic_state_facts_digest"],
-        "content_refs_available": False,
-        "coverage_refs_available": False,
+        "content_refs_available": bool(manifest.get("content_refs_available")),
+        "coverage_refs_available": bool(manifest.get("coverage_refs_available")),
         "prompt_visible": False,
         "author_payload_content_included": False,
         "model_request_visible": False,
@@ -317,6 +373,29 @@ def test_author_payload_manifest_trace_ref_schema_and_digest() -> None:
         _expected_digest(manifest)
     )
     assert payload.to_trace_ref()[TRACE_REF_KEY] == trace_ref
+    _assert_trace_ref_sealed(trace_ref)
+
+
+def test_author_payload_manifest_trace_ref_reports_availability_without_refs() -> None:
+    packet = _manual_packet(
+        semantic_content_coverage_ref_projection=(
+            _semantic_content_coverage_ref_projection()
+        )
+    )
+    payload = packet.to_author_input_payload(
+        prompt="BASE AUTHOR PROMPT",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    trace_ref = dict(payload.semantic_evidence_authority_manifest_trace_ref)
+
+    assert packet.semantic_evidence_authority_manifest["content_refs_available"] is True
+    assert packet.semantic_evidence_authority_manifest["coverage_refs_available"] is True
+    assert trace_ref == _expected_trace_ref(packet)
+    assert trace_ref["content_refs_available"] is True
+    assert trace_ref["coverage_refs_available"] is True
+    assert trace_ref["semantic_evidence_authority_manifest_digest"]
     _assert_trace_ref_sealed(trace_ref)
 
 
