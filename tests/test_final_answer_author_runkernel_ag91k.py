@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,7 @@ from core.final_answer_packet import (
     FinalAnswerPacket,
     FinalAnswerReadinessStatus,
     FinalEvidenceRecord,
+    _safe_json,
 )
 from core.final_answer_packet_runtime import execute_final_answer_packet_prepare_action
 from core.run_authority_sufficiency import (
@@ -37,6 +39,9 @@ RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 PACKET_RUNTIME = ROOT / "core" / "final_answer_packet_runtime.py"
 AUTHOR_RUNTIME = ROOT / "core" / "author_execution_runtime.py"
 SESSION_OUTPUT = ROOT / "core" / "session_output_projection.py"
+INVOCATION_MANIFEST_SCHEMA_VERSION = (
+    "author_invocation_authority_manifest_ag_auth_invoke_01_v1"
+)
 
 
 def _official_requirement() -> dict[str, Any]:
@@ -92,6 +97,16 @@ def _semantic_sufficiency_projection() -> dict[str, Any]:
             "covered_component_count": 1,
         },
     ).to_projection()
+
+
+def _stable_safe_digest(value: Any) -> str:
+    return sha256(
+        json.dumps(
+            _safe_json(value),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def _prepare_packet(
@@ -240,6 +255,7 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
     kernel, _packet_action, prepared = _prepare_packet()
     kernel.reduce(prepared.observation)
     action = kernel.authorize_author_execution(inputs={})
+    expected_digest = _stable_safe_digest(prepared.author_payload.to_trace_ref())
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
     displayed: list[str] = []
 
@@ -261,6 +277,7 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
         stream_display=fake_display,
     )
 
+    assert len(calls) == 1
     assert calls[0][0] == (prepared.author_payload.prompt, "AUTHOR SYSTEM")
     assert calls[0][1] == {
         "provider": "fast-provider",
@@ -275,6 +292,72 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
     assert displayed == ["RAW MODEL FINAL ", "ANSWER [101]"]
     assert result.report == "RAW MODEL FINAL ANSWER [101]"
     assert result.observation.observation_type is ObservationType.AUTHOR_OUTPUT_OBSERVED
+    assert action.inputs["expected_author_payload_ref_digest"] == expected_digest
+    assert action.inputs["packet_id"] == prepared.packet.packet_id
+    serialized_action_inputs = json.dumps(action.inputs, sort_keys=True)
+    assert "BASE AUTHOR PROMPT" not in serialized_action_inputs
+    assert "AUTHOR SYSTEM" not in serialized_action_inputs
+
+    manifest = result.observation.payload["author_invocation_authority_manifest"]
+    assert manifest["schema_version"] == INVOCATION_MANIFEST_SCHEMA_VERSION
+    assert manifest["available"] is True
+    assert manifest["packet_id"] == prepared.packet.packet_id
+    assert manifest["author_payload_ref_digest"] == expected_digest
+    assert manifest["expected_author_payload_ref_digest"] == expected_digest
+    assert manifest["prompt_hash"] == result.observation.payload["prompt_hash"]
+    assert manifest["prompt_length"] == len(prepared.author_payload.prompt)
+    assert manifest["system_prompt_hash"] == result.observation.payload["system_prompt_hash"]
+    assert manifest["system_prompt_length"] == len("AUTHOR SYSTEM")
+    assert manifest["authority_block_hash"] == result.observation.payload[
+        "authority_block_hash"
+    ]
+    assert manifest["authority_block_length"] == len(
+        prepared.author_payload.authority_block
+    )
+    assert manifest["author_provider"] == "fast-provider"
+    assert manifest["author_model"] == "fast-model"
+    assert manifest["author_effort"] == "medium"
+    assert manifest["prompt_text_included"] is False
+    assert manifest["system_prompt_text_included"] is False
+    assert manifest["model_request_raw_payload_retained"] is False
+    assert manifest["provider_payload_retained"] is False
+    assert manifest["raw_prompt_included"] is False
+    assert manifest["raw_content_included"] is False
+    assert manifest["bounded_text_included"] is False
+    assert manifest["final_text_included"] is False
+    serialized_manifest = json.dumps(manifest, sort_keys=True)
+    assert "BASE AUTHOR PROMPT" not in serialized_manifest
+    assert "AUTHOR SYSTEM" not in serialized_manifest
+    assert "RAW MODEL FINAL ANSWER" not in serialized_manifest
+    raw_leakage_scan = json.dumps(
+        [
+            action.inputs,
+            prepared.author_payload.to_trace_ref(),
+            result.observation.payload,
+            manifest,
+        ],
+        sort_keys=True,
+    )
+    for forbidden in (
+        "BASE AUTHOR PROMPT",
+        "FINAL ANSWER PACKET AUTHORITY",
+        "AUTHOR SYSTEM",
+        "RAW MODEL FINAL ANSWER",
+        "Official current rule excerpt.",
+        "SENTINEL_RAW_PROMPT",
+        "SENTINEL_SYSTEM_PROMPT",
+        "SENTINEL_PROVIDER_PAYLOAD",
+        "SENTINEL_RAW_PROVIDER_PAYLOAD",
+        "SENTINEL_RAW_CONTENT",
+        "SENTINEL_BOUNDED_TEXT",
+        "SENTINEL_FINAL_TEXT",
+        "SENTINEL_MODEL_RESPONSE",
+        "SENTINEL_DB_ROW",
+        "SENTINEL_CACHE_ROW",
+        "SENTINEL_FULL_TRACE",
+        "SENTINEL_SECRET_TOKEN",
+    ):
+        assert forbidden not in raw_leakage_scan
 
     kernel.reduce(result.observation)
 
@@ -290,20 +373,21 @@ def test_author_executor_consumes_packet_payload_and_reduces_author_observation(
     assert "BASE AUTHOR PROMPT" not in serialized
 
 
-def test_ag_sem_12b_author_execution_ignores_semantic_trace_ref() -> None:
+def test_ag_sem_12b_author_execution_accountability_preserves_model_request() -> None:
     kernel, _packet_action, prepared = _prepare_packet(
         sufficiency_judgment_projection=_semantic_sufficiency_projection(),
     )
     assert prepared.author_payload.semantic_authority_trace_ref
     kernel.reduce(prepared.observation)
     action = kernel.authorize_author_execution(inputs={})
+    expected_digest = _stable_safe_digest(prepared.author_payload.to_trace_ref())
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
     def fake_ask_model(*args: Any, **kwargs: Any):
         calls.append((args, kwargs))
         return iter(["RAW MODEL FINAL ANSWER [101]"])
 
-    result_with_ref = execute_author_action(
+    result = execute_author_action(
         action,
         author_payload=prepared.author_payload,
         ask_model=fake_ask_model,
@@ -312,17 +396,8 @@ def test_ag_sem_12b_author_execution_ignores_semantic_trace_ref() -> None:
         api_key=None,
         query="ordinary query",
     )
-    result_without_ref = execute_author_action(
-        action,
-        author_payload=replace(prepared.author_payload, semantic_authority_trace_ref={}),
-        ask_model=fake_ask_model,
-        system_prompt_registry={"author": "AUTHOR SYSTEM"},
-        base_url="http://local",
-        api_key=None,
-        query="ordinary query",
-    )
 
-    assert calls[0] == calls[1]
+    assert len(calls) == 1
     assert calls[0][0] == (prepared.author_payload.prompt, "AUTHOR SYSTEM")
     assert calls[0][1] == {
         "provider": "fast-provider",
@@ -334,12 +409,77 @@ def test_ag_sem_12b_author_execution_ignores_semantic_trace_ref() -> None:
         "use_reasoning": False,
     }
     assert "semantic_authority_trace_ref" not in action.inputs
-    assert "semantic_authority_trace_ref" not in result_with_ref.observation.payload
-    with_payload = dict(result_with_ref.observation.payload)
-    without_payload = dict(result_without_ref.observation.payload)
-    with_payload["author_seconds"] = 0.0
-    without_payload["author_seconds"] = 0.0
-    assert with_payload == without_payload
+    assert action.inputs["expected_author_payload_ref_digest"] == expected_digest
+    assert "semantic_authority_trace_ref" not in result.observation.payload
+    manifest = result.observation.payload["author_invocation_authority_manifest"]
+    assert manifest["author_payload_ref_digest"] == expected_digest
+    assert manifest["expected_author_payload_ref_digest"] == expected_digest
+    assert manifest["semantic_authority_trace_ref_digest"] == _stable_safe_digest(
+        prepared.author_payload.semantic_authority_trace_ref
+    )
+    assert manifest["semantic_packet_evidence_binding_available"] is False
+
+
+def test_author_execution_rejects_tampered_semantic_payload_before_model() -> None:
+    kernel, _packet_action, prepared = _prepare_packet(
+        sufficiency_judgment_projection=_semantic_sufficiency_projection(),
+    )
+    kernel.reduce(prepared.observation)
+    action = kernel.authorize_author_execution(inputs={})
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def fake_ask_model(*args: Any, **kwargs: Any):
+        calls.append((args, kwargs))
+        return iter(["unreachable"])
+
+    tampered_payload = replace(
+        prepared.author_payload,
+        semantic_authority_trace_ref={
+            **dict(prepared.author_payload.semantic_authority_trace_ref),
+            "semantic_state_facts_digest": "9" * 64,
+        },
+    )
+
+    with pytest.raises(ValueError, match="payload ref digest"):
+        execute_author_action(
+            action,
+            author_payload=tampered_payload,
+            ask_model=fake_ask_model,
+            system_prompt_registry={"author": "AUTHOR SYSTEM"},
+            base_url="http://local",
+            api_key=None,
+            query="ordinary query",
+        )
+
+    assert calls == []
+
+
+def test_author_execution_rejects_mismatched_expected_digest_before_model() -> None:
+    kernel, _packet_action, prepared = _prepare_packet()
+    kernel.reduce(prepared.observation)
+    action = kernel.authorize_author_execution(inputs={})
+    mismatched_action = replace(
+        action,
+        inputs={**dict(action.inputs), "expected_author_payload_ref_digest": "0" * 64},
+    )
+    calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def fake_ask_model(*args: Any, **kwargs: Any):
+        calls.append((args, kwargs))
+        return iter(["unreachable"])
+
+    with pytest.raises(ValueError, match="payload ref digest"):
+        execute_author_action(
+            mismatched_action,
+            author_payload=prepared.author_payload,
+            ask_model=fake_ask_model,
+            system_prompt_registry={"author": "AUTHOR SYSTEM"},
+            base_url="http://local",
+            api_key=None,
+            query="ordinary query",
+        )
+
+    assert calls == []
 
 
 def test_packet_blocks_missing_citation_authority_and_blocked_readiness() -> None:

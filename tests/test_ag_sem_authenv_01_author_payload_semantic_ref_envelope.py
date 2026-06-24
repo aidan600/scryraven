@@ -583,14 +583,12 @@ def test_author_payload_envelope_non_delta_surfaces_and_raw_leakage_scan() -> No
 def test_static_guards_keep_envelope_out_of_closed_surfaces() -> None:
     packet_source = PACKET.read_text(encoding="utf-8")
     adapter_source = ADAPTER.read_text(encoding="utf-8")
-    author_runtime = AUTHOR_RUNTIME.read_text(encoding="utf-8")
     prompt_assembly = PROMPT_ASSEMBLY.read_text(encoding="utf-8")
 
     assert "semantic_observation_admission_history" not in packet_source
     assert "component_coverage_history" not in packet_source
     assert "semantic_observation_admission_history" not in adapter_source
     assert "component_coverage_history" not in adapter_source
-    assert ENVELOPE_KEY not in author_runtime
     assert ENVELOPE_KEY not in prompt_assembly
 
     for path in (

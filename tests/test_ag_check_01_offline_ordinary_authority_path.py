@@ -401,11 +401,49 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.author_observation["sufficiency_decision"] == (packet_handoff.author_payload.sufficiency_decision)
     assert state.author_observation["citation_source_ids"] == list(packet_handoff.author_payload.citation_source_ids)
     assert state.author_observation["prompt_text_included"] is False
+    invocation_manifest = state.author_observation[
+        "author_invocation_authority_manifest"
+    ]
+    assert invocation_manifest["schema_version"] == (
+        "author_invocation_authority_manifest_ag_auth_invoke_01_v1"
+    )
+    assert invocation_manifest["packet_id"] == packet_handoff.packet.packet_id
+    assert invocation_manifest["author_payload_ref_digest"] == (
+        state.author_observation["author_payload_ref_digest"]
+    )
+    assert invocation_manifest["expected_author_payload_ref_digest"] == (
+        state.author_observation["expected_author_payload_ref_digest"]
+    )
+    assert invocation_manifest[
+        "semantic_packet_evidence_binding_available"
+    ] is True
+    assert invocation_manifest["semantic_packet_evidence_binding_count"] == len(
+        bindings
+    )
+    assert invocation_manifest["semantic_packet_evidence_binding_digest"] == (
+        manifest.get("semantic_packet_evidence_binding_digest")
+    )
+    assert invocation_manifest["prompt_text_included"] is False
+    assert invocation_manifest["system_prompt_text_included"] is False
+    assert invocation_manifest["provider_payload_retained"] is False
+    assert invocation_manifest["raw_prompt_included"] is False
+    assert invocation_manifest["raw_content_included"] is False
+    assert invocation_manifest["bounded_text_included"] is False
+    assert invocation_manifest["final_text_included"] is False
     assert state.author_observation["final_text_included"] is False
     assert ENVELOPE_KEY not in state.author_observation
     assert "sanitized_content_ref_ids" not in state.author_observation
     assert "content_ref_digests" not in state.author_observation
     assert "coverage_record_refs" not in state.author_observation
+    for forbidden_manifest_key in (
+        "semantic_packet_evidence_bindings",
+        "semantic_content_coverage_ref_envelope",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+    ):
+        assert forbidden_manifest_key not in invocation_manifest
 
     trace_packet = outcome.execution_trace["final_answer_packet"]
     assert trace_packet["packet_id"] == packet_handoff.packet.packet_id

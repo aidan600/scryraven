@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -11,6 +12,7 @@ from typing import Any
 from core.final_answer_packet import (
     AuthorInputStatus,
     FinalAnswerAuthorInputPayload,
+    _safe_json,
 )
 from core.quantitative_consistency import (
     apply_quantitative_consistency_guard,
@@ -29,6 +31,10 @@ from core.run_kernel import (
 
 AskModel = Callable[..., Any]
 StreamDisplay = Callable[[Iterable[str]], None]
+
+AUTHOR_INVOCATION_AUTHORITY_MANIFEST_SCHEMA_VERSION = (
+    "author_invocation_authority_manifest_ag_auth_invoke_01_v1"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +67,124 @@ class AuthorExecutionHandoff:
 
 def _hash_text(value: str) -> str:
     return sha256(str(value or "").encode("utf-8")).hexdigest()
+
+
+def _stable_safe_json_digest(value: Any) -> str:
+    canonical_json = json.dumps(
+        _safe_json(value),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(canonical_json.encode("utf-8")).hexdigest()
+
+
+def _digest_mapping(value: Any) -> str | None:
+    if not isinstance(value, Mapping) or not value:
+        return None
+    return _stable_safe_json_digest(value)
+
+
+def _semantic_binding_ref(trace_ref: Mapping[str, Any]) -> Mapping[str, Any]:
+    envelope = trace_ref.get("semantic_content_coverage_ref_envelope_trace_ref")
+    if isinstance(envelope, Mapping) and envelope.get(
+        "semantic_packet_evidence_binding_available"
+    ):
+        return envelope
+    manifest = trace_ref.get("semantic_evidence_authority_manifest_trace_ref")
+    if isinstance(manifest, Mapping) and manifest.get(
+        "semantic_packet_evidence_binding_available"
+    ):
+        return manifest
+    return {}
+
+
+def _build_author_invocation_authority_manifest(
+    action: AuthorizedAction,
+    payload: FinalAnswerAuthorInputPayload,
+    *,
+    system_prompt: str,
+) -> dict[str, Any]:
+    trace_ref = payload.to_trace_ref()
+    expected_digest = action.inputs.get("expected_author_payload_ref_digest")
+    binding_ref = _semantic_binding_ref(trace_ref)
+    semantic_authority_trace_ref = trace_ref.get("semantic_authority_trace_ref")
+    semantic_manifest_trace_ref = trace_ref.get(
+        "semantic_evidence_authority_manifest_trace_ref"
+    )
+    semantic_envelope_trace_ref = trace_ref.get(
+        "semantic_content_coverage_ref_envelope_trace_ref"
+    )
+    return {
+        "schema_version": AUTHOR_INVOCATION_AUTHORITY_MANIFEST_SCHEMA_VERSION,
+        "available": True,
+        "packet_id": payload.packet_id,
+        "author_payload_ref_digest": _stable_safe_json_digest(trace_ref),
+        "expected_author_payload_ref_digest": expected_digest,
+        "semantic_authority_trace_ref_digest": _digest_mapping(
+            semantic_authority_trace_ref
+        ),
+        "semantic_evidence_authority_manifest_trace_ref_digest": _digest_mapping(
+            semantic_manifest_trace_ref
+        ),
+        "semantic_content_coverage_ref_envelope_trace_ref_digest": _digest_mapping(
+            semantic_envelope_trace_ref
+        ),
+        "semantic_packet_evidence_binding_available": bool(
+            binding_ref.get("semantic_packet_evidence_binding_available")
+        ),
+        "semantic_packet_evidence_binding_count": int(
+            binding_ref.get("semantic_packet_evidence_binding_count") or 0
+        ),
+        "semantic_packet_evidence_binding_digest": binding_ref.get(
+            "semantic_packet_evidence_binding_digest"
+        ),
+        "prompt_hash": _hash_text(payload.prompt),
+        "prompt_length": len(payload.prompt),
+        "system_prompt_hash": _hash_text(system_prompt),
+        "system_prompt_length": len(system_prompt),
+        "authority_block_hash": (
+            _hash_text(payload.authority_block) if payload.authority_block else None
+        ),
+        "authority_block_length": len(payload.authority_block),
+        "author_provider": payload.author_provider,
+        "author_model": payload.author_model,
+        "author_effort": payload.author_effort,
+        "prompt_text_included": False,
+        "system_prompt_text_included": False,
+        "model_request_raw_payload_retained": False,
+        "provider_payload_retained": False,
+        "raw_prompt_included": False,
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "final_text_included": False,
+    }
+
+
+def _semantic_authority_present(payload: FinalAnswerAuthorInputPayload) -> bool:
+    return bool(
+        payload.semantic_authority_trace_ref
+        or payload.semantic_evidence_authority_manifest_trace_ref
+        or payload.semantic_content_coverage_ref_envelope
+    )
+
+
+def _require_author_payload_ref_digest_match(
+    action: AuthorizedAction,
+    payload: FinalAnswerAuthorInputPayload,
+) -> str:
+    actual_digest = _stable_safe_json_digest(payload.to_trace_ref())
+    expected_digest = action.inputs.get("expected_author_payload_ref_digest")
+    if expected_digest:
+        if actual_digest != expected_digest:
+            raise ValueError(
+                "Author payload ref digest does not match packet-prep authority"
+            )
+        return actual_digest
+    if _semantic_authority_present(payload):
+        raise ValueError(
+            "semantic Author execution requires expected_author_payload_ref_digest"
+        )
+    return actual_digest
 
 
 def _require_action_payload_alignment(
@@ -136,6 +260,15 @@ def execute_author_action(
     system_prompt = system_prompt_registry.get(author_payload.author_system_prompt_key)
     if system_prompt is None:
         raise ValueError("Author system prompt key is unavailable")
+    author_payload_ref_digest = _require_author_payload_ref_digest_match(
+        authorized,
+        author_payload,
+    )
+    invocation_authority_manifest = _build_author_invocation_authority_manifest(
+        authorized,
+        author_payload,
+        system_prompt=system_prompt,
+    )
 
     stream_buffered = bool(
         stream_display is not None and is_two_item_calorie_gram_comparison_candidate(query)
@@ -176,9 +309,17 @@ def execute_author_action(
         "owner": "RunKernel.AuthorExecutor",
         "packet_id": author_payload.packet_id,
         "author_payload_status": author_payload.status.value,
+        "author_invocation_authority_manifest": invocation_authority_manifest,
+        "author_payload_ref_digest": author_payload_ref_digest,
+        "expected_author_payload_ref_digest": authorized.inputs.get(
+            "expected_author_payload_ref_digest"
+        ),
         "prompt_hash": _hash_text(author_payload.prompt),
         "prompt_length": len(author_payload.prompt),
         "prompt_text_included": False,
+        "system_prompt_hash": _hash_text(system_prompt),
+        "system_prompt_length": len(system_prompt),
+        "system_prompt_text_included": False,
         "authority_block_hash": (
             _hash_text(author_payload.authority_block)
             if author_payload.authority_block
