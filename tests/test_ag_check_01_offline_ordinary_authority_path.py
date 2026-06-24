@@ -10,6 +10,7 @@ import pytest
 
 import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
+from core.final_answer_packet import SourceObligationStatus
 from core.prompts import DEFAULT_SYSTEM
 from core.protocols import NullStatusWriter
 from core.run_config import RunConfig, RunDeps
@@ -353,6 +354,39 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert semantic_ref.get("sufficiency_semantic_consumed") is True
     assert "consumed" not in semantic_ref
     assert state.final_answer_packet.get("semantic_authority_ref") == semantic_ref
+    manifest = packet_handoff.packet.semantic_evidence_authority_manifest
+    assert manifest.get("available") is True
+    assert manifest.get("semantic_state_facts_digest") == (
+        semantic_ref.get("semantic_state_facts_digest")
+    )
+    assert manifest.get("evidence_ids") == [
+        record.evidence_id for record in packet_handoff.packet.evidence_allowed
+    ]
+    assert manifest.get("citation_source_ids") == [
+        record.source_id
+        for record in packet_handoff.packet.citation_eligible
+        if record.source_id is not None
+    ]
+    expected_status_summary = {item.value: 0 for item in SourceObligationStatus}
+    for record in packet_handoff.packet.source_obligations:
+        expected_status_summary[record.status.value] += 1
+    assert manifest.get("source_obligation_status_summary") == expected_status_summary
+    for key in (
+        "required_component_count",
+        "covered_component_count",
+        "missing_component_count",
+    ):
+        if key in semantic_ref:
+            assert manifest.get(key) == semantic_ref.get(key)
+    assert manifest.get("content_refs_available") is False
+    assert manifest.get("coverage_refs_available") is False
+    assert "sanitized_content_ref_ids" not in manifest
+    assert "content_ref_digests" not in manifest
+    assert "coverage_record_ids" not in manifest
+    assert "coverage_record_digests" not in manifest
+    assert state.final_answer_packet.get("semantic_evidence_authority_manifest") == (
+        manifest
+    )
     semantic_trace_ref = packet_handoff.author_payload.to_trace_ref()[
         "semantic_authority_trace_ref"
     ]
