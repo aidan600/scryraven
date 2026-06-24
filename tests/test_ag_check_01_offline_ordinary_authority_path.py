@@ -347,6 +347,15 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.sufficiency_judgment_projection["decision"]
     assert state.sufficiency_judgment_projection["decision"] == (state.final_answer_packet["sufficiency_decision"])
 
+    semantic_ref = packet_handoff.packet.semantic_authority_ref
+    assert semantic_ref.get("available") is True
+    assert semantic_ref.get("semantic_state_facts_digest")
+    assert semantic_ref.get("sufficiency_semantic_consumed") is True
+    assert "consumed" not in semantic_ref
+    assert state.final_answer_packet.get("semantic_authority_ref") == semantic_ref
+    assert "semantic_authority_ref" not in packet_handoff.author_payload.to_trace_ref()
+    assert "semantic_authority_ref" not in state.author_observation
+
     assert packet_handoff.packet.packet_id == state.final_answer_packet["packet_id"]
     assert packet_handoff.author_payload.packet_id == state.final_answer_packet["packet_id"]
     assert state.final_answer_authority_projection["owner"] == "RunKernel.FinalAnswerPacket"

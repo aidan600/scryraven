@@ -6,6 +6,7 @@ from typing import Any, Mapping, Sequence
 from core.citation_source_handoff_contract import build_citation_source_handoff_state
 from core.final_answer_packet import (
     FINAL_ANSWER_PACKET_TRACE_KEY,
+    FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION,
     CitationEligibilityRecord,
     CitationEligibilityStatus,
     CitationRequirementStatus,
@@ -20,6 +21,7 @@ from core.final_answer_packet import (
 )
 from core.official_current_source_custody import OfficialCurrentSourceCustodyState
 from core.run_authority_projection_refs import (
+    RUN_AUTHORITY_SUFFICIENCY_JUDGMENT_OWNER,
     canonical_sufficiency_judgment_projection,
     compact_sufficiency_judgment_ref,
 )
@@ -318,6 +320,107 @@ def _dedupe_source_obligations(
 
 def _sufficiency_projection_from_any(value: Any) -> dict[str, Any]:
     return canonical_sufficiency_judgment_projection(value)
+
+
+def _semantic_projection_mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _semantic_state_facts_digest(
+    *,
+    summary: Mapping[str, Any],
+    consumption: Mapping[str, Any],
+) -> str | None:
+    for source in (summary, consumption):
+        digest = str(source.get("semantic_state_facts_digest") or "").strip()
+        if digest:
+            return digest[:128]
+    return None
+
+
+def _semantic_field_from_sources(
+    key: str,
+    *,
+    consumption: Mapping[str, Any],
+    summary: Mapping[str, Any],
+) -> Any | None:
+    if key in consumption:
+        return consumption[key]
+    if consumption:
+        return None
+    if key in summary:
+        return summary[key]
+    return None
+
+
+def _compact_semantic_authority_ref(projection: Any) -> dict[str, Any]:
+    sufficiency = _sufficiency_projection_from_any(projection)
+    if not sufficiency:
+        return {}
+
+    summary = _semantic_projection_mapping(
+        sufficiency.get("semantic_state_facts_summary")
+    )
+    consumption = _semantic_projection_mapping(sufficiency.get("semantic_consumption"))
+
+    digest = _semantic_state_facts_digest(summary=summary, consumption=consumption)
+    if not digest:
+        return {}
+
+    ref: dict[str, Any] = {
+        "schema_version": FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION,
+        "available": True,
+        "sufficiency_semantic_consumed": True,
+        "authority_owner": RUN_AUTHORITY_SUFFICIENCY_JUDGMENT_OWNER,
+        "semantic_state_facts_digest": digest,
+    }
+
+    summary_schema = _semantic_field_from_sources(
+        "schema_version",
+        consumption=consumption,
+        summary=summary,
+    )
+    if summary_schema is not None and str(summary_schema).strip():
+        ref["semantic_summary_schema_version"] = str(summary_schema).strip()
+
+    for key in (
+        "required_component_count",
+        "covered_component_count",
+        "satisfied_coverage_count",
+        "blocker_count",
+    ):
+        value = _semantic_field_from_sources(
+            key,
+            consumption=consumption,
+            summary=summary,
+        )
+        if value is not None:
+            ref[key] = value
+
+    required = ref.get("required_component_count")
+    covered = ref.get("covered_component_count")
+    if (
+        "required_component_count" in ref
+        and "covered_component_count" in ref
+        and isinstance(required, int)
+        and isinstance(covered, int)
+    ):
+        ref["missing_component_count"] = max(0, required - covered)
+
+    for key in ("blocker_codes", "direct_answer_blocked", "finalization_blocked"):
+        value = _semantic_field_from_sources(
+            key,
+            consumption=consumption,
+            summary=summary,
+        )
+        if value is not None:
+            ref[key] = value
+
+    judgment_ref = compact_sufficiency_judgment_ref(sufficiency)
+    if judgment_ref:
+        ref["sufficiency_judgment_ref"] = judgment_ref
+
+    return ref
 
 
 def _status_for_sufficiency_obligation(
@@ -972,6 +1075,9 @@ def build_final_answer_packet(
         readiness_reasons = tuple(
             dict.fromkeys((*readiness_reasons, "final_answer_not_allowed"))
         )
+    semantic_authority_ref = _compact_semantic_authority_ref(
+        sufficiency_judgment_projection
+    )
     return FinalAnswerPacket(
         packet_id=packet_id,
         evidence_records=evidence_records,
@@ -1010,6 +1116,7 @@ def build_final_answer_packet(
         query_lineage_refs=dict(query_lineage_refs or {}),
         readiness_status=readiness_status,
         readiness_reasons=readiness_reasons,
+        semantic_authority_ref=semantic_authority_ref,
     )
 
 

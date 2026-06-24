@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,7 @@ from core.run_authority_sufficiency import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+SEMANTIC_DIGEST = "b" * 64
 
 
 def _passage(**overrides):
@@ -636,3 +638,35 @@ def test_ag89d_static_orchestrator_wiring_does_not_change_protected_surfaces() -
     assert "source_obligation_projection = build_source_class_observability_telemetry" in helper_text
     assert "final_source_telemetry_inputs.final_evidence_snapshot_payload" in helper_text
     assert '"authority": "final_answer_packet"' not in text
+
+
+def test_ag_sem_12a_semantic_authority_ref_exact_non_delta_author_surfaces() -> None:
+    sufficiency_projection = RunSufficiencyJudgment(
+        judgment_id="ag-sem-12a-ag89d",
+        decision=RunSufficiencyDecision.READY_DIRECT,
+        final_answer_posture=SufficiencyPosture.DIRECT_ANSWER,
+        final_answer_allowed=True,
+        semantic_consumption={
+            "schema_version": "sufficiency_semantic_state_consumption_ag_sem_09_v1",
+            "semantic_state_facts_digest": SEMANTIC_DIGEST,
+            "blocker_count": 0,
+            "blocker_codes": [],
+            "direct_answer_blocked": False,
+            "finalization_blocked": False,
+            "required_component_count": 1,
+            "covered_component_count": 1,
+        },
+    ).to_projection()
+    packet_with = build_final_answer_packet(
+        run_id="ag-sem-12a-ag89d",
+        final_evidence=[_passage(source_id=11)],
+        author_evidence=[_passage(source_id=11)],
+        sufficiency_judgment_projection=sufficiency_projection,
+    )
+    packet_without = replace(packet_with, semantic_authority_ref={})
+    assert packet_with.semantic_authority_ref
+    assert packet_without.semantic_authority_ref == {}
+
+    from tests.test_ag_sem_12a_fap_semantic_authority_projection import _author_surfaces
+
+    assert _author_surfaces(packet_with) == _author_surfaces(packet_without)
