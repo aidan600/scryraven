@@ -14,6 +14,9 @@ from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 FINAL_ANSWER_PACKET_SCHEMA_VERSION = "final_answer_packet_ag89d_v1"
+FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION = (
+    "final_answer_semantic_authority_ref_v1"
+)
 FINAL_ANSWER_PACKET_TRACE_KEY = "final_answer_packet"
 
 
@@ -372,6 +375,7 @@ class FinalAnswerPacket:
         FinalAnswerReadinessStatus.AUTHOR_READY
     )
     readiness_reasons: tuple[str, ...] = ()
+    semantic_authority_ref: Mapping[str, Any] = field(default_factory=dict)
     schema_version: str = FINAL_ANSWER_PACKET_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -689,7 +693,7 @@ class FinalAnswerPacket:
 
     def to_dict(self) -> dict[str, Any]:
         postures = [item.value if isinstance(item, ClaimPosture) else str(item) for item in self.claim_postures]
-        return {
+        payload = {
             "schema_version": self.schema_version,
             "packet_id": _clean_token(self.packet_id, limit=120),
             "evidence_allowed": [record.to_dict() for record in self.evidence_allowed],
@@ -719,6 +723,9 @@ class FinalAnswerPacket:
             ],
             "trace_mode": "final_answer_packet_authority_projection",
         }
+        if self.semantic_authority_ref:
+            payload["semantic_authority_ref"] = _safe_json(self.semantic_authority_ref)
+        return payload
 
     def to_trace_fragment(self) -> dict[str, Any]:
         return {FINAL_ANSWER_PACKET_TRACE_KEY: self.to_dict()}
@@ -726,6 +733,7 @@ class FinalAnswerPacket:
 
 __all__ = [
     "FINAL_ANSWER_PACKET_SCHEMA_VERSION",
+    "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_TRACE_KEY",
     "AuthorInputStatus",
     "CitationEligibilityRecord",
