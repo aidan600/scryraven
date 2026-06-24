@@ -1,4 +1,4 @@
-"""AG-SEM-12C1 FAP semantic/evidence authority manifest tests."""
+"""AG-SEM-12C2 Author payload FAP manifest trace-ref tests."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import Any
 
 from core.author_execution_runtime import execute_author_action
 from core.final_answer_packet import (
+    FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION,
     FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION,
     FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION,
     CitationEligibilityRecord,
@@ -24,7 +25,10 @@ from core.final_answer_packet import (
     _safe_json,
 )
 from core.final_answer_packet_runtime import execute_final_answer_packet_prepare_action
-from core.final_answer_runtime_adapter import build_final_answer_packet, derive_author_input_payload
+from core.final_answer_runtime_adapter import (
+    build_final_answer_packet,
+    derive_author_input_payload,
+)
 from core.run_authority_sufficiency import (
     RunSufficiencyDecision,
     RunSufficiencyJudgment,
@@ -39,8 +43,57 @@ PACKET_RUNTIME = ROOT / "core" / "final_answer_packet_runtime.py"
 RUN_KERNEL = ROOT / "core" / "run_kernel.py"
 AUTHOR_RUNTIME = ROOT / "core" / "author_execution_runtime.py"
 
-SEMANTIC_DIGEST = "d" * 64
+SEMANTIC_DIGEST = "e" * 64
 SEMANTIC_SCHEMA = "sufficiency_semantic_state_consumption_ag_sem_09_v1"
+TRACE_REF_KEY = "semantic_evidence_authority_manifest_trace_ref"
+
+FORBIDDEN_TRACE_REF_KEYS = (
+    "semantic_evidence_authority_manifest",
+    "evidence_ids",
+    "excluded_evidence_ids",
+    "citation_source_ids",
+    "source_obligation_status_summary",
+    "deferred_ref_fields",
+    "sanitized_content_ref_ids",
+    "content_ref_digests",
+    "coverage_record_ids",
+    "coverage_record_digests",
+    "raw_source_text",
+    "bounded_text",
+    "component_summaries",
+    "amendment_summaries",
+    "prompt_text",
+    "provider_payload",
+    "model_response",
+    "final_prose",
+    "db_row",
+    "cache",
+    "secret",
+    "token",
+)
+
+FORBIDDEN_TRACE_REF_VALUE_TOKENS = (
+    "raw_prompt",
+    "prompt_text",
+    "provider_payload",
+    "raw_provider_payload",
+    "model_response",
+    "raw_model_response",
+    "final_prose",
+    "final_text",
+    "bounded_text",
+    "component_summaries",
+    "amendment_summaries",
+    "db_row",
+    "cache",
+    "secret",
+    "token",
+    "evidence_ids",
+    "citation_source_ids",
+    "source_obligation_status_summary",
+    "sanitized_content_ref_ids",
+    "coverage_record_ids",
+)
 
 
 def _passage(**overrides: Any) -> dict[str, Any]:
@@ -72,9 +125,12 @@ def _semantic_ref(**overrides: Any) -> dict[str, Any]:
     return ref
 
 
-def _manual_packet(*, semantic_authority_ref: dict[str, Any] | None = None) -> FinalAnswerPacket:
+def _manual_packet(
+    *,
+    semantic_authority_ref: dict[str, Any] | None = None,
+) -> FinalAnswerPacket:
     return FinalAnswerPacket(
-        packet_id="ag-sem-12c1-manual",
+        packet_id="ag-sem-12c2-manual",
         semantic_authority_ref=(
             _semantic_ref()
             if semantic_authority_ref is None
@@ -142,7 +198,7 @@ def _manual_packet(*, semantic_authority_ref: dict[str, Any] | None = None) -> F
 
 def _semantic_sufficiency_projection() -> dict[str, Any]:
     return RunSufficiencyJudgment(
-        judgment_id="ag-sem-12c1:judgment",
+        judgment_id="ag-sem-12c2:judgment",
         decision=RunSufficiencyDecision.READY_DIRECT,
         final_answer_posture=SufficiencyPosture.DIRECT_ANSWER,
         final_answer_allowed=True,
@@ -170,7 +226,7 @@ def _expected_digest(value: Any) -> str:
 
 
 def _prepare_packet_runtime_result():
-    kernel = RunKernel.start(run_id="ag-sem-12c1-runtime", request_id="req")
+    kernel = RunKernel.start(run_id="ag-sem-12c2-runtime", request_id="req")
     action = kernel.authorize_final_answer_packet_prepare(inputs={"candidate_count": 1})
     result = execute_final_answer_packet_prepare_action(
         action,
@@ -207,111 +263,144 @@ def _prepare_packet_runtime_result():
     return kernel, action, result
 
 
-def test_manifest_schema_direct_packet_projection() -> None:
-    packet = _manual_packet()
-
+def _expected_trace_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
     manifest = packet.semantic_evidence_authority_manifest
-
-    assert manifest["schema_version"] == (
-        FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION
-    )
-    assert manifest["available"] is True
-    assert manifest["source_packet_id"] == packet.packet_id
-    assert manifest["source_packet_schema_version"] == packet.schema_version
-    assert manifest["semantic_authority_ref_schema_version"] == (
-        FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION
-    )
-    assert manifest["semantic_authority_ref_digest"] == _expected_digest(
-        packet.semantic_authority_ref
-    )
-    assert manifest["semantic_state_facts_digest"] == SEMANTIC_DIGEST
-    assert manifest["required_component_count"] == 2
-    assert manifest["covered_component_count"] == 1
-    assert manifest["missing_component_count"] == 1
-    assert manifest["evidence_ids"] == ["ev-allowed-1", "ev-allowed-2"]
-    assert manifest["excluded_evidence_ids"] == ["ev-excluded"]
-    assert manifest["citation_source_ids"] == [101, 102]
-    assert manifest["source_obligation_status_summary"] == {
-        "source_obligation_satisfied": 1,
-        "source_obligation_partial": 0,
-        "missing_required_source": 1,
-        "official_current_unsatisfied": 0,
-        "source_bound_value_missing": 0,
-        "source_obligation_state_unavailable": 0,
+    return {
+        "schema_version": (
+            FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION
+        ),
+        "available": True,
+        "source_packet_id": packet.packet_id,
+        "source_packet_schema_version": packet.schema_version,
+        "semantic_evidence_authority_manifest_schema_version": (
+            FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION
+        ),
+        "semantic_evidence_authority_manifest_digest": _expected_digest(manifest),
+        "semantic_authority_ref_digest": manifest["semantic_authority_ref_digest"],
+        "semantic_state_facts_digest": manifest["semantic_state_facts_digest"],
+        "content_refs_available": False,
+        "coverage_refs_available": False,
+        "prompt_visible": False,
+        "author_payload_content_included": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "raw_prompt_included": False,
+        "provider_payload_included": False,
     }
-    assert manifest["content_refs_available"] is False
-    assert manifest["coverage_refs_available"] is False
-    assert manifest["deferred_ref_fields"] == [
-        "sanitized_content_ref_ids",
-        "content_ref_digests",
-        "coverage_record_ids",
-        "coverage_record_digests",
-    ]
-    assert "sanitized_content_ref_ids" not in manifest
-    assert "content_ref_digests" not in manifest
-    assert "coverage_record_ids" not in manifest
-    assert "coverage_record_digests" not in manifest
-    assert packet.to_dict()["semantic_evidence_authority_manifest"] == manifest
-    assert packet.to_trace_fragment()["final_answer_packet"][
-        "semantic_evidence_authority_manifest"
-    ] == manifest
 
 
-def test_manifest_empty_when_semantic_authority_ref_empty() -> None:
-    packet = _manual_packet(semantic_authority_ref={})
+def _assert_trace_ref_sealed(trace_ref: dict[str, Any]) -> None:
+    for key in FORBIDDEN_TRACE_REF_KEYS:
+        assert key not in trace_ref
 
-    assert packet.semantic_authority_ref == {}
-    assert packet.semantic_evidence_authority_manifest == {}
-    assert "semantic_evidence_authority_manifest" not in packet.to_dict()
+    encoded_values = json.dumps(list(trace_ref.values()), sort_keys=True)
+    for token in FORBIDDEN_TRACE_REF_VALUE_TOKENS:
+        assert token not in encoded_values
 
 
-def test_manifest_omits_unavailable_component_counts() -> None:
-    packet = _manual_packet(
-        semantic_authority_ref=_semantic_ref(
-            required_component_count=None,
-            covered_component_count="",
-            missing_component_count=[],
-        )
+def test_author_payload_manifest_trace_ref_schema_and_digest() -> None:
+    packet = _manual_packet()
+    manifest = packet.semantic_evidence_authority_manifest
+    payload = packet.to_author_input_payload(
+        prompt="BASE AUTHOR PROMPT",
+        author_system_prompt_key="author",
+        author_effort="low",
     )
 
+    trace_ref = dict(payload.semantic_evidence_authority_manifest_trace_ref)
+
+    assert manifest
+    assert trace_ref == _expected_trace_ref(packet)
+    assert trace_ref["semantic_evidence_authority_manifest_digest"] == (
+        _expected_digest(manifest)
+    )
+    assert payload.to_trace_ref()[TRACE_REF_KEY] == trace_ref
+    _assert_trace_ref_sealed(trace_ref)
+
+
+def test_author_payload_manifest_trace_ref_empty_when_manifest_empty() -> None:
+    packet = _manual_packet(semantic_authority_ref={})
+    payload = packet.to_author_input_payload(
+        prompt="BASE AUTHOR PROMPT",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    assert packet.semantic_evidence_authority_manifest == {}
+    assert payload.semantic_evidence_authority_manifest_trace_ref == {}
+    assert TRACE_REF_KEY not in payload.to_trace_ref()
+
+    incomplete_packet = _manual_packet(
+        semantic_authority_ref=_semantic_ref(semantic_state_facts_digest="")
+    )
+    incomplete_payload = incomplete_packet.to_author_input_payload(
+        prompt="BASE AUTHOR PROMPT",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    assert incomplete_packet.semantic_evidence_authority_manifest == {}
+    assert incomplete_payload.semantic_evidence_authority_manifest_trace_ref == {}
+    assert TRACE_REF_KEY not in incomplete_payload.to_trace_ref()
+
+
+def test_author_payload_manifest_trace_ref_merges_into_packet_author_input_refs() -> None:
+    packet = _manual_packet()
     manifest = packet.semantic_evidence_authority_manifest
+    semantic_authority_ref = dict(packet.semantic_authority_ref)
+    payload = packet.to_author_input_payload(
+        prompt="BASE AUTHOR PROMPT",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
 
-    assert "required_component_count" not in manifest
-    assert "covered_component_count" not in manifest
-    assert "missing_component_count" not in manifest
+    assert TRACE_REF_KEY not in packet.author_input_refs
+    packet_with_payload = packet.with_author_input_payload(payload)
+
+    assert packet_with_payload.author_input_refs[TRACE_REF_KEY] == (
+        payload.to_trace_ref()[TRACE_REF_KEY]
+    )
+    assert packet.semantic_evidence_authority_manifest == manifest
+    assert packet.semantic_authority_ref == semantic_authority_ref
+    assert packet_with_payload.semantic_evidence_authority_manifest == manifest
+    assert packet_with_payload.semantic_authority_ref == semantic_authority_ref
+    assert TRACE_REF_KEY not in packet.semantic_evidence_authority_manifest
+    assert TRACE_REF_KEY not in packet.semantic_authority_ref
 
 
-def test_manifest_propagates_through_existing_packet_runtime_and_run_kernel() -> None:
+def test_manifest_trace_ref_propagates_through_packet_runtime_and_run_kernel() -> None:
     kernel, action, result = _prepare_packet_runtime_result()
+    trace_ref = dict(result.author_payload.semantic_evidence_authority_manifest_trace_ref)
+    manifest = result.packet.semantic_evidence_authority_manifest
 
     assert action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE
-    manifest = result.packet.semantic_evidence_authority_manifest
-    assert manifest
+    assert trace_ref == _expected_trace_ref(result.packet)
+    assert result.observation.payload["author_payload_ref"][TRACE_REF_KEY] == trace_ref
     assert result.observation.payload["packet_projection"][
         "semantic_evidence_authority_manifest"
     ] == manifest
-    assert "semantic_evidence_authority_manifest" not in PACKET_RUNTIME.read_text(
-        encoding="utf-8"
-    )
+    assert TRACE_REF_KEY not in PACKET_RUNTIME.read_text(encoding="utf-8")
 
     kernel.reduce(result.observation)
 
-    assert kernel.state.final_answer_packet[
-        "semantic_evidence_authority_manifest"
-    ] == manifest
-    assert "semantic_evidence_authority_manifest" not in RUN_KERNEL.read_text(
-        encoding="utf-8"
+    assert kernel.state.final_answer_authority_projection["author_payload_ref"][
+        TRACE_REF_KEY
+    ] == trace_ref
+    assert kernel.state.final_answer_packet["semantic_evidence_authority_manifest"] == (
+        manifest
     )
+    assert TRACE_REF_KEY not in RUN_KERNEL.read_text(encoding="utf-8")
 
 
-def test_manifest_does_not_change_author_payload_prompt_or_execution_surfaces() -> None:
+def test_manifest_trace_ref_does_not_change_author_surfaces_or_model_args() -> None:
     packet = build_final_answer_packet(
-        run_id="ag-sem-12c1-nondelta",
+        run_id="ag-sem-12c2-nondelta",
         final_evidence=[_passage(source_id=101)],
         author_evidence=[_passage(source_id=101)],
         sufficiency_judgment_projection=_semantic_sufficiency_projection(),
     )
-    assert packet.semantic_evidence_authority_manifest
     packet_without_manifest = replace(packet, semantic_authority_ref={})
 
     with_packet, with_payload = derive_author_input_payload(
@@ -332,19 +421,19 @@ def test_manifest_does_not_change_author_payload_prompt_or_execution_surfaces() 
     assert with_payload.authority_block == without_payload.authority_block
     assert with_packet.citation_records == without_packet.citation_records
     assert with_packet.source_obligations == without_packet.source_obligations
-    assert "semantic_evidence_authority_manifest" not in with_payload.to_trace_ref()
-    assert "semantic_evidence_authority_manifest" not in with_payload.prompt
-    assert "semantic_evidence_authority_manifest" not in with_payload.authority_payload
-    assert "semantic_evidence_authority_manifest" not in (
-        with_payload.semantic_authority_trace_ref
+    assert with_payload.citation_source_ids == without_payload.citation_source_ids
+    assert with_payload.missing_source_obligations == (
+        without_payload.missing_source_obligations
     )
+    assert TRACE_REF_KEY not in with_payload.prompt
+    assert TRACE_REF_KEY not in with_payload.authority_payload
 
     runtime_kernel, _runtime_action, runtime_result = _prepare_packet_runtime_result()
     runtime_kernel.reduce(runtime_result.observation)
     author_action = runtime_kernel.authorize_author_execution(inputs={})
-    payload_without_semantic_ref = replace(
+    payload_without_trace_ref = replace(
         runtime_result.author_payload,
-        semantic_authority_trace_ref={},
+        semantic_evidence_authority_manifest_trace_ref={},
     )
     calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
 
@@ -352,7 +441,7 @@ def test_manifest_does_not_change_author_payload_prompt_or_execution_surfaces() 
         calls.append((args, kwargs))
         return iter(["RAW MODEL FINAL ANSWER [101]"])
 
-    execute_author_action(
+    with_trace_result = execute_author_action(
         author_action,
         author_payload=runtime_result.author_payload,
         ask_model=fake_ask_model,
@@ -361,9 +450,9 @@ def test_manifest_does_not_change_author_payload_prompt_or_execution_surfaces() 
         api_key=None,
         query="ordinary query",
     )
-    execute_author_action(
+    without_trace_result = execute_author_action(
         author_action,
-        author_payload=payload_without_semantic_ref,
+        author_payload=payload_without_trace_ref,
         ask_model=fake_ask_model,
         system_prompt_registry={"author": "AUTHOR SYSTEM"},
         base_url="http://local",
@@ -372,39 +461,32 @@ def test_manifest_does_not_change_author_payload_prompt_or_execution_surfaces() 
     )
 
     assert calls[0] == calls[1]
+    assert TRACE_REF_KEY not in with_trace_result.observation.payload
+    assert TRACE_REF_KEY not in without_trace_result.observation.payload
 
 
-def test_manifest_raw_leakage_scan() -> None:
+def test_manifest_trace_ref_raw_leakage_scan() -> None:
     packet = _manual_packet()
-    encoded = json.dumps(packet.semantic_evidence_authority_manifest, sort_keys=True)
-
-    for forbidden in (
-        "raw_prompt",
-        "prompt_text",
-        "provider_payload",
-        "raw_provider_payload",
-        "model_response",
-        "raw_model_response",
-        "final_prose",
-        "final_text",
-        "bounded_text",
-        "component_summaries",
-        "amendment_summaries",
-        "db_row",
-        "cache",
-        "secret",
-        "token",
-    ):
-        assert forbidden not in encoded
-
-
-def test_static_guard_manifest_not_in_forbidden_author_surfaces() -> None:
-    assert "semantic_evidence_authority_manifest" not in AUTHOR_RUNTIME.read_text(
-        encoding="utf-8"
+    payload = packet.to_author_input_payload(
+        prompt="BASE AUTHOR PROMPT",
+        author_system_prompt_key="author",
+        author_effort="low",
     )
+    trace_ref = payload.to_trace_ref()[TRACE_REF_KEY]
+
+    _assert_trace_ref_sealed(trace_ref)
+    assert "semantic_evidence_authority_manifest_digest" in trace_ref
+    assert "semantic_evidence_authority_manifest" not in trace_ref
+
+
+def test_static_guard_manifest_trace_ref_stays_out_of_closed_surfaces() -> None:
+    assert TRACE_REF_KEY not in AUTHOR_RUNTIME.read_text(encoding="utf-8")
+    assert TRACE_REF_KEY not in PACKET_RUNTIME.read_text(encoding="utf-8")
+    assert TRACE_REF_KEY not in RUN_KERNEL.read_text(encoding="utf-8")
+    assert TRACE_REF_KEY not in ADAPTER.read_text(encoding="utf-8")
 
     packet_source = PACKET.read_text(encoding="utf-8")
-    forbidden_regions = (
+    for region_name, start, end in (
         (
             "to_authority_payload",
             packet_source.index("def to_authority_payload("),
@@ -415,36 +497,24 @@ def test_static_guard_manifest_not_in_forbidden_author_surfaces() -> None:
             packet_source.index("def to_author_authority_block("),
             packet_source.index("def to_legacy_citation_handoff_inputs("),
         ),
-    )
-    for region_name, start, end in forbidden_regions:
+    ):
         region = packet_source[start:end]
-        assert "semantic_evidence_authority_manifest" not in region, region_name
+        assert TRACE_REF_KEY not in region, region_name
 
-    payload_region = packet_source[
-        packet_source.index("class FinalAnswerAuthorInputPayload") : packet_source.index(
-            "class FinalAnswerPacket"
-        )
-    ]
-    assert "semantic_evidence_authority_manifest_trace_ref" in payload_region
-    assert '"semantic_evidence_authority_manifest"' not in payload_region
+    for path in (
+        ROOT / "core" / "retrieval.py",
+        ROOT / "core" / "retrieval_dispatch_runtime.py",
+        ROOT / "core" / "search_providers.py",
+    ):
+        assert TRACE_REF_KEY not in path.read_text(encoding="utf-8")
 
 
-def test_static_guard_full_manifest_not_copied_to_author_payload_trace_ref() -> None:
+def test_static_guard_no_historical_author_harness_or_semantic_history_reads() -> None:
     packet_source = PACKET.read_text(encoding="utf-8")
-    payload_region = packet_source[
-        packet_source.index("class FinalAnswerAuthorInputPayload") : packet_source.index(
-            "class FinalAnswerPacket"
-        )
-    ]
-    assert '"semantic_evidence_authority_manifest"' not in payload_region
-
-
-def test_static_guard_no_direct_semantic_history_or_af_reads_for_manifest() -> None:
-    packet_source = PACKET.read_text(encoding="utf-8")
-    manifest_region = packet_source[
-        packet_source.index("def semantic_evidence_authority_manifest(") : packet_source.index(
-            "def with_author_input_payload("
-        )
+    manifest_ref_region = packet_source[
+        packet_source.index(
+            "def _semantic_evidence_authority_manifest_trace_ref("
+        ) : packet_source.index("def to_author_authority_block(")
     ]
     for token in (
         "initial_answer_contract",
@@ -459,33 +529,7 @@ def test_static_guard_no_direct_semantic_history_or_af_reads_for_manifest() -> N
         "AF5A",
         "AF5B",
     ):
-        assert token not in manifest_region
-
-    adapter_source = ADAPTER.read_text(encoding="utf-8")
-    assert "semantic_evidence_authority_manifest" not in adapter_source
-    for token in (
-        "initial_answer_contract",
-        "semantic_observation_admission_history",
-        "component_coverage_history",
-        "ordinary_semantic_producer",
-        "followup_author",
-        "AF4B2",
-        "AF4D",
-        "AF5A",
-        "AF5B",
-    ):
-        assert token not in adapter_source
-
-
-def test_static_guard_no_manifest_provider_search_or_af_imports() -> None:
-    for path in (
-        ROOT / "core" / "retrieval.py",
-        ROOT / "core" / "retrieval_dispatch_runtime.py",
-        ROOT / "core" / "search_providers.py",
-    ):
-        assert "semantic_evidence_authority_manifest" not in path.read_text(
-            encoding="utf-8"
-        )
+        assert token not in manifest_ref_region
 
     for path in (PACKET, ADAPTER):
         tree = ast.parse(path.read_text(encoding="utf-8"))
