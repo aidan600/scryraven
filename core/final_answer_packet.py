@@ -21,6 +21,9 @@ FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION = (
 FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION = (
     "final_answer_author_payload_semantic_ref_v1"
 )
+FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION = (
+    "final_answer_semantic_evidence_authority_manifest_v1"
+)
 FINAL_ANSWER_PACKET_TRACE_KEY = "final_answer_packet"
 
 
@@ -117,6 +120,15 @@ _AUTHOR_SEMANTIC_TRACE_REF_BOOL_KEYS = frozenset(
 
 def _hash_text(value: str) -> str:
     return sha256(value.encode("utf-8")).hexdigest()
+
+
+def _stable_safe_json_digest(value: Any) -> str:
+    canonical_json = json.dumps(
+        _safe_json(value),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 def _clean_text(value: Any, *, limit: int = 500) -> str | None:
@@ -455,6 +467,76 @@ class FinalAnswerPacket:
     def citation_ineligible(self) -> tuple[CitationEligibilityRecord, ...]:
         return tuple(record for record in self.citation_records if record.status is CitationEligibilityStatus.CITATION_INELIGIBLE)
 
+    @property
+    def semantic_evidence_authority_manifest(self) -> dict[str, Any]:
+        source_ref = dict(self.semantic_authority_ref or {})
+        if not source_ref:
+            return {}
+        source_schema = _clean_text(source_ref.get("schema_version"), limit=120)
+        semantic_digest = _clean_text(
+            source_ref.get("semantic_state_facts_digest"),
+            limit=128,
+        )
+        if not source_schema or not semantic_digest:
+            return {}
+
+        status_summary = {item.value: 0 for item in SourceObligationStatus}
+        for record in self.source_obligations:
+            status_summary[record.status.value] = (
+                status_summary.get(record.status.value, 0) + 1
+            )
+
+        manifest: dict[str, Any] = {
+            "schema_version": (
+                FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION
+            ),
+            "available": True,
+            "source_packet_id": _clean_token(self.packet_id, limit=120),
+            "source_packet_schema_version": self.schema_version,
+            "semantic_authority_ref_schema_version": source_schema,
+            "semantic_authority_ref_digest": _stable_safe_json_digest(source_ref),
+            "semantic_state_facts_digest": semantic_digest,
+            "evidence_ids": [
+                record.evidence_id
+                for record in self.evidence_allowed
+                if _clean_token(record.evidence_id, limit=120)
+            ],
+            "citation_source_ids": [
+                _safe_json(record.source_id)
+                for record in self.citation_eligible
+                if record.source_id is not None
+            ],
+            "source_obligation_status_summary": status_summary,
+            "content_refs_available": False,
+            "coverage_refs_available": False,
+            "deferred_ref_fields": [
+                "sanitized_content_ref_ids",
+                "content_ref_digests",
+                "coverage_record_ids",
+                "coverage_record_digests",
+            ],
+            "prompt_visible": False,
+            "author_payload_visible": False,
+            "model_request_visible": False,
+        }
+        excluded_evidence_ids = [
+            record.evidence_id
+            for record in self.evidence_excluded
+            if _clean_token(record.evidence_id, limit=120)
+        ]
+        if excluded_evidence_ids:
+            manifest["excluded_evidence_ids"] = excluded_evidence_ids
+        for key in (
+            "required_component_count",
+            "covered_component_count",
+            "missing_component_count",
+        ):
+            if key in source_ref:
+                value = _safe_json(source_ref[key])
+                if value not in (None, "", [], {}):
+                    manifest[key] = value
+        return manifest
+
     def with_author_input_payload(self, payload: FinalAnswerAuthorInputPayload) -> "FinalAnswerPacket":
         return replace(
             self,
@@ -629,11 +711,6 @@ class FinalAnswerPacket:
         )
         if not source_schema or not authority_owner or not semantic_digest:
             return {}
-        canonical_json = json.dumps(
-            _safe_json(source_ref),
-            sort_keys=True,
-            separators=(",", ":"),
-        )
         return {
             "schema_version": FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION,
             "available": True,
@@ -642,7 +719,7 @@ class FinalAnswerPacket:
             "semantic_authority_ref_schema_version": source_schema,
             "authority_owner": authority_owner,
             "semantic_state_facts_digest": semantic_digest,
-            "ref_digest": sha256(canonical_json.encode("utf-8")).hexdigest(),
+            "ref_digest": _stable_safe_json_digest(source_ref),
             "prompt_visible": False,
             "final_text_included": False,
             "raw_content_included": False,
@@ -801,6 +878,9 @@ class FinalAnswerPacket:
         }
         if self.semantic_authority_ref:
             payload["semantic_authority_ref"] = _safe_json(self.semantic_authority_ref)
+        manifest = self.semantic_evidence_authority_manifest
+        if manifest:
+            payload["semantic_evidence_authority_manifest"] = _safe_json(manifest)
         return payload
 
     def to_trace_fragment(self) -> dict[str, Any]:
@@ -810,6 +890,7 @@ class FinalAnswerPacket:
 __all__ = [
     "FINAL_ANSWER_PACKET_SCHEMA_VERSION",
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION",
+    "FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_TRACE_KEY",
     "AuthorInputStatus",
