@@ -34,6 +34,7 @@ RAW_AUTHOR_RESPONSE = (
     "[[1]](https://official.example/rule). The answer stays narrow, avoids new "
     "evidence, and leaves any unresolved source obligations caveated."
 )
+MANIFEST_TRACE_REF_KEY = "semantic_evidence_authority_manifest_trace_ref"
 
 
 @pytest.fixture(autouse=True)
@@ -231,6 +232,17 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     )
     assert "semantic_authority_ref" not in packet_handoff.author_payload.to_trace_ref()
     assert "semantic_authority_ref" not in state.author_observation
+    manifest_trace_ref = packet_handoff.author_payload.to_trace_ref()[
+        MANIFEST_TRACE_REF_KEY
+    ]
+    assert manifest_trace_ref.get("available") is True
+    assert manifest_trace_ref.get("semantic_state_facts_digest") == (
+        manifest.get("semantic_state_facts_digest")
+    )
+    assert manifest_trace_ref.get("semantic_evidence_authority_manifest_digest")
+    assert "evidence_ids" not in manifest_trace_ref
+    assert "citation_source_ids" not in manifest_trace_ref
+    assert "source_obligation_status_summary" not in manifest_trace_ref
 
     assert packet_handoff.packet.packet_id == state.final_answer_packet["packet_id"]
     assert packet_handoff.author_payload.packet_id == state.final_answer_packet["packet_id"]
@@ -243,10 +255,15 @@ def test_ag_check_01_offline_run_pipeline_consumes_packet_constrained_authority(
     assert state.final_answer_authority_projection["author_payload_ref"][
         "semantic_authority_trace_ref"
     ] == semantic_trace_ref
+    assert state.final_answer_authority_projection["author_payload_ref"][
+        MANIFEST_TRACE_REF_KEY
+    ] == manifest_trace_ref
     assert state.final_answer_authority_projection["author_payload_ref"]["prompt_text_included"] is False
     assert "semantic_authority_trace_ref" not in state.author_observation
+    assert MANIFEST_TRACE_REF_KEY not in state.author_observation
 
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
+    assert MANIFEST_TRACE_REF_KEY not in harness.author_prompts[0]
     assert author_scope["final_answer_packet_action"] is packet_handoff.action
     assert author_scope["final_answer_author_payload"] is packet_handoff.author_payload
     assert state.author_observation["owner"] == "RunKernel.AuthorExecutor"

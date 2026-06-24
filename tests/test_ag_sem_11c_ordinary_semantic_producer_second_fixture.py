@@ -42,6 +42,7 @@ RAW_AUTHOR_RESPONSE = (
     "the retrieved official current rule. The answer cites only packet provided "
     "source identity [[7]](https://official.sample.test/rule)."
 )
+MANIFEST_TRACE_REF_KEY = "semantic_evidence_authority_manifest_trace_ref"
 
 
 @pytest.fixture(autouse=True)
@@ -221,11 +222,26 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     for record in packet.source_obligations:
         expected_status_summary[record.status.value] += 1
     assert manifest["source_obligation_status_summary"] == expected_status_summary
+    manifest_trace_ref = packet_handoff.author_payload.to_trace_ref()[
+        MANIFEST_TRACE_REF_KEY
+    ]
+    assert manifest_trace_ref["available"] is True
+    assert manifest_trace_ref["semantic_state_facts_digest"] == (
+        manifest["semantic_state_facts_digest"]
+    )
+    assert manifest_trace_ref["semantic_evidence_authority_manifest_digest"]
+    assert "evidence_ids" not in manifest_trace_ref
+    assert "citation_source_ids" not in manifest_trace_ref
+    assert "source_obligation_status_summary" not in manifest_trace_ref
+    assert state.final_answer_authority_projection["author_payload_ref"][
+        MANIFEST_TRACE_REF_KEY
+    ] == manifest_trace_ref
 
     assert harness.author_prompts == [packet_handoff.author_prompt]
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
     assert "semantic_authority_ref" not in harness.author_prompts[0]
     assert "semantic_evidence_authority_manifest" not in harness.author_prompts[0]
+    assert MANIFEST_TRACE_REF_KEY not in harness.author_prompts[0]
     assert captured["author_runtime_scope"]["final_answer_author_payload"] is (
         packet_handoff.author_payload
     )
@@ -239,6 +255,7 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     )
     assert "semantic_authority_ref" not in state.author_observation
     assert "semantic_authority_trace_ref" not in state.author_observation
+    assert MANIFEST_TRACE_REF_KEY not in state.author_observation
 
     assert outcome.report == RAW_AUTHOR_RESPONSE
     canonical_trace = json.dumps(kernel.to_trace_fragment(), sort_keys=True)

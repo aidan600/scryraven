@@ -21,6 +21,9 @@ FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION = (
 FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION = (
     "final_answer_author_payload_semantic_ref_v1"
 )
+FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION = (
+    "final_answer_author_payload_semantic_evidence_manifest_ref_v1"
+)
 FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION = (
     "final_answer_semantic_evidence_authority_manifest_v1"
 )
@@ -114,6 +117,41 @@ _AUTHOR_SEMANTIC_TRACE_REF_BOOL_KEYS = frozenset(
         "prompt_visible",
         "final_text_included",
         "raw_content_included",
+    }
+)
+_AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_KEYS = (
+    "schema_version",
+    "available",
+    "source_packet_id",
+    "source_packet_schema_version",
+    "semantic_evidence_authority_manifest_schema_version",
+    "semantic_evidence_authority_manifest_digest",
+    "semantic_authority_ref_digest",
+    "semantic_state_facts_digest",
+    "content_refs_available",
+    "coverage_refs_available",
+    "prompt_visible",
+    "author_payload_content_included",
+    "model_request_visible",
+    "final_text_included",
+    "raw_content_included",
+    "bounded_text_included",
+    "raw_prompt_included",
+    "provider_payload_included",
+)
+_AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_BOOL_KEYS = frozenset(
+    {
+        "available",
+        "content_refs_available",
+        "coverage_refs_available",
+        "prompt_visible",
+        "author_payload_content_included",
+        "model_request_visible",
+        "final_text_included",
+        "raw_content_included",
+        "bounded_text_included",
+        "raw_prompt_included",
+        "provider_payload_included",
     }
 )
 
@@ -211,6 +249,22 @@ def _safe_author_semantic_trace_ref(value: Mapping[str, Any]) -> dict[str, Any]:
         out[key] = (
             bool(item)
             if key in _AUTHOR_SEMANTIC_TRACE_REF_BOOL_KEYS
+            else _safe_json(item)
+        )
+    return out
+
+
+def _safe_author_semantic_evidence_manifest_trace_ref(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in _AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_KEYS:
+        if key not in value:
+            continue
+        item = value[key]
+        out[key] = (
+            bool(item)
+            if key in _AUTHOR_SEMANTIC_EVIDENCE_MANIFEST_TRACE_REF_BOOL_KEYS
             else _safe_json(item)
         )
     return out
@@ -363,6 +417,9 @@ class FinalAnswerAuthorInputPayload:
     authority_payload: Mapping[str, Any] = field(default_factory=dict)
     authority_block: str = ""
     semantic_authority_trace_ref: Mapping[str, Any] = field(default_factory=dict)
+    semantic_evidence_authority_manifest_trace_ref: Mapping[str, Any] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         status = self.status.value if isinstance(self.status, AuthorInputStatus) else str(self.status)
@@ -402,6 +459,12 @@ class FinalAnswerAuthorInputPayload:
         if self.semantic_authority_trace_ref:
             payload["semantic_authority_trace_ref"] = _safe_author_semantic_trace_ref(
                 self.semantic_authority_trace_ref
+            )
+        if self.semantic_evidence_authority_manifest_trace_ref:
+            payload["semantic_evidence_authority_manifest_trace_ref"] = (
+                _safe_author_semantic_evidence_manifest_trace_ref(
+                    self.semantic_evidence_authority_manifest_trace_ref
+                )
             )
         return payload
 
@@ -696,6 +759,9 @@ class FinalAnswerPacket:
             authority_payload=authority_payload,
             authority_block=authority_block,
             semantic_authority_trace_ref=self._semantic_authority_trace_ref(),
+            semantic_evidence_authority_manifest_trace_ref=(
+                self._semantic_evidence_authority_manifest_trace_ref()
+            ),
         )
         return payload
 
@@ -723,6 +789,37 @@ class FinalAnswerPacket:
             "prompt_visible": False,
             "final_text_included": False,
             "raw_content_included": False,
+        }
+
+    def _semantic_evidence_authority_manifest_trace_ref(self) -> dict[str, Any]:
+        manifest = self.semantic_evidence_authority_manifest
+        if not manifest:
+            return {}
+        return {
+            "schema_version": (
+                FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION
+            ),
+            "available": True,
+            "source_packet_id": self.packet_id,
+            "source_packet_schema_version": self.schema_version,
+            "semantic_evidence_authority_manifest_schema_version": manifest[
+                "schema_version"
+            ],
+            "semantic_evidence_authority_manifest_digest": _stable_safe_json_digest(
+                manifest
+            ),
+            "semantic_authority_ref_digest": manifest["semantic_authority_ref_digest"],
+            "semantic_state_facts_digest": manifest["semantic_state_facts_digest"],
+            "content_refs_available": bool(manifest.get("content_refs_available")),
+            "coverage_refs_available": bool(manifest.get("coverage_refs_available")),
+            "prompt_visible": False,
+            "author_payload_content_included": False,
+            "model_request_visible": False,
+            "final_text_included": False,
+            "raw_content_included": False,
+            "bounded_text_included": False,
+            "raw_prompt_included": False,
+            "provider_payload_included": False,
         }
 
     def to_author_authority_block(
@@ -890,6 +987,7 @@ class FinalAnswerPacket:
 __all__ = [
     "FINAL_ANSWER_PACKET_SCHEMA_VERSION",
     "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_REF_SCHEMA_VERSION",
+    "FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_EVIDENCE_MANIFEST_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_EVIDENCE_AUTHORITY_MANIFEST_SCHEMA_VERSION",
     "FINAL_ANSWER_SEMANTIC_AUTHORITY_REF_SCHEMA_VERSION",
     "FINAL_ANSWER_PACKET_TRACE_KEY",
