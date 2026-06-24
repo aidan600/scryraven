@@ -8,9 +8,11 @@ ranking/citation/final-answer code.
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
+from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 from core.component_coverage_reduction_runtime import (
@@ -32,6 +34,7 @@ from core.contract_amendment_admission_runtime import (
     CONTRACT_AMENDMENT_ADMISSION_STAGE as CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME,
 )
 from core.evidence_ledger import EvidenceLedger
+from core.final_answer_packet import _safe_json
 from core.followup_author_evidence_content_bridge_runtime import (
     FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_REASON,
     af4b2_authority_projection_from_record,
@@ -702,6 +705,15 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
 def _safe_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     safe = _json_safe(dict(value or {}))
     return dict(safe) if isinstance(safe, Mapping) else {}
+
+
+def _stable_packet_safe_json_digest(value: Any) -> str:
+    canonical_json = json.dumps(
+        _safe_json(value),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
 def _safe_semantic_consumption(value: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -2401,14 +2413,18 @@ class RunKernel:
                 "AG-96I3 Author execution is subordinated to a future "
                 "X-bound activation consumer"
             )
+        expected_author_payload_ref_digest = _stable_packet_safe_json_digest(
+            payload_ref
+        )
         merged_inputs = {
+            **dict(inputs or {}),
             "packet_id": self.state.final_answer_packet.get("packet_id"),
             "author_payload_status": payload_ref.get("status"),
+            "expected_author_payload_ref_digest": expected_author_payload_ref_digest,
             "author_system_prompt_key": payload_ref.get("author_system_prompt_key"),
             "author_effort": payload_ref.get("author_effort"),
             "author_provider": payload_ref.get("author_provider"),
             "author_model": payload_ref.get("author_model"),
-            **dict(inputs or {}),
         }
         return self.authorize(
             stage=AUTHOR_EXECUTION_STAGE,

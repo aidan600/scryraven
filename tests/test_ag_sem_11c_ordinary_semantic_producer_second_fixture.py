@@ -404,6 +404,35 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert state.author_observation["citation_source_ids"] == list(
         packet_handoff.author_payload.citation_source_ids
     )
+    invocation_manifest = state.author_observation[
+        "author_invocation_authority_manifest"
+    ]
+    assert invocation_manifest["schema_version"] == (
+        "author_invocation_authority_manifest_ag_auth_invoke_01_v1"
+    )
+    assert invocation_manifest["packet_id"] == packet.packet_id
+    assert invocation_manifest["author_payload_ref_digest"] == (
+        state.author_observation["author_payload_ref_digest"]
+    )
+    assert invocation_manifest["expected_author_payload_ref_digest"] == (
+        state.author_observation["expected_author_payload_ref_digest"]
+    )
+    assert invocation_manifest[
+        "semantic_packet_evidence_binding_available"
+    ] is True
+    assert invocation_manifest["semantic_packet_evidence_binding_count"] == len(
+        bindings
+    )
+    assert invocation_manifest["semantic_packet_evidence_binding_digest"] == (
+        manifest["semantic_packet_evidence_binding_digest"]
+    )
+    assert invocation_manifest["prompt_text_included"] is False
+    assert invocation_manifest["system_prompt_text_included"] is False
+    assert invocation_manifest["provider_payload_retained"] is False
+    assert invocation_manifest["raw_prompt_included"] is False
+    assert invocation_manifest["raw_content_included"] is False
+    assert invocation_manifest["bounded_text_included"] is False
+    assert invocation_manifest["final_text_included"] is False
     assert "semantic_authority_ref" not in state.author_observation
     assert "semantic_authority_trace_ref" not in state.author_observation
     assert "semantic_ref_projection" not in state.author_observation
@@ -416,6 +445,15 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "coverage_record_refs" not in state.author_observation
     assert "semantic_observation_refs" not in state.author_observation
     assert MANIFEST_TRACE_REF_KEY not in state.author_observation
+    for forbidden_manifest_key in (
+        "semantic_packet_evidence_bindings",
+        "semantic_content_coverage_ref_envelope",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+    ):
+        assert forbidden_manifest_key not in invocation_manifest
 
     assert outcome.report == RAW_AUTHOR_RESPONSE
     canonical_trace = json.dumps(kernel.to_trace_fragment(), sort_keys=True)
