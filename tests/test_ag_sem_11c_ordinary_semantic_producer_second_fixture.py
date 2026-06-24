@@ -43,6 +43,8 @@ RAW_AUTHOR_RESPONSE = (
     "source identity [[7]](https://official.sample.test/rule)."
 )
 MANIFEST_TRACE_REF_KEY = "semantic_evidence_authority_manifest_trace_ref"
+ENVELOPE_TRACE_REF_KEY = "semantic_content_coverage_ref_envelope_trace_ref"
+ENVELOPE_KEY = "semantic_content_coverage_ref_envelope"
 
 
 @pytest.fixture(autouse=True)
@@ -254,6 +256,7 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert manifest["bounded_text_included"] is False
     assert manifest["prompt_visible"] is False
     assert manifest["author_payload_visible"] is False
+    assert manifest["author_payload_ref_envelope_available"] is True
     assert manifest["model_request_visible"] is False
     assert manifest["final_text_included"] is False
     assert "coverage_record_ids" not in manifest
@@ -286,9 +289,50 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "component_refs" not in manifest_trace_ref
     assert "semantic_ref_evidence_ids" not in manifest_trace_ref
     assert "source_obligation_refs" not in manifest_trace_ref
+    envelope = packet_handoff.author_payload.semantic_content_coverage_ref_envelope
+    assert envelope["available"] is True
+    assert envelope["semantic_state_facts_digest"] == (
+        fap_ref_projection["semantic_state_facts_digest"]
+    )
+    assert envelope["sanitized_content_ref_ids"]
+    assert envelope["content_ref_digests"]
+    assert envelope["coverage_record_refs"]
+    assert envelope["semantic_observation_refs"]
+    assert envelope["component_refs"]
+    assert envelope["author_payload_visible"] is True
+    assert envelope["authority_payload_visible"] is False
+    assert envelope["authority_block_visible"] is False
+    assert envelope["prompt_visible"] is False
+    assert envelope["model_request_visible"] is False
+    envelope_trace_ref = author_payload_trace_ref[ENVELOPE_TRACE_REF_KEY]
+    assert envelope_trace_ref["available"] is True
+    assert envelope_trace_ref["envelope_digest"]
+    assert envelope_trace_ref["component_ref_count"] > 0
+    assert envelope_trace_ref["coverage_record_ref_count"] > 0
+    assert envelope_trace_ref["semantic_observation_ref_count"] > 0
+    assert envelope_trace_ref["sanitized_content_ref_count"] > 0
+    assert envelope_trace_ref["content_ref_digest_count"] > 0
+    assert envelope_trace_ref["semantic_ref_evidence_id_count"] > 0
+    assert envelope_trace_ref["source_obligation_ref_count"] > 0
+    for forbidden_ref_key in (
+        "component_refs",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "semantic_ref_evidence_ids",
+        "source_obligation_refs",
+    ):
+        assert forbidden_ref_key not in envelope_trace_ref
     assert state.final_answer_authority_projection["author_payload_ref"][
         MANIFEST_TRACE_REF_KEY
     ] == manifest_trace_ref
+    assert state.final_answer_authority_projection["author_payload_ref"][
+        ENVELOPE_TRACE_REF_KEY
+    ] == envelope_trace_ref
+    assert ENVELOPE_KEY not in state.final_answer_authority_projection[
+        "author_payload_ref"
+    ]
 
     assert harness.author_prompts == [packet_handoff.author_prompt]
     assert "FINAL ANSWER PACKET AUTHORITY" in harness.author_prompts[0]
@@ -302,6 +346,8 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
         "coverage_record_refs",
         "semantic_observation_refs",
         MANIFEST_TRACE_REF_KEY,
+        ENVELOPE_TRACE_REF_KEY,
+        ENVELOPE_KEY,
     ):
         assert forbidden_prompt_token not in harness.author_prompts[0]
     assert captured["author_runtime_scope"]["final_answer_author_payload"] is (
@@ -319,6 +365,8 @@ def test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest(
     assert "semantic_authority_trace_ref" not in state.author_observation
     assert "semantic_ref_projection" not in state.author_observation
     assert "semantic_content_coverage_ref_projection" not in state.author_observation
+    assert ENVELOPE_TRACE_REF_KEY not in state.author_observation
+    assert ENVELOPE_KEY not in state.author_observation
     assert "sanitized_content_ref_ids" not in state.author_observation
     assert "content_ref_digests" not in state.author_observation
     assert "coverage_record_refs" not in state.author_observation
