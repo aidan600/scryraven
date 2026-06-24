@@ -75,6 +75,14 @@ ORDINARY_SEMANTIC_PRODUCER_SCHEMA_VERSION = "ordinary_semantic_producer_ag_sem_1
 ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION = "ag-sem-11-query-shape-seeded"
 _PREFLIGHT_ACTION_ID = "preflight:ag-sem-11-ordinary-semantic-producer"
 
+SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE = "query_shape_classifier_unavailable"
+SKIP_REASON_MULTIPART_ASSESSMENT = "multipart_assessment"
+SKIP_REASON_BINDABLE_PASSAGE_MISSING = "bindable_passage_missing"
+SKIP_REASON_CONTRACT_PREFLIGHT_FAILED = "contract_preflight_failed"
+SKIP_REASON_ADMISSION_PREFLIGHT_FAILED = "admission_preflight_failed"
+SKIP_REASON_COVERAGE_PREFLIGHT_FAILED = "coverage_preflight_failed"
+SKIP_REASON_PREFLIGHT_FAILED = "preflight_failed"
+
 _ACCEPTED_DISPOSITIONS = frozenset({"accepted", "observed", "partially_accepted"})
 _READABLE_STATUSES = frozenset({"readable", "available", "ok"})
 
@@ -108,6 +116,12 @@ class OrdinarySemanticProducerBundle:
 @dataclass(frozen=True, slots=True)
 class OrdinarySemanticProducerHandoffResult:
     status: OrdinarySemanticProducerHandoffStatus
+    skipped_reason: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OrdinarySemanticProducerPreflightResult:
+    bundle: OrdinarySemanticProducerBundle | None
     skipped_reason: str | None = None
 
 
@@ -757,7 +771,7 @@ def _dry_run_coverage_state(
         return None
 
 
-def build_ordinary_semantic_producer_bundle(
+def preflight_ordinary_semantic_producer_bundle(
     *,
     search_work_plan: Mapping[str, Any],
     route_projection: Mapping[str, Any] | None,
@@ -768,9 +782,12 @@ def build_ordinary_semantic_producer_bundle(
     request_id: str,
     query: str,
     requested_mode: str | None = None,
-) -> OrdinarySemanticProducerBundle | None:
+) -> OrdinarySemanticProducerPreflightResult:
     if not _search_work_plan_uses_real_query_shape_classifier(search_work_plan):
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
+        )
     contract_id = _clean_token(run_contract_projection.get("contract_id")) or run_id
     route_facts = _safe_mapping(route_projection)
     try:
@@ -785,7 +802,15 @@ def build_ordinary_semantic_producer_bundle(
             )
         )
     except Exception:
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_PREFLIGHT_FAILED,
+        )
+    if len(records.query_shape_assessment.component_candidates) != 1:
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_MULTIPART_ASSESSMENT,
+        )
     qmr = build_question_meaning_record_from_search_work_plan(
         assessment=records.query_shape_assessment,
         route_facts=route_facts,
@@ -796,24 +821,36 @@ def build_ordinary_semantic_producer_bundle(
         requested_mode=requested_mode or str(run_contract_projection.get("selected_depth") or "balanced"),
     )
     if qmr is None:
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_MULTIPART_ASSESSMENT,
+        )
     accepted_contract = _dry_run_accepted_contract(
         qmr=qmr,
         run_id=run_id,
         request_id=request_id,
     )
     if accepted_contract is None:
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
+        )
     bindable = select_bindable_final_passage(final_top_evidence, evidence_ledger_projection)
     if bindable is None:
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_BINDABLE_PASSAGE_MISSING,
+        )
     try:
         observation, content_refs = build_semantic_observation_and_content_refs(
             accepted_contract=accepted_contract,
             bindable=bindable,
         )
     except Exception:
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_PREFLIGHT_FAILED,
+        )
     admission_projection = _dry_run_admission_projection(
         accepted_contract=accepted_contract,
         observation=observation,
@@ -823,7 +860,10 @@ def build_ordinary_semantic_producer_bundle(
         request_id=request_id,
     )
     if admission_projection is None:
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
+        )
     coverage_record = build_component_coverage_proposal(
         accepted_contract=accepted_contract,
         observation=observation,
@@ -834,7 +874,10 @@ def build_ordinary_semantic_producer_bundle(
         query=query,
     )
     if coverage_record is None:
-        return None
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
+        )
     if (
         _dry_run_coverage_state(
             accepted_contract=accepted_contract,
@@ -846,15 +889,45 @@ def build_ordinary_semantic_producer_bundle(
         )
         is None
     ):
-        return None
-    return OrdinarySemanticProducerBundle(
-        question_meaning_record=qmr,
-        semantic_observation=observation,
-        sanitized_content_references=content_refs,
-        component_coverage_record=coverage_record,
-        dry_run_accepted_contract=accepted_contract,
-        dry_run_admission_projection=admission_projection,
+        return OrdinarySemanticProducerPreflightResult(
+            bundle=None,
+            skipped_reason=SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
+        )
+    return OrdinarySemanticProducerPreflightResult(
+        bundle=OrdinarySemanticProducerBundle(
+            question_meaning_record=qmr,
+            semantic_observation=observation,
+            sanitized_content_references=content_refs,
+            component_coverage_record=coverage_record,
+            dry_run_accepted_contract=accepted_contract,
+            dry_run_admission_projection=admission_projection,
+        ),
     )
+
+
+def build_ordinary_semantic_producer_bundle(
+    *,
+    search_work_plan: Mapping[str, Any],
+    route_projection: Mapping[str, Any] | None,
+    run_contract_projection: Mapping[str, Any],
+    final_top_evidence: Sequence[Mapping[str, Any]],
+    evidence_ledger_projection: Mapping[str, Any],
+    run_id: str,
+    request_id: str,
+    query: str,
+    requested_mode: str | None = None,
+) -> OrdinarySemanticProducerBundle | None:
+    return preflight_ordinary_semantic_producer_bundle(
+        search_work_plan=search_work_plan,
+        route_projection=route_projection,
+        run_contract_projection=run_contract_projection,
+        final_top_evidence=final_top_evidence,
+        evidence_ledger_projection=evidence_ledger_projection,
+        run_id=run_id,
+        request_id=request_id,
+        query=query,
+        requested_mode=requested_mode,
+    ).bundle
 
 
 def _semantic_state_already_present(run_kernel: Any) -> bool:
@@ -892,11 +965,9 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
         for item in runtime_scope.get("final_top_evidence") or ()
         if isinstance(item, Mapping)
     ]
-    evidence_ledger_projection = _safe_mapping(runtime_scope.get("evidence_ledger_projection"))
-    if not evidence_ledger_projection:
-        evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+    evidence_ledger_projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
 
-    bundle = build_ordinary_semantic_producer_bundle(
+    preflight = preflight_ordinary_semantic_producer_bundle(
         search_work_plan=search_work_plan,
         route_projection=run_kernel.state.projections.get("route_request"),
         run_contract_projection=_safe_mapping(runtime_scope.get("run_contract_projection")),
@@ -907,11 +978,12 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
         query=str(runtime_scope.get("query") or ""),
         requested_mode=str(runtime_scope.get("strategy") or runtime_scope.get("mode") or ""),
     )
-    if bundle is None:
+    if preflight.bundle is None:
         return OrdinarySemanticProducerHandoffResult(
             status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
-            skipped_reason="preflight_failed",
+            skipped_reason=preflight.skipped_reason or SKIP_REASON_PREFLIGHT_FAILED,
         )
+    bundle = preflight.bundle
 
     qmr = bundle.question_meaning_record
     try:
@@ -992,10 +1064,18 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
 __all__ = [
     "ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION",
     "ORDINARY_SEMANTIC_PRODUCER_SCHEMA_VERSION",
+    "SKIP_REASON_ADMISSION_PREFLIGHT_FAILED",
+    "SKIP_REASON_BINDABLE_PASSAGE_MISSING",
+    "SKIP_REASON_CONTRACT_PREFLIGHT_FAILED",
+    "SKIP_REASON_COVERAGE_PREFLIGHT_FAILED",
+    "SKIP_REASON_MULTIPART_ASSESSMENT",
+    "SKIP_REASON_PREFLIGHT_FAILED",
+    "SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE",
     "BindableFinalPassage",
     "OrdinarySemanticProducerBundle",
     "OrdinarySemanticProducerHandoffResult",
     "OrdinarySemanticProducerHandoffStatus",
+    "OrdinarySemanticProducerPreflightResult",
     "OrdinarySemanticProducerTransactionError",
     "build_component_coverage_proposal",
     "build_ordinary_semantic_producer_bundle",
@@ -1003,5 +1083,6 @@ __all__ = [
     "build_sanitized_content_reference_from_passage",
     "build_semantic_observation_and_content_refs",
     "execute_ordinary_semantic_producer_handoff_from_scope",
+    "preflight_ordinary_semantic_producer_bundle",
     "select_bindable_final_passage",
 ]
