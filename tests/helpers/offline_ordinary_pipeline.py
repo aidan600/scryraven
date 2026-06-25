@@ -235,6 +235,8 @@ def install_handoff_capture(
 
     if HANDOFF_SUFFICIENCY in stages:
         captured["sufficiency_handoff_called"] = False
+        captured["sufficiency_handoffs"] = []
+        captured["sufficiency_projections"] = []
         original_sufficiency = orchestrator.execute_sufficiency_judgment_handoff_from_scope
 
         def sufficiency_wrapper(
@@ -246,8 +248,12 @@ def install_handoff_capture(
             captured["sufficiency_runtime_scope"] = dict(runtime_scope)
             handoff = original_sufficiency(run_kernel, runtime_scope, **kwargs)
             captured["sufficiency_handoff"] = handoff
+            captured["sufficiency_handoffs"].append(handoff)
             captured["sufficiency_projection"] = dict(
                 run_kernel.state.sufficiency_judgment_projection
+            )
+            captured["sufficiency_projections"].append(
+                dict(run_kernel.state.sufficiency_judgment_projection)
             )
             return handoff
 
