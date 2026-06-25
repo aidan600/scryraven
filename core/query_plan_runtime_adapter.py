@@ -73,6 +73,7 @@ class QueryPlanRuntimeAdapter:
         queries: Sequence[str],
         *,
         search_work_projection: Mapping[str, Any] | None,
+        search_judgment_projection: Mapping[str, Any] | None = None,
         max_len: int | None,
         origin: str,
         role: QueryPlanRole | str,
@@ -89,12 +90,25 @@ class QueryPlanRuntimeAdapter:
             queries,
             query_plan_context=context,
             search_work_projection=search_work_projection,
+            search_judgment_projection=search_judgment_projection,
             max_len=max_len,
             origin=origin,
             role=role,
             phase=phase,
         )
         return allocated
+
+    def consume_search_judgment_component_gap_authority(
+        self,
+        queries: Sequence[str],
+        *,
+        search_judgment_projection: Mapping[str, Any] | None,
+    ) -> list[str]:
+        self.plan = self.plan.consume_search_judgment_component_gap_authority(
+            queries,
+            search_judgment_projection=search_judgment_projection,
+        )
+        return list(queries)
 
     def admit_recon_candidates(self, queries: Sequence[str]) -> list[str]:
         """Admit recon-rewriter candidates before they become retrieval queries."""

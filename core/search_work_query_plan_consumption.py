@@ -88,6 +88,15 @@ _PROVIDER_TERMS = {
     "conflict_currentness_check": ("conflict", "current", "deadline", "compare"),
     "direct_candidate_search": ("overview", "lookup", "background"),
 }
+_COMPONENT_GAP_AUTHORIZING_DECISIONS = frozenset(
+    {
+        "continue_targeted_search",
+        "recover_missing_canonical",
+        "recover_missing_legal_primary",
+        "recover_missing_official_current",
+        "recover_missing_source_bound_numeric",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +149,9 @@ class SearchWorkQueryPlanAllocationResult:
     behavior_boundary_flags: Mapping[str, Any] = field(default_factory=dict)
     fallback_reason: str | None = None
     query_metadata: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    version_bound_component_gap_authority_consumed: bool = False
+    version_bound_component_gap_authorized_query: str | None = None
+    version_bound_component_gap_fallback_reason: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload = {
@@ -157,6 +169,15 @@ class SearchWorkQueryPlanAllocationResult:
                 query: dict(metadata)
                 for query, metadata in self.query_metadata.items()
             },
+            "version_bound_component_gap_authority_consumed": (
+                self.version_bound_component_gap_authority_consumed
+            ),
+            "version_bound_component_gap_authorized_query": (
+                self.version_bound_component_gap_authorized_query
+            ),
+            "version_bound_component_gap_fallback_reason": (
+                self.version_bound_component_gap_fallback_reason
+            ),
         }
         return _json_safe(_without_empty(payload))
 
@@ -170,6 +191,7 @@ def allocate_existing_queries_by_search_work(
     origin: str,
     role: str,
     phase: str,
+    search_judgment_projection: Mapping[str, Any] | None = None,
 ) -> SearchWorkQueryPlanAllocationResult:
     """Allocate existing query strings across SearchWork components.
 
@@ -187,6 +209,11 @@ def allocate_existing_queries_by_search_work(
             rejected_over_budget_queries=() if max_len is None else queries[max(0, max_len) :],
             behavior_boundary_flags=flags,
             fallback_reason="search_work_projection_absent",
+            version_bound_component_gap_fallback_reason=(
+                "search_work_projection_absent"
+                if search_judgment_projection
+                else None
+            ),
         )
 
     components, fallback_reason = _component_hints(search_work_projection)
@@ -196,6 +223,11 @@ def allocate_existing_queries_by_search_work(
             admitted_query_order=queries,
             behavior_boundary_flags=flags,
             fallback_reason=fallback_reason or "search_work_projection_has_no_components",
+            version_bound_component_gap_fallback_reason=(
+                fallback_reason or "search_work_projection_has_no_components"
+                if search_judgment_projection
+                else None
+            ),
         )
     if not queries:
         return SearchWorkQueryPlanAllocationResult(
@@ -205,6 +237,9 @@ def allocate_existing_queries_by_search_work(
             provider_job_ids_considered=_all_provider_job_ids(components),
             behavior_boundary_flags=flags,
             fallback_reason="candidate_queries_absent",
+            version_bound_component_gap_fallback_reason=(
+                "candidate_queries_absent" if search_judgment_projection else None
+            ),
         )
 
     route_tokens = _context_tokens(query_plan_context)
@@ -231,6 +266,13 @@ def allocate_existing_queries_by_search_work(
         for query, match in matches_by_query.items()
         if match.component_id
     }
+    metadata, gap_consumed, gap_query, gap_reason = (
+        _apply_version_bound_component_gap_authority(
+            admitted,
+            metadata,
+            search_judgment_projection=search_judgment_projection,
+        )
+    )
     return SearchWorkQueryPlanAllocationResult(
         search_work_consumed_by_query_plan=True,
         component_ids_considered=tuple(component.component_id for component in components),
@@ -241,7 +283,115 @@ def allocate_existing_queries_by_search_work(
         unfilled_component_ids=unfilled,
         behavior_boundary_flags=flags,
         query_metadata=metadata,
+        version_bound_component_gap_authority_consumed=gap_consumed,
+        version_bound_component_gap_authorized_query=gap_query,
+        version_bound_component_gap_fallback_reason=gap_reason,
     )
+
+
+def authorize_existing_query_by_version_bound_component_gap(
+    *,
+    existing_queries: Sequence[str],
+    query_metadata: Mapping[str, Mapping[str, Any]],
+    search_judgment_projection: Mapping[str, Any] | None,
+) -> tuple[dict[str, dict[str, Any]], bool, str | None, str | None]:
+    """Tag one already-existing query from one version-bound semantic gap."""
+
+    queries = tuple(_clean_query(query) for query in existing_queries if _clean_query(query))
+    return _apply_version_bound_component_gap_authority(
+        queries,
+        query_metadata,
+        search_judgment_projection=search_judgment_projection,
+    )
+
+
+def _apply_version_bound_component_gap_authority(
+    queries: Sequence[str],
+    query_metadata: Mapping[str, Mapping[str, Any]],
+    *,
+    search_judgment_projection: Mapping[str, Any] | None,
+) -> tuple[dict[str, dict[str, Any]], bool, str | None, str | None]:
+    metadata = {
+        _clean_query(query): dict(value)
+        for query, value in query_metadata.items()
+        if _clean_query(query) and isinstance(value, Mapping)
+    }
+    if not search_judgment_projection:
+        return metadata, False, None, None
+    gap, reason = _version_bound_component_gap(search_judgment_projection)
+    if reason or not gap:
+        return metadata, False, None, reason
+    target_component = _normalize_component_id(gap["answer_component_id"])
+    matches = [
+        query
+        for query in queries
+        if _normalize_component_id(
+            metadata.get(query, {}).get("search_work_component_id")
+        )
+        == target_component
+    ]
+    if not matches:
+        return metadata, False, None, "zero_existing_candidate_query_matches_component_gap"
+    if len(matches) > 1:
+        return metadata, False, None, "multiple_existing_candidate_queries_match_component_gap"
+    query = matches[0]
+    existing = metadata.setdefault(query, {})
+    existing["version_bound_component_gap_authorized"] = True
+    existing["version_bound_component_gap_authority"] = {
+        "owner": "RunKernel.RunAuthoritySearchJudgment",
+        "judgment_id": _clean_token(search_judgment_projection.get("judgment_id")),
+        "accepted_contract_version": gap["accepted_contract_version"],
+        "accepted_contract_digest": gap["accepted_contract_digest"],
+        "answer_component_id": gap["answer_component_id"],
+        "component_digest": gap["component_digest"],
+        "semantic_gap_code": gap["semantic_gap_code"],
+        "existing_candidate_query": query,
+        "query_text_generated": False,
+        "new_executable_query_text_generated": False,
+    }
+    return metadata, True, query, None
+
+
+def _version_bound_component_gap(
+    projection: Mapping[str, Any],
+) -> tuple[dict[str, str] | None, str | None]:
+    source = _mapping(projection)
+    if source.get("owner") != "RunKernel.RunAuthoritySearchJudgment":
+        return None, "search_judgment_projection_not_canonical"
+    if source.get("canonical_state") is not True or source.get("trace_only") is not False:
+        return None, "search_judgment_projection_not_canonical"
+    if _clean_token(source.get("decision")) not in _COMPONENT_GAP_AUTHORIZING_DECISIONS:
+        return None, "search_judgment_decision_does_not_authorize_component_gap_query"
+    continuation = _mapping(source.get("continuation"))
+    if "allowed" in continuation and continuation.get("allowed") is not True:
+        return None, "search_judgment_decision_does_not_authorize_component_gap_query"
+    gaps = [
+        item for item in _sequence_of_mappings(source.get("gaps"))
+        if _clean_token(item.get("semantic_gap_code"))
+        == "missing_required_component_coverage"
+    ]
+    if not gaps:
+        return None, "search_judgment_has_no_version_bound_component_gap"
+    if len(gaps) > 1:
+        return None, "search_judgment_has_multiple_version_bound_component_gaps"
+    gap = gaps[0]
+    required = {
+        "accepted_contract_version": _clean_token(
+            gap.get("accepted_contract_version")
+        ),
+        "accepted_contract_digest": _clean_token(
+            gap.get("accepted_contract_digest"),
+            limit=128,
+        ),
+        "answer_component_id": _clean_token(gap.get("answer_component_id")),
+        "component_digest": _clean_token(gap.get("component_digest"), limit=128),
+        "semantic_gap_code": _clean_token(gap.get("semantic_gap_code")),
+    }
+    if not all(required.values()):
+        return None, "version_bound_component_gap_missing_identity"
+    if _clean_token(gap.get("requirement_kind")) != "semantic_component_coverage":
+        return None, "version_bound_component_gap_generic_kind_erases_identity"
+    return {key: str(value) for key, value in required.items()}, None
 
 
 def _component_hints(
@@ -518,6 +668,7 @@ def _behavior_boundary_flags(
     return {
         "query_text_generated": False,
         "new_executable_query_text_generated": False,
+        "component_gap_authority_changed_retrieval_queries": False,
         "provider_job_hints_executed": False,
         "provider_selected": False,
         "provider_search_behavior_changed": False,
@@ -568,6 +719,13 @@ def _clean_token(value: Any, *, limit: int = 160) -> str | None:
     return _clean_text(value, limit=limit)
 
 
+def _normalize_component_id(value: Any) -> str | None:
+    token = _clean_token(value)
+    if not token:
+        return None
+    return token.casefold().removeprefix("component:")
+
+
 def _tokens(*values: Any) -> tuple[str, ...]:
     tokens: list[str] = []
     for value in values:
@@ -615,4 +773,5 @@ __all__ = [
     "SEARCH_WORK_QUERY_PLAN_CONSUMPTION_SCHEMA_VERSION",
     "SearchWorkQueryPlanAllocationResult",
     "allocate_existing_queries_by_search_work",
+    "authorize_existing_query_by_version_bound_component_gap",
 ]

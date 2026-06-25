@@ -2889,6 +2889,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             _pre_recovery_answer_contract_result.fulfillment_handoff.to_dict()
         )
         answer_contract_projection = dict(_pre_recovery_answer_contract_projection)
+        if not run_kernel.state.initial_answer_contract:
+            final_top_evidence = list(all_passages)
+            execute_ordinary_semantic_producer_handoff_from_scope(
+                run_kernel,
+                locals(),
+            )
         _search_judgment_started = True
         _search_judgment_input = build_search_judgment_input_from_runtime(
             contract_projection=run_contract_projection,
@@ -2921,6 +2927,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             recovery_attempt_count=(
                 _run_controller_mirror.state.active_source_class_recovery_attempt_count
             ),
+            initial_answer_contract=run_kernel.state.initial_answer_contract,
+            component_coverage_history=run_kernel.state.component_coverage_history,
+            contract_amendment_admission_history=(
+                run_kernel.state.contract_amendment_admission_history
+            ),
         )
         _search_judgment_action = run_kernel.authorize_search_judgment(
             inputs={
@@ -2951,6 +2962,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         run_kernel.reduce(_search_judgment_result.observation)
         search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
+        current_queries = query_authority.consume_search_judgment_component_gap_authority(
+            current_queries,
+            search_judgment_projection=search_judgment_projection,
+        )
     except Exception as exc:
         if _search_judgment_started:
             raise
@@ -3491,6 +3506,73 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     status.step("Judging final answer sufficiency...")
     execute_ordinary_semantic_producer_handoff_from_scope(run_kernel, locals())
+    _semantic_gap_search_judgment_input = build_search_judgment_input_from_runtime(
+        contract_projection=run_contract_projection,
+        evidence_ledger_projection=evidence_ledger_projection,
+        query_authority_trace=query_authority.to_trace_fragment(),
+        core_topic=core_topic,
+        primary_entity=primary_entity,
+        result_count=len(all_passages),
+        iterations_run=iterations_run,
+        source_tier_counts=_source_tier_recovery_lifecycle[
+            "source_tier_counts"
+        ],
+        source_domain_counts=_source_domain_recovery_lifecycle[
+            "source_domain_counts"
+        ],
+        top_source_domains=_source_domain_recovery_lifecycle[
+            "top_source_domains"
+        ],
+        provider_diagnostic_count=len(provider_diagnostics),
+        source_class_recovery_recommendation=(
+            _source_class_recovery_lifecycle_recommendation
+        ),
+        source_class_observability=(
+            _source_class_recovery_answer_contract_observability
+        ),
+        retrieval_stop_shadow_telemetry=retrieval_stop_shadow_telemetry,
+        retrieval_stop_active_telemetry=retrieval_stop_active_telemetry,
+        answer_contract_projection=answer_contract_projection,
+        max_iterations=max_iterations,
+        recovery_attempt_count=(
+            _run_controller_mirror.state.active_source_class_recovery_attempt_count
+        ),
+        initial_answer_contract=run_kernel.state.initial_answer_contract,
+        component_coverage_history=run_kernel.state.component_coverage_history,
+        contract_amendment_admission_history=(
+            run_kernel.state.contract_amendment_admission_history
+        ),
+    )
+    if _semantic_gap_search_judgment_input.helper_proposals.get(
+        "semantic_missing_assessments"
+    ):
+        _semantic_gap_search_judgment_action = run_kernel.authorize_search_judgment(
+            inputs={
+                "phase": "ag_gap_01_semantic_component_gap_projection",
+                "contract_id": run_contract_projection.get("contract_id"),
+                "candidate_count": evidence_ledger_projection.get("candidate_count"),
+                "requirement_count": evidence_ledger_projection.get(
+                    "requirement_count"
+                ),
+                "iteration": iterations_run,
+                "max_iterations": max_iterations,
+            }
+        )
+        _semantic_gap_search_judgment_result = (
+            execute_run_authority_search_judgment_action(
+                _semantic_gap_search_judgment_action,
+                judgment_input=_semantic_gap_search_judgment_input,
+                ask_model=None,
+                clean_json_response=deps.clean_json_response,
+                smart_model_enabled=False,
+            )
+        )
+        run_kernel.reduce(_semantic_gap_search_judgment_result.observation)
+        search_judgment_projection = dict(run_kernel.state.search_judgment_projection)
+        current_queries = query_authority.consume_search_judgment_component_gap_authority(
+            current_queries,
+            search_judgment_projection=search_judgment_projection,
+        )
     sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
         run_kernel,
         locals(),

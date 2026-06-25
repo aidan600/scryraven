@@ -106,6 +106,39 @@ def _adapter() -> Any:
     )
 
 
+def _search_judgment_projection(
+    *,
+    component_id: str = "component:component-fee",
+    decision: str = "continue_targeted_search",
+    continuation_allowed: bool | None = True,
+) -> dict[str, Any]:
+    projection: dict[str, Any] = {
+        "owner": "RunKernel.RunAuthoritySearchJudgment",
+        "canonical_state": True,
+        "trace_only": False,
+        "judgment_id": "search-judgment:ag-gap-01",
+        "decision": decision,
+        "gaps": [
+            {
+                "requirement_id": (
+                    "semantic:missing_required_component_coverage:"
+                    f"{component_id}"
+                ),
+                "requirement_kind": "semantic_component_coverage",
+                "accepted_contract_version": "accepted-v1",
+                "accepted_contract_digest": "accepted-digest-v1",
+                "answer_component_id": component_id,
+                "component_digest": "component-digest-fee",
+                "semantic_gap_code": "missing_required_component_coverage",
+                "status": "unsatisfied",
+            }
+        ],
+    }
+    if continuation_allowed is not None:
+        projection["continuation"] = {"allowed": continuation_allowed}
+    return projection
+
+
 def test_no_searchwork_projection_keeps_authorize_retrieval_queries_byte_equivalent() -> None:
     queries = ["fee update", "legal deadline", "API parameter docs", "fee duplicate"]
     baseline = authorize_retrieval_queries(
@@ -196,6 +229,158 @@ def test_multipart_searchwork_allocates_component_coverage_before_duplicate_fee(
     assert finalized[0]["metadata"]["provider_job_candidate_ids"] == [
         "provider-official-fee"
     ]
+
+
+def test_exactly_one_existing_candidate_query_gets_version_bound_gap_authority() -> None:
+    adapter = _adapter()
+
+    allocated = adapter.consume_search_work_for_existing_queries(
+        [
+            "official current filing fee",
+            "legal deadline appeal rule",
+            "API parameter documentation",
+        ],
+        search_work_projection=_search_work_projection(),
+        search_judgment_projection=_search_judgment_projection(),
+        max_len=3,
+        origin="researcher_search_work_consumption",
+        role=QueryPlanRole.INITIAL,
+    )
+
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    consumption = trace["search_work_consumption"]
+    assert allocated == [
+        "official current filing fee",
+        "legal deadline appeal rule",
+        "API parameter documentation",
+    ]
+    assert consumption["version_bound_component_gap_authority_consumed"] is True
+    assert (
+        consumption["version_bound_component_gap_authorized_query"]
+        == "official current filing fee"
+    )
+    metadata = consumption["query_metadata"]["official current filing fee"]
+    assert metadata["version_bound_component_gap_authorized"] is True
+    assert metadata["version_bound_component_gap_authority"] == {
+        "owner": "RunKernel.RunAuthoritySearchJudgment",
+        "judgment_id": "search-judgment:ag-gap-01",
+        "accepted_contract_version": "accepted-v1",
+        "accepted_contract_digest": "accepted-digest-v1",
+        "answer_component_id": "component:component-fee",
+        "component_digest": "component-digest-fee",
+        "semantic_gap_code": "missing_required_component_coverage",
+        "existing_candidate_query": "official current filing fee",
+        "query_text_generated": False,
+        "new_executable_query_text_generated": False,
+    }
+
+
+def test_non_authorizing_decision_does_not_authorize_component_gap_query() -> None:
+    result = allocate_existing_queries_by_search_work(
+        candidate_queries=["official current filing fee"],
+        query_plan_context={},
+        search_work_projection=_search_work_projection(),
+        search_judgment_projection=_search_judgment_projection(
+            decision="stop_insufficient",
+            continuation_allowed=False,
+        ),
+        max_len=1,
+        origin="unit",
+        role="initial",
+        phase="unit",
+    )
+
+    payload = result.to_dict()
+    assert payload["admitted_query_order"] == ["official current filing fee"]
+    assert payload["version_bound_component_gap_authority_consumed"] is False
+    assert payload["version_bound_component_gap_fallback_reason"] == (
+        "search_judgment_decision_does_not_authorize_component_gap_query"
+    )
+    assert "version_bound_component_gap_authorized" not in json.dumps(
+        payload["query_metadata"],
+        sort_keys=True,
+    )
+    assert payload["behavior_boundary_flags"]["new_executable_query_text_generated"] is False
+
+
+def test_zero_component_gap_query_matches_fail_closed_without_new_text() -> None:
+    result = allocate_existing_queries_by_search_work(
+        candidate_queries=["legal deadline appeal rule"],
+        query_plan_context={},
+        search_work_projection=_search_work_projection(),
+        search_judgment_projection=_search_judgment_projection(),
+        max_len=1,
+        origin="unit",
+        role="initial",
+        phase="unit",
+    )
+
+    payload = result.to_dict()
+    assert payload["admitted_query_order"] == ["legal deadline appeal rule"]
+    assert payload["version_bound_component_gap_authority_consumed"] is False
+    assert payload["version_bound_component_gap_fallback_reason"] == (
+        "zero_existing_candidate_query_matches_component_gap"
+    )
+    assert payload["behavior_boundary_flags"][
+        "new_executable_query_text_generated"
+    ] is False
+
+
+def test_multiple_component_gap_query_matches_fail_closed() -> None:
+    result = allocate_existing_queries_by_search_work(
+        candidate_queries=["official current filing fee", "fee amount agency update"],
+        query_plan_context={},
+        search_work_projection=_search_work_projection(),
+        search_judgment_projection=_search_judgment_projection(),
+        max_len=2,
+        origin="unit",
+        role="initial",
+        phase="unit",
+    )
+
+    payload = result.to_dict()
+    assert payload["version_bound_component_gap_authority_consumed"] is False
+    assert payload["version_bound_component_gap_fallback_reason"] == (
+        "multiple_existing_candidate_queries_match_component_gap"
+    )
+    assert "version_bound_component_gap_authorized" not in json.dumps(
+        payload["query_metadata"],
+        sort_keys=True,
+    )
+
+
+def test_search_judgment_metadata_consumption_keeps_execution_queries_unchanged() -> None:
+    adapter = _adapter()
+    allocated = adapter.consume_search_work_for_existing_queries(
+        [
+            "official current filing fee",
+            "legal deadline appeal rule",
+        ],
+        search_work_projection=_search_work_projection(),
+        max_len=2,
+        origin="researcher_search_work_consumption",
+        role=QueryPlanRole.INITIAL,
+    )
+    tagged = adapter.consume_search_judgment_component_gap_authority(
+        allocated,
+        search_judgment_projection=_search_judgment_projection(),
+    )
+    executed = adapter.admit_execution_queries(
+        tagged,
+        iteration=1,
+        recovery_active=False,
+    )
+
+    trace = adapter.to_trace_fragment()[QUERY_PLAN_TRACE_KEY]
+    assert tagged == allocated
+    assert executed == allocated
+    assert trace["authorized_queries_by_iteration"]["1"] == allocated
+    authority_items = [
+        item for item in trace["items"]
+        if item.get("phase") == "search_judgment_component_gap_authority"
+    ]
+    assert len(authority_items) == 1
+    assert authority_items[0]["authorized_query"] == "official current filing fee"
 
 
 def test_multipart_max_len_two_records_unfilled_without_generating_query() -> None:

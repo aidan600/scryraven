@@ -11,6 +11,10 @@ from collections.abc import Mapping
 from typing import Any
 
 from core.run_authority_search_judgment import RunSearchJudgmentInput
+from core.sufficiency_semantic_state_consumption_runtime import (
+    build_semantic_state_facts_for_sufficiency,
+    evaluate_semantic_sufficiency_overlay,
+)
 
 
 def build_search_judgment_input_from_runtime(
@@ -33,6 +37,9 @@ def build_search_judgment_input_from_runtime(
     answer_contract_projection: Mapping[str, Any],
     max_iterations: int,
     recovery_attempt_count: int,
+    initial_answer_contract: Mapping[str, Any] | None = None,
+    component_coverage_history: Any = (),
+    contract_amendment_admission_history: Any = (),
 ) -> RunSearchJudgmentInput:
     """Build the AG-92B search-judgment input from runtime facts."""
 
@@ -40,6 +47,14 @@ def build_search_judgment_input_from_runtime(
         **dict(source_class_recovery_recommendation),
         **dict(source_class_observability),
     }
+    semantic_state_facts = build_semantic_state_facts_for_sufficiency(
+        initial_answer_contract=initial_answer_contract or {},
+        component_coverage_history=component_coverage_history or (),
+        contract_amendment_admission_history=contract_amendment_admission_history
+        or (),
+        evidence_ledger_projection=evidence_ledger_projection,
+    )
+    semantic_overlay = evaluate_semantic_sufficiency_overlay(semantic_state_facts)
     return RunSearchJudgmentInput(
         contract_projection=contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,
@@ -64,6 +79,10 @@ def build_search_judgment_input_from_runtime(
                 "active": retrieval_stop_active_telemetry,
             },
             "answer_contract": answer_contract_projection,
+            "semantic_state_facts": semantic_state_facts,
+            "semantic_missing_assessments": [
+                dict(item) for item in semantic_overlay.missing_assessments
+            ],
         },
         budget={
             "iteration": iterations_run,
