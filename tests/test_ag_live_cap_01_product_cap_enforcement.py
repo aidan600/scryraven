@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+import core.pipeline as pipeline
 import core.pipeline_orchestrator as orchestrator
 from core.cap_enforcement import RunCapExceeded, RunCapPolicy
 from tests.helpers.offline_ordinary_pipeline import (
@@ -141,3 +142,62 @@ def test_author_model_cap_overflow_fails_before_author_call(
 
     assert harness.author_prompts == []
     assert cap_policy.author_model_calls == 0
+
+
+def test_fetch_read_cap_overflow_fails_before_fetch_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_page_called = False
+
+    def fake_search_web_results(*_args: Any, **_kwargs: Any) -> tuple[list[dict[str, Any]], list[str]]:
+        return (
+            [
+                {
+                    "title": "Official high credibility result",
+                    "url": "https://www.irs.gov/example",
+                    "domain": "irs.gov",
+                    "credibility": 5,
+                    "snippet": "Official source result.",
+                }
+            ],
+            [],
+        )
+
+    def fake_fetch_page(_item: Any) -> dict[str, Any]:
+        nonlocal fetch_page_called
+        fetch_page_called = True
+        return {}
+
+    monkeypatch.setattr(pipeline, "search_web_results", fake_search_web_results)
+    monkeypatch.setattr(pipeline, "fetch_page", fake_fetch_page)
+    cap_policy = RunCapPolicy(
+        max_search_dispatches=1,
+        max_fetch_read_operations=0,
+        max_author_model_calls=1,
+        max_smart_search_judgment_model_calls=0,
+        max_retries=0,
+    )
+
+    with pytest.raises(RunCapExceeded, match="fetch_read_operations cap exceeded"):
+        pipeline.process_search_queries(
+            ["official result"],
+            "general",
+            "high",
+            "advanced",
+            1,
+            [],
+            [],
+            None,
+            set(),
+            set(),
+            "offline-embed-provider",
+            "offline-embed-model",
+            None,
+            lambda *_args, **_kwargs: [],
+            lambda *_args, **_kwargs: [],
+            search_providers=["tavily"],
+            cap_policy=cap_policy,
+        )
+
+    assert fetch_page_called is False
+    assert cap_policy.fetch_read_operations == 0

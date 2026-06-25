@@ -575,6 +575,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
             if cap_policy is not None:
+                kw.update(
+                    supported_diagnostic_kwargs(base, {"cap_policy": cap_policy})
+                )
+            if cap_policy is not None:
                 cap_policy.mark_search_dispatch()
             return base(*args, **kw)
         return wrapped
@@ -590,8 +594,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             kw.update(supported_diagnostic_kwargs(base, diagnostic_kw))
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
-            if cap_policy is not None:
-                cap_policy.mark_fetch_read_operation()
             return base(*args, **kw)
         return wrapped
 
