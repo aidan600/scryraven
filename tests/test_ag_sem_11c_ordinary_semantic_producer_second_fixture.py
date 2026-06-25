@@ -625,9 +625,17 @@ def test_ag_sem_11c_static_guards_keep_second_fixture_out_of_closed_surfaces() -
             imported.add(node.module)
     assert imported.isdisjoint(forbidden_imports)
 
-    assert PIPELINE.read_text(encoding="utf-8").count(
-        "execute_ordinary_semantic_producer_handoff_from_scope("
-    ) == 1
+    pipeline_source = PIPELINE.read_text(encoding="utf-8")
+    assert (
+        pipeline_source.count("execute_ordinary_semantic_producer_handoff_from_scope(")
+        == 2
+    )
+    assert (
+        "if not run_kernel.state.initial_answer_contract:\n"
+        "            final_top_evidence = list(all_passages)\n"
+        "            execute_ordinary_semantic_producer_handoff_from_scope("
+        in pipeline_source
+    )
     for closed_file in (FAP, FAP_ADAPTER, FAP_RUNTIME, AUTHOR_RUNTIME):
         source = closed_file.read_text(encoding="utf-8")
         assert "AG-SEM-11C" not in source

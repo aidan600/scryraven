@@ -405,9 +405,17 @@ def test_ag_sem_multi_01_static_closed_surface_and_import_guards() -> None:
     assert "ask_model(" not in producer_source
     assert "fetch_linkup_precision_block" not in producer_source
     assert "run_scout" not in producer_source
-    assert PIPELINE.read_text(encoding="utf-8").count(
-        "execute_ordinary_semantic_producer_handoff_from_scope("
-    ) == 1
+    pipeline_source = PIPELINE.read_text(encoding="utf-8")
+    assert (
+        pipeline_source.count("execute_ordinary_semantic_producer_handoff_from_scope(")
+        == 2
+    )
+    assert (
+        "if not run_kernel.state.initial_answer_contract:\n"
+        "            final_top_evidence = list(all_passages)\n"
+        "            execute_ordinary_semantic_producer_handoff_from_scope("
+        in pipeline_source
+    )
     for closed_file in (
         PIPELINE,
         RUNTIME_PROMPT_ASSEMBLY,

@@ -4,7 +4,7 @@ import ast
 import hashlib
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 from unittest.mock import patch
 
 import pytest
@@ -32,11 +32,18 @@ from core.ordinary_semantic_producer_runtime import (
     preflight_ordinary_semantic_producer_bundle,
     select_bindable_final_passage,
 )
+from core.run_authority_search_judgment import RunSearchJudgmentInput
+from core.run_authority_search_judgment_validation import (
+    build_deterministic_search_judgment,
+)
 from core.run_authority_sufficiency import RunSufficiencyDecision
-from core.run_kernel import RunKernel
+from core.run_kernel import RunKernel, RunKernelTransitionError
 from core.search_work_query_shape_runtime import (
     DeterministicSearchWorkRuntimeInput,
     build_deterministic_search_work_runtime_records,
+)
+from core.sufficiency_semantic_state_consumption_runtime import (
+    build_semantic_state_facts_for_sufficiency,
 )
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_PACKET,
@@ -96,6 +103,71 @@ def _preflight_kwargs_from_capture(
         "query": scope["query"],
         "requested_mode": scope.get("strategy"),
     }
+
+
+def _component_payloads_from_bundle(
+    bundle: OrdinarySemanticProducerBundle,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "answer_component_id": component_bundle.answer_component_id,
+            "semantic_observation": component_bundle.semantic_observation.to_dict(),
+            "sanitized_content_references": [
+                ref.to_dict() for ref in component_bundle.sanitized_content_references
+            ],
+            "component_coverage_record": (
+                component_bundle.component_coverage_record.to_dict()
+            ),
+        }
+        for component_bundle in bundle.component_bundles
+    ]
+
+
+def _preflight_bundle_for_fresh_kernel(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[RunKernel, OrdinarySemanticProducerBundle]:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    kernel = _fresh_kernel_for_handoff(source_kernel)
+    preflight = preflight_ordinary_semantic_producer_bundle(
+        **_preflight_kwargs_from_capture(kernel, scope)
+    )
+    assert preflight.bundle is not None
+    return kernel, preflight.bundle
+
+
+def _assert_atomic_failure_closed(kernel: RunKernel) -> None:
+    assert_no_semantic_state(kernel)
+    facts = build_semantic_state_facts_for_sufficiency(
+        initial_answer_contract=kernel.state.initial_answer_contract,
+        component_coverage_history=kernel.state.component_coverage_history,
+        contract_amendment_admission_history=(
+            kernel.state.contract_amendment_admission_history
+        ),
+        evidence_ledger_projection=kernel.state.evidence_ledger.to_projection().to_dict(),
+    )
+    assert facts["accepted_contract_digest"] is None
+    search_judgment = build_deterministic_search_judgment(
+        RunSearchJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection=(
+                kernel.state.evidence_ledger.to_projection().to_dict()
+            ),
+            helper_proposals={
+                "semantic_state_facts": facts,
+                "semantic_missing_assessments": [],
+            },
+        )
+    )
+    assert search_judgment.gaps == ()
+    assert not kernel.state.final_answer_packet
+    assert not kernel.state.author_observation
+
+
+def _assert_failed_atomic_projection(kernel: RunKernel) -> None:
+    projection = kernel.state.projections["semantic_producer_bundle_commit"]
+    assert projection["semantic_producer_bundle_commit_failed"] is True
+    assert projection["semantic_state_mutated"] is False
 
 
 @pytest.fixture(autouse=True)
@@ -190,7 +262,7 @@ def _run_offline_pipeline(
     return captured
 
 
-def test_offline_run_pipeline_transactional_semantic_chain_reaches_real_sufficiency(
+def test_offline_run_pipeline_atomic_semantic_commit_reaches_real_sufficiency(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -288,16 +360,100 @@ def test_preflight_bundle_builds_for_ag_check_01_scope(
     assert bundle.component_coverage_record.evidence_ledger_binding.source_requirement_ids
 
 
-def test_static_guard_no_new_run_kernel_semantic_authority() -> None:
+def test_atomic_bundle_commit_commits_contract_observations_and_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kernel, bundle = _preflight_bundle_for_fresh_kernel(tmp_path, monkeypatch)
+    kernel.commit_semantic_producer_bundle(
+        question_meaning_record=bundle.question_meaning_record.to_dict(),
+        component_bundles=_component_payloads_from_bundle(bundle),
+    )
+
+    assert kernel.state.initial_answer_contract
+    assert len(kernel.state.initial_answer_contract_history) == 1
+    assert len(kernel.state.semantic_observation_admission_history) == len(
+        bundle.component_bundles
+    )
+    assert len(kernel.state.component_coverage_history) == len(bundle.component_bundles)
+
+    projection = kernel.state.projections["semantic_producer_bundle_commit"]
+    assert projection["atomic_semantic_producer_commit"] is True
+    assert projection["accepted_contract_committed"] is True
+    assert projection["semantic_observation_count"] == len(bundle.component_bundles)
+    assert projection["component_coverage_count"] == len(bundle.component_bundles)
+
+
+def test_atomic_bundle_commit_failures_leave_no_semantic_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_kernel, scope = _capture_ag_check_01_handoff_inputs(tmp_path, monkeypatch)
+    mutations: tuple[
+        tuple[str, Callable[[dict[str, Any], list[dict[str, Any]]], None]],
+        ...,
+    ] = (
+        (
+            "proposal_digest",
+            lambda qmr, _payloads: qmr.update(record_digest="0" * 64),
+        ),
+        (
+            "observation_digest",
+            lambda _qmr, payloads: payloads[0]["semantic_observation"].update(
+                claim_or_value="tampered claim without digest update",
+            ),
+        ),
+        (
+            "observation_contract_digest",
+            lambda _qmr, payloads: payloads[0]["semantic_observation"].update(
+                contract_digest="stale-contract-digest",
+            ),
+        ),
+        (
+            "coverage_digest",
+            lambda _qmr, payloads: payloads[0]["component_coverage_record"].update(
+                record_digest="0" * 64,
+            ),
+        ),
+        (
+            "coverage_payload_missing",
+            lambda _qmr, payloads: payloads[0].update(
+                component_coverage_record={},
+            ),
+        ),
+    )
+
+    for _case_name, mutate in mutations:
+        kernel = _fresh_kernel_for_handoff(source_kernel)
+        preflight = preflight_ordinary_semantic_producer_bundle(
+            **_preflight_kwargs_from_capture(kernel, scope)
+        )
+        assert preflight.bundle is not None
+        qmr_payload = preflight.bundle.question_meaning_record.to_dict()
+        component_payloads = _component_payloads_from_bundle(preflight.bundle)
+        mutate(qmr_payload, component_payloads)
+
+        with pytest.raises(RunKernelTransitionError):
+            kernel.commit_semantic_producer_bundle(
+                question_meaning_record=qmr_payload,
+                component_bundles=component_payloads,
+            )
+
+        _assert_atomic_failure_closed(kernel)
+        _assert_failed_atomic_projection(kernel)
+
+
+def test_static_guard_run_kernel_owns_atomic_semantic_commit_boundary() -> None:
     source = RUN_KERNEL.read_text(encoding="utf-8")
     forbidden = (
         "semantic_producer_history",
         "pre_sufficiency_semantic",
         "semantic_ledger_bridge",
-        "ordinary_semantic_producer",
     )
     for token in forbidden:
         assert token not in source
+    assert "commit_semantic_producer_bundle" in source
+    assert "SEMANTIC_PRODUCER_BUNDLE_COMMIT" in source
 
 
 def test_static_guard_no_pre_sufficiency_semantic_bridge() -> None:
@@ -306,6 +462,8 @@ def test_static_guard_no_pre_sufficiency_semantic_bridge() -> None:
     assert "pre_sufficiency_semantic" not in source
     assert "semantic_ledger_bridge" not in source
     assert "execute_ordinary_semantic_producer_handoff_from_scope" in source
+    assert "commit_semantic_producer_bundle(" in source
+    assert "run_kernel.reduce(" not in source
 
 
 def test_static_guard_skip_reasons_remain_return_only_in_core() -> None:
@@ -353,10 +511,14 @@ def test_static_guard_producer_module_import_boundary() -> None:
     assert imported.isdisjoint(forbidden_roots)
 
 
-def test_static_guard_orchestrator_at_most_one_semantic_callsite() -> None:
+def test_static_guard_orchestrator_semantic_callsites_are_bounded() -> None:
     source = PIPELINE.read_text(encoding="utf-8")
+    assert source.count("execute_ordinary_semantic_producer_handoff_from_scope(") == 2
     assert (
-        source.count("execute_ordinary_semantic_producer_handoff_from_scope(") == 1
+        "if not run_kernel.state.initial_answer_contract:\n"
+        "            final_top_evidence = list(all_passages)\n"
+        "            execute_ordinary_semantic_producer_handoff_from_scope("
+        in source
     )
 
 
@@ -372,7 +534,7 @@ def test_static_guard_no_compensating_rollback_paths() -> None:
             assert node.id.casefold() not in {"rollback", "revert", "undo_semantic"}
 
 
-def test_transactional_handoff_raises_on_mid_chain_failure() -> None:
+def test_handoff_atomic_commit_failure_leaves_no_semantic_state() -> None:
     from dataclasses import dataclass
 
     @dataclass
@@ -426,11 +588,15 @@ def test_transactional_handoff_raises_on_mid_chain_failure() -> None:
     ):
         with patch.object(
             kernel,
-            "authorize_initial_answer_contract_acceptance",
-            side_effect=OrdinarySemanticProducerTransactionError("forced"),
+            "commit_semantic_producer_bundle",
+            side_effect=RunKernelTransitionError("forced"),
         ):
-            with pytest.raises(OrdinarySemanticProducerTransactionError):
+            with pytest.raises(
+                OrdinarySemanticProducerTransactionError,
+                match="atomic handoff failed",
+            ):
                 execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
+    assert_no_semantic_state(kernel)
 
 
 def test_unit_multipart_assessment_builds_bounded_component_qmr() -> None:

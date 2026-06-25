@@ -539,6 +539,10 @@ def _coverage_history_entry(accepted: dict[str, Any], **overrides: Any) -> dict[
     component_ref = accepted["accepted_answer_component_refs"][0]
     entry = {
         "answer_component_id": component_ref["component_id"],
+        "accepted_contract_version": accepted["accepted_contract_version"],
+        "accepted_contract_digest": accepted["accepted_contract_digest"],
+        "component_revision": component_ref["component_revision"],
+        "component_digest": component_ref["component_digest"],
         "coverage_record_id": COVERAGE_RECORD_ID,
         "coverage_state": "satisfied",
         "semantic_support_status": "supported",
@@ -829,6 +833,32 @@ def test_missing_required_component_emits_version_bound_gap_identity() -> None:
     assert assessment["answer_component_id"] == component_ref["component_id"]
     assert assessment["component_digest"] == component_ref["component_digest"]
     assert assessment["semantic_gap_code"] == "missing_required_component_coverage"
+
+
+def test_stale_contract_bound_coverage_is_ignored_as_orphan_state() -> None:
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    accepted = _accept_contract(kernel)
+    stale_coverage = _coverage_history_entry(
+        accepted,
+        accepted_contract_digest="stale-contract-digest",
+    )
+
+    judgment = _judgment_with_semantic(
+        accepted,
+        coverage_history=[stale_coverage],
+    )
+    semantic_consumption = judgment.semantic_consumption
+    assert "stale_or_orphan_component_coverage" in semantic_consumption[
+        "blocker_codes"
+    ]
+    assert "missing_required_component_coverage" in semantic_consumption[
+        "blocker_codes"
+    ]
+    assert semantic_consumption["direct_answer_blocked"] is True
+    assert semantic_consumption["covered_component_count"] == 0
+    assert semantic_consumption["missing_component_count"] == 1
+    assert semantic_consumption["semantic_ref_projection"]["available"] is False
+    assert judgment.decision is not RunSufficiencyDecision.READY_DIRECT
 
 
 def test_ready_direct_is_repaired_when_coverage_has_only_unqualified_ledger_presence() -> None:
