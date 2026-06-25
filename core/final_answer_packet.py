@@ -205,6 +205,8 @@ _AUTHOR_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_KEYS = (
     "semantic_packet_evidence_binding_available",
     "semantic_packet_evidence_binding_count",
     "semantic_packet_evidence_binding_digest",
+    "author_materialization_content_ref_count",
+    "author_materialization_content_ref_digest",
     "author_payload_visible",
     "authority_payload_visible",
     "authority_block_visible",
@@ -245,6 +247,11 @@ _AUTHOR_SEMANTIC_MATERIALIZATION_TRACE_REF_KEYS = (
     "semantic_materialization_block_length",
     "component_count",
     "excerpt_count",
+    "bounded_material_component_count",
+    "bounded_material_digest",
+    "bounded_material_complete",
+    "accepted_contract_version",
+    "accepted_contract_digest",
     "semantic_packet_evidence_binding_count",
     "semantic_packet_evidence_binding_digest",
     "prompt_visible",
@@ -266,6 +273,7 @@ _AUTHOR_SEMANTIC_MATERIALIZATION_TRACE_BOOL_KEYS = frozenset(
         "model_request_visible",
         "bounded_text_included",
         "bounded_text_retained",
+        "bounded_material_complete",
         "raw_content_included",
         "raw_prompt_included",
         "raw_prompt_retained",
@@ -488,6 +496,14 @@ def _safe_semantic_content_coverage_projection_ref(
         ),
         "semantic_source_ref_binding_count": _sequence_count(
             value.get("semantic_source_ref_bindings")
+        ),
+        "author_materialization_content_ref_count": _sequence_count(
+            value.get("author_materialization_content_refs")
+        ),
+        "author_materialization_content_ref_digest": (
+            _stable_safe_json_digest(value.get("author_materialization_content_refs"))
+            if value.get("author_materialization_content_refs")
+            else None
         ),
         "source_obligation_ref_count": _sequence_count(
             value.get("source_obligation_refs")
@@ -762,6 +778,12 @@ class FinalAnswerAuthorInputPayload:
                 "source_obligation_ref_count": _sequence_count(
                     envelope.get("source_obligation_refs")
                 ),
+                "author_materialization_content_ref_count": int(
+                    envelope.get("author_materialization_content_ref_count") or 0
+                ),
+                "author_materialization_content_ref_digest": envelope.get(
+                    "author_materialization_content_ref_digest"
+                ),
                 "author_payload_visible": True,
                 "authority_payload_visible": False,
                 "authority_block_visible": False,
@@ -994,6 +1016,14 @@ class FinalAnswerPacket:
             manifest["semantic_source_ref_binding_count"] = _sequence_count(
                 ref_projection.get("semantic_source_ref_bindings")
             )
+            material_refs = ref_projection.get("author_materialization_content_refs")
+            if material_refs:
+                manifest["author_materialization_content_ref_count"] = (
+                    _sequence_count(material_refs)
+                )
+                manifest["author_materialization_content_ref_digest"] = (
+                    _stable_safe_json_digest(material_refs)
+                )
             manifest["source_obligation_ref_count"] = _sequence_count(
                 ref_projection.get("source_obligation_refs")
             )
@@ -1384,6 +1414,14 @@ class FinalAnswerPacket:
             "raw_prompt_included": False,
             "provider_payload_included": False,
         }
+        material_refs = _safe_json(
+            ref_projection.get("author_materialization_content_refs")
+        ) or []
+        if material_refs:
+            envelope["author_materialization_content_ref_count"] = len(material_refs)
+            envelope["author_materialization_content_ref_digest"] = (
+                _stable_safe_json_digest(material_refs)
+            )
         binding_rows = _safe_json(self.semantic_packet_evidence_bindings) or []
         if binding_rows:
             envelope["semantic_packet_evidence_binding_available"] = True
@@ -1410,24 +1448,43 @@ class FinalAnswerPacket:
         if not component_count:
             return {}
 
-        excerpt = self._semantic_author_materialization_excerpt()
-        excerpt_text = _clean_text(
-            excerpt.get("text"),
-            limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
+        materials, unavailable_reason = (
+            self._semantic_author_materialization_materials(
+                component_count=component_count
+            )
         )
+        bounded_material_component_count = len(
+            {item.get("component_id") for item in materials if item.get("component_id")}
+        )
+        bounded_material_complete = bool(
+            materials and bounded_material_component_count == component_count
+        )
+        prompt_materials = materials if bounded_material_complete else ()
         block_text = self._semantic_author_materialization_block(
             component_count=component_count,
-            excerpt=excerpt,
+            materials=prompt_materials,
         )
         block_hash = _hash_text(block_text)
+        bounded_material_digest = (
+            _stable_safe_json_digest(materials) if materials else None
+        )
         materialization: dict[str, Any] = {
             "schema_version": FINAL_ANSWER_SEMANTIC_AUTHOR_MATERIALIZATION_SCHEMA_VERSION,
             "available": True,
             "source": "FinalAnswerPacket.semantic_content_coverage_ref_projection",
             "source_packet_id": self.packet_id,
             "source_packet_schema_version": self.schema_version,
+            "accepted_contract_version": _clean_token(
+                ref_projection.get("accepted_contract_version"), limit=160
+            ),
+            "accepted_contract_digest": _clean_token(
+                ref_projection.get("accepted_contract_digest"), limit=128
+            ),
             "component_count": component_count,
-            "excerpt_count": 1 if excerpt_text else 0,
+            "excerpt_count": len(prompt_materials),
+            "bounded_material_component_count": bounded_material_component_count,
+            "bounded_material_digest": bounded_material_digest,
+            "bounded_material_complete": bounded_material_complete,
             "semantic_packet_evidence_binding_count": len(binding_rows),
             "semantic_packet_evidence_binding_digest": _stable_safe_json_digest(
                 binding_rows
@@ -1436,7 +1493,7 @@ class FinalAnswerPacket:
             "semantic_materialization_block_length": len(block_text),
             "prompt_visible": True,
             "model_request_visible": True,
-            "bounded_text_included": bool(excerpt_text),
+            "bounded_text_included": bool(prompt_materials),
             "bounded_text_retained": False,
             "raw_content_included": False,
             "raw_prompt_included": False,
@@ -1446,10 +1503,11 @@ class FinalAnswerPacket:
             "final_text_included": False,
             "block_text": block_text,
         }
-        if not excerpt_text:
+        if materials:
+            materialization["bounded_material_refs"] = materials
+        if not prompt_materials:
             materialization["unavailable_reason"] = _clean_token(
-                excerpt.get("unavailable_reason")
-                or "bounded_excerpt_not_packet_owned",
+                unavailable_reason or "bounded_excerpt_not_packet_owned",
                 limit=160,
             )
         materialization["materialization_digest"] = _stable_safe_json_digest(
@@ -1465,7 +1523,7 @@ class FinalAnswerPacket:
         self,
         *,
         component_count: int,
-        excerpt: Mapping[str, Any],
+        materials: Sequence[Mapping[str, Any]],
     ) -> str:
         source_obligation_posture = self._semantic_materialization_source_obligation_posture()
         component_phrase = (
@@ -1478,20 +1536,26 @@ class FinalAnswerPacket:
             "CONTROLLED SEMANTIC CONTEXT (do not mention this block):",
             "- Covered components: "
             + component_phrase
-            + " supported by packet-bound semantic evidence.",
+            + " supported by packet-owned semantic evidence.",
             "- Support posture: supported; source obligation: "
             + source_obligation_posture
             + "; custody: custodied.",
         ]
-        excerpt_text = _clean_text(
-            excerpt.get("text"),
-            limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
-        )
-        if excerpt_text:
+        for index, material in enumerate(materials, start=1):
+            excerpt_text = _clean_text(
+                material.get("bounded_text"),
+                limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
+            )
+            if not excerpt_text:
+                continue
             safe_excerpt = excerpt_text.replace('"', "'")
             lines.append(
-                "- Bounded semantic excerpt from citation-eligible Source ID "
-                + str(excerpt.get("source_id"))
+                "- Packet-owned bounded support "
+                + str(index)
+                + " for component "
+                + str(material.get("component_id"))
+                + " from citation-eligible Source ID "
+                + str(material.get("source_id"))
                 + ': "'
                 + safe_excerpt
                 + '"'
@@ -1528,13 +1592,17 @@ class FinalAnswerPacket:
             return "partially satisfied"
         return "caveated"
 
-    def _semantic_author_materialization_excerpt(self) -> dict[str, Any]:
+    def _semantic_author_materialization_materials(
+        self,
+        *,
+        component_count: int,
+    ) -> tuple[tuple[Mapping[str, Any], ...], str | None]:
         ref_projection = dict(self.semantic_content_coverage_ref_projection or {})
         content_refs = self._semantic_materialization_bounded_content_refs(
             ref_projection
         )
         if not content_refs:
-            return {"unavailable_reason": "bounded_excerpt_not_packet_owned"}
+            return (), "bounded_excerpt_not_packet_owned"
 
         eligible_citations = {
             record.evidence_id: record
@@ -1546,7 +1614,21 @@ class FinalAnswerPacket:
             for row in self.semantic_packet_evidence_bindings
             if _clean_token(row.get("content_ref_id"), limit=160)
         }
+        expected_contract_version = _clean_token(
+            ref_projection.get("accepted_contract_version"), limit=160
+        )
+        expected_contract_digest = _clean_token(
+            ref_projection.get("accepted_contract_digest"), limit=128
+        )
+        component_ids = {
+            _clean_token(ref.get("component_id"), limit=160)
+            for ref in _safe_json(ref_projection.get("component_refs")) or ()
+            if isinstance(ref, Mapping)
+            and _clean_token(ref.get("component_id"), limit=160)
+        }
         unavailable_reason = "bounded_excerpt_not_packet_owned"
+        materials: list[Mapping[str, Any]] = []
+        seen_components: set[str] = set()
         for raw_ref in content_refs:
             ref = dict(raw_ref)
             if not self._semantic_materialization_content_ref_is_safe(ref):
@@ -1559,6 +1641,72 @@ class FinalAnswerPacket:
             binding = binding_by_content_ref.get(content_ref_id)
             if not binding:
                 unavailable_reason = "bounded_excerpt_unbound_to_packet_evidence"
+                continue
+            component_id = _clean_token(binding.get("component_id"), limit=160)
+            if (
+                not component_id
+                or (component_ids and component_id not in component_ids)
+                or component_id in seen_components
+            ):
+                unavailable_reason = "bounded_excerpt_component_mismatch"
+                continue
+            if _clean_token(ref.get("component_id"), limit=160) and (
+                _clean_token(ref.get("component_id"), limit=160) != component_id
+            ):
+                unavailable_reason = "bounded_excerpt_component_mismatch"
+                continue
+            if _clean_token(ref.get("answer_component_id"), limit=160) and (
+                _clean_token(ref.get("answer_component_id"), limit=160) != component_id
+            ):
+                unavailable_reason = "bounded_excerpt_component_mismatch"
+                continue
+            if _clean_token(ref.get("component_digest"), limit=128) and (
+                _clean_token(ref.get("component_digest"), limit=128)
+                != _clean_token(binding.get("component_digest"), limit=128)
+            ):
+                unavailable_reason = "bounded_excerpt_component_digest_mismatch"
+                continue
+            if _clean_token(ref.get("component_contract_digest"), limit=128) and (
+                _clean_token(ref.get("component_contract_digest"), limit=128)
+                != _clean_token(binding.get("component_digest"), limit=128)
+            ):
+                unavailable_reason = "bounded_excerpt_component_digest_mismatch"
+                continue
+            if expected_contract_version and (
+                _clean_token(ref.get("accepted_contract_version"), limit=160)
+                != expected_contract_version
+            ):
+                unavailable_reason = "bounded_excerpt_contract_digest_mismatch"
+                continue
+            if expected_contract_digest and (
+                _clean_token(ref.get("accepted_contract_digest"), limit=128)
+                != expected_contract_digest
+            ):
+                unavailable_reason = "bounded_excerpt_contract_digest_mismatch"
+                continue
+            if _clean_token(ref.get("coverage_record_id"), limit=160) and (
+                _clean_token(ref.get("coverage_record_id"), limit=160)
+                != _clean_token(binding.get("coverage_record_id"), limit=160)
+            ):
+                unavailable_reason = "bounded_excerpt_coverage_mismatch"
+                continue
+            if _clean_token(ref.get("coverage_record_digest"), limit=128) and (
+                _clean_token(ref.get("coverage_record_digest"), limit=128)
+                != _clean_token(binding.get("coverage_record_digest"), limit=128)
+            ):
+                unavailable_reason = "bounded_excerpt_coverage_mismatch"
+                continue
+            if _clean_token(ref.get("packet_evidence_id"), limit=160) and (
+                _clean_token(ref.get("packet_evidence_id"), limit=160)
+                != _clean_token(binding.get("packet_evidence_id"), limit=160)
+            ):
+                unavailable_reason = "bounded_excerpt_packet_evidence_mismatch"
+                continue
+            if _clean_token(ref.get("origin_evidence_ref_id"), limit=200) and (
+                _clean_token(ref.get("origin_evidence_ref_id"), limit=200)
+                != _clean_token(binding.get("origin_evidence_ref_id"), limit=200)
+            ):
+                unavailable_reason = "bounded_excerpt_origin_evidence_mismatch"
                 continue
             citation = eligible_citations.get(str(binding.get("packet_evidence_id")))
             if citation is None:
@@ -1585,14 +1733,48 @@ class FinalAnswerPacket:
             ):
                 unavailable_reason = "bounded_excerpt_digest_mismatch"
                 continue
-            return {
-                "text": _clean_text(
+            material = {
+                "component_id": component_id,
+                "component_digest": binding.get("component_digest"),
+                "accepted_contract_version": expected_contract_version,
+                "accepted_contract_digest": expected_contract_digest,
+                "coverage_record_id": binding.get("coverage_record_id"),
+                "coverage_record_digest": binding.get("coverage_record_digest"),
+                "content_ref_id": content_ref_id,
+                "content_digest": expected_digest,
+                "origin_evidence_ref_id": binding.get("origin_evidence_ref_id"),
+                "origin_evidence_ref_kind": binding.get("origin_evidence_ref_kind"),
+                "packet_evidence_id": binding.get("packet_evidence_id"),
+                "source_id": citation.source_id,
+                "citation_eligibility_posture": "citation_eligible_packet_evidence",
+                "source_obligation_posture": (
+                    self._semantic_materialization_source_obligation_posture()
+                ),
+                "sanitized": True,
+                "bounded": True,
+                "bounded_text": _clean_text(
                     bounded_text,
                     limit=_SEMANTIC_MATERIALIZATION_EXCERPT_CHAR_LIMIT,
                 ),
-                "source_id": citation.source_id,
+                "raw_content_retained": False,
+                "raw_provider_payload_retained": False,
+                "raw_prompt_retained": False,
+                "raw_model_response_retained": False,
+                "private_logs_retained": False,
+                "db_cache_rows_retained": False,
+                "full_trace_retained": False,
+                "secrets_returned": False,
+                "raw_content_included": False,
+                "raw_prompt_included": False,
+                "provider_payload_included": False,
+                "final_text_included": False,
             }
-        return {"unavailable_reason": unavailable_reason}
+            material["bounded_material_digest"] = _stable_safe_json_digest(material)
+            materials.append(material)
+            seen_components.add(component_id)
+        if len(seen_components) != component_count:
+            return tuple(materials), unavailable_reason
+        return tuple(materials), None
 
     def _semantic_materialization_bounded_content_refs(
         self,

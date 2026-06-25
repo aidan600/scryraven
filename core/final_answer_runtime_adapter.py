@@ -677,6 +677,9 @@ def _semantic_ref_projection_from_sufficiency(projection: Any) -> dict[str, Any]
         semantic_ref_projection.get("accepted_contract_digest"),
         limit=128,
     )
+    accepted_contract_version = _clean_token(
+        semantic_ref_projection.get("accepted_contract_version")
+    )
     component_refs = _component_refs(semantic_ref_projection.get("component_refs"))
     coverage_refs = _coverage_record_refs(
         semantic_ref_projection.get("coverage_record_refs")
@@ -714,6 +717,7 @@ def _semantic_ref_projection_from_sufficiency(projection: Any) -> dict[str, Any]
         "schema_version": SUFFICIENCY_SEMANTIC_REF_PROJECTION_SCHEMA_VERSION,
         "available": True,
         "semantic_state_facts_digest": semantic_state_digest,
+        "accepted_contract_version": accepted_contract_version,
         "accepted_contract_digest": accepted_contract_digest,
         "component_refs": component_refs,
         "coverage_record_refs": coverage_refs,
@@ -739,7 +743,96 @@ def _semantic_ref_projection_from_sufficiency(projection: Any) -> dict[str, Any]
     }
 
 
-def _fap_semantic_content_coverage_projection(projection: Any) -> dict[str, Any]:
+def _author_materialization_content_refs(
+    *,
+    source_projection: Mapping[str, Any],
+    final_top_evidence: Sequence[Mapping[str, Any]],
+    evidence_records: Sequence[FinalEvidenceRecord],
+) -> list[dict[str, Any]]:
+    if not final_top_evidence or not evidence_records:
+        return []
+    evidence_by_origin = {
+        record.origin_evidence_ref_id: record
+        for record in evidence_records
+        if record.status is EvidenceAuthorityStatus.EVIDENCE_ALLOWED
+        and record.origin_evidence_ref_id
+    }
+    passages_by_position = {
+        index: passage
+        for index, passage in enumerate(final_top_evidence, start=1)
+        if isinstance(passage, Mapping)
+    }
+    material_refs: list[dict[str, Any]] = []
+    for binding in source_projection.get("semantic_source_ref_bindings") or ():
+        if not isinstance(binding, Mapping):
+            continue
+        origin_id = _clean_token(binding.get("origin_evidence_ref_id"), limit=200)
+        record = evidence_by_origin.get(origin_id)
+        if record is None or not record.position:
+            continue
+        passage = passages_by_position.get(record.position)
+        if not passage:
+            continue
+        bounded_text = _clean_text(passage.get("text"), limit=2000)
+        if not bounded_text:
+            continue
+        material_ref = {
+            "content_ref_id": binding["content_ref_id"],
+            "content_digest": binding["content_digest"],
+            "evidence_ref_id": origin_id,
+            "admitted_evidence_ref": origin_id,
+            "origin_evidence_ref_id": origin_id,
+            "origin_evidence_ref_kind": (
+                binding.get("origin_evidence_ref_kind")
+                or _ORIGIN_EVIDENCE_REF_KIND
+            ),
+            "packet_evidence_id": record.evidence_id,
+            "answer_component_id": binding["component_id"],
+            "component_id": binding["component_id"],
+            "component_digest": binding["component_digest"],
+            "component_contract_digest": binding["component_digest"],
+            "accepted_contract_version": source_projection.get(
+                "accepted_contract_version"
+            ),
+            "accepted_contract_digest": source_projection.get(
+                "accepted_contract_digest"
+            ),
+            "coverage_record_id": binding["coverage_record_id"],
+            "coverage_record_digest": binding["coverage_record_digest"],
+            "content_kind": "bounded_excerpt",
+            "bounded_text": bounded_text,
+            "source_id": record.source_id,
+            "source_url": record.url,
+            "source_title": record.title,
+            "source_domain": record.domain,
+            "citation_eligibility_posture": "packet_evidence_pending",
+            "sanitized": True,
+            "bounded": True,
+            "raw_content_retained": False,
+            "raw_provider_payload_retained": False,
+            "raw_prompt_retained": False,
+            "raw_model_response_retained": False,
+            "private_logs_retained": False,
+            "db_cache_rows_retained": False,
+            "full_trace_retained": False,
+            "secrets_returned": False,
+            "raw_content_included": False,
+            "raw_prompt_included": False,
+            "provider_payload_included": False,
+            "final_text_included": False,
+            "trace_only": True,
+            "accepted_authority": False,
+        }
+        material_refs.append(material_ref)
+    return material_refs[:_MAX_SEMANTIC_REF_ITEMS]
+
+
+def _fap_semantic_content_coverage_projection(
+    projection: Any,
+    *,
+    final_top_evidence: Sequence[Mapping[str, Any]],
+    evidence_records: Sequence[FinalEvidenceRecord],
+) -> dict[str, Any]:
     source_projection = _semantic_ref_projection_from_sufficiency(projection)
     if not source_projection:
         return {}
@@ -754,6 +847,9 @@ def _fap_semantic_content_coverage_projection(projection: Any) -> dict[str, Any]
         "semantic_state_facts_digest": source_projection[
             "semantic_state_facts_digest"
         ],
+        "accepted_contract_version": source_projection.get(
+            "accepted_contract_version"
+        ),
         "accepted_contract_digest": source_projection["accepted_contract_digest"],
         "content_refs_available": True,
         "coverage_refs_available": True,
@@ -777,6 +873,13 @@ def _fap_semantic_content_coverage_projection(projection: Any) -> dict[str, Any]
         value = source_projection.get(source_key)
         if value not in (None, "", [], {}):
             fap_projection[packet_key] = value
+    material_refs = _author_materialization_content_refs(
+        source_projection=source_projection,
+        final_top_evidence=final_top_evidence,
+        evidence_records=evidence_records,
+    )
+    if material_refs:
+        fap_projection["author_materialization_content_refs"] = material_refs
     return fap_projection
 
 
@@ -1620,7 +1723,11 @@ def build_final_answer_packet(
         sufficiency_judgment_projection
     )
     semantic_content_coverage_ref_projection = (
-        _fap_semantic_content_coverage_projection(sufficiency_judgment_projection)
+        _fap_semantic_content_coverage_projection(
+            sufficiency_judgment_projection,
+            final_top_evidence=final_evidence or (),
+            evidence_records=evidence_records,
+        )
     )
     semantic_packet_evidence_bindings = _semantic_packet_evidence_bindings(
         evidence_records=evidence_records,

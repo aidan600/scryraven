@@ -182,6 +182,30 @@ def _build_author_invocation_authority_manifest(
             )
             or 0
         ),
+        "semantic_materialization_bounded_material_component_count": int(
+            (
+                semantic_materialization_trace_ref.get(
+                    "bounded_material_component_count"
+                )
+                if isinstance(semantic_materialization_trace_ref, Mapping)
+                else 0
+            )
+            or 0
+        ),
+        "semantic_materialization_bounded_material_digest": (
+            semantic_materialization_trace_ref.get("bounded_material_digest")
+            if isinstance(semantic_materialization_trace_ref, Mapping)
+            else None
+        ),
+        "semantic_materialization_bounded_material_complete": bool(
+            isinstance(semantic_materialization_trace_ref, Mapping)
+            and semantic_materialization_trace_ref.get("bounded_material_complete")
+        ),
+        "semantic_materialization_accepted_contract_digest": (
+            semantic_materialization_trace_ref.get("accepted_contract_digest")
+            if isinstance(semantic_materialization_trace_ref, Mapping)
+            else None
+        ),
         "semantic_materialization_prompt_visible": bool(
             isinstance(semantic_materialization_trace_ref, Mapping)
             and semantic_materialization_trace_ref.get("prompt_visible")

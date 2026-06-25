@@ -274,6 +274,7 @@ def test_direct_canonical_spec_fact_reaches_semantic_fap_and_author_materializat
     fap_ref_projection = packet.semantic_content_coverage_ref_projection
     assert fap_ref_projection["available"] is True
     assert fap_ref_projection["semantic_source_ref_bindings"]
+    assert len(fap_ref_projection["author_materialization_content_refs"]) == 1
     bindings = tuple(dict(row) for row in packet.semantic_packet_evidence_bindings)
     assert bindings
     assert packet.semantic_evidence_authority_manifest[
@@ -285,13 +286,22 @@ def test_direct_canonical_spec_fact_reaches_semantic_fap_and_author_materializat
     assert materialization_trace_ref["available"] is True
     assert materialization_trace_ref["prompt_visible"] is True
     assert materialization_trace_ref["model_request_visible"] is True
-    assert materialization_trace_ref["bounded_text_included"] is False
-    assert materialization_trace_ref["unavailable_reason"] == (
-        "bounded_excerpt_not_packet_owned"
+    assert materialization_trace_ref["bounded_text_included"] is True
+    assert materialization_trace_ref["excerpt_count"] == 1
+    assert materialization_trace_ref["bounded_material_component_count"] == 1
+    assert materialization_trace_ref["bounded_material_complete"] is True
+    assert materialization_trace_ref["bounded_material_digest"]
+    assert materialization_trace_ref["accepted_contract_digest"] == (
+        fap_ref_projection["accepted_contract_digest"]
     )
+    assert "unavailable_reason" not in materialization_trace_ref
 
     assert "CONTROLLED SEMANTIC CONTEXT" in harness.author_prompts[0]
-    assert "Bounded semantic excerpt from" not in harness.author_prompts[0]
+    assert "Packet-owned bounded support 1" in harness.author_prompts[0]
+    assert (
+        "Acme Widget API specification says supported payload size is 64 KiB"
+        in harness.author_prompts[0]
+    )
     assert outcome.report == RAW_DIRECT_AUTHOR_RESPONSE
     _assert_no_private_material_leaks(
         packet_projection=state.final_answer_packet,
