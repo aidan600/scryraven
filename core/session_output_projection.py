@@ -89,6 +89,7 @@ def build_execution_trace_projection(runtime_values: Mapping[str, Any]) -> dict[
         "utilization_pre_retry": v["utilization_pre_retry"],
         "utilization_rate": v["utilization_rate_val"],
         "retrieval_retry_used": v["retrieval_retry_used"],
+        "cap_enforcement_trace": dict(v.get("cap_enforcement_trace") or {}),
         "corpus_state": v["corpus_state"],
         "corpus_state_forced": v["corpus_state_forced_flag"],
         "corpus_weak": v["corpus_weak"],

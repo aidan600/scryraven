@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.cap_enforcement import RunCapPolicy
+
 PHASE_ID = "AG-LIVE-BRIDGE-01"
 SCHEMA_VERSION = "ag_live_bound_01_bounded_product_runner_v1"
 PACKET_MARKER = "LOCAL/UNTRACKED — DO NOT COMMIT"
@@ -82,6 +84,17 @@ class AgLiveBoundCaps:
             ),
             "max_retries": self.max_retries,
         }
+
+    def to_run_cap_policy(self) -> RunCapPolicy:
+        return RunCapPolicy(
+            max_search_dispatches=self.max_search_dispatches,
+            max_fetch_read_operations=self.max_fetch_read_operations,
+            max_author_model_calls=self.max_author_model_calls,
+            max_smart_search_judgment_model_calls=(
+                self.max_smart_search_judgment_model_calls
+            ),
+            max_retries=self.max_retries,
+        )
 
     @classmethod
     def from_requested(cls, requested: Mapping[str, int]) -> AgLiveBoundCaps:
@@ -314,7 +327,6 @@ def build_preflight_context(
 def live_execution_blockers() -> list[str]:
     return [
         LIVE_EXECUTION_STOP_REASON,
-        UTILIZATION_RETRY_STOP_REASON,
     ]
 
 
@@ -362,6 +374,12 @@ def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
         "output_path": _relative_output_path(context),
         "caps_requested": context.caps.as_requested_dict(),
         "caps_observed": CappedDepsCounters.from_caps(context.caps).not_executed_dict(),
+        "cap_enforcement_product_path": {
+            "policy_surface": "RunConfig.cap_policy",
+            "runtime_consumer": "run_pipeline",
+            "script_owns_cap_authority": False,
+            "product_policy_constructible": True,
+        },
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
@@ -398,6 +416,12 @@ def build_fail_closed_live_packet(
         "output_path": _relative_output_path(context),
         "caps_requested": context.caps.as_requested_dict(),
         "caps_observed": CappedDepsCounters.from_caps(context.caps).not_executed_dict(),
+        "cap_enforcement_product_path": {
+            "policy_surface": "RunConfig.cap_policy",
+            "runtime_consumer": "run_pipeline",
+            "script_owns_cap_authority": False,
+            "product_policy_constructible": True,
+        },
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
@@ -414,6 +438,23 @@ def build_fail_closed_live_packet(
     }
     reject_forbidden_packet(packet)
     return packet
+
+
+def caps_observed_from_policy(policy: RunCapPolicy) -> dict[str, Any]:
+    observed = policy.observed_counts()
+    return {
+        "scryraven_runs": 1,
+        "search_dispatches": observed["search_dispatches"],
+        "fetch_read_operations": observed["fetch_read_operations"],
+        "author_model_calls": observed["author_model_calls"],
+        "smart_search_judgment_model_calls": (
+            observed["smart_search_judgment_model_calls"]
+        ),
+        "independent_manual_source_checks": 0,
+        "retries": observed["retries"],
+        "enforcement": observed["enforcement"],
+        "facts": list(policy.facts),
+    }
 
 
 def write_packet(path: Path, packet: Mapping[str, Any]) -> None:

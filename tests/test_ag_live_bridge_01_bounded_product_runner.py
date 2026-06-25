@@ -92,6 +92,12 @@ def test_dry_run_writes_sanitized_packet(tmp_path: Path) -> None:
     assert packet["packet_marker"] == "LOCAL/UNTRACKED — DO NOT COMMIT"
     assert packet["caps_requested"]["max_search_dispatches"] == 2
     assert packet["caps_observed"]["enforcement"] == "not_executed"
+    assert packet["cap_enforcement_product_path"] == {
+        "policy_surface": "RunConfig.cap_policy",
+        "runtime_consumer": "run_pipeline",
+        "script_owns_cap_authority": False,
+        "product_policy_constructible": True,
+    }
 
 
 def test_dry_run_never_calls_run_pipeline(capsys: pytest.CaptureFixture[str]) -> None:
@@ -133,7 +139,7 @@ def test_confirm_live_fails_closed_before_run_pipeline(
     assert packet["primary_stop_reason"] == (
         "live_execution_not_enabled_in_ag_live_bridge_01"
     )
-    assert "orchestrator_utilization_retry_not_disableable" in packet["stop_reasons"]
+    assert "orchestrator_utilization_retry_not_disableable" not in packet["stop_reasons"]
 
 
 def test_unsafe_output_path_blocks(capsys: pytest.CaptureFixture[str]) -> None:
@@ -307,6 +313,40 @@ def test_author_and_smart_judgment_counters_with_fake_wrappers() -> None:
     wrapped.ask_model("x", cost_phase="author")
     with pytest.raises(RuntimeError, match="smart_search_judgment_model_call budget exceeded"):
         wrapped.ask_model("x", cost_phase="search_judgment")
+
+
+def test_fetch_read_cap_overflow_fails_closed_with_fake_wrappers() -> None:
+    support = _load_support()
+    caps = support.AgLiveBoundCaps(max_fetch_read_operations=0)
+    fetch_attempted = False
+
+    def fake_fetch(*_args: Any, **_kwargs: Any) -> str:
+        nonlocal fetch_attempted
+        fetch_attempted = True
+        return "text"
+
+    wrapped = support.compose_capped_run_callables(
+        process_search_queries=lambda *_a, **_k: [],
+        fetch_linkup_precision_block=fake_fetch,
+        ask_model=lambda *_a, **_k: None,
+        caps=caps,
+    )
+
+    with pytest.raises(RuntimeError, match="fetch_read_operation budget exceeded"):
+        wrapped.fetch_linkup_precision_block("topic")
+    assert fetch_attempted is False
+
+
+def test_live_bound_caps_build_product_cap_policy() -> None:
+    support = _load_support()
+    policy = support.AgLiveBoundCaps().to_run_cap_policy()
+
+    policy.mark_search_dispatch()
+    observed = support.caps_observed_from_policy(policy)
+
+    assert observed["scryraven_runs"] == 1
+    assert observed["search_dispatches"] == 1
+    assert observed["enforcement"] == "active"
 
 
 def test_forbidden_packet_fields_absent() -> None:
