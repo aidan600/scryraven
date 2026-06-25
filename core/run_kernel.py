@@ -390,6 +390,11 @@ from core.semantic_observation_admission_runtime import (
 from core.semantic_observation_admission_runtime import (
     SEMANTIC_OBSERVATION_ADMISSION_STAGE as SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME,
 )
+from core.semantic_producer_bundle_commit_runtime import (
+    SemanticProducerBundleCommitStagingError,
+    normalize_semantic_producer_bundle_payload,
+    stage_semantic_producer_bundle_commit,
+)
 
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
@@ -404,6 +409,10 @@ SEMANTIC_OBSERVATION_ADMISSION_STAGE = (
     SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME
 )
 COMPONENT_COVERAGE_REDUCTION_STAGE = COMPONENT_COVERAGE_REDUCTION_STAGE_NAME
+SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE = "semantic_producer_bundle_commit"
+SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON = (
+    "ordinary_semantic_producer_atomic_bundle_commit"
+)
 CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
@@ -504,6 +513,7 @@ class ActionType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
+    SEMANTIC_PRODUCER_BUNDLE_COMMIT = "semantic_producer_bundle_commit"
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
@@ -568,6 +578,7 @@ class ObservationType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
+    SEMANTIC_PRODUCER_BUNDLE_COMMITTED = "semantic_producer_bundle_committed"
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
@@ -2162,6 +2173,257 @@ class RunKernel:
             inputs=merged_inputs,
             expected_observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
         )
+
+    def authorize_semantic_producer_bundle_commit(
+        self,
+        *,
+        parent_question_meaning_record_id: str,
+        parent_proposal_digest: str,
+        component_count: int,
+        request_id: str | None = None,
+        reason: str = SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not _clean_text(parent_question_meaning_record_id, limit=160):
+            raise RunKernelTransitionError(
+                "semantic producer bundle commit requires a parent "
+                "QuestionMeaningRecord id binding"
+            )
+        if not _clean_text(parent_proposal_digest, limit=128):
+            raise RunKernelTransitionError(
+                "semantic producer bundle commit requires a parent proposal "
+                "digest binding"
+            )
+        if int(component_count or 0) <= 0:
+            raise RunKernelTransitionError(
+                "semantic producer bundle commit requires at least one component"
+            )
+        merged_inputs = {
+            "parent_question_meaning_record_id": parent_question_meaning_record_id,
+            "parent_proposal_digest": parent_proposal_digest,
+            "component_count": int(component_count),
+            "request_id": request_id or self.state.request_id,
+            "atomic_semantic_producer_commit": True,
+            "semantic_producer_commit_boundary": (
+                "accepted_contract_observations_coverage"
+            ),
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE,
+            action_type=ActionType.SEMANTIC_PRODUCER_BUNDLE_COMMIT,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.SEMANTIC_PRODUCER_BUNDLE_COMMITTED
+            ),
+        )
+
+    def commit_semantic_producer_bundle(
+        self,
+        *,
+        question_meaning_record: Mapping[str, Any],
+        component_bundles: Sequence[Mapping[str, Any]],
+        request_id: str | None = None,
+        reason: str = SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> RunState:
+        """Atomically commit accepted contract, observations, and coverage.
+
+        The ordinary semantic producer preflights the same payloads before
+        calling this method. This method repeats the canonical reducer
+        validation against staged in-memory state and mutates RunState only
+        after every accepted contract, SemanticObservation admission, and
+        ComponentCoverageRecord reduction has been built successfully.
+        """
+
+        bundle_payload = normalize_semantic_producer_bundle_payload(
+            question_meaning_record=question_meaning_record,
+            component_bundles=component_bundles,
+        )
+        qmr_payload = dict(bundle_payload.get("question_meaning_record") or {})
+        component_payloads = list(bundle_payload.get("component_bundles") or ())
+        action = self.authorize_semantic_producer_bundle_commit(
+            parent_question_meaning_record_id=str(qmr_payload.get("record_id") or ""),
+            parent_proposal_digest=str(qmr_payload.get("record_digest") or ""),
+            component_count=len(component_payloads),
+            request_id=request_id,
+            reason=reason,
+            inputs=inputs,
+        )
+        try:
+            if action.action_id in self.state.reduced_action_ids:
+                raise RunKernelTransitionError("authorized action was already reduced")
+            if action.sequence != self.state.next_observation_sequence:
+                raise RunKernelTransitionError(
+                    "semantic producer bundle commit observation reduced out of order"
+                )
+            if (
+                self.state.initial_answer_contract_projection
+                or self.state.initial_answer_contract_history
+                or self.state.semantic_observation_admission_history
+                or self.state.component_coverage_history
+            ):
+                raise RunKernelTransitionError(
+                    "semantic producer bundle commit requires empty canonical "
+                    "semantic state"
+                )
+            staged = stage_semantic_producer_bundle_commit(
+                action_id=action.action_id,
+                action_inputs=action.inputs,
+                payload=bundle_payload,
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                evidence_ledger_projection=(
+                    self.state.evidence_ledger.to_projection().to_dict()
+                ),
+            )
+        except SemanticProducerBundleCommitStagingError as exc:
+            transition_error = RunKernelTransitionError(str(exc))
+            self._record_semantic_producer_bundle_commit_failure(
+                action=action,
+                exc=transition_error,
+            )
+            raise transition_error from exc
+        except Exception as exc:
+            self._record_semantic_producer_bundle_commit_failure(
+                action=action,
+                exc=exc,
+            )
+            if isinstance(exc, RunKernelTransitionError):
+                raise
+            raise RunKernelTransitionError(
+                "semantic producer bundle commit failed before canonical "
+                "semantic state mutation"
+            ) from exc
+        observation = Observation.from_action(
+            action,
+            observation_type=ObservationType.SEMANTIC_PRODUCER_BUNDLE_COMMITTED,
+            status=RunStageStatus.COMPLETED,
+            payload=bundle_payload,
+        )
+        self._apply_semantic_producer_bundle_commit(
+            action=action,
+            observation=observation,
+            staged=staged,
+        )
+        return self.state
+
+    def _apply_semantic_producer_bundle_commit(
+        self,
+        *,
+        action: AuthorizedAction,
+        observation: Observation,
+        staged: Mapping[str, Any],
+    ) -> None:
+        acceptance_state = deepcopy(dict(staged.get("acceptance_state") or {}))
+        acceptance_projection = deepcopy(
+            dict(staged.get("acceptance_projection") or {})
+        )
+        admission_states = [
+            deepcopy(dict(item))
+            for item in staged.get("admission_states") or ()
+            if isinstance(item, Mapping)
+        ]
+        admission_projections = [
+            deepcopy(dict(item))
+            for item in staged.get("admission_projections") or ()
+            if isinstance(item, Mapping)
+        ]
+        coverage_states = [
+            deepcopy(dict(item))
+            for item in staged.get("coverage_states") or ()
+            if isinstance(item, Mapping)
+        ]
+        coverage_projections = [
+            deepcopy(dict(item))
+            for item in staged.get("coverage_projections") or ()
+            if isinstance(item, Mapping)
+        ]
+
+        self.state.reduced_action_ids.add(action.action_id)
+        self.state.action_statuses[action.action_id] = observation.status
+        self.state.stage_statuses[action.stage] = observation.status
+        self.state.initial_answer_contract = acceptance_state
+        self.state.initial_answer_contract_projection = acceptance_projection
+        self.state.initial_answer_contract_history.append(
+            deepcopy(acceptance_projection)
+        )
+        self.state.projections[INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE] = (
+            deepcopy(acceptance_projection)
+        )
+        for state, projection in zip(
+            admission_states,
+            admission_projections,
+            strict=True,
+        ):
+            self.state.semantic_observation_admission_state = state
+            self.state.semantic_observation_admission_projection = projection
+            self.state.semantic_observation_admission_history.append(
+                deepcopy(projection)
+            )
+        if admission_projections:
+            self.state.projections[SEMANTIC_OBSERVATION_ADMISSION_STAGE] = (
+                deepcopy(admission_projections[-1])
+            )
+        for state, projection in zip(
+            coverage_states,
+            coverage_projections,
+            strict=True,
+        ):
+            self.state.component_coverage_state = state
+            self.state.component_coverage_projection = projection
+            self.state.component_coverage_history.append(deepcopy(projection))
+        if coverage_projections:
+            self.state.projections[COMPONENT_COVERAGE_REDUCTION_STAGE] = (
+                deepcopy(coverage_projections[-1])
+            )
+        self.state.projections[action.stage] = {
+            "owner": "RunKernel.SemanticProducerBundleCommit",
+            "canonical_state": True,
+            "trace_only": False,
+            "storage_only": False,
+            "atomic_semantic_producer_commit": True,
+            "accepted_contract_committed": True,
+            "semantic_observation_count": len(admission_projections),
+            "component_coverage_count": len(coverage_projections),
+            "accepted_contract_digest": acceptance_projection.get(
+                "accepted_contract_digest"
+            ),
+            "coverage_record_ids": [
+                projection.get("coverage_record_id")
+                for projection in coverage_projections
+            ],
+            "live_validation_not_run": True,
+        }
+        self.state.observations.append(observation)
+        self.state.next_observation_sequence += 1
+
+    def _record_semantic_producer_bundle_commit_failure(
+        self,
+        *,
+        action: AuthorizedAction,
+        exc: Exception,
+    ) -> None:
+        if action.action_id in self.state.reduced_action_ids:
+            return
+        observation = Observation.from_action(
+            action,
+            observation_type=ObservationType.SEMANTIC_PRODUCER_BUNDLE_COMMITTED,
+            status=RunStageStatus.FAILED,
+            payload={
+                "semantic_producer_bundle_commit_failed": True,
+                "semantic_state_mutated": False,
+                "error_type": type(exc).__name__,
+                "error_message": _clean_text(str(exc), limit=300),
+            },
+        )
+        self.state.reduced_action_ids.add(action.action_id)
+        self.state.action_statuses[action.action_id] = RunStageStatus.FAILED
+        self.state.stage_statuses[action.stage] = RunStageStatus.FAILED
+        self.state.projections[action.stage] = dict(observation.payload)
+        self.state.observations.append(observation)
+        self.state.next_observation_sequence += 1
 
     def authorize_contract_amendment_admission(
         self,
@@ -11701,6 +11963,8 @@ __all__ = [
     "RETRIEVAL_STOP_CHECKPOINT_STAGE",
     "ROUTE_REQUEST_STAGE",
     "RUN_KERNEL_TRACE_KEY",
+    "SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON",
+    "SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE",
     "ActionType",
     "AuthorizedAction",
     "KernelTraceProjection",

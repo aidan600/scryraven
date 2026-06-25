@@ -1,8 +1,8 @@
 """Ordinary semantic producer runtime for AG-SEM-11.
 
 Builds passive AG-SEM-01..03 proposals from ordinary offline runtime facts and
-commits them transactionally through existing AG-SEM-05/06/07 reducers
-immediately before RunAuthority Sufficiency. AG-SEM-MULTI-01 extends the
+commits them through the RunKernel semantic producer bundle boundary immediately
+before RunAuthority Sufficiency. AG-SEM-MULTI-01 extends the
 producer to a bounded loop over deterministic answer-component candidates while
 leaving all final readiness decisions to Sufficiency.
 """
@@ -100,7 +100,7 @@ class OrdinarySemanticProducerHandoffStatus(str, Enum):
 
 
 class OrdinarySemanticProducerTransactionError(RuntimeError):
-    """Raised when a transactional semantic producer commit fails mid-chain."""
+    """Raised when the semantic producer bundle fails before atomic commit."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -1285,8 +1285,6 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
 ) -> OrdinarySemanticProducerHandoffResult:
-    from core.run_kernel import Observation, ObservationType, RunStageStatus
-
     if _semantic_state_already_present(run_kernel):
         return OrdinarySemanticProducerHandoffResult(
             status=OrdinarySemanticProducerHandoffStatus.SKIPPED,
@@ -1329,78 +1327,30 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
 
     qmr = bundle.question_meaning_record
     try:
-        accept_action = run_kernel.authorize_initial_answer_contract_acceptance(
-            parent_question_meaning_record_id=qmr.record_id,
-            parent_proposal_digest=qmr.record_digest,
-        )
-        accept_observation = Observation.from_action(
-            accept_action,
-            observation_type=ObservationType.INITIAL_ANSWER_CONTRACT_ACCEPTED,
-            status=RunStageStatus.COMPLETED,
-            payload={"question_meaning_record": qmr.to_dict()},
-        )
-        run_kernel.reduce(accept_observation)
-        accepted_contract = dict(run_kernel.state.initial_answer_contract)
-        if not accepted_contract:
-            raise OrdinarySemanticProducerTransactionError(
-                "AG-SEM-05 reduce completed without initial_answer_contract state"
-            )
-
-        for component_bundle in bundle.component_bundles:
-            observation = component_bundle.semantic_observation
-            component_ref = _accepted_component_ref(
-                accepted_contract,
-                observation.answer_component_id,
-            )
-            admit_action = run_kernel.authorize_semantic_observation_admission(
-                semantic_observation_id=observation.observation_id,
-                semantic_observation_digest=observation.observation_digest,
-                answer_component_id=component_ref["component_id"],
-                component_revision=component_ref["component_revision"],
-                component_digest=component_ref["component_digest"],
-            )
-            admit_observation = Observation.from_action(
-                admit_action,
-                observation_type=ObservationType.SEMANTIC_OBSERVATION_ADMITTED,
-                status=RunStageStatus.COMPLETED,
-                payload={
-                    "semantic_observation": observation.to_dict(),
+        run_kernel.commit_semantic_producer_bundle(
+            question_meaning_record=qmr.to_dict(),
+            component_bundles=[
+                {
+                    "answer_component_id": component_bundle.answer_component_id,
+                    "semantic_observation": (
+                        component_bundle.semantic_observation.to_dict()
+                    ),
                     "sanitized_content_references": [
                         ref.to_dict()
                         for ref in component_bundle.sanitized_content_references
                     ],
-                },
-            )
-            run_kernel.reduce(admit_observation)
-            if not run_kernel.state.semantic_observation_admission_history:
-                raise OrdinarySemanticProducerTransactionError(
-                    "AG-SEM-06 reduce completed without semantic_observation_admission_history"
-                )
-
-            coverage_record = component_bundle.component_coverage_record
-            coverage_action = run_kernel.authorize_component_coverage_reduction(
-                coverage_record_id=coverage_record.record_id,
-                coverage_record_digest=coverage_record.record_digest,
-                answer_component_id=component_ref["component_id"],
-                component_revision=component_ref["component_revision"],
-                component_digest=component_ref["component_digest"],
-            )
-            coverage_observation = Observation.from_action(
-                coverage_action,
-                observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
-                status=RunStageStatus.COMPLETED,
-                payload={"component_coverage_record": coverage_record.to_dict()},
-            )
-            run_kernel.reduce(coverage_observation)
-            if not run_kernel.state.component_coverage_history:
-                raise OrdinarySemanticProducerTransactionError(
-                    "AG-SEM-07 reduce completed without component_coverage_history"
-                )
+                    "component_coverage_record": (
+                        component_bundle.component_coverage_record.to_dict()
+                    ),
+                }
+                for component_bundle in bundle.component_bundles
+            ],
+        )
     except OrdinarySemanticProducerTransactionError:
         raise
     except Exception as exc:
         raise OrdinarySemanticProducerTransactionError(
-            "ordinary semantic producer transactional handoff failed mid-chain"
+            "ordinary semantic producer atomic handoff failed before commit"
         ) from exc
 
     return OrdinarySemanticProducerHandoffResult(

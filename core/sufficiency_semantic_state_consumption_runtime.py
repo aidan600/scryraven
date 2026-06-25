@@ -218,6 +218,25 @@ def _latest_coverage_by_component(
     return latest
 
 
+def _coverage_matches_accepted_component(
+    coverage: Mapping[str, Any],
+    *,
+    accepted_contract_version: str | None,
+    accepted_contract_digest: str | None,
+    component_digest: str | None,
+) -> bool:
+    if not coverage:
+        return False
+    return (
+        _clean_token(coverage.get("accepted_contract_version"))
+        == accepted_contract_version
+        and _clean_token(coverage.get("accepted_contract_digest"), limit=128)
+        == accepted_contract_digest
+        and _clean_token(coverage.get("component_digest"), limit=128)
+        == component_digest
+    )
+
+
 def _coverage_safe_for_ref_projection(coverage: Mapping[str, Any]) -> bool:
     if coverage.get("canonical_state") is not True:
         return False
@@ -320,14 +339,24 @@ def _build_semantic_ref_projection(
 
     for component_id in required_ids:
         coverage = _mapping(latest_coverage.get(component_id))
-        if not coverage or not _coverage_safe_for_ref_projection(coverage):
+        component_ref = _mapping(component_ref_index.get(component_id))
+        component_digest = _clean_token(component_ref.get("component_digest"), limit=128)
+        if not (
+            _coverage_matches_accepted_component(
+                coverage,
+                accepted_contract_version=_clean_token(
+                    accepted_contract.get("accepted_contract_version")
+                ),
+                accepted_contract_digest=_clean_token(
+                    accepted_contract.get("accepted_contract_digest"),
+                    limit=128,
+                ),
+                component_digest=component_digest,
+            )
+            and _coverage_safe_for_ref_projection(coverage)
+        ):
             continue
         safe_required_ids.add(component_id)
-        component_ref = _mapping(component_ref_index.get(component_id))
-        component_digest = _clean_token(
-            coverage.get("component_digest") or component_ref.get("component_digest"),
-            limit=128,
-        )
         if component_digest:
             _append_unique_mapping(
                 component_refs,
@@ -704,11 +733,26 @@ def build_semantic_state_facts_for_sufficiency(
     for ref in required_refs:
         component_id = _clean_token(ref.get("component_id")) or ""
         component_digest = _clean_token(ref.get("component_digest"), limit=128)
-        coverage = latest_coverage.get(component_id, {})
+        raw_coverage = latest_coverage.get(component_id, {})
+        coverage_identity_mismatch = bool(raw_coverage) and not (
+            _coverage_matches_accepted_component(
+                raw_coverage,
+                accepted_contract_version=accepted_contract_version,
+                accepted_contract_digest=accepted_contract_digest,
+                component_digest=component_digest,
+            )
+        )
+        coverage = {} if coverage_identity_mismatch else raw_coverage
         suspect_reasons = list(invalidation_suspects.get(component_id, []))
-        coverage_record_id = _clean_token(coverage.get("coverage_record_id"))
+        coverage_record_id = _clean_token(
+            (raw_coverage or {}).get("coverage_record_id")
+            if coverage_identity_mismatch
+            else coverage.get("coverage_record_id")
+        )
         if coverage_record_id:
             suspect_reasons.extend(invalidation_suspects.get(coverage_record_id, []))
+        if coverage_identity_mismatch:
+            suspect_reasons.append("coverage_contract_identity_mismatch")
         coverage_suspect = bool(suspect_reasons)
         ledger_qualification_blockers: list[dict[str, str]] = []
         if coverage and isinstance(evidence_ledger_projection, Mapping):
@@ -756,6 +800,18 @@ def build_semantic_state_facts_for_sufficiency(
         component_blockers: list[str] = []
 
         if not coverage:
+            if coverage_identity_mismatch:
+                component_blockers.append("stale_or_orphan_component_coverage")
+                _append_blocker(
+                    blockers,
+                    code="stale_or_orphan_component_coverage",
+                    scope="component",
+                    ref_id=component_id,
+                    reason="coverage_identity_does_not_match_accepted_contract",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
+                )
             component_blockers.append("missing_required_component_coverage")
             _append_blocker(
                 blockers,
@@ -1058,7 +1114,7 @@ def build_semantic_state_facts_for_sufficiency(
         amendment_summaries.append(summary)
 
     covered_component_count = sum(
-        1 for ref in required_refs if latest_coverage.get(_clean_token(ref.get("component_id")) or "")
+        1 for summary in component_summaries if summary.get("coverage_present")
     )
     facts_core = {
         "schema_version": SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION,

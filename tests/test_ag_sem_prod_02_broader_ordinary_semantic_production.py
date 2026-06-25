@@ -374,9 +374,17 @@ def test_ag_sem_prod_02_static_guards_keep_closed_surfaces_closed() -> None:
             imported.add(node.module)
     assert imported.isdisjoint(forbidden_imports)
 
-    assert PIPELINE.read_text(encoding="utf-8").count(
-        "execute_ordinary_semantic_producer_handoff_from_scope("
-    ) == 1
+    pipeline_source = PIPELINE.read_text(encoding="utf-8")
+    assert (
+        pipeline_source.count("execute_ordinary_semantic_producer_handoff_from_scope(")
+        == 2
+    )
+    assert (
+        "if not run_kernel.state.initial_answer_contract:\n"
+        "            final_top_evidence = list(all_passages)\n"
+        "            execute_ordinary_semantic_producer_handoff_from_scope("
+        in pipeline_source
+    )
     for closed_file in (FAP, FAP_ADAPTER, RUNTIME_PROMPT_ASSEMBLY):
         source = closed_file.read_text(encoding="utf-8")
         assert "AG-SEM-PROD-02" not in source
