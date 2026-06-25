@@ -48,6 +48,19 @@ Definitions:
 - **Non-proofs** states what the phase explicitly does not prove.
 - **Bridge or exit condition** states how a harness/passive proof becomes product-path work later, or how it will be fixtureized/retired.
 
+When validation scope matters, keep the phase prompt compact but explicit:
+
+```text
+Validation bucket:
+Exact bucket command(s):
+Exact phase_focus test path(s) or node id(s):
+Full offline required:
+Intentionally not run:
+```
+
+This lets future prompts rely on repo-visible validation guidance instead of
+repasting the whole lane doctrine.
+
 ## Required pre-phase questions
 
 Before implementation, answer:
@@ -151,6 +164,19 @@ Runtime consumer: none yet; future RunAuthority/Sufficiency consumers named but 
 Actual app delta: repo gains passive semantic contract records/invariants for future authority work
 Non-proofs: no product behavior, no Balanced loop, no Author change, no live proof
 Bridge or exit condition: later canonical reducer accepts answer components into ordinary RunAuthority chain
+```
+
+## Docs/test sanitation example
+
+For AG-DOC-TEST-SANITY-01:
+
+```text
+Proof class: docs_only plus validation-routing / test-collection sanitation
+Product path affected: none
+Runtime consumer: none
+Actual app delta: none; repo-visible guidance and offline collection routing improve
+Non-proofs: no live validation, no product recovery behavior change, no full-suite repair
+Bridge or exit condition: AG-LIVE-BOUND-01 can use shorter repo-doc-backed prompts
 ```
 
 For AG-SEM-02:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -38,6 +39,18 @@ def main() -> int:
     if args.collect_only:
         command.append("--collect-only")
 
+    basetemp = os.environ.get("SCRYRAVEN_PYTEST_BASETEMP")
+    if not basetemp:
+        cache_tmp_root = ROOT / ".pytest_cache" / "basetemp"
+        try:
+            cache_tmp_root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            cache_tmp_root = None
+        if cache_tmp_root is not None:
+            basetemp = str(cache_tmp_root / args.bucket)
+    if basetemp:
+        command.append(f"--basetemp={basetemp}")
+
     if args.bucket == "full":
         print("Selected validation bucket: full")
     else:
@@ -47,7 +60,11 @@ def main() -> int:
             print(f"  {item}")
         command.extend(selected)
 
-    return subprocess.call(command, cwd=ROOT)
+    env = os.environ.copy()
+    # Offline validation must not read local .env secrets during collection.
+    env.setdefault("PYTHON_DOTENV_DISABLED", "1")
+
+    return subprocess.call(command, cwd=ROOT, env=env)
 
 
 if __name__ == "__main__":

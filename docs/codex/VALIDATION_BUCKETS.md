@@ -17,7 +17,7 @@ phase adds, promotes, demotes, or retires tests.
 | `semantic_lane` | Semantic producer, semantic reducer, semantic sufficiency, component coverage, and semantic projection validation. | Durable semantic manifest in `tests/buckets/semantic_lane.txt`, including AG-SEM reducer contracts, semantic sufficiency consumption, ordinary semantic producer atomicity, and structural guards. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
 | `semantic_search_lane` | SearchJudgment and QueryPlan consumers of semantic missing assessments and semantic component gaps. | Durable semantic-search manifest in `tests/buckets/semantic_search_lane.txt`, including AG-GAP, SearchJudgment, and QueryPlan semantic-gap consumer tests. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. Not a default PR bucket. |
 | `author_lane` | Comprehensive Author-lane custody validation. | `tests/buckets/author_lane.txt`, including the former inline AF/U/V/W/X/Y/Z/AC/AD/AE/AF4/AF5 custody set and adjacent RunKernel/final-answer files. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. |
-| `full` | Complete offline suite. | `python -m pytest -q` across the repo. | Push to `main` and manual serious validation only. |
+| `full` | Complete offline suite. | `python -m pytest -q` using the configured tracked test root. Generated outputs, local review mirrors, caches, logs, secrets, and other local artifacts must not be collected. | Push to `main` and manual serious validation only. |
 
 `semantic_lane` and `semantic_search_lane` are not default `fast_pr` scope
 because they are domain validation sweeps, not tiny broad sentinels. Run them
@@ -28,8 +28,43 @@ handling of semantic component gaps. `fast_pr` remains the ordinary PR tax.
 
 Run `author_lane` when a phase touches FinalAnswerPacket, Author payload,
 Author prompt/materialization, Author invocation/execution, citation handoff,
-or final response behavior. Run `full` for push-to-main, manual serious
-validation, or a phase that explicitly needs the complete offline suite.
+or final response behavior. This lane is high-custody and comparatively
+expensive; it is not default PR tax. Run `full` for push-to-main, manual
+serious validation, or a phase that explicitly needs the complete offline
+suite.
+
+## Generated-output Collection Hygiene
+
+`full` is an offline tracked-test sweep, not a request to collect generated
+local artifacts. Root pytest collection should be constrained by repo test
+configuration to `tests/`; generated directories such as `output/`,
+`local_output/`, `local_outputs/`, `cache/`, `caches/`, `logs/`,
+`private_logs/`, `secrets/`, and `output/local_review/` are not validation
+inputs and must not be committed or collected.
+
+The validation bucket runner also disables python-dotenv for its pytest
+subprocesses so local `.env` files are not read during offline collection.
+The runner uses ignored `.pytest_cache/basetemp/<bucket>` storage as pytest
+basetemp by default; set `SCRYRAVEN_PYTEST_BASETEMP` to override that for a
+local environment.
+
+If root collection starts walking those directories, fix the collection route
+or report the blocker. Do not delete user output directories to make validation
+pass.
+
+## AG-BAL / AG-BAL-HARDEN Routing
+
+AG-BAL recovery proof is intentionally split by invariant:
+
+- `semantic_search_lane` owns the durable offline product-path recovery sentinel
+  for QueryPlan/SearchJudgment authorization and one-cycle recovery budget
+  containment.
+- `author_lane` owns the recovered factual text and recovered source identity
+  reaching FinalAnswerPacket-owned Author material after semantic coverage
+  succeeds.
+
+Keep additional AG-BAL-HARDEN phase-detail tests in `phase_focus` unless they
+become cheap durable sentinels with a clear owner and cost posture.
 
 ## Required New-Test Classification
 
