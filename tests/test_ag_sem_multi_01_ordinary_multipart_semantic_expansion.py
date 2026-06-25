@@ -290,6 +290,7 @@ def test_positive_bounded_n_multipart_semantic_path_reaches_fap_and_author(
     assert len(fap_projection["coverage_record_refs"]) == 3
     assert len(fap_projection["semantic_observation_refs"]) == 3
     assert len(fap_projection["sanitized_content_ref_ids"]) == 3
+    assert len(fap_projection["author_materialization_content_refs"]) == 3
     bindings = tuple(dict(row) for row in packet.semantic_packet_evidence_bindings)
     assert len(bindings) == 3
     assert len({row["component_id"] for row in bindings}) == 3
@@ -298,10 +299,18 @@ def test_positive_bounded_n_multipart_semantic_path_reaches_fap_and_author(
     author_payload_trace_ref = captured["packet_handoff"].author_payload.to_trace_ref()
     materialization = author_payload_trace_ref[MATERIALIZATION_TRACE_REF_KEY]
     assert materialization["component_count"] == 3
+    assert materialization["excerpt_count"] == 3
+    assert materialization["bounded_material_component_count"] == 3
+    assert materialization["bounded_material_complete"] is True
+    assert materialization["bounded_text_included"] is True
+    assert materialization["bounded_material_digest"]
     assert materialization["semantic_packet_evidence_binding_count"] == 3
     assert "CONTROLLED SEMANTIC CONTEXT" in harness.author_prompts[0]
     assert "3 required components are supported" in harness.author_prompts[0]
-    assert "Bounded semantic excerpt from" not in harness.author_prompts[0]
+    assert harness.author_prompts[0].count("Packet-owned bounded support") == 3
+    assert "payload size is 64 KiB" in harness.author_prompts[0]
+    assert "support status is active" in harness.author_prompts[0]
+    assert "documented limitation is one active client token" in harness.author_prompts[0]
     assert outcome.report == RAW_POSITIVE_AUTHOR_RESPONSE
     _assert_no_trace_leakage(
         kernel=kernel,
