@@ -36,18 +36,46 @@ are repo files; use repo-visible files and the current phase prompt.
   `scripts/lint.ps1`, `pytest.ini`, `ruff.toml`, and `.pre-commit-config.yaml`
   as relevant to the task.
 
+## Current Productization Posture
+
+ScryRaven is post-PR #299 / post-AG-BAL-HARDEN. The current baseline includes
+AG-GAP semantic gap authority, semantic atomicity, packet-owned Author
+materialization, AG-BAL one-cycle recovery composition, and AG-BAL-HARDEN
+canonical recovery product-composition proof.
+
+The next likely product gate is AG-LIVE-BOUND-01 after the current docs/test
+sanitation pass. AG-BAL-HARDEN is not live validation: live provider, model,
+search, fetch, and retrieval calls remain closed by default unless a phase
+explicitly scopes the live query class, budget, redaction plan, artifact path,
+decision, and stop condition.
+
+Balanced now has a hardened, default-disabled, one-gap / one-query / one-cycle
+offline recovery seam. Recovery mechanics are shared primitives; modes supply
+policy and budget envelopes. Project Sources are not repo files unless their
+content is explicitly pasted into the current prompt or committed here.
+
 ## Architecture guidance
 
-- **General architecural workflow and Path B PR process:**
+- **General architectural workflow and Path B PR process:**
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
-- **Current AG-SEM posture:** AG-SEM-05 through AG-SEM-10 have completed the
-  canonical reducer and conditional Sufficiency-consumption chain. Start with
-  `docs/architecture/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md`. The next
-  recommended gate is an ordinary semantic producer vertical slice. Balanced,
-  follow-up, and Author semantic payloads remain closed until specifically
-  licensed. Name the proof class and validation bucket before implementation.
-  For historical AG-96 context, read
+- **Previous AG-SEM posture:** AG-SEM-05 through AG-SEM-10 completed the
+  canonical reducer and conditional Sufficiency-consumption chain; AG-SEM-11
+  and the later semantic atomicity work moved the ordinary semantic producer
+  past the old "next vertical slice" gate. Use
+  `docs/architecture/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md` as historical
+  context, not current next-step doctrine. For historical AG-96 context, read
   `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
+- **Recovery-adjacent Balanced / AG-BAL-HARDEN work:** read
+  `core/component_gap_recovery_runtime.py`,
+  `core/component_gap_recovery_coordinator.py`,
+  `core/run_kernel.py` around `commit_recovered_semantic_delta`,
+  `core/run_config.py` around `compose_component_gap_recovery_deps`,
+  `tests/test_ag_bal_01_component_gap_recovery.py`, and the durable
+  `tests/buckets/semantic_search_lane.txt` and
+  `tests/buckets/author_lane.txt` manifests. Keep product runtime live calls
+  closed by default. Use `semantic_search_lane` for durable QueryPlan/
+  SearchJudgment recovery-path proof and `author_lane` for recovered
+  fact/source Author-materialization proof when explicitly licensed.
 - **AG-89+ RunAuthority / authority-collapse work:**
   [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
 - **Current source-class recovery dispatch doctrine:** use
