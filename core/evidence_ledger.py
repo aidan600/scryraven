@@ -972,6 +972,12 @@ def build_evidence_ledger_observation_from_runtime(
             if final_evidence_selected
             else CandidateDisposition.OBSERVED.value
         )
+        stronger_obligation_eligible = (
+            bool(final_evidence_selected)
+            if source.get("component_gap_recovery_semantic_coverage_committed")
+            is True
+            else source.get("eligible_for_stronger_obligation")
+        )
         source_candidates.append(
             {
                 "candidate_id": candidate_id,
@@ -999,6 +1005,9 @@ def build_evidence_ledger_observation_from_runtime(
                 or source.get("fetch_status"),
                 "disposition": selected_disposition,
                 "record_kind": CandidateCustodyKind.FACT.value,
+                "eligible_for_stronger_obligation": (
+                    stronger_obligation_eligible
+                ),
                 "final_evidence_eligible": bool(final_evidence_selected),
             }
         )

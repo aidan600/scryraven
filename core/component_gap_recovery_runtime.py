@@ -31,6 +31,48 @@ from core.sufficiency_semantic_state_consumption_runtime import (
 COMPONENT_GAP_RECOVERY_TRACE_KEY = "component_gap_recovery_runtime"
 COMPONENT_GAP_RECOVERY_OWNER = "ComponentGapRecoveryRuntime"
 COMPONENT_GAP_RECOVERY_SCHEMA_VERSION = "component_gap_recovery_runtime_v1"
+_RECOVERED_ADAPTER_AUTHORITY_FIELDS = frozenset(
+    {
+        "authority_evidence",
+        "authority_lifecycle_selected_authority_evidence",
+        "citation_eligible",
+        "citation_eligibility_posture",
+        "component_gap_recovery_semantic_coverage_committed",
+        "component_gap_recovery_semantic_coverage_record_id",
+        "disposition",
+        "eligible_for_stronger_obligation",
+        "fap_authority",
+        "final_authority",
+        "final_authority_evidence",
+        "final_disposition",
+        "final_evidence_eligible",
+        "final_evidence_selected",
+        "fit_disposition",
+        "missing_source_obligations",
+        "packet_authority",
+        "partial_source_obligations",
+        "satisfied_source_obligations",
+        "selected_authority_evidence",
+        "source_obligation_authority",
+        "source_obligation_final",
+        "source_obligation_posture",
+        "source_obligation_ref",
+        "source_obligation_refs",
+        "source_obligation_satisfaction",
+        "source_obligation_satisfaction_claimed_by_bridge",
+        "source_obligation_satisfied",
+        "source_obligation_state",
+        "source_obligation_status",
+        "status",
+    }
+)
+_RECOVERED_ADAPTER_AUTHORITY_FIELD_FRAGMENTS = (
+    "citation_eligibility",
+    "final_authority",
+    "source_obligation_authority",
+    "source_obligation_final",
+    "source_obligation_satisf",
+)
 
 
 class ComponentGapRecoveryStatus(str, Enum):
@@ -362,7 +404,6 @@ def execute_authorized_component_gap_recovery(
             semantic_state_facts=gap_result.get("semantic_state_facts"),
             adapter_invoked=True,
         )
-
     post_facts = build_semantic_state_facts_for_sufficiency(
         initial_answer_contract=run_kernel.state.initial_answer_contract,
         component_coverage_history=run_kernel.state.component_coverage_history,
@@ -397,7 +438,10 @@ def execute_authorized_component_gap_recovery(
         idempotency_key=idempotency_key,
         evidence_ledger_projection=run_kernel.state.evidence_ledger.to_projection().to_dict(),
         semantic_state_facts=post_facts,
-        recovered_passages=annotated_passages,
+        recovered_passages=_semantically_committed_recovery_passages(
+            annotated_passages,
+            coverage_result=coverage_result,
+        ),
         adapter_invoked=True,
     )
 
@@ -682,7 +726,7 @@ def _annotated_recovery_passages(
     provider_job_kind = _provider_job_kind(component_ref)
     out: list[dict[str, Any]] = []
     for index, raw in enumerate(passages, start=1):
-        item = dict(raw)
+        item = _sanitize_recovered_adapter_passage(raw)
         item.setdefault(
             "candidate_id",
             f"component_gap_recovery_candidate:{idempotency_key[:20]}:{index}",
@@ -707,11 +751,144 @@ def _annotated_recovery_passages(
         item["provider_job_kind"] = provider_job_kind
         item["source_obligation_ids"] = list(source_obligation_ids)
         item.setdefault("dispatch_ref", execution_id)
-        item.setdefault("final_evidence_eligible", "unknown")
+        item["final_evidence_eligible"] = "unknown"
         item.setdefault("readable_status", "readable")
         item.setdefault("fetchable_status", "available")
         out.append(item)
     return tuple(out)
+
+
+def _sanitize_recovered_adapter_passage(
+    raw: Mapping[str, Any],
+) -> dict[str, Any]:
+    sanitized: dict[str, Any] = {}
+    for key, value in raw.items():
+        clean_key = str(key)
+        normalized = clean_key.casefold()
+        if normalized in _RECOVERED_ADAPTER_AUTHORITY_FIELDS:
+            continue
+        if any(
+            fragment in normalized
+            for fragment in _RECOVERED_ADAPTER_AUTHORITY_FIELD_FRAGMENTS
+        ):
+            continue
+        sanitized[clean_key] = value
+    return sanitized
+
+
+def _semantically_committed_recovery_passages(
+    passages: Sequence[Mapping[str, Any]],
+    *,
+    coverage_result: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    coverage_record_id = _clean_token(coverage_result.get("coverage_record_id"))
+    out: list[dict[str, Any]] = []
+    for passage in passages:
+        item = dict(passage)
+        item["component_gap_recovery_semantic_coverage_committed"] = True
+        if coverage_record_id:
+            item["component_gap_recovery_semantic_coverage_record_id"] = (
+                coverage_record_id
+            )
+        out.append(item)
+    return tuple(out)
+
+
+def _admit_semantic_bound_recovery_candidates(
+    *,
+    run_kernel: Any,
+    run_id: str,
+    annotated_passages: Sequence[Mapping[str, Any]],
+    idempotency_key: str,
+) -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = []
+    for passage in annotated_passages:
+        candidate_id = _clean_token(passage.get("candidate_id"))
+        if not candidate_id:
+            continue
+        candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "url": passage.get("url"),
+                "title": passage.get("title"),
+                "source_tier": passage.get("source_tier"),
+                "source_class": passage.get("source_class"),
+                "currentness_signal": passage.get("currentness_signal")
+                or passage.get("currentness"),
+                "readable_status": passage.get("readable_status") or "readable",
+                "fetchable_status": passage.get("fetchable_status"),
+                "query_ref": passage.get("query_ref"),
+                "disposition": "accepted",
+                "record_kind": "fact",
+                "reason": "component_gap_recovery_semantic_binding_validated",
+                "eligible_for_stronger_obligation": True,
+                "final_evidence_eligible": "unknown",
+            }
+        )
+    if not candidates:
+        return run_kernel.state.evidence_ledger.to_projection().to_dict()
+    action = run_kernel.authorize_evidence_ledger_reduction(
+        inputs={
+            "observation_source": "component_gap_recovery_semantic_coverage",
+            "candidate_count": len(candidates),
+            "component_gap_recovery_idempotency_key": idempotency_key,
+            "component_gap_recovery_owner": COMPONENT_GAP_RECOVERY_OWNER,
+        }
+    )
+    result = execute_evidence_ledger_reduction_action(
+        action,
+        payload={
+            "observation_id": (
+                f"{run_id}:evidence-ledger:component-gap-recovery-semantic:"
+                f"{idempotency_key[:24]}"
+            ),
+            "observation_source": "component_gap_recovery_semantic_coverage",
+            "candidates": candidates,
+        },
+    )
+    run_kernel.reduce(result.observation)
+    _clear_recovered_candidate_resolved_gaps(run_kernel, candidates=candidates)
+    return run_kernel.state.evidence_ledger.to_projection().to_dict()
+
+
+def _clear_recovered_candidate_resolved_gaps(
+    run_kernel: Any,
+    *,
+    candidates: Sequence[Mapping[str, Any]],
+) -> None:
+    candidate_ids = {
+        _clean_token(candidate.get("candidate_id"), limit=200)
+        for candidate in candidates
+        if isinstance(candidate, Mapping)
+    }
+    candidate_ids.discard(None)
+    if not candidate_ids:
+        return
+    projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
+    resolved_requirement_ids = {
+        _clean_token(requirement.get("requirement_id"))
+        for requirement in projection.get("source_requirements") or ()
+        if isinstance(requirement, Mapping)
+        and (_clean_token(requirement.get("status")) or "").casefold()
+        == "satisfied"
+        and candidate_ids.intersection(
+            {
+                _clean_token(value, limit=200)
+                for value in requirement.get("linked_candidate_ids") or ()
+            }
+        )
+    }
+    resolved_requirement_ids.discard(None)
+    if not resolved_requirement_ids:
+        return
+    run_kernel.state.evidence_ledger.gaps = [
+        gap
+        for gap in run_kernel.state.evidence_ledger.gaps
+        if _clean_token(getattr(gap, "requirement_id", None))
+        not in resolved_requirement_ids
+        and _clean_token(getattr(gap, "candidate_id", None), limit=200)
+        not in candidate_ids
+    ]
 
 
 def _admit_recovery_evidence(
@@ -832,6 +1009,17 @@ def _admit_semantic_component_coverage(
             continue
         if not content_refs:
             continue
+        if not _candidate_matches_recovery_source_requirement(
+            candidate=candidate,
+            evidence_ledger_projection=evidence_ledger_projection,
+        ):
+            continue
+        evidence_ledger_projection = _admit_semantic_bound_recovery_candidates(
+            run_kernel=run_kernel,
+            run_id=str(getattr(run_kernel.state, "run_id", "")),
+            annotated_passages=[passage],
+            idempotency_key=idempotency_key,
+        )
         coverage = build_component_coverage_proposal(
             accepted_contract=accepted_contract,
             observation=observation,
@@ -872,6 +1060,53 @@ def _admit_semantic_component_coverage(
             "commit_projection": dict(commit_projection),
         }
     return {"stop_reason": "recovered_evidence_not_semantically_covering_gap"}
+
+
+def _candidate_matches_recovery_source_requirement(
+    *,
+    candidate: Mapping[str, Any],
+    evidence_ledger_projection: Mapping[str, Any],
+) -> bool:
+    candidate_id = _clean_token(candidate.get("candidate_id"), limit=200)
+    if not candidate_id:
+        return False
+    candidate_class = _clean_token(candidate.get("source_class"))
+    candidate_tier = _clean_token(candidate.get("source_tier"))
+    currentness = _clean_token(candidate.get("currentness_signal"))
+    if currentness in {"stale", "outdated", "expired", "superseded"}:
+        return False
+    for requirement in evidence_ledger_projection.get("source_requirements") or ():
+        if not isinstance(requirement, Mapping):
+            continue
+        linked_candidates = {
+            _clean_token(value, limit=200)
+            for value in requirement.get("linked_candidate_ids") or ()
+        }
+        if candidate_id not in linked_candidates:
+            continue
+        required_currentness = _clean_token(requirement.get("required_currentness"))
+        if required_currentness in {"current", "official_current"} and (
+            currentness and currentness != "current"
+        ):
+            continue
+        required_class = _clean_token(requirement.get("required_source_class"))
+        if not required_class:
+            return True
+        if candidate_class == required_class:
+            return True
+        if required_class == "official_current_rules" and candidate_tier in {
+            "canonical",
+            "official",
+            "primary",
+        }:
+            return True
+        if required_class == "current_primary_or_official" and candidate_class in {
+            "legal_or_regulatory_text",
+            "official_current_rules",
+            "primary_source_documents",
+        }:
+            return True
+    return False
 
 
 def _component_still_missing(
