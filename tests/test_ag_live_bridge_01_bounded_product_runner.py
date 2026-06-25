@@ -5,7 +5,7 @@ import importlib.util
 import json
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -112,11 +112,20 @@ def test_dry_run_never_calls_run_pipeline(capsys: pytest.CaptureFixture[str]) ->
     capsys.readouterr()
 
 
-def test_confirm_live_fails_closed_before_run_pipeline(
+def test_confirm_live_with_missing_live_env_fails_before_run_pipeline(
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = _load_runner()
-    output = _gitignored_output_path("ag_live_bound_01_confirm_fail_closed.json")
+    output = _gitignored_output_path("ag_live_bound_01_confirm_missing_env.json")
+
+    monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
+
+    def fail_missing_env() -> None:
+        support = _load_support()
+        raise support.AgLiveBoundPreflightError("missing required live environment variable(s): OPENAI_API_KEY")
+
+    monkeypatch.setattr(runner, "_validate_live_model_keys", fail_missing_env)
 
     with patch("core.pipeline_orchestrator.run_pipeline") as run_pipeline:
         result = runner.main(
@@ -131,15 +140,197 @@ def test_confirm_live_fails_closed_before_run_pipeline(
     run_pipeline.assert_not_called()
     captured = capsys.readouterr()
     assert result == 2
-    assert "live_execution_not_enabled_in_ag_live_bridge_01" in captured.err
+    assert "missing required live environment variable" in captured.err
 
     packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
     assert packet["confirm_live_product_run"] is True
     assert packet["planned_live_dispatch"] is False
-    assert packet["primary_stop_reason"] == (
-        "live_execution_not_enabled_in_ag_live_bridge_01"
+    assert packet["success_classification"] == "precheck_failure"
+    assert packet["run_pipeline_call_count"] == 0
+    assert packet["failure_summary"]["reason"] == (
+        "missing required live environment variable(s): OPENAI_API_KEY"
     )
-    assert "orchestrator_utilization_retry_not_disableable" not in packet["stop_reasons"]
+
+
+def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    runner = _load_runner()
+    output = _gitignored_output_path("ag_live_bound_01_confirm_success.json")
+    captured_config: dict[str, Any] = {}
+    attempted_execution_log = tmp_path / "ordinary_execution.jsonl"
+    attempted_kb_log = tmp_path / "ordinary_kb.jsonl"
+
+    monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
+    monkeypatch.setattr(runner, "_validate_live_model_keys", lambda: None)
+
+    def fake_run_pipeline(config: Any, _deps: Any, _status: Any, _accumulator: Any) -> Any:
+        import core.persistence_side_effects as persistence
+        import core.pipeline_orchestrator as orchestrator
+
+        captured_config["config"] = config
+        assert config.cap_policy is not None
+        assert orchestrator.DB_ENABLED is False
+        config.cap_policy.mark_search_dispatch()
+        orchestrator.log_run_started(
+            run_id="would-log",
+            session_id="would-log-session",
+            phase="pipeline",
+            query="would write if not suppressed",
+            path=attempted_execution_log,
+        )
+        persistence.append_jsonl(attempted_kb_log, {"event": "would_log"})
+        persistence_result = orchestrator.execute_persistence_side_effects(
+            execution_log_path=attempted_execution_log,
+            execution_log_entry={"event": "would_log_execution_trace"},
+            run_id="would-log",
+            session_id="would-log-session",
+            latency_seconds=0.0,
+            strategy="Balanced",
+            execution_trace={"timing": {}},
+            run_log=_NoopLogger(),
+            policy_journal_path=tmp_path / "ordinary_policy.jsonl",
+            policy_applied={},
+            default_utilization_threshold=0.25,
+            ts_utc="2026-06-25T00:00:00Z",
+            query="would write if not suppressed",
+            kb_context=None,
+            db_enabled=True,
+        )
+        assert persistence_result.sqlite_row_written is False
+        return SimpleNamespace(
+            report="The defaults are rel_tol=1e-09 and abs_tol=0.0. [[1]](https://docs.python.org/3/library/math.html#math.isclose)",
+            top_passages=[
+                {
+                    "source_id": 1,
+                    "url": "https://docs.python.org/3/library/math.html#math.isclose",
+                    "text": "not serialized",
+                }
+            ],
+            seen_urls=["https://docs.python.org/3/library/math.html#math.isclose"],
+            execution_trace={
+                "final_answer_source_ids_used": ["1"],
+                "evidence_sufficient": True,
+                "synth_was_insufficient": False,
+                "synth_sufficient_first_pass": True,
+                "answer_class": "direct_answer",
+                "response_displayable": True,
+                "author_system_prompt_key": "default",
+                "failure_card": {"show": False, "reason": None},
+                "final_answer_packet": {
+                    "canonical_state": True,
+                    "trace_mode": "run_kernel_final_answer_packet_projection",
+                    "readiness_status": "author_ready",
+                    "author_payload_status": "author_input_ready",
+                    "citation_eligible_source_ids": ["1"],
+                    "sufficiency_decision": "sufficient",
+                    "semantic_evidence_authority_manifest": {
+                        "semantic_packet_evidence_binding_available": True,
+                        "semantic_packet_evidence_binding_count": 1,
+                        "content_refs_available": True,
+                        "coverage_refs_available": True,
+                    },
+                    "semantic_content_coverage_ref": {
+                        "component_ref_count": 1,
+                        "coverage_record_ref_count": 1,
+                        "semantic_observation_ref_count": 1,
+                        "sanitized_content_ref_count": 1,
+                    },
+                },
+            },
+        )
+
+    with patch("core.pipeline_orchestrator.run_pipeline", side_effect=fake_run_pipeline) as run_pipeline:
+        result = runner.main([*VALID_ARGS, "--output", output, "--confirm-live-product-run"])
+
+    assert result == 0
+    assert run_pipeline.call_count == 1
+    assert captured_config["config"].cap_policy.max_search_dispatches == 2
+    assert captured_config["config"].cap_policy.max_fetch_read_operations == 3
+    assert attempted_execution_log.exists() is False
+    assert attempted_kb_log.exists() is False
+    captured = capsys.readouterr()
+    assert "wrote sanitized AG-LIVE-BOUND live packet" in captured.out
+
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["phase_id"] == "AG-LIVE-EXEC-01"
+    assert packet["success_classification"] == "success"
+    assert packet["run_pipeline_call_count"] == 1
+    assert packet["caps_observed"]["search_dispatches"] == 1
+    assert packet["final_answer_text"].startswith("The defaults are")
+    assert packet["cited_source_ids"] == ["1"]
+    assert packet["cited_urls"] == [
+        "https://docs.python.org/3/library/math.html#math.isclose"
+    ]
+    assert packet["sanitized_projection_summaries"]["component_binding"][
+        "semantic_packet_evidence_binding_count"
+    ] == 1
+    assert packet["retention_posture"] == {
+        "ordinary_product_persistence": "suppressed_for_ag_live_bound_runner",
+        "only_runner_artifact_written": True,
+        "sanitized_packet_path": packet["output_path"],
+        "ordinary_execution_jsonl_suppressed": True,
+        "ordinary_kb_trigger_jsonl_suppressed": True,
+        "ordinary_policy_journal_jsonl_suppressed": True,
+        "sqlite_telemetry_suppressed": True,
+        "ordinary_side_effect_paths_suppressed": [
+            "output/ag_live_bound_01_execution_log.jsonl",
+            "output/ag_live_bound_01_kb_triggers.jsonl",
+            "output/ag_live_bound_01_policy_journal.jsonl",
+            "proplex.db",
+        ],
+    }
+    assert packet["no_retention"]["private_logs_retained"] is False
+    assert packet["no_retention"]["db_cache_rows_retained_in_packet"] is False
+    assert packet["no_retention"]["full_raw_traces_retained"] is False
+    rendered_packet = json.dumps(packet, sort_keys=True)
+    assert "not serialized" not in rendered_packet
+    assert '"raw_prompt":' not in rendered_packet
+    assert '"provider_payload":' not in rendered_packet
+    assert '"model_response":' not in rendered_packet
+    assert '"execution_trace":' not in rendered_packet
+
+
+def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    output = _gitignored_output_path("ag_live_bound_01_confirm_cap_overflow.json")
+
+    monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
+    monkeypatch.setattr(runner, "_validate_live_model_keys", lambda: None)
+
+    def fake_run_pipeline(config: Any, _deps: Any, _status: Any, _accumulator: Any) -> Any:
+        config.cap_policy.mark_search_dispatch()
+        config.cap_policy.mark_search_dispatch()
+        config.cap_policy.mark_search_dispatch()
+
+    with patch("core.pipeline_orchestrator.run_pipeline", side_effect=fake_run_pipeline) as run_pipeline:
+        result = runner.main([*VALID_ARGS, "--output", output, "--confirm-live-product-run"])
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == "cap_overflow"
+    assert packet["run_pipeline_call_count"] == 1
+    assert packet["caps_observed"]["search_dispatches"] == 2
+    assert packet["failure_summary"] == {
+        "reason": "search_dispatches cap exceeded",
+        "classification": "cap_overflow",
+    }
+
+
+class _NoopLogger:
+    def warning(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    def error(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
 
 
 def test_unsafe_output_path_blocks(capsys: pytest.CaptureFixture[str]) -> None:
@@ -366,19 +557,32 @@ def test_forbidden_packet_fields_absent() -> None:
     support.reject_forbidden_packet(packet)
 
 
-def test_dry_run_module_does_not_reference_live_imports() -> None:
+def test_forbidden_packet_fields_rejected_recursively() -> None:
+    support = _load_support()
+
+    with pytest.raises(support.AgLiveBoundPacketError, match="raw_prompt"):
+        support.reject_forbidden_packet(
+            {"safe": [{"nested": {"raw_prompt": "must not serialize"}}]}
+        )
+
+
+def test_dry_run_module_has_no_top_level_live_imports() -> None:
     runner_source = RUNNER_PATH.read_text(encoding="utf-8")
     support_source = SUPPORT_PATH.read_text(encoding="utf-8")
-    forbidden_tokens = (
-        "run_pipeline",
-        "load_dotenv",
-        "request_live_validation_broker",
-        "search_providers",
-        "dotenv",
-    )
-    for token in forbidden_tokens:
-        assert token not in runner_source
+    assert "request_live_validation_broker" not in runner_source
     support_tree = ast.parse(support_source)
+    runner_tree = ast.parse(runner_source)
+    runner_imported = {
+        alias.name
+        for node in runner_tree.body
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    }
+    runner_imported_from = {
+        node.module
+        for node in runner_tree.body
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
     imported = {
         alias.name
         for node in ast.walk(support_tree)
@@ -390,6 +594,8 @@ def test_dry_run_module_does_not_reference_live_imports() -> None:
         for node in ast.walk(support_tree)
         if isinstance(node, ast.ImportFrom) and node.module
     }
+    assert "dotenv" not in runner_imported
+    assert "core.pipeline_orchestrator" not in runner_imported_from
     assert "run_pipeline" not in imported
     assert "dotenv" not in imported
     assert all("pipeline_orchestrator" not in (name or "") for name in imported_from)
@@ -428,7 +634,7 @@ def test_is_allowed_output_path_requires_gitignore() -> None:
     assert support.is_allowed_output_path(ROOT, ROOT / "README.md") is False
 
 
-def test_runner_ast_has_no_run_pipeline_import() -> None:
+def test_runner_ast_has_no_top_level_run_pipeline_import() -> None:
     tree = ast.parse(RUNNER_PATH.read_text(encoding="utf-8"))
     imported_names = {
         alias.name

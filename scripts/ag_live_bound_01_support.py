@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +10,7 @@ from typing import Any
 from core.cap_enforcement import RunCapPolicy
 
 PHASE_ID = "AG-LIVE-BRIDGE-01"
+LIVE_PHASE_ID = "AG-LIVE-EXEC-01"
 SCHEMA_VERSION = "ag_live_bound_01_bounded_product_runner_v1"
 PACKET_MARKER = "LOCAL/UNTRACKED — DO NOT COMMIT"
 PROOF_SURFACE = "ordinary_product_pipeline"
@@ -26,8 +27,11 @@ BACKUP_QUERY = (
 REQUIRED_MODE = "Balanced"
 REQUIRED_DOMAIN = "docs.python.org"
 
-LIVE_EXECUTION_STOP_REASON = "live_execution_not_enabled_in_ag_live_bridge_01"
-UTILIZATION_RETRY_STOP_REASON = "orchestrator_utilization_retry_not_disableable"
+LIVE_PACKET_SUCCESS = "success"
+LIVE_PACKET_CAP_OVERFLOW = "cap_overflow"
+LIVE_PACKET_PIPELINE_FAILURE = "pipeline_failure"
+LIVE_PACKET_PRECHECK_FAILURE = "precheck_failure"
+LIVE_PACKET_UNEXPECTED_FAILURE = "unexpected_failure"
 
 PLANNED_CAPS: dict[str, int] = {
     "max_scryraven_runs": 1,
@@ -324,12 +328,6 @@ def build_preflight_context(
     )
 
 
-def live_execution_blockers() -> list[str]:
-    return [
-        LIVE_EXECUTION_STOP_REASON,
-    ]
-
-
 def reject_forbidden_packet(value: Any) -> None:
     if isinstance(value, Mapping):
         for key, child in value.items():
@@ -355,6 +353,36 @@ def forbidden_material_absent() -> dict[str, bool]:
         "absent_private_logs": True,
         "absent_db_cache_rows": True,
         "absent_full_raw_traces": True,
+    }
+
+
+def no_retention_booleans() -> dict[str, bool]:
+    return {
+        "raw_provider_payloads_retained": False,
+        "raw_prompts_retained": False,
+        "raw_model_requests_retained": False,
+        "raw_model_responses_retained": False,
+        "private_logs_retained": False,
+        "db_cache_rows_retained_in_packet": False,
+        "full_raw_traces_retained": False,
+    }
+
+
+def suppressed_ordinary_retention_posture(context: PreflightContext) -> dict[str, Any]:
+    return {
+        "ordinary_product_persistence": "suppressed_for_ag_live_bound_runner",
+        "only_runner_artifact_written": True,
+        "sanitized_packet_path": _relative_output_path(context),
+        "ordinary_execution_jsonl_suppressed": True,
+        "ordinary_kb_trigger_jsonl_suppressed": True,
+        "ordinary_policy_journal_jsonl_suppressed": True,
+        "sqlite_telemetry_suppressed": True,
+        "ordinary_side_effect_paths_suppressed": [
+            "output/ag_live_bound_01_execution_log.jsonl",
+            "output/ag_live_bound_01_kb_triggers.jsonl",
+            "output/ag_live_bound_01_policy_journal.jsonl",
+            "proplex.db",
+        ],
     }
 
 
@@ -396,45 +424,68 @@ def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
     return packet
 
 
-def build_fail_closed_live_packet(
+def build_live_success_packet(
     context: PreflightContext,
     *,
-    stop_reasons: list[str],
+    outcome: Any,
+    cap_policy: RunCapPolicy,
+) -> dict[str, Any]:
+    trace = _mapping_or_empty(getattr(outcome, "execution_trace", None))
+    cited_source_ids = _cited_source_ids(trace)
+    packet = {
+        **_live_packet_base(context, cap_policy=cap_policy),
+        "success_classification": LIVE_PACKET_SUCCESS,
+        "planned_live_dispatch": True,
+        "run_pipeline_call_count": 1,
+        "final_answer_text": str(getattr(outcome, "report", "") or ""),
+        "cited_source_ids": cited_source_ids,
+        "cited_urls": _cited_urls(outcome, cited_source_ids),
+        "source_ids_available": bool(cited_source_ids),
+        "sanitized_projection_summaries": _sanitized_projection_summaries(trace),
+        "failure_summary": None,
+        "live_only": {
+            "ordinary_product_path": True,
+            "runtime_consumer": "run_pipeline",
+            "run_config_cap_policy": True,
+        },
+    }
+    reject_forbidden_packet(packet)
+    return packet
+
+
+def build_live_failure_packet(
+    context: PreflightContext,
+    *,
+    cap_policy: RunCapPolicy,
+    classification: str,
+    failure_reason: str,
+    run_pipeline_call_count: int,
 ) -> dict[str, Any]:
     packet = {
-        "packet_marker": PACKET_MARKER,
-        "schema_version": SCHEMA_VERSION,
-        "phase_id": PHASE_ID,
-        "proof_surface": PROOF_SURFACE,
-        "dry_run": False,
-        "confirm_live_product_run": True,
-        "planned_live_dispatch": False,
-        "run_id": context.run_id,
-        "query": context.query,
-        "mode": context.mode,
-        "domain_allowlist": list(context.include_domains),
-        "output_path": _relative_output_path(context),
-        "caps_requested": context.caps.as_requested_dict(),
-        "caps_observed": CappedDepsCounters.from_caps(context.caps).not_executed_dict(),
-        "cap_enforcement_product_path": {
-            "policy_surface": "RunConfig.cap_policy",
+        **_live_packet_base(context, cap_policy=cap_policy),
+        "success_classification": classification,
+        "planned_live_dispatch": run_pipeline_call_count > 0,
+        "run_pipeline_call_count": run_pipeline_call_count,
+        "final_answer_text": "",
+        "cited_source_ids": [],
+        "cited_urls": [],
+        "source_ids_available": False,
+        "sanitized_projection_summaries": {
+            "component_binding": {"available": False},
+            "component_coverage": {"available": False},
+            "sufficiency": {"available": False},
+            "final_answer_packet": {"available": False},
+            "author_posture": {"available": False},
+        },
+        "failure_summary": {
+            "reason": failure_reason,
+            "classification": classification,
+        },
+        "live_only": {
+            "ordinary_product_path": run_pipeline_call_count > 0,
             "runtime_consumer": "run_pipeline",
-            "script_owns_cap_authority": False,
-            "product_policy_constructible": True,
+            "run_config_cap_policy": True,
         },
-        "preflight": {
-            "query_lock": context.query_lock,
-            "output_path_safe": True,
-            "output_path_gitignored": True,
-            "domain_allowlist_present": True,
-            "caps_valid": True,
-            "live_path_armed": False,
-        },
-        "stop_reasons": list(stop_reasons),
-        "primary_stop_reason": stop_reasons[0],
-        "redaction_status": "sanitized_fail_closed",
-        "forbidden_material_absent": forbidden_material_absent(),
-        "live_only": None,
     }
     reject_forbidden_packet(packet)
     return packet
@@ -471,6 +522,181 @@ def _relative_output_path(context: PreflightContext) -> str:
         return str(context.output_path.relative_to(context.root))
     except ValueError:
         return str(context.output_path)
+
+
+def _live_packet_base(
+    context: PreflightContext,
+    *,
+    cap_policy: RunCapPolicy,
+) -> dict[str, Any]:
+    return {
+        "packet_marker": PACKET_MARKER,
+        "schema_version": SCHEMA_VERSION,
+        "phase_id": LIVE_PHASE_ID,
+        "proof_surface": PROOF_SURFACE,
+        "dry_run": False,
+        "confirm_live_product_run": True,
+        "run_id": context.run_id,
+        "query": context.query,
+        "mode": context.mode,
+        "domain_allowlist": list(context.include_domains),
+        "output_path": _relative_output_path(context),
+        "caps_requested": context.caps.as_requested_dict(),
+        "caps_observed": caps_observed_from_policy(cap_policy),
+        "cap_enforcement_product_path": {
+            "policy_surface": "RunConfig.cap_policy",
+            "runtime_consumer": "run_pipeline",
+            "script_owns_cap_authority": False,
+            "product_policy_constructible": True,
+        },
+        "preflight": {
+            "query_lock": context.query_lock,
+            "output_path_safe": True,
+            "output_path_gitignored": True,
+            "domain_allowlist_present": True,
+            "caps_valid": True,
+            "live_path_armed": True,
+        },
+        "redaction_status": "sanitized_live_result",
+        "forbidden_material_absent": forbidden_material_absent(),
+        "no_retention": no_retention_booleans(),
+        "retention_posture": suppressed_ordinary_retention_posture(context),
+    }
+
+
+def _mapping_or_empty(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _cited_source_ids(trace: Mapping[str, Any]) -> list[str]:
+    ids = _string_list(trace.get("final_answer_source_ids_used"))
+    if ids:
+        return ids
+    packet = _mapping_or_empty(trace.get("final_answer_packet"))
+    for key in ("citation_eligible_source_ids", "source_ids"):
+        ids = _string_list(packet.get(key))
+        if ids:
+            return ids
+    return []
+
+
+def _cited_urls(outcome: Any, cited_source_ids: Sequence[str]) -> list[str]:
+    cited_id_set = {str(item) for item in cited_source_ids}
+    urls: list[str] = []
+    for passage in getattr(outcome, "top_passages", []) or []:
+        if not isinstance(passage, Mapping):
+            continue
+        source_id = str(passage.get("source_id") or "")
+        if cited_id_set and source_id and source_id not in cited_id_set:
+            continue
+        url = str(passage.get("url") or "").strip()
+        if url and url not in urls:
+            urls.append(url)
+    if urls:
+        return urls
+    return _string_list(getattr(outcome, "seen_urls", []) or [])
+
+
+def _sanitized_projection_summaries(trace: Mapping[str, Any]) -> dict[str, Any]:
+    packet = _mapping_or_empty(trace.get("final_answer_packet"))
+    return {
+        "component_binding": _component_binding_summary(packet),
+        "component_coverage": _component_coverage_summary(packet),
+        "sufficiency": _sufficiency_summary(trace, packet),
+        "final_answer_packet": _final_answer_packet_summary(packet),
+        "author_posture": _author_posture_summary(trace, packet),
+    }
+
+
+def _component_binding_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    manifest = _mapping_or_empty(packet.get("semantic_evidence_authority_manifest"))
+    return {
+        "available": bool(manifest),
+        "semantic_packet_evidence_binding_available": manifest.get(
+            "semantic_packet_evidence_binding_available"
+        ),
+        "semantic_packet_evidence_binding_count": manifest.get(
+            "semantic_packet_evidence_binding_count"
+        ),
+        "content_refs_available": manifest.get("content_refs_available"),
+        "coverage_refs_available": manifest.get("coverage_refs_available"),
+    }
+
+
+def _component_coverage_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    coverage = _mapping_or_empty(packet.get("semantic_content_coverage_ref"))
+    return {
+        "available": bool(coverage),
+        "component_ref_count": coverage.get("component_ref_count"),
+        "coverage_record_ref_count": coverage.get("coverage_record_ref_count"),
+        "semantic_observation_ref_count": coverage.get("semantic_observation_ref_count"),
+        "sanitized_content_ref_count": coverage.get("sanitized_content_ref_count"),
+    }
+
+
+def _sufficiency_summary(
+    trace: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "available": any(
+            key in trace
+            for key in (
+                "evidence_sufficient",
+                "synth_was_insufficient",
+                "synth_sufficient_first_pass",
+            )
+        )
+        or "sufficiency_decision" in packet,
+        "evidence_sufficient": trace.get("evidence_sufficient"),
+        "synth_was_insufficient": trace.get("synth_was_insufficient"),
+        "synth_sufficient_first_pass": trace.get("synth_sufficient_first_pass"),
+        "sufficiency_decision": packet.get("sufficiency_decision"),
+    }
+
+
+def _final_answer_packet_summary(packet: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "available": bool(packet),
+        "canonical_state": packet.get("canonical_state"),
+        "trace_mode": packet.get("trace_mode"),
+        "readiness_status": packet.get("readiness_status"),
+        "author_payload_status": packet.get("author_payload_status"),
+        "citation_eligible_source_ids": _string_list(
+            packet.get("citation_eligible_source_ids")
+        ),
+    }
+
+
+def _author_posture_summary(
+    trace: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    failure_card = _mapping_or_empty(trace.get("failure_card"))
+    return {
+        "available": bool(trace or packet),
+        "answer_class": trace.get("answer_class"),
+        "response_displayable": trace.get("response_displayable"),
+        "author_system_prompt_key": trace.get("author_system_prompt_key"),
+        "failure_card_show": failure_card.get("show"),
+        "failure_card_reason": failure_card.get("reason"),
+        "final_answer_readiness_status": packet.get("readiness_status"),
+    }
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, Sequence):
+        values = [str(item) for item in value]
+    else:
+        values = []
+    result: list[str] = []
+    for item in values:
+        clean = str(item or "").strip()
+        if clean and clean not in result:
+            result.append(clean)
+    return result
 
 
 def _is_smart_search_judgment_phase(cost_phase: str | None) -> bool:
