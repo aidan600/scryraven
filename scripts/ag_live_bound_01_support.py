@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.cap_enforcement import RunCapPolicy
+from core.validation_observability import build_validation_observability
 from core.validation_profiles import (
     AG_LIVE_BOUND_BACKUP_QUERY,
     AG_LIVE_BOUND_PRIMARY_QUERY,
@@ -455,9 +456,11 @@ def build_live_success_packet(
     *,
     outcome: Any,
     cap_policy: RunCapPolicy,
+    run_config: Any | None = None,
 ) -> dict[str, Any]:
     trace = _mapping_or_empty(getattr(outcome, "execution_trace", None))
     cited_source_ids = _cited_source_ids(trace)
+    profile = get_validation_profile(context.profile_name)
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": LIVE_PACKET_SUCCESS,
@@ -468,6 +471,13 @@ def build_live_success_packet(
         "cited_urls": _cited_urls(outcome, cited_source_ids),
         "source_ids_available": bool(cited_source_ids),
         "sanitized_projection_summaries": _sanitized_projection_summaries(trace),
+        "validation_observability": build_validation_observability(
+            validation_profile=profile,
+            preflight_context=context,
+            run_config=run_config,
+            outcome=outcome,
+            cap_policy=cap_policy,
+        ),
         "failure_summary": None,
         "live_only": {
             "ordinary_product_path": True,
@@ -486,7 +496,10 @@ def build_live_failure_packet(
     classification: str,
     failure_reason: str,
     run_pipeline_call_count: int,
+    run_config: Any | None = None,
+    outcome: Any | None = None,
 ) -> dict[str, Any]:
+    profile = get_validation_profile(context.profile_name)
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": classification,
@@ -503,6 +516,13 @@ def build_live_failure_packet(
             "final_answer_packet": {"available": False},
             "author_posture": {"available": False},
         },
+        "validation_observability": build_validation_observability(
+            validation_profile=profile,
+            preflight_context=context,
+            run_config=run_config,
+            outcome=outcome,
+            cap_policy=cap_policy,
+        ),
         "failure_summary": {
             "reason": failure_reason,
             "classification": classification,

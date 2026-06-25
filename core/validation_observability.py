@@ -1,0 +1,805 @@
+"""Sanitized AG-LIVE validation observability projection.
+
+This module consolidates already-existing validation/runtime telemetry into one
+packet-facing projection. It does not call providers, select routes, fetch
+pages, rank evidence, alter citation eligibility, or change Author behavior.
+"""
+
+from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from typing import Any
+
+from core.provider_diagnostics import summarize_provider_diagnostics
+from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
+from core.validation_profiles import AG_LIVE_SOURCE_CUSTODY
+
+VALIDATION_OBSERVABILITY_SCHEMA_VERSION = "validation_observability_v1"
+
+_UNKNOWN = "unknown"
+_SNIPPET_ONLY = "snippet_only"
+_FULL_PAGE_FETCHED = "full_page_fetched"
+_SENSITIVE_VALUE_MARKERS = (
+    "api_key",
+    "bearer ",
+    "provider_payload",
+    "raw_prompt",
+    "raw_request",
+    "raw_response",
+    "secret",
+    "sk-",
+    "token",
+)
+_SATISFIED_STATUSES = {
+    "fulfilled",
+    "not_required_or_satisfied",
+    "requirement_satisfied",
+    "satisfied",
+    "source_obligation_satisfied",
+}
+_UNSATISFIED_MARKERS = (
+    "partial",
+    "unfulfilled",
+    "unsatisfied",
+    "unmet",
+)
+
+
+def build_validation_observability(
+    *,
+    validation_profile: Any | None = None,
+    preflight_context: Any | None = None,
+    run_config: Any | None = None,
+    outcome: Any | None = None,
+    cap_policy: Any | None = None,
+) -> dict[str, Any]:
+    """Build the single sanitized AG-LIVE observability packet field."""
+
+    trace = _mapping(getattr(outcome, "execution_trace", None))
+    top_passages = _mapping_list(getattr(outcome, "top_passages", None))
+    seen_urls = _string_list(getattr(outcome, "seen_urls", None))
+    cited_source_ids = _cited_source_ids(trace)
+    cited_urls = _cited_urls(outcome, cited_source_ids)
+    profile_name = _profile_name(validation_profile, preflight_context)
+    caps_observed = _caps_observed(cap_policy, trace)
+
+    return {
+        "schema_version": VALIDATION_OBSERVABILITY_SCHEMA_VERSION,
+        "projection_mode": "sanitized_existing_telemetry_consolidation",
+        "validation_profile_name": profile_name,
+        "model_invocation_summary": _model_invocation_summary(run_config, trace),
+        "search_provider_summary": _search_provider_summary(trace),
+        "retrieval_dispatch_summary": _retrieval_dispatch_summary(
+            trace,
+            caps_observed=caps_observed,
+        ),
+        "source_material_summary": _source_material_summary(
+            top_passages=top_passages,
+            seen_urls=seen_urls,
+            cited_source_ids=cited_source_ids,
+            cited_urls=cited_urls,
+        ),
+        "source_custody_summary": _source_custody_summary(
+            profile_name=profile_name,
+            trace=trace,
+            top_passages=top_passages,
+            cited_source_ids=cited_source_ids,
+            cited_urls=cited_urls,
+            fetch_read_operations=_optional_int(
+                caps_observed.get("fetch_read_operations")
+            ),
+            final_answer_text=str(getattr(outcome, "report", "") or ""),
+        ),
+        "cap_and_retention_summary": _cap_and_retention_summary(
+            validation_profile=validation_profile,
+            preflight_context=preflight_context,
+            caps_observed=caps_observed,
+        ),
+        "raw_private_material_serialized": False,
+    }
+
+
+def _model_invocation_summary(
+    run_config: Any | None,
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    packet = _mapping(trace.get("final_answer_packet"))
+    author_input_refs = _mapping(packet.get("author_input_refs"))
+    author_payload_ref = _mapping(packet.get("author_payload_ref"))
+
+    summary = {
+        "fast_provider": _safe_text(getattr(run_config, "fast_provider", None)),
+        "fast_model": _safe_text(getattr(run_config, "fast_model", None)),
+        "smart_provider": _safe_text(getattr(run_config, "smart_provider", None)),
+        "smart_model": _safe_text(getattr(run_config, "smart_model", None)),
+        "embed_provider": _safe_text(getattr(run_config, "embed_provider", None)),
+        "embed_model": _safe_text(getattr(run_config, "embed_model", None)),
+        "author_provider": _first_text(
+            trace.get("author_provider"),
+            author_input_refs.get("author_provider"),
+            author_payload_ref.get("author_provider"),
+        ),
+        "author_model": _first_text(
+            trace.get("author_model"),
+            author_input_refs.get("author_model"),
+            author_payload_ref.get("author_model"),
+        ),
+        "author_system_prompt_key": _first_text(
+            trace.get("author_system_prompt_key"),
+            author_input_refs.get("author_system_prompt_key"),
+            author_payload_ref.get("author_system_prompt_key"),
+        ),
+        "author_provider_model_source": "trace"
+        if (
+            trace.get("author_provider")
+            or author_input_refs.get("author_provider")
+            or author_payload_ref.get("author_provider")
+        )
+        else None,
+    }
+    if (
+        summary["author_provider"] is None
+        and summary["author_model"] is None
+        and run_config is not None
+    ):
+        provider, model = _author_provider_model_from_config(run_config)
+        summary["author_provider"] = provider
+        summary["author_model"] = model
+        summary["author_provider_model_source"] = "run_config_mode_inference"
+    return summary
+
+
+def _search_provider_summary(trace: Mapping[str, Any]) -> dict[str, Any]:
+    attempts = _mapping_list(trace.get("provider_diagnostics"))
+    summarized = summarize_provider_diagnostics(attempts) if attempts else {}
+    selected_provider_list_by_iteration = _provider_lists_by_iteration(trace)
+    providers_attempted = _unique_strings(
+        [
+            *(attempt.get("provider") for attempt in attempts),
+            *(
+                provider
+                for providers in selected_provider_list_by_iteration
+                for provider in providers
+            ),
+        ]
+    )
+    accepted_by_provider: Counter[str] = Counter()
+    result_summary_count = _optional_int(trace.get("provider_result_summary_count"))
+    computed_result_summary_count = 0
+    for attempt in attempts:
+        provider = _safe_text(attempt.get("provider")) or _UNKNOWN
+        accepted = _optional_int(attempt.get("accepted_url_count")) or 0
+        if accepted:
+            accepted_by_provider[provider] += accepted
+        computed_result_summary_count += (
+            _optional_int(attempt.get("provider_result_summary_count")) or 0
+        )
+    if result_summary_count is None:
+        result_summary_count = computed_result_summary_count
+
+    return {
+        "provider_diagnostics_available": bool(attempts),
+        "providers_attempted_by_name": providers_attempted,
+        "provider_successful_attempts_by_provider": _safe_count_mapping(
+            trace.get("provider_successful_attempts_by_provider")
+            or summarized.get("provider_successful_attempts_by_provider")
+        ),
+        "provider_failed_attempts_by_provider": _safe_count_mapping(
+            trace.get("provider_failed_attempts_by_provider")
+            or summarized.get("provider_failed_attempts_by_provider")
+        ),
+        "provider_attempts_by_role": _safe_count_mapping(
+            trace.get("provider_attempts_by_role")
+            or summarized.get("provider_attempts_by_role")
+        ),
+        "provider_accepted_url_count_by_provider": dict(
+            sorted(accepted_by_provider.items())
+        ),
+        "providers_returned_accepted_urls": sorted(
+            provider for provider, count in accepted_by_provider.items() if count > 0
+        ),
+        "provider_result_summary_count": result_summary_count,
+        "selected_provider_list_by_iteration": selected_provider_list_by_iteration,
+    }
+
+
+def _retrieval_dispatch_summary(
+    trace: Mapping[str, Any],
+    *,
+    caps_observed: Mapping[str, Any],
+) -> dict[str, Any]:
+    pass_records = _retrieval_pass_records(trace)
+    loop_contract = _mapping(trace.get(RETRIEVAL_LOOP_TRACE_KEY))
+    loop_records = _retrieval_loop_pass_records(loop_contract)
+    selected = pass_records or loop_records
+    return {
+        "retrieval_pass_count": len(selected),
+        "retrieval_pass_records_available": bool(pass_records),
+        "retrieval_loop_contract_available": bool(loop_contract),
+        "pass_records": selected,
+        "search_dispatches_observed": _optional_int(
+            caps_observed.get("search_dispatches")
+        ),
+        "fetch_read_operations_observed": _optional_int(
+            caps_observed.get("fetch_read_operations")
+        ),
+    }
+
+
+def _source_material_summary(
+    *,
+    top_passages: Sequence[Mapping[str, Any]],
+    seen_urls: Sequence[str],
+    cited_source_ids: Sequence[str],
+    cited_urls: Sequence[str],
+) -> dict[str, Any]:
+    cited_url_set = set(cited_urls)
+    cited_passages = [
+        passage
+        for passage in top_passages
+        if _safe_text(passage.get("url")) in cited_url_set
+        or str(passage.get("source_id") or "").strip() in set(cited_source_ids)
+    ]
+    tiers_by_url: dict[str, str] = {}
+    material_by_url: dict[str, str] = {}
+    for passage in cited_passages:
+        url = _safe_text(passage.get("url"))
+        if not url:
+            continue
+        tier = _safe_text(passage.get("source_tier"))
+        if tier and url not in tiers_by_url:
+            tiers_by_url[url] = tier
+        material = _evidence_material_type(passage)
+        material_by_url[url] = _stronger_material_type(
+            material_by_url.get(url),
+            material,
+        )
+
+    cited_seen_count = len(
+        {
+            _safe_text(passage.get("url"))
+            for passage in cited_passages
+            if _safe_text(passage.get("url"))
+        }
+    )
+    return {
+        "cited_source_ids": list(cited_source_ids),
+        "cited_urls": list(cited_urls),
+        "top_passage_count": len(top_passages),
+        "seen_url_count": len(seen_urls),
+        "cited_urls_seen_in_top_passages": cited_seen_count > 0
+        and cited_seen_count == len(set(cited_urls)),
+        "cited_urls_seen_in_top_passages_count": cited_seen_count,
+        "source_tiers_by_cited_url": tiers_by_url,
+        "evidence_material_type_by_cited_url": {
+            url: material_by_url.get(url, _UNKNOWN) for url in cited_urls
+        },
+    }
+
+
+def _source_custody_summary(
+    *,
+    profile_name: str | None,
+    trace: Mapping[str, Any],
+    top_passages: Sequence[Mapping[str, Any]],
+    cited_source_ids: Sequence[str],
+    cited_urls: Sequence[str],
+    fetch_read_operations: int | None,
+    final_answer_text: str,
+) -> dict[str, Any]:
+    packet = _mapping(trace.get("final_answer_packet"))
+    expected = _source_custody_expected(profile_name)
+    fetch_required = profile_name == AG_LIVE_SOURCE_CUSTODY
+    official_satisfied = _official_source_custody_satisfied(trace, packet)
+    source_obligation_status = _source_obligation_status(trace, packet)
+    final_answer_mentions_custody_partial = _mentions_custody_partial(
+        final_answer_text
+    )
+    has_official_doc_citations = _has_official_doc_citations(
+        cited_urls,
+        top_passages,
+    )
+    diagnosis = None
+    explanation = None
+    source_custody_satisfied = official_satisfied
+
+    if (
+        expected
+        and fetch_required
+        and fetch_read_operations == 0
+        and has_official_doc_citations
+    ):
+        source_custody_satisfied = False
+        diagnosis = "fetch_read_operations_zero_with_official_doc_citations"
+        explanation = (
+            "Cited official docs were present, but fetch/read operations were zero, "
+            "so the packet does not prove official source custody."
+        )
+    elif source_custody_satisfied is None and _status_is_unsatisfied(
+        source_obligation_status
+    ):
+        source_custody_satisfied = False
+    elif source_custody_satisfied is None and final_answer_mentions_custody_partial:
+        source_custody_satisfied = False
+        diagnosis = "final_answer_declares_source_custody_partial"
+
+    return {
+        "source_custody_expected": expected,
+        "fetch_read_required": fetch_required,
+        "fetch_read_operations": fetch_read_operations,
+        "official_source_custody_satisfied": official_satisfied,
+        "source_custody_satisfied": source_custody_satisfied,
+        "citation_eligible_source_ids": _citation_eligible_source_ids(
+            trace,
+            packet,
+        ),
+        "final_answer_source_ids_used": _string_list(
+            trace.get("final_answer_source_ids_used")
+        )
+        or list(cited_source_ids),
+        "source_obligation_status": source_obligation_status,
+        "source_custody_diagnosis": diagnosis,
+        "source_custody_explanation": explanation,
+        "official_doc_citations_present": has_official_doc_citations,
+        "final_answer_mentions_custody_partial": (
+            final_answer_mentions_custody_partial
+        ),
+    }
+
+
+def _cap_and_retention_summary(
+    *,
+    validation_profile: Any | None,
+    preflight_context: Any | None,
+    caps_observed: Mapping[str, Any],
+) -> dict[str, Any]:
+    profile = validation_profile
+    return {
+        "caps_requested": _caps_requested(profile, preflight_context),
+        "caps_observed": dict(caps_observed),
+        "retention_posture": _safe_text(getattr(profile, "retention_posture", None)),
+        "no_retention": {
+            "raw_provider_payloads_retained": False,
+            "raw_prompts_retained": False,
+            "raw_model_requests_retained": False,
+            "raw_model_responses_retained": False,
+            "private_logs_retained": False,
+            "db_cache_rows_retained_in_packet": False,
+            "full_raw_traces_retained": False,
+        },
+        "packet_schema": _safe_text(getattr(profile, "packet_schema", None)),
+    }
+
+
+def _caps_requested(
+    validation_profile: Any | None,
+    preflight_context: Any | None,
+) -> dict[str, int]:
+    caps = getattr(preflight_context, "caps", None)
+    if hasattr(caps, "as_requested_dict"):
+        return {
+            str(key): int(value)
+            for key, value in caps.as_requested_dict().items()
+        }
+    profile_caps = getattr(validation_profile, "cap_policy", None)
+    if hasattr(profile_caps, "as_requested_dict"):
+        return {
+            str(key): int(value)
+            for key, value in profile_caps.as_requested_dict().items()
+        }
+    return {}
+
+
+def _caps_observed(
+    cap_policy: Any | None,
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    if cap_policy is not None and hasattr(cap_policy, "observed_counts"):
+        observed = cap_policy.observed_counts()
+        return {
+            "scryraven_runs": 1,
+            "search_dispatches": _optional_int(observed.get("search_dispatches"))
+            or 0,
+            "fetch_read_operations": _optional_int(
+                observed.get("fetch_read_operations")
+            )
+            or 0,
+            "author_model_calls": _optional_int(observed.get("author_model_calls"))
+            or 0,
+            "smart_search_judgment_model_calls": _optional_int(
+                observed.get("smart_search_judgment_model_calls")
+            )
+            or 0,
+            "independent_manual_source_checks": 0,
+            "retries": _optional_int(observed.get("retries")) or 0,
+            "enforcement": _safe_text(observed.get("enforcement")) or "active",
+            "facts": _string_list(getattr(cap_policy, "facts", None)),
+        }
+    cap_trace = _mapping(trace.get("cap_enforcement_trace")) or _mapping(
+        trace.get("run_cap_enforcement")
+    )
+    if not cap_trace:
+        return {}
+    return {
+        "scryraven_runs": 1,
+        "search_dispatches": _optional_int(cap_trace.get("search_dispatches")) or 0,
+        "fetch_read_operations": _optional_int(
+            cap_trace.get("fetch_read_operations")
+        )
+        or 0,
+        "author_model_calls": _optional_int(cap_trace.get("author_model_calls")) or 0,
+        "smart_search_judgment_model_calls": _optional_int(
+            cap_trace.get("smart_search_judgment_model_calls")
+        )
+        or 0,
+        "independent_manual_source_checks": 0,
+        "retries": _optional_int(cap_trace.get("retries")) or 0,
+        "enforcement": _safe_text(cap_trace.get("enforcement")) or "active",
+        "facts": _string_list(cap_trace.get("facts")),
+    }
+
+
+def _retrieval_pass_records(trace: Mapping[str, Any]) -> list[dict[str, Any]]:
+    records = _mapping_list(trace.get("retrieval_pass_records"))
+    return [_retrieval_pass_record(record) for record in records]
+
+
+def _retrieval_loop_pass_records(loop_contract: Mapping[str, Any]) -> list[dict[str, Any]]:
+    if not loop_contract:
+        return []
+    descriptor = _mapping(loop_contract.get("pass_descriptor"))
+    pass_result_summaries = _mapping_list(loop_contract.get("pass_result_summaries"))
+    query_count = _list_count(
+        descriptor.get("current_queries") or loop_contract.get("current_queries")
+    )
+    providers = _string_list(
+        descriptor.get("provider_list") or loop_contract.get("provider_list")
+    )
+    if not descriptor and not providers and not pass_result_summaries:
+        return []
+    return [
+        {
+            "stage": _safe_text(descriptor.get("stage")) or "main_retrieval",
+            "iteration": _optional_int(
+                descriptor.get("iteration") or loop_contract.get("iteration")
+            ),
+            "query_count": query_count,
+            "providers": providers,
+            "provider_role": _safe_text(
+                descriptor.get("provider_role")
+                or loop_contract.get("provider_role")
+            )
+            or "main_retrieval",
+            "search_depth": _safe_text(
+                descriptor.get("search_depth") or loop_contract.get("search_depth")
+            ),
+            "results_per_query": _optional_int(
+                descriptor.get("results_per_query")
+                or loop_contract.get("results_per_query")
+            ),
+            "pass_result_summary_count": len(pass_result_summaries),
+        }
+    ]
+
+
+def _retrieval_pass_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "stage": _safe_text(record.get("stage")) or "retrieval_pass",
+        "iteration": _optional_int(record.get("iteration")),
+        "query_count": _optional_int(record.get("query_count"))
+        if record.get("query_count") is not None
+        else _list_count(record.get("queries")),
+        "providers": _string_list(record.get("providers")),
+        "provider_role": _safe_text(record.get("provider_role")),
+        "search_depth": _safe_text(record.get("search_depth")),
+        "results_per_query": _optional_int(record.get("results_per_query")),
+    }
+
+
+def _provider_lists_by_iteration(trace: Mapping[str, Any]) -> list[list[str]]:
+    values = trace.get("pass_providers") or trace.get("providers_by_iteration")
+    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
+        loop_contract = _mapping(trace.get(RETRIEVAL_LOOP_TRACE_KEY))
+        providers = _string_list(loop_contract.get("provider_list"))
+        return [providers] if providers else []
+    if values and all(isinstance(item, str) for item in values):
+        return [_string_list(values)]
+    return [_string_list(item) for item in values if _string_list(item)]
+
+
+def _cited_source_ids(trace: Mapping[str, Any]) -> list[str]:
+    ids = _string_list(trace.get("final_answer_source_ids_used"))
+    if ids:
+        return ids
+    packet = _mapping(trace.get("final_answer_packet"))
+    ids = _citation_eligible_source_ids(trace, packet)
+    if ids:
+        return ids
+    return _string_list(packet.get("source_ids"))
+
+
+def _cited_urls(outcome: Any | None, cited_source_ids: Sequence[str]) -> list[str]:
+    cited_id_set = {str(item) for item in cited_source_ids}
+    urls: list[str] = []
+    for passage in _mapping_list(getattr(outcome, "top_passages", None)):
+        source_id = str(passage.get("source_id") or "").strip()
+        if cited_id_set and source_id and source_id not in cited_id_set:
+            continue
+        url = _safe_text(passage.get("url"))
+        if url and url not in urls:
+            urls.append(url)
+    if urls:
+        return urls
+    return _string_list(getattr(outcome, "seen_urls", None))
+
+
+def _citation_eligible_source_ids(
+    trace: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> list[str]:
+    ids = _string_list(packet.get("citation_eligible_source_ids"))
+    if ids:
+        return ids
+    eligibility = _mapping(packet.get("citation_eligibility"))
+    ids = _string_list(eligibility.get("citation_eligible_source_ids"))
+    if ids:
+        return ids
+    author_input_refs = _mapping(packet.get("author_input_refs"))
+    ids = _string_list(author_input_refs.get("citation_source_ids"))
+    if ids:
+        return ids
+    trace_eligibility = _mapping(trace.get("citation_eligibility"))
+    return _string_list(trace_eligibility.get("citation_eligible_source_ids"))
+
+
+def _official_source_custody_satisfied(
+    trace: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> bool | None:
+    candidates = (
+        packet.get("official_current_custody_summary"),
+        packet.get("official_current_source_custody"),
+        trace.get("official_current_custody_summary"),
+        trace.get("official_current_source_custody"),
+    )
+    for candidate in candidates:
+        result = _custody_projection_satisfied(_mapping(candidate))
+        if result is not None:
+            return result
+    status = _source_obligation_status(trace, packet)
+    if status is None:
+        return None
+    if _status_is_satisfied(status):
+        return True
+    if _status_is_unsatisfied(status):
+        return False
+    return None
+
+
+def _custody_projection_satisfied(projection: Mapping[str, Any]) -> bool | None:
+    if not projection:
+        return None
+    requirements = _mapping_list(projection.get("requirements"))
+    if requirements:
+        statuses = [
+            _safe_text(requirement.get("status"))
+            for requirement in requirements
+            if _safe_text(requirement.get("status"))
+        ]
+        if statuses:
+            return all(status in _SATISFIED_STATUSES for status in statuses)
+    records = _mapping_list(projection.get("records"))
+    if records:
+        terminal = [
+            _safe_text(record.get("status"))
+            for record in records
+            if _safe_text(record.get("status")) in {
+                "requirement_satisfied",
+                "requirement_unsatisfied",
+            }
+        ]
+        if terminal:
+            return all(status == "requirement_satisfied" for status in terminal)
+    direct = projection.get("source_custody_satisfied")
+    if isinstance(direct, bool):
+        return direct
+    direct = projection.get("official_source_custody_satisfied")
+    if isinstance(direct, bool):
+        return direct
+    return None
+
+
+def _source_obligation_status(
+    trace: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> str | None:
+    direct = _safe_text(trace.get("source_obligation_status"))
+    if direct:
+        return direct
+    obligations = _mapping_list(packet.get("source_obligations"))
+    if not obligations:
+        return None
+    statuses = [
+        _safe_text(obligation.get("status"))
+        for obligation in obligations
+        if _safe_text(obligation.get("status"))
+    ]
+    if not statuses:
+        return None
+    satisfied = [status for status in statuses if _status_is_satisfied(status)]
+    unsatisfied = [status for status in statuses if _status_is_unsatisfied(status)]
+    if unsatisfied and satisfied:
+        return "partial"
+    if unsatisfied:
+        return "unsatisfied"
+    if len(satisfied) == len(statuses):
+        return "satisfied"
+    return _UNKNOWN
+
+
+def _source_custody_expected(profile_name: str | None) -> bool:
+    return profile_name == AG_LIVE_SOURCE_CUSTODY
+
+
+def _has_official_doc_citations(
+    cited_urls: Sequence[str],
+    top_passages: Sequence[Mapping[str, Any]],
+) -> bool:
+    if any("docs.python.org" in url.casefold() for url in cited_urls):
+        return True
+    cited_set = set(cited_urls)
+    return any(
+        _safe_text(passage.get("url")) in cited_set
+        and _safe_text(passage.get("source_tier")) == "official"
+        for passage in top_passages
+    )
+
+
+def _mentions_custody_partial(answer_text: str) -> bool:
+    normalized = answer_text.casefold()
+    return "custody" in normalized and (
+        "partial" in normalized or "unsatisfied" in normalized
+    )
+
+
+def _status_is_satisfied(status: str | None) -> bool:
+    return _safe_text(status) in _SATISFIED_STATUSES
+
+
+def _status_is_unsatisfied(status: str | None) -> bool:
+    clean = _safe_text(status)
+    return bool(clean and any(marker in clean for marker in _UNSATISFIED_MARKERS))
+
+
+def _evidence_material_type(passage: Mapping[str, Any]) -> str:
+    for key in (
+        "evidence_material_type",
+        "material_type",
+        "source_material_type",
+    ):
+        value = _safe_text(passage.get(key))
+        if value in {_SNIPPET_ONLY, _FULL_PAGE_FETCHED, _UNKNOWN}:
+            return value
+    if passage.get("full_page_fetched") is True:
+        return _FULL_PAGE_FETCHED
+    if passage.get("snippet_only") is True:
+        return _SNIPPET_ONLY
+    text = str(passage.get("text") or "")
+    if text.startswith("[FULL_PAGE]"):
+        return _FULL_PAGE_FETCHED
+    if text.startswith("[SNIPPET]"):
+        return _SNIPPET_ONLY
+    return _UNKNOWN
+
+
+def _stronger_material_type(current: str | None, incoming: str) -> str:
+    order = {_UNKNOWN: 0, _SNIPPET_ONLY: 1, _FULL_PAGE_FETCHED: 2}
+    if current is None:
+        return incoming
+    return incoming if order.get(incoming, 0) > order.get(current, 0) else current
+
+
+def _author_provider_model_from_config(run_config: Any) -> tuple[str | None, str | None]:
+    mode = str(getattr(run_config, "mode", "") or "")
+    if mode in {"Fast", "Balanced"}:
+        return (
+            _safe_text(getattr(run_config, "fast_provider", None)),
+            _safe_text(getattr(run_config, "fast_model", None)),
+        )
+    return (
+        _safe_text(getattr(run_config, "smart_provider", None)),
+        _safe_text(getattr(run_config, "smart_model", None)),
+    )
+
+
+def _profile_name(
+    validation_profile: Any | None,
+    preflight_context: Any | None,
+) -> str | None:
+    return _safe_text(
+        getattr(validation_profile, "name", None)
+        or getattr(preflight_context, "profile_name", None)
+    )
+
+
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _mapping_list(value: Any) -> list[Mapping[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    return [item for item in value if isinstance(item, Mapping)]
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        values = list(value)
+    else:
+        values = []
+    return _unique_strings(values)
+
+
+def _unique_strings(values: Sequence[Any]) -> list[str]:
+    result: list[str] = []
+    for value in values:
+        clean = _safe_text(value)
+        if clean and clean not in result:
+            result.append(clean)
+    return result
+
+
+def _safe_count_mapping(value: Any) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    result: dict[str, int] = {}
+    for key, item in value.items():
+        clean_key = _safe_text(key)
+        count = _optional_int(item)
+        if clean_key and count is not None:
+            result[clean_key] = count
+    return dict(sorted(result.items()))
+
+
+def _safe_text(value: Any, *, limit: int = 240) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return None
+    lowered = text.casefold()
+    if any(marker in lowered for marker in _SENSITIVE_VALUE_MARKERS):
+        return "[redacted]"
+    return text[:limit]
+
+
+def _first_text(*values: Any) -> str | None:
+    for value in values:
+        clean = _safe_text(value)
+        if clean:
+            return clean
+    return None
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _list_count(value: Any) -> int:
+    if isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        return len(value)
+    return 0
+
+
+__all__ = [
+    "VALIDATION_OBSERVABILITY_SCHEMA_VERSION",
+    "build_validation_observability",
+]
