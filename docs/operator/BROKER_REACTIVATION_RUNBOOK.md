@@ -84,6 +84,12 @@ profile name, query/domain/mode constraints, `RunConfig.cap_policy` values,
 retention posture, packet schema, and expected packet criteria. The private
 broker must not accept arbitrary commands from the client.
 
+Before the POST, the tracked client prints the selected profile's bounded live
+budget, including profile name, max ScryRaven runs, search dispatches,
+fetch/read operations, Author calls, smart SearchJudgment calls, and retries.
+Those values are owned by the selected validation profile/spec; the broker must
+not impose `AG-LIVE-SMOKE` caps globally on future approved profiles.
+
 Use only sanitized broker output under `output/`. Do not paste or commit tokens,
 secrets, `.env` contents, provider keys, raw prompts, raw provider payloads, raw
 model responses, private logs, DB rows, cache rows, or full traces.
@@ -106,9 +112,10 @@ Use only the tracked client:
 py scripts\request_live_validation_broker.py --job-id <job-id> --profile <AG-LIVE-profile> --confirm-live-provider-call --output output\<sanitized-broker-response>.json
 
 Budget:
+- selected validation profile: <AG-LIVE-profile>
 - max broker requests: 1
-- max model/provider/search/fetch/retrieval calls: <phase-approved budget>
-- retries: 0
+- bounded provider/model/search/fetch/read budget: use the selected profile summary printed by the tracked client
+- retries: profile-owned cap from `core/validation_profiles.py`
 
 Rules:
 - Do not read `.env`.

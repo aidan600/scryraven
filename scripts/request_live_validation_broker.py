@@ -24,7 +24,16 @@ DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
 TOKEN_ENV_VAR = "SCRYRAVEN_BROKER_TOKEN"
 TOKEN_HEADER = "X-ScryRaven-Broker-Token"
 LIVE_SPEND_WARNING = (
-    "This request may spend one live provider/search call if accepted by the broker."
+    "This request may spend the selected validation profile's bounded "
+    "provider/model/search/fetch/read budget if accepted by the broker."
+)
+BUDGET_SUMMARY_FIELDS = (
+    "max_scryraven_runs",
+    "max_search_dispatches",
+    "max_fetch_read_operations",
+    "max_author_model_calls",
+    "max_smart_search_judgment_model_calls",
+    "max_retries",
 )
 
 
@@ -63,7 +72,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    profile = get_validation_profile(args.profile)
     print(LIVE_SPEND_WARNING)
+    print(_profile_budget_summary_line(profile.name))
     payload = _build_profile_request_payload(args.job_id, args.profile)
     status, broker_json = _post_broker_json(args.broker_url, token, payload)
     rendered = json.dumps(broker_json, indent=2, sort_keys=True)
@@ -106,7 +117,10 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--confirm-live-provider-call",
         action="store_true",
-        help="Acknowledge that the broker may spend one live provider/search call.",
+        help=(
+            "Acknowledge that the broker may spend the selected validation "
+            "profile's bounded provider/model/search/fetch/read budget."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -123,6 +137,13 @@ def _build_profile_request_payload(job_id: str, profile_name: str) -> dict[str, 
         "request_kind": "approved_validation_profile",
         "profile_request": profile.broker_request_shape(),
     }
+
+
+def _profile_budget_summary_line(profile_name: str) -> str:
+    profile = get_validation_profile(profile_name)
+    caps = profile.cap_policy.as_requested_dict()
+    summary = ", ".join(f"{field}={caps[field]}" for field in BUDGET_SUMMARY_FIELDS)
+    return f"Selected validation profile budget: profile={profile.name}, {summary}"
 
 
 def _post_broker_json(

@@ -16,6 +16,16 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "request_live_validation_broker.py"
+PROFILE_BUDGET_WARNING = (
+    "This request may spend the selected validation profile's bounded "
+    "provider/model/search/fetch/read budget if accepted by the broker."
+)
+SMOKE_BUDGET_SUMMARY = (
+    "Selected validation profile budget: profile=AG-LIVE-SMOKE, "
+    "max_scryraven_runs=1, max_search_dispatches=2, "
+    "max_fetch_read_operations=3, max_author_model_calls=1, "
+    "max_smart_search_judgment_model_calls=0, max_retries=0"
+)
 
 
 class BrokerHandler(BaseHTTPRequestHandler):
@@ -110,6 +120,15 @@ def test_client_refuses_without_live_spend_confirmation() -> None:
     assert "--confirm-live-provider-call" in result.stderr
 
 
+def test_confirm_flag_help_names_profile_bounded_budget() -> None:
+    result = _run_client("--help")
+
+    assert result.returncode == 0
+    normalized_help = " ".join(result.stdout.split())
+    assert "selected validation profile's bounded" in normalized_help
+    assert "provider/model/search/fetch/read budget" in normalized_help
+
+
 def test_client_constructs_expected_post_body_and_token_header_only() -> None:
     with BrokerServer(status=200, response_json={"status": "accepted"}) as broker:
         result = _run_client(
@@ -131,11 +150,38 @@ def test_client_constructs_expected_post_body_and_token_header_only() -> None:
     assert payload["profile_request"]["validation_profile"] == "AG-LIVE-SMOKE"
     assert payload["profile_request"]["cap_policy"]["surface"] == "RunConfig.cap_policy"
     assert "command" not in json.dumps(payload).casefold()
+    assert PROFILE_BUDGET_WARNING in result.stdout
+    assert SMOKE_BUDGET_SUMMARY in result.stdout
     headers = _lower_headers(broker.captured["headers"])
     assert headers["x-scryraven-broker-token"] == "one-shot-token"
     assert "one-shot-token" not in result.stdout
     assert "one-shot-token" not in result.stderr
     assert "one-shot-token" not in json.dumps(broker.captured["json"])
+
+
+def test_client_warning_uses_selected_profile_budget() -> None:
+    with BrokerServer(status=200, response_json={"status": "accepted"}) as broker:
+        result = _run_client(
+            "--broker-url",
+            broker.url,
+            "--job-id",
+            "ag-live-source-custody-once",
+            "--profile",
+            "AG-LIVE-SOURCE-CUSTODY",
+            "--token",
+            "one-shot-token",
+            "--confirm-live-provider-call",
+        )
+
+    assert result.returncode == 0
+    assert PROFILE_BUDGET_WARNING in result.stdout
+    assert (
+        "Selected validation profile budget: profile=AG-LIVE-SOURCE-CUSTODY"
+        in result.stdout
+    )
+    assert broker.captured["json"]["profile_request"]["validation_profile"] == (
+        "AG-LIVE-SOURCE-CUSTODY"
+    )
 
 
 def test_client_refuses_unknown_profile_before_contacting_broker() -> None:
@@ -196,7 +242,8 @@ def test_client_refuses_https_non_local_broker_url_before_warning() -> None:
 
     assert result.returncode == 2
     assert "non-local broker URL" in result.stderr
-    assert "This request may spend one live provider/search call" not in result.stdout
+    assert PROFILE_BUDGET_WARNING not in result.stdout
+    assert "Selected validation profile budget:" not in result.stdout
     assert "one-shot-token" not in result.stdout
     assert "one-shot-token" not in result.stderr
 
@@ -227,7 +274,8 @@ def test_client_refuses_public_provider_broker_url_without_contacting_broker(
 
     assert result == 2
     assert "non-local broker URL" in captured.err
-    assert "This request may spend one live provider/search call" not in captured.out
+    assert PROFILE_BUDGET_WARNING not in captured.out
+    assert "Selected validation profile budget:" not in captured.out
     assert "one-shot-token" not in captured.out
     assert "one-shot-token" not in captured.err
 
@@ -259,7 +307,8 @@ def test_client_handles_200_broker_json_and_writes_ignored_output(
             )
 
         assert result.returncode == 0
-        assert "This request may spend one live provider/search call" in result.stdout
+        assert PROFILE_BUDGET_WARNING in result.stdout
+        assert SMOKE_BUDGET_SUMMARY in result.stdout
         assert "wrote sanitized broker response" in result.stdout
         assert json.loads(output.read_text(encoding="utf-8")) == response
     finally:

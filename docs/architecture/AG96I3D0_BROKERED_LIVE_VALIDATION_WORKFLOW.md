@@ -70,11 +70,17 @@ Required inputs:
 - a token from `--token` or `SCRYRAVEN_BROKER_TOKEN`;
 - `--confirm-live-provider-call`.
 
-Before the POST, the client prints:
+Before the POST, the client prints the selected profile's bounded live budget.
+For the default `AG-LIVE-SMOKE` profile, that looks like:
 
 ```text
-This request may spend one live provider/search call if accepted by the broker.
+This request may spend the selected validation profile's bounded provider/model/search/fetch/read budget if accepted by the broker.
+Selected validation profile budget: profile=AG-LIVE-SMOKE, max_scryraven_runs=1, max_search_dispatches=2, max_fetch_read_operations=3, max_author_model_calls=1, max_smart_search_judgment_model_calls=0, max_retries=0
 ```
+
+Those cap values are profile/spec-owned, not global broker limits. Future
+approved profiles may carry different caps, and the broker should enforce the
+selected request's approved budget/fuse without inventing product policy.
 
 The POST body is:
 
