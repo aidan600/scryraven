@@ -163,6 +163,11 @@ class SearchGapAssessment:
     required_source_class: str | None = None
     required_source_tier: str | None = None
     required_currentness: str | None = None
+    accepted_contract_version: str | None = None
+    accepted_contract_digest: str | None = None
+    answer_component_id: str | None = None
+    component_digest: str | None = None
+    semantic_gap_code: str | None = None
     status: str = "unsatisfied"
     reason: str | None = None
 
@@ -175,6 +180,16 @@ class SearchGapAssessment:
                 "required_source_class": clean_token(self.required_source_class),
                 "required_source_tier": clean_token(self.required_source_tier),
                 "required_currentness": clean_token(self.required_currentness),
+                "accepted_contract_version": clean_token(
+                    self.accepted_contract_version
+                ),
+                "accepted_contract_digest": clean_token(
+                    self.accepted_contract_digest,
+                    limit=128,
+                ),
+                "answer_component_id": clean_token(self.answer_component_id),
+                "component_digest": clean_token(self.component_digest, limit=128),
+                "semantic_gap_code": clean_token(self.semantic_gap_code),
                 "status": clean_token(self.status),
                 "reason": clean_text(self.reason, limit=220),
             }.items()
@@ -189,6 +204,19 @@ class SearchGapAssessment:
             required_source_class=clean_token(payload.get("required_source_class")),
             required_source_tier=clean_token(payload.get("required_source_tier")),
             required_currentness=clean_token(payload.get("required_currentness")),
+            accepted_contract_version=clean_token(
+                payload.get("accepted_contract_version")
+            ),
+            accepted_contract_digest=clean_token(
+                payload.get("accepted_contract_digest"),
+                limit=128,
+            ),
+            answer_component_id=clean_token(
+                payload.get("answer_component_id")
+                or payload.get("component_id")
+            ),
+            component_digest=clean_token(payload.get("component_digest"), limit=128),
+            semantic_gap_code=clean_token(payload.get("semantic_gap_code")),
             status=clean_token(payload.get("status")) or "unsatisfied",
             reason=clean_text(payload.get("reason"), limit=220),
         )

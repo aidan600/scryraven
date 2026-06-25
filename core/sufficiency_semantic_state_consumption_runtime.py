@@ -592,6 +592,9 @@ def _append_blocker(
     scope: str,
     ref_id: str | None = None,
     reason: str | None = None,
+    accepted_contract_version: str | None = None,
+    accepted_contract_digest: str | None = None,
+    component_digest: str | None = None,
 ) -> None:
     if len(blockers) >= _MAX_BLOCKERS:
         return
@@ -603,6 +606,18 @@ def _append_blocker(
         entry["ref_id"] = _clean_token(ref_id, limit=160)
     if reason:
         entry["reason"] = _clean_text(reason, limit=260)
+    if accepted_contract_version:
+        entry["accepted_contract_version"] = _clean_token(
+            accepted_contract_version,
+            limit=160,
+        )
+    if accepted_contract_digest:
+        entry["accepted_contract_digest"] = _clean_token(
+            accepted_contract_digest,
+            limit=128,
+        )
+    if component_digest:
+        entry["component_digest"] = _clean_token(component_digest, limit=128)
     blockers.append(entry)
 
 
@@ -649,6 +664,11 @@ def build_semantic_state_facts_for_sufficiency(
 
     latest_coverage = _latest_coverage_by_component(component_coverage_history)
     invalidation_suspects = _invalidated_coverage_ids(contract_amendment_admission_history)
+    accepted_contract_version = _clean_token(contract.get("accepted_contract_version"))
+    accepted_contract_digest = _clean_token(
+        contract.get("accepted_contract_digest"),
+        limit=128,
+    )
 
     required_refs = [
         ref
@@ -661,6 +681,19 @@ def build_semantic_state_facts_for_sufficiency(
         for ref in required_refs
         if isinstance(ref, Mapping)
     ]
+    accepted_required_component_refs = [
+        {
+            "answer_component_id": component_id,
+            "component_digest": component_digest,
+            "accepted_contract_version": accepted_contract_version,
+            "accepted_contract_digest": accepted_contract_digest,
+        }
+        for ref in required_refs
+        if (component_id := _clean_token(ref.get("component_id")))
+        and (
+            component_digest := _clean_token(ref.get("component_digest"), limit=128)
+        )
+    ]
     component_summaries: list[dict[str, Any]] = []
     blockers: list[dict[str, Any]] = []
     required_caveats: list[str] = []
@@ -670,6 +703,7 @@ def build_semantic_state_facts_for_sufficiency(
 
     for ref in required_refs:
         component_id = _clean_token(ref.get("component_id")) or ""
+        component_digest = _clean_token(ref.get("component_digest"), limit=128)
         coverage = latest_coverage.get(component_id, {})
         suspect_reasons = list(invalidation_suspects.get(component_id, []))
         coverage_record_id = _clean_token(coverage.get("coverage_record_id"))
@@ -688,6 +722,9 @@ def build_semantic_state_facts_for_sufficiency(
 
         summary = {
             "component_id": component_id,
+            "component_digest": component_digest,
+            "accepted_contract_version": accepted_contract_version,
+            "accepted_contract_digest": accepted_contract_digest,
             "requirement_posture": _clean_token(ref.get("requirement_posture")),
             "coverage_present": bool(coverage),
             "coverage_record_id": coverage_record_id,
@@ -726,6 +763,9 @@ def build_semantic_state_facts_for_sufficiency(
                 scope="component",
                 ref_id=component_id,
                 reason="required_component_has_no_reduced_coverage",
+                accepted_contract_version=accepted_contract_version,
+                accepted_contract_digest=accepted_contract_digest,
+                component_digest=component_digest,
             )
             direct_answer_blocked = True
         else:
@@ -740,6 +780,9 @@ def build_semantic_state_facts_for_sufficiency(
                     code="stale_coverage",
                     scope="component",
                     ref_id=component_id,
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 finalization_blocked = True
             if coverage_state == "conflicted" or conflict_posture == "present":
@@ -749,6 +792,9 @@ def build_semantic_state_facts_for_sufficiency(
                     code="conflicted_coverage",
                     scope="component",
                     ref_id=component_id,
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 finalization_blocked = True
             if coverage_state in _DIRECT_BLOCKING_COVERAGE_STATES:
@@ -764,6 +810,9 @@ def build_semantic_state_facts_for_sufficiency(
                     scope="component",
                     ref_id=component_id,
                     reason=f"coverage_state:{coverage_state}",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
             elif coverage_state not in _SATISFIED_COVERAGE_STATES:
@@ -774,6 +823,9 @@ def build_semantic_state_facts_for_sufficiency(
                     scope="component",
                     ref_id=component_id,
                     reason=f"coverage_state:{coverage_state or 'unknown'}",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -785,6 +837,9 @@ def build_semantic_state_facts_for_sufficiency(
                     code="remaining_unknowns",
                     scope="component",
                     ref_id=component_id,
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -797,6 +852,9 @@ def build_semantic_state_facts_for_sufficiency(
                     scope="component",
                     ref_id=component_id,
                     reason=f"followup_need:{followup_need}",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 finalization_blocked = True
 
@@ -811,6 +869,9 @@ def build_semantic_state_facts_for_sufficiency(
                     scope="component",
                     ref_id=component_id,
                     reason=f"source_obligation_status:{source_obligation}",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -825,6 +886,9 @@ def build_semantic_state_facts_for_sufficiency(
                     scope="component",
                     ref_id=component_id,
                     reason=f"content_availability_status:{content_availability}",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -837,6 +901,9 @@ def build_semantic_state_facts_for_sufficiency(
                     scope="component",
                     ref_id=component_id,
                     reason=f"evidence_custody_status:{evidence_custody}",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -847,6 +914,9 @@ def build_semantic_state_facts_for_sufficiency(
                     code="weak_only_evidence_basis",
                     scope="component",
                     ref_id=component_id,
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -857,6 +927,9 @@ def build_semantic_state_facts_for_sufficiency(
                     code="coverage_suspect_from_amendment",
                     scope="component",
                     ref_id=component_id,
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -872,6 +945,9 @@ def build_semantic_state_facts_for_sufficiency(
                     ref_id=component_id,
                     reason=_clean_text(ledger_blocker.get("reason"), limit=260)
                     or "satisfied_coverage_lacks_current_ledger_qualification",
+                    accepted_contract_version=accepted_contract_version,
+                    accepted_contract_digest=accepted_contract_digest,
+                    component_digest=component_digest,
                 )
                 direct_answer_blocked = True
 
@@ -991,6 +1067,7 @@ def build_semantic_state_facts_for_sufficiency(
         "required_component_count": len(required_refs),
         "covered_component_count": covered_component_count,
         "missing_component_count": max(0, len(required_refs) - covered_component_count),
+        "accepted_required_component_refs": accepted_required_component_refs,
         "component_summaries": component_summaries,
         "amendment_summaries": amendment_summaries,
         "blockers": blockers,
@@ -1053,6 +1130,21 @@ def evaluate_semantic_sufficiency_overlay(
                 "requirement_id": f"semantic:{code}:{ref_id or 'global'}",
                 "requirement_kind": requirement_kind,
                 "component_id": ref_id if scope == "component" else None,
+                "answer_component_id": ref_id if scope == "component" else None,
+                "accepted_contract_version": _clean_token(
+                    blocker.get("accepted_contract_version")
+                    or facts.get("accepted_contract_version")
+                ),
+                "accepted_contract_digest": _clean_token(
+                    blocker.get("accepted_contract_digest")
+                    or facts.get("accepted_contract_digest"),
+                    limit=128,
+                ),
+                "component_digest": _clean_token(
+                    blocker.get("component_digest"),
+                    limit=128,
+                ),
+                "semantic_gap_code": code,
                 "status": "missing",
                 "reason": _clean_text(blocker.get("reason"), limit=260) or code,
             }

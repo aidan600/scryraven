@@ -21,6 +21,7 @@ from core.retrieval_quality import (
 )
 from core.search_work_query_plan_consumption import (
     allocate_existing_queries_by_search_work,
+    authorize_existing_query_by_version_bound_component_gap,
 )
 
 QUERY_PLAN_TRACE_KEY = "query_plan"
@@ -235,6 +236,7 @@ class QueryPlan:
         *,
         query_plan_context: Mapping[str, Any] | None = None,
         search_work_projection: Mapping[str, Any] | None = None,
+        search_judgment_projection: Mapping[str, Any] | None = None,
         max_len: int | None,
         origin: str,
         role: QueryPlanRole | str,
@@ -246,6 +248,7 @@ class QueryPlan:
             candidate_queries=queries,
             query_plan_context=query_plan_context,
             search_work_projection=search_work_projection,
+            search_judgment_projection=search_judgment_projection,
             max_len=max_len,
             origin=origin,
             role=role.value if isinstance(role, QueryPlanRole) else str(role),
@@ -290,6 +293,53 @@ class QueryPlan:
                 metadata=metadata,
             )
         return plan, admitted
+
+    def consume_search_judgment_component_gap_authority(
+        self,
+        queries: Sequence[str],
+        *,
+        search_judgment_projection: Mapping[str, Any] | None,
+        origin: str = "run_authority_search_judgment",
+        role: QueryPlanRole | str = QueryPlanRole.FINALIZED,
+        phase: str = "search_judgment_component_gap_authority",
+    ) -> "QueryPlan":
+        metadata, consumed, authorized_query, fallback_reason = (
+            authorize_existing_query_by_version_bound_component_gap(
+                existing_queries=queries,
+                query_metadata=self.search_work_consumption.get(
+                    "query_metadata",
+                    {},
+                )
+                if isinstance(self.search_work_consumption, Mapping)
+                else {},
+                search_judgment_projection=search_judgment_projection,
+            )
+        )
+        consumption = dict(self.search_work_consumption or {})
+        if metadata:
+            consumption["query_metadata"] = metadata
+        consumption["version_bound_component_gap_authority_consumed"] = consumed
+        if authorized_query:
+            consumption["version_bound_component_gap_authorized_query"] = (
+                authorized_query
+            )
+        if fallback_reason:
+            consumption["version_bound_component_gap_fallback_reason"] = (
+                fallback_reason
+            )
+        plan = replace(self, search_work_consumption=consumption)
+        if not consumed or not authorized_query:
+            return plan
+        return plan.append(
+            origin=origin,
+            role=role,
+            status=QueryPlanStatus.FINALIZED,
+            authorized_query=authorized_query,
+            admission_reason="version_bound_component_gap_authority_consumed",
+            mutation_reason="metadata_only_existing_query_authority",
+            phase=phase,
+            metadata=metadata.get(authorized_query, {}),
+        )
 
     def queries_by_iteration(self) -> dict[int, list[str]]:
         out: dict[int, list[str]] = {}

@@ -139,6 +139,62 @@ def _source_bound_only(contract: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _without_source_requirements(contract: dict[str, Any]) -> dict[str, Any]:
+    out = deepcopy(contract)
+    out["source_requirements"] = []
+    out["source_requirement_summary"] = []
+    out["source_requirement_count"] = 0
+    out["required_source_requirement_count"] = 0
+    return out
+
+
+def _semantic_gap_helper(
+    *,
+    component_id: str = "component:fee",
+    component_digest: str = "component-digest-fee",
+    contract_version: str = "accepted-v1",
+    contract_digest: str = "accepted-digest-v1",
+    duplicate: bool = False,
+    stale_component_digest: str | None = None,
+    requirement_kind: str = "semantic_component_coverage",
+) -> dict[str, Any]:
+    assessment = {
+        "requirement_id": f"semantic:missing_required_component_coverage:{component_id}",
+        "requirement_kind": requirement_kind,
+        "answer_component_id": component_id,
+        "component_id": component_id,
+        "accepted_contract_version": contract_version,
+        "accepted_contract_digest": contract_digest,
+        "component_digest": stale_component_digest or component_digest,
+        "semantic_gap_code": "missing_required_component_coverage",
+        "status": "missing",
+    }
+    assessments = [assessment, dict(assessment)] if duplicate else [assessment]
+    return {
+        "semantic_state_facts": {
+            "accepted_contract_version": contract_version,
+            "accepted_contract_digest": contract_digest,
+            "accepted_required_component_refs": [
+                {
+                    "answer_component_id": component_id,
+                    "component_digest": component_digest,
+                    "accepted_contract_version": contract_version,
+                    "accepted_contract_digest": contract_digest,
+                }
+            ],
+            "component_summaries": [
+                {
+                    "component_id": component_id,
+                    "component_digest": component_digest,
+                    "coverage_present": False,
+                    "coverage_suspect": False,
+                }
+            ],
+        },
+        "semantic_missing_assessments": assessments,
+    }
+
+
 def _kernel_with_official_contract() -> tuple[RunKernel, dict[str, Any]]:
     kernel = RunKernel.start(run_id="ag92b-run", request_id="request")
     contract_action = kernel.authorize_run_contract_synthesis(
@@ -306,6 +362,87 @@ def test_source_bound_numeric_gap_recovers_or_stops_insufficient_when_exhausted(
     )
     assert exhausted.decision is RunSearchJudgmentDecision.STOP_INSUFFICIENT
     assert exhausted.insufficient_posture["posture"] == "insufficient_partial"
+
+
+def test_semantic_component_gap_preserves_version_bound_identity() -> None:
+    contract = _without_source_requirements(_contract("What is the filing fee?"))
+    ledger = _ledger_projection(contract)
+
+    judgment = build_deterministic_search_judgment(
+        _input(
+            contract,
+            ledger,
+            helper_proposals=_semantic_gap_helper(),
+        )
+    )
+
+    semantic_gap = judgment.gaps[0].to_dict()
+    assert semantic_gap["requirement_kind"] == "semantic_component_coverage"
+    assert semantic_gap["accepted_contract_version"] == "accepted-v1"
+    assert semantic_gap["accepted_contract_digest"] == "accepted-digest-v1"
+    assert semantic_gap["answer_component_id"] == "component:fee"
+    assert semantic_gap["component_digest"] == "component-digest-fee"
+    assert semantic_gap["semantic_gap_code"] == "missing_required_component_coverage"
+    assert judgment.recommended_queries == ()
+    assert judgment.helper_assessments["semantic_component_gap_authority_valid"] is True
+
+
+def test_duplicate_semantic_component_gaps_fail_closed() -> None:
+    contract = _without_source_requirements(_contract("What is the filing fee?"))
+    ledger = _ledger_projection(contract)
+
+    judgment = build_deterministic_search_judgment(
+        _input(
+            contract,
+            ledger,
+            helper_proposals=_semantic_gap_helper(duplicate=True),
+        )
+    )
+
+    assert judgment.gaps == ()
+    assert judgment.helper_assessments["semantic_component_gap_authority_valid"] is False
+    assert "duplicate_semantic_component_gap" in judgment.helper_assessments[
+        "semantic_component_gap_authority_reasons"
+    ]
+
+
+def test_stale_semantic_component_identity_fails_closed() -> None:
+    contract = _without_source_requirements(_contract("What is the filing fee?"))
+    ledger = _ledger_projection(contract)
+
+    judgment = build_deterministic_search_judgment(
+        _input(
+            contract,
+            ledger,
+            helper_proposals=_semantic_gap_helper(
+                stale_component_digest="stale-component-digest"
+            ),
+        )
+    )
+
+    assert judgment.gaps == ()
+    assert "semantic_component_gap_stale_component_identity" in (
+        judgment.helper_assessments["semantic_component_gap_authority_reasons"]
+    )
+
+
+def test_generic_semantic_recovery_kind_does_not_erase_component_identity() -> None:
+    contract = _without_source_requirements(_contract("What is the filing fee?"))
+    ledger = _ledger_projection(contract)
+
+    judgment = build_deterministic_search_judgment(
+        _input(
+            contract,
+            ledger,
+            helper_proposals=_semantic_gap_helper(requirement_kind="source_class"),
+        )
+    )
+
+    assert judgment.gaps == ()
+    assert "semantic_component_gap_generic_kind_erases_identity" in (
+        judgment.helper_assessments["semantic_component_gap_authority_reasons"]
+    )
+    assert judgment.recommended_queries == ()
 
 
 def test_ordinary_explainer_does_not_over_require_official_recovery() -> None:

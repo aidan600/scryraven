@@ -856,6 +856,7 @@ def execute_query_plan_admission_action(
     max_queries: int,
     route_runtime_posture: Mapping[str, Any],
     search_work_projection: Mapping[str, Any] | None = None,
+    search_judgment_projection: Mapping[str, Any] | None = None,
 ) -> QueryPlanAdmissionResult:
     """Admit existing candidates into QueryPlan after RunKernel authorization."""
 
@@ -878,6 +879,7 @@ def execute_query_plan_admission_action(
         max_len=max_queries,
         origin=f"{candidate_source}_search_work_consumption",
         role=QueryPlanRole.INITIAL,
+        search_judgment_projection=search_judgment_projection,
     )
     recency_projection = query_authority.apply_initial_recency_merge(
         queries,

@@ -75,6 +75,7 @@ from core.semantic_observation_foundation import (
 from core.sufficiency_semantic_state_consumption_runtime import (
     SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION,
     build_semantic_state_facts_for_sufficiency,
+    evaluate_semantic_sufficiency_overlay,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -789,6 +790,45 @@ def test_all_required_components_satisfied_preserves_ready_direct() -> None:
     assert judgment.decision is RunSufficiencyDecision.READY_DIRECT
     assert judgment.final_answer_allowed is True
     assert not judgment.semantic_consumption.get("direct_answer_blocked")
+
+
+def test_missing_required_component_emits_version_bound_gap_identity() -> None:
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    accepted = _accept_contract(kernel)
+    component_ref = accepted["accepted_answer_component_refs"][0]
+
+    facts = build_semantic_state_facts_for_sufficiency(
+        initial_answer_contract=accepted,
+        component_coverage_history=[],
+        contract_amendment_admission_history=[],
+        evidence_ledger_projection=_ledger_projection(_contract()),
+    )
+    missing = facts["blockers"][0]
+    overlay = evaluate_semantic_sufficiency_overlay(facts)
+    assessment = overlay.missing_assessments[0]
+
+    assert missing["code"] == "missing_required_component_coverage"
+    assert missing["accepted_contract_version"] == accepted["accepted_contract_version"]
+    assert missing["accepted_contract_digest"] == accepted["accepted_contract_digest"]
+    assert missing["ref_id"] == component_ref["component_id"]
+    assert missing["component_digest"] == component_ref["component_digest"]
+    assert facts["accepted_required_component_refs"] == [
+        {
+            "answer_component_id": component_ref["component_id"],
+            "component_digest": component_ref["component_digest"],
+            "accepted_contract_version": accepted["accepted_contract_version"],
+            "accepted_contract_digest": accepted["accepted_contract_digest"],
+        }
+    ]
+    assert assessment["accepted_contract_version"] == accepted[
+        "accepted_contract_version"
+    ]
+    assert assessment["accepted_contract_digest"] == accepted[
+        "accepted_contract_digest"
+    ]
+    assert assessment["answer_component_id"] == component_ref["component_id"]
+    assert assessment["component_digest"] == component_ref["component_digest"]
+    assert assessment["semantic_gap_code"] == "missing_required_component_coverage"
 
 
 def test_ready_direct_is_repaired_when_coverage_has_only_unqualified_ledger_presence() -> None:

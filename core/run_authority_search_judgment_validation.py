@@ -373,6 +373,107 @@ def _preferred_gap_classes(judgment_input: RunSearchJudgmentInput) -> tuple[str,
     return tuple(out)
 
 
+def _semantic_gap_validation(
+    judgment_input: RunSearchJudgmentInput,
+) -> tuple[SearchGapAssessment | None, tuple[str, ...]]:
+    helper = _mapping(judgment_input.helper_proposals)
+    facts = _mapping(helper.get("semantic_state_facts"))
+    if not facts:
+        return None, ()
+
+    contract_version = clean_token(facts.get("accepted_contract_version"))
+    contract_digest = clean_token(facts.get("accepted_contract_digest"), limit=128)
+    if not contract_version or not contract_digest:
+        return None, ("semantic_component_gap_missing_contract_identity",)
+
+    component_refs: dict[str, str] = {}
+    for ref in _list(facts.get("accepted_required_component_refs")):
+        if not isinstance(ref, Mapping):
+            continue
+        component_id = clean_token(
+            ref.get("answer_component_id") or ref.get("component_id")
+        )
+        component_digest = clean_token(ref.get("component_digest"), limit=128)
+        ref_contract_version = clean_token(ref.get("accepted_contract_version"))
+        ref_contract_digest = clean_token(
+            ref.get("accepted_contract_digest"),
+            limit=128,
+        )
+        if (
+            component_id
+            and component_digest
+            and ref_contract_version == contract_version
+            and ref_contract_digest == contract_digest
+        ):
+            component_refs[component_id] = component_digest
+
+    eligible: list[Mapping[str, Any]] = []
+    for assessment in _list(helper.get("semantic_missing_assessments")):
+        if not isinstance(assessment, Mapping):
+            continue
+        if clean_token(assessment.get("semantic_gap_code")) != (
+            "missing_required_component_coverage"
+        ):
+            continue
+        if clean_token(assessment.get("requirement_kind")) != (
+            "semantic_component_coverage"
+        ):
+            return None, ("semantic_component_gap_generic_kind_erases_identity",)
+        eligible.append(assessment)
+
+    if not eligible:
+        return None, ()
+    component_ids = [
+        clean_token(item.get("answer_component_id") or item.get("component_id"))
+        for item in eligible
+    ]
+    component_ids = [item for item in component_ids if item]
+    if len(set(component_ids)) != len(component_ids):
+        return None, ("duplicate_semantic_component_gap",)
+    if len(eligible) > 1:
+        return None, ("multiple_semantic_component_gaps",)
+
+    assessment = eligible[0]
+    component_id = clean_token(
+        assessment.get("answer_component_id") or assessment.get("component_id")
+    )
+    component_digest = clean_token(assessment.get("component_digest"), limit=128)
+    if not component_id or not component_digest:
+        return None, ("semantic_component_gap_missing_component_identity",)
+    if clean_token(assessment.get("accepted_contract_version")) != contract_version:
+        return None, ("semantic_component_gap_stale_contract_version",)
+    if clean_token(
+        assessment.get("accepted_contract_digest"),
+        limit=128,
+    ) != contract_digest:
+        return None, ("semantic_component_gap_stale_contract_digest",)
+    if component_refs.get(component_id) != component_digest:
+        return None, ("semantic_component_gap_stale_component_identity",)
+
+    for summary in _list(facts.get("component_summaries")):
+        if not isinstance(summary, Mapping):
+            continue
+        if clean_token(summary.get("component_id")) != component_id:
+            continue
+        if bool(summary.get("coverage_suspect")):
+            return None, ("semantic_component_gap_ambiguous_coverage_suspect",)
+
+    return (
+        SearchGapAssessment(
+            requirement_id=f"semantic:missing_required_component_coverage:{component_id}",
+            requirement_kind="semantic_component_coverage",
+            accepted_contract_version=contract_version,
+            accepted_contract_digest=contract_digest,
+            answer_component_id=component_id,
+            component_digest=component_digest,
+            semantic_gap_code="missing_required_component_coverage",
+            status="unsatisfied",
+            reason="current_accepted_contract_required_component_missing_coverage",
+        ),
+        ("semantic_component_gap_authority_valid",),
+    )
+
+
 def _judgment_context_text(judgment_input: RunSearchJudgmentInput) -> str:
     query_facts = _mapping(judgment_input.query_facts)
     helper = _mapping(judgment_input.helper_proposals)
@@ -593,6 +694,12 @@ def build_deterministic_search_judgment(
             )
         )
 
+    helper_satisfied = _helper_says_satisfied(judgment_input.helper_proposals)
+    classifications: list[str] = []
+    semantic_gap, semantic_gap_reasons = _semantic_gap_validation(judgment_input)
+    if semantic_gap is not None:
+        gaps.append(semantic_gap)
+        classifications.append(SearchJudgmentClassification.ACTIVE_REQUIRED_GAP.value)
     active_gap_classes = _target_source_classes(
         [gap.to_dict() for gap in gaps]
     )
@@ -600,12 +707,17 @@ def build_deterministic_search_judgment(
         judgment_input,
         active_gap_classes=active_gap_classes,
     )
-    helper_satisfied = _helper_says_satisfied(judgment_input.helper_proposals)
-    classifications: list[str] = []
     helper_assessments: dict[str, Any] = {
         "helper_satisfied": helper_satisfied,
         "helper_authority": "advisory",
     }
+    if semantic_gap_reasons:
+        helper_assessments["semantic_component_gap_authority_reasons"] = list(
+            semantic_gap_reasons
+        )
+        helper_assessments["semantic_component_gap_authority_valid"] = (
+            semantic_gap is not None
+        )
     decision = RunSearchJudgmentDecision.DEFER_TO_EXISTING_LEGACY_COMPATIBILITY
     rationale = "ordinary_or_compatibility_path_without_required_source_gap"
 
