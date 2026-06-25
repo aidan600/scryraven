@@ -10,15 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import json
-from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable, Mapping, Sequence
 
-from core.component_coverage_reduction_runtime import (
-    build_component_coverage_reduction_state,
-)
-from core.evidence_ledger import build_evidence_ledger_observation_from_runtime
 from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.ordinary_semantic_producer_runtime import (
     BindableFinalPassage,
@@ -27,11 +22,6 @@ from core.ordinary_semantic_producer_runtime import (
 )
 from core.provider_job_evidence_ledger_bridge import (
     build_provider_job_evidence_ledger_observation,
-)
-from core.run_kernel import Observation, ObservationType, RunStageStatus
-from core.semantic_observation_admission_runtime import (
-    build_semantic_observation_admission_projection,
-    build_semantic_observation_admission_state,
 )
 from core.sufficiency_semantic_state_consumption_runtime import (
     build_semantic_state_facts_for_sufficiency,
@@ -119,61 +109,27 @@ class ComponentGapRecoveryResult:
 
 
 @dataclass(frozen=True, slots=True)
-class ComponentGapRecoveryEvidencePatch:
-    """Evidence locals refreshed after a successful recovery result."""
+class ComponentGapRecoveryHandoff:
+    """Canonical product handoff after recovered semantic coverage succeeds."""
 
     all_passages: tuple[dict[str, Any], ...]
-    final_top_evidence: tuple[dict[str, Any], ...]
-    author_evidence: tuple[dict[str, Any], ...]
-    unique_source_urls: Mapping[str, Any] | None
+    evidence_ledger_projection: Mapping[str, Any] | None
+    final_evidence_rebuild_required: bool = True
+    semantic_binding_committed: bool = True
 
 
-def build_component_gap_recovery_evidence_patch(
+def build_component_gap_recovery_handoff(
     *,
     result: ComponentGapRecoveryResult,
     all_passages: Sequence[Mapping[str, Any]],
-    final_top_evidence: Sequence[Mapping[str, Any]],
-    author_evidence: Sequence[Mapping[str, Any]],
-    unique_source_urls: Mapping[str, Any] | None,
-) -> ComponentGapRecoveryEvidencePatch:
-    """Return recovered passages merged into ordinary evidence locals."""
+) -> ComponentGapRecoveryHandoff:
+    """Return recovered passages for ordinary final-evidence rebuilding."""
 
     recovered_passages = [dict(item) for item in result.recovered_passages]
     merged_all_passages = [*(dict(item) for item in all_passages), *recovered_passages]
-    seen_final_keys = {
-        str(item.get("candidate_id") or item.get("url") or "")
-        for item in final_top_evidence
-        if isinstance(item, Mapping)
-    }
-    new_final_passages: list[dict[str, Any]] = []
-    for passage in recovered_passages:
-        key = str(passage.get("candidate_id") or passage.get("url") or "")
-        if key and key in seen_final_keys:
-            continue
-        seen_final_keys.add(key)
-        new_final_passages.append(passage)
-    merged_final = [
-        *(dict(item) for item in final_top_evidence),
-        *new_final_passages,
-    ]
-    merged_author = [
-        *(dict(item) for item in author_evidence),
-        *new_final_passages,
-    ]
-    if unique_source_urls is None:
-        merged_urls = None
-    else:
-        recovered_urls = {
-            str(passage.get("url")): str(passage.get("url"))
-            for passage in new_final_passages
-            if passage.get("url")
-        }
-        merged_urls = {**dict(unique_source_urls), **recovered_urls}
-    return ComponentGapRecoveryEvidencePatch(
+    return ComponentGapRecoveryHandoff(
         all_passages=tuple(merged_all_passages),
-        final_top_evidence=tuple(merged_final),
-        author_evidence=tuple(merged_author),
-        unique_source_urls=merged_urls,
+        evidence_ledger_projection=result.evidence_ledger_projection,
     )
 
 
@@ -691,7 +647,6 @@ def _call_offline_adapter(
         str(context.get("search_depth") or "basic"),
         _positive_int(context.get("results_per_query")) or 1,
         provider_role="component_gap_recovery_offline",
-        search_providers=["offline-fixture"],
         seen_urls=seen_urls,
         component_gap_recovery=True,
         component_gap=dict(component_gap),
@@ -752,12 +707,9 @@ def _annotated_recovery_passages(
         item["provider_job_kind"] = provider_job_kind
         item["source_obligation_ids"] = list(source_obligation_ids)
         item.setdefault("dispatch_ref", execution_id)
-        item.setdefault("provider_name", "offline-recovery-fixture")
-        item.setdefault("provider", "offline-recovery-fixture")
+        item.setdefault("final_evidence_eligible", "unknown")
         item.setdefault("readable_status", "readable")
         item.setdefault("fetchable_status", "available")
-        item.setdefault("disposition", "accepted")
-        item.setdefault("eligible_for_stronger_obligation", True)
         out.append(item)
     return tuple(out)
 
@@ -839,28 +791,6 @@ def _admit_recovery_evidence(
         payload=dict(bridge_result.observation_payload),
     )
     run_kernel.reduce(result.observation)
-    final_evidence_action = run_kernel.authorize_evidence_ledger_reduction(
-        inputs={
-            "observation_source": "component_gap_recovery_final_evidence",
-            "final_evidence_count": len(annotated_passages),
-            "component_gap_recovery_idempotency_key": idempotency_key,
-            "component_gap_recovery_owner": COMPONENT_GAP_RECOVERY_OWNER,
-        }
-    )
-    final_evidence_observation = build_evidence_ledger_observation_from_runtime(
-        observation_id=(
-            f"{run_id}:evidence-ledger:component-gap-recovery-final:"
-            f"{idempotency_key[:24]}"
-        ),
-        observation_source="component_gap_recovery_final_evidence",
-        final_top_evidence=list(annotated_passages),
-        final_evidence_selected=True,
-    )
-    final_evidence_result = execute_evidence_ledger_reduction_action(
-        final_evidence_action,
-        payload=final_evidence_observation.to_dict(),
-    )
-    run_kernel.reduce(final_evidence_result.observation)
     projection = run_kernel.state.evidence_ledger.to_projection().to_dict()
     record = {
         "bridge_projection": dict(bridge_result.projection),
@@ -914,271 +844,34 @@ def _admit_semantic_component_coverage(
         if coverage is None:
             continue
 
-        semantic_inputs = _semantic_observation_action_inputs(
-            run_kernel=run_kernel,
-            accepted_contract=accepted_contract,
-            component_ref=component_ref,
-            observation=observation,
-            authorized_query=authorized_query,
-            idempotency_key=idempotency_key,
-        )
-        coverage_inputs = _component_coverage_action_inputs(
-            run_kernel=run_kernel,
-            accepted_contract=accepted_contract,
-            component_ref=component_ref,
-            coverage=coverage,
-            authorized_query=authorized_query,
-            idempotency_key=idempotency_key,
-        )
-        stage_result = _stage_recovered_semantic_commit(
-            run_kernel=run_kernel,
-            accepted_contract=accepted_contract,
-            observation=observation,
-            content_refs=content_refs,
-            coverage=coverage,
-            semantic_inputs=semantic_inputs,
-            coverage_inputs=coverage_inputs,
-            evidence_ledger_projection=evidence_ledger_projection,
-        )
-        if stage_result.get("stop_reason"):
-            continue
-
-        semantic_snapshot = _semantic_mutation_snapshot(run_kernel)
         try:
-            semantic_action = run_kernel.authorize_semantic_observation_admission(
-                semantic_observation_id=observation.observation_id,
-                semantic_observation_digest=observation.observation_digest,
-                answer_component_id=component_ref["component_id"],
-                component_revision=component_ref["component_revision"],
-                component_digest=component_ref["component_digest"],
-                accepted_contract_digest=accepted_contract[
-                    "accepted_contract_digest"
-                ],
-                accepted_contract_version=accepted_contract[
-                    "accepted_contract_version"
-                ],
-                request_id=str(getattr(run_kernel.state, "request_id", "")),
-                inputs={
-                    "component_gap_recovery_idempotency_key": idempotency_key,
-                    "authorized_recovery_query": authorized_query,
-                    "component_gap_recovery_owner": COMPONENT_GAP_RECOVERY_OWNER,
-                },
-            )
-            run_kernel.reduce(
-                Observation.from_action(
-                    semantic_action,
-                    observation_type=ObservationType.SEMANTIC_OBSERVATION_ADMITTED,
-                    status=RunStageStatus.COMPLETED,
-                    payload={
-                        "semantic_observation": observation.to_dict(),
-                        "sanitized_content_references": [
-                            ref.to_dict() for ref in content_refs
-                        ],
-                    },
-                )
-            )
-            coverage_action = run_kernel.authorize_component_coverage_reduction(
-                coverage_record_id=coverage.record_id,
-                coverage_record_digest=coverage.record_digest,
-                answer_component_id=component_ref["component_id"],
-                component_revision=component_ref["component_revision"],
-                component_digest=component_ref["component_digest"],
-                accepted_contract_digest=accepted_contract[
-                    "accepted_contract_digest"
-                ],
-                accepted_contract_version=accepted_contract[
-                    "accepted_contract_version"
-                ],
-                request_id=str(getattr(run_kernel.state, "request_id", "")),
-                inputs={
-                    "component_gap_recovery_idempotency_key": idempotency_key,
-                    "authorized_recovery_query": authorized_query,
-                    "component_gap_recovery_owner": COMPONENT_GAP_RECOVERY_OWNER,
-                },
-            )
-            run_kernel.reduce(
-                Observation.from_action(
-                    coverage_action,
-                    observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
-                    status=RunStageStatus.COMPLETED,
-                    payload={"component_coverage_record": coverage.to_dict()},
-                )
-            )
-        except Exception:
-            _restore_semantic_mutation_snapshot(run_kernel, semantic_snapshot)
-            continue
-        return {"coverage_record_id": coverage.record_id}
-    return {"stop_reason": "recovered_evidence_not_semantically_covering_gap"}
-
-
-def _semantic_observation_action_inputs(
-    *,
-    run_kernel: Any,
-    accepted_contract: Mapping[str, Any],
-    component_ref: Mapping[str, Any],
-    observation: Any,
-    authorized_query: str,
-    idempotency_key: str,
-) -> dict[str, Any]:
-    return {
-        "semantic_observation_id": observation.observation_id,
-        "semantic_observation_digest": observation.observation_digest,
-        "answer_component_id": component_ref["component_id"],
-        "component_revision": component_ref["component_revision"],
-        "component_digest": component_ref["component_digest"],
-        "accepted_contract_digest": accepted_contract["accepted_contract_digest"],
-        "accepted_contract_version": accepted_contract["accepted_contract_version"],
-        "request_id": str(getattr(run_kernel.state, "request_id", "")),
-        "component_gap_recovery_idempotency_key": idempotency_key,
-        "authorized_recovery_query": authorized_query,
-        "component_gap_recovery_owner": COMPONENT_GAP_RECOVERY_OWNER,
-    }
-
-
-def _component_coverage_action_inputs(
-    *,
-    run_kernel: Any,
-    accepted_contract: Mapping[str, Any],
-    component_ref: Mapping[str, Any],
-    coverage: Any,
-    authorized_query: str,
-    idempotency_key: str,
-) -> dict[str, Any]:
-    return {
-        "coverage_record_id": coverage.record_id,
-        "coverage_record_digest": coverage.record_digest,
-        "answer_component_id": component_ref["component_id"],
-        "component_revision": component_ref["component_revision"],
-        "component_digest": component_ref["component_digest"],
-        "accepted_contract_digest": accepted_contract["accepted_contract_digest"],
-        "accepted_contract_version": accepted_contract["accepted_contract_version"],
-        "request_id": str(getattr(run_kernel.state, "request_id", "")),
-        "component_gap_recovery_idempotency_key": idempotency_key,
-        "authorized_recovery_query": authorized_query,
-        "component_gap_recovery_owner": COMPONENT_GAP_RECOVERY_OWNER,
-    }
-
-
-def _stage_recovered_semantic_commit(
-    *,
-    run_kernel: Any,
-    accepted_contract: Mapping[str, Any],
-    observation: Any,
-    content_refs: Sequence[Any],
-    coverage: Any,
-    semantic_inputs: Mapping[str, Any],
-    coverage_inputs: Mapping[str, Any],
-    evidence_ledger_projection: Mapping[str, Any],
-) -> dict[str, Any]:
-    """Validate recovered observation and coverage before mutating state."""
-
-    existing_observation_ids = [
-        _clean_token(item.get("observation_id"))
-        for item in run_kernel.state.semantic_observation_admission_history
-        if isinstance(item, Mapping)
-    ]
-    existing_observation_digests = [
-        _clean_token(item.get("observation_digest"), limit=128)
-        for item in run_kernel.state.semantic_observation_admission_history
-        if isinstance(item, Mapping)
-    ]
-    try:
-        admission_state = build_semantic_observation_admission_state(
-            action_id="component-gap-recovery-preflight:semantic",
-            action_inputs=semantic_inputs,
-            observation_payload={
-                "semantic_observation": observation.to_dict(),
-                "sanitized_content_references": [
+            commit_projection = run_kernel.commit_recovered_semantic_delta(
+                semantic_observation=observation.to_dict(),
+                sanitized_content_references=[
                     ref.to_dict() for ref in content_refs
                 ],
-            },
-            accepted_contract=accepted_contract,
-            evidence_ledger_projection=evidence_ledger_projection,
-            existing_observation_ids=existing_observation_ids,
-            existing_observation_digests=existing_observation_digests,
-            run_id=str(getattr(run_kernel.state, "run_id", "")),
-            request_id=str(getattr(run_kernel.state, "request_id", "")),
-        )
-        admission_projection = build_semantic_observation_admission_projection(
-            admission_state=admission_state
-        )
-        build_component_coverage_reduction_state(
-            action_id="component-gap-recovery-preflight:coverage",
-            action_inputs=coverage_inputs,
-            coverage_payload={"component_coverage_record": coverage.to_dict()},
-            accepted_contract=accepted_contract,
-            admission_history=[
-                *list(run_kernel.state.semantic_observation_admission_history),
-                admission_projection,
-            ],
-            evidence_ledger_projection=evidence_ledger_projection,
-            existing_coverage_record_ids=[
-                _clean_token(item.get("coverage_record_id"))
-                for item in run_kernel.state.component_coverage_history
-                if isinstance(item, Mapping)
-            ],
-            existing_coverage_record_digests=[
-                _clean_token(item.get("coverage_record_digest"), limit=128)
-                for item in run_kernel.state.component_coverage_history
-                if isinstance(item, Mapping)
-            ],
-            run_id=str(getattr(run_kernel.state, "run_id", "")),
-            request_id=str(getattr(run_kernel.state, "request_id", "")),
-        )
-    except Exception as exc:
-        return {"stop_reason": f"recovered_semantic_commit_staging_blocked:{exc}"}
-    return {}
-
-
-def _semantic_mutation_snapshot(run_kernel: Any) -> dict[str, Any]:
-    state = run_kernel.state
-    return {
-        "semantic_observation_admission_state": deepcopy(
-            state.semantic_observation_admission_state
-        ),
-        "semantic_observation_admission_projection": deepcopy(
-            state.semantic_observation_admission_projection
-        ),
-        "semantic_observation_admission_history": deepcopy(
-            state.semantic_observation_admission_history
-        ),
-        "component_coverage_state": deepcopy(state.component_coverage_state),
-        "component_coverage_projection": deepcopy(state.component_coverage_projection),
-        "component_coverage_history": deepcopy(state.component_coverage_history),
-        "projections": deepcopy(state.projections),
-        "issued_actions": deepcopy(state.issued_actions),
-        "action_statuses": deepcopy(state.action_statuses),
-        "stage_statuses": deepcopy(state.stage_statuses),
-        "next_action_sequence": state.next_action_sequence,
-    }
-
-
-def _restore_semantic_mutation_snapshot(
-    run_kernel: Any,
-    snapshot: Mapping[str, Any],
-) -> None:
-    state = run_kernel.state
-    state.semantic_observation_admission_state = deepcopy(
-        snapshot["semantic_observation_admission_state"]
-    )
-    state.semantic_observation_admission_projection = deepcopy(
-        snapshot["semantic_observation_admission_projection"]
-    )
-    state.semantic_observation_admission_history = deepcopy(
-        snapshot["semantic_observation_admission_history"]
-    )
-    state.component_coverage_state = deepcopy(snapshot["component_coverage_state"])
-    state.component_coverage_projection = deepcopy(
-        snapshot["component_coverage_projection"]
-    )
-    state.component_coverage_history = deepcopy(
-        snapshot["component_coverage_history"]
-    )
-    state.projections = deepcopy(snapshot["projections"])
-    state.issued_actions = deepcopy(snapshot["issued_actions"])
-    state.action_statuses = deepcopy(snapshot["action_statuses"])
-    state.stage_statuses = deepcopy(snapshot["stage_statuses"])
-    state.next_action_sequence = int(snapshot["next_action_sequence"])
+                component_coverage_record=coverage.to_dict(),
+                answer_component_id=component_ref["component_id"],
+                component_revision=component_ref["component_revision"],
+                component_digest=component_ref["component_digest"],
+                accepted_contract_digest=accepted_contract["accepted_contract_digest"],
+                accepted_contract_version=accepted_contract[
+                    "accepted_contract_version"
+                ],
+                request_id=str(getattr(run_kernel.state, "request_id", "")),
+                inputs={
+                    "component_gap_recovery_idempotency_key": idempotency_key,
+                    "authorized_recovery_query": authorized_query,
+                    "component_gap_recovery_owner": COMPONENT_GAP_RECOVERY_OWNER,
+                },
+            )
+        except Exception:
+            continue
+        return {
+            "coverage_record_id": coverage.record_id,
+            "commit_projection": dict(commit_projection),
+        }
+    return {"stop_reason": "recovered_evidence_not_semantically_covering_gap"}
 
 
 def _component_still_missing(
@@ -1232,6 +925,7 @@ def _record_and_result(
         "schema_version": COMPONENT_GAP_RECOVERY_SCHEMA_VERSION,
         "owner": COMPONENT_GAP_RECOVERY_OWNER,
         "mode_neutral_primitive": True,
+        "canonical_budget_owner": "RunKernel.RunState.component_gap_recovery_history",
         "status": status.value,
         "stop_reason": stop_reason,
         "policy": policy.to_dict(),
@@ -1248,7 +942,7 @@ def _record_and_result(
         ),
         "recovered_passage_count": len(recovered_passages),
     }
-    _append_projection(run_kernel, record)
+    _append_canonical_recovery_record(run_kernel, record)
     return ComponentGapRecoveryResult(
         status=status,
         stop_reason=stop_reason,
@@ -1259,34 +953,40 @@ def _record_and_result(
     )
 
 
-def _append_projection(run_kernel: Any, record: Mapping[str, Any]) -> None:
-    current = run_kernel.state.projections.get(COMPONENT_GAP_RECOVERY_TRACE_KEY)
-    history = []
-    if isinstance(current, Mapping):
-        history = [
-            dict(item)
-            for item in current.get("history") or ()
-            if isinstance(item, Mapping)
-        ]
+def _append_canonical_recovery_record(
+    run_kernel: Any,
+    record: Mapping[str, Any],
+) -> None:
+    history = _history(run_kernel)
     history.append(dict(record))
+    run_kernel.state.component_gap_recovery_history = history
+    _write_projection_from_canonical_history(run_kernel)
+
+
+def _write_projection_from_canonical_history(run_kernel: Any) -> None:
+    history = _history(run_kernel)
+    latest = dict(history[-1]) if history else {}
     run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY] = {
         "schema_version": COMPONENT_GAP_RECOVERY_SCHEMA_VERSION,
         "owner": COMPONENT_GAP_RECOVERY_OWNER,
         "runtime_consumer": "core.pipeline_orchestrator.run_pipeline",
         "mode_neutral_primitive": True,
-        "latest": dict(record),
+        "canonical_budget_owner": "RunKernel.RunState.component_gap_recovery_history",
+        "projection_derived_from_canonical_state": True,
+        "latest": latest,
         "history": history,
         "history_count": len(history),
     }
 
 
 def _history(run_kernel: Any) -> list[dict[str, Any]]:
-    current = run_kernel.state.projections.get(COMPONENT_GAP_RECOVERY_TRACE_KEY)
-    if not isinstance(current, Mapping):
-        return []
     return [
         dict(item)
-        for item in current.get("history") or ()
+        for item in getattr(
+            run_kernel.state,
+            "component_gap_recovery_history",
+            (),
+        )
         if isinstance(item, Mapping)
     ]
 
@@ -1452,10 +1152,10 @@ __all__ = [
     "COMPONENT_GAP_RECOVERY_OWNER",
     "COMPONENT_GAP_RECOVERY_SCHEMA_VERSION",
     "COMPONENT_GAP_RECOVERY_TRACE_KEY",
-    "ComponentGapRecoveryEvidencePatch",
+    "ComponentGapRecoveryHandoff",
     "ComponentGapRecoveryPolicy",
     "ComponentGapRecoveryResult",
     "ComponentGapRecoveryStatus",
-    "build_component_gap_recovery_evidence_patch",
+    "build_component_gap_recovery_handoff",
     "execute_authorized_component_gap_recovery",
 ]

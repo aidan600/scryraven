@@ -409,9 +409,15 @@ SEMANTIC_OBSERVATION_ADMISSION_STAGE = (
     SEMANTIC_OBSERVATION_ADMISSION_STAGE_NAME
 )
 COMPONENT_COVERAGE_REDUCTION_STAGE = COMPONENT_COVERAGE_REDUCTION_STAGE_NAME
+RECOVERED_SEMANTIC_DELTA_COMMIT_STAGE = (
+    "component_gap_recovery_semantic_delta_commit"
+)
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE = "semantic_producer_bundle_commit"
 SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON = (
     "ordinary_semantic_producer_atomic_bundle_commit"
+)
+RECOVERED_SEMANTIC_DELTA_COMMIT_REASON = (
+    "component_gap_recovery_atomic_semantic_delta_commit"
 )
 CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
@@ -513,6 +519,9 @@ class ActionType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
+    RECOVERED_SEMANTIC_DELTA_COMMIT = (
+        "component_gap_recovery_semantic_delta_commit"
+    )
     SEMANTIC_PRODUCER_BUNDLE_COMMIT = "semantic_producer_bundle_commit"
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
@@ -578,6 +587,9 @@ class ObservationType(str, Enum):
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
+    RECOVERED_SEMANTIC_DELTA_COMMITTED = (
+        "component_gap_recovery_semantic_delta_committed"
+    )
     SEMANTIC_PRODUCER_BUNDLE_COMMITTED = "semantic_producer_bundle_committed"
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
@@ -940,6 +952,9 @@ class RunState:
     component_coverage_state: dict[str, Any] = field(default_factory=dict)
     component_coverage_projection: dict[str, Any] = field(default_factory=dict)
     component_coverage_history: list[dict[str, Any]] = field(default_factory=list)
+    component_gap_recovery_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     contract_amendment_admission_state: dict[str, Any] = field(default_factory=dict)
     contract_amendment_admission_projection: dict[str, Any] = field(
         default_factory=dict
@@ -1212,6 +1227,9 @@ class RunState:
             component_coverage_state=deepcopy(self.component_coverage_state),
             component_coverage_projection=deepcopy(self.component_coverage_projection),
             component_coverage_history=deepcopy(self.component_coverage_history),
+            component_gap_recovery_history=deepcopy(
+                self.component_gap_recovery_history
+            ),
             contract_amendment_admission_state=deepcopy(
                 self.contract_amendment_admission_state
             ),
@@ -1496,6 +1514,7 @@ class KernelTraceProjection:
     component_coverage_state: Mapping[str, Any]
     component_coverage_projection: Mapping[str, Any]
     component_coverage_history: Sequence[Mapping[str, Any]]
+    component_gap_recovery_history: Sequence[Mapping[str, Any]]
     contract_amendment_admission_state: Mapping[str, Any]
     contract_amendment_admission_projection: Mapping[str, Any]
     contract_amendment_admission_history: Sequence[Mapping[str, Any]]
@@ -1633,6 +1652,10 @@ class KernelTraceProjection:
             ),
             "component_coverage_history": [
                 _safe_mapping(item) for item in self.component_coverage_history
+            ],
+            "component_gap_recovery_history": [
+                _safe_mapping(item)
+                for item in self.component_gap_recovery_history
             ],
             "contract_amendment_admission_state": _safe_mapping(
                 self.contract_amendment_admission_state
@@ -2219,6 +2242,79 @@ class RunKernel:
             ),
         )
 
+    def authorize_recovered_semantic_delta_commit(
+        self,
+        *,
+        semantic_observation_id: str,
+        semantic_observation_digest: str,
+        coverage_record_id: str,
+        coverage_record_digest: str,
+        answer_component_id: str,
+        component_revision: str,
+        component_digest: str,
+        accepted_contract_digest: str | None = None,
+        accepted_contract_version: str | None = None,
+        request_id: str | None = None,
+        reason: str = RECOVERED_SEMANTIC_DELTA_COMMIT_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.initial_answer_contract_projection:
+            raise RunKernelTransitionError(
+                "recovered semantic delta commit requires an accepted initial "
+                "answer contract"
+            )
+        accepted = self.state.initial_answer_contract
+        resolved_contract_digest = (
+            accepted_contract_digest
+            or accepted.get("accepted_contract_digest")
+        )
+        resolved_contract_version = (
+            accepted_contract_version
+            or accepted.get("accepted_contract_version")
+        )
+        for label, value in (
+            ("semantic_observation_id", semantic_observation_id),
+            ("semantic_observation_digest", semantic_observation_digest),
+            ("coverage_record_id", coverage_record_id),
+            ("coverage_record_digest", coverage_record_digest),
+            ("answer_component_id", answer_component_id),
+            ("component_revision", component_revision),
+            ("component_digest", component_digest),
+            ("accepted_contract_digest", resolved_contract_digest),
+            ("accepted_contract_version", resolved_contract_version),
+        ):
+            if not _clean_text(value, limit=200):
+                raise RunKernelTransitionError(
+                    "recovered semantic delta commit requires "
+                    f"{label} binding"
+                )
+        merged_inputs = {
+            "semantic_observation_id": semantic_observation_id,
+            "semantic_observation_digest": semantic_observation_digest,
+            "coverage_record_id": coverage_record_id,
+            "coverage_record_digest": coverage_record_digest,
+            "answer_component_id": answer_component_id,
+            "component_revision": component_revision,
+            "component_digest": component_digest,
+            "accepted_contract_digest": resolved_contract_digest,
+            "accepted_contract_version": resolved_contract_version,
+            "request_id": request_id or self.state.request_id,
+            "atomic_recovered_semantic_delta_commit": True,
+            "semantic_delta_boundary": (
+                "semantic_observation_plus_component_coverage"
+            ),
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=RECOVERED_SEMANTIC_DELTA_COMMIT_STAGE,
+            action_type=ActionType.RECOVERED_SEMANTIC_DELTA_COMMIT,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.RECOVERED_SEMANTIC_DELTA_COMMITTED
+            ),
+        )
+
     def commit_semantic_producer_bundle(
         self,
         *,
@@ -2396,6 +2492,245 @@ class RunKernel:
             ],
             "live_validation_not_run": True,
         }
+        self.state.observations.append(observation)
+        self.state.next_observation_sequence += 1
+
+    def commit_recovered_semantic_delta(
+        self,
+        *,
+        semantic_observation: Mapping[str, Any],
+        sanitized_content_references: Sequence[Mapping[str, Any]],
+        component_coverage_record: Mapping[str, Any],
+        answer_component_id: str,
+        component_revision: str,
+        component_digest: str,
+        accepted_contract_digest: str | None = None,
+        accepted_contract_version: str | None = None,
+        request_id: str | None = None,
+        reason: str = RECOVERED_SEMANTIC_DELTA_COMMIT_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Atomically commit a recovered SemanticObservation plus coverage.
+
+        This commit is for an already accepted contract. It stages both existing
+        canonical reducers before mutating RunState, then applies observation and
+        coverage together through one RunKernel-owned transaction boundary.
+        """
+
+        observation_payload = _safe_mapping(semantic_observation)
+        content_reference_payloads = [
+            _safe_mapping(ref)
+            for ref in sanitized_content_references
+            if isinstance(ref, Mapping)
+        ]
+        coverage_payload = _safe_mapping(component_coverage_record)
+        action = self.authorize_recovered_semantic_delta_commit(
+            semantic_observation_id=str(
+                observation_payload.get("observation_id") or ""
+            ),
+            semantic_observation_digest=str(
+                observation_payload.get("observation_digest") or ""
+            ),
+            coverage_record_id=str(
+                coverage_payload.get("record_id")
+                or coverage_payload.get("coverage_record_id")
+                or ""
+            ),
+            coverage_record_digest=str(
+                coverage_payload.get("record_digest")
+                or coverage_payload.get("coverage_record_digest")
+                or ""
+            ),
+            answer_component_id=answer_component_id,
+            component_revision=component_revision,
+            component_digest=component_digest,
+            accepted_contract_digest=accepted_contract_digest,
+            accepted_contract_version=accepted_contract_version,
+            request_id=request_id,
+            reason=reason,
+            inputs=inputs,
+        )
+        try:
+            if action.action_id in self.state.reduced_action_ids:
+                raise RunKernelTransitionError("authorized action was already reduced")
+            if action.sequence != self.state.next_observation_sequence:
+                raise RunKernelTransitionError(
+                    "recovered semantic delta commit observation reduced out of order"
+                )
+            if not observation_payload or not content_reference_payloads:
+                raise RunKernelTransitionError(
+                    "recovered semantic delta commit requires SemanticObservation "
+                    "and sanitized content references"
+                )
+            if not coverage_payload:
+                raise RunKernelTransitionError(
+                    "recovered semantic delta commit requires ComponentCoverageRecord"
+                )
+            existing_observation_ids = [
+                _safe_mapping(item).get("observation_id")
+                for item in self.state.semantic_observation_admission_history
+            ]
+            existing_observation_digests = [
+                _safe_mapping(item).get("observation_digest")
+                for item in self.state.semantic_observation_admission_history
+            ]
+            admission_state = build_semantic_observation_admission_state(
+                action_id=action.action_id,
+                action_inputs=action.inputs,
+                observation_payload={
+                    "semantic_observation": observation_payload,
+                    "sanitized_content_references": content_reference_payloads,
+                },
+                accepted_contract=self.state.initial_answer_contract,
+                evidence_ledger_projection=(
+                    self.state.evidence_ledger.to_projection().to_dict()
+                ),
+                existing_observation_ids=existing_observation_ids,
+                existing_observation_digests=existing_observation_digests,
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+            )
+            admission_projection = build_semantic_observation_admission_projection(
+                admission_state=admission_state
+            )
+            staged_admission_history = [
+                *[
+                    deepcopy(dict(item))
+                    for item in self.state.semantic_observation_admission_history
+                    if isinstance(item, Mapping)
+                ],
+                deepcopy(admission_projection),
+            ]
+            existing_coverage_record_ids = [
+                _safe_mapping(item).get("coverage_record_id")
+                for item in self.state.component_coverage_history
+            ]
+            existing_coverage_record_digests = [
+                _safe_mapping(item).get("coverage_record_digest")
+                for item in self.state.component_coverage_history
+            ]
+            coverage_state = build_component_coverage_reduction_state(
+                action_id=action.action_id,
+                action_inputs=action.inputs,
+                coverage_payload={
+                    "component_coverage_record": coverage_payload,
+                },
+                accepted_contract=self.state.initial_answer_contract,
+                admission_history=staged_admission_history,
+                evidence_ledger_projection=(
+                    self.state.evidence_ledger.to_projection().to_dict()
+                ),
+                existing_coverage_record_ids=existing_coverage_record_ids,
+                existing_coverage_record_digests=existing_coverage_record_digests,
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+            )
+            coverage_projection = build_component_coverage_reduction_projection(
+                coverage_state=coverage_state
+            )
+        except (SemanticObservationAdmissionError, ComponentCoverageReductionError) as exc:
+            transition_error = RunKernelTransitionError(str(exc))
+            self._record_recovered_semantic_delta_commit_failure(
+                action=action,
+                exc=transition_error,
+            )
+            raise transition_error from exc
+        except Exception as exc:
+            self._record_recovered_semantic_delta_commit_failure(
+                action=action,
+                exc=exc,
+            )
+            if isinstance(exc, RunKernelTransitionError):
+                raise
+            raise RunKernelTransitionError(
+                "recovered semantic delta commit failed before canonical "
+                "semantic state mutation"
+            ) from exc
+
+        observation = Observation.from_action(
+            action,
+            observation_type=(
+                ObservationType.RECOVERED_SEMANTIC_DELTA_COMMITTED
+            ),
+            status=RunStageStatus.COMPLETED,
+            payload={
+                "semantic_observation": observation_payload,
+                "sanitized_content_references": content_reference_payloads,
+                "component_coverage_record": coverage_payload,
+            },
+        )
+        admission_state = deepcopy(dict(admission_state))
+        admission_projection = deepcopy(dict(admission_projection))
+        coverage_state = deepcopy(dict(coverage_state))
+        coverage_projection = deepcopy(dict(coverage_projection))
+        self.state.reduced_action_ids.add(action.action_id)
+        self.state.action_statuses[action.action_id] = observation.status
+        self.state.stage_statuses[action.stage] = observation.status
+        self.state.semantic_observation_admission_state = admission_state
+        self.state.semantic_observation_admission_projection = admission_projection
+        self.state.semantic_observation_admission_history.append(
+            deepcopy(admission_projection)
+        )
+        self.state.projections[SEMANTIC_OBSERVATION_ADMISSION_STAGE] = (
+            deepcopy(admission_projection)
+        )
+        self.state.component_coverage_state = coverage_state
+        self.state.component_coverage_projection = coverage_projection
+        self.state.component_coverage_history.append(deepcopy(coverage_projection))
+        self.state.projections[COMPONENT_COVERAGE_REDUCTION_STAGE] = (
+            deepcopy(coverage_projection)
+        )
+        projection = {
+            "owner": "RunKernel.RecoveredSemanticDeltaCommit",
+            "canonical_state": True,
+            "trace_only": False,
+            "storage_only": False,
+            "atomic_recovered_semantic_delta_commit": True,
+            "accepted_contract_digest": self.state.initial_answer_contract.get(
+                "accepted_contract_digest"
+            ),
+            "accepted_contract_version": self.state.initial_answer_contract.get(
+                "accepted_contract_version"
+            ),
+            "semantic_observation_id": admission_projection.get(
+                "observation_id"
+            ),
+            "coverage_record_id": coverage_projection.get("coverage_record_id"),
+            "answer_component_id": coverage_projection.get(
+                "answer_component_id"
+            ),
+            "live_validation_not_run": True,
+        }
+        self.state.projections[action.stage] = projection
+        self.state.observations.append(observation)
+        self.state.next_observation_sequence += 1
+        return projection
+
+    def _record_recovered_semantic_delta_commit_failure(
+        self,
+        *,
+        action: AuthorizedAction,
+        exc: Exception,
+    ) -> None:
+        if action.action_id in self.state.reduced_action_ids:
+            return
+        observation = Observation.from_action(
+            action,
+            observation_type=(
+                ObservationType.RECOVERED_SEMANTIC_DELTA_COMMITTED
+            ),
+            status=RunStageStatus.FAILED,
+            payload={
+                "recovered_semantic_delta_commit_failed": True,
+                "semantic_state_mutated": False,
+                "error_type": type(exc).__name__,
+                "error_message": _clean_text(str(exc), limit=300),
+            },
+        )
+        self.state.reduced_action_ids.add(action.action_id)
+        self.state.action_statuses[action.action_id] = RunStageStatus.FAILED
+        self.state.stage_statuses[action.stage] = RunStageStatus.FAILED
+        self.state.projections[action.stage] = dict(observation.payload)
         self.state.observations.append(observation)
         self.state.next_observation_sequence += 1
 

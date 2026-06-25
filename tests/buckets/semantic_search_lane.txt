@@ -11,3 +11,8 @@ tests/test_runauthority_iterative_search_judgment_ag92b.py
 # component-gap authority can tag existing queries without provider/fetch/search
 # execution behavior changes.
 tests/test_search_work_query_plan_consumption_ag96e2.py
+
+# Owner: component-gap recovery product path. Reason: one canonical, offline,
+# one-cycle recovery remains QueryPlan-authorized and projection deletion cannot
+# reset RunKernel-owned recovery budget/idempotency.
+tests/test_ag_bal_01_component_gap_recovery.py
