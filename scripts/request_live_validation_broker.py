@@ -10,6 +10,15 @@ from typing import Any
 from urllib import error, parse, request
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.validation_profiles import (  # noqa: E402
+    AG_LIVE_SMOKE,
+    get_validation_profile,
+    validation_profile_names,
+)
+
 OUTPUT_DIR = ROOT / "output"
 DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
 TOKEN_ENV_VAR = "SCRYRAVEN_BROKER_TOKEN"
@@ -55,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     print(LIVE_SPEND_WARNING)
-    payload = {"job_id": args.job_id, "confirm_live": True}
+    payload = _build_profile_request_payload(args.job_id, args.profile)
     status, broker_json = _post_broker_json(args.broker_url, token, payload)
     rendered = json.dumps(broker_json, indent=2, sort_keys=True)
 
@@ -85,6 +94,12 @@ def _parser() -> argparse.ArgumentParser:
         help="Allowlisted broker job id to request.",
     )
     parser.add_argument(
+        "--profile",
+        default=AG_LIVE_SMOKE,
+        choices=validation_profile_names(),
+        help=f"Approved product validation profile to request (default: {AG_LIVE_SMOKE}).",
+    )
+    parser.add_argument(
         "--token",
         help=f"One-shot broker token. Alternatively set {TOKEN_ENV_VAR}.",
     )
@@ -98,6 +113,16 @@ def _parser() -> argparse.ArgumentParser:
         help="Optional ignored path for the sanitized broker JSON response.",
     )
     return parser
+
+
+def _build_profile_request_payload(job_id: str, profile_name: str) -> dict[str, Any]:
+    profile = get_validation_profile(profile_name)
+    return {
+        "job_id": job_id,
+        "confirm_live": True,
+        "request_kind": "approved_validation_profile",
+        "profile_request": profile.broker_request_shape(),
+    }
 
 
 def _post_broker_json(

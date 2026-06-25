@@ -23,6 +23,12 @@ Tracked broker client:
 scripts/request_live_validation_broker.py
 ```
 
+Shared validation-profile source:
+
+```text
+core/validation_profiles.py
+```
+
 Required local environment variables:
 
 ```text
@@ -66,9 +72,17 @@ Run from the repository root in a shell that can see `SCRYRAVEN_BROKER_TOKEN`:
 ```powershell
 py scripts\request_live_validation_broker.py `
   --job-id <job-id> `
+  --profile AG-LIVE-SMOKE `
   --confirm-live-provider-call `
   --output output\<sanitized-broker-response>.json
 ```
+
+The tracked client sends an `approved_validation_profile` request shape derived
+from `core/validation_profiles.py`. The private broker should treat `job_id` as
+its one-run allowlist/fuse and the profile request as product-owned constraints:
+profile name, query/domain/mode constraints, `RunConfig.cap_policy` values,
+retention posture, packet schema, and expected packet criteria. The private
+broker must not accept arbitrary commands from the client.
 
 Use only sanitized broker output under `output/`. Do not paste or commit tokens,
 secrets, `.env` contents, provider keys, raw prompts, raw provider payloads, raw
@@ -89,7 +103,7 @@ Broker script:
 C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py
 
 Use only the tracked client:
-py scripts\request_live_validation_broker.py --job-id <job-id> --confirm-live-provider-call --output output\<sanitized-broker-response>.json
+py scripts\request_live_validation_broker.py --job-id <job-id> --profile <AG-LIVE-profile> --confirm-live-provider-call --output output\<sanitized-broker-response>.json
 
 Budget:
 - max broker requests: 1
@@ -101,6 +115,8 @@ Rules:
 - Do not print or request secrets.
 - Do not call provider APIs directly.
 - Do not run search/fetch/retrieval unless explicitly budgeted.
+- Do not accept arbitrary commands from the tracked client.
+- Dispatch only approved validation profiles from `core/validation_profiles.py`.
 - Use only sanitized broker output under `output/`.
 - If the broker returns `unknown_job_id`, token error, missing config, max-runs exhausted, or any provider/model error, fail closed and do not retry.
 ```

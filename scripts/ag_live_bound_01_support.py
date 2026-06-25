@@ -8,24 +8,28 @@ from pathlib import Path
 from typing import Any
 
 from core.cap_enforcement import RunCapPolicy
+from core.validation_profiles import (
+    AG_LIVE_BOUND_BACKUP_QUERY,
+    AG_LIVE_BOUND_PRIMARY_QUERY,
+    AG_LIVE_SMOKE,
+    PRODUCT_CAP_POLICY_SURFACE,
+    PRODUCT_RUNTIME_CONSUMER,
+    get_validation_profile,
+)
 
 PHASE_ID = "AG-LIVE-BRIDGE-01"
 LIVE_PHASE_ID = "AG-LIVE-EXEC-01"
-SCHEMA_VERSION = "ag_live_bound_01_bounded_product_runner_v1"
+DEFAULT_PROFILE_NAME = AG_LIVE_SMOKE
+_DEFAULT_PROFILE = get_validation_profile(DEFAULT_PROFILE_NAME)
+SCHEMA_VERSION = _DEFAULT_PROFILE.packet_schema
 PACKET_MARKER = "LOCAL/UNTRACKED — DO NOT COMMIT"
 PROOF_SURFACE = "ordinary_product_pipeline"
 DEFAULT_OUTPUT = "output/ag_live_bound_01_packet.json"
 
-PRIMARY_QUERY = (
-    "According to the official Python 3 documentation, what are the default "
-    "values for rel_tol and abs_tol in math.isclose()?"
-)
-BACKUP_QUERY = (
-    "According to the official Python 3 documentation, what are the default "
-    "values for start and step in itertools.count()?"
-)
-REQUIRED_MODE = "Balanced"
-REQUIRED_DOMAIN = "docs.python.org"
+PRIMARY_QUERY = AG_LIVE_BOUND_PRIMARY_QUERY
+BACKUP_QUERY = AG_LIVE_BOUND_BACKUP_QUERY
+REQUIRED_MODE = _DEFAULT_PROFILE.required_mode
+REQUIRED_DOMAIN = _DEFAULT_PROFILE.required_include_domains[0]
 
 LIVE_PACKET_SUCCESS = "success"
 LIVE_PACKET_CAP_OVERFLOW = "cap_overflow"
@@ -33,15 +37,7 @@ LIVE_PACKET_PIPELINE_FAILURE = "pipeline_failure"
 LIVE_PACKET_PRECHECK_FAILURE = "precheck_failure"
 LIVE_PACKET_UNEXPECTED_FAILURE = "unexpected_failure"
 
-PLANNED_CAPS: dict[str, int] = {
-    "max_scryraven_runs": 1,
-    "max_search_dispatches": 2,
-    "max_fetch_read_operations": 3,
-    "max_author_model_calls": 1,
-    "max_smart_search_judgment_model_calls": 0,
-    "max_independent_manual_source_checks": 1,
-    "max_retries": 0,
-}
+PLANNED_CAPS: dict[str, int] = _DEFAULT_PROFILE.cap_policy.as_requested_dict()
 
 FORBIDDEN_PACKET_KEYS = frozenset(
     """
@@ -197,6 +193,7 @@ class WrappedRunCallables:
 @dataclass(frozen=True, slots=True)
 class PreflightContext:
     root: Path
+    profile_name: str
     query: str
     query_lock: str
     mode: str
@@ -242,20 +239,26 @@ def parse_domains(raw: str) -> list[str]:
     return [part.strip().lower() for part in raw.split(",") if part.strip()]
 
 
-def validate_caps_requested(requested: Mapping[str, int]) -> AgLiveBoundCaps:
-    missing = [key for key in PLANNED_CAPS if key not in requested]
+def validate_caps_requested(
+    requested: Mapping[str, int],
+    *,
+    profile_name: str = DEFAULT_PROFILE_NAME,
+) -> AgLiveBoundCaps:
+    profile = get_validation_profile(profile_name)
+    planned_caps = profile.cap_policy.as_requested_dict()
+    missing = [key for key in planned_caps if key not in requested]
     if missing:
         raise AgLiveBoundPreflightError(
             f"refusing run: missing required cap fields: {', '.join(missing)}"
         )
     mismatched = [
         key
-        for key, expected in PLANNED_CAPS.items()
+        for key, expected in planned_caps.items()
         if int(requested[key]) != expected
     ]
     if mismatched:
         raise AgLiveBoundPreflightError(
-            "refusing run: caps must match AG-LIVE-BOUND-01 planned values exactly"
+            f"refusing run: caps must match {profile.name} planned values exactly"
         )
     return AgLiveBoundCaps.from_requested(requested)
 
@@ -264,37 +267,54 @@ def validate_query_lock(
     query: str,
     *,
     approved_backup_query: bool,
+    profile_name: str = DEFAULT_PROFILE_NAME,
 ) -> str:
+    profile = get_validation_profile(profile_name)
+    if not profile.supports_direct_runner():
+        raise AgLiveBoundPreflightError(
+            f"refusing run: profile {profile.name!r} is not direct-runner ready"
+        )
     normalized = query.strip()
     if not normalized:
         raise AgLiveBoundPreflightError("refusing run: empty query")
-    if normalized == PRIMARY_QUERY:
+    if normalized == profile.primary_query:
         return "primary"
-    if normalized == BACKUP_QUERY and approved_backup_query:
+    if normalized == profile.backup_query and approved_backup_query:
         return "backup"
     raise AgLiveBoundPreflightError(
-        "refusing run: query must match the AG-LIVE-BOUND-01 primary query exactly "
+        f"refusing run: query must match the {profile.name} primary query exactly "
         "or the approved backup query with --approved-backup-query"
     )
 
 
-def validate_mode(mode: str) -> None:
-    if mode != REQUIRED_MODE:
+def validate_mode(mode: str, *, profile_name: str = DEFAULT_PROFILE_NAME) -> None:
+    profile = get_validation_profile(profile_name)
+    if mode != profile.required_mode:
         raise AgLiveBoundPreflightError(
-            f"refusing run: mode must be {REQUIRED_MODE!r}"
+            f"refusing run: mode must be {profile.required_mode!r}"
         )
 
 
-def validate_domain_allowlist(include_domains: list[str]) -> None:
-    if REQUIRED_DOMAIN not in include_domains:
+def validate_domain_allowlist(
+    include_domains: list[str],
+    *,
+    profile_name: str = DEFAULT_PROFILE_NAME,
+) -> None:
+    profile = get_validation_profile(profile_name)
+    missing = [
+        domain for domain in profile.required_include_domains if domain not in include_domains
+    ]
+    if missing:
         raise AgLiveBoundPreflightError(
-            f"refusing run: --include-domains must include {REQUIRED_DOMAIN!r}"
+            "refusing run: --include-domains must include "
+            + ", ".join(repr(domain) for domain in missing)
         )
 
 
 def build_preflight_context(
     *,
     root: Path,
+    profile_name: str = DEFAULT_PROFILE_NAME,
     query: str,
     mode: str,
     include_domains: list[str],
@@ -304,12 +324,14 @@ def build_preflight_context(
     confirm_live_product_run: bool,
     approved_backup_query: bool,
 ) -> PreflightContext:
+    profile = get_validation_profile(profile_name)
     query_lock = validate_query_lock(
         query,
         approved_backup_query=approved_backup_query,
+        profile_name=profile.name,
     )
-    validate_mode(mode)
-    validate_domain_allowlist(include_domains)
+    validate_mode(mode, profile_name=profile.name)
+    validate_domain_allowlist(include_domains, profile_name=profile.name)
     if not is_allowed_output_path(root, output_path):
         raise AgLiveBoundPreflightError(
             "refusing run: output path must be under ignored repo output/ and "
@@ -317,6 +339,7 @@ def build_preflight_context(
         )
     return PreflightContext(
         root=root,
+        profile_name=profile.name,
         query=query.strip(),
         query_lock=query_lock,
         mode=mode,
@@ -387,10 +410,13 @@ def suppressed_ordinary_retention_posture(context: PreflightContext) -> dict[str
 
 
 def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
+    profile = get_validation_profile(context.profile_name)
     packet = {
         "packet_marker": PACKET_MARKER,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": profile.packet_schema,
         "phase_id": PHASE_ID,
+        "validation_profile": profile.packet_identity(),
+        "expected_packet_criteria": list(profile.expected_packet_criteria),
         "proof_surface": PROOF_SURFACE,
         "dry_run": True,
         "confirm_live_product_run": False,
@@ -403,8 +429,8 @@ def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
         "caps_requested": context.caps.as_requested_dict(),
         "caps_observed": CappedDepsCounters.from_caps(context.caps).not_executed_dict(),
         "cap_enforcement_product_path": {
-            "policy_surface": "RunConfig.cap_policy",
-            "runtime_consumer": "run_pipeline",
+            "policy_surface": PRODUCT_CAP_POLICY_SURFACE,
+            "runtime_consumer": PRODUCT_RUNTIME_CONSUMER,
             "script_owns_cap_authority": False,
             "product_policy_constructible": True,
         },
@@ -529,10 +555,13 @@ def _live_packet_base(
     *,
     cap_policy: RunCapPolicy,
 ) -> dict[str, Any]:
+    profile = get_validation_profile(context.profile_name)
     return {
         "packet_marker": PACKET_MARKER,
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": profile.packet_schema,
         "phase_id": LIVE_PHASE_ID,
+        "validation_profile": profile.packet_identity(),
+        "expected_packet_criteria": list(profile.expected_packet_criteria),
         "proof_surface": PROOF_SURFACE,
         "dry_run": False,
         "confirm_live_product_run": True,
@@ -544,8 +573,8 @@ def _live_packet_base(
         "caps_requested": context.caps.as_requested_dict(),
         "caps_observed": caps_observed_from_policy(cap_policy),
         "cap_enforcement_product_path": {
-            "policy_surface": "RunConfig.cap_policy",
-            "runtime_consumer": "run_pipeline",
+            "policy_surface": PRODUCT_CAP_POLICY_SURFACE,
+            "runtime_consumer": PRODUCT_RUNTIME_CONSUMER,
             "script_owns_cap_authority": False,
             "product_policy_constructible": True,
         },

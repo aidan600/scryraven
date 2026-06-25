@@ -124,15 +124,37 @@ def test_client_constructs_expected_post_body_and_token_header_only() -> None:
 
     assert result.returncode == 0
     assert broker.captured["path"] == "/run"
-    assert broker.captured["json"] == {
-        "job_id": "ag96i3d0-official-current-once",
-        "confirm_live": True,
-    }
+    payload = broker.captured["json"]
+    assert payload["job_id"] == "ag96i3d0-official-current-once"
+    assert payload["confirm_live"] is True
+    assert payload["request_kind"] == "approved_validation_profile"
+    assert payload["profile_request"]["validation_profile"] == "AG-LIVE-SMOKE"
+    assert payload["profile_request"]["cap_policy"]["surface"] == "RunConfig.cap_policy"
+    assert "command" not in json.dumps(payload).casefold()
     headers = _lower_headers(broker.captured["headers"])
     assert headers["x-scryraven-broker-token"] == "one-shot-token"
     assert "one-shot-token" not in result.stdout
     assert "one-shot-token" not in result.stderr
     assert "one-shot-token" not in json.dumps(broker.captured["json"])
+
+
+def test_client_refuses_unknown_profile_before_contacting_broker() -> None:
+    result = _run_client(
+        "--broker-url",
+        "http://127.0.0.1:1/run",
+        "--job-id",
+        "ag-live-smoke-once",
+        "--profile",
+        "unknown-profile",
+        "--token",
+        "one-shot-token",
+        "--confirm-live-provider-call",
+    )
+
+    assert result.returncode == 2
+    assert "invalid choice" in result.stderr
+    assert "one-shot-token" not in result.stdout
+    assert "one-shot-token" not in result.stderr
 
 
 def test_client_can_read_token_from_environment_without_printing_it() -> None:

@@ -89,6 +89,14 @@ def test_dry_run_writes_sanitized_packet(tmp_path: Path) -> None:
     assert packet["dry_run"] is True
     assert packet["confirm_live_product_run"] is False
     assert packet["planned_live_dispatch"] is False
+    assert packet["validation_profile"]["name"] == "AG-LIVE-SMOKE"
+    assert packet["validation_profile"]["live_status"] == (
+        "succeeded_once_direct_human_private_shell"
+    )
+    assert packet["validation_profile"]["cap_policy_surface"] == "RunConfig.cap_policy"
+    assert "run_pipeline_call_count == 1 on live success" in packet[
+        "expected_packet_criteria"
+    ]
     assert packet["packet_marker"] == "LOCAL/UNTRACKED — DO NOT COMMIT"
     assert packet["caps_requested"]["max_search_dispatches"] == 2
     assert packet["caps_observed"]["enforcement"] == "not_executed"
@@ -256,6 +264,7 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
 
     packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
     assert packet["phase_id"] == "AG-LIVE-EXEC-01"
+    assert packet["validation_profile"]["name"] == "AG-LIVE-SMOKE"
     assert packet["success_classification"] == "success"
     assert packet["run_pipeline_call_count"] == 1
     assert packet["caps_observed"]["search_dispatches"] == 1
