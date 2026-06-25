@@ -58,6 +58,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PRODUCER_MODULE = ROOT / "core" / "ordinary_semantic_producer_runtime.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 RUN_KERNEL = ROOT / "core" / "run_kernel.py"
+SEMANTIC_BUNDLE_HELPER = ROOT / "core" / "semantic_producer_bundle_commit_runtime.py"
 
 AG_CHECK_01_QUERY = "What is the current official rule for Example Program?"
 MULTIPART_QUERY = "What are the current official fee and legal deadline?"
@@ -445,6 +446,7 @@ def test_atomic_bundle_commit_failures_leave_no_semantic_state(
 
 def test_static_guard_run_kernel_owns_atomic_semantic_commit_boundary() -> None:
     source = RUN_KERNEL.read_text(encoding="utf-8")
+    tree = ast.parse(source)
     forbidden = (
         "semantic_producer_history",
         "pre_sufficiency_semantic",
@@ -454,6 +456,34 @@ def test_static_guard_run_kernel_owns_atomic_semantic_commit_boundary() -> None:
         assert token not in source
     assert "commit_semantic_producer_bundle" in source
     assert "SEMANTIC_PRODUCER_BUNDLE_COMMIT" in source
+    assert "_stage_semantic_producer_bundle_commit" not in source
+
+    run_kernel_class = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == "RunKernel"
+    )
+    commit_method = next(
+        node
+        for node in run_kernel_class.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name == "commit_semantic_producer_bundle"
+    )
+    method_source = ast.get_source_segment(source, commit_method) or ""
+    assert "stage_semantic_producer_bundle_commit(" in method_source
+    assert "self._apply_semantic_producer_bundle_commit(" in method_source
+    for token in (
+        "build_initial_answer_contract_acceptance_state",
+        "build_semantic_observation_admission_state",
+        "build_component_coverage_reduction_state",
+    ):
+        assert token not in method_source
+
+    helper_source = SEMANTIC_BUNDLE_HELPER.read_text(encoding="utf-8")
+    assert "stage_semantic_producer_bundle_commit" in helper_source
+    assert "build_initial_answer_contract_acceptance_state" in helper_source
+    assert "build_semantic_observation_admission_state" in helper_source
+    assert "build_component_coverage_reduction_state" in helper_source
 
 
 def test_static_guard_no_pre_sufficiency_semantic_bridge() -> None:
