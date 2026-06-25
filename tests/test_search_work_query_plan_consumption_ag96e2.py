@@ -109,13 +109,15 @@ def _adapter() -> Any:
 def _search_judgment_projection(
     *,
     component_id: str = "component:component-fee",
+    decision: str = "continue_targeted_search",
+    continuation_allowed: bool | None = True,
 ) -> dict[str, Any]:
-    return {
+    projection: dict[str, Any] = {
         "owner": "RunKernel.RunAuthoritySearchJudgment",
         "canonical_state": True,
         "trace_only": False,
         "judgment_id": "search-judgment:ag-gap-01",
-        "decision": "continue_targeted_search",
+        "decision": decision,
         "gaps": [
             {
                 "requirement_id": (
@@ -132,6 +134,9 @@ def _search_judgment_projection(
             }
         ],
     }
+    if continuation_allowed is not None:
+        projection["continuation"] = {"allowed": continuation_allowed}
+    return projection
 
 
 def test_no_searchwork_projection_keeps_authorize_retrieval_queries_byte_equivalent() -> None:
@@ -268,6 +273,34 @@ def test_exactly_one_existing_candidate_query_gets_version_bound_gap_authority()
         "query_text_generated": False,
         "new_executable_query_text_generated": False,
     }
+
+
+def test_non_authorizing_decision_does_not_authorize_component_gap_query() -> None:
+    result = allocate_existing_queries_by_search_work(
+        candidate_queries=["official current filing fee"],
+        query_plan_context={},
+        search_work_projection=_search_work_projection(),
+        search_judgment_projection=_search_judgment_projection(
+            decision="stop_insufficient",
+            continuation_allowed=False,
+        ),
+        max_len=1,
+        origin="unit",
+        role="initial",
+        phase="unit",
+    )
+
+    payload = result.to_dict()
+    assert payload["admitted_query_order"] == ["official current filing fee"]
+    assert payload["version_bound_component_gap_authority_consumed"] is False
+    assert payload["version_bound_component_gap_fallback_reason"] == (
+        "search_judgment_decision_does_not_authorize_component_gap_query"
+    )
+    assert "version_bound_component_gap_authorized" not in json.dumps(
+        payload["query_metadata"],
+        sort_keys=True,
+    )
+    assert payload["behavior_boundary_flags"]["new_executable_query_text_generated"] is False
 
 
 def test_zero_component_gap_query_matches_fail_closed_without_new_text() -> None:

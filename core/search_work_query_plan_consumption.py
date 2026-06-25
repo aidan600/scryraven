@@ -88,6 +88,15 @@ _PROVIDER_TERMS = {
     "conflict_currentness_check": ("conflict", "current", "deadline", "compare"),
     "direct_candidate_search": ("overview", "lookup", "background"),
 }
+_COMPONENT_GAP_AUTHORIZING_DECISIONS = frozenset(
+    {
+        "continue_targeted_search",
+        "recover_missing_canonical",
+        "recover_missing_legal_primary",
+        "recover_missing_official_current",
+        "recover_missing_source_bound_numeric",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -351,6 +360,11 @@ def _version_bound_component_gap(
         return None, "search_judgment_projection_not_canonical"
     if source.get("canonical_state") is not True or source.get("trace_only") is not False:
         return None, "search_judgment_projection_not_canonical"
+    if _clean_token(source.get("decision")) not in _COMPONENT_GAP_AUTHORIZING_DECISIONS:
+        return None, "search_judgment_decision_does_not_authorize_component_gap_query"
+    continuation = _mapping(source.get("continuation"))
+    if "allowed" in continuation and continuation.get("allowed") is not True:
+        return None, "search_judgment_decision_does_not_authorize_component_gap_query"
     gaps = [
         item for item in _sequence_of_mappings(source.get("gaps"))
         if _clean_token(item.get("semantic_gap_code"))
