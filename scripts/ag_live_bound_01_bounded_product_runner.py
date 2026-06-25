@@ -4,9 +4,10 @@ import argparse
 import logging
 import os
 import sys
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -77,7 +78,8 @@ def _run_confirmed_live(context) -> int:
         deps = _build_live_run_deps()
         status, accumulator = _live_runtime_helpers()
         run_pipeline_call_count = 1
-        outcome = _call_run_pipeline_once(config, deps, status, accumulator)
+        with _suppress_ordinary_retention_for_bounded_runner():
+            outcome = _call_run_pipeline_once(config, deps, status, accumulator)
     except AgLiveBoundPreflightError as exc:
         packet = build_live_failure_packet(
             context,
@@ -297,6 +299,52 @@ def _call_run_pipeline_once(
     import core.pipeline_orchestrator as orchestrator
 
     return orchestrator.run_pipeline(config, deps, status, accumulator)
+
+
+@contextmanager
+def _suppress_ordinary_retention_for_bounded_runner() -> Iterator[None]:
+    import core.persistence_side_effects as persistence
+    import core.pipeline_orchestrator as orchestrator
+
+    originals = {
+        "orchestrator_log_run_started": orchestrator.log_run_started,
+        "orchestrator_log_run_failed": orchestrator.log_run_failed,
+        "orchestrator_execute_persistence_side_effects": (
+            orchestrator.execute_persistence_side_effects
+        ),
+        "orchestrator_db_enabled": orchestrator.DB_ENABLED,
+        "persistence_append_jsonl": persistence.append_jsonl,
+        "persistence_log_run_completed": persistence.log_run_completed,
+    }
+
+    def noop(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    def suppressed_persistence_side_effects(*_args: Any, **kwargs: Any) -> Any:
+        return persistence.PersistenceSideEffectResult(
+            execution_log_entry=dict(kwargs.get("execution_log_entry") or {}),
+            kb_instrumentation=None,
+            kb_warning=None,
+            sqlite_row_written=False,
+        )
+
+    orchestrator.log_run_started = noop
+    orchestrator.log_run_failed = noop
+    orchestrator.execute_persistence_side_effects = suppressed_persistence_side_effects
+    orchestrator.DB_ENABLED = False
+    persistence.append_jsonl = noop
+    persistence.log_run_completed = noop
+    try:
+        yield
+    finally:
+        orchestrator.log_run_started = originals["orchestrator_log_run_started"]
+        orchestrator.log_run_failed = originals["orchestrator_log_run_failed"]
+        orchestrator.execute_persistence_side_effects = originals[
+            "orchestrator_execute_persistence_side_effects"
+        ]
+        orchestrator.DB_ENABLED = originals["orchestrator_db_enabled"]
+        persistence.append_jsonl = originals["persistence_append_jsonl"]
+        persistence.log_run_completed = originals["persistence_log_run_completed"]
 
 
 def _run_cap_exceeded_type() -> type[Exception]:

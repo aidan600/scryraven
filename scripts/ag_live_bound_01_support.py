@@ -368,6 +368,24 @@ def no_retention_booleans() -> dict[str, bool]:
     }
 
 
+def suppressed_ordinary_retention_posture(context: PreflightContext) -> dict[str, Any]:
+    return {
+        "ordinary_product_persistence": "suppressed_for_ag_live_bound_runner",
+        "only_runner_artifact_written": True,
+        "sanitized_packet_path": _relative_output_path(context),
+        "ordinary_execution_jsonl_suppressed": True,
+        "ordinary_kb_trigger_jsonl_suppressed": True,
+        "ordinary_policy_journal_jsonl_suppressed": True,
+        "sqlite_telemetry_suppressed": True,
+        "ordinary_side_effect_paths_suppressed": [
+            "output/ag_live_bound_01_execution_log.jsonl",
+            "output/ag_live_bound_01_kb_triggers.jsonl",
+            "output/ag_live_bound_01_policy_journal.jsonl",
+            "proplex.db",
+        ],
+    }
+
+
 def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
     packet = {
         "packet_marker": PACKET_MARKER,
@@ -542,6 +560,7 @@ def _live_packet_base(
         "redaction_status": "sanitized_live_result",
         "forbidden_material_absent": forbidden_material_absent(),
         "no_retention": no_retention_booleans(),
+        "retention_posture": suppressed_ordinary_retention_posture(context),
     }
 
 

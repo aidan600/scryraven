@@ -155,18 +155,51 @@ def test_confirm_live_with_missing_live_env_fails_before_run_pipeline(
 def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     runner = _load_runner()
     output = _gitignored_output_path("ag_live_bound_01_confirm_success.json")
     captured_config: dict[str, Any] = {}
+    attempted_execution_log = tmp_path / "ordinary_execution.jsonl"
+    attempted_kb_log = tmp_path / "ordinary_kb.jsonl"
 
     monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
     monkeypatch.setattr(runner, "_validate_live_model_keys", lambda: None)
 
     def fake_run_pipeline(config: Any, _deps: Any, _status: Any, _accumulator: Any) -> Any:
+        import core.persistence_side_effects as persistence
+        import core.pipeline_orchestrator as orchestrator
+
         captured_config["config"] = config
         assert config.cap_policy is not None
+        assert orchestrator.DB_ENABLED is False
         config.cap_policy.mark_search_dispatch()
+        orchestrator.log_run_started(
+            run_id="would-log",
+            session_id="would-log-session",
+            phase="pipeline",
+            query="would write if not suppressed",
+            path=attempted_execution_log,
+        )
+        persistence.append_jsonl(attempted_kb_log, {"event": "would_log"})
+        persistence_result = orchestrator.execute_persistence_side_effects(
+            execution_log_path=attempted_execution_log,
+            execution_log_entry={"event": "would_log_execution_trace"},
+            run_id="would-log",
+            session_id="would-log-session",
+            latency_seconds=0.0,
+            strategy="Balanced",
+            execution_trace={"timing": {}},
+            run_log=_NoopLogger(),
+            policy_journal_path=tmp_path / "ordinary_policy.jsonl",
+            policy_applied={},
+            default_utilization_threshold=0.25,
+            ts_utc="2026-06-25T00:00:00Z",
+            query="would write if not suppressed",
+            kb_context=None,
+            db_enabled=True,
+        )
+        assert persistence_result.sqlite_row_written is False
         return SimpleNamespace(
             report="The defaults are rel_tol=1e-09 and abs_tol=0.0. [[1]](https://docs.python.org/3/library/math.html#math.isclose)",
             top_passages=[
@@ -216,6 +249,8 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     assert run_pipeline.call_count == 1
     assert captured_config["config"].cap_policy.max_search_dispatches == 2
     assert captured_config["config"].cap_policy.max_fetch_read_operations == 3
+    assert attempted_execution_log.exists() is False
+    assert attempted_kb_log.exists() is False
     captured = capsys.readouterr()
     assert "wrote sanitized AG-LIVE-BOUND live packet" in captured.out
 
@@ -232,6 +267,24 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     assert packet["sanitized_projection_summaries"]["component_binding"][
         "semantic_packet_evidence_binding_count"
     ] == 1
+    assert packet["retention_posture"] == {
+        "ordinary_product_persistence": "suppressed_for_ag_live_bound_runner",
+        "only_runner_artifact_written": True,
+        "sanitized_packet_path": packet["output_path"],
+        "ordinary_execution_jsonl_suppressed": True,
+        "ordinary_kb_trigger_jsonl_suppressed": True,
+        "ordinary_policy_journal_jsonl_suppressed": True,
+        "sqlite_telemetry_suppressed": True,
+        "ordinary_side_effect_paths_suppressed": [
+            "output/ag_live_bound_01_execution_log.jsonl",
+            "output/ag_live_bound_01_kb_triggers.jsonl",
+            "output/ag_live_bound_01_policy_journal.jsonl",
+            "proplex.db",
+        ],
+    }
+    assert packet["no_retention"]["private_logs_retained"] is False
+    assert packet["no_retention"]["db_cache_rows_retained_in_packet"] is False
+    assert packet["no_retention"]["full_raw_traces_retained"] is False
     rendered_packet = json.dumps(packet, sort_keys=True)
     assert "not serialized" not in rendered_packet
     assert '"raw_prompt":' not in rendered_packet
@@ -270,6 +323,14 @@ def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
         "reason": "search_dispatches cap exceeded",
         "classification": "cap_overflow",
     }
+
+
+class _NoopLogger:
+    def warning(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    def error(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
 
 
 def test_unsafe_output_path_blocks(capsys: pytest.CaptureFixture[str]) -> None:
