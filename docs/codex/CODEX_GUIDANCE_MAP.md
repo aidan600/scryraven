@@ -147,6 +147,9 @@ content is explicitly pasted into the current prompt or committed here.
 - Live ScryRaven/proplex provider, model, search, or retrieval calls are disabled
   unless the phase explicitly scopes query class, run cap, provider/model/search
   budget, packet path, redaction plan, decision, and stop condition.
+- For the current AG-LIVE-BOUND-01 preflight status and no-go bridge
+  recommendation, see
+  [AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md](AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md).
 - For live validation artifact rules, read the live-validation section in
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 
