@@ -353,7 +353,7 @@ def _candidate_record(source: Mapping[str, Any], *, index: int) -> dict[str, Any
             ),
             "contextual_only": bool(source.get("contextual_only")) or lower_tier,
             "lower_tier": lower_tier,
-            "final_evidence_eligible": False,
+            "final_evidence_eligible": source.get("final_evidence_eligible", False),
             "provider_job_id": source.get("provider_job_id"),
             "provider_job_execution_id": source.get("provider_job_execution_id"),
         }

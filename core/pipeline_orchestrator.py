@@ -39,10 +39,8 @@ from core.author_execution_runtime import execute_author_handoff_from_scope
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
-from core.component_gap_recovery_runtime import (
-    ComponentGapRecoveryPolicy,
-    build_component_gap_recovery_evidence_patch,
-    execute_authorized_component_gap_recovery,
+from core.component_gap_recovery_coordinator import (
+    execute_balanced_component_gap_recovery_from_scope,
 )
 from core.conflict_resolution_controller import (
     ConflictResolutionDecision,
@@ -3595,60 +3593,100 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     sufficiency_judgment_projection = sufficiency_handoff.projection
 
     if strategy == "Balanced":
-        component_gap_recovery_policy = ComponentGapRecoveryPolicy(
-            policy_label="balanced_single_cycle_offline",
-            requested_mode=strategy,
-            allowed_requested_modes=("Balanced",),
-            max_cycles=1,
-            offline_only=True,
-            existing_candidate_query_only=True,
-            model_generated_query_text_allowed=False,
-            provider_live_calls_allowed=False,
-            accepted_amendments_allowed=False,
-            deep_reconciliation_allowed=False,
-        )
-        component_gap_recovery_result = execute_authorized_component_gap_recovery(
-            run_kernel=run_kernel,
-            policy=component_gap_recovery_policy,
-            query_plan_trace=query_authority.to_trace_fragment(),
-            search_judgment_projection=search_judgment_projection,
-            evidence_ledger_projection=evidence_ledger_projection,
-            search_work_projection=run_kernel.state.projections.get(
-                SEARCH_WORK_SHADOW_LANE_TRACE_KEY
-            ),
-            offline_recovery_adapter=deps.component_gap_recovery_adapter,
-            runtime_context={
-                "query": query,
-                "intent": intent,
-                "complexity": complexity,
-                "search_depth": search_depth,
-                "results_per_query": results_per_query,
-            },
-            seen_urls=seen_urls,
-        )
-        if component_gap_recovery_result.recovered:
-            component_gap_recovery_evidence_patch = (
-                build_component_gap_recovery_evidence_patch(
-                    result=component_gap_recovery_result,
-                    all_passages=all_passages,
-                    final_top_evidence=final_top_evidence,
-                    author_evidence=author_evidence,
-                    unique_source_urls=unique_source_urls,
-                )
+        component_gap_recovery_handoff = (
+            execute_balanced_component_gap_recovery_from_scope(
+                runtime_scope={
+                    "run_kernel": run_kernel,
+                    "run_id": run_id,
+                    "strategy": strategy,
+                    "query_authority": query_authority,
+                    "search_judgment_projection": search_judgment_projection,
+                    "evidence_ledger_projection": evidence_ledger_projection,
+                    "search_work_projection": run_kernel.state.projections.get(
+                        SEARCH_WORK_SHADOW_LANE_TRACE_KEY
+                    ),
+                    "query": query,
+                    "intent": intent,
+                    "complexity": complexity,
+                    "search_depth": search_depth,
+                    "results_per_query": results_per_query,
+                    "all_passages": all_passages,
+                    "top_chunks": top_chunks,
+                    "current_date": current_date,
+                    "run_contract_projection": run_contract_projection,
+                    "active_source_class_recovery_lifecycle": (
+                        active_source_class_recovery_lifecycle
+                    ),
+                    "precision_count": precision_count,
+                    "corpus_weak": corpus_weak,
+                    "_efp_author": _efp_author,
+                    "_relevance_low": _relevance_low,
+                    "recency_notes": recency_notes,
+                    "analysis": analysis,
+                    "primary_entity": primary_entity,
+                    "core_topic": core_topic,
+                    "author_notes": author_notes,
+                    "ordered_sources": ordered_sources,
+                    "nutrition_lookup_telemetry": nutrition_lookup_telemetry,
+                    "quant_retrieval_sufficiency_telemetry": (
+                        quant_retrieval_sufficiency_telemetry
+                    ),
+                    "scrutineer_flags": scrutineer_flags,
+                    "image_context": image_context,
+                },
+                offline_recovery_adapter=deps.component_gap_recovery_adapter,
+                seen_urls=seen_urls,
+                filter_top_evidence=deps.filter_top_evidence,
+                is_plausible_domain=deps.is_plausible_domain,
+                recovered_evidence_visibility=(
+                    apply_controller_recovered_evidence_visibility
+                ),
             )
-            all_passages = list(component_gap_recovery_evidence_patch.all_passages)
+        )
+        component_gap_recovery_result = component_gap_recovery_handoff.result
+        if component_gap_recovery_handoff.recovered:
+            all_passages = list(component_gap_recovery_handoff.all_passages or ())
+            final_evidence_handoff = (
+                component_gap_recovery_handoff.final_evidence_handoff
+                or final_evidence_handoff
+            )
+            final_evidence_bundle = final_evidence_handoff.bundle
             final_top_evidence = list(
-                component_gap_recovery_evidence_patch.final_top_evidence
-            )
-            author_evidence = list(
-                component_gap_recovery_evidence_patch.author_evidence
+                component_gap_recovery_handoff.final_top_evidence
+                or final_evidence_handoff.final_top_evidence
             )
             unique_source_urls = (
-                component_gap_recovery_evidence_patch.unique_source_urls
+                component_gap_recovery_handoff.unique_source_urls
+                or final_evidence_handoff.unique_source_urls
+            )
+            ordered_sources = list(
+                component_gap_recovery_handoff.ordered_sources
+                or final_evidence_handoff.ordered_sources
             )
             evidence_ledger_projection = dict(
-                component_gap_recovery_result.evidence_ledger_projection
+                component_gap_recovery_handoff.evidence_ledger_projection
                 or evidence_ledger_projection
+            )
+            evidence_block = (
+                component_gap_recovery_handoff.evidence_block
+                or final_evidence_handoff.evidence_block
+            )
+            cached_prefix = (
+                component_gap_recovery_handoff.cached_prefix
+                or final_evidence_handoff.cached_prefix
+            )
+            author_evidence = list(
+                component_gap_recovery_handoff.author_evidence or author_evidence
+            )
+            author_evidence_block = (
+                component_gap_recovery_handoff.author_evidence_block
+                or author_evidence_block
+            )
+            author_prompt = (
+                component_gap_recovery_handoff.author_prompt or author_prompt
+            )
+            author_notes = (
+                component_gap_recovery_handoff.author_notes or author_notes
             )
             sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
                 run_kernel,

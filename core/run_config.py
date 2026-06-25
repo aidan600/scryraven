@@ -8,7 +8,7 @@ RunOutcome — everything produced by a completed pipeline run.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 
@@ -151,3 +151,20 @@ class RunOutcome:
 
     # True when the UI wired author_stream_display so the report was streamed live.
     author_streamed: bool = False
+
+
+def compose_component_gap_recovery_deps(
+    deps: RunDeps,
+    *,
+    enabled: bool = False,
+    offline_recovery_adapter: Callable[..., Any] | None = None,
+) -> RunDeps:
+    """Return product dependencies with one-cycle recovery explicitly composed."""
+
+    if not enabled:
+        return replace(deps, component_gap_recovery_adapter=None)
+    if offline_recovery_adapter is None:
+        raise ValueError(
+            "component-gap recovery composition requires an offline adapter"
+        )
+    return replace(deps, component_gap_recovery_adapter=offline_recovery_adapter)

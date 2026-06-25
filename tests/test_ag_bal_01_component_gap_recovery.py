@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+import core.component_gap_recovery_coordinator as recovery_coordinator
 import core.component_gap_recovery_runtime as recovery_runtime
 import core.pipeline_orchestrator as orchestrator
 from core.component_gap_recovery_runtime import (
@@ -17,7 +18,7 @@ from core.component_gap_recovery_runtime import (
 from core.cost_accounting import CostAccumulator
 from core.protocols import NullStatusWriter
 from core.query_plan import QUERY_PLAN_TRACE_KEY
-from core.run_config import RunDeps
+from core.run_config import RunDeps, compose_component_gap_recovery_deps
 from tests.helpers.offline_ordinary_pipeline import (
     HANDOFF_AUTHOR,
     HANDOFF_PACKET,
@@ -30,9 +31,26 @@ from tests.helpers.offline_ordinary_pipeline import (
 )
 
 RAW_AUTHOR_RESPONSE = (
-    "AG_BAL_01_FINAL_REPORT: The official fee and appeal deadline are both "
-    "supported by recovered offline evidence."
+    "AG_BAL_01_FINAL_REPORT: The Example Filing Program appeal deadline is "
+    "calculated as 30 calendar days after the notice date. [Source 2]."
 )
+RECOVERED_FACT = (
+    "The Example Filing Program appeal deadline is calculated as 30 calendar "
+    "days after the notice date."
+)
+RECOVERED_SOURCE_URL = "https://official.example/deadline"
+POISONED_AUTHORITY_FIELDS = {
+    "citation_eligible": True,
+    "citation_eligibility_posture": "adapter_claimed_citation_eligible",
+    "disposition": "accepted",
+    "eligible_for_stronger_obligation": True,
+    "final_authority": "adapter_claimed_final_authority",
+    "final_evidence_eligible": True,
+    "final_evidence_selected": True,
+    "source_obligation_posture": "adapter_claimed_satisfied",
+    "source_obligation_satisfied": True,
+    "status": "accepted",
+}
 
 
 class _AdapterSpy:
@@ -103,9 +121,11 @@ class _BalancedRecoveryHarness(OfflineOrdinaryPipelineHarness):
         )
 
     def deps(self) -> RunDeps:
-        deps = super().deps()
-        deps.component_gap_recovery_adapter = self.process_search_queries
-        return deps
+        return compose_component_gap_recovery_deps(
+            super().deps(),
+            enabled=True,
+            offline_recovery_adapter=self.process_search_queries,
+        )
 
     def build_search_passages(self) -> list[dict[str, Any]]:
         if len(self.search_calls) == 1:
@@ -140,6 +160,9 @@ class _BalancedRecoveryHarness(OfflineOrdinaryPipelineHarness):
                 "source_class": "legal_or_regulatory_text",
                 "currentness_signal": "current",
                 "_provider": "offline_fake_search",
+                "provider_name": "offline-fixture",
+                "disposition": "accepted",
+                "eligible_for_stronger_obligation": True,
             }
         ]
 
@@ -168,6 +191,58 @@ class _WeakRecoveryHarness(_BalancedRecoveryHarness):
                 "_provider": "offline_fake_search",
             }
         ]
+
+
+def _poisoned_authority_passage(passage: dict[str, Any]) -> dict[str, Any]:
+    return {**passage, **POISONED_AUTHORITY_FIELDS}
+
+
+class _PoisonedAuthorityRecoveryHarness(_BalancedRecoveryHarness):
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        passages = super().build_search_passages()
+        if len(self.search_calls) == 1:
+            return passages
+        return [_poisoned_authority_passage(dict(item)) for item in passages]
+
+
+class _PoisonedWeakRecoveryHarness(_WeakRecoveryHarness):
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        passages = super().build_search_passages()
+        if len(self.search_calls) == 1:
+            return passages
+        return [_poisoned_authority_passage(dict(item)) for item in passages]
+
+
+def _candidate_records_for_url(
+    projection: dict[str, Any],
+    url: str,
+) -> list[dict[str, Any]]:
+    return [
+        dict(record)
+        for record in projection.get("candidate_records") or ()
+        if isinstance(record, dict) and record.get("url") == url
+    ]
+
+
+def _assert_recovered_candidate_authority_neutral(
+    records: list[dict[str, Any]],
+) -> None:
+    assert records
+    for record in records:
+        assert record.get("final_evidence_eligible") is not True
+        assert record.get("eligible_for_stronger_obligation") is not True
+        assert record.get("citation_eligible") is not True
+        assert record.get("final_evidence_selected") is not True
+        assert record.get("source_obligation_satisfied") is not True
+        assert record.get("fact_disposition") != "accepted"
+        assert record.get("proposal_disposition") != "accepted"
+        assert record.get("disposition") != "accepted"
+
+
+def _assert_adapter_authority_markers_absent(text: str) -> None:
+    assert "adapter_claimed_citation_eligible" not in text
+    assert "adapter_claimed_final_authority" not in text
+    assert "adapter_claimed_satisfied" not in text
 
 
 def _run_blocked_offline_path(
@@ -280,10 +355,15 @@ def test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author(
     assert harness.search_calls[1]["provider_role"] == (
         "component_gap_recovery_offline"
     )
-    assert harness.search_calls[1]["search_providers"] == ["offline-fixture"]
+    assert harness.search_calls[1]["search_providers"] == []
 
     state = captured["run_kernel"].state
+    assert len(state.component_gap_recovery_history) == 1
     recovery_projection = state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
+    assert recovery_projection["projection_derived_from_canonical_state"] is True
+    assert recovery_projection["canonical_budget_owner"] == (
+        "RunKernel.RunState.component_gap_recovery_history"
+    )
     latest_recovery = recovery_projection["latest"]
     assert latest_recovery["owner"] == "ComponentGapRecoveryRuntime"
     assert latest_recovery["mode_neutral_primitive"] is True
@@ -300,6 +380,9 @@ def test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author(
     assert latest_recovery["policy"]["model_generated_query_text_allowed"] is False
     assert latest_recovery["policy"]["accepted_amendments_allowed"] is False
     assert latest_recovery["policy"]["deep_reconciliation_allowed"] is False
+    assert latest_recovery["canonical_budget_owner"] == (
+        "RunKernel.RunState.component_gap_recovery_history"
+    )
 
     accepted_component_ids = {
         ref["component_id"]
@@ -337,9 +420,19 @@ def test_ag_bal_01_recovers_one_authorized_component_gap_and_regenerates_author(
 
     assert captured["packet_handoff_called"] is True
     assert captured["author_handoff_called"] is True
+    packet = state.final_answer_packet
+    packet_text = repr(packet)
+    assert RECOVERED_SOURCE_URL in packet_text
+    assert "source_id': 2" in packet_text or '"source_id": 2' in packet_text
+    author_payload_text = repr(captured["packet_handoff"].author_payload)
+    assert RECOVERED_FACT in author_payload_text
+    assert RECOVERED_SOURCE_URL in author_payload_text
+    assert "[Source 2]" in outcome.report
+    assert RECOVERED_FACT in outcome.report
     assert len(harness.author_prompts) == 1
     author_prompt = harness.author_prompts[0]
-    assert "appeal deadline legal rule" in author_prompt
+    assert RECOVERED_FACT in author_prompt
+    assert RECOVERED_SOURCE_URL in author_prompt
     assert "CONTROLLED SEMANTIC CONTEXT" in author_prompt
     assert "2 required components are supported" in author_prompt
 
@@ -371,6 +464,7 @@ def test_ag_bal_01_fails_closed_without_offline_recovery_adapter(
     assert harness.author_prompts == []
     assert len(harness.search_calls) == 1
     state = captured["run_kernel"].state
+    assert len(state.component_gap_recovery_history) == 1
     latest_recovery = state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]["latest"]
     assert latest_recovery["status"] == "blocked"
     assert latest_recovery["stop_reason"] == "offline_recovery_adapter_absent"
@@ -417,6 +511,149 @@ def test_ag_bal_01_fails_closed_when_recovered_evidence_cannot_cover_gap(
     assert semantic_consumption["required_component_count"] == 2
     assert semantic_consumption["covered_component_count"] == 1
     assert semantic_consumption["missing_component_count"] == 1
+    candidate_records = state.evidence_ledger.to_projection().to_dict()[
+        "candidate_records"
+    ]
+    recovered_candidates = [
+        record
+        for record in candidate_records
+        if record.get("url") == "https://secondary.example/deadline"
+    ]
+    assert recovered_candidates
+    assert all(
+        record.get("final_evidence_eligible") is not True
+        for record in recovered_candidates
+    )
+
+
+def test_ag_bal_harden_01_poisoned_adapter_authority_is_neutral_before_rebuild(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pre_rebuild: dict[str, Any] = {}
+    original_rebuild = (
+        recovery_coordinator.build_final_evidence_runtime_handoff_from_scope
+    )
+
+    def capture_pre_rebuild_scope(scope: Any, *args: Any, **kwargs: Any) -> Any:
+        pre_rebuild["evidence_ledger_projection"] = deepcopy(
+            scope["evidence_ledger_projection"]
+        )
+        pre_rebuild["all_passages"] = deepcopy(scope["all_passages"])
+        return original_rebuild(scope, *args, **kwargs)
+
+    monkeypatch.setattr(
+        recovery_coordinator,
+        "build_final_evidence_runtime_handoff_from_scope",
+        capture_pre_rebuild_scope,
+    )
+    harness = _PoisonedAuthorityRecoveryHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(HANDOFF_PACKET, HANDOFF_AUTHOR, HANDOFF_SUFFICIENCY),
+    )
+
+    outcome = orchestrator.run_pipeline(
+        offline_balanced_run_config(
+            query=harness.query,
+            current_date="2026-06-24",
+            session_id="ag-bal-harden-01-poison-success-session",
+            run_id="ag-bal-harden-01-poison-success-run",
+        ),
+        harness.deps(),
+        NullStatusWriter(),
+        CostAccumulator(),
+    )
+
+    pre_rebuild_candidates = _candidate_records_for_url(
+        pre_rebuild["evidence_ledger_projection"],
+        RECOVERED_SOURCE_URL,
+    )
+    assert pre_rebuild_candidates
+    for record in pre_rebuild_candidates:
+        assert record.get("final_evidence_eligible") is not True
+        assert record.get("citation_eligible") is not True
+        assert record.get("final_evidence_selected") is not True
+        assert record.get("fact_disposition") == "accepted"
+        assert record.get("eligible_for_stronger_obligation") is True
+        assert record.get("disposition_reason") == (
+            "component_gap_recovery_semantic_binding_validated"
+        )
+    recovered_passages = [
+        item
+        for item in pre_rebuild["all_passages"]
+        if item.get("url") == RECOVERED_SOURCE_URL
+    ]
+    assert recovered_passages
+    for passage in recovered_passages:
+        assert passage["final_evidence_eligible"] == "unknown"
+        assert passage["component_gap_recovery_semantic_coverage_committed"] is True
+        for key in POISONED_AUTHORITY_FIELDS:
+            if key != "final_evidence_eligible":
+                assert key not in passage
+
+    final_candidates = _candidate_records_for_url(
+        captured["run_kernel"].state.evidence_ledger.to_projection().to_dict(),
+        RECOVERED_SOURCE_URL,
+    )
+    assert any(
+        record.get("final_evidence_eligible") is True
+        and record.get("eligible_for_stronger_obligation") is True
+        and record.get("fact_disposition") == "accepted"
+        for record in final_candidates
+    )
+    assert RECOVERED_FACT in repr(captured["packet_handoff"].author_payload)
+    assert RECOVERED_SOURCE_URL in repr(captured["packet_handoff"].author_payload)
+    assert RECOVERED_FACT in harness.author_prompts[0]
+    assert RECOVERED_SOURCE_URL in harness.author_prompts[0]
+    assert RECOVERED_FACT in outcome.report
+    assert "[Source 2]" in outcome.report
+    combined_material = "\n".join(
+        (
+            repr(captured["packet_handoff"].author_payload),
+            harness.author_prompts[0],
+            outcome.report,
+        )
+    )
+    _assert_adapter_authority_markers_absent(combined_material)
+
+
+def test_ag_bal_harden_01_poisoned_adapter_authority_cannot_promote_failed_coverage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness = _PoisonedWeakRecoveryHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(HANDOFF_PACKET,),
+    )
+
+    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+        orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-06-24",
+                session_id="ag-bal-harden-01-poison-weak-session",
+                run_id="ag-bal-harden-01-poison-weak-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+
+    state = captured["run_kernel"].state
+    latest_recovery = state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]["latest"]
+    assert latest_recovery["status"] == "attempted_no_coverage"
+    candidate_projection = state.evidence_ledger.to_projection().to_dict()
+    weak_candidates = _candidate_records_for_url(
+        candidate_projection,
+        "https://secondary.example/deadline",
+    )
+    _assert_recovered_candidate_authority_neutral(weak_candidates)
+    packet_text = repr(state.final_answer_packet)
+    assert "https://secondary.example/deadline" not in packet_text
+    assert harness.author_prompts == []
+    _assert_adapter_authority_markers_absent(packet_text)
 
 
 def test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_observation(
@@ -474,6 +711,11 @@ def test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_obs
     assert semantic_consumption["covered_component_count"] == 1
     assert semantic_consumption["missing_component_count"] == 1
     assert harness.author_prompts == []
+    candidate_records = state.evidence_ledger.to_projection().to_dict()[
+        "candidate_records"
+    ]
+    assert any(record.get("url") == RECOVERED_SOURCE_URL for record in candidate_records)
+    assert RECOVERED_SOURCE_URL not in repr(state.final_answer_packet)
 
 
 def test_ag_bal_01_fast_mode_does_not_invoke_or_record_recovery(
@@ -512,6 +754,31 @@ def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
     )
     assert second.stop_reason == "duplicate_recovery_cycle"
     assert adapter.calls == []
+
+
+def test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _harness, captured = _run_balanced_adapter_absent_path(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    run_kernel = captured["run_kernel"]
+    assert len(run_kernel.state.component_gap_recovery_history) == 1
+    del run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
+
+    adapter = _AdapterSpy()
+    second = execute_authorized_component_gap_recovery(
+        **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
+    )
+
+    assert second.stop_reason == "duplicate_recovery_cycle"
+    assert adapter.calls == []
+    assert len(run_kernel.state.component_gap_recovery_history) == 2
+    recovery_projection = run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
+    assert recovery_projection["history_count"] == 2
+    assert recovery_projection["projection_derived_from_canonical_state"] is True
 
 
 def test_ag_bal_01_multiple_component_gaps_block_before_adapter(
@@ -665,3 +932,25 @@ def test_ag_bal_01_generated_query_metadata_blocks_before_adapter(
 
     assert result.stop_reason == "authorized_query_was_generated"
     assert adapter.calls == []
+
+
+def test_ag_bal_harden_01_structural_guards() -> None:
+    repo = Path(__file__).resolve().parents[1]
+    runtime = (repo / "core" / "component_gap_recovery_runtime.py").read_text()
+    coordinator = (
+        repo / "core" / "component_gap_recovery_coordinator.py"
+    ).read_text()
+    orchestrator_text = (repo / "core" / "pipeline_orchestrator.py").read_text()
+
+    assert "state.projections.get(COMPONENT_GAP_RECOVERY_TRACE_KEY" not in runtime
+    assert "_semantic_mutation_snapshot" not in runtime
+    assert "_restore_semantic_mutation_snapshot" not in runtime
+    assert "offline-fixture" not in runtime
+    assert "offline-recovery-fixture" not in runtime
+    assert 'setdefault("disposition", "accepted")' not in runtime
+    assert "eligible_for_stronger_obligation\", True" not in runtime
+    assert "ComponentGapRecoveryPolicy(" not in orchestrator_text
+    assert "build_component_gap_recovery_evidence_patch" not in orchestrator_text
+    assert "execute_authorized_component_gap_recovery(" not in orchestrator_text
+    assert "Manifest" not in runtime + coordinator
+    assert "Envelope" not in runtime + coordinator
