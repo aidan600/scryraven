@@ -13,8 +13,9 @@ bucket.
 
 Do not add a new test to a permanent bucket manifest until the phase brief or
 PR notes classify it with the fields below. Promotion to `fast_pr`,
-`author_lane`, or `full` must be deliberate, cheap enough for the chosen bucket,
-and tied to the proof class the phase actually claims.
+`semantic_lane`, `semantic_search_lane`, `author_lane`, or `full` must be
+deliberate, cheap enough for the chosen bucket, and tied to the proof class the
+phase actually claims.
 
 ## Bucket Classes
 
@@ -23,6 +24,8 @@ and tied to the proof class the phase actually claims.
 | `docs_only` | No test is added or run by default because only docs, prompts, runbooks, or operator text changed. |
 | `fast_pr` | Cheap broad sentinels for ordinary PR confidence. These are not phase-detail tests. |
 | `phase_focus` | Local phase proof for the exact changed seam and its immediate producer/consumer surface. |
+| `semantic_lane` | Durable semantic producer, reducer, sufficiency, component coverage, and semantic projection validation. Not ordinary PR tax. |
+| `semantic_search_lane` | Durable SearchJudgment and QueryPlan validation for semantic missing assessments and semantic component gaps. Not ordinary PR tax. |
 | `author_lane` | Detailed Author custody coverage and related high-custody workflow tests. |
 | `full` | Complete offline suite. This is not ordinary PR tax. |
 
@@ -49,7 +52,7 @@ Field guidance:
 - **Proof class** must use the proof classes in
   [PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md).
 - **Validation bucket** is one of `docs_only`, `fast_pr`, `phase_focus`,
-  `author_lane`, or `full`.
+  `semantic_lane`, `semantic_search_lane`, `author_lane`, or `full`.
 - **Protected surface guarded** names the custody, contract, authority,
   semantic, or operator surface the test protects.
 - **Runtime/product path guarded** states whether ordinary product execution,
@@ -87,7 +90,7 @@ The following tests normally belong in `phase_focus` first:
 
 Promote one of these to `fast_pr` only when it has become a cheap broad sentinel
 for a runtime-consumed contract. Otherwise keep it as phase-focused proof or
-move it into a domain bucket when a domain lane owns it.
+move it into `semantic_lane` when durable semantic validation owns it.
 
 ## Author Custody Detail
 

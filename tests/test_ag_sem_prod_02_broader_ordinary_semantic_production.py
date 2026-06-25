@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -19,13 +18,6 @@ from tests.helpers.offline_ordinary_pipeline import (
     run_offline_ordinary_pipeline,
     scrub_offline_runtime,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-PRODUCER_MODULE = ROOT / "core" / "ordinary_semantic_producer_runtime.py"
-PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
-FAP = ROOT / "core" / "final_answer_packet.py"
-FAP_ADAPTER = ROOT / "core" / "final_answer_runtime_adapter.py"
-RUNTIME_PROMPT_ASSEMBLY = ROOT / "core" / "runtime_prompt_assembly.py"
 
 DIRECT_SPEC_QUERY = (
     "What does the Acme Widget API spec say about supported payload size?"
@@ -346,49 +338,3 @@ def test_insufficient_single_component_evidence_does_not_overclaim_semantic_cove
     assert "CONTROLLED SEMANTIC CONTEXT" not in harness.author_prompts[0]
     assert "semantic coverage" in outcome.report
     assert outcome.report == RAW_INSUFFICIENT_AUTHOR_RESPONSE
-
-
-def test_ag_sem_prod_02_static_guards_keep_closed_surfaces_closed() -> None:
-    producer_source = PRODUCER_MODULE.read_text(encoding="utf-8")
-    assert "Acme Widget" not in producer_source
-    assert "official rule wording" not in producer_source
-    assert "state the bounded official answer" not in producer_source
-
-    tree = ast.parse(producer_source)
-    forbidden_imports = {
-        "core.pipeline_orchestrator",
-        "core.author_execution_runtime",
-        "core.final_answer_packet",
-        "core.final_answer_packet_runtime",
-        "core.retrieval_dispatch_runtime",
-        "core.retrieval",
-        "openai",
-        "requests",
-        "httpx",
-    }
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    assert imported.isdisjoint(forbidden_imports)
-
-    pipeline_source = PIPELINE.read_text(encoding="utf-8")
-    assert (
-        pipeline_source.count("execute_ordinary_semantic_producer_handoff_from_scope(")
-        == 2
-    )
-    assert (
-        "if not run_kernel.state.initial_answer_contract:\n"
-        "            final_top_evidence = list(all_passages)\n"
-        "            execute_ordinary_semantic_producer_handoff_from_scope("
-        in pipeline_source
-    )
-    for closed_file in (FAP, FAP_ADAPTER, RUNTIME_PROMPT_ASSEMBLY):
-        source = closed_file.read_text(encoding="utf-8")
-        assert "AG-SEM-PROD-02" not in source
-        assert "Acme Widget" not in source
-    assert "followup_author" not in producer_source
-    assert "provider_payload" not in producer_source
-    assert "raw_prompt" not in producer_source

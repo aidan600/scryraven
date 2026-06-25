@@ -24,7 +24,9 @@ are repo files; use repo-visible files and the current phase prompt.
   [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md) and
   [CI_VALIDATION_ERGONOMICS.md](CI_VALIDATION_ERGONOMICS.md). Choose the
   smallest valid bucket, report the exact command, and do not run full pytest
-  unless the phase requires it.
+  unless the phase requires it. Use `semantic_lane` for durable semantic
+  producer/reducer/sufficiency validation and `semantic_search_lane` for
+  SearchJudgment/QueryPlan semantic-gap consumer validation.
 - **Test additions, promotions, demotions, or retirements:** read
   [TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md) and
   [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md). Classify new tests before

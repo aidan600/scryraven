@@ -11,6 +11,8 @@ on:
         options:
           - docs_only
           - fast_pr
+          - semantic_lane
+          - semantic_search_lane
           - author_lane
           - full
   pull_request:
@@ -143,7 +145,7 @@ jobs:
             }
           }
 
-          if ($bucket -notin @("docs_only", "fast_pr", "author_lane", "full")) {
+          if ($bucket -notin @("docs_only", "fast_pr", "semantic_lane", "semantic_search_lane", "author_lane", "full")) {
             throw "Unknown validation bucket: $bucket"
           }
 
@@ -172,6 +174,12 @@ jobs:
             }
             "fast_pr" {
               python scripts/validation/run_bucket.py fast_pr
+            }
+            "semantic_lane" {
+              python scripts/validation/run_bucket.py semantic_lane
+            }
+            "semantic_search_lane" {
+              python scripts/validation/run_bucket.py semantic_search_lane
             }
             "author_lane" {
               python scripts/validation/run_bucket.py author_lane
