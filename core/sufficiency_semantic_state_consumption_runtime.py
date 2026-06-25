@@ -637,6 +637,7 @@ def build_semantic_state_facts_for_sufficiency(
             "accepted_contract_digest": None,
             "required_component_count": 0,
             "covered_component_count": 0,
+            "missing_component_count": 0,
             "component_summaries": [],
             "amendment_summaries": [],
             "blockers": [],
@@ -980,14 +981,16 @@ def build_semantic_state_facts_for_sufficiency(
         summary["blockers"] = amendment_blockers
         amendment_summaries.append(summary)
 
+    covered_component_count = sum(
+        1 for ref in required_refs if latest_coverage.get(_clean_token(ref.get("component_id")) or "")
+    )
     facts_core = {
         "schema_version": SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION,
         "accepted_contract_version": _clean_token(contract.get("accepted_contract_version")),
         "accepted_contract_digest": _clean_token(contract.get("accepted_contract_digest")),
         "required_component_count": len(required_refs),
-        "covered_component_count": sum(
-            1 for ref in required_refs if latest_coverage.get(_clean_token(ref.get("component_id")) or "")
-        ),
+        "covered_component_count": covered_component_count,
+        "missing_component_count": max(0, len(required_refs) - covered_component_count),
         "component_summaries": component_summaries,
         "amendment_summaries": amendment_summaries,
         "blockers": blockers,
@@ -1126,6 +1129,7 @@ def build_semantic_consumption_summary(
         "candidate_new_contract_versions": list(evaluated.candidate_new_contract_versions),
         "required_component_count": int(facts.get("required_component_count") or 0),
         "covered_component_count": int(facts.get("covered_component_count") or 0),
+        "missing_component_count": int(facts.get("missing_component_count") or 0),
         "amendment_admission_count": len(_list(facts.get("amendment_summaries"))),
     }
     semantic_ref_projection = _safe_semantic_ref_projection(facts.get("semantic_ref_projection"))
@@ -1156,6 +1160,7 @@ def build_semantic_state_facts_summary(
         "blocker_codes": list(blocker_codes),
         "required_component_count": int(facts.get("required_component_count") or 0),
         "covered_component_count": int(facts.get("covered_component_count") or 0),
+        "missing_component_count": int(facts.get("missing_component_count") or 0),
         "amendment_admission_count": len(_list(facts.get("amendment_summaries"))),
     }
 
