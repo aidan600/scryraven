@@ -46,6 +46,8 @@ def offline_balanced_run_config(
     current_date: str,
     session_id: str,
     run_id: str,
+    cap_policy: Any | None = None,
+    smart_search_judgment_model: bool = False,
 ) -> RunConfig:
     return RunConfig(
         query=query,
@@ -61,8 +63,9 @@ def offline_balanced_run_config(
         or_api_key="",
         use_reasoning=False,
         run_authority_contract_smart_model=False,
-        run_authority_search_judgment_smart_model=False,
+        run_authority_search_judgment_smart_model=smart_search_judgment_model,
         run_authority_sufficiency_smart_model=False,
+        cap_policy=cap_policy,
     )
 
 
@@ -313,6 +316,8 @@ def run_offline_ordinary_pipeline(
     session_id: str,
     run_id: str,
     capture_stages: Sequence[str],
+    cap_policy: Any | None = None,
+    smart_search_judgment_model: bool = False,
 ) -> tuple[dict[str, Any], Any]:
     captured = install_handoff_capture(monkeypatch, capture_stages=capture_stages)
     outcome = orchestrator.run_pipeline(
@@ -321,6 +326,8 @@ def run_offline_ordinary_pipeline(
             current_date=current_date,
             session_id=session_id,
             run_id=run_id,
+            cap_policy=cap_policy,
+            smart_search_judgment_model=smart_search_judgment_model,
         ),
         harness.deps(),
         NullStatusWriter(),

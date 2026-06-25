@@ -520,6 +520,9 @@ def build_post_author_output_packaging_from_scope(
         "final_output_metadata": final_output_metadata,
         "output_word_count": final_output_metadata["output_word_count"],
     }
+    v["cap_enforcement_trace"] = dict(
+        runtime_values_with_optional.get("cap_enforcement_trace") or {}
+    )
     execution_trace = build_execution_trace_projection(v)
     runtime_trace_export_attachment = attach_runtime_trace_export_compatibility_payloads(
         execution_trace,

@@ -531,6 +531,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         config.run_authority_sufficiency_smart_model
     )
     current_date = config.current_date
+    cap_policy = config.cap_policy
 
     a5_provider_override: list[str] | None = None
     if config.provider_override:
@@ -573,6 +574,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             kw.update(supported_diagnostic_kwargs(base, diagnostic_kw))
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
+            if cap_policy is not None:
+                kw.update(
+                    supported_diagnostic_kwargs(base, {"cap_policy": cap_policy})
+                )
+            if cap_policy is not None:
+                cap_policy.mark_search_dispatch()
             return base(*args, **kw)
         return wrapped
 
@@ -588,6 +595,19 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             kw.setdefault("cost_accumulator", accumulator)
             kw.setdefault("cost_phase", phase)
             return base(*args, **kw)
+        return wrapped
+
+    def _cap_model_phase(base: Any, phase: str) -> Any:
+        if cap_policy is None:
+            return base
+
+        def wrapped(*args: Any, **kw: Any) -> Any:
+            if phase == "author":
+                cap_policy.mark_author_model_call()
+            elif phase == "search_judgment":
+                cap_policy.mark_smart_search_judgment_model_call()
+            return base(*args, **kw)
+
         return wrapped
 
     ask_model = _ask()
@@ -2129,24 +2149,32 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                 and should_retry_retrieval(utilization_pre_retry)
                 and not retrieval_retry_used
             ):
-                rqs = build_disambiguation_queries(
-                    query, core_topic, primary_entity, query_type, current_date
-                )
-                rqs = query_authority.finalize_disambiguation(rqs)
-                if rqs:
-                    disambiguation_queries_by_iteration[iteration] = list(rqs)
-                    status.step("Low match to the main subject; trying disambiguation searches\u2026")
-                    retrieval_retry_used = True
-                    retry_outcome = execute_disambiguation_retry_from_scope(
-                        locals(),
-                        queries=rqs,
-                        retrieval_pass_records=retrieval_pass_records,
+                if (
+                    cap_policy is not None
+                    and cap_policy.should_disable_utilization_retry()
+                ):
+                    cap_policy.record_fact("utilization_retry_disabled_by_cap_policy")
+                else:
+                    rqs = build_disambiguation_queries(
+                        query, core_topic, primary_entity, query_type, current_date
                     )
-                    retry_passages = retry_outcome.passages
-                    total_urls_fetched += retry_outcome.seen_url_delta
-                    total_chunks_embedded += retry_outcome.chunk_delta
-                    past_searches.extend(rqs)
-                    to_merge = to_merge + retry_passages
+                    rqs = query_authority.finalize_disambiguation(rqs)
+                    if rqs:
+                        if cap_policy is not None:
+                            cap_policy.mark_retry()
+                        disambiguation_queries_by_iteration[iteration] = list(rqs)
+                        status.step("Low match to the main subject; trying disambiguation searches\u2026")
+                        retrieval_retry_used = True
+                        retry_outcome = execute_disambiguation_retry_from_scope(
+                            locals(),
+                            queries=rqs,
+                            retrieval_pass_records=retrieval_pass_records,
+                        )
+                        retry_passages = retry_outcome.passages
+                        total_urls_fetched += retry_outcome.seen_url_delta
+                        total_chunks_embedded += retry_outcome.chunk_delta
+                        past_searches.extend(rqs)
+                        to_merge = to_merge + retry_passages
             u_post = utilization_rate(to_merge, _ent) if _ent else 1.0
             utilization_rate_val = u_post
             _low_ent_match = (
@@ -2951,7 +2979,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             _search_judgment_action,
             judgment_input=_search_judgment_input,
             ask_model=(
-                ask_model if run_authority_search_judgment_smart_model else None
+                _cap_model_phase(ask_model, "search_judgment")
+                if run_authority_search_judgment_smart_model
+                else None
             ),
             clean_json_response=deps.clean_json_response,
             smart_model_enabled=run_authority_search_judgment_smart_model,
@@ -3749,7 +3779,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_execution_handoff = execute_author_handoff_from_scope(
         run_kernel,
         locals(),
-        ask_model=ask_model,
+        ask_model=_cap_model_phase(ask_model, "author"),
         system_prompt_registry=DEFAULT_SYSTEM,
         base_url=local_url,
         api_key=or_api_key,
@@ -3937,6 +3967,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     for trace_field_fragment in post_author_trace_packaging.trace_field_fragments:
         _run_controller_mirror.state.trace_fields.update(trace_field_fragment)
 
+    cap_enforcement_trace = (
+        cap_policy.to_trace_fragment()["run_cap_enforcement"]
+        if cap_policy is not None
+        else {}
+    )
     post_author_output_packaging = build_post_author_output_packaging_from_scope(
         locals(),
         trace_packaging=post_author_trace_packaging,

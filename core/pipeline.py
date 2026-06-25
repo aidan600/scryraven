@@ -2701,6 +2701,7 @@ def process_search_queries(
     iteration: int | None = None,
     prior_queries_for_similarity: list[str] | None = None,
     query_similarity_basis: str | None = None,
+    cap_policy: Any | None = None,
 ):
     if search_providers is None:
         search_providers = ["tavily"]
@@ -2941,7 +2942,12 @@ def process_search_queries(
     if to_fetch:
         status_container.write(f"Selectively fetching {len(to_fetch)} high-credibility pages...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            fetched_results = list(executor.map(fetch_page, enumerate(to_fetch, 1)))
+            futures = []
+            for item in enumerate(to_fetch, 1):
+                if cap_policy is not None:
+                    cap_policy.mark_fetch_read_operation()
+                futures.append(executor.submit(fetch_page, item))
+            fetched_results = [future.result() for future in futures]
         docs = [d for d in fetched_results if d is not None]
         for doc in docs:
             _tier_snip = (doc.get("text") or "")[:2000]

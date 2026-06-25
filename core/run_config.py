@@ -59,6 +59,9 @@ class RunConfig:
     # Optional Streamlit hook: receives the author's token stream iterator (same-thread).
     author_stream_display: Callable[[Any], Any] | None = None
 
+    # Optional bounded-validation policy. None preserves ordinary CLI/UI behavior.
+    cap_policy: Any | None = None
+
 
 @dataclass
 class RunDeps:
