@@ -13,8 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.validation_profiles import validation_profile_names  # noqa: E402
 from scripts.ag_live_bound_01_support import (  # noqa: E402
     DEFAULT_OUTPUT,
+    DEFAULT_PROFILE_NAME,
     LIVE_PACKET_CAP_OVERFLOW,
     LIVE_PACKET_PIPELINE_FAILURE,
     LIVE_PACKET_PRECHECK_FAILURE,
@@ -41,10 +43,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        caps = validate_caps_requested(_caps_from_args(args))
+        caps = validate_caps_requested(
+            _caps_from_args(args),
+            profile_name=args.profile,
+        )
         output_path = resolve_output_path(ROOT, args.output)
         context = build_preflight_context(
             root=ROOT,
+            profile_name=args.profile,
             query=args.query,
             mode=args.mode,
             include_domains=parse_domains(args.include_domains),
@@ -381,6 +387,15 @@ def _parser() -> argparse.ArgumentParser:
             "Dry-run-first bounded ordinary product runner for AG-LIVE-BOUND-01. "
             "Confirmed live execution runs ordinary run_pipeline() once with "
             "RunConfig.cap_policy."
+        ),
+    )
+    parser.add_argument(
+        "--profile",
+        default=DEFAULT_PROFILE_NAME,
+        choices=validation_profile_names(),
+        help=(
+            "Validation profile/spec to consume "
+            f"(default: {DEFAULT_PROFILE_NAME})."
         ),
     )
     parser.add_argument(

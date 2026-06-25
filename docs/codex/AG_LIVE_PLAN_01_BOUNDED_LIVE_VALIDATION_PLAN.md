@@ -1,22 +1,50 @@
 # AG-LIVE-PLAN-01 Bounded Live Product Validation Plan
 
-Status: planning/readiness audit only. No live provider, model, search,
-retrieval, fetch/read, broker, `.env`, private adapter, DB/cache, private log,
-raw prompt, raw model response, or raw provider payload access was used.
+Status: planning/readiness audit plus reusable validation-profile substrate. No
+live provider, model, search, retrieval, fetch/read, broker, `.env`, private
+adapter, DB/cache, private log, raw prompt, raw model response, or raw provider
+payload access was used for the profile-substrate update.
 
-Proof class: `docs_only` plus live-readiness audit.
+Proof class: `offline_product_path_proof` for profile consumption and broker
+request shaping; no live proof.
 
-Actual app delta: none.
+Actual app delta: the bounded direct-human runner and tracked broker client can
+target a shared product-owned validation profile/cap/packet schema instead of
+runner-owned doctrine.
+
+## Validation Profiles
+
+Reusable live/component validation profile authority now lives in:
+
+```text
+core/validation_profiles.py
+```
+
+The product-owned profile registry defines shared query/domain/mode constraints,
+`RunConfig.cap_policy` values, retention posture, packet schema, expected packet
+criteria, allowed invocation modes, and live/no-live status for:
+
+| Profile | Purpose | Current live status |
+| --- | --- | --- |
+| `AG-LIVE-SMOKE` | Can one bounded live product run complete? | Succeeded once by direct human private shell after local env was loaded into process env. |
+| `AG-LIVE-SOURCE-CUSTODY` | Can an official-doc fact be fetched/read/admitted into custody? | Not run. |
+| `AG-LIVE-MULTI-COMPONENT` | Can two answer components map to obligations, evidence bindings, and packet-owned Author material? | Not run. |
+| `AG-LIVE-DISAMBIG` | Can ambiguous entities/components produce explicit disambiguation/search work without hidden provider or routing changes? | Not run. |
+
+The successful #304 local private-shell run is classifiable as
+`AG-LIVE-SMOKE` only. It is not sufficient proof for source custody,
+multi-component binding, or disambiguation.
 
 ## Go/No-Go Decision
 
-AG-LIVE-BOUND-01 is **not ready to run** from the current repo-visible product
-entrypoints.
+Historical pre-#304 decision: AG-LIVE-BOUND-01 was **not ready to run** from the
+then-current repo-visible product entrypoints.
 
-Entrypoint classification: **E. no safe product-live entrypoint exists yet**.
-
-The ordinary CLI, `python -m proplex`, does call ordinary `run_pipeline()`, but
-it is not a safe AG-LIVE-BOUND-01 entrypoint because it:
+Current profile-substrate status: #304's bounded product runner remains the
+direct-human trusted-local-operator runner and now consumes `AG-LIVE-SMOKE` from
+`core/validation_profiles.py`. The ordinary CLI, `python -m proplex`, still
+does call ordinary `run_pipeline()`, but it is not the AG-LIVE validation
+entrypoint because it:
 
 - loads local dotenv state before command execution;
 - has no single-run sanitized validation packet writer;
@@ -53,6 +81,7 @@ Future bridge command shape:
 
 ```powershell
 py scripts\ag_live_bound_01_bounded_product_runner.py `
+  --profile AG-LIVE-SMOKE `
   --query "According to the official Python 3 documentation, what are the default values for rel_tol and abs_tol in math.isclose()?" `
   --mode Balanced `
   --include-domains docs.python.org `
@@ -75,19 +104,24 @@ would require provider routing/depth/query/citation/Author changes.
 ## Broker Boundary
 
 The repo-visible broker path is suitable for requesting allowlisted local jobs
-and receiving sanitized broker responses. It is not currently proven as a
-product-path executor.
+and receiving sanitized broker responses. It now sends an approved validation
+profile request shape derived from `core/validation_profiles.py`; private broker
+implementation remains outside the repo.
 
 - The broker is proven for a sanitized client boundary plus component/discovery
   shapes, including provider discovery and Author-lane smoke.
-- The visible broker template does not expose a real ordinary `run_pipeline()`
-  job that enforces AG-LIVE-BOUND-01 caps.
-- A live product path would need model credentials and search/fetch provider
-  credentials outside the Author adapter surface.
-- Codex should not run AG-LIVE-BOUND-01 through the broker today.
-- After AG-LIVE-BRIDGE-01, the user should run the live command manually from a
-  private shell or through an allowlisted broker job that returns only the
-  sanitized packet.
+- The tracked client does not accept arbitrary commands and does not load
+  `.env`.
+- A private broker may map an allowlisted `job_id` to the approved product
+  entrypoint and profile request, load private credentials there, enforce a
+  one-run fuse, and return sanitized packet/results only.
+- The broker must not own provider policy, provider routing/depth/order, query
+  generation, retrieval ranking/filtering, citation policy, semantic
+  sufficiency, Author behavior, or product answer policy.
+- Codex/tool-side live invocation should use the broker path, not direct `.env`
+  or provider credential access.
+- Direct human/private-shell runs remain trusted-local-operator only and must
+  target the same profile/cap/packet schema.
 
 ## Query Candidates
 

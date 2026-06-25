@@ -13,6 +13,12 @@ The tracked client is:
 scripts/request_live_validation_broker.py
 ```
 
+The product-owned validation profile registry is:
+
+```text
+core/validation_profiles.py
+```
+
 It is a request client only. The private broker, provider credentials, local
 environment, provider payloads, raw snippets, page text, private logs, cache
 rows, DB rows, and full traces remain outside the repository.
@@ -60,21 +66,47 @@ http://127.0.0.1:8765/run
 Required inputs:
 
 - `--job-id`;
+- `--profile`, defaulting to `AG-LIVE-SMOKE`;
 - a token from `--token` or `SCRYRAVEN_BROKER_TOKEN`;
 - `--confirm-live-provider-call`.
 
-Before the POST, the client prints:
+Before the POST, the client prints the selected profile's bounded live budget.
+For the default `AG-LIVE-SMOKE` profile, that looks like:
 
 ```text
-This request may spend one live provider/search call if accepted by the broker.
+This request may spend the selected validation profile's bounded provider/model/search/fetch/read budget if accepted by the broker.
+Selected validation profile budget: profile=AG-LIVE-SMOKE, max_scryraven_runs=1, max_search_dispatches=2, max_fetch_read_operations=3, max_author_model_calls=1, max_smart_search_judgment_model_calls=0, max_retries=0
 ```
+
+Those cap values are profile/spec-owned, not global broker limits. Future
+approved profiles may carry different caps, and the broker should enforce the
+selected request's approved budget/fuse without inventing product policy.
 
 The POST body is:
 
 ```json
 {
   "job_id": "allowlisted-job-id",
-  "confirm_live": true
+  "confirm_live": true,
+  "request_kind": "approved_validation_profile",
+  "profile_request": {
+    "validation_profile": "AG-LIVE-SMOKE",
+    "approved_product_entrypoint": "scripts/ag_live_bound_01_bounded_product_runner.py",
+    "query_constraints": {
+      "intent": "official Python documentation exact API defaults smoke query",
+      "primary_query": "...",
+      "backup_query": "...",
+      "mode": "Balanced",
+      "include_domains": ["docs.python.org"]
+    },
+    "cap_policy": {
+      "surface": "RunConfig.cap_policy",
+      "values": {"max_scryraven_runs": 1}
+    },
+    "retention_posture": "sanitized_packet_only_with_ordinary_retention_suppressed",
+    "packet_schema": "ag_live_bound_01_bounded_product_runner_v1",
+    "expected_packet_criteria": ["..."]
+  }
 }
 ```
 
@@ -82,6 +114,12 @@ The token is sent only as the `X-ScryRaven-Broker-Token` header. The client does
 not print the token. HTTP 4xx/5xx broker JSON is printed as broker-provided
 sanitized JSON and exits nonzero. Non-JSON broker responses are replaced with a
 small local error object instead of printing response text.
+
+The broker remains responsible for credentialed private-shell invocation,
+private `.env` loading, one-run fuse enforcement, and returning sanitized
+results only. The broker must not own provider policy, routing/depth/order,
+query generation, retrieval ranking/filtering, citation policy, semantic
+sufficiency, Author behavior, or product answer policy.
 
 ## Permission Profile Example
 
@@ -124,6 +162,7 @@ Example command shape:
 $env:SCRYRAVEN_BROKER_TOKEN = "<one-shot broker token>"
 py scripts\request_live_validation_broker.py `
   --job-id ag96i3d0-official-current-once `
+  --profile AG-LIVE-SMOKE `
   --confirm-live-provider-call `
   --output output\ag96i3d0_broker_response.json
 ```
