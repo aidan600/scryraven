@@ -39,6 +39,11 @@ from core.author_execution_runtime import execute_author_handoff_from_scope
 from core.authoritative_source_action_orchestrator_adapter import (
     build_authoritative_source_action_orchestrator_handoff,
 )
+from core.component_gap_recovery_runtime import (
+    ComponentGapRecoveryPolicy,
+    build_component_gap_recovery_evidence_patch,
+    execute_authorized_component_gap_recovery,
+)
 from core.conflict_resolution_controller import (
     ConflictResolutionDecision,
     conflict_resolution_lifecycle_defaults,
@@ -3588,6 +3593,73 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         measure_context_stage=_measure_context_stage,
     )
     sufficiency_judgment_projection = sufficiency_handoff.projection
+
+    component_gap_recovery_policy = ComponentGapRecoveryPolicy(
+        policy_label="balanced_single_cycle_offline",
+        requested_mode=strategy,
+        allowed_requested_modes=("Balanced",),
+        max_cycles=1,
+        offline_only=True,
+        existing_candidate_query_only=True,
+        model_generated_query_text_allowed=False,
+        provider_live_calls_allowed=False,
+        accepted_amendments_allowed=False,
+        deep_reconciliation_allowed=False,
+    )
+    component_gap_recovery_result = execute_authorized_component_gap_recovery(
+        run_kernel=run_kernel,
+        policy=component_gap_recovery_policy,
+        query_plan_trace=query_authority.to_trace_fragment(),
+        search_judgment_projection=search_judgment_projection,
+        evidence_ledger_projection=evidence_ledger_projection,
+        search_work_projection=run_kernel.state.projections.get(
+            SEARCH_WORK_SHADOW_LANE_TRACE_KEY
+        ),
+        offline_recovery_adapter=deps.component_gap_recovery_adapter,
+        runtime_context={
+            "query": query,
+            "intent": intent,
+            "complexity": complexity,
+            "search_depth": search_depth,
+            "results_per_query": results_per_query,
+        },
+        seen_urls=seen_urls,
+    )
+    if component_gap_recovery_result.recovered:
+        component_gap_recovery_evidence_patch = (
+            build_component_gap_recovery_evidence_patch(
+                result=component_gap_recovery_result,
+                all_passages=all_passages,
+                final_top_evidence=final_top_evidence,
+                author_evidence=author_evidence,
+                unique_source_urls=unique_source_urls,
+            )
+        )
+        all_passages = list(component_gap_recovery_evidence_patch.all_passages)
+        final_top_evidence = list(
+            component_gap_recovery_evidence_patch.final_top_evidence
+        )
+        author_evidence = list(component_gap_recovery_evidence_patch.author_evidence)
+        unique_source_urls = component_gap_recovery_evidence_patch.unique_source_urls
+        evidence_ledger_projection = dict(
+            component_gap_recovery_result.evidence_ledger_projection
+            or evidence_ledger_projection
+        )
+        sufficiency_handoff = execute_sufficiency_judgment_handoff_from_scope(
+            run_kernel,
+            locals(),
+            ask_model=ask_model if run_authority_sufficiency_smart_model else None,
+            clean_json_response=deps.clean_json_response,
+            smart_model_enabled=run_authority_sufficiency_smart_model,
+            provider=smart_provider,
+            model=smart_model,
+            base_url=local_url,
+            api_key=or_api_key,
+            effort="high",
+            use_reasoning=use_reasoning,
+            measure_context_stage=_measure_context_stage,
+        )
+        sufficiency_judgment_projection = sufficiency_handoff.projection
 
     status.update("Writing final report...")
 

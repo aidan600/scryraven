@@ -98,6 +98,9 @@ class RunDeps:
     policy_state_path: Any           # Path
     policy_journal_path: Any         # Path
 
+    # Optional offline-only adapter for authorized component-gap recovery.
+    component_gap_recovery_adapter: Callable[..., Any] | None = None
+
 
 @dataclass
 class RunOutcome:
