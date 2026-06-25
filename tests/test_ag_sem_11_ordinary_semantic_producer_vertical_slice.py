@@ -14,6 +14,7 @@ from core.ordinary_semantic_producer_runtime import (
     SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
     SKIP_REASON_BINDABLE_PASSAGE_MISSING,
     SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
+    SKIP_REASON_COMPONENT_CAP_EXCEEDED,
     SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
     SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
     SKIP_REASON_MULTIPART_ASSESSMENT,
@@ -21,6 +22,7 @@ from core.ordinary_semantic_producer_runtime import (
     SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
     SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
     OrdinarySemanticProducerBundle,
+    OrdinarySemanticProducerComponentBundle,
     OrdinarySemanticProducerHandoffStatus,
     OrdinarySemanticProducerPreflightResult,
     OrdinarySemanticProducerTransactionError,
@@ -314,6 +316,7 @@ def test_static_guard_skip_reasons_remain_return_only_in_core() -> None:
         SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
         SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
         SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
+        SKIP_REASON_COMPONENT_CAP_EXCEEDED,
         SKIP_REASON_PREFLIGHT_FAILED,
         SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
         SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
@@ -399,11 +402,16 @@ def test_transactional_handoff_raises_on_mid_chain_failure() -> None:
     }
     bundle = OrdinarySemanticProducerBundle(
         question_meaning_record=_FakeRecord("qmr:test", "d" * 64),
-        semantic_observation=_FakeObservation("observation:test", "e" * 64),
-        sanitized_content_references=(),
-        component_coverage_record=_FakeRecord("coverage:test", "f" * 64),
+        component_bundles=(
+            OrdinarySemanticProducerComponentBundle(
+                answer_component_id="component:test",
+                semantic_observation=_FakeObservation("observation:test", "e" * 64),
+                sanitized_content_references=(),
+                component_coverage_record=_FakeRecord("coverage:test", "f" * 64),
+                dry_run_admission_projection={},
+            ),
+        ),
         dry_run_accepted_contract={},
-        dry_run_admission_projection={},
     )
     scope = {
         "query": AG_CHECK_01_QUERY,
@@ -425,7 +433,7 @@ def test_transactional_handoff_raises_on_mid_chain_failure() -> None:
                 execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
 
 
-def test_unit_multipart_assessment_skips_qmr_build() -> None:
+def test_unit_multipart_assessment_builds_bounded_component_qmr() -> None:
     records = build_deterministic_search_work_runtime_records(
         DeterministicSearchWorkRuntimeInput(
             contract_id="ag-sem-11b-multipart",
@@ -446,7 +454,12 @@ def test_unit_multipart_assessment_skips_qmr_build() -> None:
         query=MULTIPART_QUERY,
         requested_mode="Balanced",
     )
-    assert qmr is None
+    assert qmr is not None
+    assert len(qmr.answer_components) == len(records.query_shape_assessment.component_candidates)
+    assert len(qmr.answer_components) <= 5
+    assert len({component.component_id for component in qmr.answer_components}) == len(
+        qmr.answer_components
+    )
     preflight = preflight_ordinary_semantic_producer_bundle(
         search_work_plan={
             "metadata": {
@@ -463,7 +476,7 @@ def test_unit_multipart_assessment_skips_qmr_build() -> None:
         requested_mode="Balanced",
     )
     assert preflight.bundle is None
-    assert preflight.skipped_reason == SKIP_REASON_MULTIPART_ASSESSMENT
+    assert preflight.skipped_reason == SKIP_REASON_BINDABLE_PASSAGE_MISSING
 
 
 def test_unit_stale_readable_candidate_is_not_bindable() -> None:
@@ -565,7 +578,7 @@ def test_query_shape_classifier_unavailable_skips_without_orphan_state(
     assert_no_semantic_state(kernel)
 
 
-def test_multipart_assessment_skips_without_orphan_state(
+def test_multipart_assessment_can_commit_bounded_component_subset(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -574,9 +587,12 @@ def test_multipart_assessment_skips_without_orphan_state(
     scope = dict(scope)
     scope["query"] = MULTIPART_QUERY
     result = execute_ordinary_semantic_producer_handoff_from_scope(kernel, scope)
-    assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
-    assert result.skipped_reason == SKIP_REASON_MULTIPART_ASSESSMENT
-    assert_no_semantic_state(kernel)
+    assert result.status is OrdinarySemanticProducerHandoffStatus.COMMITTED
+    component_refs = kernel.state.initial_answer_contract["accepted_answer_component_refs"]
+    assert len(component_refs) >= 2
+    assert kernel.state.semantic_observation_admission_history
+    assert kernel.state.component_coverage_history
+    assert len(kernel.state.component_coverage_history) <= len(component_refs)
 
 
 def _mutate_bound_candidate_in_projection(

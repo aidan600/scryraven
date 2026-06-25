@@ -2,8 +2,9 @@
 
 Builds passive AG-SEM-01..03 proposals from ordinary offline runtime facts and
 commits them transactionally through existing AG-SEM-05/06/07 reducers
-immediately before RunAuthority Sufficiency. Partial canonical semantic state is
-prevented by preflight only; this module does not perform compensating mutation.
+immediately before RunAuthority Sufficiency. AG-SEM-MULTI-01 extends the
+producer to a bounded loop over deterministic answer-component candidates while
+leaving all final readiness decisions to Sufficiency.
 """
 
 from __future__ import annotations
@@ -73,10 +74,12 @@ from core.semantic_observation_foundation import (
 
 ORDINARY_SEMANTIC_PRODUCER_SCHEMA_VERSION = "ordinary_semantic_producer_ag_sem_11_v1"
 ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION = "ag-sem-11-query-shape-seeded"
+ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP = 5
 _PREFLIGHT_ACTION_ID = "preflight:ag-sem-11-ordinary-semantic-producer"
 
 SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE = "query_shape_classifier_unavailable"
 SKIP_REASON_MULTIPART_ASSESSMENT = "multipart_assessment"
+SKIP_REASON_COMPONENT_CAP_EXCEEDED = "component_cap_exceeded"
 SKIP_REASON_BINDABLE_PASSAGE_MISSING = "bindable_passage_missing"
 SKIP_REASON_CONTRACT_PREFLIGHT_FAILED = "contract_preflight_failed"
 SKIP_REASON_ADMISSION_PREFLIGHT_FAILED = "admission_preflight_failed"
@@ -108,13 +111,39 @@ class BindableFinalPassage:
 
 
 @dataclass(frozen=True, slots=True)
-class OrdinarySemanticProducerBundle:
-    question_meaning_record: QuestionMeaningRecord
+class OrdinarySemanticProducerComponentBundle:
+    answer_component_id: str
     semantic_observation: SemanticObservation
     sanitized_content_references: tuple[SanitizedContentReference, ...]
     component_coverage_record: ComponentCoverageRecord
-    dry_run_accepted_contract: dict[str, Any]
     dry_run_admission_projection: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class OrdinarySemanticProducerBundle:
+    question_meaning_record: QuestionMeaningRecord
+    component_bundles: tuple[OrdinarySemanticProducerComponentBundle, ...]
+    dry_run_accepted_contract: dict[str, Any]
+
+    @property
+    def semantic_observation(self) -> SemanticObservation:
+        return self.component_bundles[0].semantic_observation
+
+    @property
+    def sanitized_content_references(self) -> tuple[SanitizedContentReference, ...]:
+        return tuple(
+            ref
+            for component_bundle in self.component_bundles
+            for ref in component_bundle.sanitized_content_references
+        )
+
+    @property
+    def component_coverage_record(self) -> ComponentCoverageRecord:
+        return self.component_bundles[0].component_coverage_record
+
+    @property
+    def dry_run_admission_projection(self) -> dict[str, Any]:
+        return self.component_bundles[0].dry_run_admission_projection
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,8 +236,8 @@ def _semantic_slot_for_component(
     route_facts: Mapping[str, Any],
 ) -> SemanticSlot:
     topic = (
-        _clean_text(route_facts.get("core_topic"), limit=220)
-        or _clean_text(component.user_facing_subquestion, limit=220)
+        _clean_text(component.user_facing_subquestion, limit=220)
+        or _clean_text(route_facts.get("core_topic"), limit=220)
         or "primary topic"
     )
     return SemanticSlot(
@@ -276,6 +305,26 @@ def _direct_source_obligation_label(obligation_ids: Sequence[str]) -> str:
     return "source-bound"
 
 
+def _component_matching_text(component: AnswerComponentContract) -> str:
+    text = _clean_text(component.user_facing_question, limit=300) or (
+        _clean_text(component.user_facing_label, limit=200) or ""
+    )
+    lowered = text.casefold()
+    marker = " say about "
+    if marker in lowered:
+        text = text[lowered.index(marker) + len(marker) :]
+    lowered = text.casefold()
+    for prefix in ("answer the ",):
+        if lowered.startswith(prefix):
+            text = text[len(prefix) :]
+            break
+    lowered = text.casefold()
+    suffix = " component."
+    if lowered.endswith(suffix):
+        text = text[: -len(suffix)]
+    return _clean_text(text, limit=300) or component.component_id
+
+
 def build_question_meaning_record_from_search_work_plan(
     *,
     assessment: QueryShapeAssessment,
@@ -286,11 +335,20 @@ def build_question_meaning_record_from_search_work_plan(
     query: str,
     requested_mode: str,
 ) -> QuestionMeaningRecord | None:
-    if len(assessment.component_candidates) != 1:
+    component_candidates = tuple(assessment.component_candidates)
+    if not component_candidates or len(component_candidates) > ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP:
         return None
-    candidate = assessment.component_candidates[0]
-    slot = _semantic_slot_for_component(component=candidate, route_facts=route_facts)
-    component = _answer_component_from_candidate(candidate, semantic_slot_ids=(slot.slot_id,))
+    slots: list[SemanticSlot] = []
+    components: list[AnswerComponentContract] = []
+    for candidate in component_candidates:
+        slot = _semantic_slot_for_component(component=candidate, route_facts=route_facts)
+        slots.append(slot)
+        components.append(
+            _answer_component_from_candidate(
+                candidate,
+                semantic_slot_ids=(slot.slot_id,),
+            )
+        )
     intent = (
         _clean_text(route_facts.get("intent"), limit=200)
         or _clean_text(query, limit=200)
@@ -304,12 +362,16 @@ def build_question_meaning_record_from_search_work_plan(
         request_digest=_request_digest(query=query, run_id=run_id),
         requested_mode=_clean_token(requested_mode) or "balanced",
         intent=intent,
-        requested_output="Concise evidence-bound answer for the primary component.",
-        semantic_slots=(slot,),
-        answer_components=(component,),
+        requested_output="Concise evidence-bound answer for the required components.",
+        semantic_slots=tuple(slots),
+        answer_components=tuple(components),
         assessment=assessment,
         resolver_version=ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION,
-        metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
+        metadata={
+            "phase": "AG-SEM-MULTI-01",
+            "ordinary_semantic_producer": True,
+            "bounded_component_cap": ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP,
+        },
     ).require_valid()
 
 
@@ -392,14 +454,172 @@ def select_bindable_final_passage(
     return None
 
 
+def _token_overlap_score(
+    *,
+    component_ref: Mapping[str, Any],
+    bindable: BindableFinalPassage,
+    component_text: str | None = None,
+) -> int:
+    label_text = (
+        component_text
+        or " ".join(
+            str(value or "")
+            for value in (
+                component_ref.get("user_facing_label"),
+                component_ref.get("user_facing_question"),
+            )
+        )
+    ).casefold()
+    passage_text = " ".join(
+        str(value or "")
+        for value in (
+            bindable.passage.get("title"),
+            bindable.passage.get("text"),
+        )
+    ).casefold()
+    tokens = {
+        token.strip(".,:;!?()[]")
+        for token in label_text.split()
+        if len(token.strip(".,:;!?()[]")) >= 4
+    }
+    return sum(1 for token in tokens if token and token in passage_text)
+
+
+def _bindable_final_passages(
+    final_top_evidence: Sequence[Mapping[str, Any]],
+    evidence_ledger_projection: Mapping[str, Any],
+) -> tuple[BindableFinalPassage, ...]:
+    if not final_top_evidence:
+        return ()
+    bindables: list[BindableFinalPassage] = []
+    candidate_index = _ledger_candidate_index(evidence_ledger_projection)
+    for index, raw_passage in enumerate(final_top_evidence, start=1):
+        if not isinstance(raw_passage, Mapping):
+            continue
+        passage = dict(raw_passage)
+        bounded_text = _clean_text(passage.get("text"), limit=MAX_BOUNDED_TEXT_CHARS)
+        if not bounded_text:
+            continue
+        candidate_id = _passage_candidate_id(passage, index=index)
+        if not candidate_id:
+            continue
+        candidate = candidate_index.get(candidate_id)
+        if candidate is None:
+            url = _normalize_url(passage.get("url"))
+            if url:
+                candidate = candidate_index.get(url)
+        if candidate is None or not _candidate_is_bindable(candidate, passage=passage):
+            continue
+        evidence_ref_id = _clean_token(candidate.get("candidate_id")) or candidate_id
+        bindables.append(
+            BindableFinalPassage(
+                passage=passage,
+                evidence_ref_id=evidence_ref_id,
+                candidate_record=dict(candidate),
+            )
+        )
+    return tuple(bindables)
+
+
+def select_bindable_final_passages_for_components(
+    final_top_evidence: Sequence[Mapping[str, Any]],
+    evidence_ledger_projection: Mapping[str, Any],
+    component_refs: Sequence[Mapping[str, Any]],
+    component_text_by_id: Mapping[str, str] | None = None,
+) -> dict[str, BindableFinalPassage]:
+    bindables = _bindable_final_passages(final_top_evidence, evidence_ledger_projection)
+    if not bindables:
+        return {}
+    obligation_signatures = [
+        tuple(
+            obligation_id
+            for obligation_id in (
+                _clean_token(item)
+                for item in (
+                    ref.get("source_obligation_candidate_ids")
+                    or ref.get("source_obligation_candidate_refs")
+                    or ()
+                )
+            )
+            if obligation_id
+        )
+        for ref in component_refs
+        if isinstance(ref, Mapping)
+    ]
+    shared_obligation_shape = len(component_refs) > 1 and len(set(obligation_signatures)) < len(component_refs)
+    used_evidence_refs: set[str] = set()
+    selected: dict[str, BindableFinalPassage] = {}
+    for component_ref in component_refs:
+        component_id = _clean_token(component_ref.get("component_id"))
+        if not component_id:
+            continue
+        obligation_ids = tuple(
+            obligation_id
+            for obligation_id in (
+                _clean_token(item)
+                for item in (
+                    component_ref.get("source_obligation_candidate_ids")
+                    or component_ref.get("source_obligation_candidate_refs")
+                    or ()
+                )
+            )
+            if obligation_id
+        )
+        scored: list[tuple[int, int, BindableFinalPassage]] = []
+        for order, bindable in enumerate(bindables):
+            source_requirement_ids = _source_requirement_ids_for_candidate(
+                evidence_ledger_projection,
+                evidence_ref_id=bindable.evidence_ref_id,
+                source_obligation_candidate_ids=obligation_ids,
+            )
+            score = _token_overlap_score(
+                component_ref=component_ref,
+                bindable=bindable,
+                component_text=(
+                    _clean_text((component_text_by_id or {}).get(component_id), limit=500)
+                    if component_text_by_id
+                    else None
+                ),
+            )
+            if shared_obligation_shape and score <= 0:
+                continue
+            if source_requirement_ids:
+                score += 100
+            if bindable.evidence_ref_id not in used_evidence_refs:
+                score += 10
+            scored.append((score, -order, bindable))
+        if not scored:
+            continue
+        scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        selected_bindable = scored[0][2]
+        selected[component_id] = selected_bindable
+        used_evidence_refs.add(selected_bindable.evidence_ref_id)
+    return selected
+
+
+def _accepted_component_ref(
+    accepted_contract: Mapping[str, Any],
+    answer_component_id: str,
+) -> Mapping[str, Any]:
+    for component_ref in accepted_contract.get("accepted_answer_component_refs") or ():
+        if (
+            isinstance(component_ref, Mapping)
+            and _clean_token(component_ref.get("component_id")) == answer_component_id
+        ):
+            return component_ref
+    raise KeyError(f"accepted component ref not found: {answer_component_id}")
+
+
 def build_sanitized_content_reference_from_passage(
     *,
     passage: Mapping[str, Any],
     evidence_ref_id: str,
     accepted_contract: Mapping[str, Any],
+    component_ref: Mapping[str, Any] | None = None,
     content_ref_id: str,
 ) -> SanitizedContentReference:
-    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    if component_ref is None:
+        component_ref = accepted_contract["accepted_answer_component_refs"][0]
     url = _clean_text(passage.get("url"), limit=400)
     title = _clean_text(passage.get("title"), limit=220) or "Selected evidence"
     source_id = _clean_token(passage.get("source_id"))
@@ -588,18 +808,22 @@ def build_semantic_observation_and_content_refs(
     *,
     accepted_contract: Mapping[str, Any],
     bindable: BindableFinalPassage,
+    component_ref: Mapping[str, Any] | None = None,
 ) -> tuple[SemanticObservation, tuple[SanitizedContentReference, ...]]:
-    component_ref = accepted_contract["accepted_answer_component_refs"][0]
-    content_ref_id = f"content:{bindable.evidence_ref_id}"
+    if component_ref is None:
+        component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    component_id = _clean_token(component_ref.get("component_id")) or "component"
+    content_ref_id = f"content:{component_id}:{bindable.evidence_ref_id}"
     content_ref = build_sanitized_content_reference_from_passage(
         passage=bindable.passage,
         evidence_ref_id=bindable.evidence_ref_id,
         accepted_contract=accepted_contract,
+        component_ref=component_ref,
         content_ref_id=content_ref_id,
     )
     claim = _clean_text(bindable.passage.get("text"), limit=180) or "supported by selected evidence"
     observation = SemanticObservation(
-        observation_id=f"observation:{bindable.evidence_ref_id}",
+        observation_id=f"observation:{component_id}:{bindable.evidence_ref_id}",
         observation_kind=ObservationKind.SUPPORT,
         question_meaning_record_id=accepted_contract["parent_question_meaning_record_id"],
         question_meaning_record_digest=accepted_contract["parent_question_meaning_record_digest"],
@@ -615,10 +839,10 @@ def build_semantic_observation_and_content_refs(
         support_status=SupportStatus.SUPPORTS,
         claim_or_value=claim,
         normalization_fit="direct source-bound wording",
-        scope_fit="primary component",
+        scope_fit="answer component",
         assumption_fit="bounded selected evidence excerpt",
         inference_depth=0,
-        metadata={"phase": "AG-SEM-11", "ordinary_semantic_producer": True},
+        metadata={"phase": "AG-SEM-MULTI-01", "ordinary_semantic_producer": True},
     ).require_valid()
     return observation, (content_ref,)
 
@@ -633,7 +857,10 @@ def build_component_coverage_proposal(
     request_id: str,
     query: str,
 ) -> ComponentCoverageRecord | None:
-    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    component_ref = _accepted_component_ref(
+        accepted_contract,
+        observation.answer_component_id,
+    )
     source_obligation_candidate_ids = tuple(
         obligation_id
         for obligation_id in (
@@ -784,7 +1011,10 @@ def _dry_run_admission_projection(
     run_id: str,
     request_id: str,
 ) -> dict[str, Any] | None:
-    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    component_ref = _accepted_component_ref(
+        accepted_contract,
+        observation.answer_component_id,
+    )
     try:
         state = build_semantic_observation_admission_state(
             action_id=_PREFLIGHT_ACTION_ID,
@@ -821,7 +1051,10 @@ def _dry_run_coverage_state(
     run_id: str,
     request_id: str,
 ) -> dict[str, Any] | None:
-    component_ref = accepted_contract["accepted_answer_component_refs"][0]
+    component_ref = _accepted_component_ref(
+        accepted_contract,
+        coverage_record.answer_component_id,
+    )
     try:
         return build_component_coverage_reduction_state(
             action_id=_PREFLIGHT_ACTION_ID,
@@ -881,10 +1114,11 @@ def preflight_ordinary_semantic_producer_bundle(
             bundle=None,
             skipped_reason=SKIP_REASON_PREFLIGHT_FAILED,
         )
-    if len(records.query_shape_assessment.component_candidates) != 1:
+    component_count = len(records.query_shape_assessment.component_candidates)
+    if component_count > ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP:
         return OrdinarySemanticProducerPreflightResult(
             bundle=None,
-            skipped_reason=SKIP_REASON_MULTIPART_ASSESSMENT,
+            skipped_reason=SKIP_REASON_COMPONENT_CAP_EXCEEDED,
         )
     qmr = build_question_meaning_record_from_search_work_plan(
         assessment=records.query_shape_assessment,
@@ -898,7 +1132,7 @@ def preflight_ordinary_semantic_producer_bundle(
     if qmr is None:
         return OrdinarySemanticProducerPreflightResult(
             bundle=None,
-            skipped_reason=SKIP_REASON_MULTIPART_ASSESSMENT,
+            skipped_reason=SKIP_REASON_PREFLIGHT_FAILED,
         )
     accepted_contract = _dry_run_accepted_contract(
         qmr=qmr,
@@ -910,72 +1144,105 @@ def preflight_ordinary_semantic_producer_bundle(
             bundle=None,
             skipped_reason=SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
         )
-    bindable = select_bindable_final_passage(final_top_evidence, evidence_ledger_projection)
-    if bindable is None:
+    component_refs = tuple(
+        component_ref
+        for component_ref in accepted_contract.get("accepted_answer_component_refs") or ()
+        if isinstance(component_ref, Mapping) and _clean_token(component_ref.get("component_id"))
+    )
+    component_text_by_id = {
+        component.component_id: _component_matching_text(component)
+        for component in qmr.answer_components
+    }
+    selected_bindables = select_bindable_final_passages_for_components(
+        final_top_evidence,
+        evidence_ledger_projection,
+        component_refs,
+        component_text_by_id=component_text_by_id,
+    )
+    if not selected_bindables:
         return OrdinarySemanticProducerPreflightResult(
             bundle=None,
             skipped_reason=SKIP_REASON_BINDABLE_PASSAGE_MISSING,
         )
-    try:
-        observation, content_refs = build_semantic_observation_and_content_refs(
+    component_bundles: list[OrdinarySemanticProducerComponentBundle] = []
+    saw_admission_failure = False
+    saw_coverage_failure = False
+    for component_ref in component_refs:
+        component_id = _clean_token(component_ref.get("component_id"))
+        if not component_id:
+            continue
+        bindable = selected_bindables.get(component_id)
+        if bindable is None:
+            continue
+        try:
+            observation, content_refs = build_semantic_observation_and_content_refs(
+                accepted_contract=accepted_contract,
+                bindable=bindable,
+                component_ref=component_ref,
+            )
+        except Exception:
+            saw_admission_failure = True
+            continue
+        admission_projection = _dry_run_admission_projection(
             accepted_contract=accepted_contract,
-            bindable=bindable,
-        )
-    except Exception:
-        return OrdinarySemanticProducerPreflightResult(
-            bundle=None,
-            skipped_reason=SKIP_REASON_PREFLIGHT_FAILED,
-        )
-    admission_projection = _dry_run_admission_projection(
-        accepted_contract=accepted_contract,
-        observation=observation,
-        content_refs=content_refs,
-        evidence_ledger_projection=evidence_ledger_projection,
-        run_id=run_id,
-        request_id=request_id,
-    )
-    if admission_projection is None:
-        return OrdinarySemanticProducerPreflightResult(
-            bundle=None,
-            skipped_reason=SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
-        )
-    coverage_record = build_component_coverage_proposal(
-        accepted_contract=accepted_contract,
-        observation=observation,
-        content_ref=content_refs[0],
-        evidence_ledger_projection=evidence_ledger_projection,
-        run_id=run_id,
-        request_id=request_id,
-        query=query,
-    )
-    if coverage_record is None:
-        return OrdinarySemanticProducerPreflightResult(
-            bundle=None,
-            skipped_reason=SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
-        )
-    if (
-        _dry_run_coverage_state(
-            accepted_contract=accepted_contract,
-            admission_projection=admission_projection,
-            coverage_record=coverage_record,
+            observation=observation,
+            content_refs=content_refs,
             evidence_ledger_projection=evidence_ledger_projection,
             run_id=run_id,
             request_id=request_id,
         )
-        is None
-    ):
+        if admission_projection is None:
+            saw_admission_failure = True
+            continue
+        coverage_record = build_component_coverage_proposal(
+            accepted_contract=accepted_contract,
+            observation=observation,
+            content_ref=content_refs[0],
+            evidence_ledger_projection=evidence_ledger_projection,
+            run_id=run_id,
+            request_id=request_id,
+            query=query,
+        )
+        if coverage_record is None:
+            saw_coverage_failure = True
+            continue
+        if (
+            _dry_run_coverage_state(
+                accepted_contract=accepted_contract,
+                admission_projection=admission_projection,
+                coverage_record=coverage_record,
+                evidence_ledger_projection=evidence_ledger_projection,
+                run_id=run_id,
+                request_id=request_id,
+            )
+            is None
+        ):
+            saw_coverage_failure = True
+            continue
+        component_bundles.append(
+            OrdinarySemanticProducerComponentBundle(
+                answer_component_id=component_id,
+                semantic_observation=observation,
+                sanitized_content_references=content_refs,
+                component_coverage_record=coverage_record,
+                dry_run_admission_projection=admission_projection,
+            )
+        )
+    if not component_bundles:
+        skipped_reason = (
+            SKIP_REASON_ADMISSION_PREFLIGHT_FAILED
+            if saw_admission_failure and not saw_coverage_failure
+            else SKIP_REASON_COVERAGE_PREFLIGHT_FAILED
+        )
         return OrdinarySemanticProducerPreflightResult(
             bundle=None,
-            skipped_reason=SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
+            skipped_reason=skipped_reason,
         )
     return OrdinarySemanticProducerPreflightResult(
         bundle=OrdinarySemanticProducerBundle(
             question_meaning_record=qmr,
-            semantic_observation=observation,
-            sanitized_content_references=content_refs,
-            component_coverage_record=coverage_record,
+            component_bundles=tuple(component_bundles),
             dry_run_accepted_contract=accepted_contract,
-            dry_run_admission_projection=admission_projection,
         ),
     )
 
@@ -1079,51 +1346,56 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
                 "AG-SEM-05 reduce completed without initial_answer_contract state"
             )
 
-        component_ref = accepted_contract["accepted_answer_component_refs"][0]
-        observation = bundle.semantic_observation
-        admit_action = run_kernel.authorize_semantic_observation_admission(
-            semantic_observation_id=observation.observation_id,
-            semantic_observation_digest=observation.observation_digest,
-            answer_component_id=component_ref["component_id"],
-            component_revision=component_ref["component_revision"],
-            component_digest=component_ref["component_digest"],
-        )
-        admit_observation = Observation.from_action(
-            admit_action,
-            observation_type=ObservationType.SEMANTIC_OBSERVATION_ADMITTED,
-            status=RunStageStatus.COMPLETED,
-            payload={
-                "semantic_observation": observation.to_dict(),
-                "sanitized_content_references": [
-                    ref.to_dict() for ref in bundle.sanitized_content_references
-                ],
-            },
-        )
-        run_kernel.reduce(admit_observation)
-        if not run_kernel.state.semantic_observation_admission_history:
-            raise OrdinarySemanticProducerTransactionError(
-                "AG-SEM-06 reduce completed without semantic_observation_admission_history"
+        for component_bundle in bundle.component_bundles:
+            observation = component_bundle.semantic_observation
+            component_ref = _accepted_component_ref(
+                accepted_contract,
+                observation.answer_component_id,
             )
+            admit_action = run_kernel.authorize_semantic_observation_admission(
+                semantic_observation_id=observation.observation_id,
+                semantic_observation_digest=observation.observation_digest,
+                answer_component_id=component_ref["component_id"],
+                component_revision=component_ref["component_revision"],
+                component_digest=component_ref["component_digest"],
+            )
+            admit_observation = Observation.from_action(
+                admit_action,
+                observation_type=ObservationType.SEMANTIC_OBSERVATION_ADMITTED,
+                status=RunStageStatus.COMPLETED,
+                payload={
+                    "semantic_observation": observation.to_dict(),
+                    "sanitized_content_references": [
+                        ref.to_dict()
+                        for ref in component_bundle.sanitized_content_references
+                    ],
+                },
+            )
+            run_kernel.reduce(admit_observation)
+            if not run_kernel.state.semantic_observation_admission_history:
+                raise OrdinarySemanticProducerTransactionError(
+                    "AG-SEM-06 reduce completed without semantic_observation_admission_history"
+                )
 
-        coverage_record = bundle.component_coverage_record
-        coverage_action = run_kernel.authorize_component_coverage_reduction(
-            coverage_record_id=coverage_record.record_id,
-            coverage_record_digest=coverage_record.record_digest,
-            answer_component_id=component_ref["component_id"],
-            component_revision=component_ref["component_revision"],
-            component_digest=component_ref["component_digest"],
-        )
-        coverage_observation = Observation.from_action(
-            coverage_action,
-            observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
-            status=RunStageStatus.COMPLETED,
-            payload={"component_coverage_record": coverage_record.to_dict()},
-        )
-        run_kernel.reduce(coverage_observation)
-        if not run_kernel.state.component_coverage_history:
-            raise OrdinarySemanticProducerTransactionError(
-                "AG-SEM-07 reduce completed without component_coverage_history"
+            coverage_record = component_bundle.component_coverage_record
+            coverage_action = run_kernel.authorize_component_coverage_reduction(
+                coverage_record_id=coverage_record.record_id,
+                coverage_record_digest=coverage_record.record_digest,
+                answer_component_id=component_ref["component_id"],
+                component_revision=component_ref["component_revision"],
+                component_digest=component_ref["component_digest"],
             )
+            coverage_observation = Observation.from_action(
+                coverage_action,
+                observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
+                status=RunStageStatus.COMPLETED,
+                payload={"component_coverage_record": coverage_record.to_dict()},
+            )
+            run_kernel.reduce(coverage_observation)
+            if not run_kernel.state.component_coverage_history:
+                raise OrdinarySemanticProducerTransactionError(
+                    "AG-SEM-07 reduce completed without component_coverage_history"
+                )
     except OrdinarySemanticProducerTransactionError:
         raise
     except Exception as exc:
@@ -1139,9 +1411,11 @@ def execute_ordinary_semantic_producer_handoff_from_scope(
 __all__ = [
     "ORDINARY_SEMANTIC_PRODUCER_RESOLVER_VERSION",
     "ORDINARY_SEMANTIC_PRODUCER_SCHEMA_VERSION",
+    "ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP",
     "SKIP_REASON_ADMISSION_PREFLIGHT_FAILED",
     "SKIP_REASON_BINDABLE_PASSAGE_MISSING",
     "SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT",
+    "SKIP_REASON_COMPONENT_CAP_EXCEEDED",
     "SKIP_REASON_CONTRACT_PREFLIGHT_FAILED",
     "SKIP_REASON_COVERAGE_PREFLIGHT_FAILED",
     "SKIP_REASON_MULTIPART_ASSESSMENT",
@@ -1150,6 +1424,7 @@ __all__ = [
     "SKIP_REASON_SEARCH_WORK_PLAN_MISSING",
     "BindableFinalPassage",
     "OrdinarySemanticProducerBundle",
+    "OrdinarySemanticProducerComponentBundle",
     "OrdinarySemanticProducerHandoffResult",
     "OrdinarySemanticProducerHandoffStatus",
     "OrdinarySemanticProducerPreflightResult",
@@ -1162,4 +1437,5 @@ __all__ = [
     "execute_ordinary_semantic_producer_handoff_from_scope",
     "preflight_ordinary_semantic_producer_bundle",
     "select_bindable_final_passage",
+    "select_bindable_final_passages_for_components",
 ]

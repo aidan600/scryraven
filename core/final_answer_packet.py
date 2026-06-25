@@ -1469,14 +1469,14 @@ class FinalAnswerPacket:
     ) -> str:
         source_obligation_posture = self._semantic_materialization_source_obligation_posture()
         component_phrase = (
-            "required component is"
+            "1 required component is"
             if component_count == 1
-            else "required components are"
+            else f"{component_count} required components are"
         )
         lines = [
             "",
             "CONTROLLED SEMANTIC CONTEXT (do not mention this block):",
-            "- Covered component: "
+            "- Covered components: "
             + component_phrase
             + " supported by packet-bound semantic evidence.",
             "- Support posture: supported; source obligation: "
