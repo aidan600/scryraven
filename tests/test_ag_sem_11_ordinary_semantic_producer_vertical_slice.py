@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import hashlib
 from copy import deepcopy
 from pathlib import Path
@@ -14,11 +13,8 @@ from core.ordinary_semantic_producer_runtime import (
     SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
     SKIP_REASON_BINDABLE_PASSAGE_MISSING,
     SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
-    SKIP_REASON_COMPONENT_CAP_EXCEEDED,
     SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
     SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
-    SKIP_REASON_MULTIPART_ASSESSMENT,
-    SKIP_REASON_PREFLIGHT_FAILED,
     SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
     SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
     OrdinarySemanticProducerBundle,
@@ -53,12 +49,6 @@ from tests.helpers.offline_ordinary_pipeline import (
     run_offline_ordinary_pipeline,
     scrub_offline_runtime,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-PRODUCER_MODULE = ROOT / "core" / "ordinary_semantic_producer_runtime.py"
-PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
-RUN_KERNEL = ROOT / "core" / "run_kernel.py"
-SEMANTIC_BUNDLE_HELPER = ROOT / "core" / "semantic_producer_bundle_commit_runtime.py"
 
 AG_CHECK_01_QUERY = "What is the current official rule for Example Program?"
 MULTIPART_QUERY = "What are the current official fee and legal deadline?"
@@ -442,126 +432,6 @@ def test_atomic_bundle_commit_failures_leave_no_semantic_state(
 
         _assert_atomic_failure_closed(kernel)
         _assert_failed_atomic_projection(kernel)
-
-
-def test_static_guard_run_kernel_owns_atomic_semantic_commit_boundary() -> None:
-    source = RUN_KERNEL.read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    forbidden = (
-        "semantic_producer_history",
-        "pre_sufficiency_semantic",
-        "semantic_ledger_bridge",
-    )
-    for token in forbidden:
-        assert token not in source
-    assert "commit_semantic_producer_bundle" in source
-    assert "SEMANTIC_PRODUCER_BUNDLE_COMMIT" in source
-    assert "_stage_semantic_producer_bundle_commit" not in source
-
-    run_kernel_class = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ClassDef) and node.name == "RunKernel"
-    )
-    commit_method = next(
-        node
-        for node in run_kernel_class.body
-        if isinstance(node, ast.FunctionDef)
-        and node.name == "commit_semantic_producer_bundle"
-    )
-    method_source = ast.get_source_segment(source, commit_method) or ""
-    assert "stage_semantic_producer_bundle_commit(" in method_source
-    assert "self._apply_semantic_producer_bundle_commit(" in method_source
-    for token in (
-        "build_initial_answer_contract_acceptance_state",
-        "build_semantic_observation_admission_state",
-        "build_component_coverage_reduction_state",
-    ):
-        assert token not in method_source
-
-    helper_source = SEMANTIC_BUNDLE_HELPER.read_text(encoding="utf-8")
-    assert "stage_semantic_producer_bundle_commit" in helper_source
-    assert "build_initial_answer_contract_acceptance_state" in helper_source
-    assert "build_semantic_observation_admission_state" in helper_source
-    assert "build_component_coverage_reduction_state" in helper_source
-
-
-def test_static_guard_no_pre_sufficiency_semantic_bridge() -> None:
-    source = PRODUCER_MODULE.read_text(encoding="utf-8")
-    assert "semantic_producer_history" not in source
-    assert "pre_sufficiency_semantic" not in source
-    assert "semantic_ledger_bridge" not in source
-    assert "execute_ordinary_semantic_producer_handoff_from_scope" in source
-    assert "commit_semantic_producer_bundle(" in source
-    assert "run_kernel.reduce(" not in source
-
-
-def test_static_guard_skip_reasons_remain_return_only_in_core() -> None:
-    skip_reason_values = (
-        SKIP_REASON_QUERY_SHAPE_CLASSIFIER_UNAVAILABLE,
-        SKIP_REASON_MULTIPART_ASSESSMENT,
-        SKIP_REASON_BINDABLE_PASSAGE_MISSING,
-        SKIP_REASON_CONTRACT_PREFLIGHT_FAILED,
-        SKIP_REASON_ADMISSION_PREFLIGHT_FAILED,
-        SKIP_REASON_COVERAGE_PREFLIGHT_FAILED,
-        SKIP_REASON_COMPONENT_CAP_EXCEEDED,
-        SKIP_REASON_PREFLIGHT_FAILED,
-        SKIP_REASON_CANONICAL_SEMANTIC_STATE_ALREADY_PRESENT,
-        SKIP_REASON_SEARCH_WORK_PLAN_MISSING,
-    )
-    for path in (ROOT / "core").rglob("*.py"):
-        if path == PRODUCER_MODULE:
-            continue
-        source = path.read_text(encoding="utf-8")
-        assert "skipped_reason" not in source, str(path)
-        for value in skip_reason_values:
-            assert value not in source, str(path)
-
-
-def test_static_guard_producer_module_import_boundary() -> None:
-    source = PRODUCER_MODULE.read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    forbidden_roots = {
-        "core.pipeline_orchestrator",
-        "core.author_execution_runtime",
-        "core.final_answer_packet",
-        "core.final_answer_packet_runtime",
-        "core.retrieval_dispatch_runtime",
-        "core.retrieval",
-        "openai",
-        "requests",
-        "httpx",
-    }
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    assert imported.isdisjoint(forbidden_roots)
-
-
-def test_static_guard_orchestrator_semantic_callsites_are_bounded() -> None:
-    source = PIPELINE.read_text(encoding="utf-8")
-    assert source.count("execute_ordinary_semantic_producer_handoff_from_scope(") == 2
-    assert (
-        "if not run_kernel.state.initial_answer_contract:\n"
-        "            final_top_evidence = list(all_passages)\n"
-        "            execute_ordinary_semantic_producer_handoff_from_scope("
-        in source
-    )
-
-
-def test_static_guard_no_compensating_rollback_paths() -> None:
-    tree = ast.parse(PRODUCER_MODULE.read_text(encoding="utf-8"))
-    forbidden_tokens = ("rollback", "revert", "undo_semantic", "cleanup_reduce")
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            lowered = node.value.casefold()
-            for token in forbidden_tokens:
-                assert token not in lowered
-        if isinstance(node, ast.Name):
-            assert node.id.casefold() not in {"rollback", "revert", "undo_semantic"}
 
 
 def test_handoff_atomic_commit_failure_leaves_no_semantic_state() -> None:

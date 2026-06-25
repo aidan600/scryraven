@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 from typing import Any
@@ -26,14 +25,6 @@ from tests.helpers.offline_ordinary_pipeline import (
     run_offline_ordinary_pipeline,
     scrub_offline_runtime,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-PRODUCER_MODULE = ROOT / "core" / "ordinary_semantic_producer_runtime.py"
-PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
-RUNTIME_PROMPT_ASSEMBLY = ROOT / "core" / "runtime_prompt_assembly.py"
-RETRIEVAL = ROOT / "core" / "retrieval.py"
-RETRIEVAL_DISPATCH = ROOT / "core" / "retrieval_dispatch_runtime.py"
-SEARCH_PROVIDERS = ROOT / "core" / "search_providers.py"
 
 MULTIPART_QUERY = (
     "What does the Example Permit API spec say about payload size, support "
@@ -380,49 +371,3 @@ def test_component_cap_exceeded_skips_semantic_production_closed(
     assert tuple(packet.semantic_packet_evidence_bindings) == ()
     if harness.author_prompts:
         assert "CONTROLLED SEMANTIC CONTEXT" not in harness.author_prompts[0]
-
-
-def test_ag_sem_multi_01_static_closed_surface_and_import_guards() -> None:
-    producer_source = PRODUCER_MODULE.read_text(encoding="utf-8")
-    tree = ast.parse(producer_source)
-    forbidden_imports = {
-        "core.pipeline_orchestrator",
-        "core.author_execution_runtime",
-        "core.final_answer_packet_runtime",
-        "core.retrieval_dispatch_runtime",
-        "core.retrieval",
-        "openai",
-        "requests",
-        "httpx",
-    }
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    assert imported.isdisjoint(forbidden_imports)
-    assert "ask_model(" not in producer_source
-    assert "fetch_linkup_precision_block" not in producer_source
-    assert "run_scout" not in producer_source
-    pipeline_source = PIPELINE.read_text(encoding="utf-8")
-    assert (
-        pipeline_source.count("execute_ordinary_semantic_producer_handoff_from_scope(")
-        == 2
-    )
-    assert (
-        "if not run_kernel.state.initial_answer_contract:\n"
-        "            final_top_evidence = list(all_passages)\n"
-        "            execute_ordinary_semantic_producer_handoff_from_scope("
-        in pipeline_source
-    )
-    for closed_file in (
-        PIPELINE,
-        RUNTIME_PROMPT_ASSEMBLY,
-        RETRIEVAL,
-        RETRIEVAL_DISPATCH,
-        SEARCH_PROVIDERS,
-    ):
-        source = closed_file.read_text(encoding="utf-8")
-        assert "AG-SEM-MULTI-01" not in source
-        assert "Example Permit" not in source

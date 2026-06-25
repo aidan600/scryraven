@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 import json
 from copy import deepcopy
 from pathlib import Path
@@ -25,14 +24,6 @@ from tests.helpers.offline_ordinary_pipeline import (
     run_offline_ordinary_pipeline,
     scrub_offline_runtime,
 )
-
-ROOT = Path(__file__).resolve().parents[1]
-PRODUCER_MODULE = ROOT / "core" / "ordinary_semantic_producer_runtime.py"
-PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
-FAP = ROOT / "core" / "final_answer_packet.py"
-FAP_ADAPTER = ROOT / "core" / "final_answer_runtime_adapter.py"
-FAP_RUNTIME = ROOT / "core" / "final_answer_packet_runtime.py"
-AUTHOR_RUNTIME = ROOT / "core" / "author_execution_runtime.py"
 
 SECOND_FIXTURE_QUERY = (
     "What is the current official rule for Sample Relief Program?"
@@ -598,45 +589,3 @@ def test_second_fixture_missing_evidence_skips_without_orphan_semantic_state(
     assert result.status is OrdinarySemanticProducerHandoffStatus.SKIPPED
     assert result.skipped_reason == SKIP_REASON_BINDABLE_PASSAGE_MISSING
     assert_no_semantic_state(kernel)
-
-
-def test_ag_sem_11c_static_guards_keep_second_fixture_out_of_closed_surfaces() -> None:
-    producer_source = PRODUCER_MODULE.read_text(encoding="utf-8")
-    assert "Sample Relief Program" not in producer_source
-    assert "Example Program" not in producer_source
-
-    tree = ast.parse(producer_source)
-    forbidden_imports = {
-        "core.pipeline_orchestrator",
-        "core.author_execution_runtime",
-        "core.final_answer_packet",
-        "core.final_answer_packet_runtime",
-        "core.retrieval_dispatch_runtime",
-        "core.retrieval",
-        "openai",
-        "requests",
-        "httpx",
-    }
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            imported.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imported.add(node.module)
-    assert imported.isdisjoint(forbidden_imports)
-
-    pipeline_source = PIPELINE.read_text(encoding="utf-8")
-    assert (
-        pipeline_source.count("execute_ordinary_semantic_producer_handoff_from_scope(")
-        == 2
-    )
-    assert (
-        "if not run_kernel.state.initial_answer_contract:\n"
-        "            final_top_evidence = list(all_passages)\n"
-        "            execute_ordinary_semantic_producer_handoff_from_scope("
-        in pipeline_source
-    )
-    for closed_file in (FAP, FAP_ADAPTER, FAP_RUNTIME, AUTHOR_RUNTIME):
-        source = closed_file.read_text(encoding="utf-8")
-        assert "AG-SEM-11C" not in source
-        assert "Sample Relief Program" not in source

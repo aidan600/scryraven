@@ -80,3 +80,98 @@ For AG-TEST-CONSOLIDATE-01:
    structural test file.
 4. Leave `fast_pr` unchanged unless one cheap broad semantic sentinel is
    intentionally selected later.
+
+## AG-TEST-CONSOLIDATE-01 Update
+
+Status: implemented as validation-infrastructure work only. No product runtime
+behavior change, live validation, provider/model/search/fetch/retrieval calls,
+secrets, raw prompts, provider payloads, DB/cache rows, private logs, full
+traces, or generated private artifacts were required.
+
+### Lanes Created
+
+- `tests/buckets/semantic_lane.txt` now owns durable semantic producer,
+  reducer, sufficiency, component coverage, semantic projection, and structural
+  guard validation.
+- `tests/buckets/semantic_search_lane.txt` now owns durable SearchJudgment and
+  QueryPlan consumers of semantic missing assessments and semantic component
+  gaps.
+- `fast_pr` stayed unchanged. These lanes are not default PR tax because they
+  are domain sweeps rather than tiny broad sentinels.
+
+### Test Routing Decisions
+
+| File or node | Lane | Owner/surface | Reason |
+| --- | --- | --- | --- |
+| `tests/test_ag_sem_05_initial_answer_contract_acceptance.py` | `semantic_lane` | RunKernel initial answer contract reducer | Canonical accepted-contract construction remains a durable semantic reducer contract. |
+| `tests/test_ag_sem_06_semantic_observation_admission.py` | `semantic_lane` | RunKernel SemanticObservation reducer | Observation admission, content reference custody, digest, and contract binding are durable semantic reducer contracts. |
+| `tests/test_ag_sem_07_component_coverage_reduction.py` | `semantic_lane` | RunKernel ComponentCoverageRecord reducer | Coverage digest, component binding, evidence custody, and source-obligation state are durable semantic reducer contracts. |
+| `tests/test_ag_sem_09_sufficiency_semantic_consumption.py` | `semantic_lane` | RunAuthority sufficiency semantic consumer | Semantic facts, version-bound coverage identity, blocker repair, ledger-qualified coverage, and projection integrity are durable semantic consumption contracts. |
+| `tests/test_ag_sem_11_ordinary_semantic_producer_vertical_slice.py` | `semantic_lane` | Ordinary semantic producer and RunKernel atomic commit | Producer activation, preflight skips, atomic bundle commit, and failure/no-orphan-state behavior are durable semantic producer contracts. |
+| `tests/test_semantic_lane_structural_guards.py` | `semantic_lane` | Semantic validation structure | Consolidated static guards cover authority boundaries, import/callsite limits, fixture-label leakage, and closed runtime surfaces. |
+| `tests/test_ag_sem_11c_ordinary_semantic_producer_second_fixture.py::test_second_fixture_missing_evidence_skips_without_orphan_semantic_state` | `semantic_lane` | Second ordinary producer fixture | Missing evidence must skip without orphan semantic state; the positive Author/FAP-heavy fixture stays phase-focused. |
+| `tests/test_ag_sem_multi_01_ordinary_multipart_semantic_expansion.py::test_component_cap_exceeded_skips_semantic_production_closed` | `semantic_lane` | Multipart ordinary semantic producer | Component caps must fail closed without semantic state; Author/FAP-heavy multipart assertions stay phase-focused. |
+| `tests/test_ag_gap_01_offline_product_path.py` | `semantic_search_lane` | Offline product semantic gap path | Semantic gaps become version-bound query authority without changing retrieval execution. |
+| `tests/test_runauthority_iterative_search_judgment_ag92b.py` | `semantic_search_lane` | RunAuthority SearchJudgment | Semantic missing assessments and component-gap identity remain search-judgment facts. |
+| `tests/test_search_work_query_plan_consumption_ag96e2.py` | `semantic_search_lane` | QueryPlan/SearchWorkPlan consumer | SearchJudgment component-gap authority tags existing queries without introducing provider/search/fetch execution behavior. |
+
+### Phase Focus And Author-Lane Candidates
+
+The following tests stayed out of `semantic_lane` because their durable value is
+Author/FAP/materialization/finalization adjacency rather than semantic-only
+producer or reducer proof:
+
+- `tests/test_ag_sem_11c_ordinary_semantic_producer_second_fixture.py::test_second_offline_fixture_reaches_semantic_sufficiency_and_fap_manifest`
+- `tests/test_ag_sem_multi_01_ordinary_multipart_semantic_expansion.py::test_positive_bounded_n_multipart_semantic_path_reaches_fap_and_author`
+- `tests/test_ag_sem_multi_01_ordinary_multipart_semantic_expansion.py::test_partial_missing_bounded_n_semantic_path_fails_closed_without_overclaim`
+- `tests/test_ag_sem_prod_02_broader_ordinary_semantic_production.py::test_direct_canonical_spec_fact_reaches_semantic_fap_and_author_materialization`
+- `tests/test_ag_sem_prod_02_broader_ordinary_semantic_production.py::test_insufficient_single_component_evidence_does_not_overclaim_semantic_coverage`
+
+They remain phase-focused Author/FAP-adjacent candidates until a future Author
+lane phase chooses whether to split semantic-only assertions from Author
+payload, prompt/materialization, invocation, citation handoff, or final response
+checks.
+
+### Static Guards Consolidated
+
+`tests/test_semantic_lane_structural_guards.py` absorbed repeated and durable
+guards from AG-SEM product fixtures:
+
+- RunKernel owns the atomic semantic bundle commit authority/apply boundary.
+- `semantic_producer_bundle_commit_runtime.py` owns staging and reducer-builder
+  calls for accepted contract, SemanticObservation, and ComponentCoverageRecord
+  construction.
+- `ordinary_semantic_producer_runtime.py` does not directly call individual
+  semantic reducers or import orchestrator, Author/FAP, retrieval, provider, or
+  HTTP/client surfaces.
+- Semantic skip reasons remain return-only in the producer core.
+- `core/pipeline_orchestrator.py` keeps only the currently licensed bounded
+  ordinary semantic producer callsites.
+- The semantic producer has no compensating rollback/revert paths.
+- Phase fixture labels and example entities do not leak into closed runtime
+  surfaces.
+
+### Demoted Or Retired Guards
+
+No behavioral test was retired. Duplicate static guard tests were demoted from
+phase-local files because the new structural guard protects the same or broader
+durable invariant:
+
+- `test_static_guard_run_kernel_owns_atomic_semantic_commit_boundary`
+- `test_static_guard_no_pre_sufficiency_semantic_bridge`
+- `test_static_guard_skip_reasons_remain_return_only_in_core`
+- `test_static_guard_producer_module_import_boundary`
+- `test_static_guard_orchestrator_semantic_callsites_are_bounded`
+- `test_static_guard_no_compensating_rollback_paths`
+- `test_ag_sem_11c_static_guards_keep_second_fixture_out_of_closed_surfaces`
+- `test_ag_sem_multi_01_static_closed_surface_and_import_guards`
+- `test_ag_sem_prod_02_static_guards_keep_closed_surfaces_closed`
+
+### Remaining Cleanup
+
+- A future Author-lane cleanup can split or reroute the Author/FAP-heavy
+  semantic fixture tests listed above.
+- `semantic_search_lane` kept its QueryPlan/SearchJudgment structural guards in
+  their existing files because they protect different consumer boundaries from
+  the AG-SEM producer structural guards.
+- No `fast_pr` semantic sentinel was selected in this phase.

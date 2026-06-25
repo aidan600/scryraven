@@ -31,6 +31,12 @@ promotion posture, read
   default.
 - `fast_pr` is used for ordinary code pull requests and runs the tiny manifest
   in `tests/buckets/fast_pr.txt`.
+- `semantic_lane` is not a default PR bucket. Use it through manual
+  `workflow_dispatch` or when a phase explicitly licenses semantic producer,
+  reducer, sufficiency, component coverage, or semantic projection validation.
+- `semantic_search_lane` is not a default PR bucket. Use it through manual
+  `workflow_dispatch` or when a phase explicitly licenses SearchJudgment or
+  QueryPlan semantic-gap consumer validation.
 - `author_lane` is not a default PR bucket. Use it only through manual
   `workflow_dispatch` or when a phase explicitly licenses it.
 - `full` is not a default PR bucket. It is for pushes to `main` and manual
@@ -43,6 +49,10 @@ promotion posture, read
 - Prefer exact test node IDs or file paths over broad test globs when proving a
   narrow custody change.
 - Name this as `phase_focus` in the phase prompt or final bundle.
+- When the phase touches durable semantic producer/reducer/sufficiency
+  contracts, run `python scripts/validation/run_bucket.py semantic_lane`.
+- When the phase touches SearchJudgment or QueryPlan semantic-gap consumption,
+  run `python scripts/validation/run_bucket.py semantic_search_lane`.
 
 ## Impacted custody slice
 
