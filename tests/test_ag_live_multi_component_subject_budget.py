@@ -100,6 +100,9 @@ def test_over_cap_subjects_are_detected_selected_and_omitted() -> None:
     assert summary["selected_subject_count"] <= 5
     assert summary["omitted_subject_count"] >= 1
     assert summary["subject_cap_exceeded"] is True
+    assert summary["subject_selection_source"] == (
+        "query_plan_work_shadow_projection_component_order"
+    )
     assert _subject_ids(summary["selected_subjects"]) == subjects[:5]
     assert _subject_ids(summary["omitted_subjects"]) == ["Apache"]
 
