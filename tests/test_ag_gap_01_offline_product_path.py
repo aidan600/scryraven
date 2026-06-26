@@ -77,7 +77,7 @@ def test_ag_gap_01_offline_path_records_one_gap_authorized_query_without_executi
         capture_stages=(HANDOFF_SEMANTIC, HANDOFF_PACKET),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -99,6 +99,11 @@ def test_ag_gap_01_offline_path_records_one_gap_authorized_query_without_executi
     ]
 
     state = captured["run_kernel"].state
+    assert captured["packet_handoff"].author_input_blocked is True
+    assert captured["packet_handoff"].author_payload is None
+    assert state.final_answer_authority_projection["author_payload_ref"]["status"] == (
+        "blocked"
+    )
     assert state.search_judgment_projection["owner"] == (
         "RunKernel.RunAuthoritySearchJudgment"
     )

@@ -185,10 +185,10 @@ def _run_multipart(
                 NullStatusWriter(),
                 CostAccumulator(),
             )
-        except ValueError as exc:
-            if "blocked FinalAnswerPacket cannot produce Author input" not in str(exc):
+        except orchestrator.PipelineError as exc:
+            if "blocked FinalAnswerPacket cannot proceed to Author handoff" not in str(exc):
                 raise
-            captured["blocked_packet_error"] = str(exc)
+            captured["blocked_pipeline_error"] = str(exc)
             outcome = None
         return captured, harness, outcome
     captured, outcome = run_offline_ordinary_pipeline(
@@ -348,10 +348,15 @@ def test_partial_missing_bounded_n_semantic_path_fails_closed_without_overclaim(
     assert "missing_required_component_coverage" in semantic_consumption["blocker_codes"]
     assert semantic_consumption["semantic_ref_projection"]["available"] is False
 
-    assert captured["blocked_packet_error"] == (
-        "blocked FinalAnswerPacket cannot produce Author input"
+    assert captured["blocked_pipeline_error"] == (
+        "blocked FinalAnswerPacket cannot proceed to Author handoff"
     )
     assert captured["packet_handoff_called"] is True
+    assert captured["packet_handoff"].author_input_blocked is True
+    assert captured["packet_handoff"].author_payload is None
+    assert captured["run_kernel"].state.final_answer_authority_projection[
+        "author_payload_ref"
+    ]["status"] == "blocked"
     assert captured["author_handoff_called"] is False
     assert harness.author_prompts == []
     assert harness.author_kwargs == []

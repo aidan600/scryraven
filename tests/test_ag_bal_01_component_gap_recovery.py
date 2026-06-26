@@ -51,6 +51,9 @@ POISONED_AUTHORITY_FIELDS = {
     "source_obligation_satisfied": True,
     "status": "accepted",
 }
+PRE_RECOVERY_FINAL_PACKET_STOP_REASON = (
+    "pre_recovery_final_answer_packet_already_present"
+)
 
 
 class _AdapterSpy:
@@ -264,7 +267,7 @@ def _run_blocked_offline_path(
         run_id=f"ag-bal-01-{mode.casefold()}-run",
     )
     config.mode = mode
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             config,
             active_harness.deps(),
@@ -285,6 +288,16 @@ def _run_balanced_adapter_absent_path(
         mode="Balanced",
         harness=_AdapterAbsentHarness(tmp_path),
     )
+
+
+def _remove_final_answer_packet_guard_state(captured: dict[str, Any]) -> None:
+    state = captured["run_kernel"].state
+    assert state.final_answer_packet
+    state.final_answer_packet = {}
+    state.final_answer_authority_projection = {}
+    state.projections.pop("final_answer_packet", None)
+    if hasattr(state, "final_answer_packet_projection"):
+        state.final_answer_packet_projection = {}
 
 
 def _direct_recovery_kwargs(
@@ -447,7 +460,7 @@ def test_ag_bal_01_fails_closed_without_offline_recovery_adapter(
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -482,7 +495,7 @@ def test_ag_bal_01_fails_closed_when_recovered_evidence_cannot_cover_gap(
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -628,7 +641,7 @@ def test_ag_bal_harden_01_poisoned_adapter_authority_cannot_promote_failed_cover
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -679,7 +692,7 @@ def test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_obs
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -735,6 +748,25 @@ def test_ag_bal_01_fast_mode_does_not_invoke_or_record_recovery(
     assert COMPONENT_GAP_RECOVERY_TRACE_KEY not in state.projections
 
 
+def test_ag_bal_01_recovery_stops_when_final_answer_packet_already_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _harness, captured = _run_balanced_adapter_absent_path(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    assert captured["run_kernel"].state.final_answer_packet
+    adapter = _AdapterSpy()
+
+    result = execute_authorized_component_gap_recovery(
+        **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
+    )
+
+    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert adapter.calls == []
+
+
 def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -747,6 +779,7 @@ def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
         COMPONENT_GAP_RECOVERY_TRACE_KEY
     ]["latest"]
     assert first["stop_reason"] == "offline_recovery_adapter_absent"
+    _remove_final_answer_packet_guard_state(captured)
 
     adapter = _AdapterSpy()
     second = execute_authorized_component_gap_recovery(
@@ -766,6 +799,7 @@ def test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency(
     )
     run_kernel = captured["run_kernel"]
     assert len(run_kernel.state.component_gap_recovery_history) == 1
+    _remove_final_answer_packet_guard_state(captured)
     del run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
 
     adapter = _AdapterSpy()
@@ -789,6 +823,7 @@ def test_ag_bal_01_multiple_component_gaps_block_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     captured["run_kernel"].state.component_coverage_history = []
     adapter = _AdapterSpy()
 
@@ -808,6 +843,7 @@ def test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     query_plan_trace = deepcopy(
         captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
     )
@@ -838,6 +874,7 @@ def test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     query_plan_trace = deepcopy(
         captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
     )
@@ -887,6 +924,7 @@ def test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     search_judgment_projection = deepcopy(
         captured["run_kernel"].state.search_judgment_projection
     )
@@ -913,6 +951,7 @@ def test_ag_bal_01_generated_query_metadata_blocks_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     query_plan_trace = deepcopy(
         captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
     )
