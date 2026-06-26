@@ -366,7 +366,7 @@ def _is_sensitive_key(key: Any) -> bool:
 
 
 def _safe_json(value: Any, *, depth: int = 0) -> Any:
-    if depth > 4:
+    if depth > 8:
         return "[truncated]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -1118,7 +1118,7 @@ class FinalAnswerPacket:
             item.value if isinstance(item, ClaimPosture) else str(item)
             for item in self.claim_postures
         ]
-        return {
+        payload = {
             "packet_id": self.packet_id,
             "readiness_status": self.readiness_status.value,
             "readiness_reasons": list(self.readiness_reasons),
@@ -1138,6 +1138,12 @@ class FinalAnswerPacket:
             "prohibited_upgrades": [_clean_text(item, limit=300) for item in self.prohibited_upgrades],
             "behavior_boundary_flags": _safe_json(self.behavior_boundary_flags),
         }
+        component_readiness = _safe_json(
+            self.author_input_refs.get("component_readiness")
+        )
+        if component_readiness:
+            payload["component_readiness"] = component_readiness
+        return payload
 
     def to_author_input_payload(
         self,

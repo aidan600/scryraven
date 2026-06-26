@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-COMPONENT-EVIDENCE-CITATION-BINDING-01`.
+`AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -48,8 +48,13 @@ Current summary:
   EvidenceLedger component-scoped custody. Offline candidate links and custody
   gaps appear as component-specific blockers, but custody/candidate presence
   does not bind evidence, citations, source obligations, answer values,
-  readiness, partial answer authority, or Author handoff. The post-merge next
-  gate is AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01.
+  readiness, partial answer authority, or Author handoff.
+- This PR adds AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 using existing
+  SufficiencyJudgment and FinalAnswerPacket owners. Passive
+  AnswerContractAuthorityMap binding status and EvidenceLedger custody inputs
+  are consumed into component-aware blocked readiness, but they do not become
+  readiness authorities. The post-merge next gate is
+  AG-PARTIAL-ANSWER-READINESS-01.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the

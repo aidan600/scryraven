@@ -90,12 +90,15 @@ source custody from offline bridge output: component source requirements,
 candidate links, custody gaps, and unsatisfied/pending source-obligation state.
 Candidate links remain non-evidence until fetched/read/admitted by a later
 phase, source obligations are unsatisfied/pending rather than satisfied by
-candidate presence, and AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 extends the
-existing AnswerContractAuthorityMap per-component binding status to consume
+candidate presence, and PR #321 /
+AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 extends the existing
+AnswerContractAuthorityMap per-component binding status to consume
 EvidenceLedger component-scoped custody. Candidate links and custody gaps are
 component-specific blockers, not evidence/citation/source-obligation/answer
-binding. The post-merge next gate is
-AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01.
+binding. This PR adds AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 using existing
+SufficiencyJudgment and FinalAnswerPacket owners; passive binding/custody inputs
+do not themselves decide readiness. The post-merge next gate is
+AG-PARTIAL-ANSWER-READINESS-01.
 
 ### No orchestrator brain
 

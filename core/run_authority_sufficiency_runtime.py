@@ -22,6 +22,7 @@ from core.run_authority_sufficiency_validation import (
     validate_or_repair_sufficiency_judgment,
 )
 from core.run_kernel import (
+    ANSWER_CONTRACT_AUTHORITY_MAP_STAGE,
     SUFFICIENCY_JUDGMENT_STAGE,
     ActionType,
     AuthorizedAction,
@@ -256,6 +257,9 @@ def execute_sufficiency_judgment_handoff_from_scope(
         component_coverage_history=run_kernel.state.component_coverage_history,
         contract_amendment_admission_history=(
             run_kernel.state.contract_amendment_admission_history
+        ),
+        answer_contract_authority_map_projection=run_kernel.state.projections.get(
+            ANSWER_CONTRACT_AUTHORITY_MAP_STAGE,
         ),
     )
     action = run_kernel.authorize_sufficiency_judgment(
