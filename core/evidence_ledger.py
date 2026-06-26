@@ -24,6 +24,13 @@ from core.official_current_source_custody import (
 
 EVIDENCE_LEDGER_SCHEMA_VERSION = "evidence_ledger_ag91j_v1"
 EVIDENCE_LEDGER_TRACE_KEY = "evidence_ledger"
+COMPONENT_SCOPED_SOURCE_CUSTODY_SCHEMA_VERSION = (
+    "component_scoped_source_custody_ag_custody_01_v1"
+)
+COMPONENT_SCOPED_SOURCE_CUSTODY_TRACE_KEY = "component_scoped_source_custody"
+COMPONENT_SCOPED_SOURCE_CUSTODY_NEXT_CONSUMER = (
+    "component evidence/citation binding"
+)
 
 UNKNOWN = "unknown"
 NOT_OBSERVABLE = "not_observable"
@@ -71,6 +78,10 @@ class EvidenceCustodyGapType(str, Enum):
     FINAL_EVIDENCE_SELECTED_WITHOUT_LEDGER_CUSTODY = (
         "final_evidence_selected_without_ledger_custody"
     )
+    MISSING_COMPONENT_SOURCE_CANDIDATE = "missing_component_source_candidate"
+    UNFETCHED_OR_UNREAD_COMPONENT_CANDIDATE = (
+        "unfetched_or_unread_component_candidate"
+    )
     MISSING_SOURCE_BOUND_VALUE = "missing_source_bound_value"
     UNSUPPORTED_NUMERIC_VALUE = "unsupported_numeric_value"
 
@@ -112,6 +123,14 @@ _SECRET_VALUE_PATTERNS = (
     re.compile(
         r"(?i)\b(api[_ -]?key|secret|token|password)\b\s*[:=]\s*[^,\s;]+"
     ),
+)
+_SENSITIVE_VALUE_MARKERS = (
+    "RAW_PROMPT",
+    "RAW_PROVIDER_PAYLOAD",
+    "RAW_MODEL_RESPONSE",
+    "PRIVATE_LOG",
+    "DB_CACHE_ROW",
+    "FULL_TRACE",
 )
 _STRONG_REQUIREMENT_KINDS = frozenset(
     {
@@ -438,6 +457,9 @@ class EvidenceLedger:
     gaps: list[EvidenceCustodyGap] = field(default_factory=list)
     final_evidence_refs: list[dict[str, Any]] = field(default_factory=list)
     observation_refs: list[dict[str, Any]] = field(default_factory=list)
+    component_source_custody: dict[str, dict[str, Any]] = field(
+        default_factory=dict
+    )
 
     def reduce_observation(
         self,
@@ -474,8 +496,27 @@ class EvidenceLedger:
         for gap in _list(payload.get("custody_gaps") or payload.get("gaps")):
             self._admit_gap_record(gap, source=source)
         self._admit_final_evidence(payload.get("final_evidence"))
+        for custody in _list(payload.get("component_source_custody")):
+            self._admit_component_source_custody(custody)
         self._evaluate_requirements()
         return self
+
+    def record_component_scoped_source_custody_from_offline_search_executor_bridge(
+        self,
+        bridge_projection: Mapping[str, Any] | None,
+        *,
+        observation_id: str = "component-scoped-source-custody:offline-bridge",
+    ) -> dict[str, Any]:
+        """Consume offline SearchExecutor bridge observations into ledger custody."""
+
+        observation = (
+            build_component_scoped_source_custody_observation_from_offline_search_executor_bridge(
+                bridge_projection=bridge_projection,
+                observation_id=observation_id,
+            )
+        )
+        self.reduce_observation(observation)
+        return self.to_component_scoped_source_custody_projection()
 
     def to_projection(self) -> EvidenceLedgerProjection:
         official_current_projection = self.to_official_current_source_custody()
@@ -511,6 +552,9 @@ class EvidenceLedger:
             "final_evidence_refs": list(self.final_evidence_refs),
             "observation_refs": list(self.observation_refs),
             "official_current_source_custody": official_current_projection.to_dict(),
+            "component_scoped_source_custody": (
+                self.to_component_scoped_source_custody_projection()
+            ),
             "compatibility": {
                 "controller_evidence_ledger_status": "compatibility_only_subordinate",
                 "allocation_result_candidate_custody_status": (
@@ -528,6 +572,72 @@ class EvidenceLedger:
             },
         }
         return EvidenceLedgerProjection(payload)
+
+    def to_component_scoped_source_custody_projection(self) -> dict[str, Any]:
+        components = [
+            _safe_mapping(record)
+            for record in sorted(
+                self.component_source_custody.values(),
+                key=lambda item: str(item.get("component_id") or ""),
+            )
+        ]
+        custody_gaps = [
+            gap
+            for component in components
+            for gap in _list(component.get("custody_gaps"))
+            if isinstance(gap, Mapping)
+        ]
+        obligation_statuses = [
+            obligation.get("source_obligation_status")
+            for component in components
+            for obligation in _list(component.get("source_obligation_refs"))
+            if isinstance(obligation, Mapping)
+        ]
+        payload = {
+            "schema_version": COMPONENT_SCOPED_SOURCE_CUSTODY_SCHEMA_VERSION,
+            "trace_key": COMPONENT_SCOPED_SOURCE_CUSTODY_TRACE_KEY,
+            "owner": "RunKernel.EvidenceLedger",
+            "canonical_state": True,
+            "trace_only": False,
+            "storage_only": False,
+            "offline_bridge_consumer": True,
+            "component_count": len(components),
+            "source_obligation_count": sum(
+                _positive_int(component.get("source_obligation_count"))
+                for component in components
+            ),
+            "candidate_link_count": sum(
+                _positive_int(component.get("candidate_link_count"))
+                for component in components
+            ),
+            "per_component_custody": components,
+            "custody_gaps": custody_gaps,
+            "custody_gap_count": len(custody_gaps),
+            "unsatisfied_obligation_statuses": [
+                status
+                for status in obligation_statuses
+                if status
+                in {
+                    "unsatisfied",
+                    "pending_candidate",
+                    "missing_candidate",
+                    "blocked_by_unfetched_or_unread_candidate",
+                }
+            ],
+            "next_consumer": COMPONENT_SCOPED_SOURCE_CUSTODY_NEXT_CONSUMER,
+            "candidate_links_are_evidence": False,
+            "source_obligation_satisfied": False,
+            "source_obligations_satisfied_by_candidate_presence": False,
+            "evidence_bound": False,
+            "citation_bound": False,
+            "answer_value_bound": False,
+            "full_component_success": False,
+            "partial_user_answer_candidate": False,
+            "final_answer_allowed": False,
+            "author_payload_ready": False,
+            "behavior_boundary_flags": _component_custody_false_flags(),
+        }
+        return _safe_mapping(payload)
 
     def to_official_current_source_custody(self) -> OfficialCurrentSourceCustodyState:
         state = OfficialCurrentSourceCustodyState()
@@ -845,6 +955,16 @@ class EvidenceLedger:
             source_ref=_clean_text(record.get("source_ref")) or source,
         )
 
+    def _admit_component_source_custody(self, record: Any) -> None:
+        if not isinstance(record, Mapping):
+            return
+        component_id = _clean_component_id(record.get("component_id"))
+        if not component_id:
+            return
+        safe_record = _component_source_custody_record(record)
+        if safe_record:
+            self.component_source_custody[component_id] = safe_record
+
     def _evaluate_requirements(self) -> None:
         for requirement in self.requirements.values():
             linked_candidates = [
@@ -875,6 +995,12 @@ class EvidenceLedger:
             if requirement.aggregate_counts_insufficient:
                 requirement.status = SourceRequirementStatus.UNSATISFIED
                 requirement.reason = "aggregate_counts_cannot_satisfy_custody"
+                continue
+            if _clean_text(requirement.origin_ref, limit=120) and (
+                "offline_search_executor_bridge" in requirement.origin_ref
+            ):
+                requirement.status = SourceRequirementStatus.UNSATISFIED
+                requirement.reason = "component_source_custody_missing_candidate"
                 continue
             if _strong_requirement(requirement):
                 requirement.status = SourceRequirementStatus.UNSATISFIED
@@ -1133,6 +1259,104 @@ def build_evidence_ledger_observation_from_run_contract(
             "requirements": requirements,
             "contract_id": contract_id,
             "owner": "RunKernel.RunAuthorityContract",
+        },
+    )
+
+
+def build_component_scoped_source_custody_observation_from_offline_search_executor_bridge(
+    *,
+    bridge_projection: Mapping[str, Any] | None,
+    observation_id: str,
+) -> EvidenceLedgerObservation:
+    """Build ledger-owned component custody from the offline SearchExecutor bridge."""
+
+    bridge = _safe_mapping(bridge_projection)
+    requirements: list[dict[str, Any]] = []
+    candidates: list[dict[str, Any]] = []
+    links: list[dict[str, Any]] = []
+    gaps: list[dict[str, Any]] = []
+    component_custody: list[dict[str, Any]] = []
+
+    for component in _list(bridge.get("component_observations")):
+        if not isinstance(component, Mapping):
+            continue
+        component_record = _component_custody_from_bridge_component(component)
+        if not component_record:
+            continue
+        component_custody.append(component_record)
+        for obligation in _list(component_record.get("source_obligation_refs")):
+            if not isinstance(obligation, Mapping):
+                continue
+            requirement_id = _clean_token(obligation.get("source_obligation_id"))
+            if not requirement_id:
+                continue
+            requirements.append(
+                {
+                    "requirement_id": requirement_id,
+                    "requirement_kind": _requirement_kind_from_obligation(
+                        obligation
+                    ),
+                    "origin_ref": (
+                        "offline_search_executor_bridge:"
+                        f"{component_record.get('component_id')}"
+                    ),
+                    "required_source_class": obligation.get("required_source_class")
+                    or obligation.get("source_class"),
+                    "aggregate_counts_insufficient": False,
+                }
+            )
+        for candidate in _list(component_record.get("candidate_links")):
+            if not isinstance(candidate, Mapping):
+                continue
+            candidate_id = _clean_token(candidate.get("candidate_id"))
+            requirement_id = _clean_token(candidate.get("source_obligation_id"))
+            if not candidate_id:
+                continue
+            candidates.append(
+                {
+                    "candidate_id": candidate_id,
+                    "requirement_id": requirement_id,
+                    "url": candidate.get("url"),
+                    "domain": candidate.get("domain"),
+                    "title": candidate.get("title"),
+                    "source_class": candidate.get("source_class_hint")
+                    or candidate.get("required_source_class"),
+                    "record_kind": CandidateCustodyKind.PROPOSAL.value,
+                    "disposition": CandidateDisposition.PROPOSED.value,
+                    "reason": "offline bridge candidate link only",
+                    "fetchable_status": "not_fetched",
+                    "readable_status": "not_read",
+                    "eligible_for_stronger_obligation": False,
+                    "final_evidence_eligible": False,
+                }
+            )
+            if requirement_id:
+                links.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "candidate_id": candidate_id,
+                        "link_reason": "offline_bridge_component_candidate_link",
+                        "link_status": "blocked_by_unfetched_or_unread_candidate",
+                    }
+                )
+        for gap in _list(component_record.get("custody_gaps")):
+            if isinstance(gap, Mapping):
+                gaps.append(dict(gap))
+
+    return EvidenceLedgerObservation(
+        observation_id=observation_id,
+        source="offline_search_executor_bridge_component_source_custody",
+        payload={
+            "observation_id": observation_id,
+            "observation_source": (
+                "offline_search_executor_bridge_component_source_custody"
+            ),
+            "requirements": requirements,
+            "candidates": candidates,
+            "requirement_links": links,
+            "custody_gaps": gaps,
+            "component_source_custody": component_custody,
+            "owner": "RunKernel.EvidenceLedger",
         },
     )
 
@@ -1551,6 +1775,8 @@ def _clean_text(value: Any, *, limit: int = _MAX_TEXT_CHARS) -> str | None:
     text = " ".join(str(value or "").strip().split())
     if not text:
         return None
+    if any(marker in text for marker in _SENSITIVE_VALUE_MARKERS):
+        return "[redacted]"
     return text[:limit]
 
 
@@ -1587,6 +1813,219 @@ def _append_unique(target: list[str], value: str | None) -> None:
         target.append(value)
 
 
+def _positive_int(value: Any) -> int:
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _clean_component_id(value: Any, *, limit: int = 160) -> str:
+    text = _clean_text(value, limit=limit)
+    if not text:
+        return ""
+    return text.replace(" ", "_")[:limit]
+
+
+def _component_custody_from_bridge_component(
+    component: Mapping[str, Any],
+) -> dict[str, Any]:
+    component_id = _clean_component_id(component.get("component_id"))
+    if not component_id:
+        return {}
+    obligations = [
+        _source_obligation_ref_from_bridge(component_id, obligation)
+        for obligation in _list(component.get("source_obligation_refs"))
+        if isinstance(obligation, Mapping)
+    ]
+    obligations = [obligation for obligation in obligations if obligation]
+    candidates = [
+        _candidate_link_from_bridge(component_id, candidate)
+        for candidate in _list(component.get("candidate_observation_refs"))
+        if isinstance(candidate, Mapping)
+    ]
+    candidates = [candidate for candidate in candidates if candidate]
+    candidate_obligation_ids = {
+        _clean_token(candidate.get("source_obligation_id"))
+        for candidate in candidates
+        if _clean_token(candidate.get("source_obligation_id"))
+    }
+    gaps: list[dict[str, Any]] = []
+    for obligation in obligations:
+        obligation_id = _clean_token(obligation.get("source_obligation_id"))
+        linked = obligation_id in candidate_obligation_ids
+        obligation["source_obligation_status"] = (
+            "blocked_by_unfetched_or_unread_candidate"
+            if linked
+            else "missing_candidate"
+        )
+        obligation["source_obligation_satisfied"] = False
+        gaps.append(
+            {
+                "gap_type": (
+                    EvidenceCustodyGapType.UNFETCHED_OR_UNREAD_COMPONENT_CANDIDATE.value
+                    if linked
+                    else EvidenceCustodyGapType.MISSING_COMPONENT_SOURCE_CANDIDATE.value
+                ),
+                "requirement_id": obligation_id,
+                "reason": (
+                    "offline bridge candidate is not fetched or read"
+                    if linked
+                    else "source obligation has no offline bridge candidate"
+                ),
+                "source_ref": f"offline_search_executor_bridge:{component_id}",
+            }
+        )
+    return _safe_mapping(
+        {
+            "component_id": component_id,
+            "component_id_normalized": _clean_token(component_id),
+            "source_obligation_refs": obligations,
+            "candidate_links": candidates,
+            "custody_gaps": gaps,
+            "source_obligation_count": len(obligations),
+            "candidate_link_count": len(candidates),
+            "candidate_links_are_evidence": False,
+            "source_obligation_satisfied": False,
+            "source_obligations_satisfied_by_candidate_presence": False,
+            "evidence_bound": False,
+            "citation_bound": False,
+            "answer_value_bound": False,
+            "full_component_success": False,
+            "partial_user_answer_candidate": False,
+            "final_answer_allowed": False,
+            "author_payload_ready": False,
+        }
+    )
+
+
+def _source_obligation_ref_from_bridge(
+    component_id: str,
+    obligation: Mapping[str, Any],
+) -> dict[str, Any]:
+    obligation_id = _clean_component_id(
+        obligation.get("source_obligation_id")
+        or obligation.get("requirement_id")
+        or f"{component_id}:source-requirement"
+    )
+    if not obligation_id:
+        return {}
+    source_class = _clean_token(
+        obligation.get("required_source_class")
+        or obligation.get("source_class")
+        or obligation.get("search_constraint")
+    )
+    return _safe_mapping(
+        {
+            "component_id": component_id,
+            "source_obligation_id": obligation_id,
+            "source": obligation.get("source") or "offline_search_executor_bridge",
+            "kind": obligation.get("kind") or _kind_for_source_class(source_class),
+            "required_source_class": source_class,
+            "source_obligation_satisfied": False,
+            "status": "unsatisfied",
+        }
+    )
+
+
+def _candidate_link_from_bridge(
+    component_id: str,
+    candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    ledger_shape = _safe_mapping(candidate.get("evidence_ledger_candidate_observation"))
+    candidate_id = _clean_component_id(
+        ledger_shape.get("candidate_id") or candidate.get("candidate_id")
+    )
+    if not candidate_id:
+        return {}
+    obligation_id = _clean_component_id(
+        ledger_shape.get("source_obligation_id")
+        or candidate.get("source_obligation_id")
+        or candidate.get("requirement_id")
+    )
+    return _safe_mapping(
+        {
+            "component_id": component_id,
+            "candidate_id": candidate_id,
+            "source_obligation_id": obligation_id,
+            "url": ledger_shape.get("url") or candidate.get("url"),
+            "domain": ledger_shape.get("domain") or candidate.get("domain"),
+            "title": ledger_shape.get("title") or candidate.get("title"),
+            "source_class_hint": ledger_shape.get("source_class_hint")
+            or candidate.get("source_class_hint")
+            or candidate.get("source_class"),
+            "candidate_kind": "offline_bridge_candidate_observation",
+            "custody_status": "blocked_by_unfetched_or_unread_candidate",
+            "fetched": False,
+            "read": False,
+            "evidence_ledger_admitted": False,
+            "citation_eligible": False,
+            "source_obligation_satisfied": False,
+            "semantic_coverage": False,
+            "final_evidence": False,
+            "evidence_bound": False,
+            "citation_bound": False,
+            "answer_value_bound": False,
+            "full_component_success": False,
+            "partial_user_answer_candidate": False,
+            "final_answer_allowed": False,
+            "author_payload_ready": False,
+        }
+    )
+
+
+def _component_source_custody_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(record)
+    component_id = _clean_component_id(safe.get("component_id"))
+    if not component_id:
+        return {}
+    safe["component_id"] = component_id
+    safe["candidate_links_are_evidence"] = False
+    safe["source_obligations_satisfied_by_candidate_presence"] = False
+    for field_name in (
+        "evidence_bound",
+        "citation_bound",
+        "answer_value_bound",
+        "full_component_success",
+        "partial_user_answer_candidate",
+        "final_answer_allowed",
+        "author_payload_ready",
+    ):
+        safe[field_name] = False
+    return safe
+
+
+def _requirement_kind_from_obligation(obligation: Mapping[str, Any]) -> str:
+    return (
+        _clean_token(obligation.get("kind"))
+        or _kind_for_source_class(_clean_token(obligation.get("required_source_class")))
+        or "general"
+    )
+
+
+def _component_custody_false_flags() -> dict[str, bool]:
+    return {
+        "live_search_executed": False,
+        "provider_selected": False,
+        "provider_called": False,
+        "model_called": False,
+        "fetch_read_executed": False,
+        "retrieval_executed": False,
+        "evidence_ledger_admitted": False,
+        "citation_rendering_performed": False,
+        "author_called": False,
+        "candidate_links_are_evidence": False,
+        "source_obligations_satisfied_by_candidate_presence": False,
+        "evidence_bound": False,
+        "citation_bound": False,
+        "answer_value_bound": False,
+        "full_component_success": False,
+        "partial_user_answer_candidate": False,
+        "final_answer_allowed": False,
+        "author_payload_ready": False,
+    }
+
+
 def _coerce_enum(enum_cls: type[Enum], value: Any, default: str) -> Any:
     raw = value.value if isinstance(value, Enum) else _clean_token(value)
     try:
@@ -1596,6 +2035,9 @@ def _coerce_enum(enum_cls: type[Enum], value: Any, default: str) -> Any:
 
 
 __all__ = [
+    "COMPONENT_SCOPED_SOURCE_CUSTODY_NEXT_CONSUMER",
+    "COMPONENT_SCOPED_SOURCE_CUSTODY_SCHEMA_VERSION",
+    "COMPONENT_SCOPED_SOURCE_CUSTODY_TRACE_KEY",
     "EVIDENCE_LEDGER_SCHEMA_VERSION",
     "EVIDENCE_LEDGER_TRACE_KEY",
     "CandidateCustodyKind",
@@ -1610,6 +2052,7 @@ __all__ = [
     "SourceObligationLink",
     "SourceRequirementRecord",
     "SourceRequirementStatus",
+    "build_component_scoped_source_custody_observation_from_offline_search_executor_bridge",
     "build_evidence_ledger_observation_from_run_contract",
     "build_evidence_ledger_observation_from_runtime",
     "source_class_facts_from_evidence_ledger_projection",

@@ -71,7 +71,7 @@ Current authority-map baseline after PR #318:
 AnswerContractAuthorityMap before runtime SearchExecutor wiring, and
 `AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01` completed the ComponentSearchPlan
 naming / subordination cleanup. PR #319 /
-`AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01` completes the offline RunKernel-owned
+`AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01` completed the offline RunKernel-owned
 SearchExecutor bridge. RunKernel / RunAuthority remains root authority.
 AnswerContractAuthorityMap owns answer-component authority mapping.
 ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the
@@ -84,10 +84,14 @@ citation eligibility, or Author handoff readiness. The completed Offline
 SearchExecutor bridge is offline and inert, does not perform live
 provider/search/fetch/read/retrieval work, does not admit EvidenceLedger custody
 or satisfy source obligations, keeps candidate observations non-evidence, and
-is not user-facing runtime search. The next gate is
-AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01, which should consume bridge observations
-for EvidenceLedger component-scoped source requirements, candidate links,
-custody gaps, and satisfied/unsatisfied source-obligation state.
+is not user-facing runtime search. PR #320 /
+AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger component-scoped
+source custody from offline bridge output: component source requirements,
+candidate links, custody gaps, and unsatisfied/pending source-obligation state.
+Candidate links remain non-evidence until fetched/read/admitted by a later
+phase, source obligations are unsatisfied/pending rather than satisfied by
+candidate presence, and the post-merge next gate is
+AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 / component evidence/citation binding.
 
 ### No orchestrator brain
 

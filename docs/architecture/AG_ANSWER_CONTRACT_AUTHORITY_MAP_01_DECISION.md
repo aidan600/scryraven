@@ -46,6 +46,11 @@ AnswerContractAuthorityMap ties:
   not user-facing runtime search; it does not perform live provider/search/
   fetch/read/retrieval work, admit EvidenceLedger custody, or satisfy source
   obligations. Candidate observations remain non-evidence.
+- PR #320 `AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01`: EvidenceLedger
+  component-scoped source custody is added from offline bridge output. Candidate
+  links remain non-evidence until fetched/read/admitted by a later phase, and
+  source obligations are unsatisfied/pending rather than satisfied by candidate
+  presence.
 
 ## Authority Hierarchy
 
@@ -91,11 +96,16 @@ AnswerContractAuthorityMap ties:
    read/retrieval work, does not admit EvidenceLedger custody or satisfy source
    obligations, keeps candidate observations non-evidence, and is not
    user-facing runtime search.
-4. Add component-scoped source custody. This is the next gate:
-   AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 should consume bridge observations for
-   EvidenceLedger component-scoped source requirements, candidate links,
-   custody gaps, and satisfied/unsatisfied source-obligation state.
-5. Bind component evidence and citations.
+4. Add component-scoped source custody. Complete in PR #320 /
+   AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01. EvidenceLedger consumes offline bridge
+   observations for component-scoped source requirements, candidate links,
+   custody gaps, and unsatisfied/pending source-obligation state. Candidate
+   links remain non-evidence until fetched/read/admitted by a later phase, and
+   source obligations are unsatisfied/pending rather than satisfied by candidate
+   presence.
+5. Bind component evidence and citations. The post-merge next gate is
+   AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 / component evidence/citation
+   binding.
 6. Bind Sufficiency / FinalAnswerPacket component readiness.
 7. Add partial-answer readiness only after the full offline authority chain is
    testable.
