@@ -88,6 +88,11 @@ is not user-facing runtime search. The next gate is
 AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01, which should consume bridge observations
 for EvidenceLedger component-scoped source requirements, candidate links,
 custody gaps, and satisfied/unsatisfied source-obligation state.
+AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger component-scoped
+source custody from offline bridge output. Candidate links remain non-evidence
+until fetched/read/admitted by a later phase, source obligations are represented
+as unsatisfied/pending rather than satisfied by candidate presence, and the next
+gate is component evidence/citation binding.
 
 ### No orchestrator brain
 

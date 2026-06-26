@@ -46,6 +46,7 @@ ComponentPlan / component executor contract, a RunKernel-owned passive
 AnswerContractAuthorityMap, and completed ComponentSearchPlan naming /
 subordination cleanup. PR #319 / AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01
 completes the offline RunKernel-owned SearchExecutor bridge.
+PR #319 completed the offline RunKernel-owned SearchExecutor bridge.
 
 The completed Offline SearchExecutor bridge is offline and inert, does not
 perform live provider/search/fetch/read/retrieval work, does not admit
@@ -54,6 +55,11 @@ observations non-evidence, and is not user-facing runtime search. The next gate
 is AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01, which should consume bridge
 observations for EvidenceLedger component-scoped source requirements, candidate
 links, custody gaps, and satisfied/unsatisfied source-obligation state.
+AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger component-scoped
+source custody from that bridge output. Candidate links remain non-evidence
+until fetched, read, and admitted by a later phase, and source obligations are
+represented as unsatisfied/pending rather than satisfied by candidate presence.
+The next gate is component evidence/citation binding.
 RunKernel / RunAuthority remains the root authority.
 AnswerContractAuthorityMap owns the
 answer-component authority mapping. ComponentPlan is legacy/compat input

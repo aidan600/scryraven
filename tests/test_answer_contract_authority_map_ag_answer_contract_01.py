@@ -603,12 +603,13 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
     assert "componentplan is legacy/compat input terminology" in normalized
     assert "componentsearchplan is the preferred subordinate" in normalized
     assert "they do not decide answerability" in normalized
-    assert "post-ag-component-searchplan-subordination-01" in normalized
+    assert "componentplan / componentsearchplan naming and subordination cleanup is complete" in normalized
     assert "completed componentsearchplan naming / subordination cleanup" in normalized
     assert "complete in pr #318" in normalized
-    assert "next productization gate is the offline searchexecutor bridge" in normalized
-    assert "offline searchexecutor bridge. this is the next gate" in normalized
-    assert "runtime searchexecutor wiring is still not part of pr #318" in normalized
+    assert "pr #319 / ag-offline-search-executor-bridge-01" in normalized
+    assert "completes the offline runkernel-owned searchexecutor bridge" in normalized
+    assert "next gate is ag-component-scoped-source-custody-01" in normalized
+    assert "evidenceledger component-scoped source custody" in normalized
     assert "no live validation" in normalized
 
     forbidden_claims = {
@@ -622,6 +623,7 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
         "searchexecutor decides answerability",
         "current productization cleanup is componentsearchplan",
         "current next implementation target is componentsearchplan naming",
+        "next productization gate is the offline searchexecutor bridge",
     }
     for claim in forbidden_claims:
         assert claim not in normalized

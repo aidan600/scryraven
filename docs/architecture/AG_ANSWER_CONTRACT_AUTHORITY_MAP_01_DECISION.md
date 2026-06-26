@@ -95,7 +95,13 @@ AnswerContractAuthorityMap ties:
    AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 should consume bridge observations for
    EvidenceLedger component-scoped source requirements, candidate links,
    custody gaps, and satisfied/unsatisfied source-obligation state.
-5. Bind component evidence and citations.
+   AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger component-scoped
+   source custody from offline bridge output. Candidate links remain
+   non-evidence until fetched/read/admitted by a later phase, and source
+   obligations are represented as unsatisfied/pending rather than satisfied by
+   candidate presence.
+5. Bind component evidence and citations. The next gate is component
+   evidence/citation binding.
 6. Bind Sufficiency / FinalAnswerPacket component readiness.
 7. Add partial-answer readiness only after the full offline authority chain is
    testable.

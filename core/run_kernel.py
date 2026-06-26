@@ -423,6 +423,7 @@ CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 ANSWER_CONTRACT_AUTHORITY_MAP_STAGE = "answer_contract_authority_map"
 OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE = "offline_search_executor_bridge"
+COMPONENT_SCOPED_SOURCE_CUSTODY_STAGE = "component_scoped_source_custody"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
@@ -971,6 +972,12 @@ class RunState:
         default_factory=dict
     )
     offline_search_executor_bridge_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
+    component_scoped_source_custody_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    component_scoped_source_custody_history: list[dict[str, Any]] = field(
         default_factory=list
     )
     evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
@@ -2946,6 +2953,47 @@ class RunKernel:
                 bridge
             )
         return bridge
+
+    def record_component_scoped_source_custody_from_offline_search_executor_bridge(
+        self,
+        *,
+        bridge_projection: Mapping[str, Any] | None = None,
+        observation_id: str = "component-scoped-source-custody:offline-bridge",
+        store: bool = True,
+    ) -> dict[str, Any]:
+        """Consume the offline bridge into EvidenceLedger-owned component custody."""
+
+        bridge_input = (
+            bridge_projection
+            or self.state.offline_search_executor_bridge_projection
+            or self.state.projections.get(OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE)
+        )
+        bridge = dict(bridge_input) if isinstance(bridge_input, Mapping) else {}
+        if not bridge:
+            raise RunKernelTransitionError(
+                "component-scoped source custody requires an offline "
+                "SearchExecutor bridge projection"
+            )
+        projection = (
+            self.state.evidence_ledger.record_component_scoped_source_custody_from_offline_search_executor_bridge(
+                bridge,
+                observation_id=observation_id,
+            )
+        )
+        if store:
+            self.state.component_scoped_source_custody_projection = deepcopy(
+                projection
+            )
+            self.state.component_scoped_source_custody_history.append(
+                deepcopy(projection)
+            )
+            self.state.projections[COMPONENT_SCOPED_SOURCE_CUSTODY_STAGE] = (
+                deepcopy(projection)
+            )
+            self.state.projections[EVIDENCE_LEDGER_STAGE] = (
+                self.state.evidence_ledger.to_projection().to_dict()
+            )
+        return projection
 
     def authorize_query_plan_admission(
         self,
@@ -12393,6 +12441,7 @@ __all__ = [
     "FOLLOWUP_SUFFICIENCY_RECHECK_STAGE",
     "ANSWER_CONTRACT_AUTHORITY_MAP_STAGE",
     "OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE",
+    "COMPONENT_SCOPED_SOURCE_CUSTODY_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
