@@ -559,12 +559,19 @@ def _evidence_custody(component_id: str, ledger: Mapping[str, Any]) -> dict[str,
             "source_obligation_satisfaction_owner": "EvidenceLedger",
             "source_obligation_satisfaction_inferred_from_plan": False,
             "candidate_refs": [],
+            "component_candidate_link_refs": [],
             "source_requirement_refs": [],
+            "component_source_obligation_refs": [],
             "custody_gaps": [],
+            "component_custody_gap_refs": [],
             "official_current_compatibility_status": "unknown",
             "readability_status": "unknown",
             "source_bound_compatibility_status": "unknown",
         }
+    component_custody = _component_scoped_custody_for_component(
+        ledger,
+        component_id,
+    )
     requirements = [
         item
         for item in _sequence_of_mappings(ledger.get("source_requirements"))
@@ -582,6 +589,20 @@ def _evidence_custody(component_id: str, ledger: Mapping[str, Any]) -> dict[str,
         if _matches_component(component_id, item)
         or _clean_token(item.get("requirement_id")) in requirement_ids
     ]
+    component_obligations = [
+        _component_source_obligation_ref(item)
+        for item in _sequence_of_mappings(
+            component_custody.get("source_obligation_refs")
+        )
+    ]
+    component_candidates = [
+        _component_candidate_link_ref(item)
+        for item in _sequence_of_mappings(component_custody.get("candidate_links"))
+    ]
+    component_gaps = [
+        _gap_ref(item)
+        for item in _sequence_of_mappings(component_custody.get("custody_gaps"))
+    ]
     statuses = [_clean_token(item.get("status")) or "unknown" for item in requirements]
     custody_status = _custody_status(statuses, requirements, ledger)
     return {
@@ -590,6 +611,11 @@ def _evidence_custody(component_id: str, ledger: Mapping[str, Any]) -> dict[str,
         "ledger_schema_version": _clean_token(ledger.get("schema_version")),
         "custody_status": custody_status,
         "candidate_refs": candidates,
+        "component_candidate_link_refs": component_candidates,
+        "component_scoped_source_custody_ref": _component_custody_projection_ref(
+            ledger,
+            component_custody,
+        ),
         "source_requirement_refs": [
             _without_empty(
                 {
@@ -609,7 +635,9 @@ def _evidence_custody(component_id: str, ledger: Mapping[str, Any]) -> dict[str,
             )
             for item in requirements
         ],
+        "component_source_obligation_refs": component_obligations,
         "custody_gaps": gaps,
+        "component_custody_gap_refs": component_gaps,
         "source_obligation_satisfied": (
             "satisfied"
             if custody_status == AnswerComponentCustodyStatus.SATISFIED.value
@@ -744,6 +772,7 @@ def _binding_status(
         blocker_reasons.append("source_obligation_not_bound_by_final_answer_packet")
     if not answer_value_bound:
         blocker_reasons.append("answer_value_not_bound_by_semantic_packet")
+    blocker_reasons.extend(_component_custody_binding_blockers(custody))
     return {
         "evidence_bound": evidence_bound,
         "evidence_binding_status": (
@@ -776,7 +805,15 @@ def _binding_status(
             custody.get("source_obligation_satisfied") == "satisfied"
         ),
         "plan_presence_contributed_to_binding": False,
-        "blocker_reasons": blocker_reasons,
+        "component_candidate_link_refs": _json_safe(
+            custody.get("component_candidate_link_refs") or []
+        ),
+        "component_custody_gap_refs": _json_safe(
+            custody.get("component_custody_gap_refs") or []
+        ),
+        "blocker_reasons": list(
+            dict.fromkeys(reason for reason in blocker_reasons if reason)
+        ),
     }
 
 
@@ -845,7 +882,8 @@ def _component_binding_ref_sets(
             _add_normalized_ref(source_refs, binding.get(key))
 
     for candidate in _sequence_of_mappings(custody.get("candidate_refs")):
-        _add_normalized_ref(candidate_refs, candidate.get("candidate_id"))
+        if _candidate_ref_binding_eligible(candidate):
+            _add_normalized_ref(candidate_refs, candidate.get("candidate_id"))
 
     for evidence in _sequence_of_mappings(packet.get("evidence_allowed")):
         if _evidence_record_matches_component_refs(
@@ -1417,6 +1455,144 @@ def _candidate_refs(
             )
         )
     return refs
+
+
+def _component_scoped_custody_for_component(
+    ledger: Mapping[str, Any],
+    component_id: str,
+) -> dict[str, Any]:
+    custody_projection = _mapping(ledger.get("component_scoped_source_custody"))
+    normalized_component = _normalize(component_id)
+    for item in _sequence_of_mappings(custody_projection.get("per_component_custody")):
+        if _normalize(item.get("component_id")) == normalized_component:
+            return _json_safe(item) or {}
+    return {}
+
+
+def _component_custody_projection_ref(
+    ledger: Mapping[str, Any],
+    component_custody: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not component_custody:
+        return {}
+    custody_projection = _mapping(ledger.get("component_scoped_source_custody"))
+    return _without_empty(
+        {
+            "available": True,
+            "owner": _clean_token(custody_projection.get("owner"))
+            or _clean_token(ledger.get("owner")),
+            "schema_version": _clean_token(custody_projection.get("schema_version")),
+            "trace_key": _clean_token(custody_projection.get("trace_key")),
+            "component_id": _clean_token(component_custody.get("component_id")),
+            "candidate_links_are_evidence": False,
+            "source_obligations_satisfied_by_candidate_presence": False,
+        }
+    )
+
+
+def _component_source_obligation_ref(item: Mapping[str, Any]) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "component_id": _clean_token(item.get("component_id")),
+            "source_obligation_id": _clean_token(
+                item.get("source_obligation_id")
+                or item.get("requirement_id")
+                or item.get("obligation_id")
+            ),
+            "source": _clean_token(item.get("source")),
+            "kind": _clean_token(item.get("kind") or item.get("requirement_kind")),
+            "required_source_class": _clean_token(
+                item.get("required_source_class")
+                or item.get("source_class")
+                or item.get("search_constraint")
+            ),
+            "status": _clean_token(item.get("status")),
+            "source_obligation_status": _clean_token(
+                item.get("source_obligation_status")
+            ),
+            "source_obligation_satisfied": False,
+        }
+    )
+
+
+def _component_candidate_link_ref(item: Mapping[str, Any]) -> dict[str, Any]:
+    ref = _without_empty(
+        {
+            "component_id": _clean_token(item.get("component_id")),
+            "candidate_id": _clean_token(item.get("candidate_id")),
+            "source_obligation_id": _clean_token(
+                item.get("source_obligation_id")
+                or item.get("requirement_id")
+                or item.get("obligation_id")
+            ),
+            "url": _clean_text(item.get("url"), limit=500),
+            "domain": _clean_token(item.get("domain"), limit=160),
+            "title": _clean_text(item.get("title"), limit=220),
+            "source_class_hint": _clean_token(
+                item.get("source_class_hint") or item.get("source_class")
+            ),
+            "candidate_kind": _clean_token(item.get("candidate_kind")),
+            "custody_status": _clean_token(item.get("custody_status")),
+        }
+    )
+    for field_name in (
+        "fetched",
+        "read",
+        "evidence_ledger_admitted",
+        "citation_eligible",
+        "source_obligation_satisfied",
+        "semantic_coverage",
+        "final_evidence",
+        "evidence_bound",
+        "citation_bound",
+        "answer_value_bound",
+        "full_component_success",
+        "partial_user_answer_candidate",
+        "final_answer_allowed",
+        "author_payload_ready",
+    ):
+        ref[field_name] = False
+    return ref
+
+
+def _candidate_ref_binding_eligible(candidate: Mapping[str, Any]) -> bool:
+    disposition = _clean_token(candidate.get("fact_disposition"))
+    return (
+        disposition in {"accepted", "partially_accepted"}
+        and candidate.get("final_evidence_eligible") is True
+    )
+
+
+def _component_custody_binding_blockers(custody: Mapping[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    obligations = _sequence_of_mappings(
+        custody.get("component_source_obligation_refs")
+    )
+    candidates = _sequence_of_mappings(custody.get("component_candidate_link_refs"))
+    if obligations and not candidates:
+        blockers.append("no_candidate")
+        blockers.append("missing_component_source_candidate")
+    for gap in _sequence_of_mappings(custody.get("component_custody_gap_refs")):
+        gap_type = _clean_token(gap.get("gap_type"))
+        if gap_type:
+            blockers.append(gap_type)
+    if candidates:
+        if any(candidate.get("fetched") is not True for candidate in candidates):
+            blockers.append("candidate_not_fetched")
+        if any(candidate.get("read") is not True for candidate in candidates):
+            blockers.append("candidate_not_read")
+        if any(
+            candidate.get("evidence_ledger_admitted") is not True
+            for candidate in candidates
+        ):
+            blockers.append("candidate_not_admitted_by_evidenceledger")
+        if any(
+            candidate.get("citation_eligible") is not True for candidate in candidates
+        ):
+            blockers.append("citation_not_eligible")
+    if obligations and custody.get("source_obligation_satisfied") != "satisfied":
+        blockers.append("source_obligation_unsatisfied")
+    return blockers
 
 
 def _custody_status(

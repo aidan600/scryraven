@@ -445,9 +445,10 @@ def test_docs_name_completed_bridge_and_component_custody_next_gate() -> None:
     )
     assert "unsatisfied/pending" in normalized
     assert "rather than satisfied by candidate presence" in normalized
-    assert "post-merge next gate" in normalized
+    assert "ag-component-evidence-citation-binding-01 extends" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
     assert "component evidence/citation binding" in normalized
+    assert "post-merge next gate is ag-sufficiency-fap-component-readiness-01" in normalized
     assert "merge-stable phase posture" in normalized
 
     forbidden_stale_phrases = {
@@ -456,6 +457,8 @@ def test_docs_name_completed_bridge_and_component_custody_next_gate() -> None:
         "the next gate is ag-component-scoped-source-custody-01",
         "this is the next gate: ag-component-scoped-source-custody-01",
         "should consume bridge observations for evidenceledger component-scoped",
+        "post-merge next gate is ag-component-evidence-citation-binding-01",
+        "current next implementation target is component evidence/citation binding",
     }
     for phrase in forbidden_stale_phrases:
         assert phrase not in normalized

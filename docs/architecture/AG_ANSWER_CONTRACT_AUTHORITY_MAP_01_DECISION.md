@@ -103,10 +103,15 @@ AnswerContractAuthorityMap ties:
    links remain non-evidence until fetched/read/admitted by a later phase, and
    source obligations are unsatisfied/pending rather than satisfied by candidate
    presence.
-5. Bind component evidence and citations. The post-merge next gate is
-   AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 / component evidence/citation
-   binding.
-6. Bind Sufficiency / FinalAnswerPacket component readiness.
+5. Bind component evidence and citations. Complete in
+   AG-COMPONENT-EVIDENCE-CITATION-BINDING-01: the existing
+   AnswerContractAuthorityMap per-component binding status consumes
+   EvidenceLedger component-scoped custody and preserves offline candidate links
+   and custody gaps as component-specific blockers without upgrading custody
+   presence into evidence, citation, source-obligation, answer-value,
+   readiness, partial-answer, or Author authority.
+6. Bind Sufficiency / FinalAnswerPacket component readiness. The post-merge
+   next gate is AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01.
 7. Add partial-answer readiness only after the full offline authority chain is
    testable.
 8. Run live multi-component validation only after offline authority mapping,
