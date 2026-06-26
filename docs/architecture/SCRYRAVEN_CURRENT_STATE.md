@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
-Status: current-state redirect stub refreshed for PR #319 /
-`AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01`.
+Status: current-state redirect stub refreshed for PR #320 /
+`AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -33,20 +33,18 @@ Current summary:
   and scorekeeping surfaces, PR #317 RunKernel-owned passive
   AnswerContractAuthorityMap, and PR #318 ComponentSearchPlan naming and
   subordination cleanup. PR #319 / AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01
-  completes the offline RunKernel-owned SearchExecutor bridge.
+  completed the offline RunKernel-owned SearchExecutor bridge.
 - The completed Offline SearchExecutor bridge is offline and inert, does not
   perform live provider/search/fetch/read/retrieval work, does not admit
   EvidenceLedger custody or satisfy source obligations, keeps candidate
   observations non-evidence, and is not user-facing runtime search.
-- The next gate is AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01, which should consume
-  bridge observations for EvidenceLedger component-scoped source requirements,
-  candidate links, custody gaps, and satisfied/unsatisfied source-obligation
-  state.
-- AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger component-scoped
-  source custody from offline bridge output. Candidate links remain
-  non-evidence until fetched/read/admitted by a later phase, source obligations
-  are represented as unsatisfied/pending rather than satisfied by candidate
-  presence, and the next gate is component evidence/citation binding.
+- PR #320 / AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger
+  component-scoped source custody from offline bridge output. Candidate links
+  remain non-evidence until fetched/read/admitted by a later phase, source
+  obligations are unsatisfied/pending rather than satisfied by candidate
+  presence, and the post-merge next gate is
+  AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 / component evidence/citation
+  binding.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the

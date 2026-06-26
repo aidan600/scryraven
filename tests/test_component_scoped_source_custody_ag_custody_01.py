@@ -434,9 +434,28 @@ def test_docs_name_completed_bridge_and_component_custody_next_gate() -> None:
     normalized = " ".join(combined.casefold().replace("`", "").split())
 
     assert "pr #319" in normalized
-    assert "completes the offline runkernel-owned searchexecutor bridge" in normalized
+    assert "completed the offline runkernel-owned searchexecutor bridge" in normalized
+    assert "pr #320" in normalized
     assert "ag-component-scoped-source-custody-01" in normalized
     assert "evidenceledger component-scoped source custody" in normalized
+    assert "adds evidenceledger component-scoped source custody" in normalized
     assert "candidate links remain non-evidence" in normalized
+    assert "until fetched/read/admitted" in normalized or (
+        "until fetched, read, and admitted" in normalized
+    )
     assert "unsatisfied/pending" in normalized
-    assert "next gate is component evidence/citation binding" in normalized
+    assert "rather than satisfied by candidate presence" in normalized
+    assert "post-merge next gate" in normalized
+    assert "ag-component-evidence-citation-binding-01" in normalized
+    assert "component evidence/citation binding" in normalized
+    assert "merge-stable phase posture" in normalized
+
+    forbidden_stale_phrases = {
+        "next gate is ag-component-scoped-source-custody-01",
+        "current next implementation target is component-scoped source custody",
+        "the next gate is ag-component-scoped-source-custody-01",
+        "this is the next gate: ag-component-scoped-source-custody-01",
+        "should consume bridge observations for evidenceledger component-scoped",
+    }
+    for phrase in forbidden_stale_phrases:
+        assert phrase not in normalized

@@ -39,27 +39,25 @@ are repo files; use repo-visible files and the current phase prompt.
 ## Current Productization Posture
 
 ScryRaven is post-PR #319 /
-post-AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01. The current baseline includes
+post-AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01. The completed baseline includes
 guarded blocked FinalAnswerPacket input derivation, safe blocked-FAP failure
 summaries, component-level blocked-FAP summary telemetry, an offline
 ComponentPlan / component executor contract, a RunKernel-owned passive
 AnswerContractAuthorityMap, and completed ComponentSearchPlan naming /
 subordination cleanup. PR #319 / AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01
-completes the offline RunKernel-owned SearchExecutor bridge.
-PR #319 completed the offline RunKernel-owned SearchExecutor bridge.
+completed the offline RunKernel-owned SearchExecutor bridge.
 
 The completed Offline SearchExecutor bridge is offline and inert, does not
 perform live provider/search/fetch/read/retrieval work, does not admit
 EvidenceLedger custody or satisfy source obligations, keeps candidate
-observations non-evidence, and is not user-facing runtime search. The next gate
-is AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01, which should consume bridge
-observations for EvidenceLedger component-scoped source requirements, candidate
-links, custody gaps, and satisfied/unsatisfied source-obligation state.
+observations non-evidence, and is not user-facing runtime search. PR #320 /
 AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger component-scoped
-source custody from that bridge output. Candidate links remain non-evidence
-until fetched, read, and admitted by a later phase, and source obligations are
-represented as unsatisfied/pending rather than satisfied by candidate presence.
-The next gate is component evidence/citation binding.
+source custody from that bridge output: component source requirements,
+candidate links, custody gaps, and unsatisfied/pending source-obligation state.
+Candidate links remain non-evidence until fetched, read, and admitted by a later
+phase, and source obligations are unsatisfied/pending rather than satisfied by
+candidate presence. The post-merge next gate is
+AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 / component evidence/citation binding.
 RunKernel / RunAuthority remains the root authority.
 AnswerContractAuthorityMap owns the
 answer-component authority mapping. ComponentPlan is legacy/compat input
@@ -190,6 +188,10 @@ content is explicitly pasted into the current prompt or committed here.
   fields from [RUNAUTHORITY_IMPLEMENTATION_GUIDE.md](RUNAUTHORITY_IMPLEMENTATION_GUIDE.md).
 - Always report the validation bucket used. For PRs, `fast_pr` is the normal
   non-docs target unless the phase explicitly licenses `author_lane` or `full`.
+- Implementation PR docs should use merge-stable phase posture: previous
+  completed baseline, this PR completes/introduces the active phase, and
+  post-merge next gate. Do not label the active implementation phase as the
+  repo's next/current target in docs updated by that same PR.
 
 ## Surface Boundary Vocabulary
 
