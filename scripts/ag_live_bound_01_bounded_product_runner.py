@@ -77,6 +77,7 @@ def _run_confirmed_live(context) -> int:
     print(LIVE_SPEND_WARNING, file=sys.stderr)
     cap_policy = context.caps.to_run_cap_policy()
     run_pipeline_call_count = 0
+    config: Any | None = None
     try:
         _load_live_environment()
         _validate_live_model_keys()
@@ -93,6 +94,7 @@ def _run_confirmed_live(context) -> int:
             classification=LIVE_PACKET_PRECHECK_FAILURE,
             failure_reason=str(exc),
             run_pipeline_call_count=run_pipeline_call_count,
+            run_config=config,
         )
         write_packet(context.output_path, packet)
         print(f"refusing live product execution: {exc}", file=sys.stderr)
@@ -104,6 +106,7 @@ def _run_confirmed_live(context) -> int:
             classification=LIVE_PACKET_CAP_OVERFLOW,
             failure_reason=str(exc),
             run_pipeline_call_count=run_pipeline_call_count,
+            run_config=config,
         )
         write_packet(context.output_path, packet)
         print(f"bounded live product run exceeded caps: {exc}", file=sys.stderr)
@@ -115,6 +118,7 @@ def _run_confirmed_live(context) -> int:
             classification=LIVE_PACKET_PIPELINE_FAILURE,
             failure_reason=str(exc),
             run_pipeline_call_count=run_pipeline_call_count,
+            run_config=config,
         )
         write_packet(context.output_path, packet)
         print(f"bounded live product run failed: {exc}", file=sys.stderr)
@@ -126,6 +130,7 @@ def _run_confirmed_live(context) -> int:
             classification=LIVE_PACKET_UNEXPECTED_FAILURE,
             failure_reason=type(exc).__name__,
             run_pipeline_call_count=run_pipeline_call_count,
+            run_config=config,
         )
         write_packet(context.output_path, packet)
         print(
@@ -138,6 +143,7 @@ def _run_confirmed_live(context) -> int:
         context,
         outcome=outcome,
         cap_policy=cap_policy,
+        run_config=config,
     )
     write_packet(context.output_path, packet)
     print(f"wrote sanitized AG-LIVE-BOUND live packet to {context.output_path}")

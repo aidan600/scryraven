@@ -173,6 +173,19 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
 
     monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
     monkeypatch.setattr(runner, "_validate_live_model_keys", lambda: None)
+    monkeypatch.setattr(
+        runner,
+        "_live_model_config",
+        lambda: {
+            "fast_provider": "FixtureFastProvider",
+            "fast_model": "fixture-fast-model",
+            "smart_provider": "FixtureSmartProvider",
+            "smart_model": "fixture-smart-model",
+            "embed_provider": "FixtureEmbedProvider",
+            "embed_model": "fixture-embed-model",
+            "local_url": "http://localhost:1234/v1",
+        },
+    )
 
     def fake_run_pipeline(config: Any, _deps: Any, _status: Any, _accumulator: Any) -> Any:
         import core.persistence_side_effects as persistence
@@ -276,6 +289,22 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     assert packet["sanitized_projection_summaries"]["component_binding"][
         "semantic_packet_evidence_binding_count"
     ] == 1
+    observability = packet["validation_observability"]
+    assert observability["model_invocation_summary"]["fast_provider"] == (
+        "FixtureFastProvider"
+    )
+    assert observability["model_invocation_summary"]["fast_model"] == (
+        "fixture-fast-model"
+    )
+    assert observability["model_invocation_summary"]["embed_model"] == (
+        "fixture-embed-model"
+    )
+    assert observability["cap_and_retention_summary"]["caps_observed"][
+        "search_dispatches"
+    ] == 1
+    assert observability["source_material_summary"]["cited_urls"] == [
+        "https://docs.python.org/3/library/math.html#math.isclose"
+    ]
     assert packet["retention_posture"] == {
         "ordinary_product_persistence": "suppressed_for_ag_live_bound_runner",
         "only_runner_artifact_written": True,
