@@ -44,6 +44,7 @@ def test_default_run_config_has_no_cap_policy() -> None:
     from core.run_config import RunConfig
 
     assert RunConfig(query="hello").cap_policy is None
+    assert RunConfig(query="hello").source_custody_policy is None
 
 
 def test_utilization_retry_disabled_by_cap_policy_records_trace(

@@ -234,6 +234,7 @@ class EvidenceCandidate:
     source_tier: str | None = None
     source_class: str | None = None
     currentness_signal: str | None = None
+    evidence_material_type: str | None = None
     readable_status: str | None = None
     fetchable_status: str | None = None
     fact_disposition: CandidateDisposition = CandidateDisposition.UNKNOWN
@@ -260,6 +261,7 @@ class EvidenceCandidate:
             "source_tier",
             "source_class",
             "currentness_signal",
+            "evidence_material_type",
             "readable_status",
             "fetchable_status",
             "disposition_reason",
@@ -303,6 +305,7 @@ class EvidenceCandidate:
                 "source_tier": _clean_token(self.source_tier),
                 "source_class": _clean_token(self.source_class),
                 "currentness_signal": _clean_token(self.currentness_signal),
+                "evidence_material_type": _clean_token(self.evidence_material_type),
                 "readable_status": _clean_token(self.readable_status),
                 "fetchable_status": _clean_token(self.fetchable_status),
                 "fact_disposition": self.fact_disposition.value,
@@ -345,6 +348,7 @@ class SourceRequirementRecord:
     required_source_class: str | None = None
     required_source_tier: str | None = None
     required_currentness: str | None = None
+    required_evidence_material_type: str | None = None
     linked_candidate_ids: list[str] = field(default_factory=list)
     status: SourceRequirementStatus = SourceRequirementStatus.UNKNOWN
     reason: str | None = None
@@ -359,6 +363,9 @@ class SourceRequirementRecord:
                 "required_source_class": _clean_token(self.required_source_class),
                 "required_source_tier": _clean_token(self.required_source_tier),
                 "required_currentness": _clean_token(self.required_currentness),
+                "required_evidence_material_type": _clean_token(
+                    self.required_evidence_material_type
+                ),
                 "status": self.status.value,
                 "reason": _clean_text(self.reason),
                 "aggregate_counts_insufficient": bool(
@@ -599,6 +606,10 @@ class EvidenceLedger:
                 ),
                 required_source_tier=_clean_token(record.get("required_source_tier")),
                 required_currentness=_clean_token(record.get("required_currentness")),
+                required_evidence_material_type=_clean_token(
+                    record.get("required_evidence_material_type")
+                    or record.get("required_material_type")
+                ),
                 aggregate_counts_insufficient=bool(
                     record.get("aggregate_counts_insufficient")
                 ),
@@ -608,6 +619,11 @@ class EvidenceLedger:
             if not requirement.required_source_class:
                 requirement.required_source_class = _clean_token(
                     record.get("required_source_class") or record.get("source_class")
+                )
+            if not requirement.required_evidence_material_type:
+                requirement.required_evidence_material_type = _clean_token(
+                    record.get("required_evidence_material_type")
+                    or record.get("required_material_type")
                 )
             requirement.aggregate_counts_insufficient = (
                 requirement.aggregate_counts_insufficient
@@ -967,6 +983,40 @@ def build_evidence_ledger_observation_from_runtime(
         candidate_id = _candidate_id(source, index=index)
         if not candidate_id:
             continue
+        source_custody_requirement_id = _clean_token(
+            source.get("source_custody_requirement_id")
+            or source.get("custody_requirement_id")
+        )
+        source_custody_required_class = _clean_token(
+            source.get("required_source_class")
+            or source.get("source_custody_required_source_class")
+        )
+        if source_custody_requirement_id and source_custody_required_class:
+            requirements.append(
+                {
+                    "requirement_id": source_custody_requirement_id,
+                    "requirement_kind": _kind_for_source_class(
+                        source_custody_required_class
+                    ),
+                    "required_source_class": source_custody_required_class,
+                    "required_source_tier": source.get("required_source_tier"),
+                    "required_currentness": source.get("required_currentness"),
+                    "required_evidence_material_type": source.get(
+                        "required_evidence_material_type"
+                    ),
+                    "origin_ref": "source_custody_policy",
+                    "aggregate_counts_insufficient": False,
+                }
+            )
+            links.append(
+                {
+                    "requirement_id": source_custody_requirement_id,
+                    "candidate_id": candidate_id,
+                    "link_reason": source.get("source_custody_admission_reason")
+                    or "source_custody_policy_candidate",
+                    "link_status": "selected" if final_evidence_selected else "observed",
+                }
+            )
         selected_disposition = (
             CandidateDisposition.ACCEPTED.value
             if final_evidence_selected
@@ -998,6 +1048,9 @@ def build_evidence_ledger_observation_from_runtime(
                 "source_class": source.get("source_class"),
                 "currentness_signal": source.get("currentness_signal")
                 or source.get("currentness"),
+                "evidence_material_type": _evidence_material_type(source),
+                "full_page_fetched": source.get("full_page_fetched"),
+                "snippet_only": source.get("snippet_only"),
                 "readable_status": source.get("readable_status")
                 or source.get("readability_status")
                 or "readable",
@@ -1146,6 +1199,7 @@ def _candidate_update(record: Mapping[str, Any], *, candidate_id: str) -> dict[s
         "currentness_signal": _clean_token(
             record.get("currentness_signal") or record.get("currentness")
         ),
+        "evidence_material_type": _evidence_material_type(record),
         "readable_status": _clean_token(
             record.get("readable_status") or record.get("readability_status")
         ),
@@ -1164,6 +1218,21 @@ def _candidate_update(record: Mapping[str, Any], *, candidate_id: str) -> dict[s
         "lower_tier": lower_tier,
         "final_evidence_eligible": record.get("final_evidence_eligible", UNKNOWN),
     }
+
+
+def _evidence_material_type(record: Mapping[str, Any]) -> str | None:
+    explicit = _clean_token(
+        record.get("evidence_material_type")
+        or record.get("material_type")
+        or record.get("source_material_type")
+    )
+    if explicit:
+        return explicit
+    if record.get("full_page_fetched") is True:
+        return "full_page_fetched"
+    if record.get("snippet_only") is True:
+        return "snippet_only"
+    return None
 
 
 def _candidate_disposition(record: Mapping[str, Any]) -> CandidateDisposition:
@@ -1220,6 +1289,9 @@ def _candidate_satisfies_requirement(
         return False
     if _bad_readability(candidate):
         return False
+    required_material = _clean_token(requirement.required_evidence_material_type)
+    if required_material and _clean_token(candidate.evidence_material_type) != required_material:
+        return False
     if _strong_requirement(requirement):
         if candidate.contextual_only or candidate.lower_tier:
             return False
@@ -1253,6 +1325,9 @@ def _candidate_requirement_rejection_reason(
 ) -> str:
     if _bad_readability(candidate):
         return "candidate_not_readable_or_fetchable"
+    required_material = _clean_token(requirement.required_evidence_material_type)
+    if required_material and _clean_token(candidate.evidence_material_type) != required_material:
+        return "candidate_material_type_does_not_satisfy_requirement"
     if _strong_requirement(requirement):
         if candidate.contextual_only or candidate.lower_tier:
             return "lower_tier_or_contextual_candidate_cannot_satisfy_stronger_obligation"

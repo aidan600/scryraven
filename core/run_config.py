@@ -12,6 +12,27 @@ from dataclasses import dataclass, field, replace
 from typing import Any, Callable
 
 
+@dataclass(frozen=True, slots=True)
+class SourceCustodyPolicy:
+    """Optional policy for custody-required official source full reads."""
+
+    require_official_full_fetch_read: bool = False
+    max_forced_fetch_reads: int = 1
+    preferred_domains: tuple[str, ...] = ()
+    required_source_class: str = "primary_source_documents"
+    required_source_tier: str = "official"
+    required_currentness: str = "current"
+    requirement_id: str = "source-custody:official-full-fetch-read"
+    required_evidence_material_type: str = "full_page_fetched"
+    admission_reason: str = "source_custody_policy_full_fetch_read"
+
+    def enabled(self) -> bool:
+        return bool(
+            self.require_official_full_fetch_read
+            and int(self.max_forced_fetch_reads or 0) > 0
+        )
+
+
 @dataclass
 class RunConfig:
     """All per-run settings.  Constructed by the Streamlit page or the CLI."""
@@ -61,6 +82,9 @@ class RunConfig:
 
     # Optional bounded-validation policy. None preserves ordinary CLI/UI behavior.
     cap_policy: Any | None = None
+
+    # Optional source-custody policy. None preserves ordinary CLI/UI behavior.
+    source_custody_policy: SourceCustodyPolicy | None = None
 
 
 @dataclass

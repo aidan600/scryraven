@@ -15,6 +15,7 @@ from core.validation_profiles import (
     AG_LIVE_SMOKE,
     PRODUCT_CAP_POLICY_SURFACE,
     PRODUCT_RUNTIME_CONSUMER,
+    PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE,
     get_validation_profile,
 )
 
@@ -392,6 +393,27 @@ def no_retention_booleans() -> dict[str, bool]:
     }
 
 
+def source_custody_policy_request(profile_name: str) -> dict[str, Any] | None:
+    profile = get_validation_profile(profile_name)
+    if profile.source_custody_policy is None:
+        return None
+    return {
+        "surface": profile.source_custody_policy_surface,
+        "values": profile.source_custody_policy.as_requested_dict(),
+    }
+
+
+def source_custody_policy_product_path(profile_name: str) -> dict[str, Any]:
+    profile = get_validation_profile(profile_name)
+    return {
+        "policy_surface": PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE,
+        "runtime_consumer": PRODUCT_RUNTIME_CONSUMER,
+        "policy_enabled": profile.source_custody_policy is not None,
+        "script_owns_source_custody_authority": False,
+        "product_policy_constructible": True,
+    }
+
+
 def suppressed_ordinary_retention_posture(context: PreflightContext) -> dict[str, Any]:
     return {
         "ordinary_product_persistence": "suppressed_for_ag_live_bound_runner",
@@ -435,6 +457,12 @@ def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
             "script_owns_cap_authority": False,
             "product_policy_constructible": True,
         },
+        "source_custody_policy_requested": source_custody_policy_request(
+            context.profile_name
+        ),
+        "source_custody_policy_product_path": source_custody_policy_product_path(
+            context.profile_name
+        ),
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
@@ -598,6 +626,12 @@ def _live_packet_base(
             "script_owns_cap_authority": False,
             "product_policy_constructible": True,
         },
+        "source_custody_policy_requested": source_custody_policy_request(
+            context.profile_name
+        ),
+        "source_custody_policy_product_path": source_custody_policy_product_path(
+            context.profile_name
+        ),
         "preflight": {
             "query_lock": context.query_lock,
             "output_path_safe": True,
