@@ -353,6 +353,72 @@ def test_seen_official_docs_without_citation_ids_do_not_count_as_cited() -> None
     support.reject_forbidden_packet(packet)
 
 
+def test_final_answer_markdown_urls_are_cited_when_source_ids_are_missing() -> None:
+    context = _context(AG_LIVE_SOURCE_CUSTODY)
+    policy = _cap_policy(search_dispatches=1, fetch_read_operations=1)
+    cited_url = "https://docs.python.org/3/library/math.html"
+    passage_url = f"{cited_url}#math.isclose"
+    outcome = SimpleNamespace(
+        report=(
+            "### Answer\n\n"
+            "The defaults are rel_tol=1e-09 and abs_tol=0.0.\n\n"
+            "### Sources\n\n"
+            f"- Python documentation: {cited_url}"
+        ),
+        top_passages=[
+            {
+                "source_id": 1,
+                "url": passage_url,
+                "text": "[FULL_PAGE] official docs page must not serialize",
+                "source_tier": "official",
+                "source_class": "primary_source_documents",
+                "evidence_material_type": "full_page_fetched",
+            }
+        ],
+        seen_urls=[passage_url],
+        execution_trace={
+            "provider_diagnostics": _provider_attempts()[:1],
+            "pass_providers": [["tavily"]],
+            "author_system_prompt_key": "author",
+            "final_answer_packet": {
+                "source_obligations": [
+                    {
+                        "source_class": "primary_source_documents",
+                        "status": "source_obligation_partial",
+                    }
+                ],
+            },
+        },
+    )
+
+    packet = support.build_live_success_packet(
+        context,
+        outcome=outcome,
+        cap_policy=policy,
+        run_config=_run_config(),
+    )
+
+    assert packet["cited_source_ids"] == []
+    assert packet["cited_urls"] == [cited_url]
+    observability = packet["validation_observability"]
+    material = observability["source_material_summary"]
+    assert material["cited_url_resolution_source"] == "final_answer_markdown_urls"
+    assert material["cited_urls"] == [cited_url]
+    assert material["cited_urls_seen_in_top_passages"] is True
+    assert material["source_tiers_by_cited_url"] == {cited_url: "official"}
+    assert material["evidence_material_type_by_cited_url"] == {
+        cited_url: "full_page_fetched"
+    }
+
+    custody = observability["source_custody_summary"]
+    assert custody["official_doc_citations_present"] is True
+    assert custody["source_custody_satisfied"] is False
+
+    rendered = json.dumps(packet, sort_keys=True)
+    assert "official docs page must not serialize" not in rendered
+    support.reject_forbidden_packet(packet)
+
+
 def test_retrieval_dispatch_summary_can_fall_back_to_loop_contract() -> None:
     policy = _cap_policy(search_dispatches=1, fetch_read_operations=0)
     outcome = SimpleNamespace(

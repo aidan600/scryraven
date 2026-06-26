@@ -7,9 +7,11 @@ pages, rank evidence, alter citation eligibility, or change Author behavior.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any
+from urllib.parse import urlparse, urlunparse
 
 from core.provider_diagnostics import summarize_provider_diagnostics
 from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
@@ -44,6 +46,7 @@ _UNSATISFIED_MARKERS = (
     "unsatisfied",
     "unmet",
 )
+_HTTP_URL_RE = re.compile(r"https?://[^\s<>\]\)]+", re.IGNORECASE)
 
 
 def build_validation_observability(
@@ -59,12 +62,19 @@ def build_validation_observability(
     trace = _mapping(getattr(outcome, "execution_trace", None))
     top_passages = _mapping_list(getattr(outcome, "top_passages", None))
     seen_urls = _string_list(getattr(outcome, "seen_urls", None))
+    final_answer_text = str(getattr(outcome, "report", "") or "")
+    final_answer_urls = extract_cited_urls_from_text(final_answer_text)
     cited_source_ids, cited_source_id_source = _cited_source_id_resolution(trace)
     cited_urls = _cited_urls(outcome, trace, cited_source_ids)
+    used_final_answer_urls = False
+    if not cited_urls and final_answer_urls:
+        cited_urls = final_answer_urls
+        used_final_answer_urls = True
     cited_url_resolution_source = _cited_url_resolution_source(
         cited_source_ids,
         cited_urls,
         cited_source_id_source,
+        used_final_answer_urls=used_final_answer_urls,
     )
     profile_name = _profile_name(validation_profile, preflight_context)
     caps_observed = _caps_observed(cap_policy, trace)
@@ -95,7 +105,7 @@ def build_validation_observability(
             fetch_read_operations=_optional_int(
                 caps_observed.get("fetch_read_operations")
             ),
-            final_answer_text=str(getattr(outcome, "report", "") or ""),
+            final_answer_text=final_answer_text,
         ),
         "cap_and_retention_summary": _cap_and_retention_summary(
             validation_profile=validation_profile,
@@ -242,43 +252,45 @@ def _source_material_summary(
     cited_url_resolution_source: str,
 ) -> dict[str, Any]:
     cited_url_set = set(cited_urls)
-    cited_passages = [
-        passage
-        for passage in top_passages
-        if _safe_text(passage.get("url")) in cited_url_set
-        or str(passage.get("source_id") or "").strip() in set(cited_source_ids)
-    ]
+    cited_url_by_key = {
+        key: url
+        for url in cited_urls
+        if (key := _url_match_key(url))
+    }
+    cited_source_id_set = set(cited_source_ids)
     tiers_by_url: dict[str, str] = {}
     material_by_url: dict[str, str] = {}
-    for passage in cited_passages:
+    matched_cited_urls: set[str] = set()
+    for passage in top_passages:
         url = _safe_text(passage.get("url"))
+        matched_cited_url = _matched_cited_url(
+            passage,
+            cited_url_set=cited_url_set,
+            cited_url_by_key=cited_url_by_key,
+            cited_source_id_set=cited_source_id_set,
+        )
+        if not matched_cited_url:
+            continue
         if not url:
             continue
+        matched_cited_urls.add(matched_cited_url)
         tier = _safe_text(passage.get("source_tier"))
-        if tier and url not in tiers_by_url:
-            tiers_by_url[url] = tier
+        if tier and matched_cited_url not in tiers_by_url:
+            tiers_by_url[matched_cited_url] = tier
         material = _evidence_material_type(passage)
-        material_by_url[url] = _stronger_material_type(
-            material_by_url.get(url),
+        material_by_url[matched_cited_url] = _stronger_material_type(
+            material_by_url.get(matched_cited_url),
             material,
         )
-
-    cited_seen_count = len(
-        {
-            _safe_text(passage.get("url"))
-            for passage in cited_passages
-            if _safe_text(passage.get("url"))
-        }
-    )
     return {
         "cited_source_ids": list(cited_source_ids),
         "cited_urls": list(cited_urls),
         "cited_url_resolution_source": cited_url_resolution_source,
         "top_passage_count": len(top_passages),
         "seen_url_count": len(seen_urls),
-        "cited_urls_seen_in_top_passages": cited_seen_count > 0
-        and cited_seen_count == len(set(cited_urls)),
-        "cited_urls_seen_in_top_passages_count": cited_seen_count,
+        "cited_urls_seen_in_top_passages": bool(cited_urls)
+        and len(matched_cited_urls) == len(set(cited_urls)),
+        "cited_urls_seen_in_top_passages_count": len(matched_cited_urls),
         "source_tiers_by_cited_url": tiers_by_url,
         "evidence_material_type_by_cited_url": {
             url: material_by_url.get(url, _UNKNOWN) for url in cited_urls
@@ -542,7 +554,11 @@ def _cited_url_resolution_source(
     cited_source_ids: Sequence[str],
     cited_urls: Sequence[str],
     cited_source_id_source: str,
+    *,
+    used_final_answer_urls: bool = False,
 ) -> str:
+    if cited_urls and used_final_answer_urls:
+        return "final_answer_markdown_urls"
     if not cited_source_ids:
         return "unavailable"
     if not cited_urls:
@@ -707,6 +723,56 @@ def _has_official_doc_citations(
     )
 
 
+def extract_cited_urls_from_text(text: Any) -> list[str]:
+    """Extract sanitized HTTP(S) URLs visible in final answer text."""
+
+    urls: list[str] = []
+    for match in _HTTP_URL_RE.finditer(str(text or "")):
+        url = _safe_url(match.group(0).rstrip(".,;:!?"))
+        if url and url not in urls:
+            urls.append(url)
+    return urls
+
+
+def _matched_cited_url(
+    passage: Mapping[str, Any],
+    *,
+    cited_url_set: set[str],
+    cited_url_by_key: Mapping[str, str],
+    cited_source_id_set: set[str],
+) -> str | None:
+    url = _safe_url(passage.get("url"))
+    if url:
+        if url in cited_url_set:
+            return url
+        key = _url_match_key(url)
+        if key and key in cited_url_by_key:
+            return cited_url_by_key[key]
+    source_id = str(passage.get("source_id") or "").strip()
+    if source_id and source_id in cited_source_id_set:
+        return url
+    return None
+
+
+def _url_match_key(value: Any) -> str:
+    url = _safe_url(value)
+    if not url:
+        return ""
+    parsed = urlparse(url)
+    if not parsed.netloc:
+        return url.casefold()
+    return urlunparse(
+        (
+            parsed.scheme.casefold() or "https",
+            parsed.netloc.casefold(),
+            parsed.path.rstrip("/"),
+            "",
+            parsed.query,
+            "",
+        )
+    )
+
+
 def _mentions_custody_partial(answer_text: str) -> bool:
     normalized = answer_text.casefold()
     return "custody" in normalized and (
@@ -827,6 +893,16 @@ def _safe_text(value: Any, *, limit: int = 240) -> str | None:
     return text[:limit]
 
 
+def _safe_url(value: Any) -> str | None:
+    text = _safe_text(value, limit=500)
+    if not text or text == "[redacted]":
+        return None
+    parsed = urlparse(text)
+    if parsed.scheme.casefold() not in {"http", "https"} or not parsed.netloc:
+        return None
+    return text
+
+
 def _first_text(*values: Any) -> str | None:
     for value in values:
         clean = _safe_text(value)
@@ -853,4 +929,5 @@ def _list_count(value: Any) -> int:
 __all__ = [
     "VALIDATION_OBSERVABILITY_SCHEMA_VERSION",
     "build_validation_observability",
+    "extract_cited_urls_from_text",
 ]

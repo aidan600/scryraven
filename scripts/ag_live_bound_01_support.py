@@ -8,7 +8,10 @@ from pathlib import Path
 from typing import Any
 
 from core.cap_enforcement import RunCapPolicy
-from core.validation_observability import build_validation_observability
+from core.validation_observability import (
+    build_validation_observability,
+    extract_cited_urls_from_text,
+)
 from core.validation_profiles import (
     AG_LIVE_BOUND_BACKUP_QUERY,
     AG_LIVE_BOUND_PRIMARY_QUERY,
@@ -487,16 +490,20 @@ def build_live_success_packet(
     run_config: Any | None = None,
 ) -> dict[str, Any]:
     trace = _mapping_or_empty(getattr(outcome, "execution_trace", None))
+    final_answer_text = str(getattr(outcome, "report", "") or "")
     cited_source_ids = _cited_source_ids(trace)
+    cited_urls = _cited_urls(outcome, cited_source_ids)
+    if not cited_urls:
+        cited_urls = extract_cited_urls_from_text(final_answer_text)
     profile = get_validation_profile(context.profile_name)
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": LIVE_PACKET_SUCCESS,
         "planned_live_dispatch": True,
         "run_pipeline_call_count": 1,
-        "final_answer_text": str(getattr(outcome, "report", "") or ""),
+        "final_answer_text": final_answer_text,
         "cited_source_ids": cited_source_ids,
-        "cited_urls": _cited_urls(outcome, cited_source_ids),
+        "cited_urls": cited_urls,
         "source_ids_available": bool(cited_source_ids),
         "sanitized_projection_summaries": _sanitized_projection_summaries(trace),
         "validation_observability": build_validation_observability(
