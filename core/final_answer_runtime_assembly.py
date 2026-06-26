@@ -13,7 +13,11 @@ from typing import Any, Mapping, Sequence
 
 from core.analyst_author_handoff_contract import build_analyst_author_handoff_state
 from core.citation_source_handoff_contract import execute_citation_source_handoff
-from core.final_answer_packet import FinalAnswerAuthorInputPayload, FinalAnswerPacket
+from core.final_answer_packet import (
+    FinalAnswerAuthorInputPayload,
+    FinalAnswerPacket,
+    FinalAnswerReadinessStatus,
+)
 from core.final_answer_runtime_adapter import (
     build_final_answer_packet,
     build_packet_derived_citation_source_handoff_state,
@@ -29,13 +33,15 @@ class FinalAnswerAuthorRuntimeAssembly:
     """Pre-Author packet and payload assembly output."""
 
     packet: FinalAnswerPacket
-    author_payload: FinalAnswerAuthorInputPayload
+    author_payload: FinalAnswerAuthorInputPayload | None
     author_prompt: str
     author_system_prompt_key: str
     author_effort: str
     author_provider: str | None
     author_model: str | None
     source_obligation_projection: Any
+    author_input_blocked: bool = False
+    blocked_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,6 +124,19 @@ def assemble_final_answer_author_runtime(
         synth_was_insufficient=synth_was_insufficient,
         author_notes=author_notes,
     )
+    if packet.readiness_status is FinalAnswerReadinessStatus.BLOCKED:
+        return FinalAnswerAuthorRuntimeAssembly(
+            packet=packet,
+            author_payload=None,
+            author_prompt=author_prompt,
+            author_system_prompt_key=author_system_prompt_key,
+            author_effort=author_effort,
+            author_provider=author_provider,
+            author_model=author_model,
+            source_obligation_projection=source_obligation_projection,
+            author_input_blocked=True,
+            blocked_reason="blocked_final_answer_packet",
+        )
     packet, payload = derive_author_input_payload(
         packet,
         prompt=author_prompt,

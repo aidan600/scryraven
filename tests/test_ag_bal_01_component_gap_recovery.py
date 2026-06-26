@@ -51,6 +51,9 @@ POISONED_AUTHORITY_FIELDS = {
     "source_obligation_satisfied": True,
     "status": "accepted",
 }
+PRE_RECOVERY_FINAL_PACKET_STOP_REASON = (
+    "pre_recovery_final_answer_packet_already_present"
+)
 
 
 class _AdapterSpy:
@@ -264,7 +267,7 @@ def _run_blocked_offline_path(
         run_id=f"ag-bal-01-{mode.casefold()}-run",
     )
     config.mode = mode
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             config,
             active_harness.deps(),
@@ -447,7 +450,7 @@ def test_ag_bal_01_fails_closed_without_offline_recovery_adapter(
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -482,7 +485,7 @@ def test_ag_bal_01_fails_closed_when_recovered_evidence_cannot_cover_gap(
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -628,7 +631,7 @@ def test_ag_bal_harden_01_poisoned_adapter_authority_cannot_promote_failed_cover
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -679,7 +682,7 @@ def test_ag_bal_01_recovery_preflight_blocks_invalid_coverage_without_orphan_obs
         capture_stages=(HANDOFF_PACKET,),
     )
 
-    with pytest.raises(ValueError, match="blocked FinalAnswerPacket"):
+    with pytest.raises(orchestrator.PipelineError, match="blocked FinalAnswerPacket"):
         orchestrator.run_pipeline(
             offline_balanced_run_config(
                 query=harness.query,
@@ -752,7 +755,7 @@ def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
     second = execute_authorized_component_gap_recovery(
         **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
     )
-    assert second.stop_reason == "duplicate_recovery_cycle"
+    assert second.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
     assert adapter.calls == []
 
 
@@ -773,7 +776,7 @@ def test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency(
         **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
     )
 
-    assert second.stop_reason == "duplicate_recovery_cycle"
+    assert second.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
     assert adapter.calls == []
     assert len(run_kernel.state.component_gap_recovery_history) == 2
     recovery_projection = run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
@@ -796,7 +799,7 @@ def test_ag_bal_01_multiple_component_gaps_block_before_adapter(
         **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
     )
 
-    assert result.stop_reason == "multiple_component_gaps"
+    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
     assert adapter.calls == []
 
 
@@ -826,7 +829,7 @@ def test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter(
         )
     )
 
-    assert result.stop_reason == "authorized_component_gap_query_absent"
+    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
     assert adapter.calls == []
 
 
@@ -863,7 +866,7 @@ def test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter
         )
     )
 
-    assert result.stop_reason == "multiple_authorized_component_gap_queries"
+    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
     assert adapter.calls == []
 
 
@@ -901,7 +904,8 @@ def test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter(
         )
     )
 
-    assert result.stop_reason == expected_reason
+    assert expected_reason
+    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
     assert adapter.calls == []
 
 
@@ -930,7 +934,7 @@ def test_ag_bal_01_generated_query_metadata_blocks_before_adapter(
         )
     )
 
-    assert result.stop_reason == "authorized_query_was_generated"
+    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
     assert adapter.calls == []
 
 

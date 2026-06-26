@@ -3751,7 +3751,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     final_answer_packet_action = final_answer_packet_handoff.action
     final_answer_packet = final_answer_packet_handoff.packet
+    if final_answer_packet_handoff.author_input_blocked:
+        raise PipelineError("blocked FinalAnswerPacket cannot proceed to Author handoff")
     final_answer_author_payload = final_answer_packet_handoff.author_payload
+    if final_answer_author_payload is None:
+        raise PipelineError("FinalAnswerPacket did not produce Author input")
     author_prompt = final_answer_packet_handoff.author_prompt
     author_system_prompt_key = final_answer_packet_handoff.author_system_prompt_key
     _author_effort = final_answer_packet_handoff.author_effort

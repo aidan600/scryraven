@@ -24,30 +24,39 @@ from core.runtime_prompt_assembly import select_author_system_prompt
 
 @dataclass(frozen=True, slots=True)
 class FinalAnswerPacketPreparationResult:
-    """Packet, payload, and observation produced by the bounded executor."""
+    """Packet, optional Author payload, and observation from the bounded executor."""
 
     packet: FinalAnswerPacket
-    author_payload: FinalAnswerAuthorInputPayload
+    author_payload: FinalAnswerAuthorInputPayload | None
+    author_payload_ref: Mapping[str, Any]
+    author_prompt: str
+    author_system_prompt_key: str
+    author_effort: str
     author_system_prompt: str
     observation: Observation
     author_provider: str | None
     author_model: str | None
+    author_input_blocked: bool = False
+    blocked_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class FinalAnswerPacketAuthorHandoff:
-    """RunKernel-reduced FinalAnswerPacket and packet-derived Author payload."""
+    """RunKernel-reduced FinalAnswerPacket and optional Author payload handoff."""
 
     action: AuthorizedAction
     preparation: FinalAnswerPacketPreparationResult
     packet: FinalAnswerPacket
-    author_payload: FinalAnswerAuthorInputPayload
+    author_payload: FinalAnswerAuthorInputPayload | None
+    author_payload_ref: Mapping[str, Any]
     author_prompt: str
     author_system_prompt_key: str
     author_effort: str
     author_provider: str | None
     author_model: str | None
     author_system_prompt: str
+    author_input_blocked: bool = False
+    blocked_reason: str | None = None
 
 
 def _author_effort(
@@ -84,6 +93,75 @@ def _ledger_summary(projection: Mapping[str, Any] | None) -> dict[str, Any]:
         "evidence_ledger_candidate_count": projection.get("candidate_count", 0),
         "evidence_ledger_requirement_count": projection.get("requirement_count", 0),
         "evidence_ledger_gap_count": len(projection.get("custody_gaps") or ()),
+    }
+
+
+def _safe_mapping_sequence(values: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    return [dict(item) for item in values if isinstance(item, Mapping)]
+
+
+def _blocked_author_payload_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
+    readiness_status = packet.readiness_status.value
+    readiness_reasons = list(packet.readiness_reasons)
+    missing_source_obligations = _safe_mapping_sequence(
+        packet.missing_required_obligations
+    )
+    partial_source_obligations = _safe_mapping_sequence(packet.partial_obligations)
+    satisfied_source_obligations = _safe_mapping_sequence(packet.satisfied_obligations)
+    source_bound_numeric_unknowns = _safe_mapping_sequence(
+        packet.source_bound_numeric_unknowns
+    )
+    source_bound_numeric_resolutions = _safe_mapping_sequence(
+        packet.source_bound_numeric_resolutions
+    )
+    claim_postures = [
+        item.value if hasattr(item, "value") else str(item)
+        for item in packet.claim_postures
+    ]
+    authority_payload = {
+        "packet_id": packet.packet_id,
+        "readiness_status": readiness_status,
+        "readiness_reasons": readiness_reasons,
+        "sufficiency_decision": packet.sufficiency_decision,
+        "final_answer_posture": packet.final_answer_posture,
+        "final_answer_allowed": bool(packet.final_answer_allowed),
+        "required_obligations_satisfied": packet.required_obligations_satisfied,
+        "claim_postures": claim_postures,
+        "missing_source_obligation_count": len(missing_source_obligations),
+        "partial_source_obligation_count": len(partial_source_obligations),
+        "satisfied_source_obligation_count": len(satisfied_source_obligations),
+        "source_bound_numeric_unknown_count": len(source_bound_numeric_unknowns),
+        "mandatory_caveat_count": len(packet.mandatory_caveats),
+        "prohibited_upgrade_count": len(packet.prohibited_upgrades),
+        "author_input_deferred": True,
+    }
+    return {
+        "packet_id": packet.packet_id,
+        "status": "blocked",
+        "prompt_text_included": False,
+        "author_input_deferred": True,
+        "blocked_before_author_input": True,
+        "readiness_status": readiness_status,
+        "readiness_reasons": readiness_reasons,
+        "author_evidence_ids": [],
+        "citation_source_ids": [],
+        "citation_ineligible_refs": [],
+        "missing_source_obligations": missing_source_obligations,
+        "partial_source_obligations": partial_source_obligations,
+        "satisfied_source_obligations": satisfied_source_obligations,
+        "source_bound_numeric_unknowns": source_bound_numeric_unknowns,
+        "source_bound_numeric_resolutions": source_bound_numeric_resolutions,
+        "final_answer_posture": packet.final_answer_posture,
+        "sufficiency_decision": packet.sufficiency_decision,
+        "claim_postures": claim_postures,
+        "mandatory_caveat_count": len(packet.mandatory_caveats),
+        "prohibited_upgrade_count": len(packet.prohibited_upgrades),
+        "authority_payload": authority_payload,
+        "raw_prompt_included": False,
+        "provider_payload_included": False,
+        "raw_content_included": False,
+        "final_text_included": False,
+        "model_request_visible": False,
     }
 
 
@@ -183,11 +261,16 @@ def execute_final_answer_packet_prepare_action(
         sufficiency_judgment_projection=sufficiency_judgment_projection,
     )
     packet_projection = assembly.packet.to_dict()
-    payload_ref = assembly.author_payload.to_trace_ref()
+    if assembly.author_payload is None:
+        payload_ref = _blocked_author_payload_ref(assembly.packet)
+    else:
+        payload_ref = assembly.author_payload.to_trace_ref()
     observation_payload = {
         "owner": "RunKernel.FinalAnswerPacket",
         "packet_projection": packet_projection,
         "author_payload_ref": payload_ref,
+        "author_input_blocked": assembly.author_input_blocked,
+        "blocked_reason": assembly.blocked_reason,
         "readiness_status": packet_projection.get("readiness_status"),
         "readiness_reasons": packet_projection.get("readiness_reasons", []),
         "citation_authority_available": "citation_eligible" in packet_projection
@@ -218,6 +301,10 @@ def execute_final_answer_packet_prepare_action(
     return FinalAnswerPacketPreparationResult(
         packet=assembly.packet,
         author_payload=assembly.author_payload,
+        author_payload_ref=payload_ref,
+        author_prompt=assembly.author_prompt,
+        author_system_prompt_key=assembly.author_system_prompt_key,
+        author_effort=assembly.author_effort,
         author_system_prompt=author_system_prompt,
         observation=Observation.from_action(
             authorized,
@@ -227,6 +314,8 @@ def execute_final_answer_packet_prepare_action(
         ),
         author_provider=author_provider,
         author_model=author_model,
+        author_input_blocked=assembly.author_input_blocked,
+        blocked_reason=assembly.blocked_reason,
     )
 
 
@@ -314,11 +403,30 @@ def prepare_final_answer_packet_author_handoff_from_scope(
     )
     run_kernel.reduce(preparation.observation)
     payload = preparation.author_payload
+    if preparation.author_input_blocked:
+        return FinalAnswerPacketAuthorHandoff(
+            action=action,
+            preparation=preparation,
+            packet=preparation.packet,
+            author_payload=None,
+            author_payload_ref=preparation.author_payload_ref,
+            author_prompt=preparation.author_prompt,
+            author_system_prompt_key=preparation.author_system_prompt_key,
+            author_effort=preparation.author_effort,
+            author_provider=preparation.author_provider,
+            author_model=preparation.author_model,
+            author_system_prompt=preparation.author_system_prompt,
+            author_input_blocked=True,
+            blocked_reason=preparation.blocked_reason,
+        )
+    if payload is None:
+        raise ValueError("FinalAnswerPacket preparation did not produce Author input")
     return FinalAnswerPacketAuthorHandoff(
         action=action,
         preparation=preparation,
         packet=preparation.packet,
         author_payload=payload,
+        author_payload_ref=preparation.author_payload_ref,
         author_prompt=payload.prompt,
         author_system_prompt_key=payload.author_system_prompt_key,
         author_effort=payload.author_effort,

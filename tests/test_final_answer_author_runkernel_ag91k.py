@@ -99,6 +99,39 @@ def _semantic_sufficiency_projection() -> dict[str, Any]:
     ).to_projection()
 
 
+def _blocked_sufficiency_projection() -> dict[str, Any]:
+    return RunSufficiencyJudgment(
+        judgment_id="ag-live-blocked-fap-guard-01",
+        decision=RunSufficiencyDecision.BLOCK_FINALIZATION,
+        final_answer_posture=SufficiencyPosture.BLOCKED,
+        required_obligations_satisfied=False,
+        final_answer_allowed=False,
+        readiness_reasons=("blocked_by_sufficiency",),
+        final_packet_inputs={
+            "decision": "block_finalization",
+            "final_answer_posture": "blocked",
+            "final_answer_allowed": False,
+            "required_obligations_satisfied": False,
+            "readiness_status": "blocked",
+            "readiness_reasons": ["blocked_by_sufficiency"],
+            "claim_postures": ["unsupported"],
+            "missing_required_obligations": [],
+            "partial_obligations": [],
+            "satisfied_obligations": [],
+            "source_bound_numeric_unknowns": [],
+            "mandatory_caveats": ["finalization_blocked"],
+            "prohibited_upgrades": ["do_not_call_author"],
+            "behavior_boundary_flags": {
+                "provider_search_behavior_changed": False,
+                "retrieval_behavior_changed": False,
+                "prompt_behavior_changed": False,
+                "citation_behavior_changed": False,
+                "author_prose_behavior_changed": False,
+            },
+        },
+    ).to_projection()
+
+
 def _stable_safe_digest(value: Any) -> str:
     return sha256(
         json.dumps(
@@ -229,6 +262,46 @@ def test_ag_sem_12b_packet_prep_runtime_propagates_semantic_trace_ref() -> None:
         "semantic_authority_trace_ref"
     ] == semantic_trace_ref
     assert "semantic_authority_trace_ref" not in RUN_KERNEL.read_text(encoding="utf-8")
+
+
+def test_blocked_packet_preparation_defers_author_input_derivation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_derivation(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("blocked FAP must not derive Author input")
+
+    monkeypatch.setattr(
+        "core.final_answer_runtime_assembly.derive_author_input_payload",
+        fail_derivation,
+    )
+
+    kernel, _action, result = _prepare_packet(
+        final_top_evidence=[],
+        sufficiency_judgment_projection=_blocked_sufficiency_projection(),
+    )
+
+    assert result.packet.readiness_status is FinalAnswerReadinessStatus.BLOCKED
+    assert result.author_input_blocked is True
+    assert result.blocked_reason == "blocked_final_answer_packet"
+    assert result.author_payload is None
+    assert result.author_payload_ref["status"] == "blocked"
+    assert result.author_payload_ref["blocked_before_author_input"] is True
+    assert result.author_payload_ref["prompt_text_included"] is False
+    assert result.observation.payload["author_input_blocked"] is True
+    assert result.observation.payload["author_payload_ref"]["status"] == "blocked"
+
+    kernel.reduce(result.observation)
+
+    assert kernel.state.final_answer_packet["readiness_status"] == "blocked"
+    projection = kernel.state.final_answer_authority_projection
+    assert projection["author_payload_ref"]["status"] == "blocked"
+    assert projection["author_payload_ref"]["blocked_before_author_input"] is True
+    assert projection["author_payload_ref"]["prompt_text_included"] is False
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="author execution requires packet-ready author input payload",
+    ):
+        kernel.authorize_author_execution()
 
 
 def test_run_kernel_refuses_author_execution_before_packet_readiness() -> None:
