@@ -189,6 +189,7 @@ def _run_multipart(
             if "blocked FinalAnswerPacket cannot proceed to Author handoff" not in str(exc):
                 raise
             captured["blocked_pipeline_error"] = str(exc)
+            captured["blocked_pipeline_error_obj"] = exc
             outcome = None
         return captured, harness, outcome
     captured, outcome = run_offline_ordinary_pipeline(
@@ -351,6 +352,27 @@ def test_partial_missing_bounded_n_semantic_path_fails_closed_without_overclaim(
     assert captured["blocked_pipeline_error"] == (
         "blocked FinalAnswerPacket cannot proceed to Author handoff"
     )
+    blocked_error = captured["blocked_pipeline_error_obj"]
+    blocked_summary = blocked_error.blocked_fap_summary
+    assert blocked_summary["schema_version"] == (
+        "blocked_final_answer_packet_safe_summary_v1"
+    )
+    assert blocked_summary["blocked_fap"] is True
+    assert blocked_summary["status"] == "blocked"
+    assert blocked_summary["readiness_status"] == "blocked"
+    assert blocked_summary["author_input_deferred"] is True
+    assert blocked_summary["blocked_before_author_input"] is True
+    assert "final_answer_not_allowed" in blocked_summary["readiness_reasons"]
+    assert "missing_required_component_coverage" in blocked_summary[
+        "readiness_reasons"
+    ]
+    assert isinstance(blocked_summary["missing_source_obligation_count"], int)
+    assert isinstance(blocked_summary["mandatory_caveat_count"], int)
+    assert isinstance(blocked_summary["prohibited_upgrade_count"], int)
+    rendered_summary = json.dumps(blocked_summary, sort_keys=True)
+    assert "raw_prompt" not in rendered_summary
+    assert "prompt_text" not in rendered_summary
+    assert "provider_payload" not in rendered_summary
     assert captured["packet_handoff_called"] is True
     assert captured["packet_handoff"].author_input_blocked is True
     assert captured["packet_handoff"].author_payload is None

@@ -84,6 +84,45 @@ SENSITIVE_FAILURE_MESSAGE_MARKERS = (
     "token",
     "traceback",
 )
+BLOCKED_FAP_SUMMARY_KEYS = (
+    "schema_version",
+    "blocked_fap",
+    "packet_id",
+    "status",
+    "readiness_status",
+    "readiness_reasons",
+    "author_input_deferred",
+    "blocked_before_author_input",
+    "final_answer_allowed",
+    "final_answer_posture",
+    "sufficiency_decision",
+    "missing_source_obligation_count",
+    "partial_source_obligation_count",
+    "satisfied_source_obligation_count",
+    "source_bound_numeric_unknown_count",
+    "mandatory_caveat_count",
+    "prohibited_upgrade_count",
+    "claim_postures",
+)
+BLOCKED_FAP_BOOLEAN_KEYS = frozenset(
+    {
+        "blocked_fap",
+        "author_input_deferred",
+        "blocked_before_author_input",
+        "final_answer_allowed",
+    }
+)
+BLOCKED_FAP_COUNT_KEYS = frozenset(
+    {
+        "missing_source_obligation_count",
+        "partial_source_obligation_count",
+        "satisfied_source_obligation_count",
+        "source_bound_numeric_unknown_count",
+        "mandatory_caveat_count",
+        "prohibited_upgrade_count",
+    }
+)
+BLOCKED_FAP_LIST_KEYS = frozenset({"readiness_reasons", "claim_postures"})
 
 
 class AgLiveBoundPreflightError(ValueError):
@@ -434,7 +473,8 @@ def build_failure_observability(
 
     safe_error_type = type(exc).__name__
     safe_message, message_redacted = _safe_exception_message(exc)
-    return {
+    blocked_fap_summary = _blocked_fap_summary_from_exception(exc)
+    observability = {
         "schema_version": FAILURE_OBSERVABILITY_SCHEMA_VERSION,
         "safe_phase": _safe_error_token(safe_phase) or "unexpected",
         "safe_error_type": safe_error_type,
@@ -453,6 +493,71 @@ def build_failure_observability(
         "db_cache_rows_retained": False,
         "secrets_returned": False,
     }
+    if blocked_fap_summary:
+        observability["blocked_fap_summary"] = blocked_fap_summary
+    return observability
+
+
+def _safe_summary_text(value: Any, *, limit: int = 240) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _safe_summary_text_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        values: Sequence[Any] = (value,)
+    elif isinstance(value, Sequence):
+        values = value
+    else:
+        values = ()
+    result: list[str] = []
+    for item in values:
+        clean = _safe_summary_text(item)
+        if clean and clean not in result:
+            result.append(clean)
+    return result
+
+
+def _safe_summary_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
+    raw = getattr(exc, "blocked_fap_summary", None)
+    if not isinstance(raw, Mapping):
+        metadata = getattr(exc, "safe_metadata", None)
+        if isinstance(metadata, Mapping):
+            raw = metadata.get("blocked_fap_summary")
+    if not isinstance(raw, Mapping) or raw.get("blocked_fap") is not True:
+        return {}
+    summary: dict[str, Any] = {}
+    for key in BLOCKED_FAP_SUMMARY_KEYS:
+        if key not in raw:
+            continue
+        value = raw.get(key)
+        if key in BLOCKED_FAP_BOOLEAN_KEYS:
+            if isinstance(value, bool):
+                summary[key] = value
+        elif key in BLOCKED_FAP_COUNT_KEYS:
+            count = _safe_summary_int(value)
+            if count is not None:
+                summary[key] = count
+        elif key in BLOCKED_FAP_LIST_KEYS:
+            values = _safe_summary_text_list(value)
+            if values:
+                summary[key] = values
+        else:
+            text = _safe_summary_text(value)
+            if text is not None:
+                summary[key] = text
+    return summary if summary.get("blocked_fap") is True else {}
 
 
 def source_custody_policy_request(profile_name: str) -> dict[str, Any] | None:
@@ -618,6 +723,34 @@ def build_live_failure_packet(
                 ),
             }
         )
+    blocked_fap_summary = (
+        _mapping_or_empty(failure_observability.get("blocked_fap_summary"))
+        if failure_observability is not None
+        else {}
+    )
+    if blocked_fap_summary:
+        failure_summary.update(
+            {
+                "blocked_fap": True,
+                "blocked_fap_readiness_status": blocked_fap_summary.get(
+                    "readiness_status"
+                ),
+                "blocked_fap_missing_source_obligation_count": (
+                    blocked_fap_summary.get("missing_source_obligation_count")
+                ),
+            }
+        )
+    sanitized_projection_summaries = {
+        "component_binding": {"available": False},
+        "component_coverage": {"available": False},
+        "sufficiency": {"available": False},
+        "final_answer_packet": {"available": False},
+        "author_posture": {"available": False},
+    }
+    if blocked_fap_summary:
+        sanitized_projection_summaries["blocked_fap_summary"] = dict(
+            blocked_fap_summary
+        )
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": classification,
@@ -627,13 +760,7 @@ def build_live_failure_packet(
         "cited_source_ids": [],
         "cited_urls": [],
         "source_ids_available": False,
-        "sanitized_projection_summaries": {
-            "component_binding": {"available": False},
-            "component_coverage": {"available": False},
-            "sufficiency": {"available": False},
-            "final_answer_packet": {"available": False},
-            "author_posture": {"available": False},
-        },
+        "sanitized_projection_summaries": sanitized_projection_summaries,
         "validation_observability": build_validation_observability(
             validation_profile=profile,
             preflight_context=context,

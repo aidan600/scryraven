@@ -18,7 +18,10 @@ from core.final_answer_packet import (
     FinalEvidenceRecord,
     _safe_json,
 )
-from core.final_answer_packet_runtime import execute_final_answer_packet_prepare_action
+from core.final_answer_packet_runtime import (
+    build_safe_blocked_fap_summary,
+    execute_final_answer_packet_prepare_action,
+)
 from core.run_authority_sufficiency import (
     RunSufficiencyDecision,
     RunSufficiencyJudgment,
@@ -297,6 +300,21 @@ def test_blocked_packet_preparation_defers_author_input_derivation(
     assert projection["author_payload_ref"]["status"] == "blocked"
     assert projection["author_payload_ref"]["blocked_before_author_input"] is True
     assert projection["author_payload_ref"]["prompt_text_included"] is False
+    summary = build_safe_blocked_fap_summary(projection)
+    assert summary["schema_version"] == "blocked_final_answer_packet_safe_summary_v1"
+    assert summary["blocked_fap"] is True
+    assert summary["status"] == "blocked"
+    assert summary["readiness_status"] == "blocked"
+    assert summary["author_input_deferred"] is True
+    assert summary["blocked_before_author_input"] is True
+    assert "final_answer_not_allowed" in summary["readiness_reasons"]
+    assert summary["missing_source_obligation_count"] == 0
+    assert isinstance(summary["mandatory_caveat_count"], int)
+    assert isinstance(summary["prohibited_upgrade_count"], int)
+    rendered_summary = json.dumps(summary, sort_keys=True)
+    assert "prompt_text" not in rendered_summary
+    assert "raw_prompt" not in rendered_summary
+    assert "provider_payload" not in rendered_summary
     with pytest.raises(
         RunKernelTransitionError,
         match="author execution requires packet-ready author input payload",

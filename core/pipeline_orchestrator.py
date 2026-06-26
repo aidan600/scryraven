@@ -14,7 +14,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Mapping
 
 from core import (
     analyst_runtime_stage,
@@ -87,6 +87,7 @@ from core.failure_card import (
     normalize_force_corpus_state,
 )
 from core.final_answer_packet_runtime import (
+    build_safe_blocked_fap_summary,
     prepare_final_answer_packet_author_handoff_from_scope,
 )
 from core.final_authority_citation_survival import (
@@ -333,6 +334,22 @@ _SOURCE_CLASS_RECOVERY_ORDINARY_BLOCK_REASONS = frozenset(
 
 class PipelineError(RuntimeError):
     """Raised by run_pipeline() for expected failure conditions (empty query, no passages, …)."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        safe_metadata: Mapping[str, Any] | None = None,
+        blocked_fap_summary: Mapping[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        metadata = dict(safe_metadata or {})
+        blocked_summary = dict(blocked_fap_summary or {})
+        if blocked_summary:
+            metadata["blocked_fap_summary"] = blocked_summary
+        self.safe_metadata = metadata
+        self.blocked_fap_summary = blocked_summary
+
 
 # ---------------------------------------------------------------------------
 # Module-level helpers (moved from ui/pages.py inner functions)
@@ -3752,7 +3769,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     final_answer_packet_action = final_answer_packet_handoff.action
     final_answer_packet = final_answer_packet_handoff.packet
     if final_answer_packet_handoff.author_input_blocked:
-        raise PipelineError("blocked FinalAnswerPacket cannot proceed to Author handoff")
+        raise PipelineError(
+            "blocked FinalAnswerPacket cannot proceed to Author handoff",
+            blocked_fap_summary=build_safe_blocked_fap_summary(
+                run_kernel.state.final_answer_authority_projection
+            ),
+        )
     final_answer_author_payload = final_answer_packet_handoff.author_payload
     if final_answer_author_payload is None:
         raise PipelineError("FinalAnswerPacket did not produce Author input")
