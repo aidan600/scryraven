@@ -631,19 +631,19 @@ def _cited_source_ids(trace: Mapping[str, Any]) -> list[str]:
 
 def _cited_urls(outcome: Any, cited_source_ids: Sequence[str]) -> list[str]:
     cited_id_set = {str(item) for item in cited_source_ids}
+    if not cited_id_set:
+        return []
     urls: list[str] = []
     for passage in getattr(outcome, "top_passages", []) or []:
         if not isinstance(passage, Mapping):
             continue
         source_id = str(passage.get("source_id") or "")
-        if cited_id_set and source_id and source_id not in cited_id_set:
+        if source_id and source_id not in cited_id_set:
             continue
         url = str(passage.get("url") or "").strip()
         if url and url not in urls:
             urls.append(url)
-    if urls:
-        return urls
-    return _string_list(getattr(outcome, "seen_urls", []) or [])
+    return urls
 
 
 def _sanitized_projection_summaries(trace: Mapping[str, Any]) -> dict[str, Any]:

@@ -59,8 +59,13 @@ def build_validation_observability(
     trace = _mapping(getattr(outcome, "execution_trace", None))
     top_passages = _mapping_list(getattr(outcome, "top_passages", None))
     seen_urls = _string_list(getattr(outcome, "seen_urls", None))
-    cited_source_ids = _cited_source_ids(trace)
-    cited_urls = _cited_urls(outcome, cited_source_ids)
+    cited_source_ids, cited_source_id_source = _cited_source_id_resolution(trace)
+    cited_urls = _cited_urls(outcome, trace, cited_source_ids)
+    cited_url_resolution_source = _cited_url_resolution_source(
+        cited_source_ids,
+        cited_urls,
+        cited_source_id_source,
+    )
     profile_name = _profile_name(validation_profile, preflight_context)
     caps_observed = _caps_observed(cap_policy, trace)
 
@@ -79,6 +84,7 @@ def build_validation_observability(
             seen_urls=seen_urls,
             cited_source_ids=cited_source_ids,
             cited_urls=cited_urls,
+            cited_url_resolution_source=cited_url_resolution_source,
         ),
         "source_custody_summary": _source_custody_summary(
             profile_name=profile_name,
@@ -233,6 +239,7 @@ def _source_material_summary(
     seen_urls: Sequence[str],
     cited_source_ids: Sequence[str],
     cited_urls: Sequence[str],
+    cited_url_resolution_source: str,
 ) -> dict[str, Any]:
     cited_url_set = set(cited_urls)
     cited_passages = [
@@ -266,6 +273,7 @@ def _source_material_summary(
     return {
         "cited_source_ids": list(cited_source_ids),
         "cited_urls": list(cited_urls),
+        "cited_url_resolution_source": cited_url_resolution_source,
         "top_passage_count": len(top_passages),
         "seen_url_count": len(seen_urls),
         "cited_urls_seen_in_top_passages": cited_seen_count > 0
@@ -509,29 +517,72 @@ def _provider_lists_by_iteration(trace: Mapping[str, Any]) -> list[list[str]]:
 
 
 def _cited_source_ids(trace: Mapping[str, Any]) -> list[str]:
+    ids, _source = _cited_source_id_resolution(trace)
+    return ids
+
+
+def _cited_source_id_resolution(trace: Mapping[str, Any]) -> tuple[list[str], str]:
     ids = _string_list(trace.get("final_answer_source_ids_used"))
     if ids:
-        return ids
+        return ids, "final_answer_source_ids_used"
+    final_answer_source_telemetry = _mapping(trace.get("final_answer_source_telemetry"))
+    ids = _string_list(
+        final_answer_source_telemetry.get("final_answer_source_ids_used")
+    )
+    if ids:
+        return ids, "final_answer_source_telemetry"
     packet = _mapping(trace.get("final_answer_packet"))
     ids = _citation_eligible_source_ids(trace, packet)
     if ids:
-        return ids
-    return _string_list(packet.get("source_ids"))
+        return ids, "citation_eligible_source_ids"
+    return [], "unavailable"
 
 
-def _cited_urls(outcome: Any | None, cited_source_ids: Sequence[str]) -> list[str]:
+def _cited_url_resolution_source(
+    cited_source_ids: Sequence[str],
+    cited_urls: Sequence[str],
+    cited_source_id_source: str,
+) -> str:
+    if not cited_source_ids:
+        return "unavailable"
+    if not cited_urls:
+        return "source_ids_unresolved"
+    return cited_source_id_source
+
+
+def _cited_urls(
+    outcome: Any | None,
+    trace: Mapping[str, Any],
+    cited_source_ids: Sequence[str],
+) -> list[str]:
     cited_id_set = {str(item) for item in cited_source_ids}
+    if not cited_id_set:
+        return []
     urls: list[str] = []
     for passage in _mapping_list(getattr(outcome, "top_passages", None)):
         source_id = str(passage.get("source_id") or "").strip()
-        if cited_id_set and source_id and source_id not in cited_id_set:
+        if source_id and source_id not in cited_id_set:
             continue
         url = _safe_text(passage.get("url"))
         if url and url not in urls:
             urls.append(url)
-    if urls:
-        return urls
-    return _string_list(getattr(outcome, "seen_urls", None))
+    for url, source_id in _unique_source_url_items(trace):
+        if source_id in cited_id_set and url not in urls:
+            urls.append(url)
+    return urls
+
+
+def _unique_source_url_items(trace: Mapping[str, Any]) -> list[tuple[str, str]]:
+    packet = _mapping(trace.get("final_answer_packet"))
+    author_input_refs = _mapping(packet.get("author_input_refs"))
+    unique_source_urls = _mapping(author_input_refs.get("unique_source_urls"))
+    items: list[tuple[str, str]] = []
+    for url, source_id in unique_source_urls.items():
+        clean_url = _safe_text(url)
+        clean_id = _safe_text(source_id)
+        if clean_url and clean_id:
+            items.append((clean_url, clean_id))
+    return items
 
 
 def _citation_eligible_source_ids(

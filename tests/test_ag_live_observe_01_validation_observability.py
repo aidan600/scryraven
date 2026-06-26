@@ -210,6 +210,7 @@ def test_success_packet_contains_consolidated_sanitized_observability() -> None:
 
     material = observability["source_material_summary"]
     assert material["cited_source_ids"] == ["1", "2"]
+    assert material["cited_url_resolution_source"] == "final_answer_source_ids_used"
     assert material["cited_urls_seen_in_top_passages"] is True
     assert material["source_tiers_by_cited_url"] == {
         "https://docs.python.org/3/library/math.html#math.isclose": "official",
@@ -290,9 +291,62 @@ def test_source_custody_profile_with_zero_fetch_read_diagnoses_unsatisfied() -> 
     assert "fetch/read operations were zero" in custody["source_custody_explanation"]
     assert custody["citation_eligible_source_ids"] == ["1"]
     assert custody["final_answer_source_ids_used"] == ["1"]
+    assert packet["validation_observability"]["source_material_summary"][
+        "cited_url_resolution_source"
+    ] == "final_answer_source_ids_used"
     assert packet["validation_observability"]["model_invocation_summary"][
         "fast_model"
     ] == "fixture-fast-model"
+
+    rendered = json.dumps(packet, sort_keys=True)
+    assert "official docs snippet must not serialize" not in rendered
+    support.reject_forbidden_packet(packet)
+
+
+def test_seen_official_docs_without_citation_ids_do_not_count_as_cited() -> None:
+    context = _context(AG_LIVE_SOURCE_CUSTODY)
+    policy = _cap_policy(search_dispatches=2, fetch_read_operations=0)
+    outcome = SimpleNamespace(
+        report="The answer text is unavailable.",
+        top_passages=[
+            {
+                "source_id": 1,
+                "url": "https://docs.python.org/3/library/math.html#math.isclose",
+                "text": "[SNIPPET] official docs snippet must not serialize",
+                "source_tier": "official",
+            }
+        ],
+        seen_urls=["https://docs.python.org/3/library/math.html#math.isclose"],
+        execution_trace={
+            "provider_diagnostics": _provider_attempts()[:1],
+            "pass_providers": [["tavily"]],
+            "author_system_prompt_key": "author",
+            "final_answer_packet": {},
+        },
+    )
+
+    packet = support.build_live_success_packet(
+        context,
+        outcome=outcome,
+        cap_policy=policy,
+        run_config=_run_config(),
+    )
+
+    assert packet["cited_source_ids"] == []
+    assert packet["cited_urls"] == []
+    observability = packet["validation_observability"]
+    material = observability["source_material_summary"]
+    assert material["seen_url_count"] == 1
+    assert material["cited_source_ids"] == []
+    assert material["cited_urls"] == []
+    assert material["cited_url_resolution_source"] == "unavailable"
+
+    custody = observability["source_custody_summary"]
+    assert custody["official_doc_citations_present"] is False
+    assert custody["source_custody_diagnosis"] != (
+        "fetch_read_operations_zero_with_official_doc_citations"
+    )
+    assert custody["source_custody_diagnosis"] is None
 
     rendered = json.dumps(packet, sort_keys=True)
     assert "official docs snippet must not serialize" not in rendered
