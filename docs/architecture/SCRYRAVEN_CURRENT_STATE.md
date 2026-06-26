@@ -1,7 +1,6 @@
 # ScryRaven Current State
 
-Status: current-state redirect stub refreshed for
-`AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01`.
+Status: current-state redirect stub refreshed for `AG-OFFLINE-XAXIS-E2E-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -49,12 +48,14 @@ Current summary:
   gaps appear as component-specific blockers, but custody/candidate presence
   does not bind evidence, citations, source obligations, answer values,
   readiness, partial answer authority, or Author handoff.
-- This PR adds AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 using existing
-  SufficiencyJudgment and FinalAnswerPacket owners. Passive
+- PR #322 / AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 completed existing
+  SufficiencyJudgment and FinalAnswerPacket consumption of passive
   AnswerContractAuthorityMap binding status and EvidenceLedger custody inputs
-  are consumed into component-aware blocked readiness, but they do not become
-  readiness authorities. The post-merge next gate is
-  AG-PARTIAL-ANSWER-READINESS-01.
+  into component-aware blocked readiness.
+- This PR adds AG-OFFLINE-XAXIS-E2E-01 as an offline X-axis end-to-end proof
+  through blocked FAP / Author handoff. It does not enable partial answers and
+  does not enable live validation. The post-merge next gate is bounded live
+  multi-component validation planning or execution.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the

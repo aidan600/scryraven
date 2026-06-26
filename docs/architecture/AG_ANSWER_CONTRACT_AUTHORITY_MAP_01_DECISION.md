@@ -55,6 +55,10 @@ AnswerContractAuthorityMap ties:
   AnswerContractAuthorityMap per-component binding status consumes
   EvidenceLedger component-scoped custody while preserving candidate links and
   custody gaps as non-authorizing blockers.
+- PR #322 `AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01`: existing
+  SufficiencyJudgment and FinalAnswerPacket owners consume passive
+  binding/custody inputs into component-aware blocked readiness without making
+  those inputs readiness authorities.
 
 ## Authority Hierarchy
 
@@ -114,12 +118,14 @@ AnswerContractAuthorityMap ties:
    and custody gaps as component-specific blockers without upgrading custody
    presence into evidence, citation, source-obligation, answer-value,
    readiness, partial-answer, or Author authority.
-6. Bind Sufficiency / FinalAnswerPacket component readiness. This PR adds
-   AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 using existing SufficiencyJudgment
-   and FinalAnswerPacket owners; passive binding/custody inputs do not
-   themselves decide readiness.
-7. Add partial-answer readiness. The post-merge next gate is
-   AG-PARTIAL-ANSWER-READINESS-01.
-8. Run live multi-component validation only after offline authority mapping,
-   component binding, custody, Sufficiency, FinalAnswerPacket readiness, and
-   Author-safe handoff are testable without live behavior changes.
+6. Bind Sufficiency / FinalAnswerPacket component readiness. Complete in PR
+   #322 / AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 using existing
+   SufficiencyJudgment and FinalAnswerPacket owners; passive binding/custody
+   inputs do not themselves decide readiness.
+7. Prove the offline X-axis end-to-end through blocked FAP / Author handoff.
+   This PR adds AG-OFFLINE-XAXIS-E2E-01. It does not enable partial answers and
+   does not enable live validation.
+8. The post-merge next gate is bounded live multi-component validation planning
+   or execution, unless the offline proof finds a blocker. Partial-answer
+   readiness remains deferred until the live/product posture supports that
+   policy choice.

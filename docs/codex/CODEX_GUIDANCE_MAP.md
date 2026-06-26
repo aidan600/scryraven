@@ -38,14 +38,15 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## Current Productization Posture
 
-ScryRaven is post-PR #319 /
-post-AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01. The completed baseline includes
+ScryRaven is post-PR #322 /
+post-AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01. The completed baseline includes
 guarded blocked FinalAnswerPacket input derivation, safe blocked-FAP failure
 summaries, component-level blocked-FAP summary telemetry, an offline
 ComponentPlan / component executor contract, a RunKernel-owned passive
-AnswerContractAuthorityMap, and completed ComponentSearchPlan naming /
-subordination cleanup. PR #319 / AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01
-completed the offline RunKernel-owned SearchExecutor bridge.
+AnswerContractAuthorityMap, completed ComponentSearchPlan naming /
+subordination cleanup, the offline RunKernel-owned SearchExecutor bridge,
+EvidenceLedger component-scoped source custody, component evidence/citation
+binding, and SufficiencyJudgment / FinalAnswerPacket component readiness.
 
 The completed Offline SearchExecutor bridge is offline and inert, does not
 perform live provider/search/fetch/read/retrieval work, does not admit
@@ -61,10 +62,13 @@ completed the component evidence/citation binding phase: it extends the
 existing AnswerContractAuthorityMap per-component binding status so it consumes
 EvidenceLedger component-scoped custody, preserves candidate links and custody
 gaps as component-specific blockers, and keeps custody/candidate presence
-non-binding. This PR adds AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 by having
-existing SufficiencyJudgment and FinalAnswerPacket owners consume those passive
-binding/custody inputs into component-aware blocked readiness. The post-merge
-next gate is AG-PARTIAL-ANSWER-READINESS-01.
+non-binding. PR #322 / AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 completed
+existing SufficiencyJudgment and FinalAnswerPacket consumption of those passive
+binding/custody inputs into component-aware blocked readiness. This PR adds
+AG-OFFLINE-XAXIS-E2E-01 as an offline X-axis end-to-end proof through blocked
+FAP / Author handoff. It does not enable partial answers and does not enable
+live validation. The post-merge next gate is bounded live multi-component
+validation planning or execution.
 RunKernel / RunAuthority remains the root authority.
 AnswerContractAuthorityMap owns the
 answer-component authority mapping. ComponentPlan is legacy/compat input
