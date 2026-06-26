@@ -411,12 +411,15 @@ def test_docs_name_binding_complete_and_next_sufficiency_fap_gate() -> None:
     assert "ag-component-evidence-citation-binding-01" in normalized
     assert "answercontractauthoritymap" in normalized
     assert "component evidence/citation binding" in normalized
-    assert "post-merge next gate is ag-sufficiency-fap-component-readiness-01" in normalized
+    assert "ag-sufficiency-fap-component-readiness-01" in normalized
+    assert "sufficiencyjudgment and finalanswerpacket" in normalized
+    assert "post-merge next gate is ag-partial-answer-readiness-01" in normalized
 
     forbidden_stale_phrases = {
         "next gate is ag-component-evidence-citation-binding-01",
         "current next implementation target is component evidence/citation binding",
         "post-merge next gate is ag-component-evidence-citation-binding-01",
+        "post-merge next gate is ag-sufficiency-fap-component-readiness-01",
     }
     for phrase in forbidden_stale_phrases:
         assert phrase not in normalized

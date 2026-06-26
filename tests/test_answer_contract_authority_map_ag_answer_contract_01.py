@@ -613,7 +613,9 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
     assert "evidenceledger component-scoped source custody" in normalized
     assert "ag-component-evidence-citation-binding-01 extends" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
-    assert "post-merge next gate is ag-sufficiency-fap-component-readiness-01" in normalized
+    assert "ag-sufficiency-fap-component-readiness-01" in normalized
+    assert "sufficiencyjudgment and finalanswerpacket" in normalized
+    assert "post-merge next gate is ag-partial-answer-readiness-01" in normalized
     assert "no live validation" in normalized
 
     forbidden_claims = {
@@ -632,6 +634,7 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
         "current next implementation target is component-scoped source custody",
         "post-merge next gate is ag-component-evidence-citation-binding-01",
         "current next implementation target is component evidence/citation binding",
+        "post-merge next gate is ag-sufficiency-fap-component-readiness-01",
     }
     for claim in forbidden_claims:
         assert claim not in normalized

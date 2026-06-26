@@ -17,6 +17,7 @@ from core.run_authority_sufficiency import (
     SufficiencyValidationStatus,
     clean_text,
     clean_token,
+    safe_json,
     stable_hash,
 )
 from core.sufficiency_semantic_state_consumption_runtime import (
@@ -82,6 +83,9 @@ _SOURCE_BOUND_EXTRACTION_FLAGS = (
     "source_bound_numeric_extraction_executed",
     "quant_extraction_executed",
     "calculation_executed",
+)
+_COMPONENT_READINESS_SCHEMA_VERSION = (
+    "sufficiency_component_readiness_ag_readiness_01_v1"
 )
 
 
@@ -518,6 +522,264 @@ def _answer_contract_missing(
             )
         )
     return tuple(assessments)
+
+
+def _mapping_tuple(value: Any) -> tuple[Mapping[str, Any], ...]:
+    return tuple(item for item in _list(value) if isinstance(item, Mapping))
+
+
+def _binding_true(binding: Mapping[str, Any], key: str) -> bool:
+    return binding.get(key) is True
+
+
+def _component_ref_count(component: Mapping[str, Any], key: str) -> int:
+    return len(_mapping_tuple(component.get(key)))
+
+
+def _component_missing_candidate(
+    *,
+    candidate_count: int,
+    blockers: Sequence[str],
+    custody_gaps: Sequence[Mapping[str, Any]],
+) -> bool:
+    gap_types = {
+        clean_token(gap.get("gap_type"))
+        for gap in custody_gaps
+        if isinstance(gap, Mapping)
+    }
+    blocker_set = {clean_token(item) for item in blockers}
+    return (
+        candidate_count == 0
+        or "no_candidate" in blocker_set
+        or "missing_component_source_candidate" in gap_types
+        or "missing_component_source_candidate" in blocker_set
+    )
+
+
+def _component_readiness_status(
+    component: Mapping[str, Any],
+) -> tuple[str, str, str, tuple[str, ...]]:
+    binding = _mapping(component.get("binding_status"))
+    canonical_support = _mapping(component.get("canonical_support"))
+    blockers = _string_list(component.get("blocker_reasons"))
+    custody_gaps = _mapping_tuple(component.get("component_custody_gap_refs"))
+    candidate_count = _component_ref_count(component, "component_candidate_link_refs")
+    source_obligation_count = _component_ref_count(
+        component,
+        "component_source_obligation_refs",
+    )
+    canonical_source_satisfied = (
+        canonical_support.get("source_obligation_satisfied") is True
+    )
+    tempting_binding_true = any(
+        _binding_true(binding, key)
+        for key in (
+            "evidence_bound",
+            "citation_bound",
+            "source_obligation_bound",
+            "answer_value_bound",
+            "full_component_success",
+            "partial_user_answer_candidate",
+            "source_obligation_satisfied_from_ledger",
+        )
+    )
+    if tempting_binding_true and not canonical_source_satisfied:
+        blockers.append("passive_binding_true_without_canonical_source_obligation")
+
+    full_success = bool(
+        _binding_true(binding, "evidence_bound")
+        and _binding_true(binding, "citation_bound")
+        and _binding_true(binding, "source_obligation_bound")
+        and _binding_true(binding, "answer_value_bound")
+        and _binding_true(binding, "full_component_success")
+        and canonical_source_satisfied
+        and not custody_gaps
+        and not blockers
+    )
+    if full_success:
+        return (
+            "satisfied_component",
+            "satisfied",
+            "component_binding_and_canonical_support_satisfied",
+            (),
+        )
+
+    if _component_missing_candidate(
+        candidate_count=candidate_count,
+        blockers=blockers,
+        custody_gaps=custody_gaps,
+    ):
+        reasons = tuple(
+            dict.fromkeys(
+                (
+                    *blockers,
+                    "missing_component_source_candidate",
+                    "component_candidate_not_available",
+                )
+            )
+        )
+        return (
+            "missing_component",
+            "missing",
+            "component_candidate_missing_or_unbound",
+            reasons,
+        )
+
+    if blockers or custody_gaps or candidate_count:
+        reasons = tuple(
+            dict.fromkeys(
+                (
+                    *blockers,
+                    "component_candidate_or_custody_presence_is_not_support",
+                )
+            )
+        )
+        return (
+            "blocked_component",
+            "missing",
+            "component_binding_or_custody_blocked",
+            reasons,
+        )
+
+    if canonical_source_satisfied and any(
+        _binding_true(binding, key)
+        for key in ("evidence_bound", "citation_bound", "answer_value_bound")
+    ):
+        return (
+            "partial_component",
+            "partial",
+            "component_canonical_support_partial",
+            ("component_binding_partial",),
+        )
+
+    if source_obligation_count:
+        return (
+            "missing_component",
+            "missing",
+            "component_source_obligation_unbound",
+            ("component_source_obligation_unbound",),
+        )
+    return (
+        "missing_component",
+        "missing",
+        "component_readiness_not_observed",
+        ("component_readiness_not_observed",),
+    )
+
+
+def _component_readiness_assessments(
+    projection: Mapping[str, Any],
+) -> tuple[tuple[SufficiencyRequirementAssessment, ...], dict[str, Any]]:
+    components = _mapping_tuple(projection.get("components"))
+    assessments: list[SufficiencyRequirementAssessment] = []
+    summary_components: list[dict[str, Any]] = []
+    for component in components:
+        component_id = clean_token(component.get("component_id"))
+        if not component_id:
+            continue
+        binding = _mapping(component.get("binding_status"))
+        candidate_refs = _mapping_tuple(component.get("component_candidate_link_refs"))
+        custody_gap_refs = _mapping_tuple(component.get("component_custody_gap_refs"))
+        source_obligation_refs = _mapping_tuple(
+            component.get("component_source_obligation_refs")
+        )
+        readiness_status, assessment_status, reason, readiness_blockers = (
+            _component_readiness_status(component)
+        )
+        source_class = None
+        source_obligation_id = None
+        if source_obligation_refs:
+            first_obligation = source_obligation_refs[0]
+            source_class = clean_token(
+                first_obligation.get("required_source_class")
+                or first_obligation.get("source_class_hint")
+            )
+            source_obligation_id = clean_token(
+                first_obligation.get("source_obligation_id")
+            )
+        if not source_class and candidate_refs:
+            source_class = clean_token(candidate_refs[0].get("source_class_hint"))
+        source_class = source_class or "component_source_obligation"
+        assessments.append(
+            SufficiencyRequirementAssessment(
+                requirement_id=f"component-readiness:{component_id}",
+                requirement_kind="component_readiness",
+                required_source_class=source_class,
+                component_id=component_id,
+                source_obligation_id=source_obligation_id,
+                origin_ref="AnswerContractAuthorityMap.binding_status",
+                status=assessment_status,
+                reason=reason,
+                component_readiness_status=readiness_status,
+                binding_status_ref=binding,
+                component_candidate_link_refs=candidate_refs,
+                component_custody_gap_refs=custody_gap_refs,
+                component_source_obligation_refs=source_obligation_refs,
+            )
+        )
+        summary_components.append(
+            {
+                "component_id": component_id,
+                "status": readiness_status,
+                "sufficiency_obligation_status": assessment_status,
+                "reason": reason,
+                "binding_status": safe_json(binding),
+                "component_candidate_link_refs": safe_json(candidate_refs),
+                "component_custody_gap_refs": safe_json(custody_gap_refs),
+                "component_source_obligation_refs": safe_json(source_obligation_refs),
+                "blocker_reasons": list(readiness_blockers),
+                "candidate_link_count": len(candidate_refs),
+                "custody_gap_count": len(custody_gap_refs),
+                "source_obligation_ref_count": len(source_obligation_refs),
+                "partial_user_answer_candidate": False,
+                "author_payload_ready": False,
+            }
+        )
+    status_counts = {
+        status: sum(1 for item in summary_components if item["status"] == status)
+        for status in (
+            "satisfied_component",
+            "partial_component",
+            "missing_component",
+            "blocked_component",
+        )
+    }
+    unready_count = (
+        status_counts["partial_component"]
+        + status_counts["missing_component"]
+        + status_counts["blocked_component"]
+    )
+    summary = {
+        "schema_version": _COMPONENT_READINESS_SCHEMA_VERSION,
+        "source": clean_token(projection.get("source")),
+        "readiness_owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "binding_input_owner": clean_token(projection.get("binding_input_owner")),
+        "binding_input_passive": projection.get("binding_input_passive") is True,
+        "custody_owner": clean_token(projection.get("custody_owner")),
+        "custody_canonical_state": projection.get("custody_canonical_state") is True,
+        "final_packet_owner": "RunKernel.FinalAnswerPacket",
+        "component_count": len(summary_components),
+        "satisfied_component_count": status_counts["satisfied_component"],
+        "partial_component_count": status_counts["partial_component"],
+        "missing_component_count": status_counts["missing_component"],
+        "blocked_component_count": status_counts["blocked_component"],
+        "unready_component_count": unready_count,
+        "components": summary_components,
+        "component_readiness_blocked": bool(unready_count),
+        "partial_user_answer_candidate": False,
+        "user_facing_partial_answer_enabled": False,
+        "final_answer_allowed": False if unready_count else None,
+        "author_payload_ready": False if unready_count else None,
+        "readiness_reasons": [
+            "component_readiness_not_satisfied",
+            *[
+                reason
+                for component in summary_components
+                for reason in component.get("blocker_reasons", [])
+            ],
+        ][:80],
+    }
+    return tuple(assessments), summary
 
 
 def _conflict_reasons(facts: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1136,6 +1398,17 @@ def build_deterministic_sufficiency_judgment(
             else:
                 missing.append(item)
 
+    component_assessments, component_readiness = _component_readiness_assessments(
+        _mapping(judgment_input.component_readiness_projection)
+    )
+    for item in component_assessments:
+        if item.status == "satisfied":
+            satisfied.append(item)
+        elif item.status == "partial":
+            partial.append(item)
+        else:
+            missing.append(item)
+
     for requirement in _preferred_contract_requirements(contract):
         ledger_requirement = _find_ledger_requirement(
             requirement,
@@ -1200,6 +1473,11 @@ def build_deterministic_sufficiency_judgment(
         rationale,
         semantic_overlay,
     )
+    if component_readiness.get("component_readiness_blocked"):
+        decision = RunSufficiencyDecision.BLOCK_FINALIZATION
+        posture = SufficiencyPosture.BLOCKED
+        final_allowed = False
+        rationale = "component_readiness_not_satisfied"
     readiness_reasons = _readiness_reasons(
         missing=missing,
         partial=partial,
@@ -1211,7 +1489,13 @@ def build_deterministic_sufficiency_judgment(
         search_insufficient=search_insufficient,
     )
     readiness_reasons = tuple(
-        dict.fromkeys((*readiness_reasons, *_semantic_readiness_reasons(semantic_overlay)))
+        dict.fromkeys(
+            (
+                *readiness_reasons,
+                *_string_list(component_readiness.get("readiness_reasons")),
+                *_semantic_readiness_reasons(semantic_overlay),
+            )
+        )
     )
     mandatory = _mandatory_caveats(
         contract=contract,
@@ -1239,6 +1523,16 @@ def build_deterministic_sufficiency_judgment(
     prohibited = tuple(
         dict.fromkeys((*prohibited, *semantic_overlay.prohibited_upgrades))
     )
+    if component_readiness.get("component_readiness_blocked"):
+        prohibited = tuple(
+            dict.fromkeys(
+                (
+                    *prohibited,
+                    "do_not_treat_component_candidate_presence_as_readiness",
+                    "do_not_create_author_payload_from_unready_components",
+                )
+            )
+        )
     required_satisfied = not missing and not any(
         item.status == "partial" and item.requirement_kind != "reputable_secondary"
         for item in partial
@@ -1246,6 +1540,8 @@ def build_deterministic_sufficiency_judgment(
     if not _required_contract_requirements(contract) and final_evidence_count > 0:
         required_satisfied = True
     if semantic_overlay.direct_answer_blocked or semantic_overlay.finalization_blocked:
+        required_satisfied = False
+    if component_readiness.get("component_readiness_blocked"):
         required_satisfied = False
 
     semantic_consumption = build_semantic_consumption_summary(
@@ -1277,6 +1573,7 @@ def build_deterministic_sufficiency_judgment(
         readiness_reasons=readiness_reasons,
         rationale=rationale,
         semantic_consumption=semantic_consumption,
+        component_readiness=component_readiness,
     )
     final_packet_inputs = dict(judgment.final_packet_inputs)
     existing_flags = _mapping(final_packet_inputs.get("behavior_boundary_flags"))

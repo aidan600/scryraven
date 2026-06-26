@@ -701,7 +701,7 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
 
 
 def _json_safe(value: Any, *, depth: int = 0) -> Any:
-    if depth > 5:
+    if depth > 8:
         return "[redacted]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -12390,6 +12390,7 @@ def _canonical_sufficiency_judgment_projection(
             "semantic_state_facts_summary",
             {},
         ),
+        "component_readiness": judgment_projection.get("component_readiness", {}),
         "final_packet_inputs": judgment_projection.get("final_packet_inputs", {}),
         "rationale": judgment_projection.get("rationale"),
         "validation_status": validation_mapping.get("status")

@@ -427,7 +427,9 @@ def test_docs_name_offline_inert_bridge_and_next_custody_phase() -> None:
     assert "adds evidenceledger component-scoped source custody" in normalized
     assert "ag-component-evidence-citation-binding-01 extends" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
-    assert "post-merge next gate is ag-sufficiency-fap-component-readiness-01" in normalized
+    assert "ag-sufficiency-fap-component-readiness-01" in normalized
+    assert "sufficiencyjudgment and finalanswerpacket" in normalized
+    assert "post-merge next gate is ag-partial-answer-readiness-01" in normalized
 
     forbidden_stale_phrases = {
         "current next implementation target is the offline searchexecutor bridge",
@@ -436,6 +438,7 @@ def test_docs_name_offline_inert_bridge_and_next_custody_phase() -> None:
         "current next implementation target is component-scoped source custody",
         "post-merge next gate is ag-component-evidence-citation-binding-01",
         "current next implementation target is component evidence/citation binding",
+        "post-merge next gate is ag-sufficiency-fap-component-readiness-01",
     }
     for phrase in forbidden_stale_phrases:
         assert phrase not in normalized

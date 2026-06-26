@@ -100,7 +100,7 @@ def clean_token(value: Any, *, limit: int = 160) -> str | None:
 
 
 def safe_json(value: Any, *, depth: int = 0) -> Any:
-    if depth > 5:
+    if depth > 8:
         return "[redacted]"
     if value is None or isinstance(value, (bool, int, float)):
         return value
@@ -191,6 +191,11 @@ class SufficiencyRequirementAssessment:
     status: str = "missing"
     reason: str | None = None
     satisfied_candidate_ids: tuple[str, ...] = ()
+    component_readiness_status: str | None = None
+    binding_status_ref: Mapping[str, Any] = field(default_factory=dict)
+    component_candidate_link_refs: tuple[Mapping[str, Any], ...] = ()
+    component_custody_gap_refs: tuple[Mapping[str, Any], ...] = ()
+    component_source_obligation_refs: tuple[Mapping[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -208,6 +213,19 @@ class SufficiencyRequirementAssessment:
                 "status": clean_token(self.status),
                 "reason": clean_text(self.reason, limit=260),
                 "satisfied_candidate_ids": list(self.satisfied_candidate_ids),
+                "component_readiness_status": clean_token(
+                    self.component_readiness_status
+                ),
+                "binding_status_ref": safe_json(self.binding_status_ref),
+                "component_candidate_link_refs": safe_json(
+                    self.component_candidate_link_refs
+                ),
+                "component_custody_gap_refs": safe_json(
+                    self.component_custody_gap_refs
+                ),
+                "component_source_obligation_refs": safe_json(
+                    self.component_source_obligation_refs
+                ),
             }.items()
             if value not in (None, [], {})
         }
@@ -232,6 +250,25 @@ class SufficiencyRequirementAssessment:
             satisfied_candidate_ids=_string_tuple(
                 payload.get("satisfied_candidate_ids")
                 or payload.get("linked_candidate_ids")
+            ),
+            component_readiness_status=clean_token(
+                payload.get("component_readiness_status")
+            ),
+            binding_status_ref=_safe_mapping(payload.get("binding_status_ref")),
+            component_candidate_link_refs=tuple(
+                _safe_mapping(item)
+                for item in _list(payload.get("component_candidate_link_refs"))
+                if isinstance(item, Mapping)
+            ),
+            component_custody_gap_refs=tuple(
+                _safe_mapping(item)
+                for item in _list(payload.get("component_custody_gap_refs"))
+                if isinstance(item, Mapping)
+            ),
+            component_source_obligation_refs=tuple(
+                _safe_mapping(item)
+                for item in _list(payload.get("component_source_obligation_refs"))
+                if isinstance(item, Mapping)
             ),
         )
 
@@ -290,6 +327,7 @@ class RunSufficiencyJudgmentInput:
     weak_failure_facts: Mapping[str, Any] = field(default_factory=dict)
     budget: Mapping[str, Any] = field(default_factory=dict)
     semantic_state_facts: Mapping[str, Any] = field(default_factory=dict)
+    component_readiness_projection: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
         contract = _safe_mapping(self.contract_projection)
@@ -362,6 +400,7 @@ class RunSufficiencyJudgmentInput:
             "weak_failure_facts": _safe_mapping(self.weak_failure_facts),
             "budget": _safe_mapping(self.budget),
             "semantic_state_ref": self._semantic_state_model_ref(),
+            "component_readiness_ref": self._component_readiness_model_ref(),
         }
 
     def _semantic_state_model_ref(self) -> dict[str, Any]:
@@ -384,6 +423,41 @@ class RunSufficiencyJudgmentInput:
             "finalization_blocked": bool(facts.get("finalization_blocked")),
             "component_summary_count": len(facts.get("component_summaries") or []),
             "amendment_summary_count": len(facts.get("amendment_summaries") or []),
+        }
+
+    def _component_readiness_model_ref(self) -> dict[str, Any]:
+        projection = _safe_mapping(self.component_readiness_projection)
+        components = [
+            item
+            for item in _list(projection.get("components"))
+            if isinstance(item, Mapping)
+        ]
+        return {
+            "schema_version": clean_token(projection.get("schema_version")),
+            "source": clean_token(projection.get("source")),
+            "readiness_owner": clean_token(projection.get("readiness_owner")),
+            "binding_input_owner": clean_token(
+                projection.get("binding_input_owner")
+            ),
+            "custody_owner": clean_token(projection.get("custody_owner")),
+            "component_count": len(components),
+            "component_ids": [
+                clean_token(item.get("component_id"))
+                for item in components[:_MAX_LIST_ITEMS]
+                if clean_token(item.get("component_id"))
+            ],
+            "satisfied_component_count": projection.get(
+                "satisfied_component_count",
+                0,
+            ),
+            "partial_component_count": projection.get("partial_component_count", 0),
+            "missing_component_count": projection.get("missing_component_count", 0),
+            "blocked_component_count": projection.get("blocked_component_count", 0),
+            "final_answer_allowed": projection.get("final_answer_allowed"),
+            "author_payload_ready": projection.get("author_payload_ready"),
+            "partial_user_answer_candidate": projection.get(
+                "partial_user_answer_candidate"
+            ),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -420,6 +494,7 @@ class RunSufficiencyJudgment:
     prompt_length: int = 0
     model_identity: Mapping[str, Any] = field(default_factory=dict)
     semantic_consumption: Mapping[str, Any] = field(default_factory=dict)
+    component_readiness: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         decision = (
@@ -571,6 +646,7 @@ class RunSufficiencyJudgment:
             semantic_consumption=_safe_semantic_consumption(
                 payload.get("semantic_consumption")
             ),
+            component_readiness=_safe_mapping(payload.get("component_readiness")),
         )
 
     def _default_final_packet_inputs(self) -> dict[str, Any]:
@@ -641,6 +717,7 @@ class RunSufficiencyJudgment:
             ),
             "source_obligations": missing
             + [item.to_dict() for item in self.satisfied_obligations],
+            "component_readiness": dict(self.component_readiness),
             "mandatory_caveats": list(self.mandatory_caveats),
             "prohibited_upgrades": list(self.prohibited_upgrades),
             "behavior_boundary_flags": {
@@ -703,6 +780,7 @@ class RunSufficiencyJudgment:
                 "prompt_length": int(self.prompt_length or 0),
                 "model_identity": dict(self.model_identity),
                 "semantic_consumption": dict(self.semantic_consumption),
+                "component_readiness": dict(self.component_readiness),
                 "semantic_state_facts_summary": self._semantic_state_facts_summary(),
                 "prompt_text_retained": False,
                 "model_response_text_retained": False,

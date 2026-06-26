@@ -212,12 +212,197 @@ def _component_refs_from_blocked_sources(
     return []
 
 
+def _component_readiness_from_blocked_sources(
+    *,
+    projection: Mapping[str, Any],
+    payload_ref: Mapping[str, Any],
+    authority_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    for source in (payload_ref, projection, authority_payload):
+        readiness = _safe_mapping(source.get("component_readiness"))
+        if readiness:
+            return readiness
+    author_refs = _safe_mapping(projection.get("author_input_refs"))
+    return _safe_mapping(author_refs.get("component_readiness"))
+
+
+def _component_binding_ref(binding: Mapping[str, Any]) -> dict[str, Any]:
+    ref: dict[str, Any] = {}
+    for field_name in (
+        "evidence_bound",
+        "citation_bound",
+        "source_obligation_bound",
+        "answer_value_bound",
+        "full_component_success",
+        "partial_user_answer_candidate",
+        "source_obligation_satisfied_from_ledger",
+    ):
+        if field_name in binding:
+            ref[field_name] = binding.get(field_name) is True
+    for field_name in (
+        "evidence_binding_status",
+        "citation_binding_status",
+        "source_obligation_binding_status",
+        "answer_value_binding_status",
+    ):
+        value = _safe_text(binding.get(field_name), limit=120)
+        if value:
+            ref[field_name] = value
+    return ref
+
+
+def _blocked_component_summary_from_readiness(
+    *,
+    component_readiness: Mapping[str, Any],
+    packet_id: str | None,
+) -> dict[str, Any]:
+    readiness_components = _safe_mapping_sequence_from_any(
+        component_readiness.get("components")
+    )
+    if not readiness_components:
+        return {}
+    components: list[dict[str, Any]] = []
+    for index, component in enumerate(readiness_components, start=1):
+        binding = _safe_mapping(component.get("binding_status"))
+        status = (
+            _safe_text(
+                component.get("status")
+                or component.get("component_readiness_status"),
+                limit=120,
+            )
+            or "missing_component"
+        )
+        entry = _component_entry(
+            packet_id=packet_id,
+            status=status,
+            index=index,
+            component_ref={
+                "component_id": component.get("component_id"),
+                "safe_label": component.get("safe_label") or component.get("label"),
+            },
+            blocker_reason_codes=_safe_text_list(
+                component.get("blocker_reasons"),
+                limit=160,
+            ),
+            expected_answerable=True,
+            answered_or_answerable_from_evidence=(
+                status == "satisfied_component"
+                and binding.get("full_component_success") is True
+            ),
+            satisfied_source_obligation_count=(
+                1 if binding.get("source_obligation_bound") is True else 0
+            ),
+            missing_source_obligation_count=(
+                0 if binding.get("source_obligation_bound") is True else 1
+            ),
+            partial_source_obligation_count=(
+                1 if status == "partial_component" else 0
+            ),
+            citation_binding_available=binding.get("citation_bound") is True,
+            evidence_binding_available=binding.get("evidence_bound") is True,
+        )
+        binding_ref = _component_binding_ref(binding)
+        if binding_ref:
+            entry["binding_status_ref"] = binding_ref
+        for target_key, source_key in (
+            ("component_candidate_link_refs", "component_candidate_link_refs"),
+            ("component_custody_gap_refs", "component_custody_gap_refs"),
+            (
+                "component_source_obligation_refs",
+                "component_source_obligation_refs",
+            ),
+        ):
+            refs = _safe_mapping_sequence_from_any(component.get(source_key))
+            if refs:
+                entry[target_key] = refs
+        components.append(entry)
+
+    expected_count = _optional_int(component_readiness.get("component_count"))
+    if expected_count is None:
+        expected_count = len(components)
+    satisfied_count = sum(1 for item in components if item["status"] == "satisfied_component")
+    partial_count = sum(1 for item in components if item["status"] == "partial_component")
+    missing_count = sum(1 for item in components if item["status"] == "missing_component")
+    blocked_count = sum(1 for item in components if item["status"] == "blocked_component")
+    unready_count = partial_count + missing_count + blocked_count
+    candidate_observed_count = sum(
+        1 for item in components if item.get("component_candidate_link_refs")
+    )
+    summary = {
+        "schema_version": COMPONENT_BLOCKED_SUMMARY_SCHEMA_VERSION,
+        "component_summary_available": True,
+        "source": "RunKernel.RunAuthoritySufficiencyJudgment.component_readiness",
+        "readiness_owner": "RunKernel.RunAuthoritySufficiencyJudgment",
+        "final_packet_owner": "RunKernel.FinalAnswerPacket",
+        "expected_component_count": expected_count,
+        "expected_answerable_component_count": expected_count,
+        "supported_component_count": satisfied_count,
+        "candidate_observed_component_count": candidate_observed_count,
+        "citation_bound_component_count": sum(
+            1
+            for item in components
+            if _safe_mapping(item.get("binding_status_ref")).get("citation_bound")
+            is True
+        ),
+        "evidence_bound_component_count": sum(
+            1
+            for item in components
+            if _safe_mapping(item.get("binding_status_ref")).get("evidence_bound")
+            is True
+        ),
+        "source_obligation_satisfied_component_count": sum(
+            1
+            for item in components
+            if _safe_mapping(item.get("binding_status_ref")).get(
+                "source_obligation_bound"
+            )
+            is True
+        ),
+        "satisfied_component_count": satisfied_count,
+        "partial_component_count": partial_count,
+        "missing_component_count": missing_count,
+        "blocked_component_count": blocked_count,
+        "expected_answerable_missing_component_count": unready_count,
+        "unsupported_component_count": 0,
+        "unclear_component_count": 0,
+        "entangled_component_count": 0,
+        "source_bound_numeric_unknown_component_count": 0,
+        "full_component_success": bool(
+            expected_count and satisfied_count >= expected_count and unready_count == 0
+        ),
+        "partial_user_answer_candidate": False,
+        "user_facing_partial_answer_enabled": False,
+        "component_partial_readiness_observed": bool(partial_count),
+        "hard_block_candidate": bool(unready_count),
+        "components": components,
+    }
+    return _without_empty(summary)
+
+
 def _blocked_component_summary(
     *,
     projection: Mapping[str, Any],
     payload_ref: Mapping[str, Any],
     authority_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
+    packet_id = _safe_text(
+        payload_ref.get("packet_id")
+        or projection.get("packet_id")
+        or authority_payload.get("packet_id"),
+        limit=160,
+    )
+    component_readiness = _component_readiness_from_blocked_sources(
+        projection=projection,
+        payload_ref=payload_ref,
+        authority_payload=authority_payload,
+    )
+    readiness_summary = _blocked_component_summary_from_readiness(
+        component_readiness=component_readiness,
+        packet_id=packet_id,
+    )
+    if readiness_summary:
+        return readiness_summary
+
     semantic_ref = _semantic_ref_from_blocked_sources(
         projection=projection,
         payload_ref=payload_ref,
@@ -302,12 +487,6 @@ def _blocked_component_summary(
         and source_bound_unknown_count == 0
     )
 
-    packet_id = _safe_text(
-        payload_ref.get("packet_id")
-        or projection.get("packet_id")
-        or authority_payload.get("packet_id"),
-        limit=160,
-    )
     component_refs = _component_refs_from_blocked_sources(
         projection=projection,
         payload_ref=payload_ref,
@@ -596,6 +775,11 @@ def _blocked_author_payload_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
         item.value if hasattr(item, "value") else str(item)
         for item in packet.claim_postures
     ]
+    component_readiness = _safe_mapping(
+        packet.author_input_refs.get("component_readiness")
+        if isinstance(packet.author_input_refs, Mapping)
+        else {}
+    )
     authority_payload = {
         "packet_id": packet.packet_id,
         "readiness_status": readiness_status,
@@ -613,6 +797,8 @@ def _blocked_author_payload_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
         "prohibited_upgrade_count": len(packet.prohibited_upgrades),
         "author_input_deferred": True,
     }
+    if component_readiness:
+        authority_payload["component_readiness"] = component_readiness
     semantic_component_refs = _safe_semantic_component_refs(
         packet.semantic_content_coverage_ref_projection.get("component_refs")
         if isinstance(packet.semantic_content_coverage_ref_projection, Mapping)
@@ -650,6 +836,8 @@ def _blocked_author_payload_ref(packet: FinalAnswerPacket) -> dict[str, Any]:
         "final_text_included": False,
         "model_request_visible": False,
     }
+    if component_readiness:
+        payload["component_readiness"] = component_readiness
     if packet.semantic_authority_ref:
         payload["semantic_authority_ref"] = _safe_mapping(packet.semantic_authority_ref)
     if semantic_component_refs:

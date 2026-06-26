@@ -1714,6 +1714,19 @@ def build_final_answer_packet(
         sufficiency_judgment_projection,
         "behavior_boundary_flags",
     )
+    component_readiness = dict(
+        sufficiency_projection.get("component_readiness")
+        if isinstance(sufficiency_projection.get("component_readiness"), Mapping)
+        else {}
+    ) or _sufficiency_packet_mapping(
+        sufficiency_judgment_projection,
+        "component_readiness",
+    )
+    if component_readiness:
+        author_refs["component_readiness"] = component_readiness
+        if component_readiness.get("unready_component_count"):
+            prohibited.append("do_not_treat_component_candidate_presence_as_readiness")
+            prohibited.append("do_not_create_author_payload_from_unready_components")
     if final_answer_allowed is False:
         readiness_status = FinalAnswerReadinessStatus.BLOCKED
         readiness_reasons = tuple(

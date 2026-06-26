@@ -51,6 +51,10 @@ AnswerContractAuthorityMap ties:
   links remain non-evidence until fetched/read/admitted by a later phase, and
   source obligations are unsatisfied/pending rather than satisfied by candidate
   presence.
+- PR #321 `AG-COMPONENT-EVIDENCE-CITATION-BINDING-01`: the existing
+  AnswerContractAuthorityMap per-component binding status consumes
+  EvidenceLedger component-scoped custody while preserving candidate links and
+  custody gaps as non-authorizing blockers.
 
 ## Authority Hierarchy
 
@@ -110,10 +114,12 @@ AnswerContractAuthorityMap ties:
    and custody gaps as component-specific blockers without upgrading custody
    presence into evidence, citation, source-obligation, answer-value,
    readiness, partial-answer, or Author authority.
-6. Bind Sufficiency / FinalAnswerPacket component readiness. The post-merge
-   next gate is AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01.
-7. Add partial-answer readiness only after the full offline authority chain is
-   testable.
+6. Bind Sufficiency / FinalAnswerPacket component readiness. This PR adds
+   AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 using existing SufficiencyJudgment
+   and FinalAnswerPacket owners; passive binding/custody inputs do not
+   themselves decide readiness.
+7. Add partial-answer readiness. The post-merge next gate is
+   AG-PARTIAL-ANSWER-READINESS-01.
 8. Run live multi-component validation only after offline authority mapping,
    component binding, custody, Sufficiency, FinalAnswerPacket readiness, and
    Author-safe handoff are testable without live behavior changes.
