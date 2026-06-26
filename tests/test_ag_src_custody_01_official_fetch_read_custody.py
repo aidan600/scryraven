@@ -11,12 +11,17 @@ from core.cap_enforcement import RunCapExceeded, RunCapPolicy
 from core.evidence_ledger import EvidenceLedger
 from core.final_answer_packet import SourceObligationStatus
 from core.final_answer_runtime_adapter import build_final_answer_packet
+from core.run_authority_contract_templates import (
+    CANONICAL_TECHNICAL_DOCS,
+    build_deterministic_contract,
+)
 from core.run_config import RunConfig, SourceCustodyPolicy
 from core.validation_profiles import AG_LIVE_SOURCE_CUSTODY, get_validation_profile
 from scripts import ag_live_bound_01_support as support
 
 _DOC_URL = "https://docs.python.org/3/library/math.html#math.isclose"
 _OFF_POLICY_OFFICIAL_URL = "https://official.example.org/current-rules"
+_CANONICAL_DOCS_REQUIREMENT_ID = "run_contract:canonical_docs"
 _FULL_TEXT = (
     "Official Python documentation says math.isclose has default values for "
     "rel_tol and abs_tol. "
@@ -308,6 +313,75 @@ def _ledger_projection(*, material_type: str) -> dict[str, Any]:
     return ledger.to_projection().to_dict()
 
 
+def _canonical_docs_contract_projection() -> dict[str, Any]:
+    return build_deterministic_contract(
+        query=support.PRIMARY_QUERY,
+        mode=support.REQUIRED_MODE,
+        selected_template_ids=(CANONICAL_TECHNICAL_DOCS,),
+    ).to_projection()
+
+
+def _canonical_docs_ledger_projection(
+    *,
+    material_type: str = "full_page_fetched",
+    candidate_source_tier: str = "official",
+    candidate_source_class: str = "primary_source_documents",
+    requirement_id: str = _CANONICAL_DOCS_REQUIREMENT_ID,
+    requirement_kind: str = "canonical",
+    required_source_class: str = "primary_source_documents",
+    required_source_tier: str = "canonical",
+) -> dict[str, Any]:
+    ledger = EvidenceLedger()
+    ledger.reduce_observation(
+        {
+            "observation_id": (
+                f"ag-src-custody-02b:{requirement_id}:{material_type}:"
+                f"{candidate_source_tier}:{candidate_source_class}"
+            ),
+            "observation_source": "ag_src_custody_02b_test",
+            "requirements": [
+                {
+                    "requirement_id": requirement_id,
+                    "requirement_kind": requirement_kind,
+                    "required_source_class": required_source_class,
+                    "required_source_tier": required_source_tier,
+                    "required_currentness": "current",
+                    "required_evidence_material_type": "full_page_fetched",
+                }
+            ],
+            "candidates": [
+                {
+                    "candidate_id": "candidate:python-docs",
+                    "url": _DOC_URL,
+                    "title": "math.isclose docs",
+                    "domain": "docs.python.org",
+                    "source_tier": candidate_source_tier,
+                    "source_class": candidate_source_class,
+                    "currentness_signal": "current",
+                    "evidence_material_type": material_type,
+                    "readable_status": "readable",
+                    "fetchable_status": "fetchable",
+                    "disposition": "accepted",
+                    "record_kind": "fact",
+                    "eligible_for_stronger_obligation": True,
+                    "final_evidence_eligible": True,
+                }
+            ],
+        }
+    )
+    return ledger.to_projection().to_dict()
+
+
+def _source_requirement_status(
+    projection: dict[str, Any],
+    requirement_id: str,
+) -> str:
+    for requirement in projection["source_requirements"]:
+        if requirement["requirement_id"] == requirement_id:
+            return requirement["status"]
+    raise AssertionError(f"missing source requirement {requirement_id}")
+
+
 def _final_evidence(*, material_type: str) -> list[dict[str, Any]]:
     return [
         {
@@ -370,6 +444,102 @@ def test_fetched_official_source_satisfies_custody_only_after_ledger_admission()
     assert "official_current_unsatisfied:primary_source_documents" not in (
         packet.mandatory_caveats
     )
+
+
+@pytest.mark.parametrize("candidate_source_tier", ["official", "primary"])
+def test_official_project_docs_satisfy_canonical_docs_run_contract_after_full_fetch(
+    candidate_source_tier: str,
+) -> None:
+    projection = _canonical_docs_ledger_projection(
+        candidate_source_tier=candidate_source_tier,
+    )
+
+    assert _source_requirement_status(projection, _CANONICAL_DOCS_REQUIREMENT_ID) == (
+        "satisfied"
+    )
+
+    packet = build_final_answer_packet(
+        run_id=f"ag-src-custody-02b-{candidate_source_tier}",
+        final_evidence=_final_evidence(material_type="full_page_fetched"),
+        source_obligation_projection=projection,
+        run_contract_projection=_canonical_docs_contract_projection(),
+        evidence_sufficient=True,
+    )
+
+    assert packet.source_obligations
+    assert all(
+        obligation.status is SourceObligationStatus.SATISFIED
+        for obligation in packet.source_obligations
+    )
+    assert "missing_canonical_docs_must_be_caveated" not in packet.mandatory_caveats
+    assert "source_obligations_missing_or_unsatisfied" not in packet.readiness_reasons
+
+
+def test_snippet_only_official_docs_do_not_satisfy_canonical_docs_requirement() -> None:
+    projection = _canonical_docs_ledger_projection(material_type="snippet_only")
+
+    assert _source_requirement_status(projection, _CANONICAL_DOCS_REQUIREMENT_ID) == (
+        "unsatisfied"
+    )
+
+    packet = build_final_answer_packet(
+        run_id="ag-src-custody-02b-snippet",
+        final_evidence=_final_evidence(material_type="snippet_only"),
+        source_obligation_projection=projection,
+        run_contract_projection=_canonical_docs_contract_projection(),
+        evidence_sufficient=True,
+    )
+
+    assert any(
+        obligation.status is not SourceObligationStatus.SATISFIED
+        for obligation in packet.source_obligations
+    )
+    assert "missing_canonical_docs_must_be_caveated" in packet.mandatory_caveats
+
+
+def test_official_tier_source_class_mismatch_does_not_satisfy_canonical_docs() -> None:
+    projection = _canonical_docs_ledger_projection(
+        candidate_source_class="official_current_rules",
+    )
+
+    assert _source_requirement_status(projection, _CANONICAL_DOCS_REQUIREMENT_ID) == (
+        "unsatisfied"
+    )
+
+
+def test_official_tier_does_not_satisfy_non_canonical_docs_canonical_requirement() -> None:
+    projection = _canonical_docs_ledger_projection(
+        requirement_id="run_contract:non_canonical_primary_requirement",
+        requirement_kind="canonical",
+    )
+
+    assert _source_requirement_status(
+        projection,
+        "run_contract:non_canonical_primary_requirement",
+    ) == "unsatisfied"
+
+
+def test_exact_canonical_tier_still_satisfies_canonical_docs_requirement() -> None:
+    projection = _canonical_docs_ledger_projection(candidate_source_tier="canonical")
+
+    assert _source_requirement_status(projection, _CANONICAL_DOCS_REQUIREMENT_ID) == (
+        "satisfied"
+    )
+
+
+def test_canonical_docs_contract_without_ledger_admission_keeps_caveat() -> None:
+    packet = build_final_answer_packet(
+        run_id="ag-src-custody-02b-without-ledger",
+        final_evidence=_final_evidence(material_type="full_page_fetched"),
+        run_contract_projection=_canonical_docs_contract_projection(),
+        evidence_sufficient=True,
+    )
+
+    assert any(
+        obligation.status is not SourceObligationStatus.SATISFIED
+        for obligation in packet.source_obligations
+    )
+    assert "missing_canonical_docs_must_be_caveated" in packet.mandatory_caveats
 
 
 def test_validation_packet_reports_full_material_and_satisfied_custody() -> None:

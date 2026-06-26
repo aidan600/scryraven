@@ -1314,7 +1314,10 @@ def _candidate_satisfies_requirement(
         if candidate_class != required_class:
             return False
     required_tier = _clean_token(requirement.required_source_tier)
-    if required_tier and _clean_token(candidate.source_tier) != required_tier:
+    if required_tier and not _source_tier_satisfies_requirement(
+        candidate,
+        requirement,
+    ):
         return False
     return True
 
@@ -1352,7 +1355,49 @@ def _candidate_requirement_rejection_reason(
             }
         ):
             return "candidate_source_class_does_not_match_requirement"
+    if _clean_token(requirement.required_source_tier) and not (
+        _source_tier_satisfies_requirement(candidate, requirement)
+    ):
+        return "candidate_source_tier_does_not_match_requirement"
     return candidate.disposition_reason or "candidate_not_accepted_for_requirement"
+
+
+def _source_tier_satisfies_requirement(
+    candidate: EvidenceCandidate,
+    requirement: SourceRequirementRecord,
+) -> bool:
+    required_tier = _clean_token(requirement.required_source_tier)
+    candidate_tier = _clean_token(candidate.source_tier)
+    if not required_tier:
+        return True
+    if candidate_tier == required_tier:
+        return True
+    return _canonical_technical_docs_tier_compatible(
+        candidate,
+        requirement,
+        required_tier=required_tier,
+        candidate_tier=candidate_tier,
+    )
+
+
+def _canonical_technical_docs_tier_compatible(
+    candidate: EvidenceCandidate,
+    requirement: SourceRequirementRecord,
+    *,
+    required_tier: str,
+    candidate_tier: str,
+) -> bool:
+    if required_tier != "canonical" or candidate_tier not in {"official", "primary"}:
+        return False
+    required_class = _clean_token(requirement.required_source_class)
+    if required_class != "primary_source_documents":
+        return False
+    if _clean_token(candidate.source_class) != "primary_source_documents":
+        return False
+    requirement_id = _clean_token(requirement.requirement_id)
+    if requirement_id == "run_contract:canonical_docs":
+        return True
+    return _clean_token(requirement.requirement_kind) == "canonical_docs"
 
 
 def _strong_requirement(requirement: SourceRequirementRecord) -> bool:
