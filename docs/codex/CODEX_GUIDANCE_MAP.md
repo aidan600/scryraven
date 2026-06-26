@@ -56,8 +56,13 @@ source custody from that bridge output: component source requirements,
 candidate links, custody gaps, and unsatisfied/pending source-obligation state.
 Candidate links remain non-evidence until fetched, read, and admitted by a later
 phase, and source obligations are unsatisfied/pending rather than satisfied by
-candidate presence. The post-merge next gate is
-AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 / component evidence/citation binding.
+candidate presence. AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 is the component
+evidence/citation binding phase: it extends the existing
+AnswerContractAuthorityMap per-component binding status so it consumes
+EvidenceLedger component-scoped custody, preserves candidate links and custody
+gaps as component-specific blockers, and keeps custody/candidate presence
+non-binding. The post-merge next gate is
+AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01.
 RunKernel / RunAuthority remains the root authority.
 AnswerContractAuthorityMap owns the
 answer-component authority mapping. ComponentPlan is legacy/compat input

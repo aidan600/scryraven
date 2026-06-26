@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
-Status: current-state redirect stub refreshed for PR #320 /
-`AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01`.
+Status: current-state redirect stub refreshed for
+`AG-COMPONENT-EVIDENCE-CITATION-BINDING-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -40,11 +40,16 @@ Current summary:
   observations non-evidence, and is not user-facing runtime search.
 - PR #320 / AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger
   component-scoped source custody from offline bridge output. Candidate links
-  remain non-evidence until fetched/read/admitted by a later phase, source
+  remain non-evidence until fetched/read/admitted by a later phase, and source
   obligations are unsatisfied/pending rather than satisfied by candidate
-  presence, and the post-merge next gate is
-  AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 / component evidence/citation
-  binding.
+  presence.
+- AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 extends the existing
+  AnswerContractAuthorityMap per-component binding status to consume
+  EvidenceLedger component-scoped custody. Offline candidate links and custody
+  gaps appear as component-specific blockers, but custody/candidate presence
+  does not bind evidence, citations, source obligations, answer values,
+  readiness, partial answer authority, or Author handoff. The post-merge next
+  gate is AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the

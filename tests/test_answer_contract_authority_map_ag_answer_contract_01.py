@@ -611,8 +611,9 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
     assert "pr #320" in normalized
     assert "ag-component-scoped-source-custody-01" in normalized
     assert "evidenceledger component-scoped source custody" in normalized
-    assert "post-merge next gate" in normalized
+    assert "ag-component-evidence-citation-binding-01 extends" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
+    assert "post-merge next gate is ag-sufficiency-fap-component-readiness-01" in normalized
     assert "no live validation" in normalized
 
     forbidden_claims = {
@@ -629,6 +630,8 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
         "next productization gate is the offline searchexecutor bridge",
         "next gate is ag-component-scoped-source-custody-01",
         "current next implementation target is component-scoped source custody",
+        "post-merge next gate is ag-component-evidence-citation-binding-01",
+        "current next implementation target is component evidence/citation binding",
     }
     for claim in forbidden_claims:
         assert claim not in normalized
