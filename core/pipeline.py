@@ -2739,18 +2739,18 @@ def _select_source_custody_fetch_candidate(
     entity_hint: str | None,
 ) -> tuple[dict[str, Any] | None, str | None]:
     domains = _source_custody_policy_domains(policy, include_domains)
-    first_official: tuple[dict[str, Any], str] | None = None
+    if not domains:
+        return None, None
     for result in candidates:
         if not isinstance(result, dict) or not str(result.get("url") or "").strip():
             continue
         if result.get("_linkup_sourced_answer") is True:
             continue
+        if not _source_custody_domain_allowed(result.get("url"), domains):
+            continue
         tier = _source_custody_candidate_tier(result, entity_hint=entity_hint)
-        if domains and _source_custody_domain_allowed(result.get("url"), domains):
-            return result, tier
-        if first_official is None and tier == "official":
-            first_official = (result, tier)
-    return first_official or (None, None)
+        return result, tier
+    return None, None
 
 
 def _annotate_source_custody_fetch_candidate(

@@ -16,6 +16,7 @@ from core.validation_profiles import AG_LIVE_SOURCE_CUSTODY, get_validation_prof
 from scripts import ag_live_bound_01_support as support
 
 _DOC_URL = "https://docs.python.org/3/library/math.html#math.isclose"
+_OFF_POLICY_OFFICIAL_URL = "https://official.example.org/current-rules"
 _FULL_TEXT = (
     "Official Python documentation says math.isclose has default values for "
     "rel_tol and abs_tol. "
@@ -61,18 +62,32 @@ def _official_search_result() -> dict[str, Any]:
     }
 
 
+def _off_policy_official_search_result() -> dict[str, Any]:
+    return {
+        "title": "Current official rules",
+        "url": _OFF_POLICY_OFFICIAL_URL,
+        "domain": "official.example.org",
+        "credibility": 1,
+        "snippet": "Official current rules say the answer is stable. " * 8,
+        "raw_content": "Official current rules say the answer is stable. " * 8,
+        "source_tier": "official",
+    }
+
+
 def _run_search(
     monkeypatch: pytest.MonkeyPatch,
     *,
     source_custody_policy: SourceCustodyPolicy | None = None,
     cap_policy: RunCapPolicy | None = None,
     fetch_page: Any | None = None,
+    search_results: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     search_calls: list[str] = []
+    selected_results = search_results or [_official_search_result()]
 
     def fake_search_web_results(query: str, **_kwargs: Any) -> tuple[list[dict[str, Any]], list[str]]:
         search_calls.append(query)
-        return [_official_search_result()], []
+        return selected_results, []
 
     monkeypatch.setattr(pipeline, "search_web_results", fake_search_web_results)
     if fetch_page is not None:
@@ -179,6 +194,48 @@ def test_policy_enabled_forces_one_allowlisted_official_fetch_read(
         "ag-src-custody-01:official-doc-full-read"
     )
     assert passage["required_evidence_material_type"] == "full_page_fetched"
+
+
+def test_policy_enabled_does_not_force_off_policy_official_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cap_policy = _cap_policy(max_fetch_read_operations=1)
+    fetch_called = False
+    original_classify_source = pipeline.classify_source
+
+    def fail_fetch(_item: Any) -> None:
+        nonlocal fetch_called
+        fetch_called = True
+        raise AssertionError("off-policy official source should not be fetched")
+
+    def fake_classify_source(url: str, *args: Any, **kwargs: Any) -> str:
+        if url == _OFF_POLICY_OFFICIAL_URL:
+            return "official"
+        return original_classify_source(url, *args, **kwargs)
+
+    monkeypatch.setattr(pipeline, "classify_source", fake_classify_source)
+
+    passages = _run_search(
+        monkeypatch,
+        source_custody_policy=_custody_policy(),
+        cap_policy=cap_policy,
+        fetch_page=fail_fetch,
+        search_results=[_off_policy_official_search_result()],
+    )
+
+    assert fetch_called is False
+    assert cap_policy.fetch_read_operations == 0
+    assert passages
+    passage = passages[0]
+    assert passage["url"] == _OFF_POLICY_OFFICIAL_URL
+    assert passage["source_tier"] == "official"
+    assert passage["evidence_material_type"] == "snippet_only"
+    assert passage["snippet_only"] is True
+    assert passage["full_page_fetched"] is False
+    assert "_source_custody_policy_forced_fetch_read" not in passage
+    assert "source_custody_requirement_id" not in passage
+    assert "eligible_for_stronger_obligation" not in passage
+    assert passage.get("required_evidence_material_type") != "full_page_fetched"
 
 
 def test_policy_enabled_cap_exhaustion_blocks_before_fetch(
