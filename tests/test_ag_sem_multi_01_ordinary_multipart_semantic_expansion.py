@@ -378,11 +378,17 @@ def test_partial_missing_bounded_n_semantic_path_fails_closed_without_overclaim(
     assert component_summary["missing_component_count"] == 1
     assert component_summary["expected_answerable_missing_component_count"] == 1
     assert component_summary["full_component_success"] is False
-    assert component_summary["partial_user_answer_candidate"] is True
+    assert component_summary["partial_user_answer_candidate"] is False
+    assert component_summary["semantic_partial_coverage_observed"] is True
     assert component_summary["hard_block_candidate"] is True
     component_statuses = [item["status"] for item in component_summary["components"]]
     assert component_statuses.count("supported") == 2
     assert component_statuses.count("missing") == 1
+    assert all(
+        item["answered_or_answerable_from_evidence"] is False
+        for item in component_summary["components"]
+        if item["status"] == "supported"
+    )
     assert all(
         "raw_prompt" not in component and "provider_payload" not in component
         for component in component_summary["components"]

@@ -651,7 +651,8 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
             "entangled_component_count": 0,
             "source_bound_numeric_unknown_component_count": 0,
             "full_component_success": False,
-            "partial_user_answer_candidate": True,
+            "partial_user_answer_candidate": False,
+            "semantic_partial_coverage_observed": True,
             "hard_block_candidate": True,
             "components": [
                 {
@@ -659,7 +660,7 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
                     "safe_label": "supported-one",
                     "status": "supported",
                     "expected_answerable": True,
-                    "answered_or_answerable_from_evidence": True,
+                    "answered_or_answerable_from_evidence": False,
                     "blocker_reason_codes": [],
                     "satisfied_source_obligation_count": 0,
                     "missing_source_obligation_count": 0,
@@ -731,11 +732,17 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
     assert component_summary["missing_component_count"] == 1
     assert component_summary["expected_answerable_missing_component_count"] == 1
     assert component_summary["full_component_success"] is False
-    assert component_summary["partial_user_answer_candidate"] is True
+    assert component_summary["partial_user_answer_candidate"] is False
+    assert component_summary["semantic_partial_coverage_observed"] is True
     assert component_summary["hard_block_candidate"] is True
     assert "model_response" not in component_summary
     component_entries = component_summary["components"]
     assert {item["status"] for item in component_entries} == {"supported", "missing"}
+    assert all(
+        item["answered_or_answerable_from_evidence"] is False
+        for item in component_entries
+        if item["status"] == "supported"
+    )
     assert all("raw_prompt" not in item for item in component_entries)
     assert all("provider_payload" not in item for item in component_entries)
     assert "raw_prompt" not in observed

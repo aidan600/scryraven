@@ -262,9 +262,33 @@ def _blocked_component_summary(
     )
     expected_answerable_count = expected_component_count or None
     expected_answerable_missing_count = missing_count + source_bound_unknown_count
+    citation_bound_component_count = 0
+    evidence_bound_component_count = 0
+    source_obligation_satisfied_component_count = min(
+        supported_count,
+        _count_from_sources(
+            key="satisfied_source_obligation_count",
+            sequence_key="satisfied_source_obligations",
+            projection=projection,
+            payload_ref=payload_ref,
+            authority_payload=authority_payload,
+        ),
+    )
+    semantic_partial_coverage_observed = bool(
+        supported_count > 0 and expected_answerable_missing_count > 0
+    )
+    supported_components_safely_answerable = bool(
+        supported_count > 0
+        and citation_bound_component_count >= supported_count
+        and evidence_bound_component_count >= supported_count
+        and source_obligation_satisfied_component_count >= supported_count
+    )
     partial_candidate = None
     if expected_component_count:
-        partial_candidate = supported_count > 0 and expected_answerable_missing_count > 0
+        partial_candidate = bool(
+            semantic_partial_coverage_observed
+            and supported_components_safely_answerable
+        )
     hard_block_candidate = (
         supported_count == 0
         or expected_answerable_missing_count > 0
@@ -300,7 +324,7 @@ def _blocked_component_summary(
                 index=index + 1,
                 component_ref=ref,
                 expected_answerable=True,
-                answered_or_answerable_from_evidence=True,
+                answered_or_answerable_from_evidence=False,
             )
         )
     missing_blockers = blocker_codes or ["missing_required_component_coverage"]
@@ -335,17 +359,10 @@ def _blocked_component_summary(
         "expected_component_count": expected_component_count,
         "expected_answerable_component_count": expected_answerable_count,
         "supported_component_count": supported_count,
-        "citation_bound_component_count": 0,
-        "evidence_bound_component_count": 0,
-        "source_obligation_satisfied_component_count": min(
-            supported_count,
-            _count_from_sources(
-                key="satisfied_source_obligation_count",
-                sequence_key="satisfied_source_obligations",
-                projection=projection,
-                payload_ref=payload_ref,
-                authority_payload=authority_payload,
-            ),
+        "citation_bound_component_count": citation_bound_component_count,
+        "evidence_bound_component_count": evidence_bound_component_count,
+        "source_obligation_satisfied_component_count": (
+            source_obligation_satisfied_component_count
         ),
         "missing_component_count": missing_count,
         "expected_answerable_missing_component_count": expected_answerable_missing_count,
@@ -355,6 +372,7 @@ def _blocked_component_summary(
         "source_bound_numeric_unknown_component_count": source_bound_unknown_count,
         "full_component_success": full_component_success,
         "partial_user_answer_candidate": partial_candidate,
+        "semantic_partial_coverage_observed": semantic_partial_coverage_observed,
         "hard_block_candidate": hard_block_candidate,
         "components": components,
     }

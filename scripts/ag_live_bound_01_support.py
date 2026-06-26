@@ -141,6 +141,7 @@ COMPONENT_BLOCKED_SUMMARY_KEYS = (
     "source_bound_numeric_unknown_component_count",
     "full_component_success",
     "partial_user_answer_candidate",
+    "semantic_partial_coverage_observed",
     "hard_block_candidate",
     "components",
 )
@@ -149,6 +150,7 @@ COMPONENT_BLOCKED_SUMMARY_BOOLEAN_KEYS = frozenset(
         "component_summary_available",
         "full_component_success",
         "partial_user_answer_candidate",
+        "semantic_partial_coverage_observed",
         "hard_block_candidate",
     }
 )

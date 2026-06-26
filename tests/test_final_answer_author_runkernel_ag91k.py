@@ -407,11 +407,22 @@ def test_blocked_component_summary_reports_partial_missing_without_author() -> N
     assert component_summary["expected_answerable_missing_component_count"] == 1
     assert component_summary["source_bound_numeric_unknown_component_count"] == 0
     assert component_summary["full_component_success"] is False
-    assert component_summary["partial_user_answer_candidate"] is True
+    assert component_summary["partial_user_answer_candidate"] is False
+    assert component_summary["semantic_partial_coverage_observed"] is True
     assert component_summary["hard_block_candidate"] is True
     statuses = [item["status"] for item in component_summary["components"]]
     assert statuses.count("supported") == 2
     assert statuses.count("missing") == 1
+    supported_entries = [
+        item for item in component_summary["components"] if item["status"] == "supported"
+    ]
+    assert supported_entries
+    assert all(
+        item["answered_or_answerable_from_evidence"] is False
+        for item in supported_entries
+    )
+    assert all(item["citation_binding_available"] is False for item in supported_entries)
+    assert all(item["evidence_binding_available"] is False for item in supported_entries)
     missing_entry = next(
         item for item in component_summary["components"] if item["status"] == "missing"
     )
@@ -494,6 +505,7 @@ def test_blocked_component_summary_counts_source_bound_numeric_unknown() -> None
     assert summary["source_bound_numeric_unknown_component_count"] == 1
     assert summary["expected_answerable_missing_component_count"] == 1
     assert summary["full_component_success"] is False
+    assert summary["partial_user_answer_candidate"] is False
     assert "source_bound_numeric_unknown" in {
         item["status"] for item in summary["components"]
     }
