@@ -421,6 +421,7 @@ RECOVERED_SEMANTIC_DELTA_COMMIT_REASON = (
 )
 CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
+ANSWER_CONTRACT_AUTHORITY_MAP_STAGE = "answer_contract_authority_map"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
@@ -2842,6 +2843,54 @@ class RunKernel:
             inputs=merged_inputs,
             expected_observation_type=ObservationType.SEARCH_WORK_PLAN_CONSTRUCTED,
         )
+
+    def build_answer_contract_authority_map_projection(
+        self,
+        *,
+        component_executor_contract_projection: Mapping[str, Any] | None = None,
+        component_plan_projection: Mapping[str, Any] | None = None,
+        search_work_plan_projection: Mapping[str, Any] | None = None,
+        query_plan_work_shadow_projection: Mapping[str, Any] | None = None,
+        blocked_final_answer_packet_summary: Mapping[str, Any] | None = None,
+        store: bool = True,
+    ) -> dict[str, Any]:
+        """Build the passive AnswerContractAuthorityMap from RunKernel state."""
+
+        from core.answer_contract_authority_map import (
+            build_answer_contract_authority_map,
+        )
+
+        projection = build_answer_contract_authority_map(
+            component_executor_contract_projection=(
+                component_executor_contract_projection
+            ),
+            component_plan_projection=component_plan_projection,
+            search_work_plan_projection=(
+                search_work_plan_projection or self.state.search_work_plan
+            ),
+            query_plan_work_shadow_projection=query_plan_work_shadow_projection,
+            evidence_ledger_projection=(
+                self.state.evidence_ledger.to_projection().to_dict()
+            ),
+            semantic_observation_projection=(
+                self.state.semantic_observation_admission_projection
+            ),
+            component_coverage_projection=self.state.component_coverage_projection,
+            search_judgment_projection=self.state.search_judgment_projection,
+            sufficiency_judgment_projection=(
+                self.state.sufficiency_judgment_projection
+            ),
+            final_answer_packet_projection=self.state.final_answer_packet,
+            final_answer_authority_projection=(
+                self.state.final_answer_authority_projection
+            ),
+            blocked_final_answer_packet_summary=blocked_final_answer_packet_summary,
+        ).to_projection()
+        if store:
+            self.state.projections[ANSWER_CONTRACT_AUTHORITY_MAP_STAGE] = deepcopy(
+                projection
+            )
+        return projection
 
     def authorize_query_plan_admission(
         self,
@@ -12287,6 +12336,7 @@ __all__ = [
     "FOLLOWUP_FINAL_ANSWER_PACKET_READINESS_STAGE",
     "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_SUFFICIENCY_RECHECK_STAGE",
+    "ANSWER_CONTRACT_AUTHORITY_MAP_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
