@@ -603,6 +603,13 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
     assert "componentplan is legacy/compat input terminology" in normalized
     assert "componentsearchplan is the preferred subordinate" in normalized
     assert "they do not decide answerability" in normalized
+    assert "post-ag-component-searchplan-subordination-01" in normalized
+    assert "completed componentsearchplan naming / subordination cleanup" in normalized
+    assert "complete in pr #318" in normalized
+    assert "next productization gate is the offline searchexecutor bridge" in normalized
+    assert "offline searchexecutor bridge. this is the next gate" in normalized
+    assert "runtime searchexecutor wiring is still not part of pr #318" in normalized
+    assert "no live validation" in normalized
 
     forbidden_claims = {
         "componentplan owns answer authority",
@@ -613,6 +620,8 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
         "componentsearchplan is root authority",
         "componentsearchplan is top-level answer authority",
         "searchexecutor decides answerability",
+        "current productization cleanup is componentsearchplan",
+        "current next implementation target is componentsearchplan naming",
     }
     for claim in forbidden_claims:
         assert claim not in normalized

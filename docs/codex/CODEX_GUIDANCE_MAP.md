@@ -38,15 +38,17 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## Current Productization Posture
 
-ScryRaven is post-PR #317 / post-AG-ANSWER-CONTRACT-AUTHORITY-MAP-01 on main
-`4416cbc`. The current baseline includes guarded blocked FinalAnswerPacket
-input derivation, safe blocked-FAP failure summaries, component-level
-blocked-FAP summary telemetry, an offline ComponentPlan / component executor
-contract, and a RunKernel-owned passive AnswerContractAuthorityMap.
+ScryRaven is post-PR #318 /
+post-AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01. The current baseline includes
+guarded blocked FinalAnswerPacket input derivation, safe blocked-FAP failure
+summaries, component-level blocked-FAP summary telemetry, an offline
+ComponentPlan / component executor contract, a RunKernel-owned passive
+AnswerContractAuthorityMap, and completed ComponentSearchPlan naming /
+subordination cleanup.
 
-The current productization cleanup is ComponentSearchPlan naming and
-subordination before any runtime SearchExecutor wiring. RunKernel /
-RunAuthority remains the root authority. AnswerContractAuthorityMap owns the
+The next productization gate is the Offline SearchExecutor bridge. Runtime
+SearchExecutor wiring is still not part of PR #318. RunKernel / RunAuthority
+remains the root authority. AnswerContractAuthorityMap owns the
 answer-component authority mapping. ComponentPlan is legacy/compat input
 terminology for subordinate component-search planning; ComponentSearchPlan is
 the preferred subordinate name. ComponentPlan, ComponentSearchPlan, SearchWork,

@@ -38,6 +38,9 @@ AnswerContractAuthorityMap ties:
   AnswerContractAuthorityMap that observes component work, evidence custody,
   semantic coverage, Sufficiency, FinalAnswerPacket readiness, and Author-safe
   handoff posture without activating runtime SearchExecutor behavior.
+- PR #318 `AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01`: ComponentPlan /
+  ComponentSearchPlan naming and subordination cleanup is complete. Runtime
+  SearchExecutor wiring remains out of scope, and no live validation was run.
 
 ## Authority Hierarchy
 
@@ -75,8 +78,8 @@ AnswerContractAuthorityMap ties:
 ## Near-Term Roadmap
 
 1. Add the AnswerContract authority map.
-2. Clean up ComponentSearchPlan naming and subordination.
-3. Add the offline SearchExecutor bridge.
+2. Clean up ComponentSearchPlan naming and subordination. Complete in PR #318.
+3. Add the Offline SearchExecutor bridge. This is the next gate.
 4. Add component-scoped source custody.
 5. Bind component evidence and citations.
 6. Bind Sufficiency / FinalAnswerPacket component readiness.

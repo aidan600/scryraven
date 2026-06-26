@@ -30,9 +30,10 @@ Current summary:
   multipart/source-bound numeric cases, PR #315 offline ComponentPlan /
   component executor contract preservation into passive SearchWork/query-work
   and scorekeeping surfaces, and PR #317 RunKernel-owned passive
-  AnswerContractAuthorityMap.
-- The current next implementation target is ComponentSearchPlan naming and
-  subordination cleanup, before runtime SearchExecutor wiring.
+  AnswerContractAuthorityMap. PR #318 completes ComponentSearchPlan naming and
+  subordination cleanup without runtime SearchExecutor wiring.
+- The current next implementation target is the Offline SearchExecutor bridge.
+- No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the
   preferred subordinate component-search planning name.
