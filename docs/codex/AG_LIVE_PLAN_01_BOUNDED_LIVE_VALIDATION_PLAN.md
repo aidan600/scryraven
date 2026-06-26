@@ -12,6 +12,13 @@ Actual app delta: the bounded direct-human runner and tracked broker client can
 target a shared product-owned validation profile/cap/packet schema instead of
 runner-owned doctrine.
 
+Current supersession note after PR #315: live multi-component validation is
+deferred. The next gate is the offline `AG-ANSWER-CONTRACT-AUTHORITY-MAP-01`
+phase, followed by offline component binding work, before runtime
+SearchExecutor wiring or any live AG-LIVE-MULTI-COMPONENT validation. The
+historical AG-LIVE-BOUND-01 / AG-LIVE-BRIDGE-01 plan below is retained as
+planning history, not the current next productization gate.
+
 ## Validation Profiles
 
 Reusable live/component validation profile authority now lives in:
@@ -320,8 +327,13 @@ Fail closed and do not retry on unknown broker job, missing config, provider/mod
 
 ## Recommended Final Action
 
-Do not run AG-LIVE-BOUND-01 yet. Run AG-LIVE-BRIDGE-01 first to add and test a
-dry-run-first, cap-enforced, sanitized product-live runner or broker job. After
-that bridge is reviewed, the user should run the live command manually from a
-private shell or through the private broker, and share only the sanitized
-`output/ag_live_bound_01_packet.json` if review is needed.
+Current status: defer live validation and any runtime SearchExecutor wiring
+until offline AnswerContract authority mapping and component binding are
+testable.
+
+Historical AG-LIVE-BOUND-01 recommendation retained for context: the old plan
+was not to run AG-LIVE-BOUND-01 yet, and to run AG-LIVE-BRIDGE-01 first to add
+and test a dry-run-first, cap-enforced, sanitized product-live runner or broker
+job. After that bridge was reviewed, the user would run the live command
+manually from a private shell or through the private broker, and share only the
+sanitized `output/ag_live_bound_01_packet.json` if review was needed.

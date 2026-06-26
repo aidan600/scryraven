@@ -38,16 +38,28 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## Current Productization Posture
 
-ScryRaven is post-PR #299 / post-AG-BAL-HARDEN. The current baseline includes
-AG-GAP semantic gap authority, semantic atomicity, packet-owned Author
-materialization, AG-BAL one-cycle recovery composition, and AG-BAL-HARDEN
-canonical recovery product-composition proof.
+ScryRaven is post-PR #315 / post-AG-COMPONENT-EXECUTOR-CONTRACT-01 on main
+`3d6c62d`. The current baseline includes guarded blocked FinalAnswerPacket
+input derivation, safe blocked-FAP failure summaries, component-level
+blocked-FAP summary telemetry, and an offline ComponentPlan / component
+executor contract that preserves planned components into passive SearchWork,
+query-work, and scorekeeping surfaces.
 
-The next likely product gate is AG-LIVE-BOUND-01 after the current docs/test
-sanitation pass. AG-BAL-HARDEN is not live validation: live provider, model,
-search, fetch, and retrieval calls remain closed by default unless a phase
-explicitly scopes the live query class, budget, redaction plan, artifact path,
-decision, and stop condition.
+The next productization gate is **AG-ANSWER-CONTRACT-AUTHORITY-MAP-01**, before
+any runtime SearchExecutor wiring. RunKernel / RunAuthority remains the root
+authority. ComponentPlan, ComponentSearchPlan, SearchWork, QueryPlan, and the
+future SearchExecutor are subordinate work-description or execution surfaces;
+they do not decide answerability or final readiness. The missing authority is a
+RunKernel-owned AnswerContractAuthorityMap tying required components, delegated
+component-scoped search work, evidence/citation/source obligations,
+SemanticObservation / ComponentCoverage, SufficiencyJudgment, FinalAnswerPacket
+readiness, and Author-safe handoff. See
+`docs/architecture/AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md`.
+
+AG-BAL-HARDEN and the component executor contract are not live validation: live
+provider, model, search, fetch, and retrieval calls remain closed by default
+unless a phase explicitly scopes the live query class, budget, redaction plan,
+artifact path, decision, and stop condition.
 
 Balanced now has a hardened, default-disabled, one-gap / one-query / one-cycle
 offline recovery seam. Recovery mechanics are shared primitives; modes supply
@@ -147,8 +159,11 @@ content is explicitly pasted into the current prompt or committed here.
 - Live ScryRaven/proplex provider, model, search, or retrieval calls are disabled
   unless the phase explicitly scopes query class, run cap, provider/model/search
   budget, packet path, redaction plan, decision, and stop condition.
-- For the current AG-LIVE-BOUND-01 preflight status and no-go bridge
-  recommendation, see
+- Live multi-component validation is deferred until AG-ANSWER-CONTRACT-AUTHORITY-MAP-01
+  and follow-on offline component binding can prove the authority chain without
+  runtime provider/search/fetch behavior changes. For the historical
+  AG-LIVE-BOUND-01 preflight status and its superseded bridge recommendation,
+  see
   [AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md](AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md).
 - For live validation artifact rules, read the live-validation section in
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
