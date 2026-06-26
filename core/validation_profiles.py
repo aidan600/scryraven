@@ -27,15 +27,40 @@ AG_LIVE_BOUND_BACKUP_QUERY = (
     "According to the official Python 3 documentation, what are the default "
     "values for start and step in itertools.count()?"
 )
+AG_LIVE_MULTI_COMPONENT_PRIMARY_QUERY = (
+    "Using official documentation, what are the default ports for PostgreSQL, "
+    "MySQL, Redis, and MongoDB? Answer separately for each project with one "
+    "official citation per project."
+)
+AG_LIVE_MULTI_COMPONENT_BACKUP_QUERY = (
+    "Using official documentation, compare the default HTTP server port or "
+    "documented default listen address/port behavior for Nginx, Apache HTTP "
+    "Server, Caddy, and Traefik. Answer separately for each project with one "
+    "official citation per project."
+)
 
 BALANCED_MODE = "Balanced"
 PYTHON_DOCS_DOMAIN = "docs.python.org"
+MULTI_COMPONENT_DOCS_DOMAINS = (
+    "postgresql.org",
+    "dev.mysql.com",
+    "redis.io",
+    "mongodb.com",
+)
 PACKET_SCHEMA = "ag_live_bound_01_bounded_product_runner_v1"
 APPROVED_PRODUCT_ENTRYPOINT = "scripts/ag_live_bound_01_bounded_product_runner.py"
 PRODUCT_RUNTIME_CONSUMER = "run_pipeline"
 PRODUCT_CAP_POLICY_SURFACE = "RunConfig.cap_policy"
 PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE = "RunConfig.source_custody_policy"
 RETENTION_POSTURE = "sanitized_packet_only_with_ordinary_retention_suppressed"
+MAX_INITIAL_SELECTED_SUBJECTS = 5
+SUBJECT_BUDGET_SCOPE_INITIAL_INDEPENDENT = "initial_independent_subjects_only"
+SUBJECT_BUDGET_SELECTION_SOURCE = (
+    "existing_component_order_or_existing_searchwork_order"
+)
+FOLLOWUP_BUDGET_POLICY = (
+    "internal_followups_governed_by_existing_mode_and_resource_caps"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +151,34 @@ class ValidationSourceCustodyPolicySpec:
 
 
 @dataclass(frozen=True, slots=True)
+class ValidationSubjectBudgetSpec:
+    """Serializable passive subject-budget metadata for validation profiles."""
+
+    subject_budget_enabled: bool
+    max_initial_selected_subjects: int | None
+    subject_budget_scope: str = SUBJECT_BUDGET_SCOPE_INITIAL_INDEPENDENT
+    applies_to_internal_followups: bool = False
+    same_source_evidence_allowed: bool | None = False
+    subject_selection_source: str = SUBJECT_BUDGET_SELECTION_SOURCE
+    followup_budget_policy: str = FOLLOWUP_BUDGET_POLICY
+    policy_status: str = "planned_not_live_licensed"
+
+    def as_requested_dict(self) -> dict[str, Any]:
+        return {
+            "subject_budget_enabled": bool(self.subject_budget_enabled),
+            "max_initial_selected_subjects": self.max_initial_selected_subjects,
+            "subject_budget_scope": self.subject_budget_scope,
+            "applies_to_internal_followups": bool(
+                self.applies_to_internal_followups
+            ),
+            "same_source_evidence_allowed": self.same_source_evidence_allowed,
+            "subject_selection_source": self.subject_selection_source,
+            "followup_budget_policy": self.followup_budget_policy,
+            "policy_status": self.policy_status,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ValidationProfile:
     """Product-owned validation profile consumed by direct and broker paths."""
 
@@ -149,6 +202,7 @@ class ValidationProfile:
     current_evidence: str = "none"
     source_custody_policy: ValidationSourceCustodyPolicySpec | None = None
     source_custody_policy_surface: str = PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE
+    subject_budget: ValidationSubjectBudgetSpec | None = None
 
     def supports_direct_runner(self) -> bool:
         return (
@@ -170,6 +224,15 @@ class ValidationProfile:
             "approved_product_entrypoint": self.approved_product_entrypoint,
             "source_custody_policy_surface": self.source_custody_policy_surface,
             "source_custody_policy_enabled": self.source_custody_policy is not None,
+            "subject_budget_policy": (
+                self.subject_budget.as_requested_dict()
+                if self.subject_budget is not None
+                else None
+            ),
+            "subject_budget_enabled": bool(
+                self.subject_budget
+                and self.subject_budget.subject_budget_enabled
+            ),
         }
 
     def broker_request_shape(self) -> dict[str, Any]:
@@ -193,6 +256,11 @@ class ValidationProfile:
                     "values": self.source_custody_policy.as_requested_dict(),
                 }
                 if self.source_custody_policy is not None
+                else None
+            ),
+            "subject_budget_policy": (
+                self.subject_budget.as_requested_dict()
+                if self.subject_budget is not None
                 else None
             ),
             "retention_posture": self.retention_posture,
@@ -219,6 +287,17 @@ AG_LIVE_SOURCE_CUSTODY_POLICY = ValidationSourceCustodyPolicySpec(
     required_source_tier="official",
     required_currentness="current",
     requirement_id="ag-live-source-custody:official-doc-full-read",
+)
+
+AG_LIVE_MULTI_COMPONENT_SUBJECT_BUDGET = ValidationSubjectBudgetSpec(
+    subject_budget_enabled=True,
+    max_initial_selected_subjects=MAX_INITIAL_SELECTED_SUBJECTS,
+    subject_budget_scope=SUBJECT_BUDGET_SCOPE_INITIAL_INDEPENDENT,
+    applies_to_internal_followups=False,
+    same_source_evidence_allowed=False,
+    subject_selection_source=SUBJECT_BUDGET_SELECTION_SOURCE,
+    followup_budget_policy=FOLLOWUP_BUDGET_POLICY,
+    policy_status="planned_not_run_not_live_licensed",
 )
 
 VALIDATION_PROFILES: dict[str, ValidationProfile] = {
@@ -271,24 +350,35 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
     AG_LIVE_MULTI_COMPONENT: ValidationProfile(
         name=AG_LIVE_MULTI_COMPONENT,
         purpose=(
-            "Can two answer components map to component obligations, evidence "
-            "bindings, and packet-owned Author material?"
+            "Can a bounded initial set of multi-subject answer components map "
+            "to component obligations, evidence bindings, and packet-owned "
+            "Author material?"
         ),
-        proof_target="two component obligations bind to FinalAnswerPacket evidence",
+        proof_target=(
+            "up to five initial independent subjects/components bind to "
+            "FinalAnswerPacket evidence"
+        ),
         allowed_invocation_modes=(DIRECT_HUMAN_PRIVATE_SHELL, BROKER_PRIVATE_ADAPTER),
         live_status=LIVE_STATUS_NOT_RUN,
-        query_intent="two-component official documentation answer",
-        primary_query=AG_LIVE_BOUND_PRIMARY_QUERY,
-        backup_query=AG_LIVE_BOUND_BACKUP_QUERY,
+        query_intent=(
+            "planned four-component official documentation default-port answer"
+        ),
+        primary_query=AG_LIVE_MULTI_COMPONENT_PRIMARY_QUERY,
+        backup_query=AG_LIVE_MULTI_COMPONENT_BACKUP_QUERY,
         required_mode=BALANCED_MODE,
-        required_include_domains=(PYTHON_DOCS_DOMAIN,),
+        required_include_domains=MULTI_COMPONENT_DOCS_DOMAINS,
         cap_policy=BOUND_CAP_POLICY,
         expected_packet_criteria=(
-            "component coverage for both answer components",
-            "FinalAnswerPacket evidence binding for both components",
+            "detected initial independent subjects/components are visible",
+            "selected initial subjects/components are capped at up to five",
+            "omitted subjects/components are recorded when detected count exceeds five",
+            "component coverage for selected answer components",
+            "FinalAnswerPacket evidence binding for selected components",
             "search dispatch count interpreted by coverage rather than target count alone",
-            "packet-owned Author material reflects both components",
+            "internal follow-ups remain governed by existing mode/resource caps",
+            "packet-owned Author material reflects selected components",
         ),
+        subject_budget=AG_LIVE_MULTI_COMPONENT_SUBJECT_BUDGET,
     ),
     AG_LIVE_DISAMBIG: ValidationProfile(
         name=AG_LIVE_DISAMBIG,

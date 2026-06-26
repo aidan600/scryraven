@@ -9,6 +9,7 @@ from typing import Any
 
 from core.cap_enforcement import RunCapPolicy
 from core.validation_observability import (
+    build_subject_budget_summary,
     build_validation_observability,
     extract_cited_urls_from_text,
 )
@@ -465,6 +466,11 @@ def build_dry_run_packet(context: PreflightContext) -> dict[str, Any]:
         ),
         "source_custody_policy_product_path": source_custody_policy_product_path(
             context.profile_name
+        ),
+        "subject_budget_summary": build_subject_budget_summary(
+            validation_profile=profile,
+            preflight_context=context,
+            trace={},
         ),
         "preflight": {
             "query_lock": context.query_lock,

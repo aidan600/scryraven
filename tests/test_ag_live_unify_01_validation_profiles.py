@@ -13,6 +13,8 @@ from core.validation_profiles import (
     AG_LIVE_SOURCE_CUSTODY,
     BROKER_PRIVATE_ADAPTER,
     DIRECT_HUMAN_PRIVATE_SHELL,
+    MAX_INITIAL_SELECTED_SUBJECTS,
+    MULTI_COMPONENT_DOCS_DOMAINS,
     VALIDATION_PROFILES,
     get_validation_profile,
 )
@@ -78,8 +80,27 @@ def test_future_profiles_are_not_marked_as_live_proof() -> None:
         "admission_reason": "source_custody_policy_full_fetch_read",
     }
     multi_component = get_validation_profile(AG_LIVE_MULTI_COMPONENT)
+    assert multi_component.primary_query is not None
+    assert "PostgreSQL" in multi_component.primary_query
+    assert "MongoDB" in multi_component.primary_query
+    assert multi_component.required_include_domains == MULTI_COMPONENT_DOCS_DOMAINS
+    assert multi_component.subject_budget is not None
+    assert multi_component.subject_budget.as_requested_dict() == {
+        "subject_budget_enabled": True,
+        "max_initial_selected_subjects": MAX_INITIAL_SELECTED_SUBJECTS,
+        "subject_budget_scope": "initial_independent_subjects_only",
+        "applies_to_internal_followups": False,
+        "same_source_evidence_allowed": False,
+        "subject_selection_source": (
+            "existing_component_order_or_existing_searchwork_order"
+        ),
+        "followup_budget_policy": (
+            "internal_followups_governed_by_existing_mode_and_resource_caps"
+        ),
+        "policy_status": "planned_not_run_not_live_licensed",
+    }
     assert any(
-        "both answer components" in criterion
+        "selected initial subjects/components are capped at up to five" in criterion
         for criterion in multi_component.expected_packet_criteria
     )
     disambig = get_validation_profile(AG_LIVE_DISAMBIG)
@@ -110,6 +131,7 @@ def test_runner_context_and_packet_include_profile_cap_and_schema() -> None:
     assert packet["caps_requested"] == get_validation_profile(
         AG_LIVE_SMOKE
     ).cap_policy.as_requested_dict()
+    assert packet["subject_budget_summary"]["subject_budget_enabled"] is False
     support.reject_forbidden_packet(packet)
 
 
