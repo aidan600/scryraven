@@ -42,6 +42,8 @@ LIVE_PACKET_CAP_OVERFLOW = "cap_overflow"
 LIVE_PACKET_PIPELINE_FAILURE = "pipeline_failure"
 LIVE_PACKET_PRECHECK_FAILURE = "precheck_failure"
 LIVE_PACKET_UNEXPECTED_FAILURE = "unexpected_failure"
+FAILURE_OBSERVABILITY_SCHEMA_VERSION = "ag_live_failure_observability_v1"
+MAX_SAFE_ERROR_MESSAGE_CHARS = 240
 
 PLANNED_CAPS: dict[str, int] = _DEFAULT_PROFILE.cap_policy.as_requested_dict()
 
@@ -56,6 +58,32 @@ FORBIDDEN_PACKET_KEYS = frozenset(
 
 AUTHOR_MODEL_PHASES = frozenset({"author", "author_handoff"})
 SMART_SEARCH_JUDGMENT_PHASE_MARKERS = ("search_judgment", "smart_search_judgment")
+SENSITIVE_FAILURE_MESSAGE_MARKERS = (
+    ".env",
+    "api_key",
+    "bearer",
+    "cache",
+    "db_row",
+    "exa_api_key",
+    "full_trace",
+    "linkup_api_key",
+    "model_response",
+    "openai_api_key",
+    "openrouter_api_key",
+    "private_log",
+    "prompt_text",
+    "provider_payload",
+    "raw_model",
+    "raw_payload",
+    "raw_prompt",
+    "raw_provider",
+    "raw_response",
+    "secret",
+    "sk-",
+    "tavily_api_key",
+    "token",
+    "traceback",
+)
 
 
 class AgLiveBoundPreflightError(ValueError):
@@ -397,6 +425,36 @@ def no_retention_booleans() -> dict[str, bool]:
     }
 
 
+def build_failure_observability(
+    *,
+    safe_phase: str,
+    exc: BaseException,
+) -> dict[str, Any]:
+    """Return a bounded no-raw exception envelope for runner boundary failures."""
+
+    safe_error_type = type(exc).__name__
+    safe_message, message_redacted = _safe_exception_message(exc)
+    return {
+        "schema_version": FAILURE_OBSERVABILITY_SCHEMA_VERSION,
+        "safe_phase": _safe_error_token(safe_phase) or "unexpected",
+        "safe_error_type": safe_error_type,
+        "safe_error_code": _safe_error_code(
+            safe_phase=safe_phase,
+            safe_error_type=safe_error_type,
+        ),
+        "safe_error_message": safe_message,
+        "safe_error_message_redacted": message_redacted,
+        "raw_traceback_retained": False,
+        "raw_exception_repr_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "private_logs_retained": False,
+        "db_cache_rows_retained": False,
+        "secrets_returned": False,
+    }
+
+
 def source_custody_policy_request(profile_name: str) -> dict[str, Any] | None:
     profile = get_validation_profile(profile_name)
     if profile.source_custody_policy is None:
@@ -539,8 +597,27 @@ def build_live_failure_packet(
     run_pipeline_call_count: int,
     run_config: Any | None = None,
     outcome: Any | None = None,
+    failure_observability: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     profile = get_validation_profile(context.profile_name)
+    failure_summary: dict[str, Any] = {
+        "reason": failure_reason,
+        "classification": classification,
+    }
+    if failure_observability is not None:
+        failure_summary.update(
+            {
+                "safe_phase": failure_observability.get("safe_phase"),
+                "safe_error_type": failure_observability.get("safe_error_type"),
+                "safe_error_code": failure_observability.get("safe_error_code"),
+                "safe_error_message": failure_observability.get(
+                    "safe_error_message"
+                ),
+                "safe_error_message_redacted": failure_observability.get(
+                    "safe_error_message_redacted"
+                ),
+            }
+        )
     packet = {
         **_live_packet_base(context, cap_policy=cap_policy),
         "success_classification": classification,
@@ -564,16 +641,15 @@ def build_live_failure_packet(
             outcome=outcome,
             cap_policy=cap_policy,
         ),
-        "failure_summary": {
-            "reason": failure_reason,
-            "classification": classification,
-        },
+        "failure_summary": failure_summary,
         "live_only": {
             "ordinary_product_path": run_pipeline_call_count > 0,
             "runtime_consumer": "run_pipeline",
             "run_config_cap_policy": True,
         },
     }
+    if failure_observability is not None:
+        packet["failure_observability"] = dict(failure_observability)
     reject_forbidden_packet(packet)
     return packet
 
@@ -793,6 +869,50 @@ def _string_list(value: Any) -> list[str]:
         if clean and clean not in result:
             result.append(clean)
     return result
+
+
+def _safe_exception_message(exc: BaseException) -> tuple[str | None, bool]:
+    message = " ".join(str(exc).split())
+    if not message:
+        return None, False
+    lowered = message.casefold()
+    if " at 0x" in lowered:
+        return None, True
+    if any(marker in lowered for marker in SENSITIVE_FAILURE_MESSAGE_MARKERS):
+        return None, True
+    if len(message) > MAX_SAFE_ERROR_MESSAGE_CHARS:
+        message = message[: MAX_SAFE_ERROR_MESSAGE_CHARS - 3].rstrip() + "..."
+    return message, False
+
+
+def _safe_error_code(*, safe_phase: str, safe_error_type: str) -> str:
+    phase = _safe_error_token(safe_phase)
+    error_type = _safe_error_token(safe_error_type)
+    if not phase or not error_type:
+        return "unexpected_exception"
+    return f"{phase}_{error_type}"
+
+
+def _safe_error_token(value: str) -> str:
+    token: list[str] = []
+    previous_was_separator = True
+    previous_was_lower_or_digit = False
+    for char in str(value or ""):
+        if char.isupper():
+            if not previous_was_separator and previous_was_lower_or_digit:
+                token.append("_")
+            token.append(char.lower())
+            previous_was_separator = False
+            previous_was_lower_or_digit = False
+        elif char.isalnum():
+            token.append(char.lower())
+            previous_was_separator = False
+            previous_was_lower_or_digit = True
+        elif not previous_was_separator:
+            token.append("_")
+            previous_was_separator = True
+            previous_was_lower_or_digit = False
+    return "".join(token).strip("_")
 
 
 def _is_smart_search_judgment_phase(cost_phase: str | None) -> bool:

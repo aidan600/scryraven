@@ -26,6 +26,7 @@ from scripts.ag_live_bound_01_support import (  # noqa: E402
     LIVE_PACKET_UNEXPECTED_FAILURE,
     AgLiveBoundPreflightError,
     build_dry_run_packet,
+    build_failure_observability,
     build_live_failure_packet,
     build_live_success_packet,
     build_preflight_context,
@@ -81,12 +82,17 @@ def _run_confirmed_live(context) -> int:
     cap_policy = context.caps.to_run_cap_policy()
     run_pipeline_call_count = 0
     config: Any | None = None
+    safe_phase = "run_policy_live_confirmation"
     try:
+        safe_phase = "run_policy_live_confirmation"
         _load_live_environment()
         _validate_live_model_keys()
+        safe_phase = "run_config"
         config = _build_live_run_config(context, cap_policy=cap_policy)
+        safe_phase = "deps_build"
         deps = _build_live_run_deps()
         status, accumulator = _live_runtime_helpers()
+        safe_phase = "run_pipeline"
         run_pipeline_call_count = 1
         with _suppress_ordinary_retention_for_bounded_runner():
             outcome = _call_run_pipeline_once(config, deps, status, accumulator)
@@ -98,6 +104,10 @@ def _run_confirmed_live(context) -> int:
             failure_reason=str(exc),
             run_pipeline_call_count=run_pipeline_call_count,
             run_config=config,
+            failure_observability=build_failure_observability(
+                safe_phase=safe_phase,
+                exc=exc,
+            ),
         )
         write_packet(context.output_path, packet)
         print(f"refusing live product execution: {exc}", file=sys.stderr)
@@ -110,6 +120,10 @@ def _run_confirmed_live(context) -> int:
             failure_reason=str(exc),
             run_pipeline_call_count=run_pipeline_call_count,
             run_config=config,
+            failure_observability=build_failure_observability(
+                safe_phase=safe_phase,
+                exc=exc,
+            ),
         )
         write_packet(context.output_path, packet)
         print(f"bounded live product run exceeded caps: {exc}", file=sys.stderr)
@@ -122,6 +136,10 @@ def _run_confirmed_live(context) -> int:
             failure_reason=str(exc),
             run_pipeline_call_count=run_pipeline_call_count,
             run_config=config,
+            failure_observability=build_failure_observability(
+                safe_phase=safe_phase,
+                exc=exc,
+            ),
         )
         write_packet(context.output_path, packet)
         print(f"bounded live product run failed: {exc}", file=sys.stderr)
@@ -134,6 +152,10 @@ def _run_confirmed_live(context) -> int:
             failure_reason=type(exc).__name__,
             run_pipeline_call_count=run_pipeline_call_count,
             run_config=config,
+            failure_observability=build_failure_observability(
+                safe_phase=safe_phase,
+                exc=exc,
+            ),
         )
         write_packet(context.output_path, packet)
         print(

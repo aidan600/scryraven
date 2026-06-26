@@ -15,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from core.validation_profiles import (  # noqa: E402
+    AG_LIVE_MULTI_COMPONENT,
+    MULTI_COMPONENT_DOCS_DOMAINS,
+    get_validation_profile,
+)
+
 RUNNER_PATH = ROOT / "scripts" / "ag_live_bound_01_bounded_product_runner.py"
 SUPPORT_PATH = ROOT / "scripts" / "ag_live_bound_01_support.py"
 DEFAULT_OUTPUT = ROOT / "output" / "ag_live_bound_01_packet.json"
@@ -67,6 +73,36 @@ def _load_support() -> ModuleType:
 
 def _gitignored_output_path(name: str) -> str:
     return f"output/{name}"
+
+
+def _stub_live_runner_without_env(
+    runner: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner, "_load_live_environment", lambda: None)
+    monkeypatch.setattr(runner, "_validate_live_model_keys", lambda: None)
+    monkeypatch.setattr(runner, "_build_live_run_deps", lambda: SimpleNamespace())
+    monkeypatch.setattr(
+        runner,
+        "_live_runtime_helpers",
+        lambda: (SimpleNamespace(), SimpleNamespace()),
+    )
+
+    def fake_run_config(context: Any, *, cap_policy: Any) -> Any:
+        return SimpleNamespace(
+            query=context.query,
+            mode=context.mode,
+            fast_provider="FixtureFastProvider",
+            fast_model="fixture-fast-model",
+            smart_provider="FixtureSmartProvider",
+            smart_model="fixture-smart-model",
+            embed_provider="FixtureEmbedProvider",
+            embed_model="fixture-embed-model",
+            cap_policy=cap_policy,
+            source_custody_policy=None,
+        )
+
+    monkeypatch.setattr(runner, "_build_live_run_config", fake_run_config)
 
 
 @pytest.fixture(autouse=True)
@@ -158,6 +194,122 @@ def test_confirm_live_with_missing_live_env_fails_before_run_pipeline(
     assert packet["failure_summary"]["reason"] == (
         "missing required live environment variable(s): OPENAI_API_KEY"
     )
+
+
+def test_run_pipeline_value_error_writes_sanitized_failure_observability(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    output = _gitignored_output_path("ag_live_bound_01_value_error.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+
+    def fail_run_pipeline(
+        _config: Any,
+        _deps: Any,
+        _status: Any,
+        _accumulator: Any,
+    ) -> Any:
+        raise ValueError("safe synthetic failure")
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        side_effect=fail_run_pipeline,
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == "unexpected_failure"
+    assert packet["planned_live_dispatch"] is True
+    assert packet["run_pipeline_call_count"] == 1
+    assert packet["failure_summary"]["reason"] == "ValueError"
+    assert packet["failure_summary"]["safe_phase"] == "run_pipeline"
+    assert packet["failure_summary"]["safe_error_type"] == "ValueError"
+    assert packet["failure_summary"]["safe_error_code"] == (
+        "run_pipeline_value_error"
+    )
+    assert packet["failure_summary"]["safe_error_message"] == (
+        "safe synthetic failure"
+    )
+
+    observability = packet["failure_observability"]
+    assert observability == {
+        "schema_version": "ag_live_failure_observability_v1",
+        "safe_phase": "run_pipeline",
+        "safe_error_type": "ValueError",
+        "safe_error_code": "run_pipeline_value_error",
+        "safe_error_message": "safe synthetic failure",
+        "safe_error_message_redacted": False,
+        "raw_traceback_retained": False,
+        "raw_exception_repr_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "private_logs_retained": False,
+        "db_cache_rows_retained": False,
+        "secrets_returned": False,
+    }
+    assert packet["no_retention"]["raw_provider_payloads_retained"] is False
+    assert packet["no_retention"]["raw_prompts_retained"] is False
+    assert packet["no_retention"]["full_raw_traces_retained"] is False
+    assert packet["validation_observability"]["raw_private_material_serialized"] is False
+    assert "subject_budget_summary" in packet["validation_observability"]
+    rendered = json.dumps(packet, sort_keys=True)
+    assert "Traceback" not in rendered
+    assert '"raw_prompt":' not in rendered
+    assert '"provider_payload":' not in rendered
+    assert '"model_response":' not in rendered
+    support = _load_support()
+    support.reject_forbidden_packet(packet)
+
+
+def test_run_pipeline_sensitive_value_error_message_is_redacted(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    output = _gitignored_output_path("ag_live_bound_01_sensitive_value_error.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+    sensitive_message = "OPENAI_API_KEY=sk-secret raw_prompt provider_payload"
+
+    def fail_run_pipeline(
+        _config: Any,
+        _deps: Any,
+        _status: Any,
+        _accumulator: Any,
+    ) -> Any:
+        raise ValueError(sensitive_message)
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        side_effect=fail_run_pipeline,
+    ):
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    capsys.readouterr()
+
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    observability = packet["failure_observability"]
+    assert observability["safe_phase"] == "run_pipeline"
+    assert observability["safe_error_type"] == "ValueError"
+    assert observability["safe_error_code"] == "run_pipeline_value_error"
+    assert observability["safe_error_message"] is None
+    assert observability["safe_error_message_redacted"] is True
+    assert packet["failure_summary"]["safe_error_message"] is None
+    assert packet["failure_summary"]["safe_error_message_redacted"] is True
+    rendered = json.dumps(packet, sort_keys=True)
+    assert sensitive_message not in rendered
+    assert "OPENAI_API_KEY=sk-secret" not in rendered
+    assert "sk-secret" not in rendered
 
 
 def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
@@ -401,10 +553,124 @@ def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
     assert packet["success_classification"] == "cap_overflow"
     assert packet["run_pipeline_call_count"] == 1
     assert packet["caps_observed"]["search_dispatches"] == 2
-    assert packet["failure_summary"] == {
-        "reason": "search_dispatches cap exceeded",
-        "classification": "cap_overflow",
-    }
+    assert packet["failure_summary"]["reason"] == "search_dispatches cap exceeded"
+    assert packet["failure_summary"]["classification"] == "cap_overflow"
+    assert packet["failure_summary"]["safe_phase"] == "run_pipeline"
+    assert packet["failure_summary"]["safe_error_type"] == "RunCapExceeded"
+    assert packet["failure_observability"]["safe_error_code"] == (
+        "run_pipeline_run_cap_exceeded"
+    )
+
+
+def test_confirm_live_pipeline_error_keeps_pipeline_failure_classification(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    output = _gitignored_output_path("ag_live_bound_01_pipeline_error.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+    pipeline_error_type = runner._pipeline_error_type()
+
+    def fail_run_pipeline(
+        _config: Any,
+        _deps: Any,
+        _status: Any,
+        _accumulator: Any,
+    ) -> Any:
+        raise pipeline_error_type("safe pipeline failure")
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        side_effect=fail_run_pipeline,
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == "pipeline_failure"
+    assert packet["failure_summary"]["classification"] == "pipeline_failure"
+    assert packet["failure_summary"]["reason"] == "safe pipeline failure"
+    assert packet["failure_observability"]["safe_phase"] == "run_pipeline"
+    assert packet["failure_observability"]["safe_error_type"] == "PipelineError"
+    assert packet["failure_observability"]["safe_error_code"] == (
+        "run_pipeline_pipeline_error"
+    )
+
+
+def test_multi_component_failure_without_outcome_keeps_subject_budget_fallback() -> None:
+    support = _load_support()
+    profile = get_validation_profile(AG_LIVE_MULTI_COMPONENT)
+    context = support.build_preflight_context(
+        root=ROOT,
+        profile_name=AG_LIVE_MULTI_COMPONENT,
+        query=profile.primary_query,
+        mode="Balanced",
+        include_domains=list(MULTI_COMPONENT_DOCS_DOMAINS),
+        output_path=ROOT / "output" / "ag_live_bound_01_multi_failure.json",
+        caps=support.AgLiveBoundCaps(),
+        run_id="ag-live-multi-failure-test",
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+    )
+    packet = support.build_live_failure_packet(
+        context,
+        cap_policy=context.caps.to_run_cap_policy(),
+        classification="unexpected_failure",
+        failure_reason="ValueError",
+        run_pipeline_call_count=1,
+        run_config=None,
+        outcome=None,
+        failure_observability=support.build_failure_observability(
+            safe_phase="run_pipeline",
+            exc=ValueError("safe synthetic failure"),
+        ),
+    )
+
+    subject_budget = packet["validation_observability"]["subject_budget_summary"]
+    assert packet["validation_profile"]["name"] == AG_LIVE_MULTI_COMPONENT
+    assert subject_budget["subject_budget_enabled"] is True
+    assert subject_budget["detected_subject_count"] == 0
+    assert subject_budget["subject_selection_source"] == "not_available"
+    assert "detected_subjects_not_available" in str(subject_budget["diagnosis"])
+    support.reject_forbidden_packet(packet)
+
+
+def test_multi_component_four_domain_allowlist_preflight_stays_bounded() -> None:
+    support = _load_support()
+    profile = get_validation_profile(AG_LIVE_MULTI_COMPONENT)
+
+    context = support.build_preflight_context(
+        root=ROOT,
+        profile_name=AG_LIVE_MULTI_COMPONENT,
+        query=profile.primary_query,
+        mode="Balanced",
+        include_domains=list(MULTI_COMPONENT_DOCS_DOMAINS),
+        output_path=ROOT / "output" / "ag_live_bound_01_multi_preflight.json",
+        caps=support.AgLiveBoundCaps(),
+        run_id="ag-live-multi-preflight-test",
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+    )
+
+    assert context.include_domains == list(MULTI_COMPONENT_DOCS_DOMAINS)
+    with pytest.raises(support.AgLiveBoundPreflightError, match="mongodb.com"):
+        support.build_preflight_context(
+            root=ROOT,
+            profile_name=AG_LIVE_MULTI_COMPONENT,
+            query=profile.primary_query,
+            mode="Balanced",
+            include_domains=["postgresql.org", "dev.mysql.com", "redis.io"],
+            output_path=ROOT / "output" / "ag_live_bound_01_multi_missing.json",
+            caps=support.AgLiveBoundCaps(),
+            run_id="ag-live-multi-preflight-missing-test",
+            confirm_live_product_run=True,
+            approved_backup_query=False,
+        )
 
 
 class _NoopLogger:
