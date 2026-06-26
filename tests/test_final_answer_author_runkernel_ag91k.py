@@ -19,6 +19,7 @@ from core.final_answer_packet import (
     _safe_json,
 )
 from core.final_answer_packet_runtime import (
+    COMPONENT_BLOCKED_SUMMARY_SCHEMA_VERSION,
     build_safe_blocked_fap_summary,
     execute_final_answer_packet_prepare_action,
 )
@@ -122,6 +123,67 @@ def _blocked_sufficiency_projection() -> dict[str, Any]:
             "partial_obligations": [],
             "satisfied_obligations": [],
             "source_bound_numeric_unknowns": [],
+            "mandatory_caveats": ["finalization_blocked"],
+            "prohibited_upgrades": ["do_not_call_author"],
+            "behavior_boundary_flags": {
+                "provider_search_behavior_changed": False,
+                "retrieval_behavior_changed": False,
+                "prompt_behavior_changed": False,
+                "citation_behavior_changed": False,
+                "author_prose_behavior_changed": False,
+            },
+        },
+    ).to_projection()
+
+
+def _semantic_blocked_sufficiency_projection(
+    *,
+    required: int = 3,
+    covered: int = 2,
+    source_bound_numeric_unknowns: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    missing = max(0, required - covered)
+    return RunSufficiencyJudgment(
+        judgment_id="ag-partial-answer-blocked-summary-01",
+        decision=RunSufficiencyDecision.BLOCK_FINALIZATION,
+        final_answer_posture=SufficiencyPosture.PARTIAL_ANSWER,
+        required_obligations_satisfied=False,
+        final_answer_allowed=False,
+        readiness_reasons=(
+            "missing_required_component_coverage",
+            "semantic_direct_answer_blocked",
+            "final_answer_not_allowed",
+        ),
+        semantic_consumption={
+            "schema_version": "sufficiency_semantic_state_consumption_ag_sem_09_v1",
+            "semantic_state_facts_digest": "d" * 64,
+            "blocker_count": 1 if missing else 0,
+            "blocker_codes": (
+                ["missing_required_component_coverage"] if missing else []
+            ),
+            "direct_answer_blocked": bool(missing),
+            "finalization_blocked": bool(missing),
+            "required_component_count": required,
+            "covered_component_count": covered,
+            "missing_component_count": missing,
+        },
+        source_bound_numeric_unknowns=tuple(source_bound_numeric_unknowns or ()),
+        final_packet_inputs={
+            "decision": "block_finalization",
+            "final_answer_posture": "partial_answer",
+            "final_answer_allowed": False,
+            "required_obligations_satisfied": False,
+            "readiness_status": "blocked",
+            "readiness_reasons": [
+                "missing_required_component_coverage",
+                "semantic_direct_answer_blocked",
+                "final_answer_not_allowed",
+            ],
+            "claim_postures": ["insufficient_evidence"],
+            "missing_required_obligations": [],
+            "partial_obligations": [],
+            "satisfied_obligations": [],
+            "source_bound_numeric_unknowns": source_bound_numeric_unknowns or [],
             "mandatory_caveats": ["finalization_blocked"],
             "prohibited_upgrades": ["do_not_call_author"],
             "behavior_boundary_flags": {
@@ -311,6 +373,7 @@ def test_blocked_packet_preparation_defers_author_input_derivation(
     assert summary["missing_source_obligation_count"] == 0
     assert isinstance(summary["mandatory_caveat_count"], int)
     assert isinstance(summary["prohibited_upgrade_count"], int)
+    assert "component_blocked_summary" not in summary
     rendered_summary = json.dumps(summary, sort_keys=True)
     assert "prompt_text" not in rendered_summary
     assert "raw_prompt" not in rendered_summary
@@ -320,6 +383,120 @@ def test_blocked_packet_preparation_defers_author_input_derivation(
         match="author execution requires packet-ready author input payload",
     ):
         kernel.authorize_author_execution()
+
+
+def test_blocked_component_summary_reports_partial_missing_without_author() -> None:
+    kernel, _action, result = _prepare_packet(
+        final_top_evidence=[],
+        sufficiency_judgment_projection=_semantic_blocked_sufficiency_projection(),
+    )
+    assert result.author_input_blocked is True
+    assert result.author_payload is None
+
+    kernel.reduce(result.observation)
+    summary = build_safe_blocked_fap_summary(
+        kernel.state.final_answer_authority_projection
+    )
+    component_summary = summary["component_blocked_summary"]
+    assert component_summary["schema_version"] == COMPONENT_BLOCKED_SUMMARY_SCHEMA_VERSION
+    assert component_summary["component_summary_available"] is True
+    assert component_summary["expected_component_count"] == 3
+    assert component_summary["expected_answerable_component_count"] == 3
+    assert component_summary["supported_component_count"] == 2
+    assert component_summary["missing_component_count"] == 1
+    assert component_summary["expected_answerable_missing_component_count"] == 1
+    assert component_summary["source_bound_numeric_unknown_component_count"] == 0
+    assert component_summary["full_component_success"] is False
+    assert component_summary["partial_user_answer_candidate"] is True
+    assert component_summary["hard_block_candidate"] is True
+    statuses = [item["status"] for item in component_summary["components"]]
+    assert statuses.count("supported") == 2
+    assert statuses.count("missing") == 1
+    missing_entry = next(
+        item for item in component_summary["components"] if item["status"] == "missing"
+    )
+    assert missing_entry["expected_answerable"] is True
+    assert missing_entry["answered_or_answerable_from_evidence"] is False
+    assert "missing_required_component_coverage" in missing_entry[
+        "blocker_reason_codes"
+    ]
+    allowed_entry_keys = {
+        "component_id",
+        "component_digest",
+        "safe_label",
+        "status",
+        "expected_answerable",
+        "answered_or_answerable_from_evidence",
+        "blocker_reason_codes",
+        "satisfied_source_obligation_count",
+        "missing_source_obligation_count",
+        "partial_source_obligation_count",
+        "citation_binding_available",
+        "evidence_binding_available",
+    }
+    assert all(
+        set(component).issubset(allowed_entry_keys)
+        for component in component_summary["components"]
+    )
+    rendered_summary = json.dumps(summary, sort_keys=True)
+    assert "raw_prompt" not in rendered_summary
+    assert "provider_payload" not in rendered_summary
+    assert "model_response" not in rendered_summary
+
+
+def test_blocked_component_summary_distinguishes_no_supported_components() -> None:
+    kernel, _action, result = _prepare_packet(
+        final_top_evidence=[],
+        sufficiency_judgment_projection=_semantic_blocked_sufficiency_projection(
+            required=3,
+            covered=0,
+        ),
+    )
+    assert result.author_input_blocked is True
+
+    kernel.reduce(result.observation)
+    summary = build_safe_blocked_fap_summary(
+        kernel.state.final_answer_authority_projection
+    )["component_blocked_summary"]
+    assert summary["expected_component_count"] == 3
+    assert summary["supported_component_count"] == 0
+    assert summary["missing_component_count"] == 3
+    assert summary["partial_user_answer_candidate"] is False
+    assert summary["hard_block_candidate"] is True
+    assert {item["status"] for item in summary["components"]} == {"missing"}
+
+
+def test_blocked_component_summary_counts_source_bound_numeric_unknown() -> None:
+    kernel, _action, result = _prepare_packet(
+        final_top_evidence=[],
+        sufficiency_judgment_projection=_semantic_blocked_sufficiency_projection(
+            required=1,
+            covered=1,
+            source_bound_numeric_unknowns=[
+                {
+                    "requirement_id": "source-bound-numeric:fee",
+                    "requirement_kind": "source_bound_numeric",
+                    "status": "missing",
+                    "reason": "source_bound_numeric_unknown",
+                }
+            ],
+        ),
+    )
+    assert result.author_input_blocked is True
+
+    kernel.reduce(result.observation)
+    summary = build_safe_blocked_fap_summary(
+        kernel.state.final_answer_authority_projection
+    )["component_blocked_summary"]
+    assert summary["expected_component_count"] == 1
+    assert summary["supported_component_count"] == 1
+    assert summary["missing_component_count"] == 0
+    assert summary["source_bound_numeric_unknown_component_count"] == 1
+    assert summary["expected_answerable_missing_component_count"] == 1
+    assert summary["full_component_success"] is False
+    assert "source_bound_numeric_unknown" in {
+        item["status"] for item in summary["components"]
+    }
 
 
 def test_run_kernel_refuses_author_execution_before_packet_readiness() -> None:

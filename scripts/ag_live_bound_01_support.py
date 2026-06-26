@@ -103,6 +103,7 @@ BLOCKED_FAP_SUMMARY_KEYS = (
     "mandatory_caveat_count",
     "prohibited_upgrade_count",
     "claim_postures",
+    "component_blocked_summary",
 )
 BLOCKED_FAP_BOOLEAN_KEYS = frozenset(
     {
@@ -123,6 +124,80 @@ BLOCKED_FAP_COUNT_KEYS = frozenset(
     }
 )
 BLOCKED_FAP_LIST_KEYS = frozenset({"readiness_reasons", "claim_postures"})
+COMPONENT_BLOCKED_SUMMARY_KEYS = (
+    "schema_version",
+    "component_summary_available",
+    "expected_component_count",
+    "expected_answerable_component_count",
+    "supported_component_count",
+    "citation_bound_component_count",
+    "evidence_bound_component_count",
+    "source_obligation_satisfied_component_count",
+    "missing_component_count",
+    "expected_answerable_missing_component_count",
+    "unsupported_component_count",
+    "unclear_component_count",
+    "entangled_component_count",
+    "source_bound_numeric_unknown_component_count",
+    "full_component_success",
+    "partial_user_answer_candidate",
+    "hard_block_candidate",
+    "components",
+)
+COMPONENT_BLOCKED_SUMMARY_BOOLEAN_KEYS = frozenset(
+    {
+        "component_summary_available",
+        "full_component_success",
+        "partial_user_answer_candidate",
+        "hard_block_candidate",
+    }
+)
+COMPONENT_BLOCKED_SUMMARY_COUNT_KEYS = frozenset(
+    {
+        "expected_component_count",
+        "expected_answerable_component_count",
+        "supported_component_count",
+        "citation_bound_component_count",
+        "evidence_bound_component_count",
+        "source_obligation_satisfied_component_count",
+        "missing_component_count",
+        "expected_answerable_missing_component_count",
+        "unsupported_component_count",
+        "unclear_component_count",
+        "entangled_component_count",
+        "source_bound_numeric_unknown_component_count",
+    }
+)
+COMPONENT_BLOCKED_ENTRY_KEYS = (
+    "component_id",
+    "component_digest",
+    "safe_label",
+    "status",
+    "expected_answerable",
+    "answered_or_answerable_from_evidence",
+    "blocker_reason_codes",
+    "satisfied_source_obligation_count",
+    "missing_source_obligation_count",
+    "partial_source_obligation_count",
+    "citation_binding_available",
+    "evidence_binding_available",
+)
+COMPONENT_BLOCKED_ENTRY_BOOLEAN_KEYS = frozenset(
+    {
+        "expected_answerable",
+        "answered_or_answerable_from_evidence",
+        "citation_binding_available",
+        "evidence_binding_available",
+    }
+)
+COMPONENT_BLOCKED_ENTRY_COUNT_KEYS = frozenset(
+    {
+        "satisfied_source_obligation_count",
+        "missing_source_obligation_count",
+        "partial_source_obligation_count",
+    }
+)
+COMPONENT_BLOCKED_ENTRY_LIST_KEYS = frozenset({"blocker_reason_codes"})
 
 
 class AgLiveBoundPreflightError(ValueError):
@@ -542,7 +617,11 @@ def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
         if key not in raw:
             continue
         value = raw.get(key)
-        if key in BLOCKED_FAP_BOOLEAN_KEYS:
+        if key == "component_blocked_summary":
+            component_summary = _component_blocked_summary_from_raw(value)
+            if component_summary:
+                summary[key] = component_summary
+        elif key in BLOCKED_FAP_BOOLEAN_KEYS:
             if isinstance(value, bool):
                 summary[key] = value
         elif key in BLOCKED_FAP_COUNT_KEYS:
@@ -558,6 +637,66 @@ def _blocked_fap_summary_from_exception(exc: BaseException) -> dict[str, Any]:
             if text is not None:
                 summary[key] = text
     return summary if summary.get("blocked_fap") is True else {}
+
+
+def _component_blocked_summary_from_raw(value: Any) -> dict[str, Any]:
+    raw = _mapping_or_empty(value)
+    if raw.get("component_summary_available") is not True:
+        return {}
+    summary: dict[str, Any] = {}
+    for key in COMPONENT_BLOCKED_SUMMARY_KEYS:
+        if key not in raw:
+            continue
+        item = raw.get(key)
+        if key == "components":
+            components = _component_blocked_entries_from_raw(item)
+            if components:
+                summary[key] = components
+        elif key in COMPONENT_BLOCKED_SUMMARY_BOOLEAN_KEYS:
+            if isinstance(item, bool):
+                summary[key] = item
+        elif key in COMPONENT_BLOCKED_SUMMARY_COUNT_KEYS:
+            count = _safe_summary_int(item)
+            if count is not None:
+                summary[key] = count
+        else:
+            text = _safe_summary_text(item)
+            if text is not None:
+                summary[key] = text
+    return summary if summary.get("component_summary_available") is True else {}
+
+
+def _component_blocked_entries_from_raw(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        return []
+    entries: list[dict[str, Any]] = []
+    for raw_entry in value:
+        entry_raw = _mapping_or_empty(raw_entry)
+        if not entry_raw:
+            continue
+        entry: dict[str, Any] = {}
+        for key in COMPONENT_BLOCKED_ENTRY_KEYS:
+            if key not in entry_raw:
+                continue
+            item = entry_raw.get(key)
+            if key in COMPONENT_BLOCKED_ENTRY_BOOLEAN_KEYS:
+                if isinstance(item, bool):
+                    entry[key] = item
+            elif key in COMPONENT_BLOCKED_ENTRY_COUNT_KEYS:
+                count = _safe_summary_int(item)
+                if count is not None:
+                    entry[key] = count
+            elif key in COMPONENT_BLOCKED_ENTRY_LIST_KEYS:
+                values = _safe_summary_text_list(item)
+                if values:
+                    entry[key] = values
+            else:
+                text = _safe_summary_text(item)
+                if text is not None:
+                    entry[key] = text
+        if entry.get("component_id") and entry.get("status"):
+            entries.append(entry)
+    return entries
 
 
 def source_custody_policy_request(profile_name: str) -> dict[str, Any] | None:

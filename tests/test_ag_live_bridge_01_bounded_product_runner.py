@@ -635,6 +635,55 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
         "mandatory_caveat_count": 1,
         "prohibited_upgrade_count": 2,
         "claim_postures": ["insufficient_answer"],
+        "component_blocked_summary": {
+            "schema_version": "blocked_fap_component_summary_v1",
+            "component_summary_available": True,
+            "expected_component_count": 3,
+            "expected_answerable_component_count": 3,
+            "supported_component_count": 2,
+            "citation_bound_component_count": 0,
+            "evidence_bound_component_count": 0,
+            "source_obligation_satisfied_component_count": 0,
+            "missing_component_count": 1,
+            "expected_answerable_missing_component_count": 1,
+            "unsupported_component_count": 0,
+            "unclear_component_count": 0,
+            "entangled_component_count": 0,
+            "source_bound_numeric_unknown_component_count": 0,
+            "full_component_success": False,
+            "partial_user_answer_candidate": True,
+            "hard_block_candidate": True,
+            "components": [
+                {
+                    "component_id": "component:supported-one",
+                    "safe_label": "supported-one",
+                    "status": "supported",
+                    "expected_answerable": True,
+                    "answered_or_answerable_from_evidence": True,
+                    "blocker_reason_codes": [],
+                    "satisfied_source_obligation_count": 0,
+                    "missing_source_obligation_count": 0,
+                    "partial_source_obligation_count": 0,
+                    "citation_binding_available": False,
+                    "evidence_binding_available": False,
+                    "raw_prompt": "nested must not serialize",
+                },
+                {
+                    "component_id": "component:missing-one",
+                    "status": "missing",
+                    "expected_answerable": True,
+                    "answered_or_answerable_from_evidence": False,
+                    "blocker_reason_codes": ["missing_required_component_coverage"],
+                    "satisfied_source_obligation_count": 0,
+                    "missing_source_obligation_count": 1,
+                    "partial_source_obligation_count": 0,
+                    "citation_binding_available": False,
+                    "evidence_binding_available": False,
+                    "provider_payload": "nested must not serialize",
+                },
+            ],
+            "model_response": "nested must not serialize",
+        },
         "raw_prompt": "must not serialize",
     }
 
@@ -676,8 +725,24 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
     assert observed["partial_source_obligation_count"] == 1
     assert observed["mandatory_caveat_count"] == 1
     assert observed["prohibited_upgrade_count"] == 2
+    component_summary = observed["component_blocked_summary"]
+    assert component_summary["expected_component_count"] == 3
+    assert component_summary["supported_component_count"] == 2
+    assert component_summary["missing_component_count"] == 1
+    assert component_summary["expected_answerable_missing_component_count"] == 1
+    assert component_summary["full_component_success"] is False
+    assert component_summary["partial_user_answer_candidate"] is True
+    assert component_summary["hard_block_candidate"] is True
+    assert "model_response" not in component_summary
+    component_entries = component_summary["components"]
+    assert {item["status"] for item in component_entries} == {"supported", "missing"}
+    assert all("raw_prompt" not in item for item in component_entries)
+    assert all("provider_payload" not in item for item in component_entries)
     assert "raw_prompt" not in observed
     assert packet["sanitized_projection_summaries"]["blocked_fap_summary"] == observed
+    assert packet["sanitized_projection_summaries"]["blocked_fap_summary"][
+        "component_blocked_summary"
+    ] == component_summary
     assert packet["failure_summary"]["blocked_fap"] is True
     assert packet["failure_summary"]["blocked_fap_readiness_status"] == "blocked"
     assert packet["validation_observability"]["subject_budget_summary"][
@@ -685,6 +750,7 @@ def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
     ] is False
     rendered = json.dumps(packet, sort_keys=True)
     assert "must not serialize" not in rendered
+    assert "nested must not serialize" not in rendered
     assert "Traceback" not in rendered
     assert '"raw_prompt":' not in rendered
     assert '"provider_payload":' not in rendered
