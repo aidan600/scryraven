@@ -1,9 +1,15 @@
-"""Offline ComponentPlan to component-aware search-work contract.
+"""Offline ComponentSearchPlan to component-aware search-work contract.
 
 This module is executor-side only. It accepts already-safe structured component
-plans, projects them into passive SearchWorkPlan/query-work surfaces, and
-summarizes component scorekeeping without calling models, providers, search,
-fetch/read, retrieval, Author, or citation machinery.
+search plans, projects them into passive SearchWorkPlan/query-work surfaces,
+and summarizes component scorekeeping without calling models, providers,
+search, fetch/read, retrieval, Author, or citation machinery.
+
+``ComponentPlan`` remains the backward-compatible input name from
+AG-COMPONENT-EXECUTOR-CONTRACT-01. ``ComponentSearchPlan`` is the clearer
+subordinate alias: both names describe component-scoped search planning input
+owned under RunKernel / AnswerContractAuthorityMap, never top-level answer
+authority.
 """
 
 from __future__ import annotations
@@ -323,6 +329,8 @@ class ComponentPlanComponent:
 
 @dataclass(frozen=True, slots=True)
 class ComponentPlan:
+    """Backward-compatible subordinate component-search planning input."""
+
     plan_id: str
     planner_source: PlannerSource | str
     user_query_digest: str
@@ -399,8 +407,12 @@ class ComponentPlan:
         )
 
 
+ComponentSearchPlan = ComponentPlan
+ComponentSearchPlanComponent = ComponentPlanComponent
+
+
 def build_search_work_plan_from_component_plan(component_plan: ComponentPlan) -> SearchWorkPlan:
-    """Project a safe ComponentPlan into passive SearchWorkPlan structures."""
+    """Project a safe ComponentSearchPlan into passive SearchWorkPlan structures."""
 
     components = tuple(_search_work_component(component) for component in component_plan.components)
     provider_jobs = tuple(_provider_job(component) for component in component_plan.components)
@@ -494,7 +506,7 @@ def build_search_work_plan_from_component_plan(component_plan: ComponentPlan) ->
 
 
 def build_component_executor_contract_projection(component_plan: ComponentPlan) -> dict[str, Any]:
-    """Return ComponentPlan, SearchWorkPlan, query-work, and scorekeeping projections."""
+    """Return subordinate component-search planning and work projections."""
 
     search_work_plan = build_search_work_plan_from_component_plan(component_plan)
     search_work_payload = search_work_plan.to_dict()
@@ -852,6 +864,8 @@ __all__ = [
     "AmbiguityStatus",
     "ComponentPlan",
     "ComponentPlanComponent",
+    "ComponentSearchPlan",
+    "ComponentSearchPlanComponent",
     "FreshnessKind",
     "FreshnessPolicy",
     "PlannerSource",

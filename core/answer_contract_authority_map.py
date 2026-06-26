@@ -171,6 +171,14 @@ class AnswerContractAuthorityMap:
             "authority_boundary": {
                 "root_owner": "RunKernel / RunAuthority",
                 "map_owner": self.owner,
+                "subordinate_component_search_surfaces": [
+                    "InitialAnswerContract",
+                    "ComponentPlan",
+                    "ComponentSearchPlan",
+                    "SearchWork",
+                    "QueryPlan",
+                    "future SearchExecutor",
+                ],
                 "subordinates": [
                     "InitialAnswerContract",
                     "ComponentPlan",
@@ -179,6 +187,14 @@ class AnswerContractAuthorityMap:
                     "QueryPlan",
                     "future SearchExecutor",
                 ],
+                "component_plan_role": (
+                    "legacy/compat input name for subordinate component-search "
+                    "planning"
+                ),
+                "component_search_plan_role": (
+                    "preferred subordinate name for component-scoped search "
+                    "planning input"
+                ),
                 "observes": [
                     "EvidenceLedger",
                     "SemanticObservation",
@@ -193,12 +209,21 @@ class AnswerContractAuthorityMap:
                     "SufficiencyJudgment answerability",
                     "FinalAnswerPacket Author-safe readiness",
                 ],
+                "readiness_owners": [
+                    "EvidenceLedger",
+                    "SemanticObservation / ComponentCoverage",
+                    "SearchJudgment",
+                    "SufficiencyJudgment",
+                    "FinalAnswerPacket",
+                ],
                 "plan_presence_never_satisfies": [
                     "evidence_bound",
                     "citation_bound",
+                    "source_obligation_satisfied",
                     "source_obligation_bound",
                     "answer_value_bound",
                     "final_answer_allowed",
+                    "partial_user_answer_candidate",
                     "author_payload_ready",
                     "full_component_success",
                 ],
@@ -1122,11 +1147,24 @@ def _component_plan_ref(component: Mapping[str, Any]) -> dict[str, Any]:
     return _without_empty(
         {
             "source": "ComponentPlan",
+            "source_alias": "ComponentSearchPlan",
+            "authority_role": "subordinate_component_search_planning_input",
+            "authority_owner": ANSWER_CONTRACT_AUTHORITY_MAP_OWNER,
             "plan_id": _clean_token(component.get("component_plan_id")),
             "schema_version": _clean_token(
                 component.get("component_plan_schema_version")
             ),
             "component_id": _clean_token(component.get("component_id")),
+            "cannot_decide": [
+                "final_answer_allowed",
+                "partial_user_answer_candidate",
+                "source_obligation_satisfied",
+                "evidence_bound",
+                "citation_bound",
+                "answer_value_bound",
+                "author_payload_ready",
+                "full_component_success",
+            ],
         }
     )
 

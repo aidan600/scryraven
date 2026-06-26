@@ -122,11 +122,40 @@ def _projection_from_contract() -> dict[str, Any]:
 
 def test_four_component_official_doc_fixture_preserved_without_readiness() -> None:
     projection = _projection_from_contract()
+    boundary = projection["authority_boundary"]
 
     assert projection["schema_version"] == ANSWER_CONTRACT_AUTHORITY_MAP_SCHEMA_VERSION
     assert projection["owner"] == ANSWER_CONTRACT_AUTHORITY_MAP_OWNER
     assert projection["run_authority_owned"] is True
     assert projection["derived_from_canonical_state"] is True
+    assert boundary["root_owner"] == "RunKernel / RunAuthority"
+    assert boundary["map_owner"] == ANSWER_CONTRACT_AUTHORITY_MAP_OWNER
+    assert boundary["component_plan_role"] == (
+        "legacy/compat input name for subordinate component-search planning"
+    )
+    assert boundary["component_search_plan_role"] == (
+        "preferred subordinate name for component-scoped search planning input"
+    )
+    assert boundary["subordinate_component_search_surfaces"] == [
+        "InitialAnswerContract",
+        "ComponentPlan",
+        "ComponentSearchPlan",
+        "SearchWork",
+        "QueryPlan",
+        "future SearchExecutor",
+    ]
+    assert "SufficiencyJudgment" in boundary["readiness_owners"]
+    assert "FinalAnswerPacket" in boundary["readiness_owners"]
+    assert set(boundary["plan_presence_never_satisfies"]) >= {
+        "final_answer_allowed",
+        "partial_user_answer_candidate",
+        "source_obligation_satisfied",
+        "evidence_bound",
+        "citation_bound",
+        "answer_value_bound",
+        "author_payload_ready",
+        "full_component_success",
+    }
     assert [item["component_id"] for item in projection["components"]] == [
         "PostgreSQL",
         "MySQL",
@@ -150,6 +179,23 @@ def test_four_component_official_doc_fixture_preserved_without_readiness() -> No
         assert understanding["official_source_required"] is True
         assert work["planned"] is True
         assert work["component_plan_ref"]["source"] == "ComponentPlan"
+        assert work["component_plan_ref"]["source_alias"] == "ComponentSearchPlan"
+        assert work["component_plan_ref"]["authority_role"] == (
+            "subordinate_component_search_planning_input"
+        )
+        assert work["component_plan_ref"]["authority_owner"] == (
+            ANSWER_CONTRACT_AUTHORITY_MAP_OWNER
+        )
+        assert set(work["component_plan_ref"]["cannot_decide"]) >= {
+            "final_answer_allowed",
+            "partial_user_answer_candidate",
+            "source_obligation_satisfied",
+            "evidence_bound",
+            "citation_bound",
+            "answer_value_bound",
+            "author_payload_ready",
+            "full_component_success",
+        }
         assert work["search_work_ref"]["source"] == "SearchWork"
         assert work["query_plan_ref"]["source"] == "QueryPlanWorkShadow"
         assert work["searched_status"] == "not_started"
@@ -193,6 +239,11 @@ def test_component_plan_presence_is_subordinate_not_answer_authority() -> None:
     plan["final_answer_allowed"] = True
     plan["partial_user_answer_candidate"] = True
     plan["author_payload_ready"] = True
+    plan["source_obligation_satisfied"] = True
+    plan["evidence_bound"] = True
+    plan["citation_bound"] = True
+    plan["answer_value_bound"] = True
+    plan["full_component_success"] = True
     plan["metadata"] = {
         "source_obligation_satisfied": True,
         "evidence_bound": True,
@@ -229,8 +280,19 @@ def test_search_work_and_query_plan_refs_cannot_satisfy_binding_or_readiness() -
         "source_obligation_satisfied": True,
         "answer_value_bound": True,
         "full_component_success": True,
+        "final_answer_allowed": True,
+        "partial_user_answer_candidate": True,
+        "author_payload_ready": True,
     }
     query_shadow["runtime_consumed_by_query_plan"] = True
+    query_shadow["final_answer_allowed"] = True
+    query_shadow["partial_user_answer_candidate"] = True
+    query_shadow["source_obligation_satisfied"] = True
+    query_shadow["evidence_bound"] = True
+    query_shadow["citation_bound"] = True
+    query_shadow["answer_value_bound"] = True
+    query_shadow["author_payload_ready"] = True
+    query_shadow["full_component_success"] = True
 
     projection = build_answer_contract_authority_map(
         search_work_plan_projection=search_work,
@@ -247,6 +309,8 @@ def test_search_work_and_query_plan_refs_cannot_satisfy_binding_or_readiness() -
     assert postgresql["binding_status"]["source_obligation_bound"] is False
     assert postgresql["binding_status"]["answer_value_bound"] is False
     assert postgresql["binding_status"]["full_component_success"] is False
+    assert postgresql["binding_status"]["partial_user_answer_candidate"] is False
+    assert postgresql["evidence_custody"]["source_obligation_satisfied"] == "unknown"
     assert projection["final_answer_status"]["final_answer_allowed"] is None
     assert projection["final_answer_status"]["author_payload_ready"] is False
 
@@ -523,3 +587,32 @@ def test_answer_contract_authority_map_static_boundary_guard() -> None:
     }
     assert "ANSWER_CONTRACT_AUTHORITY_MAP_STAGE" in run_kernel_source
     assert "ANSWER_CONTRACT_AUTHORITY_MAP" not in action_attrs
+
+
+def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
+    doc_paths = [
+        ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
+        ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
+        ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
+        ROOT / "docs" / "architecture" / "AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md",
+    ]
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in doc_paths)
+    normalized = " ".join(combined.casefold().replace("`", "").split())
+
+    assert "answercontractauthoritymap owns answer-component authority mapping" in normalized
+    assert "componentplan is legacy/compat input terminology" in normalized
+    assert "componentsearchplan is the preferred subordinate" in normalized
+    assert "they do not decide answerability" in normalized
+
+    forbidden_claims = {
+        "componentplan owns answer authority",
+        "componentplan owns answer-component authority",
+        "componentplan is root authority",
+        "componentplan is top-level answer authority",
+        "componentsearchplan owns answer authority",
+        "componentsearchplan is root authority",
+        "componentsearchplan is top-level answer authority",
+        "searchexecutor decides answerability",
+    }
+    for claim in forbidden_claims:
+        assert claim not in normalized
