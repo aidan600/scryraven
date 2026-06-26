@@ -331,6 +331,50 @@ def test_confirm_live_constructs_cap_policy_and_calls_run_pipeline_once(
     assert '"execution_trace":' not in rendered_packet
 
 
+def test_source_custody_profile_builds_run_config_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    support = _load_support()
+    monkeypatch.setattr(
+        runner,
+        "_live_model_config",
+        lambda: {
+            "fast_provider": "FixtureFastProvider",
+            "fast_model": "fixture-fast-model",
+            "smart_provider": "FixtureSmartProvider",
+            "smart_model": "fixture-smart-model",
+            "embed_provider": "FixtureEmbedProvider",
+            "embed_model": "fixture-embed-model",
+            "local_url": "http://localhost:1234/v1",
+        },
+    )
+    context = support.build_preflight_context(
+        root=ROOT,
+        profile_name="AG-LIVE-SOURCE-CUSTODY",
+        query=PRIMARY_QUERY,
+        mode="Balanced",
+        include_domains=["docs.python.org"],
+        output_path=ROOT / "output" / "ag_live_bound_01_source_custody.json",
+        caps=support.AgLiveBoundCaps(),
+        run_id="ag-live-source-custody-config-test",
+        confirm_live_product_run=True,
+        approved_backup_query=False,
+    )
+
+    config = runner._build_live_run_config(
+        context,
+        cap_policy=context.caps.to_run_cap_policy(),
+    )
+
+    assert config.source_custody_policy is not None
+    assert config.source_custody_policy.require_official_full_fetch_read is True
+    assert config.source_custody_policy.preferred_domains == ("docs.python.org",)
+    assert config.source_custody_policy.required_source_class == (
+        "primary_source_documents"
+    )
+
+
 def test_confirm_live_cap_overflow_writes_sanitized_failure_packet(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,

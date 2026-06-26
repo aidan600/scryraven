@@ -222,7 +222,7 @@ def fetch_page(item_tuple: Tuple[int, Dict[str, Any]]) -> Optional[Dict[str, Any
             text = item.get("raw_content") or ""
 
     if text and len(text) > 200:
-        return {
+        doc = {
             "title": item["title"],
             "url": item["url"],
             "domain": item.get("domain", ""),
@@ -231,6 +231,22 @@ def fetch_page(item_tuple: Tuple[int, Dict[str, Any]]) -> Optional[Dict[str, Any
             "rrf_score": item.get("rrf_score", 0.0),
             "_provider": item.get("_provider", ""),
         }
+        for key in (
+            "source_tier",
+            "source_class",
+            "currentness_signal",
+            "source_custody_requirement_id",
+            "required_source_class",
+            "required_source_tier",
+            "required_currentness",
+            "required_evidence_material_type",
+            "eligible_for_stronger_obligation",
+            "source_custody_admission_reason",
+            "_source_custody_policy_forced_fetch_read",
+        ):
+            if key in item and item.get(key) not in (None, "", [], {}):
+                doc[key] = item[key]
+        return doc
     return None
 
 

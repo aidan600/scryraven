@@ -2673,6 +2673,185 @@ def _provider_result_summary(
     }
 
 
+_SNIPPET_ONLY_MATERIAL = "snippet_only"
+_FULL_PAGE_FETCHED_MATERIAL = "full_page_fetched"
+
+
+def _source_custody_policy_enabled(policy: Any | None) -> bool:
+    if policy is None:
+        return False
+    enabled = getattr(policy, "enabled", None)
+    if callable(enabled):
+        return bool(enabled())
+    return bool(getattr(policy, "require_official_full_fetch_read", False))
+
+
+def _source_custody_policy_domains(
+    policy: Any | None,
+    include_domains: list[str] | tuple[str, ...] | None,
+) -> tuple[str, ...]:
+    raw_domains = getattr(policy, "preferred_domains", ()) if policy else ()
+    if not raw_domains:
+        raw_domains = include_domains or ()
+    domains: list[str] = []
+    for value in raw_domains:
+        domain = str(value or "").strip().lower()
+        domain = domain.removeprefix("https://").removeprefix("http://")
+        domain = domain.split("/", 1)[0].lstrip(".").rstrip(".")
+        if domain and domain not in domains:
+            domains.append(domain)
+    return tuple(domains)
+
+
+def _host_matches_source_custody_domain(host: str, domain: str) -> bool:
+    host = (host or "").lower().rstrip(".")
+    domain = (domain or "").lower().lstrip(".").rstrip(".")
+    return bool(host and domain and (host == domain or host.endswith("." + domain)))
+
+
+def _source_custody_domain_allowed(url: Any, domains: tuple[str, ...]) -> bool:
+    host = normalize_source_domain(str(url or ""))
+    return any(_host_matches_source_custody_domain(host, domain) for domain in domains)
+
+
+def _source_custody_candidate_tier(
+    result: dict[str, Any],
+    *,
+    entity_hint: str | None,
+) -> str:
+    explicit = str(result.get("source_tier") or "").strip()
+    if explicit:
+        return explicit
+    snippet = (result.get("snippet") or result.get("raw_content") or "")[:2000]
+    return classify_source(
+        result.get("url", "") or "",
+        result.get("title", "") or "",
+        snippet,
+        source_context=entity_hint or "",
+    )
+
+
+def _select_source_custody_fetch_candidate(
+    candidates: list[dict[str, Any]],
+    *,
+    policy: Any,
+    include_domains: list[str],
+    entity_hint: str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    domains = _source_custody_policy_domains(policy, include_domains)
+    first_official: tuple[dict[str, Any], str] | None = None
+    for result in candidates:
+        if not isinstance(result, dict) or not str(result.get("url") or "").strip():
+            continue
+        if result.get("_linkup_sourced_answer") is True:
+            continue
+        tier = _source_custody_candidate_tier(result, entity_hint=entity_hint)
+        if domains and _source_custody_domain_allowed(result.get("url"), domains):
+            return result, tier
+        if first_official is None and tier == "official":
+            first_official = (result, tier)
+    return first_official or (None, None)
+
+
+def _annotate_source_custody_fetch_candidate(
+    result: dict[str, Any],
+    *,
+    policy: Any,
+    source_tier: str | None,
+) -> None:
+    result["_source_custody_policy_forced_fetch_read"] = True
+    result["source_custody_requirement_id"] = getattr(
+        policy,
+        "requirement_id",
+        "source-custody:official-full-fetch-read",
+    )
+    result["required_source_class"] = getattr(
+        policy,
+        "required_source_class",
+        "primary_source_documents",
+    )
+    result["required_source_tier"] = getattr(policy, "required_source_tier", "official")
+    result["required_currentness"] = getattr(policy, "required_currentness", "current")
+    result["required_evidence_material_type"] = getattr(
+        policy,
+        "required_evidence_material_type",
+        _FULL_PAGE_FETCHED_MATERIAL,
+    )
+    result["source_custody_admission_reason"] = getattr(
+        policy,
+        "admission_reason",
+        "source_custody_policy_full_fetch_read",
+    )
+    result["source_class"] = result.get("source_class") or result["required_source_class"]
+    result["source_tier"] = result.get("source_tier") or source_tier or result[
+        "required_source_tier"
+    ]
+    result["currentness_signal"] = (
+        result.get("currentness_signal") or result["required_currentness"]
+    )
+    result["eligible_for_stronger_obligation"] = True
+
+
+def _apply_source_custody_fetch_read_policy(
+    *,
+    to_fetch: list[dict[str, Any]],
+    to_snippet: list[dict[str, Any]],
+    source_custody_policy: Any | None,
+    include_domains: list[str],
+    entity_hint: str | None,
+) -> None:
+    if not _source_custody_policy_enabled(source_custody_policy):
+        return
+    if int(getattr(source_custody_policy, "max_forced_fetch_reads", 1) or 0) < 1:
+        return
+    candidates = [*to_fetch, *to_snippet]
+    selected, source_tier = _select_source_custody_fetch_candidate(
+        candidates,
+        policy=source_custody_policy,
+        include_domains=include_domains,
+        entity_hint=entity_hint,
+    )
+    if selected is None:
+        return
+    _annotate_source_custody_fetch_candidate(
+        selected,
+        policy=source_custody_policy,
+        source_tier=source_tier,
+    )
+    if selected in to_fetch:
+        return
+    to_snippet[:] = [result for result in to_snippet if result is not selected]
+    to_fetch.append(selected)
+
+
+def _material_fields(material_type: str) -> dict[str, Any]:
+    return {
+        "evidence_material_type": material_type,
+        "source_material_type": material_type,
+        "full_page_fetched": material_type == _FULL_PAGE_FETCHED_MATERIAL,
+        "snippet_only": material_type == _SNIPPET_ONLY_MATERIAL,
+    }
+
+
+def _source_custody_passage_fields(source: dict[str, Any]) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    for key in (
+        "source_class",
+        "currentness_signal",
+        "source_custody_requirement_id",
+        "required_source_class",
+        "required_source_tier",
+        "required_currentness",
+        "required_evidence_material_type",
+        "eligible_for_stronger_obligation",
+        "source_custody_admission_reason",
+    ):
+        value = source.get(key)
+        if value not in (None, "", [], {}):
+            fields[key] = value
+    return fields
+
+
 def process_search_queries(
     queries_list,
     intent,
@@ -2702,6 +2881,7 @@ def process_search_queries(
     prior_queries_for_similarity: list[str] | None = None,
     query_similarity_basis: str | None = None,
     cap_policy: Any | None = None,
+    source_custody_policy: Any | None = None,
 ):
     if search_providers is None:
         search_providers = ["tavily"]
@@ -2907,6 +3087,14 @@ def process_search_queries(
             else:
                 to_snippet.append(r)
 
+    _apply_source_custody_fetch_read_policy(
+        to_fetch=to_fetch,
+        to_snippet=to_snippet,
+        source_custody_policy=source_custody_policy,
+        include_domains=include_domains,
+        entity_hint=entity_hint,
+    )
+
     if to_snippet:
         status_container.write(f"Extracting snippets from {len(to_snippet)} sources (bypassing full fetch)...")
         for r in to_snippet:
@@ -2936,6 +3124,8 @@ def process_search_queries(
                             "rrf_score": r.get("rrf_score", 0.0),
                             "_provider": r.get("_provider", ""),
                             "source_tier": _source_tier,
+                            **_material_fields(_SNIPPET_ONLY_MATERIAL),
+                            **_source_custody_passage_fields(r),
                         }
                     )
 
@@ -2957,6 +3147,8 @@ def process_search_queries(
                 _tier_snip,
                 source_context=entity_hint or "",
             )
+            if doc.get("_source_custody_policy_forced_fetch_read") is True:
+                _source_tier = doc.get("source_tier") or _source_tier
             for chunk in chunk_text(doc["text"], chunk_size=2000):
                 if len(chunk) < 150:
                     continue
@@ -2972,6 +3164,8 @@ def process_search_queries(
                         "rrf_score": doc.get("rrf_score", 0.0),
                         "_provider": doc.get("_provider", ""),
                         "source_tier": _source_tier,
+                        **_material_fields(_FULL_PAGE_FETCHED_MATERIAL),
+                        **_source_custody_passage_fields(doc),
                     }
                 )
 

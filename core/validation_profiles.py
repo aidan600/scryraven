@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Sequence
 
 from core.cap_enforcement import RunCapPolicy
+from core.run_config import SourceCustodyPolicy
 
 AG_LIVE_SMOKE = "AG-LIVE-SMOKE"
 AG_LIVE_SOURCE_CUSTODY = "AG-LIVE-SOURCE-CUSTODY"
@@ -33,6 +34,7 @@ PACKET_SCHEMA = "ag_live_bound_01_bounded_product_runner_v1"
 APPROVED_PRODUCT_ENTRYPOINT = "scripts/ag_live_bound_01_bounded_product_runner.py"
 PRODUCT_RUNTIME_CONSUMER = "run_pipeline"
 PRODUCT_CAP_POLICY_SURFACE = "RunConfig.cap_policy"
+PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE = "RunConfig.source_custody_policy"
 RETENTION_POSTURE = "sanitized_packet_only_with_ordinary_retention_suppressed"
 
 
@@ -76,6 +78,54 @@ class ValidationCapPolicySpec:
 
 
 @dataclass(frozen=True, slots=True)
+class ValidationSourceCustodyPolicySpec:
+    """Serializable source-custody policy spec for validation profiles."""
+
+    require_official_full_fetch_read: bool
+    max_forced_fetch_reads: int
+    preferred_domains: tuple[str, ...]
+    required_source_class: str
+    required_source_tier: str
+    required_currentness: str
+    requirement_id: str
+    required_evidence_material_type: str = "full_page_fetched"
+    admission_reason: str = "source_custody_policy_full_fetch_read"
+
+    def as_requested_dict(self) -> dict[str, Any]:
+        return {
+            "require_official_full_fetch_read": bool(
+                self.require_official_full_fetch_read
+            ),
+            "max_forced_fetch_reads": int(self.max_forced_fetch_reads),
+            "preferred_domains": list(self.preferred_domains),
+            "required_source_class": self.required_source_class,
+            "required_source_tier": self.required_source_tier,
+            "required_currentness": self.required_currentness,
+            "requirement_id": self.requirement_id,
+            "required_evidence_material_type": self.required_evidence_material_type,
+            "admission_reason": self.admission_reason,
+        }
+
+    def to_run_policy(
+        self,
+        *,
+        include_domains: Sequence[str] = (),
+    ) -> SourceCustodyPolicy:
+        preferred_domains = tuple(self.preferred_domains or tuple(include_domains))
+        return SourceCustodyPolicy(
+            require_official_full_fetch_read=self.require_official_full_fetch_read,
+            max_forced_fetch_reads=self.max_forced_fetch_reads,
+            preferred_domains=preferred_domains,
+            required_source_class=self.required_source_class,
+            required_source_tier=self.required_source_tier,
+            required_currentness=self.required_currentness,
+            requirement_id=self.requirement_id,
+            required_evidence_material_type=self.required_evidence_material_type,
+            admission_reason=self.admission_reason,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ValidationProfile:
     """Product-owned validation profile consumed by direct and broker paths."""
 
@@ -97,6 +147,8 @@ class ValidationProfile:
     runtime_consumer: str = PRODUCT_RUNTIME_CONSUMER
     cap_policy_surface: str = PRODUCT_CAP_POLICY_SURFACE
     current_evidence: str = "none"
+    source_custody_policy: ValidationSourceCustodyPolicySpec | None = None
+    source_custody_policy_surface: str = PRODUCT_SOURCE_CUSTODY_POLICY_SURFACE
 
     def supports_direct_runner(self) -> bool:
         return (
@@ -116,6 +168,8 @@ class ValidationProfile:
             "runtime_consumer": self.runtime_consumer,
             "cap_policy_surface": self.cap_policy_surface,
             "approved_product_entrypoint": self.approved_product_entrypoint,
+            "source_custody_policy_surface": self.source_custody_policy_surface,
+            "source_custody_policy_enabled": self.source_custody_policy is not None,
         }
 
     def broker_request_shape(self) -> dict[str, Any]:
@@ -133,6 +187,14 @@ class ValidationProfile:
                 "surface": self.cap_policy_surface,
                 "values": self.cap_policy.as_requested_dict(),
             },
+            "source_custody_policy": (
+                {
+                    "surface": self.source_custody_policy_surface,
+                    "values": self.source_custody_policy.as_requested_dict(),
+                }
+                if self.source_custody_policy is not None
+                else None
+            ),
             "retention_posture": self.retention_posture,
             "packet_schema": self.packet_schema,
             "expected_packet_criteria": list(self.expected_packet_criteria),
@@ -147,6 +209,16 @@ BOUND_CAP_POLICY = ValidationCapPolicySpec(
     max_smart_search_judgment_model_calls=0,
     max_independent_manual_source_checks=1,
     max_retries=0,
+)
+
+AG_LIVE_SOURCE_CUSTODY_POLICY = ValidationSourceCustodyPolicySpec(
+    require_official_full_fetch_read=True,
+    max_forced_fetch_reads=1,
+    preferred_domains=(PYTHON_DOCS_DOMAIN,),
+    required_source_class="primary_source_documents",
+    required_source_tier="official",
+    required_currentness="current",
+    requirement_id="ag-live-source-custody:official-doc-full-read",
 )
 
 VALIDATION_PROFILES: dict[str, ValidationProfile] = {
@@ -194,6 +266,7 @@ VALIDATION_PROFILES: dict[str, ValidationProfile] = {
             "final answer cites admitted official source",
             "no awkward official-doc custody partial posture after admission",
         ),
+        source_custody_policy=AG_LIVE_SOURCE_CUSTODY_POLICY,
     ),
     AG_LIVE_MULTI_COMPONENT: ValidationProfile(
         name=AG_LIVE_MULTI_COMPONENT,

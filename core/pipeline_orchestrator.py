@@ -532,6 +532,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     )
     current_date = config.current_date
     cap_policy = config.cap_policy
+    source_custody_policy = config.source_custody_policy
 
     a5_provider_override: list[str] | None = None
     if config.provider_override:
@@ -577,6 +578,13 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             if cap_policy is not None:
                 kw.update(
                     supported_diagnostic_kwargs(base, {"cap_policy": cap_policy})
+                )
+            if source_custody_policy is not None:
+                kw.update(
+                    supported_diagnostic_kwargs(
+                        base,
+                        {"source_custody_policy": source_custody_policy},
+                    )
                 )
             if cap_policy is not None:
                 cap_policy.mark_search_dispatch()

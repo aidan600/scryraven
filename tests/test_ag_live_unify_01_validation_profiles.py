@@ -41,6 +41,9 @@ def test_profile_registry_contains_required_ag_live_profiles() -> None:
         }
         assert profile.packet_schema == "ag_live_bound_01_bounded_product_runner_v1"
         assert profile.cap_policy_surface == "RunConfig.cap_policy"
+        assert profile.source_custody_policy_surface == (
+            "RunConfig.source_custody_policy"
+        )
 
 
 def test_ag_live_smoke_maps_to_direct_human_runner_behavior() -> None:
@@ -62,6 +65,18 @@ def test_future_profiles_are_not_marked_as_live_proof() -> None:
     assert get_validation_profile(AG_LIVE_DISAMBIG).live_status == "not_run"
     source_custody = get_validation_profile(AG_LIVE_SOURCE_CUSTODY)
     assert "fetch_read_operations > 0" in source_custody.expected_packet_criteria
+    assert source_custody.source_custody_policy is not None
+    assert source_custody.source_custody_policy.as_requested_dict() == {
+        "require_official_full_fetch_read": True,
+        "max_forced_fetch_reads": 1,
+        "preferred_domains": ["docs.python.org"],
+        "required_source_class": "primary_source_documents",
+        "required_source_tier": "official",
+        "required_currentness": "current",
+        "requirement_id": "ag-live-source-custody:official-doc-full-read",
+        "required_evidence_material_type": "full_page_fetched",
+        "admission_reason": "source_custody_policy_full_fetch_read",
+    }
     multi_component = get_validation_profile(AG_LIVE_MULTI_COMPONENT)
     assert any(
         "both answer components" in criterion
@@ -129,8 +144,25 @@ def test_broker_profile_request_uses_registry_without_arbitrary_command() -> Non
     assert profile_request["cap_policy"]["values"] == get_validation_profile(
         AG_LIVE_SMOKE
     ).cap_policy.as_requested_dict()
+    assert profile_request["source_custody_policy"] is None
     assert "command" not in json.dumps(payload).casefold()
     assert "dotenv" not in json.dumps(payload).casefold()
+
+
+def test_source_custody_broker_profile_request_includes_policy_surface() -> None:
+    payload = broker_client._build_profile_request_payload(
+        "ag-live-source-custody",
+        AG_LIVE_SOURCE_CUSTODY,
+    )
+
+    profile_request = payload["profile_request"]
+    assert profile_request["validation_profile"] == AG_LIVE_SOURCE_CUSTODY
+    assert profile_request["source_custody_policy"]["surface"] == (
+        "RunConfig.source_custody_policy"
+    )
+    assert profile_request["source_custody_policy"]["values"][
+        "required_evidence_material_type"
+    ] == "full_page_fetched"
 
 
 def test_broker_client_static_boundary_has_no_dotenv_or_provider_imports() -> None:
