@@ -21,6 +21,174 @@ from core.run_kernel import (
 )
 from core.runtime_prompt_assembly import select_author_system_prompt
 
+SAFE_BLOCKED_FAP_SUMMARY_SCHEMA_VERSION = "blocked_final_answer_packet_safe_summary_v1"
+
+
+def _safe_text(value: Any, *, limit: int = 240) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    return text[:limit]
+
+
+def _safe_text_list(value: Any, *, limit: int = 240) -> list[str]:
+    if isinstance(value, str):
+        values: Sequence[Any] = (value,)
+    elif isinstance(value, Sequence):
+        values = value
+    else:
+        values = ()
+    result: list[str] = []
+    for item in values:
+        clean = _safe_text(item, limit=limit)
+        if clean and clean not in result:
+            result.append(clean)
+    return result
+
+
+def _safe_mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _count_from_sources(
+    *,
+    key: str,
+    sequence_key: str,
+    projection: Mapping[str, Any],
+    payload_ref: Mapping[str, Any],
+    authority_payload: Mapping[str, Any],
+) -> int:
+    for source in (projection, payload_ref, authority_payload):
+        value = _optional_int(source.get(key))
+        if value is not None:
+            return value
+    sequence = payload_ref.get(sequence_key)
+    if isinstance(sequence, Sequence) and not isinstance(sequence, (str, bytes)):
+        return len(sequence)
+    return 0
+
+
+def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in payload.items()
+        if value is not None and value != [] and value != {}
+    }
+
+
+def build_safe_blocked_fap_summary(
+    final_answer_authority_projection: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Return compact no-raw blocked-FAP details for failure observability."""
+
+    projection = _safe_mapping(final_answer_authority_projection)
+    payload_ref = _safe_mapping(projection.get("author_payload_ref"))
+    if not payload_ref and projection.get("status") == "blocked":
+        payload_ref = projection
+        projection = {}
+    if payload_ref.get("status") != "blocked":
+        return {}
+    authority_payload = _safe_mapping(payload_ref.get("authority_payload"))
+    final_answer_allowed = authority_payload.get("final_answer_allowed")
+    if not isinstance(final_answer_allowed, bool):
+        final_answer_allowed = None
+    return _without_empty(
+        {
+            "schema_version": SAFE_BLOCKED_FAP_SUMMARY_SCHEMA_VERSION,
+            "blocked_fap": True,
+            "packet_id": _safe_text(
+                payload_ref.get("packet_id")
+                or projection.get("packet_id")
+                or authority_payload.get("packet_id"),
+                limit=160,
+            ),
+            "status": "blocked",
+            "readiness_status": _safe_text(
+                payload_ref.get("readiness_status")
+                or projection.get("readiness_status")
+                or authority_payload.get("readiness_status"),
+                limit=120,
+            ),
+            "readiness_reasons": _safe_text_list(
+                payload_ref.get("readiness_reasons")
+                or projection.get("readiness_reasons")
+                or authority_payload.get("readiness_reasons"),
+                limit=160,
+            ),
+            "author_input_deferred": bool(payload_ref.get("author_input_deferred")),
+            "blocked_before_author_input": bool(
+                payload_ref.get("blocked_before_author_input")
+            ),
+            "final_answer_allowed": final_answer_allowed,
+            "final_answer_posture": _safe_text(
+                payload_ref.get("final_answer_posture")
+                or authority_payload.get("final_answer_posture"),
+                limit=120,
+            ),
+            "sufficiency_decision": _safe_text(
+                payload_ref.get("sufficiency_decision")
+                or authority_payload.get("sufficiency_decision"),
+                limit=120,
+            ),
+            "missing_source_obligation_count": _count_from_sources(
+                key="missing_source_obligation_count",
+                sequence_key="missing_source_obligations",
+                projection=projection,
+                payload_ref=payload_ref,
+                authority_payload=authority_payload,
+            ),
+            "partial_source_obligation_count": _count_from_sources(
+                key="partial_source_obligation_count",
+                sequence_key="partial_source_obligations",
+                projection=projection,
+                payload_ref=payload_ref,
+                authority_payload=authority_payload,
+            ),
+            "satisfied_source_obligation_count": _count_from_sources(
+                key="satisfied_source_obligation_count",
+                sequence_key="satisfied_source_obligations",
+                projection=projection,
+                payload_ref=payload_ref,
+                authority_payload=authority_payload,
+            ),
+            "source_bound_numeric_unknown_count": _count_from_sources(
+                key="source_bound_numeric_unknown_count",
+                sequence_key="source_bound_numeric_unknowns",
+                projection=projection,
+                payload_ref=payload_ref,
+                authority_payload=authority_payload,
+            ),
+            "mandatory_caveat_count": _count_from_sources(
+                key="mandatory_caveat_count",
+                sequence_key="mandatory_caveats",
+                projection=projection,
+                payload_ref=payload_ref,
+                authority_payload=authority_payload,
+            ),
+            "prohibited_upgrade_count": _count_from_sources(
+                key="prohibited_upgrade_count",
+                sequence_key="prohibited_upgrades",
+                projection=projection,
+                payload_ref=payload_ref,
+                authority_payload=authority_payload,
+            ),
+            "claim_postures": _safe_text_list(
+                payload_ref.get("claim_postures")
+                or authority_payload.get("claim_postures"),
+                limit=160,
+            ),
+        }
+    )
+
 
 @dataclass(frozen=True, slots=True)
 class FinalAnswerPacketPreparationResult:
@@ -439,6 +607,8 @@ def prepare_final_answer_packet_author_handoff_from_scope(
 __all__ = [
     "FinalAnswerPacketAuthorHandoff",
     "FinalAnswerPacketPreparationResult",
+    "SAFE_BLOCKED_FAP_SUMMARY_SCHEMA_VERSION",
+    "build_safe_blocked_fap_summary",
     "execute_final_answer_packet_prepare_action",
     "execute_final_answer_packet_prepare_action_from_scope",
     "prepare_final_answer_packet_author_handoff_from_scope",

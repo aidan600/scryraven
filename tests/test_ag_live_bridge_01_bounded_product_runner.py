@@ -600,6 +600,95 @@ def test_confirm_live_pipeline_error_keeps_pipeline_failure_classification(
     assert packet["failure_observability"]["safe_error_code"] == (
         "run_pipeline_pipeline_error"
     )
+    assert "blocked_fap_summary" not in packet["failure_observability"]
+    assert "blocked_fap_summary" not in packet["sanitized_projection_summaries"]
+
+
+def test_confirm_live_blocked_fap_pipeline_error_serializes_safe_summary(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _load_runner()
+    support = _load_support()
+    output = _gitignored_output_path("ag_live_bound_01_blocked_fap_error.json")
+    _stub_live_runner_without_env(runner, monkeypatch)
+    pipeline_error_type = runner._pipeline_error_type()
+    blocked_summary = {
+        "schema_version": "blocked_final_answer_packet_safe_summary_v1",
+        "blocked_fap": True,
+        "packet_id": "final-answer-packet-safe",
+        "status": "blocked",
+        "readiness_status": "blocked",
+        "readiness_reasons": [
+            "missing_required_component_coverage",
+            "final_answer_not_allowed",
+        ],
+        "author_input_deferred": True,
+        "blocked_before_author_input": True,
+        "final_answer_allowed": False,
+        "final_answer_posture": "insufficient_answer",
+        "sufficiency_decision": "insufficient_evidence",
+        "missing_source_obligation_count": 2,
+        "partial_source_obligation_count": 1,
+        "satisfied_source_obligation_count": 0,
+        "source_bound_numeric_unknown_count": 0,
+        "mandatory_caveat_count": 1,
+        "prohibited_upgrade_count": 2,
+        "claim_postures": ["insufficient_answer"],
+        "raw_prompt": "must not serialize",
+    }
+
+    def fail_run_pipeline(
+        _config: Any,
+        _deps: Any,
+        _status: Any,
+        _accumulator: Any,
+    ) -> Any:
+        raise pipeline_error_type(
+            "blocked FinalAnswerPacket cannot proceed to Author handoff",
+            blocked_fap_summary=blocked_summary,
+        )
+
+    with patch(
+        "core.pipeline_orchestrator.run_pipeline",
+        side_effect=fail_run_pipeline,
+    ) as run_pipeline:
+        result = runner.main(
+            [*VALID_ARGS, "--output", output, "--confirm-live-product-run"]
+        )
+
+    assert result == 2
+    assert run_pipeline.call_count == 1
+    capsys.readouterr()
+
+    packet = json.loads((ROOT / output).read_text(encoding="utf-8"))
+    assert packet["success_classification"] == "pipeline_failure"
+    assert packet["failure_observability"]["safe_error_type"] == "PipelineError"
+    assert packet["failure_observability"]["safe_error_code"] == (
+        "run_pipeline_pipeline_error"
+    )
+    observed = packet["failure_observability"]["blocked_fap_summary"]
+    assert observed["blocked_fap"] is True
+    assert observed["readiness_status"] == "blocked"
+    assert observed["author_input_deferred"] is True
+    assert observed["blocked_before_author_input"] is True
+    assert observed["missing_source_obligation_count"] == 2
+    assert observed["partial_source_obligation_count"] == 1
+    assert observed["mandatory_caveat_count"] == 1
+    assert observed["prohibited_upgrade_count"] == 2
+    assert "raw_prompt" not in observed
+    assert packet["sanitized_projection_summaries"]["blocked_fap_summary"] == observed
+    assert packet["failure_summary"]["blocked_fap"] is True
+    assert packet["failure_summary"]["blocked_fap_readiness_status"] == "blocked"
+    assert packet["validation_observability"]["subject_budget_summary"][
+        "subject_budget_enabled"
+    ] is False
+    rendered = json.dumps(packet, sort_keys=True)
+    assert "must not serialize" not in rendered
+    assert "Traceback" not in rendered
+    assert '"raw_prompt":' not in rendered
+    assert '"provider_payload":' not in rendered
+    support.reject_forbidden_packet(packet)
 
 
 def test_multi_component_failure_without_outcome_keeps_subject_budget_fallback() -> None:
