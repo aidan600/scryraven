@@ -9,6 +9,8 @@ from core.component_executor_contract import (
     AmbiguityStatus,
     ComponentPlan,
     ComponentPlanComponent,
+    ComponentSearchPlan,
+    ComponentSearchPlanComponent,
     FreshnessKind,
     FreshnessPolicy,
     PlannerSource,
@@ -181,6 +183,16 @@ def test_component_plan_schema_preserves_safe_four_component_fixture() -> None:
     )
     for forbidden in ("raw_prompt", "provider_payload", "model_response", "raw_provider_payload"):
         assert forbidden not in encoded
+
+
+def test_component_search_plan_alias_serializes_without_drift() -> None:
+    plan = _single_component_plan()
+    alias_plan = ComponentSearchPlan.from_dict(plan.to_dict())
+
+    assert ComponentSearchPlan is ComponentPlan
+    assert ComponentSearchPlanComponent is ComponentPlanComponent
+    assert isinstance(alias_plan, ComponentPlan)
+    assert alias_plan.to_dict() == plan.to_dict()
 
 
 def test_component_plan_maps_to_search_work_and_query_work_with_all_component_ids() -> None:

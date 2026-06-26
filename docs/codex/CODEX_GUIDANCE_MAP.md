@@ -38,22 +38,23 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## Current Productization Posture
 
-ScryRaven is post-PR #315 / post-AG-COMPONENT-EXECUTOR-CONTRACT-01 on main
-`3d6c62d`. The current baseline includes guarded blocked FinalAnswerPacket
-input derivation, safe blocked-FAP failure summaries, component-level
-blocked-FAP summary telemetry, and an offline ComponentPlan / component
-executor contract that preserves planned components into passive SearchWork,
-query-work, and scorekeeping surfaces.
+ScryRaven is post-PR #318 /
+post-AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01. The current baseline includes
+guarded blocked FinalAnswerPacket input derivation, safe blocked-FAP failure
+summaries, component-level blocked-FAP summary telemetry, an offline
+ComponentPlan / component executor contract, a RunKernel-owned passive
+AnswerContractAuthorityMap, and completed ComponentSearchPlan naming /
+subordination cleanup.
 
-The next productization gate is **AG-ANSWER-CONTRACT-AUTHORITY-MAP-01**, before
-any runtime SearchExecutor wiring. RunKernel / RunAuthority remains the root
-authority. ComponentPlan, ComponentSearchPlan, SearchWork, QueryPlan, and the
-future SearchExecutor are subordinate work-description or execution surfaces;
-they do not decide answerability or final readiness. The missing authority is a
-RunKernel-owned AnswerContractAuthorityMap tying required components, delegated
-component-scoped search work, evidence/citation/source obligations,
-SemanticObservation / ComponentCoverage, SufficiencyJudgment, FinalAnswerPacket
-readiness, and Author-safe handoff. See
+The next productization gate is the Offline SearchExecutor bridge. Runtime
+SearchExecutor wiring is still not part of PR #318. RunKernel / RunAuthority
+remains the root authority. AnswerContractAuthorityMap owns the
+answer-component authority mapping. ComponentPlan is legacy/compat input
+terminology for subordinate component-search planning; ComponentSearchPlan is
+the preferred subordinate name. ComponentPlan, ComponentSearchPlan, SearchWork,
+QueryPlan, and the future SearchExecutor are work-description or execution
+surfaces only; they do not decide answerability, source-obligation
+satisfaction, final readiness, citation eligibility, or Author handoff. See
 `docs/architecture/AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md`.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live

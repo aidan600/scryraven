@@ -1,16 +1,17 @@
 # AG-ANSWER-CONTRACT-AUTHORITY-MAP-01 Decision
 
-Status: current docs-only decision after PR #315 on main `3d6c62d`. No runtime
-SearchExecutor wiring, provider/search/fetch/retrieval behavior, Author
-behavior, prompt behavior, citation behavior, partial-answer readiness, or live
-validation is licensed by this note.
+Status: implemented as a passive RunKernel-owned schema/projection surface after
+PR #317 on main `4416cbc`. No runtime SearchExecutor wiring,
+provider/search/fetch/retrieval behavior, Author behavior, prompt behavior,
+citation behavior, partial-answer readiness, or live validation is licensed by
+this note.
 
 ## Decision
 
-Proceed with `AG-ANSWER-CONTRACT-AUTHORITY-MAP-01` before runtime
-SearchExecutor wiring.
+`AG-ANSWER-CONTRACT-AUTHORITY-MAP-01` established a RunKernel-owned passive
+AnswerContractAuthorityMap before runtime SearchExecutor wiring.
 
-The missing authority is a RunKernel-owned AnswerContractAuthorityMap tying:
+AnswerContractAuthorityMap ties:
 
 - required answer components;
 - delegated component-scoped search work;
@@ -33,13 +34,23 @@ The missing authority is a RunKernel-owned AnswerContractAuthorityMap tying:
   component executor contract preserves planned components into passive
   SearchWork/query-work/scorekeeping, without wiring runtime model, search,
   fetch, retrieval, or Author behavior.
+- PR #317 `AG-ANSWER-CONTRACT-AUTHORITY-MAP-01`: RunKernel owns a passive
+  AnswerContractAuthorityMap that observes component work, evidence custody,
+  semantic coverage, Sufficiency, FinalAnswerPacket readiness, and Author-safe
+  handoff posture without activating runtime SearchExecutor behavior.
+- PR #318 `AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01`: ComponentPlan /
+  ComponentSearchPlan naming and subordination cleanup is complete. Runtime
+  SearchExecutor wiring remains out of scope, and no live validation was run.
 
 ## Authority Hierarchy
 
 - RunKernel / RunAuthority remains root authority.
-- AnswerContractAuthorityMap should be owned by RunKernel and should map
-  answer-component obligations to subordinate work and readiness owners.
-- ComponentPlan / ComponentSearchPlan is useful but passive and subordinate.
+- AnswerContractAuthorityMap is owned by RunKernel and maps answer-component
+  obligations to subordinate work and readiness owners.
+- ComponentPlan is legacy/compat input terminology for subordinate
+  component-search planning.
+- ComponentSearchPlan is the preferred subordinate component-search planning
+  name.
 - SearchExecutor should eventually execute delegated component-scoped search
   work, but must not decide answerability.
 - EvidenceLedger owns evidence custody, source obligations, and citation
@@ -67,8 +78,8 @@ The missing authority is a RunKernel-owned AnswerContractAuthorityMap tying:
 ## Near-Term Roadmap
 
 1. Add the AnswerContract authority map.
-2. Clean up ComponentSearchPlan naming and subordination.
-3. Add the offline SearchExecutor bridge.
+2. Clean up ComponentSearchPlan naming and subordination. Complete in PR #318.
+3. Add the Offline SearchExecutor bridge. This is the next gate.
 4. Add component-scoped source custody.
 5. Bind component evidence and citations.
 6. Bind Sufficiency / FinalAnswerPacket component readiness.

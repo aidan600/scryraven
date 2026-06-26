@@ -66,17 +66,21 @@ AG-95R/S/T retires the old decision from active visibility export;
 ControllerRecoveryDecision is historical/offline diagnostic parity only for this
 lane.
 
-Current next authority-map target after PR #315:
-`AG-ANSWER-CONTRACT-AUTHORITY-MAP-01`. This is a docs/offline architecture
-target before runtime SearchExecutor wiring. RunKernel / RunAuthority remains
-root authority. ComponentPlan / ComponentSearchPlan, SearchWork, QueryPlan, and
-SearchExecutor are subordinate planning or execution surfaces; they may describe
-or perform component-scoped work, but they must not decide answerability, source
-obligation satisfaction, FinalAnswerPacket readiness, or Author handoff
-readiness. The missing owner is a RunKernel-owned AnswerContractAuthorityMap
-that ties required components, search delegation, evidence/citation/source
-obligations, SemanticObservation / ComponentCoverage, SufficiencyJudgment,
-FinalAnswerPacket readiness, and prose-only Author handoff.
+Current authority-map baseline after PR #318:
+`AG-ANSWER-CONTRACT-AUTHORITY-MAP-01` added a RunKernel-owned passive
+AnswerContractAuthorityMap before runtime SearchExecutor wiring, and
+`AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01` completed the ComponentSearchPlan
+naming / subordination cleanup. RunKernel / RunAuthority remains root
+authority. AnswerContractAuthorityMap owns answer-component authority mapping.
+ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the
+preferred subordinate component-search planning name under
+AnswerContractAuthorityMap. ComponentPlan / ComponentSearchPlan, SearchWork,
+QueryPlan, and SearchExecutor are subordinate planning or execution surfaces;
+they may describe or perform component-scoped work, but they must not decide
+answerability, source obligation satisfaction, FinalAnswerPacket readiness,
+citation eligibility, or Author handoff readiness. The next productization gate
+is the Offline SearchExecutor bridge; runtime SearchExecutor wiring is still
+not part of PR #318.
 
 ### No orchestrator brain
 
