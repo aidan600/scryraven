@@ -283,6 +283,24 @@ def _detected_subjects(
     )
     if subjects:
         return subjects, "query_shape_assessment_component_order", None
+    query_plan_consumption = _query_plan_search_work_consumption(trace)
+    subjects = _subjects_from_component_ids_considered(
+        query_plan_consumption,
+        source="query_plan_search_work_consumption_component_ids_considered",
+    )
+    if subjects:
+        return (
+            subjects,
+            "query_plan_search_work_consumption_component_ids_considered",
+            None,
+        )
+    for consumption in _standalone_search_work_consumption_sources(trace):
+        subjects = _subjects_from_component_ids_considered(
+            consumption,
+            source="search_work_consumption_component_ids_considered",
+        )
+        if subjects:
+            return subjects, "search_work_consumption_component_ids_considered", None
     return [], _NOT_AVAILABLE, "detected_subjects_not_available"
 
 
@@ -356,6 +374,39 @@ def _subjects_from_components(
     return subjects
 
 
+def _subjects_from_component_ids_considered(
+    consumption: Mapping[str, Any],
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
+    component_ids = consumption.get("component_ids_considered")
+    if not isinstance(component_ids, Sequence) or isinstance(
+        component_ids,
+        (str, bytes),
+    ):
+        return []
+    subjects: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for rank, component_id in enumerate(component_ids, start=1):
+        subject_id = _safe_text(component_id, limit=160)
+        if not subject_id:
+            continue
+        identity = _normalize_subject_id(subject_id)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        subjects.append(
+            {
+                "subject_id": subject_id,
+                "rank": rank,
+                "source": source,
+            }
+        )
+        if len(subjects) >= _MAX_SANITIZED_SUBJECTS:
+            break
+    return subjects
+
+
 def _subject_payload(
     subject: Mapping[str, Any],
     *,
@@ -396,34 +447,55 @@ def _normalize_subject_id(value: Any) -> str:
 def _query_mapped_subject_ids(
     trace: Mapping[str, Any],
 ) -> tuple[set[str], bool]:
-    consumption = _search_work_consumption(trace)
     ids: set[str] = set()
-    for metadata in _mapping(consumption.get("query_metadata")).values():
-        if not isinstance(metadata, Mapping):
-            continue
-        component_id = _safe_text(metadata.get("search_work_component_id"))
-        if component_id:
-            ids.add(_normalize_subject_id(component_id))
+    consumption_available = False
+    for consumption in _search_work_consumption_sources(trace):
+        if "search_work_consumed_by_query_plan" in consumption:
+            consumption_available = True
+        for metadata in _mapping(consumption.get("query_metadata")).values():
+            if not isinstance(metadata, Mapping):
+                continue
+            component_id = _safe_text(metadata.get("search_work_component_id"))
+            if component_id:
+                ids.add(_normalize_subject_id(component_id))
     query_plan = _mapping(trace.get("query_plan"))
     for item in _mapping_list(query_plan.get("items")):
         metadata = _mapping(item.get("metadata"))
         component_id = _safe_text(metadata.get("search_work_component_id"))
         if component_id:
             ids.add(_normalize_subject_id(component_id))
-    available = bool(ids) or "search_work_consumed_by_query_plan" in consumption
+    available = bool(ids) or consumption_available
     return ids, available
 
 
-def _search_work_consumption(trace: Mapping[str, Any]) -> dict[str, Any]:
+def _query_plan_search_work_consumption(trace: Mapping[str, Any]) -> dict[str, Any]:
+    query_plan = _mapping(trace.get("query_plan"))
+    return _mapping(query_plan.get("search_work_consumption"))
+
+
+def _standalone_search_work_consumption_sources(
+    trace: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    sources: list[dict[str, Any]] = []
     direct = _mapping(trace.get("search_work_consumption"))
     if direct:
-        return direct
-    query_plan = _mapping(trace.get("query_plan"))
-    nested = _mapping(query_plan.get("search_work_consumption"))
-    if nested:
-        return nested
+        sources.append(direct)
     projections = _mapping(trace.get("projections"))
-    return _mapping(projections.get("search_work_consumption"))
+    projected = _mapping(projections.get("search_work_consumption"))
+    if projected:
+        sources.append(projected)
+    return tuple(sources)
+
+
+def _search_work_consumption_sources(
+    trace: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    sources: list[dict[str, Any]] = []
+    query_plan_consumption = _query_plan_search_work_consumption(trace)
+    if query_plan_consumption:
+        sources.append(query_plan_consumption)
+    sources.extend(_standalone_search_work_consumption_sources(trace))
+    return tuple(sources)
 
 
 def _component_evidenced_subject_ids(

@@ -128,6 +128,67 @@ def test_subject_budget_does_not_pad_to_five() -> None:
     assert summary["omitted_subject_count"] == 0
 
 
+def test_query_plan_consumption_component_ids_fallback_detects_subjects_without_raw_queries() -> None:
+    trace = {
+        "query_plan": {
+            "search_work_consumption": {
+                "search_work_consumed_by_query_plan": True,
+                "component_ids_considered": [
+                    "PostgreSQL",
+                    "MySQL",
+                    "Redis",
+                    "MongoDB",
+                    "Nginx",
+                    "Apache",
+                ],
+                "unfilled_component_ids": ["Apache"],
+                "query_metadata": {
+                    "RAW QUERY STRING PostgreSQL official docs": {
+                        "search_work_component_id": "PostgreSQL",
+                    },
+                    "RAW QUERY STRING MySQL official docs": {
+                        "search_work_component_id": "MySQL",
+                    },
+                    "RAW QUERY STRING Redis official docs": {
+                        "search_work_component_id": "Redis",
+                    },
+                    "RAW QUERY STRING MongoDB official docs": {
+                        "search_work_component_id": "MongoDB",
+                    },
+                },
+            }
+        }
+    }
+
+    summary = build_subject_budget_summary(
+        validation_profile=get_validation_profile(AG_LIVE_MULTI_COMPONENT),
+        trace=trace,
+    )
+
+    assert summary["detected_subject_count"] >= 6
+    assert summary["selected_subject_count"] == 5
+    assert summary["selected_subject_count"] <= 5
+    assert summary["omitted_subject_count"] >= 1
+    assert _subject_ids(summary["omitted_subjects"]) == ["Apache"]
+    assert summary["subject_selection_source"] == (
+        "query_plan_search_work_consumption_component_ids_considered"
+    )
+    assert summary["query_mapped_subject_count"] == 4
+    assert [
+        item.get("query_mapped")
+        for item in summary["selected_subjects"]
+        if isinstance(item, dict)
+    ] == [True, True, True, True, False]
+    assert summary["independently_evidenced_subject_count"] is None
+    assert "component_scoped_evidence_binding_not_available" in str(
+        summary["diagnosis"]
+    )
+
+    rendered = json.dumps(summary, sort_keys=True)
+    assert "RAW QUERY STRING" not in rendered
+    support.reject_forbidden_packet({"subject_budget_summary": summary})
+
+
 def test_internal_followups_are_exempt_from_initial_subject_cap() -> None:
     summary = _summary(
         ["PostgreSQL", "MySQL", "Redis", "MongoDB"],
