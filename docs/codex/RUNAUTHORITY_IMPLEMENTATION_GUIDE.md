@@ -70,17 +70,24 @@ Current authority-map baseline after PR #318:
 `AG-ANSWER-CONTRACT-AUTHORITY-MAP-01` added a RunKernel-owned passive
 AnswerContractAuthorityMap before runtime SearchExecutor wiring, and
 `AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01` completed the ComponentSearchPlan
-naming / subordination cleanup. RunKernel / RunAuthority remains root
-authority. AnswerContractAuthorityMap owns answer-component authority mapping.
+naming / subordination cleanup. PR #319 /
+`AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01` completes the offline RunKernel-owned
+SearchExecutor bridge. RunKernel / RunAuthority remains root authority.
+AnswerContractAuthorityMap owns answer-component authority mapping.
 ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the
 preferred subordinate component-search planning name under
 AnswerContractAuthorityMap. ComponentPlan / ComponentSearchPlan, SearchWork,
 QueryPlan, and SearchExecutor are subordinate planning or execution surfaces;
 they may describe or perform component-scoped work, but they must not decide
 answerability, source obligation satisfaction, FinalAnswerPacket readiness,
-citation eligibility, or Author handoff readiness. The next productization gate
-is the Offline SearchExecutor bridge; runtime SearchExecutor wiring is still
-not part of PR #318.
+citation eligibility, or Author handoff readiness. The completed Offline
+SearchExecutor bridge is offline and inert, does not perform live
+provider/search/fetch/read/retrieval work, does not admit EvidenceLedger custody
+or satisfy source obligations, keeps candidate observations non-evidence, and
+is not user-facing runtime search. The next gate is
+AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01, which should consume bridge observations
+for EvidenceLedger component-scoped source requirements, candidate links,
+custody gaps, and satisfied/unsatisfied source-obligation state.
 
 ### No orchestrator brain
 
