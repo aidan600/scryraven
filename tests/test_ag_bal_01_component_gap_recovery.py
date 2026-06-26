@@ -290,6 +290,16 @@ def _run_balanced_adapter_absent_path(
     )
 
 
+def _remove_final_answer_packet_guard_state(captured: dict[str, Any]) -> None:
+    state = captured["run_kernel"].state
+    assert state.final_answer_packet
+    state.final_answer_packet = {}
+    state.final_answer_authority_projection = {}
+    state.projections.pop("final_answer_packet", None)
+    if hasattr(state, "final_answer_packet_projection"):
+        state.final_answer_packet_projection = {}
+
+
 def _direct_recovery_kwargs(
     captured: dict[str, Any],
     *,
@@ -738,6 +748,25 @@ def test_ag_bal_01_fast_mode_does_not_invoke_or_record_recovery(
     assert COMPONENT_GAP_RECOVERY_TRACE_KEY not in state.projections
 
 
+def test_ag_bal_01_recovery_stops_when_final_answer_packet_already_present(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _harness, captured = _run_balanced_adapter_absent_path(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+    )
+    assert captured["run_kernel"].state.final_answer_packet
+    adapter = _AdapterSpy()
+
+    result = execute_authorized_component_gap_recovery(
+        **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
+    )
+
+    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert adapter.calls == []
+
+
 def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -750,12 +779,13 @@ def test_ag_bal_01_duplicate_recovery_invocation_blocks_before_adapter(
         COMPONENT_GAP_RECOVERY_TRACE_KEY
     ]["latest"]
     assert first["stop_reason"] == "offline_recovery_adapter_absent"
+    _remove_final_answer_packet_guard_state(captured)
 
     adapter = _AdapterSpy()
     second = execute_authorized_component_gap_recovery(
         **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
     )
-    assert second.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert second.stop_reason == "duplicate_recovery_cycle"
     assert adapter.calls == []
 
 
@@ -769,6 +799,7 @@ def test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency(
     )
     run_kernel = captured["run_kernel"]
     assert len(run_kernel.state.component_gap_recovery_history) == 1
+    _remove_final_answer_packet_guard_state(captured)
     del run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
 
     adapter = _AdapterSpy()
@@ -776,7 +807,7 @@ def test_ag_bal_01_projection_deletion_does_not_reset_recovery_idempotency(
         **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
     )
 
-    assert second.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert second.stop_reason == "duplicate_recovery_cycle"
     assert adapter.calls == []
     assert len(run_kernel.state.component_gap_recovery_history) == 2
     recovery_projection = run_kernel.state.projections[COMPONENT_GAP_RECOVERY_TRACE_KEY]
@@ -792,6 +823,7 @@ def test_ag_bal_01_multiple_component_gaps_block_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     captured["run_kernel"].state.component_coverage_history = []
     adapter = _AdapterSpy()
 
@@ -799,7 +831,7 @@ def test_ag_bal_01_multiple_component_gaps_block_before_adapter(
         **_direct_recovery_kwargs(captured, offline_recovery_adapter=adapter)
     )
 
-    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert result.stop_reason == "multiple_component_gaps"
     assert adapter.calls == []
 
 
@@ -811,6 +843,7 @@ def test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     query_plan_trace = deepcopy(
         captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
     )
@@ -829,7 +862,7 @@ def test_ag_bal_01_zero_authorized_existing_gap_query_blocks_before_adapter(
         )
     )
 
-    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert result.stop_reason == "authorized_component_gap_query_absent"
     assert adapter.calls == []
 
 
@@ -841,6 +874,7 @@ def test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     query_plan_trace = deepcopy(
         captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
     )
@@ -866,7 +900,7 @@ def test_ag_bal_01_multiple_authorized_existing_gap_queries_block_before_adapter
         )
     )
 
-    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert result.stop_reason == "multiple_authorized_component_gap_queries"
     assert adapter.calls == []
 
 
@@ -890,6 +924,7 @@ def test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     search_judgment_projection = deepcopy(
         captured["run_kernel"].state.search_judgment_projection
     )
@@ -904,8 +939,7 @@ def test_ag_bal_01_stale_search_judgment_gap_identity_blocks_before_adapter(
         )
     )
 
-    assert expected_reason
-    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert result.stop_reason == expected_reason
     assert adapter.calls == []
 
 
@@ -917,6 +951,7 @@ def test_ag_bal_01_generated_query_metadata_blocks_before_adapter(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
     )
+    _remove_final_answer_packet_guard_state(captured)
     query_plan_trace = deepcopy(
         captured["packet_runtime_scope"]["query_authority"].to_trace_fragment()
     )
@@ -934,7 +969,7 @@ def test_ag_bal_01_generated_query_metadata_blocks_before_adapter(
         )
     )
 
-    assert result.stop_reason == PRE_RECOVERY_FINAL_PACKET_STOP_REASON
+    assert result.stop_reason == "authorized_query_was_generated"
     assert adapter.calls == []
 
 
