@@ -66,6 +66,18 @@ AG-95R/S/T retires the old decision from active visibility export;
 ControllerRecoveryDecision is historical/offline diagnostic parity only for this
 lane.
 
+Current next authority-map target after PR #315:
+`AG-ANSWER-CONTRACT-AUTHORITY-MAP-01`. This is a docs/offline architecture
+target before runtime SearchExecutor wiring. RunKernel / RunAuthority remains
+root authority. ComponentPlan / ComponentSearchPlan, SearchWork, QueryPlan, and
+SearchExecutor are subordinate planning or execution surfaces; they may describe
+or perform component-scoped work, but they must not decide answerability, source
+obligation satisfaction, FinalAnswerPacket readiness, or Author handoff
+readiness. The missing owner is a RunKernel-owned AnswerContractAuthorityMap
+that ties required components, search delegation, evidence/citation/source
+obligations, SemanticObservation / ComponentCoverage, SufficiencyJudgment,
+FinalAnswerPacket readiness, and prose-only Author handoff.
+
 ### No orchestrator brain
 
 The orchestrator should coordinate lifecycle flow and call bounded executors. It
@@ -102,6 +114,11 @@ Authority-collapse phases should move toward these canonical owners:
   Source-class recovery action queries currently remain owned by the
   Controller/RunAuthority recovery action envelope unless a future phase
   explicitly routes them through QueryPlan.
+- **ComponentPlan / ComponentSearchPlan / SearchWork / SearchExecutor** are
+  subordinate to RunKernel-owned answer authority. They may preserve required
+  components, delegated component-scoped search work, and execution results, but
+  they do not own final answerability, citation eligibility, source-obligation
+  satisfaction, FinalAnswerPacket readiness, or Author-safe payload readiness.
 - **FinalAnswerPacket** owns final evidence selection, citation eligibility,
   Author-facing posture, answer readiness, caveats, and handoff fields needed to
   write the final answer.
