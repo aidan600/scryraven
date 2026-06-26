@@ -18,10 +18,15 @@ from core.retrieval_loop_contract import RETRIEVAL_LOOP_TRACE_KEY
 from core.validation_profiles import AG_LIVE_SOURCE_CUSTODY
 
 VALIDATION_OBSERVABILITY_SCHEMA_VERSION = "validation_observability_v1"
+SUBJECT_BUDGET_SUMMARY_SCHEMA_VERSION = "subject_budget_summary_v1"
 
 _UNKNOWN = "unknown"
 _SNIPPET_ONLY = "snippet_only"
 _FULL_PAGE_FETCHED = "full_page_fetched"
+_NOT_AVAILABLE = "not_available"
+_SUBJECT_SCOPE_INITIAL = "initial_independent_subjects_only"
+_FOLLOWUP_POLICY = "internal_followups_governed_by_existing_mode_and_resource_caps"
+_MAX_SANITIZED_SUBJECTS = 20
 _SENSITIVE_VALUE_MARKERS = (
     "api_key",
     "bearer ",
@@ -107,12 +112,512 @@ def build_validation_observability(
             ),
             final_answer_text=final_answer_text,
         ),
+        "subject_budget_summary": build_subject_budget_summary(
+            validation_profile=validation_profile,
+            preflight_context=preflight_context,
+            trace=trace,
+        ),
         "cap_and_retention_summary": _cap_and_retention_summary(
             validation_profile=validation_profile,
             preflight_context=preflight_context,
             caps_observed=caps_observed,
         ),
         "raw_private_material_serialized": False,
+    }
+
+
+def build_subject_budget_summary(
+    *,
+    validation_profile: Any | None = None,
+    preflight_context: Any | None = None,
+    trace: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarize passive initial subject/component budget state."""
+
+    trace_map = _mapping(trace)
+    policy = _subject_budget_policy(validation_profile)
+    subjects, selection_source, detection_diagnosis = _detected_subjects(trace_map)
+    enabled = bool(policy.get("subject_budget_enabled", False))
+    max_subjects = _optional_int(policy.get("max_initial_selected_subjects"))
+    if not enabled:
+        selected: list[dict[str, Any]] = []
+        omitted: list[dict[str, Any]] = []
+    elif max_subjects is None:
+        selected = list(subjects)
+        omitted = []
+    else:
+        selected = list(subjects[:max_subjects])
+        omitted = list(subjects[max_subjects:])
+
+    mapped_ids, mapping_available = _query_mapped_subject_ids(trace_map)
+    evidenced_ids, evidence_available, same_source_observed = (
+        _component_evidenced_subject_ids(trace_map)
+    )
+    selected_ids = {_subject_identity(item) for item in selected}
+    query_mapped_subject_count = (
+        len(selected_ids & mapped_ids) if mapping_available else None
+    )
+    independently_evidenced_subject_count = (
+        len(selected_ids & evidenced_ids) if evidence_available else None
+    )
+    subjects_without_evidence = (
+        [
+            _subject_payload(
+                item,
+                mapped_ids=mapped_ids,
+                mapping_available=mapping_available,
+                evidenced_ids=evidenced_ids,
+                evidence_available=evidence_available,
+            )
+            for item in selected
+            if _subject_identity(item) not in evidenced_ids
+        ]
+        if evidence_available
+        else []
+    )
+    diagnosis = _subject_budget_diagnosis(
+        enabled=enabled,
+        subjects=subjects,
+        detection_diagnosis=detection_diagnosis,
+        mapping_available=mapping_available,
+        evidence_available=evidence_available,
+    )
+
+    return {
+        "schema_version": SUBJECT_BUDGET_SUMMARY_SCHEMA_VERSION,
+        "subject_budget_enabled": enabled,
+        "max_initial_selected_subjects": max_subjects if enabled else None,
+        "subject_budget_scope": (
+            _safe_text(policy.get("subject_budget_scope"))
+            or _SUBJECT_SCOPE_INITIAL
+        ),
+        "applies_to_internal_followups": bool(
+            policy.get("applies_to_internal_followups", False)
+        ),
+        "detected_subject_count": len(subjects),
+        "selected_subject_count": len(selected),
+        "omitted_subject_count": len(omitted),
+        "selected_subjects": [
+            _subject_payload(
+                item,
+                mapped_ids=mapped_ids,
+                mapping_available=mapping_available,
+                evidenced_ids=evidenced_ids,
+                evidence_available=evidence_available,
+            )
+            for item in selected
+        ],
+        "omitted_subjects": [
+            _subject_payload(
+                item,
+                mapped_ids=mapped_ids,
+                mapping_available=mapping_available,
+                evidenced_ids=evidenced_ids,
+                evidence_available=evidence_available,
+            )
+            for item in omitted
+        ],
+        "subject_selection_source": selection_source,
+        "subject_cap_exceeded": bool(enabled and max_subjects is not None)
+        and len(subjects) > max_subjects,
+        "query_mapped_subject_count": query_mapped_subject_count,
+        "independently_evidenced_subject_count": (
+            independently_evidenced_subject_count
+        ),
+        "subjects_without_evidence": subjects_without_evidence,
+        "same_source_evidence_allowed": (
+            policy.get("same_source_evidence_allowed") if enabled else None
+        ),
+        "same_source_evidence_observed": same_source_observed,
+        "followup_budget_policy": _followup_budget_policy(
+            policy=policy,
+            trace=trace_map,
+        ),
+        "validation_profile_name": _profile_name(
+            validation_profile,
+            preflight_context,
+        ),
+        "diagnosis": diagnosis,
+    }
+
+
+def _subject_budget_policy(validation_profile: Any | None) -> dict[str, Any]:
+    policy = getattr(validation_profile, "subject_budget", None)
+    if hasattr(policy, "as_requested_dict"):
+        return dict(policy.as_requested_dict())
+    return {
+        "subject_budget_enabled": False,
+        "max_initial_selected_subjects": None,
+        "subject_budget_scope": _SUBJECT_SCOPE_INITIAL,
+        "applies_to_internal_followups": False,
+        "same_source_evidence_allowed": None,
+        "subject_selection_source": _NOT_AVAILABLE,
+        "followup_budget_policy": _FOLLOWUP_POLICY,
+        "policy_status": "not_configured",
+    }
+
+
+def _detected_subjects(
+    trace: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], str, str | None]:
+    query_plan_shadow = _query_plan_work_shadow_projection(trace)
+    if query_plan_shadow:
+        subjects = _subjects_from_components(
+            _mapping_list(query_plan_shadow.get("components")),
+            source="query_plan_work_shadow_projection",
+        )
+        if subjects:
+            return subjects, "query_plan_work_shadow_projection_component_order", None
+    search_work_plan = _search_work_plan_projection(trace)
+    if search_work_plan:
+        subjects = _subjects_from_components(
+            _mapping_list(search_work_plan.get("components")),
+            source="search_work_plan_component_order",
+        )
+        if subjects:
+            return subjects, "search_work_plan_component_order", None
+    query_shape = _mapping(trace.get("query_shape_assessment"))
+    subjects = _subjects_from_components(
+        _mapping_list(query_shape.get("component_candidates")),
+        source="query_shape_assessment_component_order",
+    )
+    if subjects:
+        return subjects, "query_shape_assessment_component_order", None
+    query_plan_consumption = _query_plan_search_work_consumption(trace)
+    subjects = _subjects_from_component_ids_considered(
+        query_plan_consumption,
+        source="query_plan_search_work_consumption_component_ids_considered",
+    )
+    if subjects:
+        return (
+            subjects,
+            "query_plan_search_work_consumption_component_ids_considered",
+            None,
+        )
+    for consumption in _standalone_search_work_consumption_sources(trace):
+        subjects = _subjects_from_component_ids_considered(
+            consumption,
+            source="search_work_consumption_component_ids_considered",
+        )
+        if subjects:
+            return subjects, "search_work_consumption_component_ids_considered", None
+    return [], _NOT_AVAILABLE, "detected_subjects_not_available"
+
+
+def _query_plan_work_shadow_projection(trace: Mapping[str, Any]) -> dict[str, Any]:
+    direct = _mapping(trace.get("query_plan_work_shadow_projection"))
+    if direct:
+        return direct
+    lane = _mapping(trace.get("search_work_shadow_lane_projection"))
+    nested = _mapping(lane.get("query_plan_work_shadow_projection"))
+    if nested:
+        return nested
+    projections = _mapping(trace.get("projections"))
+    return _mapping(projections.get("query_plan_work_shadow_projection"))
+
+
+def _search_work_plan_projection(trace: Mapping[str, Any]) -> dict[str, Any]:
+    direct = _mapping(trace.get("search_work_plan"))
+    if _mapping_list(direct.get("components")):
+        return direct
+    lane = _mapping(trace.get("search_work_shadow_lane_projection"))
+    nested = _mapping(lane.get("search_work_plan"))
+    if _mapping_list(nested.get("components")):
+        return nested
+    nested = _mapping(lane.get("search_work_plan_projection"))
+    if _mapping_list(nested.get("components")):
+        return nested
+    projections = _mapping(trace.get("projections"))
+    nested = _mapping(projections.get("search_work_plan"))
+    if _mapping_list(nested.get("components")):
+        return nested
+    return {}
+
+
+def _subjects_from_components(
+    components: Sequence[Mapping[str, Any]],
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
+    subjects: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for rank, component in enumerate(components, start=1):
+        subject_id = _first_text(
+            component.get("component_id"),
+            component.get("candidate_id"),
+            component.get("group_id"),
+            f"component-{rank}",
+        )
+        if not subject_id:
+            continue
+        identity = _normalize_subject_id(subject_id)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        subjects.append(
+            _without_none(
+                {
+                    "subject_id": subject_id,
+                    "rank": rank,
+                    "source": source,
+                    "source_obligation_count": _optional_int(
+                        component.get("source_obligation_count")
+                    ),
+                    "provider_job_count": _optional_int(
+                        component.get("provider_job_count")
+                    ),
+                }
+            )
+        )
+        if len(subjects) >= _MAX_SANITIZED_SUBJECTS:
+            break
+    return subjects
+
+
+def _subjects_from_component_ids_considered(
+    consumption: Mapping[str, Any],
+    *,
+    source: str,
+) -> list[dict[str, Any]]:
+    component_ids = consumption.get("component_ids_considered")
+    if not isinstance(component_ids, Sequence) or isinstance(
+        component_ids,
+        (str, bytes),
+    ):
+        return []
+    subjects: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for rank, component_id in enumerate(component_ids, start=1):
+        subject_id = _safe_text(component_id, limit=160)
+        if not subject_id:
+            continue
+        identity = _normalize_subject_id(subject_id)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        subjects.append(
+            {
+                "subject_id": subject_id,
+                "rank": rank,
+                "source": source,
+            }
+        )
+        if len(subjects) >= _MAX_SANITIZED_SUBJECTS:
+            break
+    return subjects
+
+
+def _subject_payload(
+    subject: Mapping[str, Any],
+    *,
+    mapped_ids: set[str],
+    mapping_available: bool,
+    evidenced_ids: set[str],
+    evidence_available: bool,
+) -> dict[str, Any]:
+    identity = _subject_identity(subject)
+    payload = {
+        "subject_id": _safe_text(subject.get("subject_id"), limit=160),
+        "rank": _optional_int(subject.get("rank")),
+        "source": _safe_text(subject.get("source"), limit=120),
+        "query_mapped": identity in mapped_ids if mapping_available else None,
+        "independently_evidenced": (
+            identity in evidenced_ids if evidence_available else None
+        ),
+        "source_obligation_count": _optional_int(
+            subject.get("source_obligation_count")
+        ),
+        "provider_job_count": _optional_int(subject.get("provider_job_count")),
+    }
+    return _without_none(payload)
+
+
+def _subject_identity(subject: Mapping[str, Any]) -> str:
+    return _normalize_subject_id(subject.get("subject_id"))
+
+
+def _normalize_subject_id(value: Any) -> str:
+    text = _safe_text(value, limit=160) or ""
+    normalized = text.casefold().strip()
+    if normalized.startswith("component:"):
+        normalized = normalized.removeprefix("component:")
+    return normalized
+
+
+def _query_mapped_subject_ids(
+    trace: Mapping[str, Any],
+) -> tuple[set[str], bool]:
+    ids: set[str] = set()
+    consumption_available = False
+    for consumption in _search_work_consumption_sources(trace):
+        if "search_work_consumed_by_query_plan" in consumption:
+            consumption_available = True
+        for metadata in _mapping(consumption.get("query_metadata")).values():
+            if not isinstance(metadata, Mapping):
+                continue
+            component_id = _safe_text(metadata.get("search_work_component_id"))
+            if component_id:
+                ids.add(_normalize_subject_id(component_id))
+    query_plan = _mapping(trace.get("query_plan"))
+    for item in _mapping_list(query_plan.get("items")):
+        metadata = _mapping(item.get("metadata"))
+        component_id = _safe_text(metadata.get("search_work_component_id"))
+        if component_id:
+            ids.add(_normalize_subject_id(component_id))
+    available = bool(ids) or consumption_available
+    return ids, available
+
+
+def _query_plan_search_work_consumption(trace: Mapping[str, Any]) -> dict[str, Any]:
+    query_plan = _mapping(trace.get("query_plan"))
+    return _mapping(query_plan.get("search_work_consumption"))
+
+
+def _standalone_search_work_consumption_sources(
+    trace: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    sources: list[dict[str, Any]] = []
+    direct = _mapping(trace.get("search_work_consumption"))
+    if direct:
+        sources.append(direct)
+    projections = _mapping(trace.get("projections"))
+    projected = _mapping(projections.get("search_work_consumption"))
+    if projected:
+        sources.append(projected)
+    return tuple(sources)
+
+
+def _search_work_consumption_sources(
+    trace: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    sources: list[dict[str, Any]] = []
+    query_plan_consumption = _query_plan_search_work_consumption(trace)
+    if query_plan_consumption:
+        sources.append(query_plan_consumption)
+    sources.extend(_standalone_search_work_consumption_sources(trace))
+    return tuple(sources)
+
+
+def _component_evidenced_subject_ids(
+    trace: Mapping[str, Any],
+) -> tuple[set[str], bool, bool | None]:
+    packet = _mapping(trace.get("final_answer_packet"))
+    rows = _mapping_list(packet.get("semantic_packet_evidence_bindings"))
+    if not rows:
+        coverage = _semantic_content_coverage(packet, trace)
+        manifest = _mapping(packet.get("semantic_evidence_authority_manifest"))
+        binding_available = bool(
+            manifest.get("semantic_packet_evidence_binding_available")
+            or manifest.get("semantic_packet_evidence_binding_count")
+        )
+        if binding_available:
+            rows = _mapping_list(coverage.get("semantic_source_ref_bindings"))
+            if not rows:
+                rows = _mapping_list(
+                    coverage.get("author_materialization_content_refs")
+                )
+    if not rows:
+        return set(), False, None
+
+    ids: set[str] = set()
+    source_keys_by_component: dict[str, set[str]] = {}
+    for row in rows:
+        component_id = _first_text(
+            row.get("component_id"),
+            row.get("answer_component_id"),
+        )
+        if not component_id:
+            continue
+        identity = _normalize_subject_id(component_id)
+        ids.add(identity)
+        source_key = _first_text(
+            row.get("source_id"),
+            row.get("source_url"),
+            row.get("packet_evidence_id"),
+            row.get("origin_evidence_ref_id"),
+        )
+        if source_key:
+            source_keys_by_component.setdefault(identity, set()).add(source_key)
+    if not ids:
+        return set(), False, None
+    same_source_observed = _same_source_observed(source_keys_by_component)
+    return ids, True, same_source_observed
+
+
+def _semantic_content_coverage(
+    packet: Mapping[str, Any],
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    for value in (
+        packet.get("semantic_content_coverage_ref"),
+        packet.get("semantic_content_coverage_ref_projection"),
+        trace.get("semantic_content_coverage_ref"),
+        trace.get("semantic_content_coverage_ref_projection"),
+    ):
+        coverage = _mapping(value)
+        if coverage:
+            return coverage
+    return {}
+
+
+def _same_source_observed(source_keys_by_component: Mapping[str, set[str]]) -> bool | None:
+    source_to_components: dict[str, set[str]] = {}
+    for component_id, source_keys in source_keys_by_component.items():
+        for source_key in source_keys:
+            source_to_components.setdefault(source_key, set()).add(component_id)
+    if not source_to_components:
+        return None
+    return any(len(component_ids) > 1 for component_ids in source_to_components.values())
+
+
+def _followup_budget_policy(
+    *,
+    policy: Mapping[str, Any],
+    trace: Mapping[str, Any],
+) -> dict[str, Any]:
+    query_plan_shadow = _query_plan_work_shadow_projection(trace)
+    followup = _mapping(query_plan_shadow.get("stop_and_follow_up_posture"))
+    return {
+        "policy": _safe_text(policy.get("followup_budget_policy"))
+        or _FOLLOWUP_POLICY,
+        "subject_budget_scope": _safe_text(policy.get("subject_budget_scope"))
+        or _SUBJECT_SCOPE_INITIAL,
+        "initial_subject_cap_applies_to_internal_followups": False,
+        "internal_followups_governed_by": "existing_mode_resource_caps",
+        "observation_status": (
+            "internal_followups_exempt_but_not_independently_observed"
+        ),
+        "observed_follow_up_permission": _safe_text(
+            followup.get("follow_up_permission")
+        ),
+    }
+
+
+def _subject_budget_diagnosis(
+    *,
+    enabled: bool,
+    subjects: Sequence[Mapping[str, Any]],
+    detection_diagnosis: str | None,
+    mapping_available: bool,
+    evidence_available: bool,
+) -> str | None:
+    if not enabled:
+        return "subject_budget_not_enabled_for_profile"
+    notes: list[str] = []
+    if detection_diagnosis:
+        notes.append(detection_diagnosis)
+    if subjects and not mapping_available:
+        notes.append("query_component_mapping_not_available")
+    if subjects and not evidence_available:
+        notes.append("component_scoped_evidence_binding_not_available")
+    return ";".join(notes) if notes else None
+
+
+def _without_none(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in payload.items()
+        if value is not None and value != [] and value != {}
     }
 
 
@@ -528,11 +1033,6 @@ def _provider_lists_by_iteration(trace: Mapping[str, Any]) -> list[list[str]]:
     return [_string_list(item) for item in values if _string_list(item)]
 
 
-def _cited_source_ids(trace: Mapping[str, Any]) -> list[str]:
-    ids, _source = _cited_source_id_resolution(trace)
-    return ids
-
-
 def _cited_source_id_resolution(trace: Mapping[str, Any]) -> tuple[list[str], str]:
     ids = _string_list(trace.get("final_answer_source_ids_used"))
     if ids:
@@ -927,7 +1427,9 @@ def _list_count(value: Any) -> int:
 
 
 __all__ = [
+    "SUBJECT_BUDGET_SUMMARY_SCHEMA_VERSION",
     "VALIDATION_OBSERVABILITY_SCHEMA_VERSION",
+    "build_subject_budget_summary",
     "build_validation_observability",
     "extract_cited_urls_from_text",
 ]

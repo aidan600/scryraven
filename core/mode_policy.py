@@ -36,6 +36,30 @@ class ModePolicy:
         return payload
 
 
+@dataclass(frozen=True)
+class InitialSubjectBudgetPolicy:
+    """Passive future-policy scaffold for initial subject/component budgets."""
+
+    mode_name: str
+    max_initial_selected_subjects: int | None
+    internal_followups_exempt: bool
+    policy_status: str
+    mode_exists: bool
+    subject_budget_scope: str = "initial_independent_subjects_only"
+    notes: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mode_name": self.mode_name,
+            "max_initial_selected_subjects": self.max_initial_selected_subjects,
+            "internal_followups_exempt": self.internal_followups_exempt,
+            "policy_status": self.policy_status,
+            "mode_exists": self.mode_exists,
+            "subject_budget_scope": self.subject_budget_scope,
+            "notes": self.notes,
+        }
+
+
 MODE_POLICIES: dict[RunMode, ModePolicy] = {
     RunMode.FAST: ModePolicy(
         mode=RunMode.FAST,
@@ -66,6 +90,60 @@ MODE_POLICIES: dict[RunMode, ModePolicy] = {
     ),
 }
 
+INITIAL_SUBJECT_BUDGET_POLICIES: dict[str, InitialSubjectBudgetPolicy] = {
+    "Fast": InitialSubjectBudgetPolicy(
+        mode_name="Fast",
+        max_initial_selected_subjects=5,
+        internal_followups_exempt=True,
+        policy_status="planned",
+        mode_exists=True,
+        notes=(
+            "Passive scaffold only; existing Fast query/search/fetch/model caps "
+            "are unchanged."
+        ),
+    ),
+    "Balanced": InitialSubjectBudgetPolicy(
+        mode_name="Balanced",
+        max_initial_selected_subjects=5,
+        internal_followups_exempt=True,
+        policy_status="planned",
+        mode_exists=True,
+        notes=(
+            "Passive scaffold only; existing Balanced query/search/fetch/model "
+            "caps are unchanged."
+        ),
+    ),
+    "Deep": InitialSubjectBudgetPolicy(
+        mode_name="Deep",
+        max_initial_selected_subjects=None,
+        internal_followups_exempt=True,
+        policy_status="undecided",
+        mode_exists=True,
+        notes="No enforced Deep initial-subject cap is decided in this phase.",
+    ),
+    "Instant": InitialSubjectBudgetPolicy(
+        mode_name="Instant",
+        max_initial_selected_subjects=None,
+        internal_followups_exempt=True,
+        policy_status="not_existing_mode_future_note",
+        mode_exists=False,
+        notes=(
+            "Instant is not an existing repo mode; no runtime policy or cap is "
+            "added."
+        ),
+    ),
+    "Pro": InitialSubjectBudgetPolicy(
+        mode_name="Pro",
+        max_initial_selected_subjects=None,
+        internal_followups_exempt=True,
+        policy_status="not_existing_mode_future_note",
+        mode_exists=False,
+        notes=(
+            "Pro is not an existing repo mode; no runtime policy or cap is added."
+        ),
+    ),
+}
+
 
 def normalize_mode(mode: str | RunMode | None) -> RunMode:
     """Return the canonical mode enum for known UI modes."""
@@ -83,10 +161,40 @@ def mode_policy_for(mode: str | RunMode | None) -> ModePolicy:
     return MODE_POLICIES[normalize_mode(mode)]
 
 
+def initial_subject_budget_policy_for(
+    mode: str | RunMode | None,
+) -> InitialSubjectBudgetPolicy:
+    """Return passive subject-budget metadata for known modes or future notes."""
+
+    if isinstance(mode, RunMode):
+        return INITIAL_SUBJECT_BUDGET_POLICIES[mode.value]
+    clean = str(mode or "").strip()
+    for candidate in RunMode:
+        if clean.casefold() == candidate.value.casefold():
+            return INITIAL_SUBJECT_BUDGET_POLICIES[candidate.value]
+    for name, policy in INITIAL_SUBJECT_BUDGET_POLICIES.items():
+        if clean.casefold() == name.casefold():
+            return policy
+    raise ValueError(f"unknown run mode or subject-budget note: {mode!r}")
+
+
+def initial_subject_budget_policy_registry() -> dict[str, dict[str, Any]]:
+    """Expose passive subject-budget policy notes without affecting modes."""
+
+    return {
+        name: policy.to_dict()
+        for name, policy in INITIAL_SUBJECT_BUDGET_POLICIES.items()
+    }
+
+
 __all__ = [
+    "INITIAL_SUBJECT_BUDGET_POLICIES",
+    "InitialSubjectBudgetPolicy",
     "MODE_POLICIES",
     "ModePolicy",
     "RunMode",
+    "initial_subject_budget_policy_for",
+    "initial_subject_budget_policy_registry",
     "mode_policy_for",
     "normalize_mode",
 ]
