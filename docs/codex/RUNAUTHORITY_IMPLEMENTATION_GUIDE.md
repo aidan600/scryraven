@@ -95,10 +95,13 @@ AG-COMPONENT-EVIDENCE-CITATION-BINDING-01 extends the existing
 AnswerContractAuthorityMap per-component binding status to consume
 EvidenceLedger component-scoped custody. Candidate links and custody gaps are
 component-specific blockers, not evidence/citation/source-obligation/answer
-binding. This PR adds AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 using existing
-SufficiencyJudgment and FinalAnswerPacket owners; passive binding/custody inputs
-do not themselves decide readiness. The post-merge next gate is
-AG-PARTIAL-ANSWER-READINESS-01.
+binding. PR #322 / AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 completed
+existing SufficiencyJudgment and FinalAnswerPacket consumption of passive
+binding/custody inputs into component-aware blocked readiness. This PR adds
+AG-OFFLINE-XAXIS-E2E-01 as an offline X-axis end-to-end proof through blocked
+FAP / Author handoff. It does not enable partial answers and does not enable
+live validation. The post-merge next gate is bounded live multi-component
+validation planning or execution.
 
 ### No orchestrator brain
 

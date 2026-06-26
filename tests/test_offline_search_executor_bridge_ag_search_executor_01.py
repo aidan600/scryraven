@@ -429,7 +429,15 @@ def test_docs_name_offline_inert_bridge_and_next_custody_phase() -> None:
     assert "ag-component-evidence-citation-binding-01" in normalized
     assert "ag-sufficiency-fap-component-readiness-01" in normalized
     assert "sufficiencyjudgment and finalanswerpacket" in normalized
-    assert "post-merge next gate is ag-partial-answer-readiness-01" in normalized
+    assert "pr #322" in normalized
+    assert "ag-offline-xaxis-e2e-01" in normalized
+    assert "offline x-axis end-to-end" in normalized
+    assert "does not enable partial answers" in normalized
+    assert "does not enable live validation" in normalized
+    assert (
+        "post-merge next gate is bounded live multi-component validation planning "
+        "or execution"
+    ) in normalized
 
     forbidden_stale_phrases = {
         "current next implementation target is the offline searchexecutor bridge",
@@ -439,6 +447,7 @@ def test_docs_name_offline_inert_bridge_and_next_custody_phase() -> None:
         "post-merge next gate is ag-component-evidence-citation-binding-01",
         "current next implementation target is component evidence/citation binding",
         "post-merge next gate is ag-sufficiency-fap-component-readiness-01",
+        "post-merge next gate is ag-partial-answer-readiness-01",
     }
     for phrase in forbidden_stale_phrases:
         assert phrase not in normalized
