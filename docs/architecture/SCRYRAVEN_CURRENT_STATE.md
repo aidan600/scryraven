@@ -33,6 +33,10 @@ Current summary:
   AnswerContractAuthorityMap. PR #318 completes ComponentSearchPlan naming and
   subordination cleanup without runtime SearchExecutor wiring.
 - The current next implementation target is the Offline SearchExecutor bridge.
+  The Offline SearchExecutor bridge is offline and inert, does not perform
+  live/provider/fetch/read work, does not admit evidence or satisfy source
+  obligations, and is not user-facing runtime search. Its next consumer is
+  component-scoped source custody.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the

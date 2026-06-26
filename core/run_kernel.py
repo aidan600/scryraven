@@ -422,6 +422,7 @@ RECOVERED_SEMANTIC_DELTA_COMMIT_REASON = (
 CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 ANSWER_CONTRACT_AUTHORITY_MAP_STAGE = "answer_contract_authority_map"
+OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE = "offline_search_executor_bridge"
 MAIN_RETRIEVAL_STAGE = "main_retrieval"
 RETRIEVAL_STOP_CHECKPOINT_STAGE = "retrieval_stop_checkpoint"
 EVIDENCE_LEDGER_STAGE = "evidence_ledger"
@@ -966,6 +967,12 @@ class RunState:
     search_work_plan: dict[str, Any] = field(default_factory=dict)
     search_work_plan_projection: dict[str, Any] = field(default_factory=dict)
     search_work_plan_validation: dict[str, Any] = field(default_factory=dict)
+    offline_search_executor_bridge_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    offline_search_executor_bridge_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     evidence_ledger: EvidenceLedger = field(default_factory=EvidenceLedger)
     search_judgment: dict[str, Any] = field(default_factory=dict)
     search_judgment_projection: dict[str, Any] = field(default_factory=dict)
@@ -2891,6 +2898,54 @@ class RunKernel:
                 projection
             )
         return projection
+
+    def build_offline_search_executor_bridge_projection(
+        self,
+        *,
+        answer_contract_authority_map_projection: Mapping[str, Any] | None = None,
+        component_executor_contract_projection: Mapping[str, Any] | None = None,
+        component_search_plan_projection: Mapping[str, Any] | None = None,
+        component_plan_projection: Mapping[str, Any] | None = None,
+        search_work_plan_projection: Mapping[str, Any] | None = None,
+        query_plan_work_shadow_projection: Mapping[str, Any] | None = None,
+        offline_candidate_observations: Sequence[Mapping[str, Any]] | None = None,
+        offline_candidate_fixtures: Sequence[Mapping[str, Any]] | None = None,
+        store: bool = True,
+    ) -> dict[str, Any]:
+        """Build and store the offline SearchExecutor bridge projection."""
+
+        from core.offline_search_executor_bridge import (
+            build_offline_search_executor_bridge_projection,
+        )
+
+        bridge = build_offline_search_executor_bridge_projection(
+            answer_contract_authority_map_projection=(
+                answer_contract_authority_map_projection
+                or self.state.projections.get(ANSWER_CONTRACT_AUTHORITY_MAP_STAGE)
+            ),
+            component_executor_contract_projection=(
+                component_executor_contract_projection
+            ),
+            component_search_plan_projection=component_search_plan_projection,
+            component_plan_projection=component_plan_projection,
+            search_work_plan_projection=(
+                search_work_plan_projection
+                or self.state.search_work_plan_projection
+                or self.state.search_work_plan
+            ),
+            query_plan_work_shadow_projection=query_plan_work_shadow_projection,
+            offline_candidate_observations=offline_candidate_observations,
+            offline_candidate_fixtures=offline_candidate_fixtures,
+        ).to_projection()
+        if store:
+            self.state.offline_search_executor_bridge_projection = deepcopy(bridge)
+            self.state.offline_search_executor_bridge_history.append(
+                deepcopy(bridge)
+            )
+            self.state.projections[OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE] = deepcopy(
+                bridge
+            )
+        return bridge
 
     def authorize_query_plan_admission(
         self,
@@ -12337,6 +12392,7 @@ __all__ = [
     "FOLLOWUP_FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_SUFFICIENCY_RECHECK_STAGE",
     "ANSWER_CONTRACT_AUTHORITY_MAP_STAGE",
+    "OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE",
     "MAIN_RETRIEVAL_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",

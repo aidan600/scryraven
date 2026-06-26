@@ -79,8 +79,11 @@ QueryPlan, and SearchExecutor are subordinate planning or execution surfaces;
 they may describe or perform component-scoped work, but they must not decide
 answerability, source obligation satisfaction, FinalAnswerPacket readiness,
 citation eligibility, or Author handoff readiness. The next productization gate
-is the Offline SearchExecutor bridge; runtime SearchExecutor wiring is still
-not part of PR #318.
+is the Offline SearchExecutor bridge. The Offline SearchExecutor bridge is
+offline and inert, does not perform live/provider/fetch/read work, does not
+admit evidence or satisfy source obligations, and is not user-facing runtime
+search. Its next consumer is component-scoped source custody; runtime
+SearchExecutor wiring is still not part of PR #318.
 
 ### No orchestrator brain
 

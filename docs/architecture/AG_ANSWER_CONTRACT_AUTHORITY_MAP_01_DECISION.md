@@ -79,7 +79,10 @@ AnswerContractAuthorityMap ties:
 
 1. Add the AnswerContract authority map.
 2. Clean up ComponentSearchPlan naming and subordination. Complete in PR #318.
-3. Add the Offline SearchExecutor bridge. This is the next gate.
+3. Add the Offline SearchExecutor bridge. This is the next gate. The Offline
+   SearchExecutor bridge is offline and inert, does not perform
+   live/provider/fetch/read work, does not admit evidence or satisfy source
+   obligations, and is not user-facing runtime search.
 4. Add component-scoped source custody.
 5. Bind component evidence and citations.
 6. Bind Sufficiency / FinalAnswerPacket component readiness.

@@ -20,6 +20,7 @@ docs_only
 schema_or_passive_record
 component_harness_proof
 offline_product_path_proof
+offline_product_path_projection_proof
 live_component_proof
 live_product_proof
 ```

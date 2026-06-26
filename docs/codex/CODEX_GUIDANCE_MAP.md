@@ -46,9 +46,13 @@ ComponentPlan / component executor contract, a RunKernel-owned passive
 AnswerContractAuthorityMap, and completed ComponentSearchPlan naming /
 subordination cleanup.
 
-The next productization gate is the Offline SearchExecutor bridge. Runtime
-SearchExecutor wiring is still not part of PR #318. RunKernel / RunAuthority
-remains the root authority. AnswerContractAuthorityMap owns the
+The next productization gate is the Offline SearchExecutor bridge. The Offline
+SearchExecutor bridge is offline and inert, does not perform
+live/provider/fetch/read work, does not admit evidence or satisfy source
+obligations, and is not user-facing runtime search. Its next consumer is
+component-scoped source custody. Runtime SearchExecutor wiring is still not
+part of PR #318. RunKernel / RunAuthority remains the root authority.
+AnswerContractAuthorityMap owns the
 answer-component authority mapping. ComponentPlan is legacy/compat input
 terminology for subordinate component-search planning; ComponentSearchPlan is
 the preferred subordinate name. ComponentPlan, ComponentSearchPlan, SearchWork,
