@@ -251,6 +251,145 @@ def test_search_work_and_query_plan_refs_cannot_satisfy_binding_or_readiness() -
     assert projection["final_answer_status"]["author_payload_ready"] is False
 
 
+def test_citation_binding_does_not_cross_component_from_unrelated_citation() -> None:
+    packet = {
+        "packet_id": "packet:cross-component-citation",
+        "semantic_packet_evidence_bindings": [
+            {
+                "component_id": "PostgreSQL",
+                "component_digest": "digest:postgresql",
+                "packet_evidence_id": "packet-evidence:postgresql",
+                "origin_evidence_ref_id": "candidate:postgresql",
+                "content_ref_id": "content:postgresql",
+                "coverage_record_id": "coverage:postgresql",
+            }
+        ],
+        "evidence_allowed": [
+            {
+                "evidence_id": "packet-evidence:mysql",
+                "status": "evidence_allowed",
+                "source_id": "source:mysql",
+                "origin_evidence_ref_id": "candidate:mysql",
+            }
+        ],
+        "citation_eligible": [
+            {
+                "citation_id": "citation:mysql",
+                "evidence_id": "packet-evidence:mysql",
+                "status": "citation_eligible",
+                "source_id": "source:mysql",
+                "component_id": "MySQL",
+            }
+        ],
+        "source_obligations": [
+            {
+                "obligation_id": "PostgreSQL:source-requirement",
+                "source_class": "official_docs",
+                "status": "satisfied",
+            }
+        ],
+    }
+    projection = build_answer_contract_authority_map(
+        component_plan_projection=_default_port_plan().to_dict(),
+        final_answer_packet_projection=packet,
+        component_coverage_projection={
+            "answer_component_id": "PostgreSQL",
+            "coverage_record_id": "coverage:postgresql",
+            "coverage_record_digest": "digest:coverage:postgresql",
+            "coverage_state": "satisfied",
+            "ledger_custody_status": "satisfied",
+            "semantic_support_status": "supports",
+        },
+    ).to_projection()
+    postgresql = next(
+        item for item in projection["components"] if item["component_id"] == "PostgreSQL"
+    )
+
+    assert postgresql["binding_status"]["evidence_bound"] is True
+    assert postgresql["binding_status"]["source_obligation_bound"] is True
+    assert postgresql["binding_status"]["answer_value_bound"] is True
+    assert postgresql["binding_status"]["citation_bound"] is False
+    assert postgresql["binding_status"]["citation_binding_refs"] == []
+    assert postgresql["binding_status"]["full_component_success"] is False
+
+
+def test_citation_binding_accepts_component_specific_packet_evidence_relation() -> None:
+    packet = {
+        "packet_id": "packet:component-specific-citation",
+        "semantic_packet_evidence_bindings": [
+            {
+                "component_id": "PostgreSQL",
+                "component_digest": "digest:postgresql",
+                "packet_evidence_id": "packet-evidence:postgresql",
+                "origin_evidence_ref_id": "candidate:postgresql",
+                "content_ref_id": "content:postgresql",
+                "coverage_record_id": "coverage:postgresql",
+            }
+        ],
+        "evidence_allowed": [
+            {
+                "evidence_id": "packet-evidence:postgresql",
+                "status": "evidence_allowed",
+                "source_id": "source:postgresql",
+                "origin_evidence_ref_id": "candidate:postgresql",
+            }
+        ],
+        "citation_eligible": [
+            {
+                "citation_id": "citation:postgresql",
+                "evidence_id": "packet-evidence:postgresql",
+                "status": "citation_eligible",
+                "source_id": "source:postgresql",
+            },
+            {
+                "citation_id": "citation:mysql",
+                "evidence_id": "packet-evidence:mysql",
+                "status": "citation_eligible",
+                "source_id": "source:mysql",
+                "component_id": "MySQL",
+            },
+        ],
+        "source_obligations": [
+            {
+                "obligation_id": "PostgreSQL:source-requirement",
+                "source_class": "official_docs",
+                "status": "satisfied",
+            }
+        ],
+    }
+    projection = build_answer_contract_authority_map(
+        component_plan_projection=_default_port_plan().to_dict(),
+        final_answer_packet_projection=packet,
+        component_coverage_projection={
+            "answer_component_id": "PostgreSQL",
+            "coverage_record_id": "coverage:postgresql",
+            "coverage_record_digest": "digest:coverage:postgresql",
+            "coverage_state": "satisfied",
+            "ledger_custody_status": "satisfied",
+            "semantic_support_status": "supports",
+        },
+    ).to_projection()
+    postgresql = next(
+        item for item in projection["components"] if item["component_id"] == "PostgreSQL"
+    )
+    mysql = next(item for item in projection["components"] if item["component_id"] == "MySQL")
+
+    assert postgresql["binding_status"]["evidence_bound"] is True
+    assert postgresql["binding_status"]["source_obligation_bound"] is True
+    assert postgresql["binding_status"]["answer_value_bound"] is True
+    assert postgresql["binding_status"]["citation_bound"] is True
+    assert postgresql["binding_status"]["citation_binding_refs"] == [
+        {
+            "citation_id": "citation:postgresql",
+            "evidence_id": "packet-evidence:postgresql",
+            "source_id": "source:postgresql",
+            "relation": "component_evidence_ref",
+        }
+    ]
+    assert postgresql["binding_status"]["full_component_success"] is True
+    assert mysql["binding_status"]["citation_bound"] is False
+
+
 def test_sufficiency_and_blocked_fap_own_final_answer_and_author_block() -> None:
     final_authority = {
         "owner": "RunKernel.FinalAnswerPacket",

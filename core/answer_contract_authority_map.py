@@ -694,9 +694,13 @@ def _binding_status(
         _clean_token(item.get("status")) == "satisfied" for item in source_obligations
     )
     evidence_bound = bool(semantic_bindings)
-    citation_bound = bool(
-        semantic_bindings and _sequence_of_mappings(packet.get("citation_eligible"))
+    citation_binding_refs = _component_compatible_citation_refs(
+        component_id=component_id,
+        semantic_bindings=semantic_bindings,
+        packet=packet,
+        custody=custody,
     )
+    citation_bound = bool(citation_binding_refs)
     answer_value_bound = bool(
         semantic_bindings and semantic_coverage.get("coverage_status") == "satisfied"
     )
@@ -728,6 +732,7 @@ def _binding_status(
             if citation_bound
             else AnswerComponentBindingStatus.NOT_BOUND.value
         ),
+        "citation_binding_refs": citation_binding_refs,
         "source_obligation_bound": source_obligation_bound,
         "source_obligation_binding_status": (
             AnswerComponentBindingStatus.BOUND.value
@@ -748,6 +753,149 @@ def _binding_status(
         "plan_presence_contributed_to_binding": False,
         "blocker_reasons": blocker_reasons,
     }
+
+
+def _component_compatible_citation_refs(
+    *,
+    component_id: str,
+    semantic_bindings: Sequence[Mapping[str, Any]],
+    packet: Mapping[str, Any],
+    custody: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    if not semantic_bindings:
+        return []
+    evidence_refs, candidate_refs, source_refs = _component_binding_ref_sets(
+        semantic_bindings=semantic_bindings,
+        packet=packet,
+        custody=custody,
+    )
+    compatible_refs: list[dict[str, Any]] = []
+    for citation in _sequence_of_mappings(packet.get("citation_eligible")):
+        status = _clean_token(citation.get("status"))
+        if status and status != "citation_eligible":
+            continue
+        relation = _citation_component_relation(
+            component_id=component_id,
+            citation=citation,
+            evidence_refs=evidence_refs,
+            candidate_refs=candidate_refs,
+            source_refs=source_refs,
+        )
+        if not relation:
+            continue
+        compatible_refs.append(
+            _without_empty(
+                {
+                    "citation_id": _clean_token(citation.get("citation_id")),
+                    "evidence_id": _clean_token(citation.get("evidence_id")),
+                    "source_id": _clean_token(citation.get("source_id")),
+                    "relation": relation,
+                }
+            )
+        )
+    return compatible_refs
+
+
+def _component_binding_ref_sets(
+    *,
+    semantic_bindings: Sequence[Mapping[str, Any]],
+    packet: Mapping[str, Any],
+    custody: Mapping[str, Any],
+) -> tuple[set[str], set[str], set[str]]:
+    evidence_refs: set[str] = set()
+    candidate_refs: set[str] = set()
+    source_refs: set[str] = set()
+
+    for binding in semantic_bindings:
+        for key in (
+            "packet_evidence_id",
+            "origin_evidence_ref_id",
+            "evidence_id",
+            "admitted_evidence_ref",
+        ):
+            _add_normalized_ref(evidence_refs, binding.get(key))
+        for key in ("candidate_id", "origin_candidate_id"):
+            _add_normalized_ref(candidate_refs, binding.get(key))
+        for key in ("source_id", "citation_source_id", "source_ref_id"):
+            _add_normalized_ref(source_refs, binding.get(key))
+
+    for candidate in _sequence_of_mappings(custody.get("candidate_refs")):
+        _add_normalized_ref(candidate_refs, candidate.get("candidate_id"))
+
+    for evidence in _sequence_of_mappings(packet.get("evidence_allowed")):
+        if _evidence_record_matches_component_refs(
+            evidence,
+            evidence_refs=evidence_refs,
+            candidate_refs=candidate_refs,
+        ):
+            _add_normalized_ref(evidence_refs, evidence.get("evidence_id"))
+            _add_normalized_ref(evidence_refs, evidence.get("origin_evidence_ref_id"))
+            _add_normalized_ref(source_refs, evidence.get("source_id"))
+    return evidence_refs, candidate_refs, source_refs
+
+
+def _evidence_record_matches_component_refs(
+    evidence: Mapping[str, Any],
+    *,
+    evidence_refs: set[str],
+    candidate_refs: set[str],
+) -> bool:
+    return any(
+        _normalized_ref(evidence.get(key)) in evidence_refs | candidate_refs
+        for key in ("evidence_id", "origin_evidence_ref_id")
+        if _normalized_ref(evidence.get(key))
+    )
+
+
+def _citation_component_relation(
+    *,
+    component_id: str,
+    citation: Mapping[str, Any],
+    evidence_refs: set[str],
+    candidate_refs: set[str],
+    source_refs: set[str],
+) -> str | None:
+    if _citation_directly_matches_component(component_id, citation):
+        return "direct_component_ref"
+    evidence_id = _normalized_ref(citation.get("evidence_id"))
+    if evidence_id and evidence_id in evidence_refs | candidate_refs:
+        return "component_evidence_ref"
+    source_id = _normalized_ref(citation.get("source_id"))
+    if source_id and source_id in source_refs | candidate_refs:
+        return "component_source_ref"
+    return None
+
+
+def _citation_directly_matches_component(
+    component_id: str,
+    citation: Mapping[str, Any],
+) -> bool:
+    component = _normalize(component_id)
+    if not component:
+        return False
+    for key in (
+        "component_id",
+        "answer_component_id",
+        "search_work_component_id",
+        "requirement_id",
+        "obligation_id",
+        "custody_requirement_id",
+    ):
+        value = _normalize(citation.get(key))
+        if value and component in value:
+            return True
+    return False
+
+
+def _add_normalized_ref(target: set[str], value: Any) -> None:
+    normalized = _normalized_ref(value)
+    if normalized:
+        target.add(normalized)
+
+
+def _normalized_ref(value: Any) -> str | None:
+    token = _clean_token(value, limit=200)
+    return _normalize(token) if token else None
 
 
 def _sufficiency_status(sufficiency: Mapping[str, Any]) -> dict[str, Any]:
