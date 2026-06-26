@@ -411,8 +411,27 @@ def test_docs_name_offline_inert_bridge_and_next_custody_phase() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in doc_paths)
     normalized = " ".join(combined.casefold().replace("`", "").split())
 
+    assert "pr #319 / ag-offline-search-executor-bridge-01" in normalized
+    assert (
+        "completes the offline runkernel-owned searchexecutor bridge"
+        in normalized
+    )
+    assert "completed offline searchexecutor bridge" in normalized
     assert "offline searchexecutor bridge is offline and inert" in normalized
-    assert "does not perform live/provider/fetch/read work" in normalized
-    assert "does not admit evidence or satisfy source obligations" in normalized
-    assert "component-scoped source custody" in normalized
+    assert "does not perform live provider/search/fetch/read/retrieval work" in normalized
+    assert "does not admit evidenceledger custody or satisfy source obligations" in normalized
+    assert "keeps candidate observations non-evidence" in normalized
     assert "not user-facing runtime search" in normalized
+    assert "next gate is ag-component-scoped-source-custody-01" in normalized
+    assert (
+        "consume bridge observations for evidenceledger component-scoped "
+        "source requirements, candidate links, custody gaps, and "
+        "satisfied/unsatisfied source-obligation state"
+    ) in normalized
+
+    forbidden_stale_phrases = {
+        "current next implementation target is the offline searchexecutor bridge",
+        "next productization gate is the offline searchexecutor bridge",
+    }
+    for phrase in forbidden_stale_phrases:
+        assert phrase not in normalized

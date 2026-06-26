@@ -1,6 +1,7 @@
 # ScryRaven Current State
 
-Status: current-state redirect stub refreshed after PR #317 on main `4416cbc`.
+Status: current-state redirect stub refreshed for PR #319 /
+`AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -29,14 +30,18 @@ Current summary:
   component-level blocked-FAP summary telemetry for blocked semantic
   multipart/source-bound numeric cases, PR #315 offline ComponentPlan /
   component executor contract preservation into passive SearchWork/query-work
-  and scorekeeping surfaces, and PR #317 RunKernel-owned passive
-  AnswerContractAuthorityMap. PR #318 completes ComponentSearchPlan naming and
-  subordination cleanup without runtime SearchExecutor wiring.
-- The current next implementation target is the Offline SearchExecutor bridge.
-  The Offline SearchExecutor bridge is offline and inert, does not perform
-  live/provider/fetch/read work, does not admit evidence or satisfy source
-  obligations, and is not user-facing runtime search. Its next consumer is
-  component-scoped source custody.
+  and scorekeeping surfaces, PR #317 RunKernel-owned passive
+  AnswerContractAuthorityMap, and PR #318 ComponentSearchPlan naming and
+  subordination cleanup. PR #319 / AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01
+  completes the offline RunKernel-owned SearchExecutor bridge.
+- The completed Offline SearchExecutor bridge is offline and inert, does not
+  perform live provider/search/fetch/read/retrieval work, does not admit
+  EvidenceLedger custody or satisfy source obligations, keeps candidate
+  observations non-evidence, and is not user-facing runtime search.
+- The next gate is AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01, which should consume
+  bridge observations for EvidenceLedger component-scoped source requirements,
+  candidate links, custody gaps, and satisfied/unsatisfied source-obligation
+  state.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the

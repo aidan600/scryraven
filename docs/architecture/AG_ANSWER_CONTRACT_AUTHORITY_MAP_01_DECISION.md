@@ -41,6 +41,11 @@ AnswerContractAuthorityMap ties:
 - PR #318 `AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01`: ComponentPlan /
   ComponentSearchPlan naming and subordination cleanup is complete. Runtime
   SearchExecutor wiring remains out of scope, and no live validation was run.
+- PR #319 `AG-OFFLINE-SEARCH-EXECUTOR-BRIDGE-01`: the offline
+  RunKernel-owned SearchExecutor bridge is complete. It is offline/inert and
+  not user-facing runtime search; it does not perform live provider/search/
+  fetch/read/retrieval work, admit EvidenceLedger custody, or satisfy source
+  obligations. Candidate observations remain non-evidence.
 
 ## Authority Hierarchy
 
@@ -51,8 +56,9 @@ AnswerContractAuthorityMap ties:
   component-search planning.
 - ComponentSearchPlan is the preferred subordinate component-search planning
   name.
-- SearchExecutor should eventually execute delegated component-scoped search
-  work, but must not decide answerability.
+- Offline SearchExecutor bridge observations preserve delegated
+  component-scoped work for the next custody phase, but SearchExecutor surfaces
+  must not decide answerability.
 - EvidenceLedger owns evidence custody, source obligations, and citation
   eligibility inputs.
 - SemanticObservation / ComponentCoverage owns component support.
@@ -64,7 +70,8 @@ AnswerContractAuthorityMap ties:
 ## Non-Goals
 
 - Do not wire ComponentPlan into runtime.
-- Do not implement SearchExecutor.
+- Do not activate runtime SearchExecutor behavior or user-facing runtime
+  search.
 - Do not implement partial-answer readiness.
 - Do not change provider routing, retrieval, citation behavior, Author
   behavior, caps, prompts, query generation, or persistence shape.
@@ -79,11 +86,15 @@ AnswerContractAuthorityMap ties:
 
 1. Add the AnswerContract authority map.
 2. Clean up ComponentSearchPlan naming and subordination. Complete in PR #318.
-3. Add the Offline SearchExecutor bridge. This is the next gate. The Offline
-   SearchExecutor bridge is offline and inert, does not perform
-   live/provider/fetch/read work, does not admit evidence or satisfy source
-   obligations, and is not user-facing runtime search.
-4. Add component-scoped source custody.
+3. Add the Offline SearchExecutor bridge. Complete in PR #319. The completed
+   bridge is offline and inert, does not perform live provider/search/fetch/
+   read/retrieval work, does not admit EvidenceLedger custody or satisfy source
+   obligations, keeps candidate observations non-evidence, and is not
+   user-facing runtime search.
+4. Add component-scoped source custody. This is the next gate:
+   AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 should consume bridge observations for
+   EvidenceLedger component-scoped source requirements, candidate links,
+   custody gaps, and satisfied/unsatisfied source-obligation state.
 5. Bind component evidence and citations.
 6. Bind Sufficiency / FinalAnswerPacket component readiness.
 7. Add partial-answer readiness only after the full offline authority chain is
