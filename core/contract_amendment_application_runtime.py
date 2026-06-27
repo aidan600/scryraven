@@ -284,9 +284,9 @@ def _component_index(
     components: Sequence[Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
     return {
-        component_id: _safe_mapping(component)
+        component_id: component
         for component in components
-        if isinstance(component, Mapping)
+        if isinstance(component, dict)
         and (component_id := _clean_token(component.get("component_id")))
     }
 
@@ -1325,6 +1325,9 @@ def build_contract_amendment_application_state(
         "applied_operation_kinds": [
             item.get("operation_kind") for item in mutations["applied_operations"]
         ],
+        "search_planner_revision_lineage": _safe_mapping(
+            admission.get("search_planner_revision_lineage")
+        ),
     }
     lineage = {
         "created_by": CURRENT_ANSWER_CONTRACT_OWNER,

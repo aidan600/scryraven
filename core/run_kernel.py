@@ -406,6 +406,20 @@ from core.scout_disambiguation_runtime import (
 from core.scout_disambiguation_runtime import (
     contract_ref_from_contract as _scout_contract_ref_from_contract,
 )
+from core.search_planner_revision_runtime import (
+    SEARCH_PLANNER_REVISION_REASON,
+    SEARCH_PLANNER_REVISION_SCHEMA_VERSION,
+    SearchPlannerRevisionRuntimeError,
+    build_search_planner_revision_projection,
+    build_search_planner_revision_state,
+    scout_ref_from_scout_report_state,
+)
+from core.search_planner_revision_runtime import (
+    SEARCH_PLANNER_REVISION_STAGE as SEARCH_PLANNER_REVISION_STAGE_NAME,
+)
+from core.search_planner_revision_runtime import (
+    contract_ref_from_contract as _revision_contract_ref_from_contract,
+)
 from core.search_planner_runtime import (
     SEARCH_PLANNER_PRODUCTION_REASON,
     SEARCH_PLANNER_SCHEMA_VERSION,
@@ -442,6 +456,7 @@ QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 RUN_CONTRACT_STAGE = "run_contract"
 SEARCH_PLANNER_PRODUCTION_STAGE = SEARCH_PLANNER_PRODUCTION_STAGE_NAME
 SCOUT_DISAMBIGUATION_STAGE = SCOUT_DISAMBIGUATION_STAGE_NAME
+SEARCH_PLANNER_REVISION_STAGE = SEARCH_PLANNER_REVISION_STAGE_NAME
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -562,6 +577,7 @@ class ActionType(str, Enum):
     RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
     SEARCH_PLANNER_PRODUCE = "search_planner_produce"
     SCOUT_DISAMBIGUATE = "scout_disambiguate"
+    SEARCH_PLANNER_REVISE = "search_planner_revise"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -633,6 +649,7 @@ class ObservationType(str, Enum):
     RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
     SEARCH_PLANNER_PRODUCED = "search_planner_produced"
     SCOUT_DISAMBIGUATION_REPORTED = "scout_disambiguation_reported"
+    SEARCH_PLANNER_REVISED = "search_planner_revised"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -922,6 +939,20 @@ class Observation:
         object.__setattr__(self, "status", RunStageStatus(self.status))
         payload = _safe_mapping(self.payload)
         if (
+            self.observation_type is ObservationType.SEARCH_PLANNER_REVISED
+            and isinstance(self.payload, Mapping)
+        ):
+            payload = _safe_mapping(
+                {
+                    key: value
+                    for key, value in self.payload.items()
+                    if key != "planner_revision"
+                }
+            )
+            raw_planner_revision = self.payload.get("planner_revision")
+            if isinstance(raw_planner_revision, Mapping):
+                payload["planner_revision"] = dict(raw_planner_revision)
+        if (
             self.observation_type is ObservationType.SUFFICIENCY_JUDGMENT_DECIDED
             and isinstance(self.payload, Mapping)
         ):
@@ -995,6 +1026,13 @@ class RunState:
         default_factory=dict
     )
     scout_disambiguation_report_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
+    search_planner_revision_state: dict[str, Any] = field(default_factory=dict)
+    search_planner_revision_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    search_planner_revision_history: list[dict[str, Any]] = field(
         default_factory=list
     )
     initial_answer_contract: dict[str, Any] = field(default_factory=dict)
@@ -1313,6 +1351,15 @@ class RunState:
             ),
             scout_disambiguation_report_history=deepcopy(
                 self.scout_disambiguation_report_history
+            ),
+            search_planner_revision_state=deepcopy(
+                self.search_planner_revision_state
+            ),
+            search_planner_revision_projection=deepcopy(
+                self.search_planner_revision_projection
+            ),
+            search_planner_revision_history=deepcopy(
+                self.search_planner_revision_history
             ),
             initial_answer_contract=deepcopy(self.initial_answer_contract),
             initial_answer_contract_projection=deepcopy(
@@ -1633,6 +1680,9 @@ class KernelTraceProjection:
     scout_disambiguation_report_state: Mapping[str, Any]
     scout_disambiguation_report_projection: Mapping[str, Any]
     scout_disambiguation_report_history: Sequence[Mapping[str, Any]]
+    search_planner_revision_state: Mapping[str, Any]
+    search_planner_revision_projection: Mapping[str, Any]
+    search_planner_revision_history: Sequence[Mapping[str, Any]]
     initial_answer_contract: Mapping[str, Any]
     initial_answer_contract_projection: Mapping[str, Any]
     initial_answer_contract_history: Sequence[Mapping[str, Any]]
@@ -1781,6 +1831,16 @@ class KernelTraceProjection:
             "scout_disambiguation_report_history": [
                 _safe_mapping(item)
                 for item in self.scout_disambiguation_report_history
+            ],
+            "search_planner_revision_state": _safe_mapping(
+                self.search_planner_revision_state
+            ),
+            "search_planner_revision_projection": _safe_mapping(
+                self.search_planner_revision_projection
+            ),
+            "search_planner_revision_history": [
+                _safe_mapping(item)
+                for item in self.search_planner_revision_history
             ],
             "initial_answer_contract": _safe_mapping(self.initial_answer_contract),
             "initial_answer_contract_projection": _safe_mapping(
@@ -2376,6 +2436,153 @@ class RunKernel:
             expected_observation_type=(
                 ObservationType.SCOUT_DISAMBIGUATION_REPORTED
             ),
+        )
+
+    def authorize_search_planner_revision(
+        self,
+        *,
+        component_id: str,
+        consumed_ambiguity_dimension_ids: Sequence[str],
+        consumed_scout_hint_ids: Sequence[str] = (),
+        request_id: str | None = None,
+        reason: str = SEARCH_PLANNER_REVISION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        clean_component_id = _clean_text(component_id, limit=160)
+        if not clean_component_id:
+            raise RunKernelTransitionError(
+                "search planner revision requires component_id binding"
+            )
+        if not self.state.initial_answer_contract_projection:
+            raise RunKernelTransitionError(
+                "search planner revision requires an accepted initial answer contract"
+            )
+        parent_planner_ref = planner_ref_from_search_planner_state(
+            self.state.search_planner_proposal_state
+        )
+        if not parent_planner_ref:
+            raise RunKernelTransitionError(
+                "search planner revision requires a current SearchPlanner proposal"
+            )
+        parent_scout_ref = scout_ref_from_scout_report_state(
+            self.state.scout_disambiguation_report_state
+        )
+        if not parent_scout_ref:
+            raise RunKernelTransitionError(
+                "search planner revision requires a current Scout DisambiguationReport"
+            )
+        if (
+            _safe_mapping(parent_scout_ref.get("parent_search_planner_proposal_ref"))
+            != parent_planner_ref
+        ):
+            raise RunKernelTransitionError(
+                "search planner revision requires Scout report bound to current planner/QMR"
+            )
+        if parent_scout_ref.get("component_id") != clean_component_id:
+            raise RunKernelTransitionError(
+                "search planner revision component_id does not match Scout report"
+            )
+        qmr = _safe_mapping(
+            self.state.search_planner_proposal_state.get("question_meaning_record")
+        )
+        components = qmr.get("answer_components")
+        if not isinstance(components, Sequence) or isinstance(components, str | bytes):
+            raise RunKernelTransitionError(
+                "search planner revision requires parent QMR answer components"
+            )
+        if not any(
+            isinstance(item, Mapping)
+            and _clean_text(item.get("component_id"), limit=160)
+            == clean_component_id
+            for item in components
+        ):
+            raise RunKernelTransitionError(
+                "search planner revision component_id is not present in parent QMR"
+            )
+
+        clean_dimension_ids = _preserve_text_list(consumed_ambiguity_dimension_ids)
+        if not clean_dimension_ids:
+            raise RunKernelTransitionError(
+                "search planner revision requires consumed ambiguity dimensions"
+            )
+        scout_dimensions = {
+            _clean_text(item.get("dimension_id"), limit=160)
+            for item in self.state.scout_disambiguation_report_state.get(
+                "ambiguity_dimensions",
+                [],
+            )
+            if isinstance(item, Mapping)
+        }
+        missing_dimensions = [
+            item for item in clean_dimension_ids if item not in scout_dimensions
+        ]
+        if missing_dimensions:
+            raise RunKernelTransitionError(
+                "search planner revision consumes unknown Scout dimensions: "
+                + ", ".join(missing_dimensions)
+            )
+
+        clean_hint_ids = _preserve_text_list(consumed_scout_hint_ids)
+        scout_hint_ids = _scout_hint_ids_from_report(
+            self.state.scout_disambiguation_report_state
+        )
+        missing_hints = [item for item in clean_hint_ids if item not in scout_hint_ids]
+        if missing_hints:
+            raise RunKernelTransitionError(
+                "search planner revision consumes unknown Scout hints: "
+                + ", ".join(missing_hints)
+            )
+
+        initial_ref = _revision_contract_ref_from_contract(
+            self.state.initial_answer_contract,
+            source="initial_answer_contract",
+        )
+        current_ref = _revision_contract_ref_from_contract(
+            self.state.current_answer_contract,
+            source="current_answer_contract",
+        )
+        merged_inputs = {
+            **dict(inputs or {}),
+            "run_id": self.state.run_id,
+            "request_id": request_id or self.state.request_id,
+            "parent_search_planner_proposal_id": parent_planner_ref.get(
+                "proposal_id"
+            ),
+            "parent_search_planner_proposal_digest": parent_planner_ref.get(
+                "proposal_digest"
+            ),
+            "parent_question_meaning_record_id": parent_planner_ref.get(
+                "question_meaning_record_id"
+            ),
+            "parent_question_meaning_record_digest": parent_planner_ref.get(
+                "question_meaning_record_digest"
+            ),
+            "parent_scout_disambiguation_report_id": parent_scout_ref.get(
+                "report_id"
+            ),
+            "parent_scout_disambiguation_report_digest": parent_scout_ref.get(
+                "report_digest"
+            ),
+            "component_id": clean_component_id,
+            "consumed_ambiguity_dimension_ids": clean_dimension_ids,
+            "consumed_scout_hint_ids": clean_hint_ids,
+            "parent_initial_contract_version": initial_ref.get(
+                "contract_version"
+            ),
+            "parent_initial_contract_digest": initial_ref.get("contract_digest"),
+            "parent_current_contract_version": current_ref.get(
+                "contract_version"
+            ),
+            "parent_current_contract_digest": current_ref.get("contract_digest"),
+            "revision_schema_version": SEARCH_PLANNER_REVISION_SCHEMA_VERSION,
+            "reason": reason,
+        }
+        return self.authorize(
+            stage=SEARCH_PLANNER_REVISION_STAGE,
+            action_type=ActionType.SEARCH_PLANNER_REVISE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.SEARCH_PLANNER_REVISED,
         )
 
     def authorize_initial_answer_contract_acceptance(
@@ -10130,6 +10337,41 @@ class RunKernel:
                 deepcopy(scout_projection)
             )
             self.state.projections[action.stage] = deepcopy(scout_projection)
+        elif action.action_type is ActionType.SEARCH_PLANNER_REVISE:
+            try:
+                revision_state = build_search_planner_revision_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    current_search_planner_proposal_state=(
+                        self.state.search_planner_proposal_state
+                    ),
+                    current_scout_disambiguation_report_state=(
+                        self.state.scout_disambiguation_report_state
+                    ),
+                    current_parent_initial_contract=(
+                        self.state.initial_answer_contract
+                    ),
+                    current_parent_current_contract=(
+                        self.state.current_answer_contract
+                    ),
+                    existing_revision_history=(
+                        self.state.search_planner_revision_history
+                    ),
+                )
+                revision_projection = build_search_planner_revision_projection(
+                    revision_state=revision_state
+                )
+            except SearchPlannerRevisionRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.search_planner_revision_state = revision_state
+            self.state.search_planner_revision_projection = revision_projection
+            self.state.search_planner_revision_history.append(
+                deepcopy(revision_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(revision_projection)
         elif action.action_type is ActionType.INITIAL_ANSWER_CONTRACT_ACCEPT:
             proposal_payload = _safe_mapping(
                 observation.payload.get("question_meaning_record")
@@ -12719,6 +12961,38 @@ def _string_list(value: Any) -> list[str]:
     return out
 
 
+def _preserve_text_list(value: Any) -> list[str]:
+    if isinstance(value, str) or not isinstance(value, (list, tuple, set, frozenset)):
+        return []
+    out: list[str] = []
+    for item in value:
+        text = _clean_text(item, limit=180)
+        if text and text not in out:
+            out.append(text)
+    return out
+
+
+def _scout_hint_ids_from_report(report: Mapping[str, Any]) -> set[str]:
+    hint_ids: set[str] = set()
+    for key in (
+        "scout_result_hints",
+        "likely_official_target_hints",
+        "currentness_hints",
+    ):
+        for item in report.get(key, []) or []:
+            if not isinstance(item, Mapping):
+                continue
+            hint_id = _clean_text(item.get("hint_id"), limit=180)
+            if hint_id:
+                hint_ids.add(hint_id)
+    for item in report.get("candidate_interpretations", []) or []:
+        if not isinstance(item, Mapping):
+            continue
+        for hint_id in _preserve_text_list(item.get("supporting_hint_ids")):
+            hint_ids.add(hint_id)
+    return hint_ids
+
+
 def _positive_int(value: Any) -> int:
     try:
         return max(0, int(value or 0))
@@ -12987,6 +13261,7 @@ __all__ = [
     "ROUTE_REQUEST_STAGE",
     "RUN_KERNEL_TRACE_KEY",
     "SEARCH_PLANNER_PRODUCTION_STAGE",
+    "SEARCH_PLANNER_REVISION_STAGE",
     "SCOUT_DISAMBIGUATION_STAGE",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE",
