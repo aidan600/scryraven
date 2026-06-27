@@ -418,17 +418,23 @@ def test_docs_name_binding_complete_and_next_sufficiency_fap_gate() -> None:
     assert "offline x-axis end-to-end" in normalized
     assert "does not enable partial answers" in normalized
     assert "does not enable live validation" in normalized
+    assert "run_contract_semantic_loop.md" in normalized
+    assert "post-merge next gate is ag-run-contract-mutation-loop-01" in normalized
     assert (
-        "post-merge next gate is bounded live multi-component validation planning "
-        "or execution"
+        "bounded live validation is deferred until the upstream semantic-contract/"
+        "planner/scout/search-executor runtime loop exists"
     ) in normalized
+    assert "passive/shadow surfaces are not product readiness" in normalized
 
     forbidden_stale_phrases = {
         "next gate is ag-component-evidence-citation-binding-01",
         "current next implementation target is component evidence/citation binding",
         "post-merge next gate is ag-component-evidence-citation-binding-01",
         "post-merge next gate is ag-sufficiency-fap-component-readiness-01",
+        "post-merge next gate is bounded live multi-component validation planning or execution",
+        "bounded live validation is the immediate next gate",
         "post-merge next gate is ag-partial-answer-readiness-01",
+        "shadow query plan proves product readiness",
     }
     for phrase in forbidden_stale_phrases:
         assert phrase not in normalized
