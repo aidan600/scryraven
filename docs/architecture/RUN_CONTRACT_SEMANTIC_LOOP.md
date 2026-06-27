@@ -2,14 +2,23 @@
 
 ## 1. Status
 
-Status: Current doctrine after AG-SEARCH-PLANNER-MODEL-01 and before
-Scout/search-executor runtime implementation.
+Status: Current doctrine after AG-SCOUT-DISAMBIGUATION-RUNTIME-01 and before
+planner revision/SearchExecutor handoff.
 
 Proof class: `docs_architecture_update`.
 
-This is architecture clarification, not runtime implementation. It connects the
-AG-SEM semantic accountability lane with the component/search/X-axis lane proved
-through the offline blocked FinalAnswerPacket / Author handoff.
+Previous baseline: PR #327 / AG-SEARCH-PLANNER-MODEL-01. This PR:
+AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a RunKernel-authorized, report-only
+Scout DisambiguationReport runtime. Scout is Serper-shaped and
+future-Serper-ready, but this PR uses fake injected adapters only. No live
+Serper/search/provider/model/fetch/read/retrieval calls were run. Scout hints
+are not evidence, not citations, and not source-obligation satisfaction. Scout
+does not mutate contracts. Scout does not revise planner output. The
+post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
+
+This document connects the AG-SEM semantic accountability lane with the
+component/search/X-axis lane proved through the offline blocked
+FinalAnswerPacket / Author handoff.
 
 The governing discipline is:
 
@@ -202,8 +211,9 @@ Runtime success requires:
    and prompt/input contract behind the same SearchPlanner runtime seam. Tests use
    fake injected model callables, and no live model calls or live validation were
    run.
-5. `AG-SCOUT-DISAMBIGUATION-RUNTIME-01` - RunKernel-authorized Serper-first
-   Scout produces DisambiguationReport.
+5. `AG-SCOUT-DISAMBIGUATION-RUNTIME-01` - adds a RunKernel-authorized,
+   report-only, Serper-shaped Scout DisambiguationReport runtime with fake
+   injected adapters only.
 6. `AG-SEARCH-PLANNER-REVISION-01` - planner consumes Scout report and finalizes
    plan/amendments.
 7. `AG-SEARCH-EXECUTOR-HANDOFF-01` - RunKernel authorizes real
@@ -216,17 +226,18 @@ AG-SEARCH-PLANNER-RUNTIME-01 completes the first fail-closed SearchPlanner
 proposal runtime seam. AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected
 fail-closed model adapter behind that seam. Planner model output remains
 proposal-only and is consumed through existing RunKernel planner and contract
-reducers. No live model calls or live validation were run. Scout, SearchExecutor,
-search/fetch/read/retrieval, Author, citations, partial answers, and live
-validation remain closed. The post-merge next gate is
-AG-SCOUT-DISAMBIGUATION-RUNTIME-01 unless review chooses a focused
-AG-SEARCH-PLANNER-MODEL-LIVE-VALIDATION-01 first. Bounded live validation is
-deferred until explicitly licensed.
-
+reducers. PR #327 / AG-SEARCH-PLANNER-MODEL-01 is the previous baseline.
 AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
 No live model calls or live validation were run.
-Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations, partial answers, and live validation remain closed.
-The post-merge next gate is AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
+AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a RunKernel-authorized, report-only,
+Serper-shaped Scout DisambiguationReport runtime using fake injected adapters
+only. No live Serper/search/provider/model/fetch/read/retrieval calls were run.
+Scout hints are not evidence, not citations, and not source-obligation
+satisfaction. Scout does not mutate contracts. Scout does not revise planner
+output. SearchExecutor, fetch/read/retrieval, Author, citations, partial
+answers, and live validation remain closed. Bounded live validation is deferred
+until explicitly licensed. The post-merge next gate is
+AG-SEARCH-PLANNER-REVISION-01.
 
 The runtime contract vocabulary is merge-stable: `initial_answer_contract`
 remains the immutable AG-SEM-05 accepted genesis contract, while

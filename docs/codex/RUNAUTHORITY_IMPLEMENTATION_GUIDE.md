@@ -119,17 +119,29 @@ remain deferred. AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected
 fail-closed model adapter behind that seam. The adapter is explicitly
 enabled/licensed, uses fake injected model callables in tests, and keeps planner
 output proposal-only through existing RunKernel planner and contract reducers.
-No live model calls or live validation were run. Scout, SearchExecutor,
-search/fetch/read/retrieval, Author, citations, partial answers, and live
-validation remain closed. The post-merge next gate is
-AG-SCOUT-DISAMBIGUATION-RUNTIME-01 unless review chooses a focused
-AG-SEARCH-PLANNER-MODEL-LIVE-VALIDATION-01 first.
+No live model calls or live validation were run. Previous baseline: PR #327 /
+AG-SEARCH-PLANNER-MODEL-01. AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a
+RunKernel-authorized, report-only, Serper-shaped Scout DisambiguationReport
+runtime. Scout is future-Serper-ready, but this PR uses fake injected adapters
+only. No live Serper/search/provider/model/fetch/read/retrieval calls were run.
+Scout hints are not evidence, not citations, and not source-obligation
+satisfaction. Scout does not mutate contracts. Scout does not revise planner
+output. SearchExecutor, fetch/read/retrieval, Author, citations, partial
+answers, and live validation remain closed. The post-merge next gate is
+AG-SEARCH-PLANNER-REVISION-01.
+Merge-stable Scout posture: Previous baseline: PR #327 / AG-SEARCH-PLANNER-MODEL-01.
+AG-SCOUT-DISAMBIGUATION-RUNTIME-01 uses fake injected adapters only.
+Scout hints are not evidence, not citations, and not source-obligation satisfaction.
+Scout does not mutate contracts. Scout does not revise planner output. The
+post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 Passive/shadow surfaces are not product readiness.
 
+AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a RunKernel-authorized report-only
+Scout runtime. Scout hints are not evidence, not citations, and not
+source-obligation satisfaction. No live Serper/search/provider/model/fetch/read/
+retrieval calls were run. The post-merge next gate is
+AG-SEARCH-PLANNER-REVISION-01.
 AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
-No live model calls or live validation were run.
-Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations, partial answers, and live validation remain closed.
-The post-merge next gate is AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
 
 ### No orchestrator brain
 
