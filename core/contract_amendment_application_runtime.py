@@ -819,6 +819,11 @@ def _reject_unapplicable_admission(
         raise ContractAmendmentApplicationError(
             "cannot apply contract amendment admission with blocking reasons"
         )
+    has_application_authority = _admission_has_application_authority(
+        admitted_amendment,
+        operations,
+        action_inputs,
+    )
     user_confirmation = _normalized_token(
         admitted_amendment.get("user_confirmation_posture")
     )
@@ -829,14 +834,17 @@ def _reject_unapplicable_admission(
         or materiality == "material"
         or any(bool(operation.get("user_confirmation_required")) for operation in operations)
     )
-    if needs_confirmation and not _admission_has_application_authority(
-        admitted_amendment,
-        operations,
-        action_inputs,
-    ):
+    if needs_confirmation and not has_application_authority:
         raise ContractAmendmentApplicationError(
             "material or confirmation-gated amendment requires explicit user "
             "confirmation or authority before application"
+        )
+    if disposition != "eligible_for_future_acceptance" and not (
+        has_application_authority
+    ):
+        raise ContractAmendmentApplicationError(
+            "contract amendment application requires eligible future "
+            "acceptance disposition or explicit user authority"
         )
 
 

@@ -77,7 +77,14 @@ def _new_component() -> AnswerComponentContract:
     )
 
 
-def _add_component_record(kernel: RunKernel, accepted: dict[str, Any]):
+def _add_component_record(
+    kernel: RunKernel,
+    accepted: dict[str, Any],
+    *,
+    disposition: ProposalDisposition = (
+        ProposalDisposition.ELIGIBLE_FOR_FUTURE_ACCEPTANCE
+    ),
+):
     component = _new_component().to_dict()
     operation = AmendmentOperation(
         operation_id="operation:add-confidence-band",
@@ -92,7 +99,7 @@ def _add_component_record(kernel: RunKernel, accepted: dict[str, Any]):
     )
     return _amendment_record(
         accepted,
-        disposition=ProposalDisposition.ELIGIBLE_FOR_FUTURE_ACCEPTANCE,
+        disposition=disposition,
         operations=(operation,),
         affected_component_refs=(affected,),
         coverage_candidates=(_coverage_candidate(kernel),),
@@ -203,6 +210,24 @@ def test_application_rejects_duplicate_application() -> None:
 
     with pytest.raises(RunKernelTransitionError, match="duplicate contract amendment application"):
         kernel.reduce(observation)
+
+
+def test_application_rejects_merely_proposed_admission_without_explicit_authority() -> None:
+    kernel, accepted, _record = _start_admitted_kernel_with_coverage()
+    initial_before = json.loads(json.dumps(kernel.state.initial_answer_contract))
+    record = _add_component_record(
+        kernel,
+        accepted,
+        disposition=ProposalDisposition.PROPOSED,
+    )
+    _admit_amendment(kernel, accepted, record)
+
+    with pytest.raises(RunKernelTransitionError, match="requires eligible"):
+        _apply_admitted(kernel, record)
+
+    assert kernel.state.current_answer_contract == {}
+    assert kernel.state.current_answer_contract_history == []
+    assert kernel.state.initial_answer_contract == initial_before
 
 
 def test_application_rejects_rejected_blocked_or_unconfirmed_material_admission() -> None:
