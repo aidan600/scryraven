@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-SEARCH-PLANNER-MODEL-01`.
+`AG-SCOUT-DISAMBIGUATION-RUNTIME-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -79,14 +79,19 @@ Current summary:
   strict JSON planner output, and returns sanitized proposal data consumed
   through existing RunKernel planner and contract reducers. Tests use fake
   injected model callables. No live model calls or live validation were run.
-  Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations,
-  partial answers, and live validation remain closed. The post-merge next gate
-  is AG-SCOUT-DISAMBIGUATION-RUNTIME-01 unless review chooses a focused
-  AG-SEARCH-PLANNER-MODEL-LIVE-VALIDATION-01 first.
-- AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
-- No live model calls or live validation were run.
-- Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations, partial answers, and live validation remain closed.
-- The post-merge next gate is AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
+- Previous baseline: PR #327 / AG-SEARCH-PLANNER-MODEL-01.
+- This PR: AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a RunKernel-authorized,
+  report-only, Serper-shaped Scout DisambiguationReport runtime.
+- Scout is future-Serper-ready, but this PR uses fake injected adapters only.
+- No live Serper/search/provider/model/fetch/read/retrieval calls were run.
+- Scout hints are not evidence, not citations, and not source-obligation
+  satisfaction.
+- Scout hints are not evidence, not citations, and not source-obligation satisfaction.
+- Scout does not mutate contracts.
+- Scout does not revise planner output.
+- SearchExecutor, fetch/read/retrieval, Author, citations, partial answers, and
+  live validation remain closed.
+- The post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 - Passive/shadow surfaces are not product readiness.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.

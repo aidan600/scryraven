@@ -477,8 +477,10 @@ def test_docs_use_merge_stable_search_planner_model_posture() -> None:
         "AG-SEARCH-PLANNER-RUNTIME-01",
         "AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter",
         "No live model calls or live validation were run",
-        "Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations, partial answers, and live validation remain closed",
-        "post-merge next gate is AG-SCOUT-DISAMBIGUATION-RUNTIME-01",
+        "PR #327 / AG-SEARCH-PLANNER-MODEL-01",
+        "AG-SCOUT-DISAMBIGUATION-RUNTIME-01",
+        "Scout hints are not evidence",
+        "post-merge next gate is AG-SEARCH-PLANNER-REVISION-01",
     )
     forbidden = (
         "live validation is now next",

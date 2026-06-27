@@ -390,6 +390,22 @@ from core.initial_answer_contract_acceptance_runtime import (
 from core.initial_answer_contract_acceptance_runtime import (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE as INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME,
 )
+from core.scout_disambiguation_runtime import (
+    SCOUT_DISAMBIGUATION_REASON,
+    SCOUT_DISAMBIGUATION_SCHEMA_VERSION,
+    SCOUT_MAX_DIMENSIONS_PER_COMPONENT,
+    SCOUT_MAX_QUERIES_PER_COMPONENT,
+    ScoutDisambiguationRuntimeError,
+    build_scout_disambiguation_report_projection,
+    build_scout_disambiguation_report_state,
+    planner_ref_from_search_planner_state,
+)
+from core.scout_disambiguation_runtime import (
+    SCOUT_DISAMBIGUATION_STAGE as SCOUT_DISAMBIGUATION_STAGE_NAME,
+)
+from core.scout_disambiguation_runtime import (
+    contract_ref_from_contract as _scout_contract_ref_from_contract,
+)
 from core.search_planner_runtime import (
     SEARCH_PLANNER_PRODUCTION_REASON,
     SEARCH_PLANNER_SCHEMA_VERSION,
@@ -425,6 +441,7 @@ QUERY_PRODUCTION_STAGE = "query_production"
 QUERY_PLAN_ADMISSION_STAGE = "query_plan_admission"
 RUN_CONTRACT_STAGE = "run_contract"
 SEARCH_PLANNER_PRODUCTION_STAGE = SEARCH_PLANNER_PRODUCTION_STAGE_NAME
+SCOUT_DISAMBIGUATION_STAGE = SCOUT_DISAMBIGUATION_STAGE_NAME
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -544,6 +561,7 @@ class ActionType(str, Enum):
     ROUTE_REQUEST = "route_request"
     RUN_CONTRACT_SYNTHESIZE = "run_contract_synthesize"
     SEARCH_PLANNER_PRODUCE = "search_planner_produce"
+    SCOUT_DISAMBIGUATE = "scout_disambiguate"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -614,6 +632,7 @@ class ObservationType(str, Enum):
     ROUTE_RESULT = "route_result"
     RUN_CONTRACT_SYNTHESIZED = "run_contract_synthesized"
     SEARCH_PLANNER_PRODUCED = "search_planner_produced"
+    SCOUT_DISAMBIGUATION_REPORTED = "scout_disambiguation_reported"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -971,6 +990,13 @@ class RunState:
     search_planner_proposal_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    scout_disambiguation_report_state: dict[str, Any] = field(default_factory=dict)
+    scout_disambiguation_report_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    scout_disambiguation_report_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     initial_answer_contract: dict[str, Any] = field(default_factory=dict)
     initial_answer_contract_projection: dict[str, Any] = field(default_factory=dict)
     initial_answer_contract_history: list[dict[str, Any]] = field(
@@ -1278,6 +1304,15 @@ class RunState:
             ),
             search_planner_proposal_history=deepcopy(
                 self.search_planner_proposal_history
+            ),
+            scout_disambiguation_report_state=deepcopy(
+                self.scout_disambiguation_report_state
+            ),
+            scout_disambiguation_report_projection=deepcopy(
+                self.scout_disambiguation_report_projection
+            ),
+            scout_disambiguation_report_history=deepcopy(
+                self.scout_disambiguation_report_history
             ),
             initial_answer_contract=deepcopy(self.initial_answer_contract),
             initial_answer_contract_projection=deepcopy(
@@ -1595,6 +1630,9 @@ class KernelTraceProjection:
     search_planner_proposal_state: Mapping[str, Any]
     search_planner_proposal_projection: Mapping[str, Any]
     search_planner_proposal_history: Sequence[Mapping[str, Any]]
+    scout_disambiguation_report_state: Mapping[str, Any]
+    scout_disambiguation_report_projection: Mapping[str, Any]
+    scout_disambiguation_report_history: Sequence[Mapping[str, Any]]
     initial_answer_contract: Mapping[str, Any]
     initial_answer_contract_projection: Mapping[str, Any]
     initial_answer_contract_history: Sequence[Mapping[str, Any]]
@@ -1733,6 +1771,16 @@ class KernelTraceProjection:
             "search_planner_proposal_history": [
                 _safe_mapping(item)
                 for item in self.search_planner_proposal_history
+            ],
+            "scout_disambiguation_report_state": _safe_mapping(
+                self.scout_disambiguation_report_state
+            ),
+            "scout_disambiguation_report_projection": _safe_mapping(
+                self.scout_disambiguation_report_projection
+            ),
+            "scout_disambiguation_report_history": [
+                _safe_mapping(item)
+                for item in self.scout_disambiguation_report_history
             ],
             "initial_answer_contract": _safe_mapping(self.initial_answer_contract),
             "initial_answer_contract_projection": _safe_mapping(
@@ -2203,6 +2251,131 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.SEARCH_PLANNER_PRODUCED,
+        )
+
+    def authorize_scout_disambiguation(
+        self,
+        *,
+        component_id: str,
+        ambiguity_dimension_ids: Sequence[str],
+        request_id: str | None = None,
+        max_queries_per_component: int = SCOUT_MAX_QUERIES_PER_COMPONENT,
+        max_dimensions_per_component: int = SCOUT_MAX_DIMENSIONS_PER_COMPONENT,
+        reason: str = SCOUT_DISAMBIGUATION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        clean_component_id = _clean_text(component_id, limit=160)
+        if not clean_component_id:
+            raise RunKernelTransitionError(
+                "Scout disambiguation requires component_id binding"
+            )
+        if (
+            int(max_queries_per_component or 0) > SCOUT_MAX_QUERIES_PER_COMPONENT
+            or int(max_queries_per_component or 0) < 0
+        ):
+            raise RunKernelTransitionError(
+                "Scout disambiguation exceeds max queries per component"
+            )
+        if (
+            int(max_dimensions_per_component or 0)
+            > SCOUT_MAX_DIMENSIONS_PER_COMPONENT
+            or int(max_dimensions_per_component or 0) < 0
+        ):
+            raise RunKernelTransitionError(
+                "Scout disambiguation exceeds max dimensions per component"
+            )
+        clean_dimension_ids: list[str] = []
+        if isinstance(ambiguity_dimension_ids, Sequence) and not isinstance(
+            ambiguity_dimension_ids,
+            str | bytes,
+        ):
+            for item in ambiguity_dimension_ids:
+                dimension_id = _clean_text(item, limit=160)
+                if dimension_id:
+                    clean_dimension_ids.append(dimension_id)
+        if not clean_dimension_ids:
+            raise RunKernelTransitionError(
+                "Scout disambiguation requires ambiguity dimension bindings"
+            )
+        if len(clean_dimension_ids) > SCOUT_MAX_DIMENSIONS_PER_COMPONENT:
+            raise RunKernelTransitionError(
+                "Scout disambiguation exceeds max dimensions per component"
+            )
+        if len(clean_dimension_ids) > int(max_dimensions_per_component):
+            raise RunKernelTransitionError(
+                "Scout disambiguation dimensions exceed the authorized "
+                "per-component dimension budget"
+            )
+        if len(set(clean_dimension_ids)) != len(clean_dimension_ids):
+            raise RunKernelTransitionError(
+                "Scout disambiguation requires unique ambiguity dimension ids"
+            )
+        parent_planner_ref = planner_ref_from_search_planner_state(
+            self.state.search_planner_proposal_state
+        )
+        if not parent_planner_ref:
+            raise RunKernelTransitionError(
+                "Scout disambiguation requires a current SearchPlanner proposal"
+            )
+        qmr = _safe_mapping(
+            self.state.search_planner_proposal_state.get("question_meaning_record")
+        )
+        components = qmr.get("answer_components")
+        if not isinstance(components, Sequence) or isinstance(components, str | bytes):
+            raise RunKernelTransitionError(
+                "Scout disambiguation requires parent QMR answer components"
+            )
+        if not any(
+            isinstance(item, Mapping)
+            and _clean_text(item.get("component_id"), limit=160) == clean_component_id
+            for item in components
+        ):
+            raise RunKernelTransitionError(
+                "Scout disambiguation component_id is not present in parent QMR"
+            )
+        initial_ref = _scout_contract_ref_from_contract(
+            self.state.initial_answer_contract,
+            source="initial_answer_contract",
+        )
+        current_ref = _scout_contract_ref_from_contract(
+            self.state.current_answer_contract,
+            source="current_answer_contract",
+        )
+        merged_inputs = {
+            **dict(inputs or {}),
+            "run_id": self.state.run_id,
+            "request_id": request_id or self.state.request_id,
+            "parent_search_planner_proposal_id": parent_planner_ref.get(
+                "proposal_id"
+            ),
+            "parent_search_planner_proposal_digest": parent_planner_ref.get(
+                "proposal_digest"
+            ),
+            "parent_question_meaning_record_id": parent_planner_ref.get(
+                "question_meaning_record_id"
+            ),
+            "parent_question_meaning_record_digest": parent_planner_ref.get(
+                "question_meaning_record_digest"
+            ),
+            "component_id": clean_component_id,
+            "ambiguity_dimension_ids": clean_dimension_ids,
+            "max_queries_per_component": int(max_queries_per_component),
+            "max_dimensions_per_component": int(max_dimensions_per_component),
+            "parent_initial_contract_version": initial_ref.get("contract_version"),
+            "parent_initial_contract_digest": initial_ref.get("contract_digest"),
+            "parent_current_contract_version": current_ref.get("contract_version"),
+            "parent_current_contract_digest": current_ref.get("contract_digest"),
+            "scout_schema_version": SCOUT_DISAMBIGUATION_SCHEMA_VERSION,
+            "reason": reason,
+        }
+        return self.authorize(
+            stage=SCOUT_DISAMBIGUATION_STAGE,
+            action_type=ActionType.SCOUT_DISAMBIGUATE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.SCOUT_DISAMBIGUATION_REPORTED
+            ),
         )
 
     def authorize_initial_answer_contract_acceptance(
@@ -9925,6 +10098,38 @@ class RunKernel:
                 deepcopy(proposal_projection)
             )
             self.state.projections[action.stage] = deepcopy(proposal_projection)
+        elif action.action_type is ActionType.SCOUT_DISAMBIGUATE:
+            try:
+                scout_state = build_scout_disambiguation_report_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=_safe_mapping(observation.payload),
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    current_search_planner_proposal_state=(
+                        self.state.search_planner_proposal_state
+                    ),
+                    current_parent_initial_contract=(
+                        self.state.initial_answer_contract
+                    ),
+                    current_parent_current_contract=(
+                        self.state.current_answer_contract
+                    ),
+                    existing_report_history=(
+                        self.state.scout_disambiguation_report_history
+                    ),
+                )
+                scout_projection = build_scout_disambiguation_report_projection(
+                    report_state=scout_state
+                )
+            except ScoutDisambiguationRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.scout_disambiguation_report_state = scout_state
+            self.state.scout_disambiguation_report_projection = scout_projection
+            self.state.scout_disambiguation_report_history.append(
+                deepcopy(scout_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(scout_projection)
         elif action.action_type is ActionType.INITIAL_ANSWER_CONTRACT_ACCEPT:
             proposal_payload = _safe_mapping(
                 observation.payload.get("question_meaning_record")
@@ -12782,6 +12987,7 @@ __all__ = [
     "ROUTE_REQUEST_STAGE",
     "RUN_KERNEL_TRACE_KEY",
     "SEARCH_PLANNER_PRODUCTION_STAGE",
+    "SCOUT_DISAMBIGUATION_STAGE",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE",
     "ActionType",
