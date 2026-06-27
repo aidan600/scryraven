@@ -282,6 +282,7 @@ def _scout_input(
     parent_ref: Mapping[str, Any] | None = None,
     initial_ref: Mapping[str, Any] | None = None,
     current_ref: Mapping[str, Any] | None = None,
+    query_budget: Mapping[str, Any] | None = None,
 ) -> ScoutDisambiguationInput:
     qmr = kernel.state.search_planner_proposal_projection["question_meaning_record"]
     component = qmr["answer_components"][0]
@@ -319,6 +320,7 @@ def _scout_input(
             "user_facing_label": component["user_facing_label"],
         },
         ambiguity_dimensions=dims,
+        query_budget=dict(query_budget or {}),
         candidate_queries=[
             {
                 "query_id": "scout-query:official",
@@ -339,12 +341,20 @@ def _scout_input(
     )
 
 
-def _authorize_scout(kernel: RunKernel, scout_input: ScoutDisambiguationInput):
+def _authorize_scout(
+    kernel: RunKernel,
+    scout_input: ScoutDisambiguationInput,
+    *,
+    max_queries_per_component: int = 5,
+    max_dimensions_per_component: int = 5,
+):
     return kernel.authorize_scout_disambiguation(
         component_id=scout_input.component_id,
         ambiguity_dimension_ids=[
             item["dimension_id"] for item in scout_input.ambiguity_dimensions
         ],
+        max_queries_per_component=max_queries_per_component,
+        max_dimensions_per_component=max_dimensions_per_component,
     )
 
 
@@ -647,7 +657,10 @@ def test_scout_query_budget_cap_enforced() -> None:
         payload=payload,
     )
 
-    with pytest.raises(RunKernelTransitionError, match="max 5 executed queries"):
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="executed query count exceeds authorized budget",
+    ):
         kernel.reduce(observation)
 
     valid_kernel = _kernel()
@@ -677,6 +690,64 @@ def test_scout_query_budget_cap_enforced() -> None:
     )
 
 
+def test_scout_query_budget_cannot_exceed_action_binding() -> None:
+    kernel = _kernel()
+    _produce_planner(kernel)
+    scout_input = _scout_input(kernel)
+    action = kernel.authorize_scout_disambiguation(
+        component_id=scout_input.component_id,
+        ambiguity_dimension_ids=["dim:entity", "dim:jurisdiction"],
+        max_queries_per_component=1,
+    )
+
+    with pytest.raises(ScoutDisambiguationRuntimeError, match="Scout input query budget"):
+        execute_scout_disambiguation_action(
+            action=action,
+            scout_input=scout_input,
+            adapter=FakeScoutAdapter(),
+        )
+
+    reducer_kernel = _kernel()
+    _produce_planner(reducer_kernel)
+    bounded_input = _scout_input(
+        reducer_kernel,
+        query_budget={
+            "max_queries_per_component": 1,
+            "max_dimensions_per_component": 5,
+            "authorized_query_count": 1,
+        },
+    )
+    reducer_action = reducer_kernel.authorize_scout_disambiguation(
+        component_id=bounded_input.component_id,
+        ambiguity_dimension_ids=["dim:entity", "dim:jurisdiction"],
+        max_queries_per_component=1,
+    )
+    payload = build_scout_disambiguation_report_payload(
+        adapter_result=_scout_result(
+            queries=_six_executed_queries()[:2],
+            extra={
+                "organic_results": [],
+                "query_budget": {
+                    "max_queries_per_component": 5,
+                    "max_dimensions_per_component": 5,
+                    "authorized_query_count": 5,
+                },
+            },
+        ),
+        scout_input=bounded_input.to_adapter_payload(),
+        authorized_action_id=reducer_action.action_id,
+    )
+    observation = Observation.from_action(
+        reducer_action,
+        observation_type=ObservationType.SCOUT_DISAMBIGUATION_REPORTED,
+        status=RunStageStatus.COMPLETED,
+        payload=payload,
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="query budget exceeds"):
+        reducer_kernel.reduce(observation)
+
+
 def test_scout_dimension_cap_enforced() -> None:
     kernel = _kernel()
     _produce_planner(kernel)
@@ -687,6 +758,39 @@ def test_scout_dimension_cap_enforced() -> None:
     valid_input = _scout_input(kernel, dimensions=_dimensions(5))
     _reduce_scout(kernel, scout_input=valid_input)
     assert len(kernel.state.scout_disambiguation_report_state["ambiguity_dimensions"]) == 5
+
+
+def test_scout_dimension_budget_cannot_exceed_action_binding() -> None:
+    kernel = _kernel()
+    _produce_planner(kernel)
+    scout_input = _scout_input(
+        kernel,
+        dimensions=_dimensions(2),
+        query_budget={
+            "max_queries_per_component": 5,
+            "max_dimensions_per_component": 1,
+            "authorized_query_count": 5,
+        },
+    )
+    action = kernel.authorize_scout_disambiguation(
+        component_id=scout_input.component_id,
+        ambiguity_dimension_ids=["dim:entity"],
+        max_dimensions_per_component=1,
+    )
+    payload = build_scout_disambiguation_report_payload(
+        adapter_result=_scout_result(extra={"organic_results": []}),
+        scout_input=scout_input.to_adapter_payload(),
+        authorized_action_id=action.action_id,
+    )
+    observation = Observation.from_action(
+        action,
+        observation_type=ObservationType.SCOUT_DISAMBIGUATION_REPORTED,
+        status=RunStageStatus.COMPLETED,
+        payload=payload,
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="dimensions exceed authorized"):
+        kernel.reduce(observation)
 
 
 def test_serper_shaped_result_hints_are_normalized_as_non_evidence() -> None:
@@ -833,7 +937,6 @@ def test_scout_report_rejects_closed_authority_or_raw_provider_fields() -> None:
             "author_input": {"created": True},
             "raw_provider_payload": {"private": True},
             "raw_search_response": {"private": True},
-            "api_key": "secret",
         }
     )
 

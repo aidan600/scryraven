@@ -542,6 +542,16 @@ def build_scout_disambiguation_report_state(
         )
     _reject_forbidden_surface_claims(payload, context="Scout report observation")
     _validate_action_inputs(inputs)
+    _validate_query_budget_against_action(
+        action_inputs=inputs,
+        query_budget=_safe_mapping(scout_input.get("query_budget")),
+        context="Scout input",
+    )
+    _validate_query_budget_against_action(
+        action_inputs=inputs,
+        query_budget=_safe_mapping(report.get("query_budget")),
+        context="Scout report",
+    )
 
     if scout_input.get("run_id") != clean_run_id or report.get("run_id") != clean_run_id:
         raise ScoutDisambiguationRuntimeError(
@@ -635,6 +645,7 @@ def build_scout_disambiguation_report_state(
         scout_queries,
         dimensions=dimensions,
         query_budget=_safe_mapping(report.get("query_budget")),
+        action_inputs=inputs,
     )
     _validate_hints(
         report.get("scout_result_hints"),
@@ -880,6 +891,11 @@ def _validate_action_like(
         raise ScoutDisambiguationRuntimeError(
             "Scout disambiguation action component_id does not match input"
         )
+    _validate_query_budget_against_action(
+        action_inputs=inputs,
+        query_budget=_safe_mapping(input_payload.get("query_budget")),
+        context="Scout input",
+    )
     action_dimension_ids = _text_list(inputs.get("ambiguity_dimension_ids"))
     input_dimension_ids = [
         str(item.get("dimension_id"))
@@ -1383,6 +1399,46 @@ def _validate_action_inputs(inputs: Mapping[str, Any]) -> None:
         )
 
 
+def _validate_query_budget_against_action(
+    *,
+    action_inputs: Mapping[str, Any],
+    query_budget: Mapping[str, Any],
+    context: str,
+) -> None:
+    action_max_queries = _non_negative_int(
+        action_inputs.get("max_queries_per_component")
+    )
+    action_max_dimensions = _non_negative_int(
+        action_inputs.get("max_dimensions_per_component")
+    )
+    if not query_budget:
+        raise ScoutDisambiguationRuntimeError(f"{context} requires query budget")
+    budget_max_queries = _non_negative_int(
+        query_budget.get("max_queries_per_component")
+    )
+    authorized_queries = _non_negative_int(query_budget.get("authorized_query_count"))
+    executed_queries = _non_negative_int(query_budget.get("executed_query_count"))
+    budget_max_dimensions = _non_negative_int(
+        query_budget.get("max_dimensions_per_component")
+    )
+    if budget_max_queries > action_max_queries:
+        raise ScoutDisambiguationRuntimeError(
+            f"{context} query budget exceeds authorized max_queries_per_component"
+        )
+    if authorized_queries > action_max_queries:
+        raise ScoutDisambiguationRuntimeError(
+            f"{context} query budget exceeds authorized_query_count"
+        )
+    if executed_queries > action_max_queries:
+        raise ScoutDisambiguationRuntimeError(
+            f"{context} executed query count exceeds authorized budget"
+        )
+    if budget_max_dimensions > action_max_dimensions:
+        raise ScoutDisambiguationRuntimeError(
+            f"{context} dimension budget exceeds authorized max_dimensions_per_component"
+        )
+
+
 def _validate_action_parent_bindings(
     *,
     action_inputs: Mapping[str, Any],
@@ -1504,6 +1560,13 @@ def _validate_dimensions_against_component(
     component: Mapping[str, Any],
     qmr: Mapping[str, Any],
 ) -> None:
+    action_max_dimensions = _non_negative_int(
+        action_inputs.get("max_dimensions_per_component")
+    )
+    if len(dimensions) > action_max_dimensions:
+        raise ScoutDisambiguationRuntimeError(
+            "Scout report dimensions exceed authorized max_dimensions_per_component"
+        )
     if len(dimensions) > SCOUT_MAX_DIMENSIONS_PER_COMPONENT:
         raise ScoutDisambiguationRuntimeError(
             "Scout report exceeds max 5 dimensions per component"
@@ -1548,6 +1611,7 @@ def _validate_queries(
     *,
     dimensions: Sequence[Mapping[str, Any]],
     query_budget: Mapping[str, Any],
+    action_inputs: Mapping[str, Any],
 ) -> None:
     dimension_ids = [
         str(item.get("dimension_id"))
@@ -1593,6 +1657,10 @@ def _validate_queries(
     if executed_count > SCOUT_MAX_QUERIES_PER_COMPONENT:
         raise ScoutDisambiguationRuntimeError(
             "Scout report exceeds max 5 executed queries per component"
+        )
+    if executed_count > _non_negative_int(action_inputs.get("max_queries_per_component")):
+        raise ScoutDisambiguationRuntimeError(
+            "Scout report executed more queries than the authorized budget"
         )
     if executed_count > _non_negative_int(query_budget.get("authorized_query_count")):
         raise ScoutDisambiguationRuntimeError(

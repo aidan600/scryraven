@@ -2301,6 +2301,11 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "Scout disambiguation exceeds max dimensions per component"
             )
+        if len(clean_dimension_ids) > int(max_dimensions_per_component):
+            raise RunKernelTransitionError(
+                "Scout disambiguation dimensions exceed the authorized "
+                "per-component dimension budget"
+            )
         if len(set(clean_dimension_ids)) != len(clean_dimension_ids):
             raise RunKernelTransitionError(
                 "Scout disambiguation requires unique ambiguity dimension ids"
