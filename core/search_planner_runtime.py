@@ -96,6 +96,14 @@ _PRIVATE_VALUE_MARKERS = frozenset(
     }
 )
 
+_SAFE_FALSE_RETENTION_KEYS = frozenset(
+    {
+        "raw_model_response_retained",
+        "raw_prompt_retained",
+        "raw_provider_payload_retained",
+    }
+)
+
 _FORBIDDEN_AUTHORITY_KEYS = frozenset(
     {
         "accepted_amendment",
@@ -342,6 +350,7 @@ def build_search_planner_observation_payload(
     )
     if amendment_candidates:
         deferred_outputs.append("contract amendment candidates require a later authorized amendment admission path")
+    planner_model_metadata = _planner_model_metadata(result)
 
     proposal_base = {
         "schema_version": SEARCH_PLANNER_PROPOSAL_SCHEMA_VERSION,
@@ -368,6 +377,7 @@ def build_search_planner_observation_payload(
         "assumptions": _text_list(result.get("assumptions"), limit=260),
         "unsupported_or_deferred_outputs": _dedupe_texts(deferred_outputs),
         "component_search_requirements": component_search_requirements,
+        "planner_model_metadata": planner_model_metadata,
         "question_meaning_record": qmr_payload,
         "question_meaning_record_ref": {
             "record_id": qmr_payload.get("record_id"),
@@ -508,6 +518,7 @@ def build_search_planner_proposal_state(
         "question_meaning_summary": proposal.get("question_meaning_summary"),
         "material_ambiguity_posture": proposal.get("material_ambiguity_posture"),
         "component_search_requirements": _safe_list(proposal.get("component_search_requirements")),
+        "planner_model_metadata": _safe_mapping(proposal.get("planner_model_metadata")),
         "mandatory_caveats": _text_list(proposal.get("mandatory_caveats"), limit=260),
         "prohibited_upgrades": _text_list(proposal.get("prohibited_upgrades"), limit=260),
         "normalization_obligations": _text_list(proposal.get("normalization_obligations"), limit=260),
@@ -568,6 +579,7 @@ def build_search_planner_proposal_projection(
         "question_meaning_summary": state.get("question_meaning_summary"),
         "material_ambiguity_posture": state.get("material_ambiguity_posture"),
         "component_search_requirements": _safe_list(state.get("component_search_requirements")),
+        "planner_model_metadata": _safe_mapping(state.get("planner_model_metadata")),
         "component_search_requirements_subordinate": True,
         "component_search_requirements_executed": False,
         "mandatory_caveats": _text_list(state.get("mandatory_caveats"), limit=260),
@@ -933,6 +945,26 @@ def _component_search_requirements(adapter_result: Mapping[str, Any]) -> list[di
     return requirements
 
 
+def _planner_model_metadata(adapter_result: Mapping[str, Any]) -> dict[str, Any]:
+    metadata = _safe_mapping(adapter_result.get("planner_model_metadata"))
+    allowed_keys = {
+        "planner_model_adapter_schema_version",
+        "planner_model_prompt_schema_version",
+        "prompt_hash",
+        "prompt_length",
+        "provider",
+        "model",
+        "effort",
+        "use_reasoning",
+        "require_json",
+        "raw_prompt_retained",
+        "raw_model_response_retained",
+        "provider_payload_retained",
+        "model_adapter_enabled",
+    }
+    return {key: metadata[key] for key in allowed_keys if key in metadata}
+
+
 def _validate_action_inputs(inputs: Mapping[str, Any]) -> None:
     missing = [key for key in _REQUIRED_ACTION_INPUT_KEYS if key not in inputs]
     if missing:
@@ -1109,8 +1141,12 @@ def _json_safe(value: Any, *, depth: int = 0) -> Any:
     if isinstance(value, Mapping):
         out: dict[str, Any] = {}
         for key in sorted(value.keys(), key=str):
-            clean_key = _clean_token(key, limit=120)
-            if not clean_key or _is_sensitive_key(clean_key):
+            clean_key = str(key or "").strip()[:120]
+            if not clean_key:
+                continue
+            if _is_sensitive_key(clean_key):
+                if clean_key in _SAFE_FALSE_RETENTION_KEYS and value[key] is False:
+                    out[clean_key] = False
                 continue
             out[clean_key] = _json_safe(value[key], depth=depth + 1)
         return out

@@ -2,8 +2,8 @@
 
 ## 1. Status
 
-Status: Current doctrine after AG-SEARCH-PLANNER-RUNTIME-01 and before
-model-backed planner/scout/search-executor runtime implementation.
+Status: Current doctrine after AG-SEARCH-PLANNER-MODEL-01 and before
+Scout/search-executor runtime implementation.
 
 Proof class: `docs_architecture_update`.
 
@@ -198,8 +198,10 @@ Runtime success requires:
    passive QMR-compatible proposal plus subordinate component-search
    requirements, while live model/search/fetch/read/retrieval behavior remains
    closed and amendments remain deferred.
-4. `AG-SEARCH-PLANNER-MODEL-01` - attach the real model-backed planner adapter
-   and prompt/input contract behind the same fail-closed runtime seam.
+4. `AG-SEARCH-PLANNER-MODEL-01` - adds an explicit injected fail-closed model adapter
+   and prompt/input contract behind the same SearchPlanner runtime seam. Tests use
+   fake injected model callables, and no live model calls or live validation were
+   run.
 5. `AG-SCOUT-DISAMBIGUATION-RUNTIME-01` - RunKernel-authorized Serper-first
    Scout produces DisambiguationReport.
 6. `AG-SEARCH-PLANNER-REVISION-01` - planner consumes Scout report and finalizes
@@ -211,10 +213,20 @@ Runtime success requires:
 9. `AG-PARTIAL-ANSWER-READINESS-01` - later policy layer.
 
 AG-SEARCH-PLANNER-RUNTIME-01 completes the first fail-closed SearchPlanner
-proposal runtime seam. Post-merge next gate is
-`AG-SEARCH-PLANNER-MODEL-01`. Bounded live validation
-is deferred until the upstream semantic-contract/planner/scout/search-executor
-runtime loop exists. Partial-answer readiness remains later policy.
+proposal runtime seam. AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected
+fail-closed model adapter behind that seam. Planner model output remains
+proposal-only and is consumed through existing RunKernel planner and contract
+reducers. No live model calls or live validation were run. Scout, SearchExecutor,
+search/fetch/read/retrieval, Author, citations, partial answers, and live
+validation remain closed. The post-merge next gate is
+AG-SCOUT-DISAMBIGUATION-RUNTIME-01 unless review chooses a focused
+AG-SEARCH-PLANNER-MODEL-LIVE-VALIDATION-01 first. Bounded live validation is
+deferred until explicitly licensed.
+
+AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
+No live model calls or live validation were run.
+Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations, partial answers, and live validation remain closed.
+The post-merge next gate is AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
 
 The runtime contract vocabulary is merge-stable: `initial_answer_contract`
 remains the immutable AG-SEM-05 accepted genesis contract, while
