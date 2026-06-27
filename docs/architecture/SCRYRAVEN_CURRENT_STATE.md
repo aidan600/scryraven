@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-RUN-CONTRACT-MUTATION-LOOP-01`.
+`AG-SEARCH-PLANNER-RUNTIME-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -67,8 +67,13 @@ Current summary:
   writes prose only.
 - AG-RUN-CONTRACT-MUTATION-LOOP-01 applies admitted amendments through
   RunKernel into `current_answer_contract`, while `initial_answer_contract`
-  remains immutable genesis state. The post-merge next gate is
-  AG-SEARCH-PLANNER-RUNTIME-01. Bounded live validation is deferred until the
+  remains immutable genesis state.
+- AG-SEARCH-PLANNER-RUNTIME-01 completes the RunKernel-authorized
+  SearchPlanner proposal seam: an explicitly injected adapter can produce a
+  passive QMR-compatible proposal plus subordinate component-search
+  requirements, while live model/search/fetch/read/retrieval behavior remains
+  closed and amendments remain deferred. The post-merge next gate is
+  AG-SEARCH-PLANNER-MODEL-01. Bounded live validation is deferred until the
   upstream semantic-contract/planner/scout/search-executor runtime loop exists.
 - Passive/shadow surfaces are not product readiness.
 - No live validation is part of the current posture.

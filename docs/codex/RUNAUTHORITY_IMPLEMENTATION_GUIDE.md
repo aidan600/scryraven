@@ -110,9 +110,13 @@ EvidenceLedger records custody; SemanticObservation records evidence-relative
 meaning; ComponentCoverage records component support; SufficiencyJudgment
 decides readiness; FinalAnswerPacket packages Author-safe handoff; Author writes
 prose only. AG-RUN-CONTRACT-MUTATION-LOOP-01 introduces RunKernel-owned
-application of admitted amendments into `current_answer_contract`; the
-post-merge next gate is AG-SEARCH-PLANNER-RUNTIME-01. Bounded live validation is
-deferred until the upstream
+application of admitted amendments into `current_answer_contract`.
+AG-SEARCH-PLANNER-RUNTIME-01 completes the RunKernel-authorized SearchPlanner
+proposal seam: an explicitly injected adapter can produce a passive
+QMR-compatible proposal plus subordinate component-search requirements, while
+live model/search/fetch/read/retrieval behavior remains closed and amendments
+remain deferred. The post-merge next gate is AG-SEARCH-PLANNER-MODEL-01.
+Bounded live validation is deferred until the upstream
 semantic-contract/planner/scout/search-executor runtime loop exists.
 Passive/shadow surfaces are not product readiness.
 
