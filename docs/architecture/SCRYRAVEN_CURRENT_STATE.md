@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-SCOUT-DISAMBIGUATION-RUNTIME-01`.
+`AG-SEARCH-PLANNER-REVISION-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -79,19 +79,21 @@ Current summary:
   strict JSON planner output, and returns sanitized proposal data consumed
   through existing RunKernel planner and contract reducers. Tests use fake
   injected model callables. No live model calls or live validation were run.
-- Previous baseline: PR #327 / AG-SEARCH-PLANNER-MODEL-01.
-- This PR: AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a RunKernel-authorized,
-  report-only, Serper-shaped Scout DisambiguationReport runtime.
-- Scout is future-Serper-ready, but this PR uses fake injected adapters only.
-- No live Serper/search/provider/model/fetch/read/retrieval calls were run.
-- Scout hints are not evidence, not citations, and not source-obligation
+- Previous baseline: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
+- This PR: AG-SEARCH-PLANNER-REVISION-01 adds RunKernel-authorized planner
+  revision from a Scout DisambiguationReport.
+- The planner revision consumes Scout report output, stores revision
+  state/projection/history, and the planner revision emits passive amendment
+  candidates.
+- Scout hints remain non-evidence, non-citation, and non-source-obligation
   satisfaction.
-- Scout hints are not evidence, not citations, and not source-obligation satisfaction.
-- Scout does not mutate contracts.
-- Scout does not revise planner output.
-- SearchExecutor, fetch/read/retrieval, Author, citations, partial answers, and
-  live validation remain closed.
-- The post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
+- current_answer_contract changes only through existing admission/application path.
+- SearchExecutor, fetch/read/retrieval remain closed.
+- Author, citations, partial answers, and live validation remain closed.
+- The post-merge next gate is AG-SEARCH-EXECUTOR-HANDOFF-01.
+- SearchPlannerRevision exact posture: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01; AG-SEARCH-PLANNER-REVISION-01; planner revision consumes Scout report; planner revision emits passive amendment candidates; Scout hints remain non-evidence, non-citation, and non-source-obligation satisfaction; current_answer_contract changes only through existing admission/application path; SearchExecutor, fetch/read/retrieval remain closed; post-merge next gate is AG-SEARCH-EXECUTOR-HANDOFF-01.
+- Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
+- Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 - Passive/shadow surfaces are not product readiness.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.

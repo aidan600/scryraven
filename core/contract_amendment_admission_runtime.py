@@ -111,10 +111,14 @@ _AMENDMENT_UNSAFE_IF_TRUE = (
     "canonical_coverage",
     "component_coverage_record",
     "amendment_applied",
+    "citation_eligible",
+    "evidence_admitted",
     "followup_authorized",
     "search_judgment_decided",
     "query_plan_activated",
     "search_work_plan_activated",
+    "scout_hints_are_evidence",
+    "source_obligation_satisfied",
     "coverage_marked_stale",
     "initial_answer_contract_mutated",
 )
@@ -130,6 +134,19 @@ _REQUIRED_INPUT_KEYS = (
     "parent_contract_version",
     "accepted_contract_digest",
     "accepted_contract_version",
+)
+
+_REVISION_LINEAGE_FALSE_FLAGS = (
+    "scout_hints_are_evidence",
+    "citation_eligible",
+    "source_obligation_satisfied",
+    "evidence_admitted",
+    "contract_mutation_applied",
+)
+_REVISION_FORBIDDEN_OPERATION_KINDS = (
+    "mark_requirement_satisfied",
+    "mark_source_obligation_satisfied",
+    "resolve_slot",
 )
 
 
@@ -148,6 +165,10 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
 
 def _clean_token(value: Any, *, limit: int = 160) -> str | None:
     return _clean_text(value, limit=limit)
+
+
+def _normalize_key(value: Any) -> str:
+    return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
 
 
 def _is_sensitive_key(key: Any) -> bool:
@@ -658,6 +679,155 @@ def _validate_candidate_invalidated_coverage_refs(
     return represented
 
 
+def _validate_search_planner_revision_lineage(
+    *,
+    record_safe: Mapping[str, Any],
+    action_inputs: Mapping[str, Any],
+) -> dict[str, Any]:
+    if (
+        action_inputs.get("search_planner_revision_lineage_required") is not True
+        and action_inputs.get("amendment_origin") != "search_planner_revision"
+    ):
+        return {}
+
+    metadata = _safe_mapping(record_safe.get("metadata"))
+    lineage = _safe_mapping(metadata.get("search_planner_revision_lineage"))
+    if not lineage:
+        raise ContractAmendmentAdmissionError(
+            "search planner revision amendment requires embedded revision lineage"
+        )
+
+    for key in _REVISION_LINEAGE_FALSE_FLAGS:
+        if lineage.get(key) is not False:
+            raise ContractAmendmentAdmissionError(
+                f"search planner revision lineage must keep {key} false"
+            )
+        if key in metadata and metadata.get(key) is not False:
+            raise ContractAmendmentAdmissionError(
+                f"search planner revision amendment metadata must keep {key} false"
+            )
+
+    expected_revision_id = _clean_token(
+        action_inputs.get("planner_revision_id")
+        or action_inputs.get("search_planner_revision_id")
+    )
+    if not expected_revision_id:
+        raise ContractAmendmentAdmissionError(
+            "search planner revision admission binding requires planner_revision_id"
+        )
+    _require_match(
+        _clean_token(lineage.get("planner_revision_id")) == expected_revision_id,
+        "search planner revision lineage id does not match authorization",
+    )
+
+    expected_component_id = _clean_token(action_inputs.get("component_id"))
+    if expected_component_id:
+        _require_match(
+            _clean_token(lineage.get("component_id")) == expected_component_id,
+            "search planner revision component lineage does not match authorization",
+        )
+
+    planner_ref = _safe_mapping(lineage.get("parent_search_planner_proposal_ref"))
+    expected_planner = {
+        "proposal_id": _clean_token(
+            action_inputs.get("parent_search_planner_proposal_id")
+        ),
+        "proposal_digest": _clean_token(
+            action_inputs.get("parent_search_planner_proposal_digest"),
+            limit=128,
+        ),
+        "question_meaning_record_id": _clean_token(
+            action_inputs.get("parent_question_meaning_record_id")
+        ),
+        "question_meaning_record_digest": _clean_token(
+            action_inputs.get("parent_question_meaning_record_digest"),
+            limit=128,
+        ),
+    }
+    for key, expected in expected_planner.items():
+        if expected:
+            limit = 128 if key.endswith("digest") else 200
+            _require_match(
+                _clean_token(planner_ref.get(key), limit=limit) == expected,
+                "search planner revision parent planner lineage does not match authorization",
+            )
+
+    scout_ref = _safe_mapping(lineage.get("parent_scout_disambiguation_report_ref"))
+    expected_scout = {
+        "report_id": _clean_token(
+            action_inputs.get("parent_scout_disambiguation_report_id")
+        ),
+        "report_digest": _clean_token(
+            action_inputs.get("parent_scout_disambiguation_report_digest"),
+            limit=128,
+        ),
+    }
+    for key, expected in expected_scout.items():
+        if expected:
+            limit = 128 if key.endswith("digest") else 200
+            _require_match(
+                _clean_token(scout_ref.get(key), limit=limit) == expected,
+                "search planner revision parent Scout lineage does not match authorization",
+            )
+    nested_planner = _safe_mapping(
+        scout_ref.get("parent_search_planner_proposal_ref")
+    )
+    if nested_planner:
+        for key, expected in expected_planner.items():
+            if expected:
+                limit = 128 if key.endswith("digest") else 200
+                _require_match(
+                    _clean_token(nested_planner.get(key), limit=limit) == expected,
+                    "search planner revision Scout lineage is not bound to parent planner/QMR",
+                )
+
+    _require_match(
+        _text_list(lineage.get("consumed_ambiguity_dimension_ids"))
+        == _text_list(action_inputs.get("consumed_ambiguity_dimension_ids")),
+        "search planner revision consumed dimension lineage does not match authorization",
+    )
+    _require_match(
+        _text_list(lineage.get("consumed_scout_hint_ids"))
+        == _text_list(action_inputs.get("consumed_scout_hint_ids")),
+        "search planner revision consumed Scout hint lineage does not match authorization",
+    )
+
+    if expected_planner["question_meaning_record_id"]:
+        _require_match(
+            _clean_token(record_safe.get("parent_question_meaning_record_id"))
+            == expected_planner["question_meaning_record_id"],
+            "search planner revision amendment QMR id lineage does not match authorization",
+        )
+    if expected_planner["question_meaning_record_digest"]:
+        _require_match(
+            _clean_token(
+                record_safe.get("parent_question_meaning_record_digest"),
+                limit=128,
+            )
+            == expected_planner["question_meaning_record_digest"],
+            "search planner revision amendment QMR digest lineage does not match authorization",
+        )
+
+    for operation in record_safe.get("operations") or ():
+        operation_map = _safe_mapping(operation)
+        payload = _safe_mapping(operation_map.get("operation_payload"))
+        operation_kind = _normalize_key(
+            payload.get("normalized_operation_kind")
+            or payload.get("operation")
+            or operation_map.get("operation_kind")
+        )
+        if operation_kind in _REVISION_FORBIDDEN_OPERATION_KINDS:
+            raise ContractAmendmentAdmissionError(
+                "search planner revision amendments cannot resolve slots or satisfy requirements"
+            )
+        for key in _REVISION_LINEAGE_FALSE_FLAGS:
+            if key in payload and payload.get(key) is not False:
+                raise ContractAmendmentAdmissionError(
+                    f"search planner revision amendment operation must keep {key} false"
+                )
+    return lineage
+
+
 def _expected_accepted_contract_ref(accepted_contract_version: str) -> str:
     return f"contract:{accepted_contract_version}:accepted"
 
@@ -691,6 +861,10 @@ def _admission_digest_payload(state_core: Mapping[str, Any]) -> dict[str, Any]:
         "prohibited_upgrades": state_core.get("prohibited_upgrades"),
         "rejection_reasons": state_core.get("rejection_reasons"),
         "blocking_reasons": state_core.get("blocking_reasons"),
+        "amendment_record_lineage": state_core.get("amendment_record_lineage"),
+        "search_planner_revision_lineage": state_core.get(
+            "search_planner_revision_lineage"
+        ),
         "lineage": lineage,
     }
 
@@ -882,6 +1056,10 @@ def build_contract_amendment_admission_state(
         raise ContractAmendmentAdmissionError("contract amendment record digest is already admitted")
 
     record_safe = record.to_dict(include_validation=False)
+    search_planner_revision_lineage = _validate_search_planner_revision_lineage(
+        record_safe=record_safe,
+        action_inputs=inputs,
+    )
     lineage = {
         "created_by": CONTRACT_AMENDMENT_ADMISSION_OWNER,
         "created_from": [
@@ -929,6 +1107,9 @@ def build_contract_amendment_admission_state(
         "prohibited_upgrades": record_safe.get("prohibited_upgrades", []),
         "rejection_reasons": record_safe.get("rejection_reasons", []),
         "blocking_reasons": record_safe.get("blocking_reasons", []),
+        "amendment_record_lineage": record_safe.get("lineage", {}),
+        "amendment_record_metadata": record_safe.get("metadata", {}),
+        "search_planner_revision_lineage": search_planner_revision_lineage,
         "lineage": lineage,
         "contract_mutation_applied": False,
         "coverage_invalidation_applied": False,
@@ -993,6 +1174,15 @@ def build_contract_amendment_admission_projection(
         "prohibited_upgrades": list(admission_state.get("prohibited_upgrades", [])),
         "rejection_reasons": list(admission_state.get("rejection_reasons", [])),
         "blocking_reasons": list(admission_state.get("blocking_reasons", [])),
+        "amendment_record_lineage": dict(
+            admission_state.get("amendment_record_lineage") or {}
+        ),
+        "amendment_record_metadata": dict(
+            admission_state.get("amendment_record_metadata") or {}
+        ),
+        "search_planner_revision_lineage": dict(
+            admission_state.get("search_planner_revision_lineage") or {}
+        ),
         "lineage": dict(admission_state.get("lineage") or {}),
         "contract_mutation_applied": False,
         "coverage_invalidation_applied": False,

@@ -2,19 +2,23 @@
 
 ## 1. Status
 
-Status: Current doctrine after AG-SCOUT-DISAMBIGUATION-RUNTIME-01 and before
-planner revision/SearchExecutor handoff.
+Status: Current doctrine after AG-SEARCH-PLANNER-REVISION-01 and before
+SearchExecutor handoff.
 
 Proof class: `docs_architecture_update`.
 
-Previous baseline: PR #327 / AG-SEARCH-PLANNER-MODEL-01. This PR:
-AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a RunKernel-authorized, report-only
-Scout DisambiguationReport runtime. Scout is Serper-shaped and
-future-Serper-ready, but this PR uses fake injected adapters only. No live
-Serper/search/provider/model/fetch/read/retrieval calls were run. Scout hints
-are not evidence, not citations, and not source-obligation satisfaction. Scout
-does not mutate contracts. Scout does not revise planner output. The
-post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
+Previous baseline: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01. This PR:
+AG-SEARCH-PLANNER-REVISION-01 adds RunKernel-authorized planner revision from a
+Scout DisambiguationReport. The planner revision consumes Scout report output,
+stores revision state/projection/history, and the planner revision emits passive
+amendment candidates. Scout hints remain non-evidence, non-citation, and
+non-source-obligation satisfaction. current_answer_contract changes only
+through existing admission/application path. SearchExecutor,
+fetch/read/retrieval remain closed. The post-merge next gate is
+AG-SEARCH-EXECUTOR-HANDOFF-01.
+SearchPlannerRevision exact posture: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01; AG-SEARCH-PLANNER-REVISION-01; planner revision consumes Scout report; planner revision emits passive amendment candidates; Scout hints remain non-evidence, non-citation, and non-source-obligation satisfaction; current_answer_contract changes only through existing admission/application path; SearchExecutor, fetch/read/retrieval remain closed; post-merge next gate is AG-SEARCH-EXECUTOR-HANDOFF-01.
+Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
+Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 
 This document connects the AG-SEM semantic accountability lane with the
 component/search/X-axis lane proved through the offline blocked
@@ -214,8 +218,9 @@ Runtime success requires:
 5. `AG-SCOUT-DISAMBIGUATION-RUNTIME-01` - adds a RunKernel-authorized,
    report-only, Serper-shaped Scout DisambiguationReport runtime with fake
    injected adapters only.
-6. `AG-SEARCH-PLANNER-REVISION-01` - planner consumes Scout report and finalizes
-   plan/amendments.
+6. `AG-SEARCH-PLANNER-REVISION-01` - planner revision consumes Scout report and
+   emits passive amendment candidates through existing amendment admission and
+   application.
 7. `AG-SEARCH-EXECUTOR-HANDOFF-01` - RunKernel authorizes real
    search/fetch/read/admission path.
 8. `AG-LIVE-XAXIS-VALIDATION-01` - bounded live validation only after the
@@ -229,15 +234,16 @@ proposal-only and is consumed through existing RunKernel planner and contract
 reducers. PR #327 / AG-SEARCH-PLANNER-MODEL-01 is the previous baseline.
 AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
 No live model calls or live validation were run.
-AG-SCOUT-DISAMBIGUATION-RUNTIME-01 adds a RunKernel-authorized, report-only,
-Serper-shaped Scout DisambiguationReport runtime using fake injected adapters
-only. No live Serper/search/provider/model/fetch/read/retrieval calls were run.
-Scout hints are not evidence, not citations, and not source-obligation
-satisfaction. Scout does not mutate contracts. Scout does not revise planner
-output. SearchExecutor, fetch/read/retrieval, Author, citations, partial
-answers, and live validation remain closed. Bounded live validation is deferred
-until explicitly licensed. The post-merge next gate is
-AG-SEARCH-PLANNER-REVISION-01.
+Previous baseline: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
+AG-SEARCH-PLANNER-REVISION-01 adds RunKernel-authorized planner revision from a
+Scout DisambiguationReport. The planner revision consumes Scout report output,
+stores revision state/projection/history, and the planner revision emits passive
+amendment candidates. Scout hints remain non-evidence, non-citation, and
+non-source-obligation satisfaction. current_answer_contract changes only
+through existing admission/application path. SearchExecutor,
+fetch/read/retrieval remain closed. Author, citations, partial answers, and
+live validation remain closed. The post-merge next gate is
+AG-SEARCH-EXECUTOR-HANDOFF-01.
 
 The runtime contract vocabulary is merge-stable: `initial_answer_contract`
 remains the immutable AG-SEM-05 accepted genesis contract, while
