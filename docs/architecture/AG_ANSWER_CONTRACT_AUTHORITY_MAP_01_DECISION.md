@@ -4,7 +4,8 @@ Status: implemented as a passive RunKernel-owned schema/projection surface after
 PR #317 on main `4416cbc`. No runtime SearchExecutor wiring,
 provider/search/fetch/retrieval behavior, Author behavior, prompt behavior,
 citation behavior, partial-answer readiness, or live validation is licensed by
-this note.
+this note. Current integrated doctrine after PR #323 is
+`RUN_CONTRACT_SEMANTIC_LOOP.md`.
 
 ## Decision
 
@@ -59,6 +60,10 @@ AnswerContractAuthorityMap ties:
   SufficiencyJudgment and FinalAnswerPacket owners consume passive
   binding/custody inputs into component-aware blocked readiness without making
   those inputs readiness authorities.
+- PR #323 `AG-OFFLINE-XAXIS-E2E-01`: the offline X-axis end-to-end proof runs
+  through blocked FAP / Author handoff after a component-shaped plan already
+  exists. It does not enable partial answers and does not enable live
+  validation.
 
 ## Authority Hierarchy
 
@@ -79,6 +84,13 @@ AnswerContractAuthorityMap ties:
 - FinalAnswerPacket owns Author-safe payload readiness.
 - Author remains prose-only and consumes safe handoff material; it does not
   decide evidence custody, component support, answerability, or readiness.
+- SemanticProducer, SearchPlanner, Scout, and SearchExecutor are workers. They
+  may propose semantic meaning, component requirements, disambiguation reports,
+  search plans, observations, or amendments when RunKernel authorizes the work,
+  but they do not mutate accepted contract state.
+- Contract mutation must flow through RunKernel-authorized reducers or an
+  equivalent accepted-contract versioning path. AG-SEM-08 admits amendment
+  proposals but does not yet apply/mutate the accepted contract.
 
 ## Non-Goals
 
@@ -123,9 +135,36 @@ AnswerContractAuthorityMap ties:
    SufficiencyJudgment and FinalAnswerPacket owners; passive binding/custody
    inputs do not themselves decide readiness.
 7. Prove the offline X-axis end-to-end through blocked FAP / Author handoff.
-   This PR adds AG-OFFLINE-XAXIS-E2E-01. It does not enable partial answers and
-   does not enable live validation.
-8. The post-merge next gate is bounded live multi-component validation planning
-   or execution, unless the offline proof finds a blocker. Partial-answer
-   readiness remains deferred until the live/product posture supports that
-   policy choice.
+   Complete in PR #323 / AG-OFFLINE-XAXIS-E2E-01. It does not enable partial
+   answers and does not enable live validation.
+8. Connect the semantic lane and component/search/X-axis lane with the current
+   integrated doctrine in
+   `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`. The doctrine is:
+   semantic producer / planner understands; RunKernel governs; AnswerContract
+   records obligations and statuses; workers propose observations or amendments;
+   RunKernel validates/reduces; EvidenceLedger records custody;
+   SemanticObservation records evidence-relative meaning; ComponentCoverage
+   records component support; SufficiencyJudgment decides readiness;
+   FinalAnswerPacket packages Author-safe handoff; Author writes prose only.
+9. The post-merge next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01: implement or
+   clarify accepted-contract amendment application/status updates through
+   RunKernel authority. Bounded live validation is deferred until the upstream
+   semantic-contract/planner/scout/search-executor runtime loop exists.
+   Partial-answer readiness remains deferred until later policy.
+
+## Semantic Lane Cross-References
+
+- `AG_SEM_01_PASSIVE_SEMANTIC_CONTRACT_FOUNDATION.md`
+- `AG_SEM_02_SANITIZED_CONTENT_REFERENCE_AND_SEMANTIC_OBSERVATION.md`
+- `AG_SEM_04_CONTRACT_AMENDMENT_RECORD.md`
+- `AG_SEM_05_INITIAL_ANSWER_CONTRACT_ACCEPTANCE.md`
+- `AG_SEM_07_COMPONENT_COVERAGE_REDUCTION.md`
+- `AG_SEM_08_CONTRACT_AMENDMENT_ADMISSION.md`
+- `AG_SEM_09_SUFFICIENCY_SEMANTIC_CONSUMPTION.md`
+- `AG_SEM_11_ORDINARY_SEMANTIC_PRODUCER_VERTICAL_SLICE.md`
+- `AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md`
+
+Passive/shadow surfaces are not product readiness. A dataclass, trace key, test
+fixture, passive projection, shadow query-plan field, or prompt-only policy does
+not count unless the intended runtime owner consumes it and a focused test proves
+the real consumer path.

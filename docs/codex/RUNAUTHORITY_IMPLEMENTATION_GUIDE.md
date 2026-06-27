@@ -66,7 +66,7 @@ AG-95R/S/T retires the old decision from active visibility export;
 ControllerRecoveryDecision is historical/offline diagnostic parity only for this
 lane.
 
-Current authority-map baseline after PR #318:
+Current authority-map baseline after PR #323:
 `AG-ANSWER-CONTRACT-AUTHORITY-MAP-01` added a RunKernel-owned passive
 AnswerContractAuthorityMap before runtime SearchExecutor wiring, and
 `AG-COMPONENT-SEARCHPLAN-SUBORDINATION-01` completed the ComponentSearchPlan
@@ -97,11 +97,22 @@ EvidenceLedger component-scoped custody. Candidate links and custody gaps are
 component-specific blockers, not evidence/citation/source-obligation/answer
 binding. PR #322 / AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 completed
 existing SufficiencyJudgment and FinalAnswerPacket consumption of passive
-binding/custody inputs into component-aware blocked readiness. This PR adds
-AG-OFFLINE-XAXIS-E2E-01 as an offline X-axis end-to-end proof through blocked
+binding/custody inputs into component-aware blocked readiness. PR #323 /
+AG-OFFLINE-XAXIS-E2E-01 adds the offline X-axis end-to-end proof through blocked
 FAP / Author handoff. It does not enable partial answers and does not enable
-live validation. The post-merge next gate is bounded live multi-component
-validation planning or execution.
+live validation.
+
+Current integrated-loop doctrine is in
+`docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`: semantic producer / planner
+understands; RunKernel governs; AnswerContract records obligations and statuses;
+workers propose observations or amendments; RunKernel validates/reduces;
+EvidenceLedger records custody; SemanticObservation records evidence-relative
+meaning; ComponentCoverage records component support; SufficiencyJudgment
+decides readiness; FinalAnswerPacket packages Author-safe handoff; Author writes
+prose only. The post-merge next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01.
+Bounded live validation is deferred until the upstream
+semantic-contract/planner/scout/search-executor runtime loop exists.
+Passive/shadow surfaces are not product readiness.
 
 ### No orchestrator brain
 
@@ -144,6 +155,16 @@ Authority-collapse phases should move toward these canonical owners:
   components, delegated component-scoped search work, and execution results, but
   they do not own final answerability, citation eligibility, source-obligation
   satisfaction, FinalAnswerPacket readiness, or Author-safe payload readiness.
+- **SemanticProducer / SearchPlanner / Scout** are workers in the integrated
+  run-contract semantic loop. They may propose question meaning, components,
+  ambiguity posture, search plans, disambiguation reports, or amendment
+  candidates when RunKernel authorizes their work. They do not mutate canonical
+  contract state.
+- **SemanticObservation / ComponentCoverage / ContractAmendmentRecord** are the
+  semantic accountability pathway for evidence-relative meaning, component
+  support, and proposed contract changes. AG-SEM-08 admits amendment proposals
+  but does not apply or mutate the accepted contract; the next gate must clarify
+  or implement that RunKernel-authorized mutation/versioning path.
 - **FinalAnswerPacket** owns final evidence selection, citation eligibility,
   Author-facing posture, answer readiness, caveats, and handoff fields needed to
   write the final answer.

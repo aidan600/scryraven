@@ -38,25 +38,25 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## Current Productization Posture
 
-ScryRaven is post-PR #322 /
-post-AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01. The completed baseline includes
-guarded blocked FinalAnswerPacket input derivation, safe blocked-FAP failure
-summaries, component-level blocked-FAP summary telemetry, an offline
-ComponentPlan / component executor contract, a RunKernel-owned passive
-AnswerContractAuthorityMap, completed ComponentSearchPlan naming /
-subordination cleanup, the offline RunKernel-owned SearchExecutor bridge,
-EvidenceLedger component-scoped source custody, component evidence/citation
-binding, and SufficiencyJudgment / FinalAnswerPacket component readiness.
+ScryRaven is post-PR #323 / post-AG-OFFLINE-XAXIS-E2E-01. The completed
+baseline includes guarded blocked FinalAnswerPacket input derivation, safe
+blocked-FAP failure summaries, component-level blocked-FAP summary telemetry, an
+offline ComponentPlan / component executor contract, a RunKernel-owned passive
+AnswerContractAuthorityMap, completed ComponentSearchPlan naming / subordination
+cleanup, the offline RunKernel-owned SearchExecutor bridge, EvidenceLedger
+component-scoped source custody, component evidence/citation binding,
+SufficiencyJudgment / FinalAnswerPacket component readiness, and an offline
+X-axis end-to-end proof through blocked FAP / Author handoff.
 
 The completed Offline SearchExecutor bridge is offline and inert, does not
 perform live provider/search/fetch/read/retrieval work, does not admit
 EvidenceLedger custody or satisfy source obligations, keeps candidate
 observations non-evidence, and is not user-facing runtime search. PR #320 /
 AG-COMPONENT-SCOPED-SOURCE-CUSTODY-01 adds EvidenceLedger component-scoped
-source custody from that bridge output: component source requirements,
-candidate links, custody gaps, and unsatisfied/pending source-obligation state.
-Candidate links remain non-evidence until fetched, read, and admitted by a later
-phase, and source obligations are unsatisfied/pending rather than satisfied by
+source custody from that bridge output: component source requirements, candidate
+links, custody gaps, and unsatisfied/pending source-obligation state. Candidate
+links remain non-evidence until fetched, read, and admitted by a later phase,
+and source obligations are unsatisfied/pending rather than satisfied by
 candidate presence. PR #321 / AG-COMPONENT-EVIDENCE-CITATION-BINDING-01
 completed the component evidence/citation binding phase: it extends the
 existing AnswerContractAuthorityMap per-component binding status so it consumes
@@ -64,20 +64,33 @@ EvidenceLedger component-scoped custody, preserves candidate links and custody
 gaps as component-specific blockers, and keeps custody/candidate presence
 non-binding. PR #322 / AG-SUFFICIENCY-FAP-COMPONENT-READINESS-01 completed
 existing SufficiencyJudgment and FinalAnswerPacket consumption of those passive
-binding/custody inputs into component-aware blocked readiness. This PR adds
-AG-OFFLINE-XAXIS-E2E-01 as an offline X-axis end-to-end proof through blocked
+binding/custody inputs into component-aware blocked readiness. PR #323 /
+AG-OFFLINE-XAXIS-E2E-01 adds the offline X-axis end-to-end proof through blocked
 FAP / Author handoff. It does not enable partial answers and does not enable
-live validation. The post-merge next gate is bounded live multi-component
-validation planning or execution.
-RunKernel / RunAuthority remains the root authority.
-AnswerContractAuthorityMap owns the
-answer-component authority mapping. ComponentPlan is legacy/compat input
-terminology for subordinate component-search planning; ComponentSearchPlan is
-the preferred subordinate name. ComponentPlan, ComponentSearchPlan, SearchWork,
-QueryPlan, and the future SearchExecutor are work-description or execution
+live validation.
+
+RunKernel / RunAuthority remains the root authority. AnswerContractAuthorityMap
+owns the answer-component authority mapping. ComponentPlan is legacy/compat
+input terminology for subordinate component-search planning; ComponentSearchPlan
+is the preferred subordinate name. ComponentPlan, ComponentSearchPlan,
+SearchWork, QueryPlan, and SearchExecutor are work-description or execution
 surfaces only; they do not decide answerability, source-obligation
-satisfaction, final readiness, citation eligibility, or Author handoff. See
+satisfaction, final readiness, citation eligibility, or Author handoff.
+
+The immediate current doctrine is the integrated run-contract semantic loop:
+semantic producer / planner understands, RunKernel governs, AnswerContract
+records obligations and statuses, workers propose observations or amendments,
+RunKernel validates/reduces, EvidenceLedger records custody, SemanticObservation
+records evidence-relative meaning, ComponentCoverage records component support,
+SufficiencyJudgment decides readiness, FinalAnswerPacket packages Author-safe
+handoff, and Author writes prose only. See
+`docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md` and
 `docs/architecture/AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md`.
+
+The post-merge next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01. Bounded live
+validation is deferred until the upstream semantic-contract/planner/scout/
+search-executor runtime loop exists. Passive/shadow surfaces are not product
+readiness.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live
 provider, model, search, fetch, and retrieval calls remain closed by default
@@ -100,6 +113,20 @@ content is explicitly pasted into the current prompt or committed here.
   `docs/architecture/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md` as historical
   context, not current next-step doctrine. For historical AG-96 context, read
   `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
+- **Integrated run-contract semantic loop:** read
+  `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md` for the current doctrine
+  connecting AG-SEM semantic authority to ComponentSearchPlan, Scout,
+  SearchExecutor, EvidenceLedger, SufficiencyJudgment, FinalAnswerPacket, and
+  prose-only Author handoff. It cross-references the relevant AG-SEM records:
+  `AG_SEM_01_PASSIVE_SEMANTIC_CONTRACT_FOUNDATION.md`,
+  `AG_SEM_02_SANITIZED_CONTENT_REFERENCE_AND_SEMANTIC_OBSERVATION.md`,
+  `AG_SEM_04_CONTRACT_AMENDMENT_RECORD.md`,
+  `AG_SEM_05_INITIAL_ANSWER_CONTRACT_ACCEPTANCE.md`,
+  `AG_SEM_07_COMPONENT_COVERAGE_REDUCTION.md`,
+  `AG_SEM_08_CONTRACT_AMENDMENT_ADMISSION.md`,
+  `AG_SEM_09_SUFFICIENCY_SEMANTIC_CONSUMPTION.md`,
+  `AG_SEM_11_ORDINARY_SEMANTIC_PRODUCER_VERTICAL_SLICE.md`, and
+  `AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md`.
 - **Recovery-adjacent Balanced / AG-BAL-HARDEN work:** read
   `core/component_gap_recovery_runtime.py`,
   `core/component_gap_recovery_coordinator.py`,
@@ -182,9 +209,10 @@ content is explicitly pasted into the current prompt or committed here.
 - Live ScryRaven/proplex provider, model, search, or retrieval calls are disabled
   unless the phase explicitly scopes query class, run cap, provider/model/search
   budget, packet path, redaction plan, decision, and stop condition.
-- Live multi-component validation is deferred until AG-ANSWER-CONTRACT-AUTHORITY-MAP-01
-  and follow-on offline component binding can prove the authority chain without
-  runtime provider/search/fetch behavior changes. For the historical
+- Live multi-component validation is deferred until the upstream
+  semantic-contract/planner/scout/search-executor runtime loop exists. The
+  immediate next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01, followed by planner,
+  scout, planner-revision, and SearchExecutor handoff phases. For the historical
   AG-LIVE-BOUND-01 preflight status and its superseded bridge recommendation,
   see
   [AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md](AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md).
