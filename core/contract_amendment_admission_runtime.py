@@ -148,6 +148,10 @@ _REVISION_FORBIDDEN_OPERATION_KINDS = (
     "mark_source_obligation_satisfied",
     "resolve_slot",
 )
+_REVISION_ALLOWED_OPERATION_KINDS = (
+    "add_caveat",
+    "strengthen_source_obligation",
+)
 
 
 class ContractAmendmentAdmissionError(ValueError):
@@ -679,37 +683,159 @@ def _validate_candidate_invalidated_coverage_refs(
     return represented
 
 
-def _validate_search_planner_revision_lineage(
+def _record_declares_search_planner_revision_origin(
+    mapping: Mapping[str, Any],
+) -> bool:
+    if "search_planner_revision_lineage" in mapping:
+        return True
+    if _normalize_key(mapping.get("origin")) == "search_planner_revision":
+        return True
+    if _normalize_key(mapping.get("amendment_origin")) == "search_planner_revision":
+        return True
+    created_by = _normalize_key(mapping.get("created_by"))
+    if created_by in {
+        "runkernel.searchplannerrevision",
+        "runkernel_searchplannerrevision",
+        "run_kernel_search_planner_revision",
+    }:
+        return True
+    created_from = {
+        _normalize_key(item)
+        for item in _text_list(mapping.get("created_from"), limit=200)
+    }
+    return "search_planner_revision" in created_from
+
+
+def _revision_lineage_containers(
+    record_safe: Mapping[str, Any],
+) -> list[tuple[str, dict[str, Any]]]:
+    containers: list[tuple[str, dict[str, Any]]] = [
+        ("record metadata", _safe_mapping(record_safe.get("metadata"))),
+        ("record trigger metadata", _safe_mapping(_safe_mapping(record_safe.get("trigger_refs")).get("metadata"))),
+        ("record lineage", _safe_mapping(record_safe.get("lineage"))),
+    ]
+    for index, operation in enumerate(record_safe.get("operations") or (), start=1):
+        operation_map = _safe_mapping(operation)
+        containers.append(
+            (f"operation {index} metadata", _safe_mapping(operation_map.get("metadata")))
+        )
+        containers.append(
+            (
+                f"operation {index} payload",
+                _safe_mapping(operation_map.get("operation_payload")),
+            )
+        )
+    return containers
+
+
+def _extract_search_planner_revision_lineage(
     *,
     record_safe: Mapping[str, Any],
+) -> tuple[bool, dict[str, Any]]:
+    declared = False
+    lineages: list[tuple[str, dict[str, Any]]] = []
+    for label, container in _revision_lineage_containers(record_safe):
+        if _record_declares_search_planner_revision_origin(container):
+            declared = True
+        lineage = _safe_mapping(container.get("search_planner_revision_lineage"))
+        if lineage:
+            declared = True
+            lineages.append((label, lineage))
+
+    if not lineages:
+        return declared, {}
+
+    first_label, first_lineage = lineages[0]
+    for label, lineage in lineages[1:]:
+        if lineage != first_lineage:
+            raise ContractAmendmentAdmissionError(
+                "search planner revision lineage mismatch between "
+                f"{first_label} and {label}"
+            )
+    return True, first_lineage
+
+
+def _require_revision_action_token(
+    *,
     action_inputs: Mapping[str, Any],
-) -> dict[str, Any]:
-    if (
-        action_inputs.get("search_planner_revision_lineage_required") is not True
-        and action_inputs.get("amendment_origin") != "search_planner_revision"
-    ):
-        return {}
-
-    metadata = _safe_mapping(record_safe.get("metadata"))
-    lineage = _safe_mapping(metadata.get("search_planner_revision_lineage"))
-    if not lineage:
+    key: str,
+    limit: int = 160,
+) -> str:
+    value = _clean_token(action_inputs.get(key), limit=limit)
+    if not value:
         raise ContractAmendmentAdmissionError(
-            "search planner revision amendment requires embedded revision lineage"
+            f"search planner revision admission binding requires {key}"
         )
+    return value
 
+
+def _require_revision_action_list(
+    *,
+    action_inputs: Mapping[str, Any],
+    key: str,
+    allow_empty: bool = False,
+) -> list[str]:
+    if key not in action_inputs:
+        raise ContractAmendmentAdmissionError(
+            f"search planner revision admission binding requires {key}"
+        )
+    values = _text_list(action_inputs.get(key))
+    if not values and not allow_empty:
+        raise ContractAmendmentAdmissionError(
+            f"search planner revision admission binding requires {key}"
+        )
+    return values
+
+
+def _validate_revision_false_flags(
+    *,
+    record_safe: Mapping[str, Any],
+    lineage: Mapping[str, Any],
+) -> None:
     for key in _REVISION_LINEAGE_FALSE_FLAGS:
         if lineage.get(key) is not False:
             raise ContractAmendmentAdmissionError(
                 f"search planner revision lineage must keep {key} false"
             )
-        if key in metadata and metadata.get(key) is not False:
-            raise ContractAmendmentAdmissionError(
-                f"search planner revision amendment metadata must keep {key} false"
-            )
+    for label, container in _revision_lineage_containers(record_safe):
+        for key in _REVISION_LINEAGE_FALSE_FLAGS:
+            if key in container and container.get(key) is not False:
+                raise ContractAmendmentAdmissionError(
+                    f"search planner revision {label} must keep {key} false"
+                )
+        embedded = _safe_mapping(container.get("search_planner_revision_lineage"))
+        for key in _REVISION_LINEAGE_FALSE_FLAGS:
+            if key in embedded and embedded.get(key) is not False:
+                raise ContractAmendmentAdmissionError(
+                    f"search planner revision {label} lineage must keep {key} false"
+                )
 
-    expected_revision_id = _clean_token(
-        action_inputs.get("planner_revision_id")
-        or action_inputs.get("search_planner_revision_id")
+
+def _validate_search_planner_revision_lineage(
+    *,
+    record_safe: Mapping[str, Any],
+    action_inputs: Mapping[str, Any],
+) -> dict[str, Any]:
+    explicit_required = (
+        action_inputs.get("search_planner_revision_lineage_required") is True
+        or action_inputs.get("amendment_origin") == "search_planner_revision"
+    )
+    declared_by_record, lineage = _extract_search_planner_revision_lineage(
+        record_safe=record_safe
+    )
+    if not explicit_required and not declared_by_record:
+        return {}
+
+    if not lineage:
+        raise ContractAmendmentAdmissionError(
+            "search planner revision amendment requires embedded revision lineage"
+        )
+
+    _validate_revision_false_flags(record_safe=record_safe, lineage=lineage)
+
+    expected_revision_id = (
+        _clean_token(action_inputs.get("planner_revision_id"))
+        or _clean_token(action_inputs.get("search_planner_revision_id"))
     )
     if not expected_revision_id:
         raise ContractAmendmentAdmissionError(
@@ -720,93 +846,105 @@ def _validate_search_planner_revision_lineage(
         "search planner revision lineage id does not match authorization",
     )
 
-    expected_component_id = _clean_token(action_inputs.get("component_id"))
-    if expected_component_id:
-        _require_match(
-            _clean_token(lineage.get("component_id")) == expected_component_id,
-            "search planner revision component lineage does not match authorization",
-        )
+    expected_component_id = _require_revision_action_token(
+        action_inputs=action_inputs,
+        key="component_id",
+    )
+    _require_match(
+        _clean_token(lineage.get("component_id")) == expected_component_id,
+        "search planner revision component lineage does not match authorization",
+    )
 
     planner_ref = _safe_mapping(lineage.get("parent_search_planner_proposal_ref"))
     expected_planner = {
-        "proposal_id": _clean_token(
-            action_inputs.get("parent_search_planner_proposal_id")
+        "proposal_id": _require_revision_action_token(
+            action_inputs=action_inputs,
+            key="parent_search_planner_proposal_id",
         ),
-        "proposal_digest": _clean_token(
-            action_inputs.get("parent_search_planner_proposal_digest"),
+        "proposal_digest": _require_revision_action_token(
+            action_inputs=action_inputs,
+            key="parent_search_planner_proposal_digest",
             limit=128,
         ),
-        "question_meaning_record_id": _clean_token(
-            action_inputs.get("parent_question_meaning_record_id")
+        "question_meaning_record_id": _require_revision_action_token(
+            action_inputs=action_inputs,
+            key="parent_question_meaning_record_id",
         ),
-        "question_meaning_record_digest": _clean_token(
-            action_inputs.get("parent_question_meaning_record_digest"),
+        "question_meaning_record_digest": _require_revision_action_token(
+            action_inputs=action_inputs,
+            key="parent_question_meaning_record_digest",
             limit=128,
         ),
     }
     for key, expected in expected_planner.items():
-        if expected:
-            limit = 128 if key.endswith("digest") else 200
-            _require_match(
-                _clean_token(planner_ref.get(key), limit=limit) == expected,
-                "search planner revision parent planner lineage does not match authorization",
-            )
+        limit = 128 if key.endswith("digest") else 200
+        _require_match(
+            _clean_token(planner_ref.get(key), limit=limit) == expected,
+            "search planner revision parent planner lineage does not match authorization",
+        )
 
     scout_ref = _safe_mapping(lineage.get("parent_scout_disambiguation_report_ref"))
     expected_scout = {
-        "report_id": _clean_token(
-            action_inputs.get("parent_scout_disambiguation_report_id")
+        "report_id": _require_revision_action_token(
+            action_inputs=action_inputs,
+            key="parent_scout_disambiguation_report_id",
         ),
-        "report_digest": _clean_token(
-            action_inputs.get("parent_scout_disambiguation_report_digest"),
+        "report_digest": _require_revision_action_token(
+            action_inputs=action_inputs,
+            key="parent_scout_disambiguation_report_digest",
             limit=128,
         ),
     }
     for key, expected in expected_scout.items():
-        if expected:
-            limit = 128 if key.endswith("digest") else 200
-            _require_match(
-                _clean_token(scout_ref.get(key), limit=limit) == expected,
-                "search planner revision parent Scout lineage does not match authorization",
-            )
+        limit = 128 if key.endswith("digest") else 200
+        _require_match(
+            _clean_token(scout_ref.get(key), limit=limit) == expected,
+            "search planner revision parent Scout lineage does not match authorization",
+        )
     nested_planner = _safe_mapping(
         scout_ref.get("parent_search_planner_proposal_ref")
     )
     if nested_planner:
         for key, expected in expected_planner.items():
-            if expected:
-                limit = 128 if key.endswith("digest") else 200
-                _require_match(
-                    _clean_token(nested_planner.get(key), limit=limit) == expected,
-                    "search planner revision Scout lineage is not bound to parent planner/QMR",
-                )
+            limit = 128 if key.endswith("digest") else 200
+            _require_match(
+                _clean_token(nested_planner.get(key), limit=limit) == expected,
+                "search planner revision Scout lineage is not bound to parent planner/QMR",
+            )
 
+    expected_dimension_ids = _require_revision_action_list(
+        action_inputs=action_inputs,
+        key="consumed_ambiguity_dimension_ids",
+    )
+    expected_hint_ids = _require_revision_action_list(
+        action_inputs=action_inputs,
+        key="consumed_scout_hint_ids",
+        allow_empty=True,
+    )
     _require_match(
         _text_list(lineage.get("consumed_ambiguity_dimension_ids"))
-        == _text_list(action_inputs.get("consumed_ambiguity_dimension_ids")),
+        == expected_dimension_ids,
         "search planner revision consumed dimension lineage does not match authorization",
     )
     _require_match(
         _text_list(lineage.get("consumed_scout_hint_ids"))
-        == _text_list(action_inputs.get("consumed_scout_hint_ids")),
+        == expected_hint_ids,
         "search planner revision consumed Scout hint lineage does not match authorization",
     )
 
-    if expected_planner["question_meaning_record_id"]:
-        _require_match(
-            _clean_token(record_safe.get("parent_question_meaning_record_id"))
-            == expected_planner["question_meaning_record_id"],
-            "search planner revision amendment QMR id lineage does not match authorization",
+    _require_match(
+        _clean_token(record_safe.get("parent_question_meaning_record_id"))
+        == expected_planner["question_meaning_record_id"],
+        "search planner revision amendment QMR id lineage does not match authorization",
+    )
+    _require_match(
+        _clean_token(
+            record_safe.get("parent_question_meaning_record_digest"),
+            limit=128,
         )
-    if expected_planner["question_meaning_record_digest"]:
-        _require_match(
-            _clean_token(
-                record_safe.get("parent_question_meaning_record_digest"),
-                limit=128,
-            )
-            == expected_planner["question_meaning_record_digest"],
-            "search planner revision amendment QMR digest lineage does not match authorization",
-        )
+        == expected_planner["question_meaning_record_digest"],
+        "search planner revision amendment QMR digest lineage does not match authorization",
+    )
 
     for operation in record_safe.get("operations") or ():
         operation_map = _safe_mapping(operation)
@@ -819,6 +957,10 @@ def _validate_search_planner_revision_lineage(
         if operation_kind in _REVISION_FORBIDDEN_OPERATION_KINDS:
             raise ContractAmendmentAdmissionError(
                 "search planner revision amendments cannot resolve slots or satisfy requirements"
+            )
+        if operation_kind not in _REVISION_ALLOWED_OPERATION_KINDS:
+            raise ContractAmendmentAdmissionError(
+                "search planner revision amendments must stay monotonic and non-evidence"
             )
         for key in _REVISION_LINEAGE_FALSE_FLAGS:
             if key in payload and payload.get(key) is not False:

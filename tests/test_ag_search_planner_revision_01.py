@@ -568,10 +568,20 @@ def _revision_lineage_inputs(kernel: RunKernel) -> dict[str, Any]:
 def _admit_revision_candidate(kernel: RunKernel) -> Mapping[str, Any]:
     candidate = kernel.state.search_planner_revision_projection["amendment_candidates"][0]
     record = candidate["contract_amendment_record"]
+    _admit_record_with_inputs(kernel, record, inputs=_revision_lineage_inputs(kernel))
+    return record
+
+
+def _admit_record_with_inputs(
+    kernel: RunKernel,
+    record: Mapping[str, Any],
+    *,
+    inputs: Mapping[str, Any] | None = None,
+) -> None:
     action = kernel.authorize_contract_amendment_admission(
         amendment_record_id=record["amendment_record_id"],
         amendment_record_digest=record["record_digest"],
-        inputs=_revision_lineage_inputs(kernel),
+        inputs=inputs,
     )
     observation = Observation.from_action(
         action,
@@ -580,7 +590,6 @@ def _admit_revision_candidate(kernel: RunKernel) -> Mapping[str, Any]:
         payload={"contract_amendment_record": record},
     )
     kernel.reduce(observation)
-    return record
 
 
 def _apply_admitted_revision_candidate(kernel: RunKernel, record: Mapping[str, Any]) -> None:
@@ -846,6 +855,60 @@ def test_revision_emits_passive_add_caveat_amendment_candidate() -> None:
     assert kernel.state.contract_amendment_admission_history == []
     assert kernel.state.contract_amendment_application_history == []
     assert kernel.state.current_answer_contract == {}
+
+
+def test_revision_amendment_admission_requires_lineage_bindings_when_record_declares_revision_lineage() -> None:
+    kernel = _prepare_kernel()
+    _reduce_revision(kernel)
+    record = kernel.state.search_planner_revision_projection["amendment_candidates"][0][
+        "contract_amendment_record"
+    ]
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="search planner revision admission binding requires planner_revision_id",
+    ):
+        _admit_record_with_inputs(kernel, record)
+
+    assert kernel.state.current_answer_contract == {}
+    assert kernel.state.contract_amendment_admission_history == []
+    assert kernel.state.contract_amendment_admission_projection == {}
+
+
+def test_revision_amendment_admission_accepts_when_full_lineage_bindings_match() -> None:
+    kernel = _prepare_kernel()
+    _reduce_revision(kernel)
+
+    record = _admit_revision_candidate(kernel)
+    projection = kernel.state.contract_amendment_admission_projection
+
+    assert projection["amendment_record_id"] == record["amendment_record_id"]
+    assert projection["search_planner_revision_lineage"]["origin"] == (
+        "search_planner_revision"
+    )
+    assert projection["contract_mutation_applied"] is False
+    assert kernel.state.current_answer_contract == {}
+    assert len(kernel.state.contract_amendment_admission_history) == 1
+
+
+def test_revision_amendment_admission_rejects_stale_revision_or_scout_lineage() -> None:
+    kernel = _prepare_kernel()
+    _reduce_revision(kernel)
+    record = kernel.state.search_planner_revision_projection["amendment_candidates"][0][
+        "contract_amendment_record"
+    ]
+    inputs = _revision_lineage_inputs(kernel)
+    inputs["parent_scout_disambiguation_report_digest"] = "stale-scout"
+
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="parent Scout lineage does not match",
+    ):
+        _admit_record_with_inputs(kernel, record, inputs=inputs)
+
+    assert kernel.state.current_answer_contract == {}
+    assert kernel.state.contract_amendment_admission_history == []
+    assert kernel.state.contract_amendment_admission_projection == {}
 
 
 def test_revision_amendment_candidate_admission_and_application_updates_current_contract() -> None:
