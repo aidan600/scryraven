@@ -109,8 +109,10 @@ workers propose observations or amendments; RunKernel validates/reduces;
 EvidenceLedger records custody; SemanticObservation records evidence-relative
 meaning; ComponentCoverage records component support; SufficiencyJudgment
 decides readiness; FinalAnswerPacket packages Author-safe handoff; Author writes
-prose only. The post-merge next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01.
-Bounded live validation is deferred until the upstream
+prose only. AG-RUN-CONTRACT-MUTATION-LOOP-01 introduces RunKernel-owned
+application of admitted amendments into `current_answer_contract`; the
+post-merge next gate is AG-SEARCH-PLANNER-RUNTIME-01. Bounded live validation is
+deferred until the upstream
 semantic-contract/planner/scout/search-executor runtime loop exists.
 Passive/shadow surfaces are not product readiness.
 
@@ -163,8 +165,9 @@ Authority-collapse phases should move toward these canonical owners:
 - **SemanticObservation / ComponentCoverage / ContractAmendmentRecord** are the
   semantic accountability pathway for evidence-relative meaning, component
   support, and proposed contract changes. AG-SEM-08 admits amendment proposals
-  but does not apply or mutate the accepted contract; the next gate must clarify
-  or implement that RunKernel-authorized mutation/versioning path.
+  without mutating the accepted contract. AG-RUN-CONTRACT-MUTATION-LOOP-01
+  applies admitted amendments through RunKernel into `current_answer_contract`,
+  while `initial_answer_contract` remains immutable genesis state.
 - **FinalAnswerPacket** owns final evidence selection, citation eligibility,
   Author-facing posture, answer readiness, caveats, and handoff fields needed to
   write the final answer.

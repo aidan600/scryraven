@@ -87,10 +87,11 @@ handoff, and Author writes prose only. See
 `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md` and
 `docs/architecture/AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md`.
 
-The post-merge next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01. Bounded live
-validation is deferred until the upstream semantic-contract/planner/scout/
-search-executor runtime loop exists. Passive/shadow surfaces are not product
-readiness.
+AG-RUN-CONTRACT-MUTATION-LOOP-01 implements RunKernel-owned application of
+admitted amendments into `current_answer_contract`. The post-merge next gate is
+AG-SEARCH-PLANNER-RUNTIME-01. Bounded live validation is deferred until the
+upstream semantic-contract/planner/scout/search-executor runtime loop exists.
+Passive/shadow surfaces are not product readiness.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live
 provider, model, search, fetch, and retrieval calls remain closed by default
@@ -210,11 +211,11 @@ content is explicitly pasted into the current prompt or committed here.
   unless the phase explicitly scopes query class, run cap, provider/model/search
   budget, packet path, redaction plan, decision, and stop condition.
 - Live multi-component validation is deferred until the upstream
-  semantic-contract/planner/scout/search-executor runtime loop exists. The
-  immediate next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01, followed by planner,
-  scout, planner-revision, and SearchExecutor handoff phases. For the historical
-  AG-LIVE-BOUND-01 preflight status and its superseded bridge recommendation,
-  see
+  semantic-contract/planner/scout/search-executor runtime loop exists. After
+  AG-RUN-CONTRACT-MUTATION-LOOP-01, the immediate next gate is
+  AG-SEARCH-PLANNER-RUNTIME-01, followed by scout, planner-revision, and
+  SearchExecutor handoff phases. For the historical AG-LIVE-BOUND-01 preflight
+  status and its superseded bridge recommendation, see
   [AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md](AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md).
 - For live validation artifact rules, read the live-validation section in
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).

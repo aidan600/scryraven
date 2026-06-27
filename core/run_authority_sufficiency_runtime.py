@@ -254,6 +254,7 @@ def execute_sufficiency_judgment_handoff_from_scope(
             runtime_scope["_run_controller_mirror"].state.active_source_class_recovery_attempt_count
         ),
         initial_answer_contract=run_kernel.state.initial_answer_contract,
+        current_answer_contract=run_kernel.state.current_answer_contract,
         component_coverage_history=run_kernel.state.component_coverage_history,
         contract_amendment_admission_history=(
             run_kernel.state.contract_amendment_admission_history

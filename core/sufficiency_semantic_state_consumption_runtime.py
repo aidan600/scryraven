@@ -667,18 +667,29 @@ class SemanticSufficiencyOverlay:
 def build_semantic_state_facts_for_sufficiency(
     *,
     initial_answer_contract: Mapping[str, Any] | None,
+    current_answer_contract: Mapping[str, Any] | None = None,
     component_coverage_history: Sequence[Mapping[str, Any]],
     contract_amendment_admission_history: Sequence[Mapping[str, Any]],
     evidence_ledger_projection: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build compact semantic facts consumed by RunAuthority Sufficiency."""
 
-    contract = _mapping(initial_answer_contract)
+    current_contract = _mapping(current_answer_contract)
+    initial_contract = _mapping(initial_answer_contract)
+    current_contract_consumed = bool(current_contract.get("accepted_contract_digest"))
+    contract = current_contract if current_contract_consumed else initial_contract
+    contract_source = (
+        "current_answer_contract"
+        if current_contract_consumed
+        else "initial_answer_contract"
+    )
     if not contract.get("accepted_contract_digest"):
         return {
             "schema_version": SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION,
             "accepted_contract_version": None,
             "accepted_contract_digest": None,
+            "accepted_contract_source": None,
+            "current_answer_contract_consumed": False,
             "required_component_count": 0,
             "covered_component_count": 0,
             "missing_component_count": 0,
@@ -1120,6 +1131,8 @@ def build_semantic_state_facts_for_sufficiency(
         "schema_version": SUFFICIENCY_SEMANTIC_STATE_CONSUMPTION_SCHEMA_VERSION,
         "accepted_contract_version": _clean_token(contract.get("accepted_contract_version")),
         "accepted_contract_digest": _clean_token(contract.get("accepted_contract_digest")),
+        "accepted_contract_source": contract_source,
+        "current_answer_contract_consumed": current_contract_consumed,
         "required_component_count": len(required_refs),
         "covered_component_count": covered_component_count,
         "missing_component_count": max(0, len(required_refs) - covered_component_count),
