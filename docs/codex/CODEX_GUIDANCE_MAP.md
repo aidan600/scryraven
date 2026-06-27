@@ -93,10 +93,21 @@ AG-SEARCH-PLANNER-RUNTIME-01 completes the RunKernel-authorized SearchPlanner
 proposal seam: an explicitly injected adapter can produce a passive
 QMR-compatible proposal plus subordinate component-search requirements, while
 live model/search/fetch/read/retrieval behavior remains closed and amendments
-remain deferred. The post-merge next gate is AG-SEARCH-PLANNER-MODEL-01.
-Bounded live validation is deferred until the upstream
-semantic-contract/planner/scout/search-executor runtime loop exists.
+remain deferred. AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected
+fail-closed model adapter behind that seam. The adapter is explicitly
+enabled/licensed, uses fake injected model callables in tests, and keeps planner
+output proposal-only through existing RunKernel planner and contract reducers.
+No live model calls or live validation were run. Scout, SearchExecutor,
+search/fetch/read/retrieval, Author, citations, partial answers, and live
+validation remain closed. The post-merge next gate is
+AG-SCOUT-DISAMBIGUATION-RUNTIME-01 unless review chooses a focused
+AG-SEARCH-PLANNER-MODEL-LIVE-VALIDATION-01 first.
 Passive/shadow surfaces are not product readiness.
+
+AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
+No live model calls or live validation were run.
+Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations, partial answers, and live validation remain closed.
+The post-merge next gate is AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live
 provider, model, search, fetch, and retrieval calls remain closed by default
@@ -218,8 +229,10 @@ content is explicitly pasted into the current prompt or committed here.
 - Live multi-component validation is deferred until the upstream
   semantic-contract/planner/scout/search-executor runtime loop exists.
   AG-SEARCH-PLANNER-RUNTIME-01 completes the fail-closed planner proposal
-  runtime seam; the immediate next gate is AG-SEARCH-PLANNER-MODEL-01, followed
-  by scout, planner-revision, and SearchExecutor handoff phases. For the
+  runtime seam. AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected
+  fail-closed model adapter behind that seam. The post-merge next gate is
+  AG-SCOUT-DISAMBIGUATION-RUNTIME-01 unless review chooses a focused
+  AG-SEARCH-PLANNER-MODEL-LIVE-VALIDATION-01 first. For the
   historical AG-LIVE-BOUND-01 preflight
   status and its superseded bridge recommendation, see
   [AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md](AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md).

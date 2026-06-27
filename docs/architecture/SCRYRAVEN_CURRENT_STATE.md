@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-SEARCH-PLANNER-RUNTIME-01`.
+`AG-SEARCH-PLANNER-MODEL-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -72,9 +72,21 @@ Current summary:
   SearchPlanner proposal seam: an explicitly injected adapter can produce a
   passive QMR-compatible proposal plus subordinate component-search
   requirements, while live model/search/fetch/read/retrieval behavior remains
-  closed and amendments remain deferred. The post-merge next gate is
-  AG-SEARCH-PLANNER-MODEL-01. Bounded live validation is deferred until the
-  upstream semantic-contract/planner/scout/search-executor runtime loop exists.
+  closed and amendments remain deferred.
+- AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter
+  behind the existing SearchPlanner runtime seam. The adapter can call an
+  injected model callable only when explicitly enabled/licensed, validates
+  strict JSON planner output, and returns sanitized proposal data consumed
+  through existing RunKernel planner and contract reducers. Tests use fake
+  injected model callables. No live model calls or live validation were run.
+  Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations,
+  partial answers, and live validation remain closed. The post-merge next gate
+  is AG-SCOUT-DISAMBIGUATION-RUNTIME-01 unless review chooses a focused
+  AG-SEARCH-PLANNER-MODEL-LIVE-VALIDATION-01 first.
+- AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
+- No live model calls or live validation were run.
+- Scout, SearchExecutor, search/fetch/read/retrieval, Author, citations, partial answers, and live validation remain closed.
+- The post-merge next gate is AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
 - Passive/shadow surfaces are not product readiness.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
