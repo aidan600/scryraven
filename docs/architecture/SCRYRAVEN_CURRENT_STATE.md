@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-RUN-CONTRACT-SEMANTIC-LOOP-DOCS-01`.
+`AG-RUN-CONTRACT-MUTATION-LOOP-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -65,9 +65,11 @@ Current summary:
   ComponentCoverage own evidence-relative meaning and support; SufficiencyJudgment
   decides readiness; FinalAnswerPacket packages Author-safe handoff; Author
   writes prose only.
-- The post-merge next gate is AG-RUN-CONTRACT-MUTATION-LOOP-01. Bounded live
-  validation is deferred until the upstream semantic-contract/planner/scout/
-  search-executor runtime loop exists.
+- AG-RUN-CONTRACT-MUTATION-LOOP-01 applies admitted amendments through
+  RunKernel into `current_answer_contract`, while `initial_answer_contract`
+  remains immutable genesis state. The post-merge next gate is
+  AG-SEARCH-PLANNER-RUNTIME-01. Bounded live validation is deferred until the
+  upstream semantic-contract/planner/scout/search-executor runtime loop exists.
 - Passive/shadow surfaces are not product readiness.
 - No live validation is part of the current posture.
 - AnswerContractAuthorityMap owns answer-component authority mapping.

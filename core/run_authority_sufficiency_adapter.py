@@ -262,6 +262,7 @@ def build_sufficiency_judgment_input_from_runtime(
     max_iterations: int,
     recovery_attempt_count: int,
     initial_answer_contract: Mapping[str, Any] | None = None,
+    current_answer_contract: Mapping[str, Any] | None = None,
     component_coverage_history: Sequence[Mapping[str, Any]] = (),
     contract_amendment_admission_history: Sequence[Mapping[str, Any]] = (),
     answer_contract_authority_map_projection: Mapping[str, Any] | None = None,
@@ -270,6 +271,7 @@ def build_sufficiency_judgment_input_from_runtime(
 
     semantic_state_facts = build_semantic_state_facts_for_sufficiency(
         initial_answer_contract=initial_answer_contract or {},
+        current_answer_contract=current_answer_contract or {},
         component_coverage_history=component_coverage_history,
         contract_amendment_admission_history=contract_amendment_admission_history,
         evidence_ledger_projection=evidence_ledger_projection,

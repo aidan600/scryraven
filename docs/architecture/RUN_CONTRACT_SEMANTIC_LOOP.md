@@ -190,9 +190,9 @@ Runtime success requires:
 
 ## 7. Immediate Roadmap
 
-1. `AG-RUN-CONTRACT-SEMANTIC-LOOP-DOCS-01` - this phase.
-2. `AG-RUN-CONTRACT-MUTATION-LOOP-01` - implement or clarify accepted-contract
-   amendment application/status updates.
+1. `AG-RUN-CONTRACT-SEMANTIC-LOOP-DOCS-01` - completed baseline.
+2. `AG-RUN-CONTRACT-MUTATION-LOOP-01` - this phase implements RunKernel-owned
+   admitted-amendment application into `current_answer_contract`.
 3. `AG-SEARCH-PLANNER-RUNTIME-01` - fast LLM planner proposes semantic meaning,
    component search plan, and contract amendments.
 4. `AG-SCOUT-DISAMBIGUATION-RUNTIME-01` - RunKernel-authorized Serper-first
@@ -205,7 +205,13 @@ Runtime success requires:
    upstream runtime loop is real.
 8. `AG-PARTIAL-ANSWER-READINESS-01` - later policy layer.
 
-Post-merge next gate is `AG-RUN-CONTRACT-MUTATION-LOOP-01`. Bounded live
-validation is deferred until the upstream semantic-contract/planner/scout/
-search-executor runtime loop exists. Partial-answer readiness remains later
-policy.
+Post-merge next gate is `AG-SEARCH-PLANNER-RUNTIME-01`. Bounded live validation
+is deferred until the upstream semantic-contract/planner/scout/search-executor
+runtime loop exists. Partial-answer readiness remains later policy.
+
+The runtime contract vocabulary is merge-stable: `initial_answer_contract`
+remains the immutable AG-SEM-05 accepted genesis contract, while
+`current_answer_contract` is the latest active accepted contract after
+RunKernel applies an admitted amendment. Sufficiency consumers prefer
+`current_answer_contract` and fall back to `initial_answer_contract` when no
+application has occurred.
