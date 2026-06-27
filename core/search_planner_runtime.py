@@ -44,6 +44,8 @@ SEARCH_PLANNER_TRACE_KEY = "search_planner_proposal"
 SEARCH_PLANNER_PROPOSAL_OWNER = "RunKernel.SearchPlannerProposal"
 SEARCH_PLANNER_QMR_RESOLVER_VERSION = "ag-search-planner-runtime-01"
 SEARCH_PLANNER_INPUT_PREVIEW_CHARS = 500
+SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS = 12000
+_ADAPTER_ONLY_USER_QUERY_TEXT_KEY = "user_query_text_for_planning"
 
 _EXPECTED_ACTION_TYPE = "search_planner_produce"
 _EXPECTED_OBSERVATION_TYPE = "search_planner_produced"
@@ -229,11 +231,18 @@ class SearchPlannerInput:
         return _clean_text(self.user_query_text, limit=SEARCH_PLANNER_INPUT_PREVIEW_CHARS) or ""
 
     @property
+    def normalized_user_query_text(self) -> str:
+        return _normalize_user_query_text(
+            self.user_query_text,
+            limit=SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS,
+        )
+
+    @property
     def user_query_digest(self) -> str:
         payload = {
             "run_id": _clean_token(self.run_id),
             "request_id": _clean_token(self.request_id),
-            "user_query_preview": self.user_query_preview,
+            "normalized_user_query_text": self.normalized_user_query_text,
         }
         return _digest_json(payload)
 
@@ -252,11 +261,15 @@ class SearchPlannerInput:
             "run_id": run_id,
             "request_id": request_id,
             "requested_mode": _clean_token(self.requested_mode) or "balanced",
+            _ADAPTER_ONLY_USER_QUERY_TEXT_KEY: self.normalized_user_query_text,
+            "user_query_text_for_planning_char_limit": SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS,
             "user_query_ref": {
                 "preview": self.user_query_preview,
                 "digest": query_digest,
                 "preview_char_limit": SEARCH_PLANNER_INPUT_PREVIEW_CHARS,
+                "full_user_query_text_retained": False,
                 "raw_user_query_retained": False,
+                "user_query_text_for_planning_retained": False,
             },
             "safe_context": _json_safe(self.safe_context),
             "route_context_ref": _json_safe(self.route_context_ref),
@@ -308,7 +321,7 @@ def build_search_planner_observation_payload(
     adapter_result: Mapping[str, Any],
     planner_input: Mapping[str, Any],
 ) -> dict[str, Any]:
-    planner_input_ref = _safe_mapping(planner_input)
+    planner_input_ref = _planner_input_ref_for_observation(planner_input)
     result = _safe_mapping(adapter_result)
     if not result:
         raise SearchPlannerRuntimeError("search planner adapter returned no proposal")
@@ -611,6 +624,13 @@ def contract_ref_from_contract(
         "contract_version": version,
         "contract_digest": digest,
     }
+
+
+def _planner_input_ref_for_observation(planner_input: Mapping[str, Any]) -> dict[str, Any]:
+    planner_input_ref = _safe_mapping(planner_input)
+    planner_input_ref.pop(_ADAPTER_ONLY_USER_QUERY_TEXT_KEY, None)
+    planner_input_ref.pop("user_query_text_for_planning_char_limit", None)
+    return planner_input_ref
 
 
 def _validate_action_like(*, action: Any, planner_input: SearchPlannerInput) -> None:
@@ -1116,6 +1136,19 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
     return text[:limit]
 
 
+def _normalize_user_query_text(
+    value: Any,
+    *,
+    limit: int = SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS,
+) -> str:
+    if value is None:
+        return ""
+    text = " ".join(str(value).strip().split())
+    if not text:
+        return ""
+    return text[:limit]
+
+
 def _clean_token(value: Any, *, limit: int = 160) -> str | None:
     return _clean_text(value, limit=limit)
 
@@ -1187,6 +1220,8 @@ __all__ = [
     "SEARCH_PLANNER_OBSERVATION_SCHEMA_VERSION",
     "SEARCH_PLANNER_PRODUCTION_REASON",
     "SEARCH_PLANNER_PRODUCTION_STAGE",
+    "SEARCH_PLANNER_FULL_QUERY_TEXT_CHARS",
+    "SEARCH_PLANNER_INPUT_PREVIEW_CHARS",
     "SEARCH_PLANNER_PROPOSAL_OWNER",
     "SEARCH_PLANNER_PROPOSAL_SCHEMA_VERSION",
     "SEARCH_PLANNER_SCHEMA_VERSION",

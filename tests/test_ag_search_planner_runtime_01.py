@@ -19,6 +19,7 @@ from core.run_kernel import (
     RunStageStatus,
 )
 from core.search_planner_runtime import (
+    SEARCH_PLANNER_INPUT_PREVIEW_CHARS,
     SEARCH_PLANNER_SCHEMA_VERSION,
     SearchPlannerInput,
     SearchPlannerRuntimeError,
@@ -41,6 +42,9 @@ DOCS = (
 RUN_ID = "run:ag-search-planner-runtime-01"
 REQUEST_ID = "request:ag-search-planner-runtime-01"
 QUERY = "What is the current official filing threshold for Example Permit in 2026?"
+LONG_QUERY_PREFIX = "Q" * SEARCH_PLANNER_INPUT_PREVIEW_CHARS
+LONG_QUERY_SUFFIX_A = " DISTINCT_SUFFIX_ALPHA_AFTER_PREVIEW_LIMIT"
+LONG_QUERY_SUFFIX_B = " DISTINCT_SUFFIX_BETA_AFTER_PREVIEW_LIMIT"
 
 
 class DeterministicPlannerAdapter:
@@ -273,6 +277,89 @@ def test_planner_qmr_feeds_initial_answer_contract_acceptance() -> None:
     assert initial["parent_question_meaning_record_digest"] == qmr["record_digest"]
     assert initial["accepted_answer_component_refs"][0]["component_id"] == "component:official-threshold"
     assert kernel.state.projections[INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE]
+
+
+def test_adapter_receives_full_query_text_beyond_preview_limit() -> None:
+    kernel = _kernel()
+    adapter = DeterministicPlannerAdapter()
+    query = LONG_QUERY_PREFIX + LONG_QUERY_SUFFIX_A
+    planner_input = _planner_input(kernel, query=query)
+
+    _observation, payload = _produce(
+        kernel,
+        planner_input=planner_input,
+        adapter=adapter,
+    )
+
+    adapter_input = adapter.calls[0]
+    assert LONG_QUERY_SUFFIX_A.strip() in adapter_input["user_query_text_for_planning"]
+    assert adapter_input["user_query_ref"]["preview"] == LONG_QUERY_PREFIX
+    assert adapter_input["user_query_ref"]["digest"] == planner_input.user_query_digest
+    assert adapter_input["user_query_ref"]["raw_user_query_retained"] is False
+    assert adapter_input["user_query_ref"]["user_query_text_for_planning_retained"] is False
+
+    persisted_payload = json.dumps(payload, sort_keys=True)
+    persisted_state = json.dumps(kernel.state.search_planner_proposal_state, sort_keys=True)
+    persisted_projection = json.dumps(
+        kernel.state.search_planner_proposal_projection,
+        sort_keys=True,
+    )
+    persisted_history = json.dumps(
+        kernel.state.search_planner_proposal_history,
+        sort_keys=True,
+    )
+    trace_json = json.dumps(kernel.trace_projection().to_dict(), sort_keys=True)
+    for persisted in (
+        persisted_payload,
+        persisted_state,
+        persisted_projection,
+        persisted_history,
+        trace_json,
+    ):
+        assert LONG_QUERY_SUFFIX_A.strip() not in persisted
+        assert '"user_query_text_for_planning":' not in persisted
+    assert kernel.state.search_planner_proposal_projection["user_query_ref"] == {
+        "digest": planner_input.user_query_digest,
+        "full_user_query_text_retained": False,
+        "preview": LONG_QUERY_PREFIX,
+        "preview_char_limit": SEARCH_PLANNER_INPUT_PREVIEW_CHARS,
+        "user_query_text_for_planning_retained": False,
+    }
+
+
+def test_user_query_digest_uses_full_query_not_preview() -> None:
+    kernel = _kernel()
+    input_a = _planner_input(kernel, query=LONG_QUERY_PREFIX + LONG_QUERY_SUFFIX_A)
+    input_b = _planner_input(kernel, query=LONG_QUERY_PREFIX + LONG_QUERY_SUFFIX_B)
+
+    assert input_a.user_query_preview == LONG_QUERY_PREFIX
+    assert input_b.user_query_preview == LONG_QUERY_PREFIX
+    assert input_a.user_query_preview == input_b.user_query_preview
+    assert input_a.user_query_digest != input_b.user_query_digest
+
+
+def test_same_prefix_different_suffix_stale_query_is_rejected() -> None:
+    kernel = _kernel()
+    action_input = _planner_input(kernel, query=LONG_QUERY_PREFIX + LONG_QUERY_SUFFIX_A)
+    action = kernel.authorize_search_planner_production(
+        user_query_digest=action_input.user_query_digest,
+    )
+    stale_input = _planner_input(kernel, query=LONG_QUERY_PREFIX + LONG_QUERY_SUFFIX_B)
+    assert action_input.user_query_preview == stale_input.user_query_preview
+    assert action_input.user_query_digest != stale_input.user_query_digest
+    payload = build_search_planner_observation_payload(
+        adapter_result=_planner_result(),
+        planner_input=stale_input.to_adapter_payload(),
+    )
+    observation = Observation.from_action(
+        action,
+        observation_type=ObservationType.SEARCH_PLANNER_PRODUCED,
+        status=RunStageStatus.COMPLETED,
+        payload=payload,
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="stale query digest"):
+        kernel.reduce(observation)
 
 
 def test_stale_query_digest_is_rejected() -> None:
