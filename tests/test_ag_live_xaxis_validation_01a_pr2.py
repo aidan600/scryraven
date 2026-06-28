@@ -323,6 +323,64 @@ def test_fake_direct_response_normalizes_and_reduces_through_run_kernel() -> Non
     assert packet["execution_mode"] == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_DIRECT_LIVE
 
 
+def test_missing_selected_task_in_provider_results_fails_closed() -> None:
+    kernel = _ready_kernel()
+    request = _request_packet(kernel)
+
+    with pytest.raises(
+        LiveSearchValidationInvocationError,
+        match="missing selected search task ids",
+    ):
+        normalize_provider_results_by_task(
+            request_packet=request,
+            provider_results_by_task={},
+            root=ROOT,
+        )
+
+
+def test_selected_task_with_empty_results_counts_completed_provider_call() -> None:
+    kernel = _ready_kernel()
+    request = _request_packet(kernel)
+    task_id = pr1._selected_task_ids(kernel)[0]
+    facts = execution_facts_for_mode(LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE)
+
+    packet = reduce_provider_results_through_run_kernel(
+        kernel=kernel,
+        request_packet=request,
+        provider_results_by_task={task_id: []},
+        root=ROOT,
+        **facts,
+    )
+
+    state = kernel.state.live_search_validation_state
+    assert state["candidate_count"] == 0
+    assert state["search_result_candidates"] == []
+    assert state["provider_calls_attempted"] == 1
+    assert state["provider_calls_completed"] == 1
+    assert packet["candidate_count"] == 0
+    assert packet["provider_calls_attempted"] == 1
+    assert packet["provider_calls_completed"] == 1
+
+
+def test_extra_unselected_task_in_provider_results_fails_closed() -> None:
+    kernel = _ready_kernel()
+    request = _request_packet(kernel)
+    task_id = pr1._selected_task_ids(kernel)[0]
+
+    with pytest.raises(
+        LiveSearchValidationInvocationError,
+        match="unselected search task",
+    ):
+        normalize_provider_results_by_task(
+            request_packet=request,
+            provider_results_by_task={
+                task_id: [],
+                "search-task:unselected": [],
+            },
+            root=ROOT,
+        )
+
+
 def test_pr1_offline_fake_expectations_still_hold() -> None:
     kernel = _ready_kernel()
 

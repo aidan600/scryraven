@@ -385,20 +385,45 @@ def normalize_provider_results_by_task(
     """Normalize sanitized provider result records by selected task id."""
 
     request = validate_request_packet(request_packet, root=root)
-    selected_ids = set(_ordered_unique(request["selected_search_task_ids"]))
+    selected_ids = _ordered_unique(request["selected_search_task_ids"])
+    selected_set = set(selected_ids)
     results_per_task_cap = int(request["results_per_task_cap"])
-    normalized: dict[str, list[dict[str, Any]]] = {}
+    raw_result_map: dict[str, Sequence[Mapping[str, Any]]] = {}
     for raw_task_id, raw_results in provider_results_by_task.items():
         task_id = _required_token(
             raw_task_id,
             "provider result task id is required",
             limit=260,
         )
-        if task_id not in selected_ids:
+        if task_id in raw_result_map:
+            raise LiveSearchValidationInvocationError(
+                "provider results contain duplicate search task ids"
+            )
+        if task_id not in selected_set:
             raise LiveSearchValidationInvocationError(
                 "provider results reference unselected search task"
             )
-        result_list = _safe_list(raw_results)
+        if isinstance(raw_results, str | bytes) or not isinstance(
+            raw_results,
+            Sequence,
+        ):
+            raise LiveSearchValidationInvocationError(
+                "provider results for selected search task must be a sequence"
+            )
+        raw_result_map[task_id] = raw_results
+
+    missing_task_ids = [
+        task_id for task_id in selected_ids if task_id not in raw_result_map
+    ]
+    if missing_task_ids:
+        raise LiveSearchValidationInvocationError(
+            "provider results missing selected search task ids: "
+            + ", ".join(missing_task_ids)
+        )
+
+    normalized: dict[str, list[dict[str, Any]]] = {}
+    for task_id in selected_ids:
+        result_list = _safe_list(raw_result_map[task_id])
         if len(result_list) > results_per_task_cap:
             raise LiveSearchValidationInvocationError(
                 "provider results exceed results_per_task_cap"
@@ -496,6 +521,7 @@ def reduce_provider_results_through_run_kernel(
         provider_results_by_task=provider_results_by_task,
         root=root,
     )
+    provider_call_count = len(_ordered_unique(request["selected_search_task_ids"]))
     action = kernel.authorize_live_search_validation(
         selected_search_task_ids=request["selected_search_task_ids"],
         provider_authorized=request["provider_authorized"],
@@ -516,8 +542,8 @@ def reduce_provider_results_through_run_kernel(
         search_executor_handoff_state=kernel.state.search_executor_handoff_state,
         provider_used=request["provider_authorized"],
         provider_results_by_task=normalized_results,
-        provider_calls_attempted_count=len(normalized_results),
-        provider_calls_completed_count=len(normalized_results),
+        provider_calls_attempted_count=provider_call_count,
+        provider_calls_completed_count=provider_call_count,
         execution_mode=execution_mode,
         broker_invoked=broker_invoked,
         live_provider_called=live_provider_called,
