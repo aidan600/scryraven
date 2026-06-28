@@ -45,6 +45,7 @@ GAP_KINDS = frozenset(
         "analysis_missing",
         "analysis_gap",
         "missing_fact",
+        "possible_contradiction",
         "currentness_concern",
         "scope_mismatch",
         "unreadable_source",
@@ -681,6 +682,26 @@ def _gap_from_proposal(
             limit=500,
         ),
         proposed_query_hint=_clean_text(proposal.get("proposed_query_hint"), limit=300),
+        required_source_class_hint=_clean_token(
+            proposal.get("required_source_class_hint")
+            or proposal.get("required_source_class"),
+            limit=260,
+        ),
+        required_source_tier_hint=_clean_token(
+            proposal.get("required_source_tier_hint")
+            or proposal.get("required_source_tier"),
+            limit=160,
+        ),
+        required_currentness_hint=_clean_token(
+            proposal.get("required_currentness_hint")
+            or proposal.get("required_currentness"),
+            limit=160,
+        ),
+        priority_hint=_clean_token(
+            proposal.get("priority_hint") or proposal.get("priority"),
+            limit=80,
+        ),
+        budget_hint=_json_safe(proposal.get("budget_hint")),
         trigger_finding_id=trigger_finding_id
         or _clean_token(proposal.get("trigger_finding_id"), limit=260),
         record=record,
@@ -741,6 +762,11 @@ def _gap_record(
     index: int,
     proposed_search_direction: str | None = None,
     proposed_query_hint: str | None = None,
+    required_source_class_hint: str | None = None,
+    required_source_tier_hint: str | None = None,
+    required_currentness_hint: str | None = None,
+    priority_hint: str | None = None,
+    budget_hint: Any = None,
     trigger_finding_id: str | None = None,
 ) -> dict[str, Any]:
     gap_base = _without_empty(
@@ -764,6 +790,11 @@ def _gap_record(
             "information_needed": information_needed,
             "proposed_search_direction": proposed_search_direction,
             "proposed_query_hint": proposed_query_hint,
+            "required_source_class_hint": required_source_class_hint,
+            "required_source_tier_hint": required_source_tier_hint,
+            "required_currentness_hint": required_currentness_hint,
+            "priority_hint": priority_hint,
+            "budget_hint": budget_hint,
             "evidence_ledger_custody_projection_ref": {
                 "trace_key": FETCH_READ_CANDIDATE_CUSTODY_TRACE_KEY,
                 "projection_digest": custody_projection_digest,

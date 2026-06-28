@@ -160,13 +160,17 @@ Required second-half semantic loop:
     admissible fetch/read packet references.
 15. EvidenceRelativeAnalysisPacket / AnalystReport records proposal-only
     evidence-relative meaning after EvidenceLedger custody.
-16. SpecialistAnalysisPacket records specialized analysis when needed.
-17. ScrutineerReview reviews support, conflicts, drift, and gaps.
-18. ComponentCoverageRecord proposals bind admitted observations to components.
-19. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
-20. SufficiencyJudgment consumes contract/custody/semantic/coverage/amendment state and decides readiness.
-21. FinalAnswerPacket packages Author-safe material.
-22. Author writes prose only from FAP-safe material.
+16. FollowupSearchIntentPacket / AnalysisGapSearchProposal can translate
+    Analyst gap proposals into proposal-only follow-up search intent; this is
+    reviewable structure, not authorization, not a query plan, and not
+    SearchExecutorHandoff/search dispatch/evidence.
+17. SpecialistAnalysisPacket records specialized analysis when needed.
+18. ScrutineerReview reviews support, conflicts, drift, and gaps.
+19. ComponentCoverageRecord proposals bind admitted observations to components.
+20. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
+21. SufficiencyJudgment consumes contract/custody/semantic/coverage/amendment state and decides readiness.
+22. FinalAnswerPacket packages Author-safe material.
+23. Author writes prose only from FAP-safe material.
 ```
 
 PR #323 proved this offline blocked X-axis after a component-shaped plan already
@@ -203,9 +207,10 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | EvidenceLedger | Owns evidence custody and source-obligation state after admissible sanitized content exists. |
 | SemanticObservation | Records evidence-relative semantic observations. |
 | EvidenceRelativeAnalysisPacket / AnalystReport | Current standalone proposal-only evidence-relative analysis packet with embedded `analyst_report`; it consumes EvidenceLedger fetch/read custody IDs/digests and injected offline Analyst proposal records, is not SemanticObservation admission, and does not create ComponentCoverage, citation eligibility, source-obligation satisfaction, Sufficiency, FinalAnswerPacket, Author input, readiness, search dispatch, or final prose authority. |
+| FollowupSearchIntentPacket / AnalysisGapSearchProposal | Current proposal-only gap-to-search-intent posture from validated `EvidenceRelativeAnalysisPacket` / `analyst_report.analysis_gap_proposals`. It is not search authorization, not a query plan, does not create SearchExecutorHandoff, does not dispatch search, does not create evidence, and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains required before any executable search work exists. |
 | SpecialistAnalysisPacket | Future specialist analysis packet when quantitative, legal, technical, or other specialist reasoning is needed. |
 | ScrutineerReview | Future review packet for support, conflicts, drift, and gap review. |
-| AnalysisGapSearchProposal | Future proposal from Analyst/Specialist/Scrutineer back to RunKernel when analysis reveals a search gap. It is a proposal, not a dispatch. |
+| AnalysisGapSearchProposal | Current reviewable proposal record inside `FollowupSearchIntentPacket`. It carries gap lineage, hints, and structural review readiness only; it is a proposal, not a dispatch. |
 | ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations exist. |
 | ContractAmendmentRecord / admission / application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
 | AnswerContractAuthorityMap | Passive authority map over components, custody, binding, readiness, and FAP state. It does not mutate the contract. |
@@ -354,7 +359,14 @@ Runtime success requires:
    citation eligibility, source-obligation satisfaction, Sufficiency,
    FinalAnswerPacket, Author input, readiness, search dispatch, or product
    correctness.
-7. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
+7. `AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01` - introduce
+   `FollowupSearchIntentPacket` and `AnalysisGapSearchProposal` as the
+   proposal-only gap-to-search-intent posture after Analyst gap proposals. It is
+   not search authorization, not a query plan, does not create
+   SearchExecutorHandoff, does not dispatch search, does not create evidence,
+   and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains
+   required.
+8. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
    Analyst/Specialist/Scrutineer/Sufficiency/FAP prerequisites exist as a
    coherent evidence-relative chain.
 
