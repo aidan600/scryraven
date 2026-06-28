@@ -87,14 +87,22 @@ Historical SearchPlannerRevision exact posture: PR #329 / AG-SEARCH-PLANNER-REVI
 Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 
-`AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduces the RunKernel-owned
+`AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduced the RunKernel-owned
 search-only validation seam. It consumes `current_answer_contract` plus
 `SearchExecutorHandoff` directly and produces sanitized `SearchResultCandidate`
-records only from injected fake-provider results. PR1 must not claim
-fetch/read, EvidenceLedger admission, citations, source-obligation
-satisfaction, Sufficiency, FinalAnswerPacket, Author, partial-answer readiness,
-product correctness, or final answer quality. PR2 is the later broker/direct
-live invocation gate.
+records only from injected fake-provider results. PR2 adds broker/direct
+invocation scaffolding only: shared request/cap/output schema, provider
+allowlist, sanitized candidate normalizer, redaction posture, inert wrappers,
+and the same RunKernel reduction path. PR2 does not run live validation, call a
+broker job, call providers, fetch/read, retrieve, admit EvidenceLedger custody,
+create citations, satisfy source obligations, decide Sufficiency, create
+FinalAnswerPacket state, create Author input/prose, make partial-answer
+readiness claims, or claim product correctness unless a later phase separately
+licenses it.
+
+`broker_invoked` and `live_provider_called` are PR2 execution facts, not
+downstream closed-surface flags or evidence/readiness authority. Raw provider
+payload and raw search response retention remain false in all modes.
 
 `provider_preference_hint` is only a hint. Live provider authority must come from
 an explicit RunKernel-authorized validation action. Existing provider wrappers
@@ -253,7 +261,8 @@ content is explicitly pasted into the current prompt or committed here.
   `AG-LIVE-XAXIS-VALIDATION-01A` PR1 is a search-only validation seam that
   consumes `current_answer_contract` plus `SearchExecutorHandoff` directly and
   emits sanitized `SearchResultCandidate` records only from injected
-  fake-provider results. PR2 is the later broker/direct live invocation gate.
+  fake-provider results. PR2 is broker/direct invocation scaffolding only and
+  remains inert unless live validation is separately licensed.
 - `AG-LIVE-XAXIS-VALIDATION-01A` must keep fetch/read, EvidenceLedger custody,
   citations, source-obligation satisfaction, Sufficiency, FAP, Author,
   partial-answer readiness, and product correctness closed.

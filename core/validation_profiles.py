@@ -12,6 +12,7 @@ AG_LIVE_SMOKE = "AG-LIVE-SMOKE"
 AG_LIVE_SOURCE_CUSTODY = "AG-LIVE-SOURCE-CUSTODY"
 AG_LIVE_MULTI_COMPONENT = "AG-LIVE-MULTI-COMPONENT"
 AG_LIVE_DISAMBIG = "AG-LIVE-DISAMBIG"
+AG_LIVE_XAXIS_SEARCH_CANDIDATES = "AG-LIVE-XAXIS-SEARCH-CANDIDATES"
 
 DIRECT_HUMAN_PRIVATE_SHELL = "direct_human_private_shell"
 BROKER_PRIVATE_ADAPTER = "broker_private_adapter"
@@ -179,6 +180,43 @@ class ValidationSubjectBudgetSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class SearchCandidateValidationProfile:
+    """Narrow search-only validation profile for AG-LIVE-XAXIS PR2."""
+
+    name: str = AG_LIVE_XAXIS_SEARCH_CANDIDATES
+    purpose: str = "Search-only candidate discovery for one handoff task."
+    max_selected_tasks: int = 1
+    provider_call_cap: int = 1
+    results_per_task_cap: int = 2
+    retry_cap: int = 0
+    fetch_read_cap: int = 0
+    retrieval_cap: int = 0
+    evidence_ledger_admission_cap: int = 0
+    citation_eligibility_cap: int = 0
+    sufficiency_cap: int = 0
+    final_answer_packet_cap: int = 0
+    author_cap: int = 0
+    raw_provider_payload_retained: bool = False
+    raw_search_response_retained: bool = False
+    output_root: str = "output/"
+    live_status: str = LIVE_STATUS_NOT_RUN
+
+    def broker_request_caps(self) -> dict[str, int]:
+        return {
+            "provider_call_cap": self.provider_call_cap,
+            "results_per_task_cap": self.results_per_task_cap,
+            "retry_cap": self.retry_cap,
+            "fetch_read_cap": self.fetch_read_cap,
+            "retrieval_cap": self.retrieval_cap,
+            "evidence_ledger_admission_cap": self.evidence_ledger_admission_cap,
+            "citation_eligibility_cap": self.citation_eligibility_cap,
+            "sufficiency_cap": self.sufficiency_cap,
+            "final_answer_packet_cap": self.final_answer_packet_cap,
+            "author_cap": self.author_cap,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ValidationProfile:
     """Product-owned validation profile consumed by direct and broker paths."""
 
@@ -300,6 +338,8 @@ AG_LIVE_MULTI_COMPONENT_SUBJECT_BUDGET = ValidationSubjectBudgetSpec(
     policy_status="planned_not_run_not_live_licensed",
 )
 
+AG_LIVE_XAXIS_SEARCH_CANDIDATE_PROFILE = SearchCandidateValidationProfile()
+
 VALIDATION_PROFILES: dict[str, ValidationProfile] = {
     AG_LIVE_SMOKE: ValidationProfile(
         name=AG_LIVE_SMOKE,
@@ -414,3 +454,7 @@ def get_validation_profile(name: str) -> ValidationProfile:
 
 def validation_profile_names() -> tuple[str, ...]:
     return tuple(VALIDATION_PROFILES)
+
+
+def get_search_candidate_validation_profile() -> SearchCandidateValidationProfile:
+    return AG_LIVE_XAXIS_SEARCH_CANDIDATE_PROFILE
