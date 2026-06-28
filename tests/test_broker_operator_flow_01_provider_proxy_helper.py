@@ -196,8 +196,8 @@ def test_helper_loads_only_needed_key_from_explicit_env_file(tmp_path: Path) -> 
     env_file = tmp_path / "operator.env"
     env_file.write_text(
         "\ufeff# local only\n"
-        "SERPER_API_KEY='serper-secret'\n"
-        "SCRYRAVEN_BROKER_TOKEN=ignored-token\n"
+        f"{helper.SERPER_KEY_ENV_VAR}=example-provider-value\n"
+        f"{client.TOKEN_ENV_VAR}=ignored-token\n"
         "UNRELATED=value\n",
         encoding="utf-8",
     )
@@ -210,9 +210,9 @@ def test_helper_loads_only_needed_key_from_explicit_env_file(tmp_path: Path) -> 
         process_env={},
     )
 
-    assert values == {"SERPER_API_KEY": "serper-secret"}
+    assert values == {helper.SERPER_KEY_ENV_VAR: "example-provider-value"}
     assert env[client.TOKEN_ENV_VAR] == "temporary-token"
-    assert env[helper.SERPER_KEY_ENV_VAR] == "serper-secret"
+    assert env[helper.SERPER_KEY_ENV_VAR] == "example-provider-value"
     assert "UNRELATED" not in env
 
 
