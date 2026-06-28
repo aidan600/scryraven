@@ -87,13 +87,14 @@ Historical SearchPlannerRevision exact posture: PR #329 / AG-SEARCH-PLANNER-REVI
 Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 
-The immediate next implementation gate is `AG-LIVE-XAXIS-VALIDATION-01A`, a
-search-only live validation slice. It must consume `current_answer_contract`
-plus `SearchExecutorHandoff` directly and produce sanitized
-`SearchResultCandidate` records only. It must not claim fetch/read,
-EvidenceLedger admission, citations, source-obligation satisfaction,
-Sufficiency, FinalAnswerPacket, Author, partial-answer readiness, product
-correctness, or final answer quality.
+`AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduces the RunKernel-owned
+search-only validation seam. It consumes `current_answer_contract` plus
+`SearchExecutorHandoff` directly and produces sanitized `SearchResultCandidate`
+records only from injected fake-provider results. PR1 must not claim
+fetch/read, EvidenceLedger admission, citations, source-obligation
+satisfaction, Sufficiency, FinalAnswerPacket, Author, partial-answer readiness,
+product correctness, or final answer quality. PR2 is the later broker/direct
+live invocation gate.
 
 `provider_preference_hint` is only a hint. Live provider authority must come from
 an explicit RunKernel-authorized validation action. Existing provider wrappers
@@ -248,10 +249,11 @@ content is explicitly pasted into the current prompt or committed here.
 - Live ScryRaven/proplex provider, model, search, or retrieval calls are disabled
   unless the phase explicitly scopes query class, run cap, provider/model/search
   budget, packet path, redaction plan, decision, and stop condition.
-- The immediate post-#330 live gate is not a product run. It is
-  `AG-LIVE-XAXIS-VALIDATION-01A`, a search-only validation slice that consumes
-  `current_answer_contract` plus `SearchExecutorHandoff` directly and emits
-  sanitized `SearchResultCandidate` records only.
+- The post-#330 live-validation path is not a product run.
+  `AG-LIVE-XAXIS-VALIDATION-01A` PR1 is a search-only validation seam that
+  consumes `current_answer_contract` plus `SearchExecutorHandoff` directly and
+  emits sanitized `SearchResultCandidate` records only from injected
+  fake-provider results. PR2 is the later broker/direct live invocation gate.
 - `AG-LIVE-XAXIS-VALIDATION-01A` must keep fetch/read, EvidenceLedger custody,
   citations, source-obligation satisfaction, Sufficiency, FAP, Author,
   partial-answer readiness, and product correctness closed.

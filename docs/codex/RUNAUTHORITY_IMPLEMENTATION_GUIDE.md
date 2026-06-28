@@ -87,12 +87,14 @@ Historical SearchPlannerRevision exact posture: PR #329 / AG-SEARCH-PLANNER-REVI
 Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 
-The first live gate is `AG-LIVE-XAXIS-VALIDATION-01A`, a search-only validation
-slice that consumes `current_answer_contract` and SearchExecutorHandoff
-directly. It may emit sanitized `SearchResultCandidate` records only. It must
-not fetch/read, admit EvidenceLedger custody, create citations, satisfy source
-obligations, decide Sufficiency, prepare FinalAnswerPacket state, create Author
-input, or claim partial-answer/product readiness.
+`AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduces a search-only validation seam
+that consumes `current_answer_contract` and SearchExecutorHandoff directly. It
+may emit sanitized `SearchResultCandidate` records only from injected
+fake-provider results. It must not fetch/read, admit EvidenceLedger custody,
+create citations, claim source-obligation satisfaction, decide Sufficiency,
+prepare FinalAnswerPacket state, create Author input, or claim partial-answer
+readiness, product correctness, or product readiness. PR2 is the later
+broker/direct live invocation gate.
 
 `provider_preference_hint` is only a hint. Live provider authority must come
 from an explicit RunKernel-authorized validation action. Existing provider

@@ -12,22 +12,22 @@ Actual app delta: the bounded direct-human runner and tracked broker client can
 target a shared product-owned validation profile/cap/packet schema instead of
 runner-owned doctrine.
 
-Current supersession note after PR #330: this broad product-run plan is
-historical/later planning, not the immediate post-SearchExecutorHandoff
-validation plan. The next implementation gate after
-`AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` is
-`AG-LIVE-XAXIS-VALIDATION-01A`, a search-only live validation slice that
-consumes `current_answer_contract` plus `SearchExecutorHandoff` directly and
-emits sanitized `SearchResultCandidate` records only.
+Current supersession note after PR #330 and `AG-LIVE-XAXIS-VALIDATION-01A`
+PR1: this broad product-run plan is historical/later planning, not the
+immediate post-SearchExecutorHandoff validation plan. PR1 introduces a
+RunKernel-owned, offline-governed search-only validation seam that consumes
+`current_answer_contract` plus `SearchExecutorHandoff` directly and emits
+sanitized `SearchResultCandidate` records only from injected fake-provider
+results. PR2 is the later broker/direct live invocation gate.
 
 `AG-LIVE-XAXIS-VALIDATION-01A` must not fetch/read content, admit
-`EvidenceLedger` custody, create citations, satisfy source obligations, decide
-`SufficiencyJudgment`, prepare `FinalAnswerPacket`, create Author input, make
-partial answers ready, or claim product correctness. `provider_preference_hint`
-is only a hint; live provider authority must come from an explicit
-RunKernel-authorized validation action. Existing `core/search_providers.py`
-wrappers, including Serper, may be reused only behind a new governed
-live-search-validation adapter.
+`EvidenceLedger` custody, create citations, claim citation eligibility, claim
+source-obligation satisfaction, decide `SufficiencyJudgment`, prepare
+`FinalAnswerPacket`, create Author input, make partial-answer readiness claims,
+or claim product correctness. `provider_preference_hint` is only a hint; live
+provider authority must come from an explicit RunKernel-authorized validation
+action. Existing `core/search_providers.py` wrappers, including Serper, may be
+reused only behind a governed live-search-validation adapter.
 
 The historical AG-LIVE-BOUND-01 / AG-LIVE-BRIDGE-01 plan below is retained as
 planning history for a later product-run validation after the second-half
