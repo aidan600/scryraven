@@ -592,7 +592,7 @@ def test_static_closed_surface_guard_for_search_executor_handoff() -> None:
 
 def test_docs_use_merge_stable_search_executor_handoff_posture() -> None:
     required = (
-        "PR #329 / AG-SEARCH-PLANNER-REVISION-01",
+        "PR #330 / AG-SEARCH-EXECUTOR-HANDOFF-01",
         "AG-SEARCH-EXECUTOR-HANDOFF-01",
         "handoff consumes current_answer_contract when present",
         "Scout/revision material is search direction only",
@@ -600,7 +600,7 @@ def test_docs_use_merge_stable_search_executor_handoff_posture() -> None:
         "search work packet",
         "no live search/provider/fetch/read/retrieval calls were run",
         "no EvidenceLedger/citations/source-obligation satisfaction",
-        "post-merge next gate is AG-LIVE-XAXIS-VALIDATION-01",
+        "next implementation gate after AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01 is AG-LIVE-XAXIS-VALIDATION-01A",
     )
     forbidden = (
         "handoff executes live search",
@@ -612,7 +612,7 @@ def test_docs_use_merge_stable_search_executor_handoff_posture() -> None:
         "partial-answer readiness is now next",
     )
     for path in DOCS:
-        text = _text(path)
+        text = " ".join(_text(path).split())
         for needle in required:
             assert needle in text, (path, needle)
         for needle in forbidden:
