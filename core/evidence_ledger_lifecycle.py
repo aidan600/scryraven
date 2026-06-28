@@ -15,6 +15,9 @@ from core.evidence_ledger import (
     build_evidence_ledger_observation_from_run_contract,
     build_evidence_ledger_observation_from_runtime,
 )
+from core.evidence_ledger_candidate_custody import (
+    build_evidence_ledger_observation_from_fetch_read_content_packet,
+)
 from core.evidence_ledger_runtime import execute_evidence_ledger_reduction_action
 from core.provider_job_evidence_ledger_bridge import (
     build_provider_job_evidence_ledger_observation,
@@ -137,6 +140,37 @@ def reduce_provider_job_evidence_into_evidence_ledger(
     }
 
 
+def reduce_fetch_read_content_packet_into_evidence_ledger(
+    *,
+    run_kernel: RunKernel,
+    fetch_read_content_packet: Mapping[str, Any],
+    observation_id: str | None = None,
+) -> dict[str, Any]:
+    """Reduce fetch/read candidate-content custody through EvidenceLedger."""
+
+    observation = build_evidence_ledger_observation_from_fetch_read_content_packet(
+        fetch_read_content_packet,
+        observation_id=observation_id,
+    )
+    payload = observation.to_dict()
+    fetch_read_custody = payload.get("fetch_read_candidate_custody")
+    action = run_kernel.authorize_evidence_ledger_reduction(
+        inputs={
+            "observation_source": payload.get("observation_source"),
+            "fetch_read_content_packet_id": fetch_read_content_packet.get("packet_id"),
+            "fetch_read_content_packet_digest": fetch_read_content_packet.get(
+                "packet_digest"
+            ),
+            "fetch_read_candidate_custody_count": len(
+                fetch_read_custody if isinstance(fetch_read_custody, list) else []
+            ),
+        }
+    )
+    result = execute_evidence_ledger_reduction_action(action, payload=payload)
+    run_kernel.reduce(result.observation)
+    return _ledger_projection(run_kernel)
+
+
 def reduce_final_evidence_bundle_into_evidence_ledger(
     *,
     run_kernel: RunKernel,
@@ -195,6 +229,7 @@ def reduce_post_final_source_obligations_into_evidence_ledger(
 
 
 __all__ = [
+    "reduce_fetch_read_content_packet_into_evidence_ledger",
     "reduce_final_evidence_bundle_into_evidence_ledger",
     "reduce_post_final_source_obligations_into_evidence_ledger",
     "reduce_pre_recovery_source_obligations_into_evidence_ledger",

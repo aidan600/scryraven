@@ -156,7 +156,8 @@ Required second-half semantic loop:
 11. Live validation emits sanitized SearchResultCandidate records only.
 12. A later packet phase creates SearchResultCandidatePacket.
 13. A fetch/read phase creates FetchReadContentPacket / SanitizedContentReference.
-14. EvidenceLedger records custody only from sanitized, admissible content.
+14. EvidenceLedger records candidate/content custody only from sanitized,
+    admissible fetch/read packet references.
 15. EvidenceRelativeAnalysisPacket / AnalystReport records evidence-relative meaning.
 16. SpecialistAnalysisPacket records specialized analysis when needed.
 17. ScrutineerReview reviews support, conflicts, drift, and gaps.
@@ -197,6 +198,7 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | Live search validation adapter | Future governed adapter that may execute provider search only when RunKernel authorizes a validation action. It emits sanitized SearchResultCandidate records only in the first live slice. |
 | SearchResultCandidatePacket | Future packet for sanitized result candidates. It is not EvidenceLedger custody and does not satisfy obligations. |
 | FetchReadContentPacket / SanitizedContentReference | bounded readable-content handoff after SearchResultCandidatePacket and before EvidenceLedger custody. It is not evidence, not citation-eligible, and does not satisfy source obligations. |
+| EvidenceLedger fetch/read candidate custody | RunKernel-authorized reducer that admits FetchReadContentPacket / SanitizedContentReference packet, candidate, reference, status, URL/domain/title, and bounded-content count/digest lineage into EvidenceLedger candidate/content custody. It is not semantic support, citation eligibility, source-obligation satisfaction, ComponentCoverage, Sufficiency, FinalAnswerPacket material, Author input, partial readiness, or product correctness. |
 | EvidenceLedger | Owns evidence custody and source-obligation state after admissible sanitized content exists. |
 | SemanticObservation | Records evidence-relative semantic observations. |
 | EvidenceRelativeAnalysisPacket / AnalystReport | Future evidence-relative analysis report that consumes admitted custody/content and records meaning, caveats, conflicts, and gaps without final prose authority. |
@@ -337,11 +339,16 @@ Runtime success requires:
 4. `AG-FETCH-READ-CONTENT-REFERENCE-01` - create `FetchReadContentPacket` and
    `SanitizedContentReference` inputs from authorized candidate fetch/read,
    still without claiming readiness.
-5. `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01` - define
+5. `AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01` - reduce validated
+   `FetchReadContentPacket` / `SanitizedContentReference` records into
+   EvidenceLedger candidate/content custody, preserving lineage only and still
+   without semantic support, citations, source-obligation satisfaction,
+   Sufficiency, FAP, Author input, partial readiness, or product correctness.
+6. `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01` - define
    `EvidenceRelativeAnalysisPacket` / `AnalystReport` over admitted
    custody/content, with `AnalysisGapSearchProposal` for analysis-discovered
    gaps.
-6. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
+7. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
    Analyst/Specialist/Scrutineer/Sufficiency/FAP prerequisites exist as a
    coherent evidence-relative chain.
 

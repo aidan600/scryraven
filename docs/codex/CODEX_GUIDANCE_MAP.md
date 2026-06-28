@@ -160,6 +160,14 @@ not satisfy source obligations.
 readable-content handoff after `SearchResultCandidatePacket` and before
 EvidenceLedger custody; it is not evidence, not citation-eligible, and does not
 satisfy source obligations.
+`AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01` adds the RunKernel-authorized
+`FetchReadContentPacket` / `SanitizedContentReference` -> EvidenceLedger
+candidate/content custody seam. The custody records preserve packet,
+candidate, reference, status, digest, URL/domain/title, and bounded-content
+count/digest lineage only; they do not create semantic support, citation
+eligibility, source-obligation satisfaction, ComponentCoverage, Sufficiency,
+FinalAnswerPacket material, Author input, partial readiness, or product
+correctness.
 
 Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
 RunKernel/current_answer_contract second-half semantic architecture.
@@ -171,6 +179,7 @@ The roadmap order is:
 `AG-LIVE-XAXIS-VALIDATION-01A`,
 `AG-SEARCH-RESULT-CANDIDATE-PACKET-01`,
 `AG-FETCH-READ-CONTENT-REFERENCE-01`,
+`AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01`,
 `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01`, then later
 `AG-PARTIAL-ANSWER-READINESS-01`.
 

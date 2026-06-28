@@ -31,6 +31,11 @@ COMPONENT_SCOPED_SOURCE_CUSTODY_TRACE_KEY = "component_scoped_source_custody"
 COMPONENT_SCOPED_SOURCE_CUSTODY_NEXT_CONSUMER = (
     "component evidence/citation binding"
 )
+FETCH_READ_CANDIDATE_CUSTODY_SCHEMA_VERSION = (
+    "fetch_read_candidate_custody_ag_evidence_ledger_candidate_custody_01_v1"
+)
+FETCH_READ_CANDIDATE_CUSTODY_TRACE_KEY = "fetch_read_candidate_custody"
+FETCH_READ_CANDIDATE_CUSTODY_NEXT_CONSUMER = "evidence-relative analysis packet"
 
 UNKNOWN = "unknown"
 NOT_OBSERVABLE = "not_observable"
@@ -460,6 +465,9 @@ class EvidenceLedger:
     component_source_custody: dict[str, dict[str, Any]] = field(
         default_factory=dict
     )
+    fetch_read_candidate_custody: dict[str, dict[str, Any]] = field(
+        default_factory=dict
+    )
 
     def reduce_observation(
         self,
@@ -498,6 +506,8 @@ class EvidenceLedger:
         self._admit_final_evidence(payload.get("final_evidence"))
         for custody in _list(payload.get("component_source_custody")):
             self._admit_component_source_custody(custody)
+        for custody in _list(payload.get("fetch_read_candidate_custody")):
+            self._admit_fetch_read_candidate_custody(custody)
         self._evaluate_requirements()
         return self
 
@@ -554,6 +564,9 @@ class EvidenceLedger:
             "official_current_source_custody": official_current_projection.to_dict(),
             "component_scoped_source_custody": (
                 self.to_component_scoped_source_custody_projection()
+            ),
+            "fetch_read_candidate_custody": (
+                self.to_fetch_read_candidate_custody_projection()
             ),
             "compatibility": {
                 "controller_evidence_ledger_status": "compatibility_only_subordinate",
@@ -636,6 +649,59 @@ class EvidenceLedger:
             "final_answer_allowed": False,
             "author_payload_ready": False,
             "behavior_boundary_flags": _component_custody_false_flags(),
+        }
+        return _safe_mapping(payload)
+
+    def to_fetch_read_candidate_custody_projection(self) -> dict[str, Any]:
+        records = [
+            _fetch_read_candidate_custody_record(record)
+            for record in sorted(
+                self.fetch_read_candidate_custody.values(),
+                key=lambda item: (
+                    str(item.get("candidate_id") or ""),
+                    str(item.get("reference_id") or ""),
+                ),
+            )
+        ]
+        records = [record for record in records if record]
+        custody_gaps = [
+            _fetch_read_candidate_custody_gap(record)
+            for record in records
+            if record.get("fetch_read_status") != "readable"
+        ]
+        custody_gaps = [gap for gap in custody_gaps if gap]
+        payload = {
+            "schema_version": FETCH_READ_CANDIDATE_CUSTODY_SCHEMA_VERSION,
+            "trace_key": FETCH_READ_CANDIDATE_CUSTODY_TRACE_KEY,
+            "owner": "RunKernel.EvidenceLedger",
+            "canonical_state": True,
+            "trace_only": False,
+            "storage_only": False,
+            "fetch_read_packet_consumer": True,
+            "candidate_content_custody_visible": bool(records),
+            "custody_record_count": len(records),
+            "readable_record_count": sum(
+                1 for record in records if record.get("fetch_read_status") == "readable"
+            ),
+            "unreadable_record_count": sum(
+                1 for record in records if record.get("fetch_read_status") != "readable"
+            ),
+            "fetch_read_candidate_custody_records": records,
+            "custody_gaps": custody_gaps,
+            "custody_gap_count": len(custody_gaps),
+            "source_obligation_candidate_ids_are_lineage_only": True,
+            "source_obligation_candidate_ids_satisfy_requirements": False,
+            "candidate_content_custody_is_semantic_support": False,
+            "citation_eligible": False,
+            "source_obligation_satisfied": False,
+            "component_coverage_created": False,
+            "sufficiency_decided": False,
+            "final_answer_packet_created": False,
+            "author_input_created": False,
+            "partial_answer_ready": False,
+            "product_correctness_claimed": False,
+            "next_consumer": FETCH_READ_CANDIDATE_CUSTODY_NEXT_CONSUMER,
+            "behavior_boundary_flags": _fetch_read_candidate_custody_false_flags(),
         }
         return _safe_mapping(payload)
 
@@ -964,6 +1030,19 @@ class EvidenceLedger:
         safe_record = _component_source_custody_record(record)
         if safe_record:
             self.component_source_custody[component_id] = safe_record
+
+    def _admit_fetch_read_candidate_custody(self, record: Any) -> None:
+        if not isinstance(record, Mapping):
+            return
+        safe_record = _fetch_read_candidate_custody_record(record)
+        if not safe_record:
+            return
+        key = (
+            _clean_text(safe_record.get("reference_id"), limit=320)
+            or _clean_text(safe_record.get("candidate_id"), limit=320)
+            or f"fetch-read-candidate-custody:{len(self.fetch_read_candidate_custody) + 1}"
+        )
+        self.fetch_read_candidate_custody[key] = safe_record
 
     def _evaluate_requirements(self) -> None:
         for requirement in self.requirements.values():
@@ -1995,6 +2074,143 @@ def _component_source_custody_record(record: Mapping[str, Any]) -> dict[str, Any
     return safe
 
 
+def _fetch_read_candidate_custody_record(record: Mapping[str, Any]) -> dict[str, Any]:
+    candidate_id = _clean_text(record.get("candidate_id"), limit=320)
+    reference_id = _clean_text(record.get("reference_id"), limit=320)
+    if not candidate_id or not reference_id:
+        return {}
+    status = _clean_token(record.get("fetch_read_status"), limit=80)
+    if status not in {"readable", "unreadable", "failed", "skipped", "blocked"}:
+        status = "unreadable"
+    disposition = _clean_token(record.get("disposition"), limit=80)
+    if disposition not in {
+        CandidateDisposition.OBSERVED.value,
+        CandidateDisposition.UNREADABLE.value,
+        CandidateDisposition.UNFETCHABLE.value,
+    }:
+        disposition = (
+            CandidateDisposition.OBSERVED.value
+            if status == "readable"
+            else CandidateDisposition.UNREADABLE.value
+        )
+    payload = {
+        "record_kind": "fetch_read_candidate_custody",
+        "candidate_id": candidate_id,
+        "candidate_digest": _clean_text(record.get("candidate_digest"), limit=128),
+        "search_result_candidate_record_digest": _clean_text(
+            record.get("search_result_candidate_record_digest"),
+            limit=128,
+        ),
+        "reference_id": reference_id,
+        "reference_digest": _clean_text(record.get("reference_digest"), limit=128),
+        "run_id": _clean_text(record.get("run_id"), limit=160),
+        "request_id": _clean_text(record.get("request_id"), limit=160),
+        "current_answer_contract_ref": _safe_mapping(
+            record.get("current_answer_contract_ref")
+        ),
+        "current_answer_contract_digest": _clean_text(
+            record.get("current_answer_contract_digest"),
+            limit=128,
+        ),
+        "search_executor_handoff_ref": _safe_mapping(
+            record.get("search_executor_handoff_ref")
+        ),
+        "search_executor_handoff_digest": _clean_text(
+            record.get("search_executor_handoff_digest"),
+            limit=128,
+        ),
+        "search_result_candidate_packet_ref": _safe_mapping(
+            record.get("search_result_candidate_packet_ref")
+        ),
+        "search_result_candidate_packet_id": _clean_text(
+            record.get("search_result_candidate_packet_id"),
+            limit=320,
+        ),
+        "search_result_candidate_packet_digest": _clean_text(
+            record.get("search_result_candidate_packet_digest"),
+            limit=128,
+        ),
+        "fetch_read_content_packet_ref": _safe_mapping(
+            record.get("fetch_read_content_packet_ref")
+        ),
+        "fetch_read_content_packet_id": _clean_text(
+            record.get("fetch_read_content_packet_id"),
+            limit=320,
+        ),
+        "fetch_read_content_packet_digest": _clean_text(
+            record.get("fetch_read_content_packet_digest"),
+            limit=128,
+        ),
+        "search_task_id": _clean_text(record.get("search_task_id"), limit=260),
+        "query_intent_id": _clean_text(record.get("query_intent_id"), limit=260),
+        "component_id": _clean_text(record.get("component_id"), limit=260),
+        "source_obligation_candidate_ids": _clean_text_list(
+            record.get("source_obligation_candidate_ids"),
+            limit=260,
+        ),
+        "candidate_title": _clean_text(record.get("candidate_title")),
+        "candidate_url": _clean_text(record.get("candidate_url"), limit=700),
+        "candidate_domain": _clean_text(record.get("candidate_domain"), limit=260),
+        "attempted_url": _clean_text(record.get("attempted_url"), limit=700),
+        "resolved_url": _clean_text(record.get("resolved_url"), limit=700),
+        "final_url": _clean_text(record.get("final_url"), limit=700),
+        "canonical_url": _clean_text(record.get("canonical_url"), limit=700),
+        "resolved_domain": _clean_text(record.get("resolved_domain"), limit=260),
+        "fetch_read_status": status,
+        "disposition": disposition,
+        "bounded_content_present": bool(record.get("bounded_content_present")),
+        "bounded_character_count": _positive_int(
+            record.get("bounded_character_count")
+        ),
+        "excerpt_digest": _clean_text(record.get("excerpt_digest"), limit=128),
+        "read_error_code": _clean_text(record.get("read_error_code"), limit=120),
+        "failure_reason": _clean_text(record.get("failure_reason"), limit=500),
+        "lineage_only": True,
+        "eligible_for_stronger_obligation": False,
+        "final_evidence_eligible": False,
+        "semantic_support_created": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+        "component_coverage_created": False,
+        "sufficiency_decided": False,
+        "final_answer_packet_created": False,
+        "author_input_created": False,
+        "partial_answer_ready": False,
+        "product_correctness_claimed": False,
+    }
+    return _compact(payload)
+
+
+def _fetch_read_candidate_custody_gap(record: Mapping[str, Any]) -> dict[str, Any]:
+    return _compact(
+        {
+            "gap_type": EvidenceCustodyGapType.MISSING_READABLE_SOURCE.value,
+            "candidate_id": _clean_text(record.get("candidate_id"), limit=320),
+            "reference_id": _clean_text(record.get("reference_id"), limit=320),
+            "fetch_read_status": _clean_token(record.get("fetch_read_status")),
+            "read_error_code": _clean_text(record.get("read_error_code"), limit=120),
+            "failure_reason": _clean_text(record.get("failure_reason"), limit=500),
+            "reason": _clean_text(record.get("failure_reason"), limit=500)
+            or "fetch/read reference is not readable",
+            "source_ref": _clean_text(
+                record.get("fetch_read_content_packet_id"),
+                limit=320,
+            ),
+        }
+    )
+
+
+def _clean_text_list(value: Any, *, limit: int = 160) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in _list(value):
+        text = _clean_text(item, limit=limit)
+        if text and text not in seen:
+            seen.add(text)
+            out.append(text)
+    return out
+
+
 def _requirement_kind_from_obligation(obligation: Mapping[str, Any]) -> str:
     return (
         _clean_token(obligation.get("kind"))
@@ -2026,6 +2242,24 @@ def _component_custody_false_flags() -> dict[str, bool]:
     }
 
 
+def _fetch_read_candidate_custody_false_flags() -> dict[str, bool]:
+    return {
+        "semantic_support_created": False,
+        "citation_eligible": False,
+        "citation_created": False,
+        "source_obligation_satisfied": False,
+        "source_obligations_satisfied_by_candidate_presence": False,
+        "component_coverage_created": False,
+        "sufficiency_decided": False,
+        "final_answer_packet_created": False,
+        "author_input_created": False,
+        "partial_answer_ready": False,
+        "product_correctness_claimed": False,
+        "bounded_content_payload_retained": False,
+        "private_payload_retained": False,
+    }
+
+
 def _coerce_enum(enum_cls: type[Enum], value: Any, default: str) -> Any:
     raw = value.value if isinstance(value, Enum) else _clean_token(value)
     try:
@@ -2040,6 +2274,9 @@ __all__ = [
     "COMPONENT_SCOPED_SOURCE_CUSTODY_TRACE_KEY",
     "EVIDENCE_LEDGER_SCHEMA_VERSION",
     "EVIDENCE_LEDGER_TRACE_KEY",
+    "FETCH_READ_CANDIDATE_CUSTODY_NEXT_CONSUMER",
+    "FETCH_READ_CANDIDATE_CUSTODY_SCHEMA_VERSION",
+    "FETCH_READ_CANDIDATE_CUSTODY_TRACE_KEY",
     "CandidateCustodyKind",
     "CandidateCustodyRecord",
     "CandidateDisposition",
