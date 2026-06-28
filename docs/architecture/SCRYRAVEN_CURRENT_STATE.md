@@ -107,6 +107,13 @@ Current summary:
   readable-content handoff after `SearchResultCandidatePacket` and before
   EvidenceLedger custody; it is not evidence, not citation-eligible, and does
   not satisfy source obligations.
+- `AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01` adds the RunKernel-authorized
+  `FetchReadContentPacket` / `SanitizedContentReference` -> EvidenceLedger
+  candidate/content custody seam. EvidenceLedger now records sanitized packet,
+  candidate, reference, status, URL/domain/title, and bounded-content
+  count/digest lineage, but this custody is not semantic support, not
+  citation-eligible, does not satisfy source obligations, and does not decide
+  Sufficiency/FAP/Author readiness or product correctness.
 - `AnalysisGapSearchProposal` is the future proposal shape for analysis,
   specialist, or Scrutineer-discovered search gaps. It must route back through
   RunKernel authority and must not dispatch on its own.
@@ -119,6 +126,7 @@ Current summary:
   `AG-LIVE-XAXIS-VALIDATION-01A`,
   `AG-SEARCH-RESULT-CANDIDATE-PACKET-01`,
   `AG-FETCH-READ-CONTENT-REFERENCE-01`,
+  `AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01`,
   `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01`,
   then later `AG-PARTIAL-ANSWER-READINESS-01`.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
