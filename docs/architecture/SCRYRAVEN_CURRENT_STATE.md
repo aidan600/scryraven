@@ -63,12 +63,19 @@ Current summary:
   harness that prepares the repo-visible request packet and optional broker
   envelope from deterministic current-contract plus SearchExecutorHandoff
   state. When actual provider contact is separately licensed, it should use the
-  generic provider-proxy broker contract and separately supplied sanitized
-  provider-result JSON, not a phase-specific broker job. The harness can reduce
-  sanitized provider-result JSON through the existing RunKernel path, but it
-  does not call providers, call a broker, load credentials, fetch/read,
-  retrieve, admit evidence, create citations, decide Sufficiency, create FAP or
-  Author input, make partial-readiness claims, or claim product correctness.
+  generic provider-proxy broker contract via
+  `scripts/run_provider_proxy_broker_once.py` and separately supplied sanitized
+  provider-result JSON, not a phase-specific broker job. The helper produces
+  generic sanitized output under `output/`; LIVE-RUN-01 maps that output into a
+  task-keyed provider-results JSON written UTF-8 without BOM, then reduces it
+  through
+  `scripts/ag_live_xaxis_validation_01a_live_run_01_harness.py --reduce-sanitized-results --execution-mode broker_live`.
+  That mapping is task-specific and does not belong inside the broker. The
+  harness can reduce sanitized provider-result JSON through the existing
+  RunKernel path, but it does not call providers, call a broker, load
+  credentials, fetch/read, retrieve, admit evidence, create citations, decide
+  Sufficiency, create FAP or Author input, make partial-readiness claims, or
+  claim product correctness.
 - `AG-LIVE-XAXIS-VALIDATION-01A` must not claim fetch/read, EvidenceLedger
   admission, citations, source-obligation satisfaction, Sufficiency, FAP,
   Author, partial-answer readiness, product correctness, or final answer

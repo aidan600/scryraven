@@ -36,6 +36,14 @@ Author input, make partial-readiness claims, or claim product correctness.
 When actual provider contact is separately licensed, LIVE-RUN-01 should consume
 sanitized results from the generic provider-proxy broker contract, not a
 phase-specific broker job.
+After BROKER-OPERATOR-FLOW-01, the reusable local helper for that brokered
+provider-proxy call is `scripts/run_provider_proxy_broker_once.py`. It produces
+generic sanitized provider output under `output/`. LIVE-RUN-01 then maps those
+generic results into a task-keyed provider-results JSON written UTF-8 without
+BOM and runs
+`scripts/ag_live_xaxis_validation_01a_live_run_01_harness.py --reduce-sanitized-results --execution-mode broker_live`.
+That mapping and reduction are task-specific and do not belong inside the
+broker.
 
 `AG-LIVE-XAXIS-VALIDATION-01A` must not fetch/read content, admit
 `EvidenceLedger` custody, create citations, claim citation eligibility, claim
