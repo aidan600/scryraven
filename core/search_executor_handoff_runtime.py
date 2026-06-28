@@ -571,6 +571,8 @@ def build_search_executor_handoff_state(
             "SearchExecutor handoff action run/request binding does not match"
         )
 
+    _validate_direction_refs(handoff)
+
     declared_digest = _clean_token(handoff.get("handoff_digest"), limit=128)
     if not declared_digest:
         raise SearchExecutorHandoffRuntimeError(
@@ -1585,25 +1587,30 @@ def _validate_handoff_records(handoff: Mapping[str, Any]) -> None:
                 raise SearchExecutorHandoffRuntimeError(
                     f"SearchExecutor handoff task requires {key}={expected}"
                 )
-    for ref in _safe_list(handoff.get("non_evidence_direction_refs")):
-        if not isinstance(ref, Mapping):
-            raise SearchExecutorHandoffRuntimeError(
-                "SearchExecutor handoff direction ref must be a mapping"
-            )
-        if ref.get("role") != "search_direction_only":
-            raise SearchExecutorHandoffRuntimeError(
-                "Scout direction refs must remain search_direction_only"
-            )
-        for key in (
-            "evidence_admitted",
-            "citation_eligible",
-            "source_obligation_satisfied",
-            "fetch_read_retrieval_executed",
-        ):
-            if ref.get(key) is not False:
+    _validate_direction_refs(handoff)
+
+
+def _validate_direction_refs(handoff: Mapping[str, Any]) -> None:
+    for field_name in ("scout_direction_hint_refs", "non_evidence_direction_refs"):
+        for ref in _safe_list(handoff.get(field_name)):
+            if not isinstance(ref, Mapping):
                 raise SearchExecutorHandoffRuntimeError(
-                    "Scout direction refs must keep evidence/citation/source flags false"
+                    f"SearchExecutor handoff {field_name} direction ref must be a mapping"
                 )
+            if ref.get("role") != "search_direction_only":
+                raise SearchExecutorHandoffRuntimeError(
+                    f"SearchExecutor handoff {field_name} refs must remain search_direction_only"
+                )
+            for key in (
+                "evidence_admitted",
+                "citation_eligible",
+                "source_obligation_satisfied",
+                "fetch_read_retrieval_executed",
+            ):
+                if ref.get(key) is not False:
+                    raise SearchExecutorHandoffRuntimeError(
+                        f"SearchExecutor handoff {field_name} refs must keep {key}=False"
+                    )
 
 
 def _validate_closed_handoff_flags(handoff: Mapping[str, Any]) -> None:

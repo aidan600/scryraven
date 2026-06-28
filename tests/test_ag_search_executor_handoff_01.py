@@ -454,6 +454,32 @@ def test_scout_direction_refs_remain_non_evidence() -> None:
     assert kernel.state.followup_citation_eligibility_history == citation_before
 
 
+def test_search_executor_handoff_rejects_scout_direction_evidence_role() -> None:
+    kernel = _current_contract_kernel()
+    input_ = _handoff_input(kernel)
+    action = kernel.authorize_search_executor_handoff()
+    payload = build_search_executor_handoff_observation_payload(
+        handoff_input=input_.to_payload(),
+        authorized_action_id=action.action_id,
+    )
+    payload["search_executor_handoff"]["scout_direction_hint_refs"][0]["role"] = (
+        "evidence_support"
+    )
+    observation = Observation.from_action(
+        action,
+        observation_type=ObservationType.SEARCH_EXECUTOR_HANDOFF_CREATED,
+        status=RunStageStatus.COMPLETED,
+        payload=payload,
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="search_direction_only"):
+        kernel.reduce(observation)
+
+    assert kernel.state.search_executor_handoff_state == {}
+    assert kernel.state.search_executor_handoff_projection == {}
+    assert kernel.state.search_executor_handoff_history == []
+
+
 def test_search_executor_handoff_does_not_mutate_contracts() -> None:
     kernel = _current_contract_kernel()
     initial_before = deepcopy(kernel.state.initial_answer_contract)
@@ -504,7 +530,7 @@ def test_search_executor_handoff_rejects_closed_authority_or_raw_payload_fields(
             "author_input": {"created": True},
             "raw_provider_payload": {"private": True},
             "raw_search_response": {"private": True},
-            "serper_api_key": "secret",
+            "serper_api_key": "secret",  # pragma: allowlist secret
         }
     )
 
