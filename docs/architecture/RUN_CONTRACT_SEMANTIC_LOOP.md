@@ -2,8 +2,8 @@
 
 ## 1. Status
 
-Status: Current doctrine after AG-SEARCH-PLANNER-REVISION-01 and before
-SearchExecutor handoff.
+Status: Current doctrine after AG-SEARCH-EXECUTOR-HANDOFF-01 and before
+bounded live X-axis validation.
 
 Proof class: `docs_architecture_update`.
 
@@ -17,6 +17,7 @@ through existing admission/application path. SearchExecutor,
 fetch/read/retrieval remain closed. The post-merge next gate is
 AG-SEARCH-EXECUTOR-HANDOFF-01.
 SearchPlannerRevision exact posture: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01; AG-SEARCH-PLANNER-REVISION-01; planner revision consumes Scout report; planner revision emits passive amendment candidates; Scout hints remain non-evidence, non-citation, and non-source-obligation satisfaction; current_answer_contract changes only through existing admission/application path; SearchExecutor, fetch/read/retrieval remain closed; post-merge next gate is AG-SEARCH-EXECUTOR-HANDOFF-01.
+SearchExecutorHandoff exact posture: PR #329 / AG-SEARCH-PLANNER-REVISION-01; AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract when present; Scout/revision material is search direction only; handoff creates search task records and a search work packet; no live search/provider/fetch/read/retrieval calls were run; no EvidenceLedger/citations/source-obligation satisfaction; post-merge next gate is AG-LIVE-XAXIS-VALIDATION-01.
 Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 
@@ -221,8 +222,11 @@ Runtime success requires:
 6. `AG-SEARCH-PLANNER-REVISION-01` - planner revision consumes Scout report and
    emits passive amendment candidates through existing amendment admission and
    application.
-7. `AG-SEARCH-EXECUTOR-HANDOFF-01` - RunKernel authorizes real
-   search/fetch/read/admission path.
+7. `AG-SEARCH-EXECUTOR-HANDOFF-01` - RunKernel authorizes the bounded
+   SearchExecutor handoff into search task records and a search work packet,
+   while live provider/search/fetch/read/retrieval, EvidenceLedger custody,
+   citations, source-obligation satisfaction, Sufficiency, FAP, and Author
+   behavior remain closed.
 8. `AG-LIVE-XAXIS-VALIDATION-01` - bounded live validation only after the
    upstream runtime loop is real.
 9. `AG-PARTIAL-ANSWER-READINESS-01` - later policy layer.
