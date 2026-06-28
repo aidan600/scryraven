@@ -1064,7 +1064,7 @@ def test_static_closed_surface_guard_for_search_planner_revision() -> None:
 
 def test_docs_use_merge_stable_search_planner_revision_posture() -> None:
     required = (
-        "PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01",
+        "PR #329 / AG-SEARCH-PLANNER-REVISION-01",
         "AG-SEARCH-PLANNER-REVISION-01",
         "planner revision consumes Scout report",
         "Scout hints remain non-evidence",
@@ -1073,7 +1073,7 @@ def test_docs_use_merge_stable_search_planner_revision_posture() -> None:
         "planner revision emits passive amendment candidates",
         "current_answer_contract changes only through existing admission/application path",
         "SearchExecutor, fetch/read/retrieval remain closed",
-        "post-merge next gate is AG-SEARCH-EXECUTOR-HANDOFF-01",
+        "post-merge next gate was AG-SEARCH-EXECUTOR-HANDOFF-01",
     )
     forbidden = (
         "planner revision directly mutates contracts",
@@ -1086,7 +1086,7 @@ def test_docs_use_merge_stable_search_planner_revision_posture() -> None:
         "partial-answer readiness is now next",
     )
     for path in DOCS:
-        text = _text(path)
+        text = " ".join(_text(path).split())
         for needle in required:
             assert needle in text, (path, needle)
         for needle in forbidden:

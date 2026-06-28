@@ -2,28 +2,56 @@
 
 ## 1. Status
 
-Status: Current doctrine after AG-SEARCH-EXECUTOR-HANDOFF-01 and before
-bounded live X-axis validation.
+Status: Current doctrine after PR #330 /
+`AG-SEARCH-EXECUTOR-HANDOFF-01` and during
+`AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`.
 
 Proof class: `docs_architecture_update`.
 
-Previous baseline: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01. This PR:
-AG-SEARCH-PLANNER-REVISION-01 adds RunKernel-authorized planner revision from a
-Scout DisambiguationReport. The planner revision consumes Scout report output,
-stores revision state/projection/history, and the planner revision emits passive
-amendment candidates. Scout hints remain non-evidence, non-citation, and
-non-source-obligation satisfaction. current_answer_contract changes only
-through existing admission/application path. SearchExecutor,
-fetch/read/retrieval remain closed. The post-merge next gate is
+The front half is now coherent through SearchExecutorHandoff:
+
+```text
+SearchPlanner
+-> initial_answer_contract
+-> Scout
+-> SearchPlannerRevision
+-> amendment admission/application
+-> current_answer_contract
+-> SearchExecutorHandoff
+```
+
+`SearchExecutorHandoff` consumes `current_answer_contract` when present and
+uses explicit `initial_answer_contract` fallback only when no current contract
+exists. It creates offline executable search intent only: query-intent records,
+search-task records, and a search work packet. It does not call providers,
+execute live search, fetch/read content, run retrieval, admit EvidenceLedger
+custody, create citations, satisfy source obligations, decide Sufficiency,
+create FinalAnswerPacket state, create Author input, or make a partial answer
+ready.
+
+SearchExecutorHandoff exact posture: PR #330 / AG-SEARCH-EXECUTOR-HANDOFF-01;
+handoff consumes current_answer_contract when present; Scout/revision material
+is search direction only; handoff creates search task records and a search work
+packet; no live search/provider/fetch/read/retrieval calls were run; no
+EvidenceLedger/citations/source-obligation satisfaction; next implementation
+gate after AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01 is
+AG-LIVE-XAXIS-VALIDATION-01A.
+
+Historical SearchPlannerRevision exact posture: PR #329 /
+AG-SEARCH-PLANNER-REVISION-01; planner revision consumes Scout report; planner
+revision emits passive amendment candidates; Scout hints remain non-evidence,
+non-citation, and non-source-obligation satisfaction; current_answer_contract
+changes only through existing admission/application path; SearchExecutor,
+fetch/read/retrieval remain closed; post-merge next gate was
 AG-SEARCH-EXECUTOR-HANDOFF-01.
-SearchPlannerRevision exact posture: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01; AG-SEARCH-PLANNER-REVISION-01; planner revision consumes Scout report; planner revision emits passive amendment candidates; Scout hints remain non-evidence, non-citation, and non-source-obligation satisfaction; current_answer_contract changes only through existing admission/application path; SearchExecutor, fetch/read/retrieval remain closed; post-merge next gate is AG-SEARCH-EXECUTOR-HANDOFF-01.
-SearchExecutorHandoff exact posture: PR #329 / AG-SEARCH-PLANNER-REVISION-01; AG-SEARCH-EXECUTOR-HANDOFF-01; handoff consumes current_answer_contract when present; Scout/revision material is search direction only; handoff creates search task records and a search work packet; no live search/provider/fetch/read/retrieval calls were run; no EvidenceLedger/citations/source-obligation satisfaction; post-merge next gate is AG-LIVE-XAXIS-VALIDATION-01.
+
 Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 
 This document connects the AG-SEM semantic accountability lane with the
-component/search/X-axis lane proved through the offline blocked
-FinalAnswerPacket / Author handoff.
+component/search/X-axis lane proved offline through blocked FinalAnswerPacket /
+Author handoff, while preventing the new SearchExecutorHandoff records from
+being mistaken for evidence or product correctness.
 
 The governing discipline is:
 
@@ -45,28 +73,75 @@ The deterministic contract is not a substitute for semantic understanding.
 Semantic understanding is not a substitute for contract authority. RunKernel is
 not the LLM reasoner; it is the authority hub and reducer owner.
 
-## 2. The Integrated Product Loop
+## 2. First Live Validation Boundary
 
-Intended runtime loop:
+The next implementation gate is `AG-LIVE-XAXIS-VALIDATION-01A`, a search-only
+live validation slice.
+
+That validation must consume these two current authorities directly:
+
+- `current_answer_contract`
+- `SearchExecutorHandoff`
+
+It may produce sanitized `SearchResultCandidate` records only. Those records are
+candidate discovery output, not evidence.
+
+The first live validation must not claim or perform any of the following:
+
+- fetch/read content;
+- `EvidenceLedger` admission or custody;
+- citations or citation eligibility;
+- source-obligation satisfaction;
+- `SufficiencyJudgment`;
+- `FinalAnswerPacket`;
+- Author input or Author prose;
+- partial-answer readiness;
+- product answer correctness.
+
+`provider_preference_hint` is only a hint carried by offline search intent. Live
+provider authority must come from a future explicit RunKernel-authorized
+validation action. Existing provider wrappers in `core/search_providers.py`,
+including the Serper wrapper, may be reused only behind a new governed
+live-search-validation adapter that enforces action authorization, budget,
+redaction, sanitized output, and closed fetch/read/evidence/citation/FAP/Author
+surfaces.
+
+`core/offline_search_executor_bridge.py` is legacy/offline scaffolding for the
+old X-axis proof path. For the new handoff-consuming live path it must be
+demoted, retired, or ignored; it is not the live SearchExecutorHandoff consumer.
+
+## 3. Integrated Product Loop
+
+Current implemented front half:
 
 ```text
 1. User query arrives.
 2. RunKernel starts a seed contract / run contract with minimal known obligations.
-3. SemanticProducer / SearchPlanner proposes question meaning, semantic slots, answer components, ambiguity posture, and initial requirements.
-4. RunKernel validates and accepts or rejects canonical contract state.
+3. SearchPlanner proposes question meaning, semantic slots, answer components, ambiguity posture, and initial requirements.
+4. RunKernel validates and accepts initial_answer_contract.
 5. If ambiguity needs cheap exploration, RunKernel authorizes Scout.
-6. Scout searches bounded cheap disambiguation dimensions and reports a DisambiguationReport.
-7. Planner consumes Scout report and proposes revised/final ComponentSearchPlan and contract amendments.
-8. RunKernel validates/reduces the amended contract state.
-9. RunKernel authorizes SearchExecutor from the accepted plan/contract.
-10. SearchExecutor reports candidate/search/fetch/read/admission observations.
-11. EvidenceLedger records custody and source-obligation state.
-12. SemanticObservation / ComponentCoverage record evidence-relative semantic support.
-13. ContractAmendmentRecord may propose new/changed obligations when meaning/evidence changes.
-14. RunKernel admits/applies allowed amendments through reducers.
-15. SufficiencyJudgment consumes contract/custody/semantic/binding state and decides readiness.
-16. FinalAnswerPacket packages safe Author handoff.
-17. Author writes prose only from FAP-safe material.
+6. Scout reports bounded disambiguation dimensions and search-direction hints.
+7. SearchPlannerRevision consumes the Scout report and proposes revisions/amendments.
+8. RunKernel admits/applies allowed amendments into current_answer_contract.
+9. SearchExecutorHandoff creates offline executable search intent from current_answer_contract and planner/revision direction.
+```
+
+Required second-half semantic loop:
+
+```text
+10. RunKernel authorizes search-only live validation from current_answer_contract and SearchExecutorHandoff.
+11. Live validation emits sanitized SearchResultCandidate records only.
+12. A later packet phase creates SearchResultCandidatePacket.
+13. A fetch/read phase creates FetchReadContentPacket / SanitizedContentReference.
+14. EvidenceLedger records custody only from sanitized, admissible content.
+15. EvidenceRelativeAnalysisPacket / AnalystReport records evidence-relative meaning.
+16. SpecialistAnalysisPacket records specialized analysis when needed.
+17. ScrutineerReview reviews support, conflicts, drift, and gaps.
+18. ComponentCoverageRecord proposals bind admitted observations to components.
+19. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
+20. SufficiencyJudgment consumes contract/custody/semantic/coverage/amendment state and decides readiness.
+21. FinalAnswerPacket packages Author-safe material.
+22. Author writes prose only from FAP-safe material.
 ```
 
 PR #323 proved this offline blocked X-axis after a component-shaped plan already
@@ -82,30 +157,43 @@ Component contract / ComponentSearchPlan
 -> FinalAnswerPacket blocked Author handoff
 ```
 
-The next product problem is upstream: user query meaning, accepted answer
-contract, planner/scout revision, authorized SearchExecutor work, semantic
-observations, component coverage, contract amendments, Sufficiency, FAP, and
-Author handoff in one governed loop.
+That proof remains useful history, but it is not the immediate post-#330 live
+path. The new path starts from `current_answer_contract` and
+`SearchExecutorHandoff`, then produces only candidate search results before any
+fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 
-## 3. Ownership Boundaries
+## 4. Ownership Boundaries
 
 | Surface | Owner boundary |
 | --- | --- |
 | RunKernel / RunAuthority | Owns canonical run authority, action authorization, reducer gating, accepted contract state, and contract mutation/application authority. |
 | SemanticProducer / SearchPlanner | Proposes query meaning, semantic slots, answer components, material ambiguities, and component search requirements. It does not mutate the accepted contract directly. |
-| Scout | Performs bounded cheap disambiguation reconnaissance when RunKernel authorizes it. Reports dimensions, candidate interpretations, likely official/current targets, and URLs/hints. It does not decide final plan or mutate contract. |
-| SearchPlanner revision | Consumes Scout report and proposes revised plan/amendments. It does not own authority. |
-| SearchExecutor | Performs bounded search/fetch/read/admission work when authorized. It does not decide answerability/readiness. |
-| EvidenceLedger | Owns evidence custody and source-obligation state. |
+| Scout | Performs bounded cheap disambiguation reconnaissance when RunKernel authorizes it. Reports dimensions, candidate interpretations, likely official/current targets, and URLs/hints. It does not decide final plan, mutate contract, or create evidence. |
+| SearchPlannerRevision | Consumes Scout report and proposes revised plan/amendments. It does not own authority. |
+| SearchExecutorHandoff | Creates offline executable search intent only. It does not execute providers, fetch/read, custody, citations, sufficiency, FAP, Author, or partial-answer readiness. |
+| Live search validation adapter | Future governed adapter that may execute provider search only when RunKernel authorizes a validation action. It emits sanitized SearchResultCandidate records only in the first live slice. |
+| SearchResultCandidatePacket | Future packet for sanitized result candidates. It is not EvidenceLedger custody and does not satisfy obligations. |
+| FetchReadContentPacket / SanitizedContentReference | Future fetch/read packet and existing bounded content reference surface. They provide sanitized content inputs, not final readiness. |
+| EvidenceLedger | Owns evidence custody and source-obligation state after admissible sanitized content exists. |
 | SemanticObservation | Records evidence-relative semantic observations. |
-| ComponentCoverage | Owns component support/coverage reduction. |
-| ContractAmendmentRecord / admission / future application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
+| EvidenceRelativeAnalysisPacket / AnalystReport | Future evidence-relative analysis report that consumes admitted custody/content and records meaning, caveats, conflicts, and gaps without final prose authority. |
+| SpecialistAnalysisPacket | Future specialist analysis packet when quantitative, legal, technical, or other specialist reasoning is needed. |
+| ScrutineerReview | Future review packet for support, conflicts, drift, and gap review. |
+| AnalysisGapSearchProposal | Future proposal from Analyst/Specialist/Scrutineer back to RunKernel when analysis reveals a search gap. It is a proposal, not a dispatch. |
+| ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations exist. |
+| ContractAmendmentRecord / admission / application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
 | AnswerContractAuthorityMap | Passive authority map over components, custody, binding, readiness, and FAP state. It does not mutate the contract. |
-| SufficiencyJudgment | Owns answerability/readiness decision. |
+| SufficiencyJudgment | Owns answerability/readiness decision after prerequisite custody, semantic, coverage, and amendment inputs exist. |
 | FinalAnswerPacket | Owns Author-safe handoff. |
 | Author | Prose-only; no custody, support, readiness, citation, or contract authority. |
 
-## 4. Contract Mutation Discipline
+Existing Analyst, Economist, and Scrutineer runtime surfaces are not yet a
+coherent new RunKernel/current_answer_contract second-half semantic
+architecture. Treat them as legacy, passive, bounded, or specialized surfaces
+until a future phase wires an evidence-relative Analyst/Specialist/Scrutineer
+packet chain into the current contract loop.
+
+## 5. Contract Mutation Discipline
 
 Contract update rule:
 
@@ -132,13 +220,12 @@ Contract updates should be typed. Examples:
 - `add_caveat`
 - `prohibit_upgrade`
 
-AG-SEM-08 admits amendment proposals, but it does not apply or mutate the
-accepted contract. Future implementation must decide whether to add an amendment
-application reducer or an equivalent accepted-contract versioning path. That
-future path must be RunKernel-authorized, typed, versioned, and test-proved
-through the real consumer.
+AG-SEM-08 admits amendment proposals, and AG-RUN-CONTRACT-MUTATION-LOOP-01
+applies admitted amendments through RunKernel into `current_answer_contract`.
+Future second-half phases may propose additional amendments, but only RunKernel
+may admit/apply them into accepted contract state.
 
-## 5. Semantic Accountability Discipline
+## 6. Semantic Accountability Discipline
 
 The contract is partly deterministic and partly semantic.
 
@@ -156,9 +243,13 @@ Use these terms precisely:
 
 - semantic proposal
 - canonical semantic state
+- search result candidate
+- sanitized content reference
+- evidence-relative analysis
 - semantic observation
 - component coverage
 - semantic blocker
+- analysis gap search proposal
 - contract amendment candidate
 - required caveat
 - prohibited upgrade
@@ -176,11 +267,12 @@ Historical semantic lane references:
 - `AG_SEM_11B_ORDINARY_SEMANTIC_PRODUCER_HARDENING.md`
 
 Treat those as lane history and supporting doctrine. This document is the current
-integration doctrine for connecting that semantic authority to
-ComponentSearchPlan, Scout, SearchExecutor, EvidenceLedger, Sufficiency,
+integration doctrine for connecting semantic authority to `current_answer_contract`,
+SearchExecutorHandoff, live search-result candidates, future fetch/read content,
+EvidenceLedger, Analyst/Specialist/Scrutineer packets, SufficiencyJudgment,
 FinalAnswerPacket, and Author.
 
-## 6. Shadow/Passive Surface Warning
+## 7. Shadow/Passive Surface Warning
 
 Passive/shadow surfaces are allowed only when explicitly licensed as passive
 docs/tests/instrumentation.
@@ -202,56 +294,38 @@ Runtime success requires:
 - RunKernel or the correct owner authorizes/reduces/acts;
 - focused test proves the real consumer path.
 
-## 7. Immediate Roadmap
+## 8. Immediate Roadmap
 
-1. `AG-RUN-CONTRACT-SEMANTIC-LOOP-DOCS-01` - completed baseline.
-2. `AG-RUN-CONTRACT-MUTATION-LOOP-01` - this phase implements RunKernel-owned
-   admitted-amendment application into `current_answer_contract`.
-3. `AG-SEARCH-PLANNER-RUNTIME-01` - completes the RunKernel-authorized
-   SearchPlanner proposal seam: an explicitly injected adapter can produce a
-   passive QMR-compatible proposal plus subordinate component-search
-   requirements, while live model/search/fetch/read/retrieval behavior remains
-   closed and amendments remain deferred.
-4. `AG-SEARCH-PLANNER-MODEL-01` - adds an explicit injected fail-closed model adapter
-   and prompt/input contract behind the same SearchPlanner runtime seam. Tests use
-   fake injected model callables, and no live model calls or live validation were
-   run.
-5. `AG-SCOUT-DISAMBIGUATION-RUNTIME-01` - adds a RunKernel-authorized,
-   report-only, Serper-shaped Scout DisambiguationReport runtime with fake
-   injected adapters only.
-6. `AG-SEARCH-PLANNER-REVISION-01` - planner revision consumes Scout report and
-   emits passive amendment candidates through existing amendment admission and
-   application.
-7. `AG-SEARCH-EXECUTOR-HANDOFF-01` - RunKernel authorizes the bounded
-   SearchExecutor handoff into search task records and a search work packet,
-   while live provider/search/fetch/read/retrieval, EvidenceLedger custody,
-   citations, source-obligation satisfaction, Sufficiency, FAP, and Author
-   behavior remain closed.
-8. `AG-LIVE-XAXIS-VALIDATION-01` - bounded live validation only after the
-   upstream runtime loop is real.
-9. `AG-PARTIAL-ANSWER-READINESS-01` - later policy layer.
+1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
+   SearchExecutorHandoff is search intent only, defines the second-half
+   packet/report chain, and narrows the next live step to search-result
+   candidate validation.
+2. `AG-LIVE-XAXIS-VALIDATION-01A` - search-only live validation. Consume
+   `current_answer_contract` plus `SearchExecutorHandoff` directly, authorize a
+   governed live-search-validation action, and emit sanitized
+   `SearchResultCandidate` records only. No fetch/read, custody, citations,
+   Sufficiency, FAP, Author, partial-answer readiness, or product correctness
+   claims.
+3. `AG-SEARCH-RESULT-CANDIDATE-PACKET-01` - define and reduce
+   `SearchResultCandidatePacket` from sanitized result candidates.
+4. `AG-FETCH-READ-CONTENT-REFERENCE-01` - create `FetchReadContentPacket` and
+   `SanitizedContentReference` inputs from authorized candidate fetch/read,
+   still without claiming readiness.
+5. `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01` - define
+   `EvidenceRelativeAnalysisPacket` / `AnalystReport` over admitted
+   custody/content, with `AnalysisGapSearchProposal` for analysis-discovered
+   gaps.
+6. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
+   Analyst/Specialist/Scrutineer/Sufficiency/FAP prerequisites exist as a
+   coherent evidence-relative chain.
 
-AG-SEARCH-PLANNER-RUNTIME-01 completes the first fail-closed SearchPlanner
-proposal runtime seam. AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected
-fail-closed model adapter behind that seam. Planner model output remains
-proposal-only and is consumed through existing RunKernel planner and contract
-reducers. PR #327 / AG-SEARCH-PLANNER-MODEL-01 is the previous baseline.
-AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter.
-No live model calls or live validation were run.
-Previous baseline: PR #328 / AG-SCOUT-DISAMBIGUATION-RUNTIME-01.
-AG-SEARCH-PLANNER-REVISION-01 adds RunKernel-authorized planner revision from a
-Scout DisambiguationReport. The planner revision consumes Scout report output,
-stores revision state/projection/history, and the planner revision emits passive
-amendment candidates. Scout hints remain non-evidence, non-citation, and
-non-source-obligation satisfaction. current_answer_contract changes only
-through existing admission/application path. SearchExecutor,
-fetch/read/retrieval remain closed. Author, citations, partial answers, and
-live validation remain closed. The post-merge next gate is
-AG-SEARCH-EXECUTOR-HANDOFF-01.
+The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
+history. It is not the immediate post-#330 validation plan and must not be used
+to claim search-only candidate validation, source custody, citations,
+Sufficiency, FAP, Author behavior, or product correctness.
 
-The runtime contract vocabulary is merge-stable: `initial_answer_contract`
-remains the immutable AG-SEM-05 accepted genesis contract, while
+The runtime contract vocabulary remains merge-stable: `initial_answer_contract`
+is the immutable AG-SEM-05 accepted genesis contract, while
 `current_answer_contract` is the latest active accepted contract after
-RunKernel applies an admitted amendment. Sufficiency consumers prefer
-`current_answer_contract` and fall back to `initial_answer_contract` when no
-application has occurred.
+RunKernel applies admitted amendments. SearchExecutorHandoff and the first live
+validation must prefer `current_answer_contract`.

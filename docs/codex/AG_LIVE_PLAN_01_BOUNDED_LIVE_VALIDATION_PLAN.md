@@ -12,12 +12,26 @@ Actual app delta: the bounded direct-human runner and tracked broker client can
 target a shared product-owned validation profile/cap/packet schema instead of
 runner-owned doctrine.
 
-Current supersession note after PR #315: live multi-component validation is
-deferred. The next gate is the offline `AG-ANSWER-CONTRACT-AUTHORITY-MAP-01`
-phase, followed by offline component binding work, before runtime
-SearchExecutor wiring or any live AG-LIVE-MULTI-COMPONENT validation. The
-historical AG-LIVE-BOUND-01 / AG-LIVE-BRIDGE-01 plan below is retained as
-planning history, not the current next productization gate.
+Current supersession note after PR #330: this broad product-run plan is
+historical/later planning, not the immediate post-SearchExecutorHandoff
+validation plan. The next implementation gate after
+`AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` is
+`AG-LIVE-XAXIS-VALIDATION-01A`, a search-only live validation slice that
+consumes `current_answer_contract` plus `SearchExecutorHandoff` directly and
+emits sanitized `SearchResultCandidate` records only.
+
+`AG-LIVE-XAXIS-VALIDATION-01A` must not fetch/read content, admit
+`EvidenceLedger` custody, create citations, satisfy source obligations, decide
+`SufficiencyJudgment`, prepare `FinalAnswerPacket`, create Author input, make
+partial answers ready, or claim product correctness. `provider_preference_hint`
+is only a hint; live provider authority must come from an explicit
+RunKernel-authorized validation action. Existing `core/search_providers.py`
+wrappers, including Serper, may be reused only behind a new governed
+live-search-validation adapter.
+
+The historical AG-LIVE-BOUND-01 / AG-LIVE-BRIDGE-01 plan below is retained as
+planning history for a later product-run validation after the second-half
+semantic chain exists.
 
 ## Validation Profiles
 
@@ -76,11 +90,20 @@ bounded ordinary product run:
 | `scripts/ag96i3b_live_followup_validation.py` | follow-up provider-job harness | Uses a fixture spine and `max_fetch_read_attempts: 0`; not ordinary product path. |
 | `scripts/ag96i3af6a_brokered_author_lane_smoke.py` | Author component harness | Tests Author/model custody only; no search/fetch/product recovery path. |
 
-## Smallest Bridge Phase
+## Historical Product-Run Bridge Phase
 
-Recommended bridge: **AG-LIVE-BRIDGE-01 bounded product-live runner dry-run**.
+Historical bridge recommendation: **AG-LIVE-BRIDGE-01 bounded product-live
+runner dry-run**.
 
-That bridge should add a repo-visible runner or broker job that is inert by
+This is not the immediate post-#330 bridge. The immediate bridge is
+`AG-LIVE-XAXIS-VALIDATION-01A`, a search-only validation adapter that consumes
+`current_answer_contract` and `SearchExecutorHandoff` and emits sanitized
+`SearchResultCandidate` records only. Product-run bridge work resumes later,
+after candidate packets, fetch/read content references, EvidenceLedger custody,
+evidence-relative analysis, Scrutineer/Specialist review as needed,
+Sufficiency, and FAP prerequisites exist.
+
+The historical product-run bridge should add a repo-visible runner or broker job that is inert by
 default and can prove its argument/cap/redaction behavior offline before any
 live use. It should not change normal CLI or Streamlit behavior.
 
@@ -327,13 +350,16 @@ Fail closed and do not retry on unknown broker job, missing config, provider/mod
 
 ## Recommended Final Action
 
-Current status: defer live validation and any runtime SearchExecutor wiring
-until offline AnswerContract authority mapping and component binding are
-testable.
+Current status after PR #330: do not run AG-LIVE-BOUND-01 as the immediate next
+gate. Implement `AG-LIVE-XAXIS-VALIDATION-01A` first as a search-only live
+validation adapter that consumes `current_answer_contract` plus
+`SearchExecutorHandoff` and returns sanitized `SearchResultCandidate` records
+only.
 
-Historical AG-LIVE-BOUND-01 recommendation retained for context: the old plan
-was not to run AG-LIVE-BOUND-01 yet, and to run AG-LIVE-BRIDGE-01 first to add
-and test a dry-run-first, cap-enforced, sanitized product-live runner or broker
-job. After that bridge was reviewed, the user would run the live command
-manually from a private shell or through the private broker, and share only the
-sanitized `output/ag_live_bound_01_packet.json` if review was needed.
+Historical AG-LIVE-BOUND-01 recommendation retained for later context: the old
+plan was not to run AG-LIVE-BOUND-01 yet, and to run AG-LIVE-BRIDGE-01 first to
+add and test a dry-run-first, cap-enforced, sanitized product-live runner or
+broker job. That product-run path remains later work after the second-half
+semantic packet/report chain exists through candidate packets, fetch/read
+content references, EvidenceLedger custody, Analyst/Specialist/Scrutineer
+reports, Sufficiency, and FinalAnswerPacket.
