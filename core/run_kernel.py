@@ -13488,7 +13488,6 @@ def _reject_live_validation_closed_surface_inputs(
     closed_keys = {
         "author_input",
         "author_input_created",
-        "broker_invoked",
         "citation_eligible",
         "citation_requested",
         "evidence_ledger_admission",
@@ -13497,8 +13496,8 @@ def _reject_live_validation_closed_surface_inputs(
         "fetch_read_requested",
         "final_answer_packet",
         "final_answer_packet_created",
-        "live_provider_called",
         "partial_answer_ready",
+        "product_correctness_claimed",
         "raw_provider_payload",
         "raw_search_response",
         "source_obligation_satisfied",

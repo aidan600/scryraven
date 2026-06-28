@@ -3,7 +3,7 @@
 ## 1. Status
 
 Status: Current doctrine after PR #330 /
-`AG-SEARCH-EXECUTOR-HANDOFF-01` and PR1 of
+`AG-SEARCH-EXECUTOR-HANDOFF-01` and PR2 of
 `AG-LIVE-XAXIS-VALIDATION-01A`.
 
 Proof class: `docs_architecture_update`.
@@ -75,10 +75,19 @@ not the LLM reasoner; it is the authority hub and reducer owner.
 
 ## 2. First Live Validation Boundary
 
-`AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduces the RunKernel-owned
+`AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduced the RunKernel-owned
 search-only validation seam. PR1 is offline-governed: fake provider result
 metadata is injected in tests, no live provider is called, and no broker is
-invoked. PR2 is the later broker/direct live invocation gate.
+invoked. PR2 adds broker/direct invocation scaffolding only: the shared request,
+cap, normalizer, redaction, and output-packet shapes can represent a future
+licensed broker or trusted-local provider call, but PR2 does not run live
+validation, call a broker job, fetch/read, retrieve, or admit evidence.
+
+`broker_invoked` and `live_provider_called` are PR2 execution facts. They are
+not downstream evidence, citation, source-obligation, Sufficiency,
+FinalAnswerPacket, Author, partial-readiness, or product-correctness authority.
+`raw_provider_payload_retained` and `raw_search_response_retained` remain false
+in every mode.
 
 That validation must consume these two current authorities directly:
 
@@ -102,10 +111,11 @@ The first live validation must not claim or perform any of the following:
 
 `provider_preference_hint` is only a hint carried by offline search intent. Live
 provider authority must come from an explicit RunKernel-authorized validation
-action. Existing provider wrappers in `core/search_providers.py`, including the
-Serper wrapper, may be reused only behind a governed live-search-validation
-adapter that enforces action authorization, budget, redaction, sanitized
-output, and closed fetch/read/evidence/citation/FAP/Author surfaces.
+action and an explicit PR2 `provider_authorized` value. Existing provider
+wrappers in `core/search_providers.py`, including the Serper wrapper, may be
+reused only behind a governed live-search-validation adapter that enforces
+action authorization, budget, redaction, sanitized output, and closed
+fetch/read/evidence/citation/FAP/Author surfaces.
 
 `core/offline_search_executor_bridge.py` is legacy/offline scaffolding for the
 old X-axis proof path. For the new handoff-consuming live path it must be
@@ -304,8 +314,9 @@ Runtime success requires:
 2. `AG-LIVE-XAXIS-VALIDATION-01A` - search-only live validation. PR1 consumes
    `current_answer_contract` plus `SearchExecutorHandoff` directly, authorizes
    a fake-provider validation action, and emits sanitized
-   `SearchResultCandidate` records only. PR2 handles broker/direct live
-   invocation. No fetch/read, custody, citations, source-obligation
+   `SearchResultCandidate` records only. PR2 adds broker/direct live
+   invocation scaffolding and does not run live validation unless separately
+   licensed. No fetch/read, custody, citations, source-obligation
    satisfaction, Sufficiency, FAP, Author, partial-answer readiness, or product
    correctness claims.
 3. `AG-SEARCH-RESULT-CANDIDATE-PACKET-01` - define and reduce

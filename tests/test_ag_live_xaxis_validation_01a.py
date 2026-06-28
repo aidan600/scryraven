@@ -53,6 +53,7 @@ FALSE_FLAGS = {
     "final_answer_packet_created": False,
     "author_input_created": False,
     "partial_answer_ready": False,
+    "product_correctness_claimed": False,
 }
 
 

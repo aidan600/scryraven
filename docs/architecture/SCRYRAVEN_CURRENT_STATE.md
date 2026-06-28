@@ -1,7 +1,7 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-LIVE-XAXIS-VALIDATION-01A` PR1 after PR #330 /
+`AG-LIVE-XAXIS-VALIDATION-01A` PR2 after PR #330 /
 `AG-SEARCH-EXECUTOR-HANDOFF-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
@@ -49,17 +49,25 @@ Current summary:
 - Historical SearchPlannerRevision exact posture: PR #329 / AG-SEARCH-PLANNER-REVISION-01; planner revision consumes Scout report; planner revision emits passive amendment candidates; Scout hints remain non-evidence, non-citation, and non-source-obligation satisfaction; current_answer_contract changes only through existing admission/application path; SearchExecutor, fetch/read/retrieval remain closed; post-merge next gate was AG-SEARCH-EXECUTOR-HANDOFF-01.
 - Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 - Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
-- `AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduces a RunKernel-owned
+- `AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduced a RunKernel-owned
   search-only validation seam that consumes `current_answer_contract` plus
   `SearchExecutorHandoff` directly and emits sanitized `SearchResultCandidate`
-  records only from injected fake-provider results. PR2 is the later
-  broker/direct live invocation gate.
+  records only from injected fake-provider results. PR2 adds shared
+  broker/direct invocation scaffolding only: request schema, cap policy,
+  provider allowlist, candidate normalizer, redaction posture, output-packet
+  shape, and inert wrapper scripts. PR2 does not run live validation, call a
+  broker job, or call a provider unless separately licensed after review.
 - `AG-LIVE-XAXIS-VALIDATION-01A` must not claim fetch/read, EvidenceLedger
   admission, citations, source-obligation satisfaction, Sufficiency, FAP,
   Author, partial-answer readiness, product correctness, or final answer
   quality.
+- `broker_invoked` and `live_provider_called` are PR2 execution facts, not
+  downstream evidence/readiness authority and not members of
+  `closed_surface_flags`. Raw provider payload and raw search response
+  retention remain false in every mode.
 - `provider_preference_hint` is only a hint. Live provider authority must come
-  from an explicit RunKernel-authorized validation action.
+  from an explicit RunKernel-authorized validation action and explicit
+  `provider_authorized` request value.
 - Existing `core/search_providers.py` provider wrappers, including Serper, may
   be reused only behind a governed live-search-validation adapter.
 - `core/offline_search_executor_bridge.py` remains legacy/offline scaffolding
@@ -89,8 +97,8 @@ Current summary:
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
   history, not the immediate post-#330 search-only validation plan.
 - Passive/shadow surfaces are not product readiness.
-- No live provider call, broker invocation, fetch/read, or retrieval is part of
-  PR1.
+- No live provider call, broker invocation, fetch/read, or retrieval was run as
+  part of PR1 or PR2.
 - AnswerContractAuthorityMap owns answer-component authority mapping.
 - ComponentPlan is legacy/compat input terminology; ComponentSearchPlan is the
   preferred subordinate component-search planning name.

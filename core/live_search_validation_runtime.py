@@ -30,6 +30,16 @@ LIVE_SEARCH_VALIDATION_OWNER = "RunKernel.LiveSearchValidation"
 LIVE_SEARCH_VALIDATION_MAX_SELECTED_TASKS = 2
 LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP = 2
 LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP = 2
+LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE = "offline_fake"
+LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE = "broker_live"
+LIVE_SEARCH_VALIDATION_EXECUTION_MODE_DIRECT_LIVE = "direct_live"
+LIVE_SEARCH_VALIDATION_EXECUTION_MODES = frozenset(
+    {
+        LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
+        LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE,
+        LIVE_SEARCH_VALIDATION_EXECUTION_MODE_DIRECT_LIVE,
+    }
+)
 
 _EXPECTED_ACTION_TYPE = "live_search_validate"
 _EXPECTED_OBSERVATION_TYPE = "live_search_validated"
@@ -99,9 +109,7 @@ _SAFE_FALSE_RETENTION_KEYS = frozenset(
     }
 )
 
-_REQUIRED_FALSE_FLAGS = {
-    "broker_invoked": False,
-    "live_provider_called": False,
+_DOWNSTREAM_FALSE_FLAGS = {
     "raw_provider_payload_retained": False,
     "raw_search_response_retained": False,
     "fetch_read_executed": False,
@@ -113,6 +121,13 @@ _REQUIRED_FALSE_FLAGS = {
     "final_answer_packet_created": False,
     "author_input_created": False,
     "partial_answer_ready": False,
+    "product_correctness_claimed": False,
+}
+
+_EXECUTION_FACT_DEFAULTS = {
+    "execution_mode": LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
+    "broker_invoked": False,
+    "live_provider_called": False,
 }
 
 _FORBIDDEN_AUTHORITY_KEYS = frozenset(
@@ -150,7 +165,7 @@ _FORBIDDEN_AUTHORITY_KEYS = frozenset(
 
 _DANGEROUS_TRUE_KEYS = frozenset(
     {
-        *_REQUIRED_FALSE_FLAGS,
+        *_DOWNSTREAM_FALSE_FLAGS,
         "author_executor_invoked",
         "author_input_created",
         "broker_called",
@@ -231,8 +246,13 @@ def build_live_search_validation_observation_payload(
     provider_used: str,
     provider_results_by_task: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
     provider_call_count: int | None = None,
+    provider_calls_attempted_count: int | None = None,
+    provider_calls_completed_count: int | None = None,
+    execution_mode: str = LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
+    broker_invoked: bool = False,
+    live_provider_called: bool = False,
 ) -> dict[str, Any]:
-    """Build a sanitized PR1 observation payload from injected fake results."""
+    """Build a sanitized live-search-validation observation payload."""
 
     _validate_action_like(action=action)
     inputs = _safe_mapping(getattr(action, "inputs", None))
@@ -305,10 +325,24 @@ def build_live_search_validation_observation_payload(
     provider_calls_from_results = max(provider_call_indices, default=0)
     provider_calls_planned = len(selected_task_ids)
     provider_calls_attempted = max(
-        _bounded_int(provider_call_count, default=provider_calls_planned),
+        _bounded_int(
+            provider_calls_attempted_count,
+            default=_bounded_int(provider_call_count, default=provider_calls_planned),
+        ),
         provider_calls_from_results,
     )
-    provider_calls_completed = provider_calls_attempted
+    provider_calls_completed = max(
+        _bounded_int(
+            provider_calls_completed_count,
+            default=provider_calls_attempted,
+        ),
+        provider_calls_from_results,
+    )
+    execution_facts = _execution_facts(
+        execution_mode=execution_mode,
+        broker_invoked=broker_invoked,
+        live_provider_called=live_provider_called,
+    )
 
     validation_base = {
         "schema_version": LIVE_SEARCH_VALIDATION_SCHEMA_VERSION,
@@ -334,12 +368,19 @@ def build_live_search_validation_observation_payload(
         "results_per_task_cap": results_per_task_cap,
         "candidate_count": len(candidates),
         "search_result_candidates": [],
-        "not_live_executed_by_pr1": True,
-        "fake_provider_used": True,
+        **execution_facts,
+        "not_live_executed_by_pr1": (
+            execution_facts["execution_mode"]
+            == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE
+        ),
+        "fake_provider_used": (
+            execution_facts["execution_mode"]
+            == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE
+        ),
         "no_fetch_read_policy_active": True,
         "retention_flags": _retention_flags(),
-        "closed_surface_flags": dict(_REQUIRED_FALSE_FLAGS),
-        **_REQUIRED_FALSE_FLAGS,
+        "closed_surface_flags": dict(_DOWNSTREAM_FALSE_FLAGS),
+        **_DOWNSTREAM_FALSE_FLAGS,
     }
     dedupe_key = _dedupe_key(validation_base)
     validation_id = (
@@ -541,6 +582,7 @@ def build_live_search_validation_state(
         raise LiveSearchValidationRuntimeError(
             "live search validation provider_call_cap exceeded"
         )
+    execution_facts = _validate_execution_facts(validation)
 
     candidates = _safe_list(validation.get("search_result_candidates"))
     if validation.get("candidate_count") != len(candidates):
@@ -617,12 +659,13 @@ def build_live_search_validation_state(
         "results_per_task_cap": results_per_task_cap,
         "candidate_count": len(candidates),
         "search_result_candidates": candidates,
-        "not_live_executed_by_pr1": True,
-        "fake_provider_used": True,
+        **execution_facts,
+        "not_live_executed_by_pr1": validation.get("not_live_executed_by_pr1"),
+        "fake_provider_used": validation.get("fake_provider_used"),
         "no_fetch_read_policy_active": True,
         "retention_flags": _retention_flags(),
-        "closed_surface_flags": dict(_REQUIRED_FALSE_FLAGS),
-        **_REQUIRED_FALSE_FLAGS,
+        "closed_surface_flags": dict(_DOWNSTREAM_FALSE_FLAGS),
+        **_DOWNSTREAM_FALSE_FLAGS,
     }
     return _json_safe(state)
 
@@ -666,12 +709,15 @@ def build_live_search_validation_projection(
         "search_result_candidates": _safe_list(
             state.get("search_result_candidates")
         ),
-        "not_live_executed_by_pr1": True,
-        "fake_provider_used": True,
+        "execution_mode": state.get("execution_mode"),
+        "broker_invoked": state.get("broker_invoked"),
+        "live_provider_called": state.get("live_provider_called"),
+        "not_live_executed_by_pr1": state.get("not_live_executed_by_pr1"),
+        "fake_provider_used": state.get("fake_provider_used"),
         "no_fetch_read_policy_active": True,
         "retention_flags": _retention_flags(),
-        "closed_surface_flags": dict(_REQUIRED_FALSE_FLAGS),
-        **_REQUIRED_FALSE_FLAGS,
+        "closed_surface_flags": dict(_DOWNSTREAM_FALSE_FLAGS),
+        **_DOWNSTREAM_FALSE_FLAGS,
     }
 
 
@@ -809,6 +855,7 @@ def _build_candidate_record(
         "final_answer_packet_created": False,
         "author_input_created": False,
         "partial_answer_ready": False,
+        "product_correctness_claimed": False,
     }
     return _without_empty(candidate)
 
@@ -1157,15 +1204,93 @@ def _validate_closed_candidate_flags(candidate: Mapping[str, Any]) -> None:
             )
 
 
+def _execution_facts(
+    *,
+    execution_mode: str,
+    broker_invoked: bool,
+    live_provider_called: bool,
+) -> dict[str, Any]:
+    mode = _required_token(
+        execution_mode,
+        "live search validation requires execution_mode",
+        limit=80,
+    )
+    if mode not in LIVE_SEARCH_VALIDATION_EXECUTION_MODES:
+        raise LiveSearchValidationRuntimeError(
+            "live search validation execution_mode is not allowed"
+        )
+    if not isinstance(broker_invoked, bool):
+        raise LiveSearchValidationRuntimeError(
+            "live search validation broker_invoked must be boolean"
+        )
+    if not isinstance(live_provider_called, bool):
+        raise LiveSearchValidationRuntimeError(
+            "live search validation live_provider_called must be boolean"
+        )
+    if mode == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE:
+        if broker_invoked or live_provider_called:
+            raise LiveSearchValidationRuntimeError(
+                "offline fake validation cannot claim broker or live provider execution"
+            )
+    elif mode == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE:
+        if broker_invoked is not True:
+            raise LiveSearchValidationRuntimeError(
+                "broker live validation requires broker_invoked true"
+            )
+    elif mode == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_DIRECT_LIVE:
+        if broker_invoked:
+            raise LiveSearchValidationRuntimeError(
+                "direct live validation cannot claim broker_invoked"
+            )
+    return {
+        "execution_mode": mode,
+        "broker_invoked": broker_invoked,
+        "live_provider_called": live_provider_called,
+    }
+
+
+def _validate_execution_facts(validation: Mapping[str, Any]) -> dict[str, Any]:
+    facts = _execution_facts(
+        execution_mode=validation.get("execution_mode")
+        or _EXECUTION_FACT_DEFAULTS["execution_mode"],
+        broker_invoked=validation.get(
+            "broker_invoked",
+            _EXECUTION_FACT_DEFAULTS["broker_invoked"],
+        ),
+        live_provider_called=validation.get(
+            "live_provider_called",
+            _EXECUTION_FACT_DEFAULTS["live_provider_called"],
+        ),
+    )
+    offline = (
+        facts["execution_mode"] == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE
+    )
+    if validation.get("not_live_executed_by_pr1") is not offline:
+        raise LiveSearchValidationRuntimeError(
+            "live search validation not_live_executed_by_pr1 must match execution_mode"
+        )
+    if validation.get("fake_provider_used") is not offline:
+        raise LiveSearchValidationRuntimeError(
+            "live search validation fake_provider_used must match execution_mode"
+        )
+    return facts
+
+
 def _validate_closed_validation_flags(validation: Mapping[str, Any]) -> None:
-    for key, expected in _REQUIRED_FALSE_FLAGS.items():
+    for key, expected in _DOWNSTREAM_FALSE_FLAGS.items():
         value = validation.get(key, False if key in _SAFE_FALSE_RETENTION_KEYS else None)
         if value is not expected:
             raise LiveSearchValidationRuntimeError(
                 f"live search validation must keep {key} false"
             )
     flags = _safe_mapping(validation.get("closed_surface_flags"))
-    for key, expected in _REQUIRED_FALSE_FLAGS.items():
+    for forbidden_execution_fact in ("broker_invoked", "live_provider_called"):
+        if forbidden_execution_fact in flags:
+            raise LiveSearchValidationRuntimeError(
+                "live search validation closed-surface flags cannot include "
+                f"{forbidden_execution_fact}"
+            )
+    for key, expected in _DOWNSTREAM_FALSE_FLAGS.items():
         value = flags.get(key, False if key in _SAFE_FALSE_RETENTION_KEYS else None)
         if value is not expected:
             raise LiveSearchValidationRuntimeError(
@@ -1177,14 +1302,6 @@ def _validate_closed_validation_flags(validation: Mapping[str, Any]) -> None:
             raise LiveSearchValidationRuntimeError(
                 f"live search validation retention flag {key} must be false"
             )
-    if validation.get("not_live_executed_by_pr1") is not True:
-        raise LiveSearchValidationRuntimeError(
-            "live search validation PR1 must remain not_live_executed_by_pr1"
-        )
-    if validation.get("fake_provider_used") is not True:
-        raise LiveSearchValidationRuntimeError(
-            "live search validation PR1 requires fake_provider_used"
-        )
     if validation.get("no_fetch_read_policy_active") is not True:
         raise LiveSearchValidationRuntimeError(
             "live search validation requires no_fetch_read_policy_active"
@@ -1224,6 +1341,7 @@ def _candidate_false_flags() -> dict[str, bool]:
         "final_answer_packet_created": False,
         "author_input_created": False,
         "partial_answer_ready": False,
+        "product_correctness_claimed": False,
     }
 
 
@@ -1563,6 +1681,10 @@ def _digest_json(value: Any) -> str:
 __all__ = [
     "LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP",
     "LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP",
+    "LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE",
+    "LIVE_SEARCH_VALIDATION_EXECUTION_MODE_DIRECT_LIVE",
+    "LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE",
+    "LIVE_SEARCH_VALIDATION_EXECUTION_MODES",
     "LIVE_SEARCH_VALIDATION_MAX_SELECTED_TASKS",
     "LIVE_SEARCH_VALIDATION_OBSERVATION_SCHEMA_VERSION",
     "LIVE_SEARCH_VALIDATION_OWNER",
