@@ -57,6 +57,14 @@ Current summary:
   provider allowlist, candidate normalizer, redaction posture, output-packet
   shape, and inert wrapper scripts. PR2 does not run live validation, call a
   broker job, or call a provider unless separately licensed after review.
+- `AG-LIVE-XAXIS-VALIDATION-01A-LIVE-RUN-01` adds an inert trusted-local
+  harness that prepares the repo-visible request packet and optional broker
+  envelope from deterministic current-contract plus SearchExecutorHandoff
+  state. The harness can reduce separately supplied sanitized provider-result
+  JSON through the existing RunKernel path, but it does not call providers,
+  call broker jobs, load credentials, fetch/read, retrieve, admit evidence,
+  create citations, decide Sufficiency, create FAP or Author input, make
+  partial-readiness claims, or claim product correctness.
 - `AG-LIVE-XAXIS-VALIDATION-01A` must not claim fetch/read, EvidenceLedger
   admission, citations, source-obligation satisfaction, Sufficiency, FAP,
   Author, partial-answer readiness, product correctness, or final answer

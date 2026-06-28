@@ -22,6 +22,15 @@ results. PR2 adds broker/direct invocation scaffolding only: shared request,
 cap, provider allowlist, candidate normalizer, redaction, output-packet, and
 RunKernel reduction shapes. PR2 does not run live validation, call a broker job,
 or call a provider unless separately licensed after review.
+`AG-LIVE-XAXIS-VALIDATION-01A-LIVE-RUN-01` adds the inert repo-visible
+trusted-local harness for preparing the request packet and optional broker
+envelope from deterministic current-contract plus SearchExecutorHandoff state.
+It can reduce a separately supplied sanitized provider-result JSON file through
+the existing RunKernel path, including an explicit empty result list for the
+selected task, but it does not call providers, call broker jobs, load `.env`,
+read secrets, retain raw provider/search responses, fetch/read, retrieve, admit
+EvidenceLedger custody, create citations, decide Sufficiency, create FAP or
+Author input, make partial-readiness claims, or claim product correctness.
 
 `AG-LIVE-XAXIS-VALIDATION-01A` must not fetch/read content, admit
 `EvidenceLedger` custody, create citations, claim citation eligibility, claim
@@ -105,7 +114,9 @@ runner dry-run**.
 This is not the immediate post-#330 bridge. The immediate bridge is
 `AG-LIVE-XAXIS-VALIDATION-01A`, a search-only validation adapter that consumes
 `current_answer_contract` and `SearchExecutorHandoff` and emits sanitized
-`SearchResultCandidate` records only. Product-run bridge work resumes later,
+`SearchResultCandidate` records only. LIVE-RUN-01 prepares the request packet
+and broker envelope only; actual provider contact remains separately licensed
+and trusted-local or broker-private. Product-run bridge work resumes later,
 after candidate packets, fetch/read content references, EvidenceLedger custody,
 evidence-relative analysis, Scrutineer/Specialist review as needed,
 Sufficiency, and FAP prerequisites exist.

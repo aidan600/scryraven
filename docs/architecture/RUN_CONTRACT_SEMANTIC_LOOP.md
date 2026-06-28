@@ -82,6 +82,14 @@ invoked. PR2 adds broker/direct invocation scaffolding only: the shared request,
 cap, normalizer, redaction, and output-packet shapes can represent a future
 licensed broker or trusted-local provider call, but PR2 does not run live
 validation, call a broker job, fetch/read, retrieve, or admit evidence.
+`AG-LIVE-XAXIS-VALIDATION-01A-LIVE-RUN-01` adds an inert trusted-local harness
+for preparing the repo-visible request packet and optional broker envelope from
+deterministic current-contract plus SearchExecutorHandoff state. The harness may
+also reduce an operator-supplied sanitized provider-result JSON file through the
+existing RunKernel validation path, but it does not call providers, call broker
+jobs, load credentials, fetch/read, retrieve, admit evidence, create citations,
+decide Sufficiency, create FinalAnswerPacket state, create Author input, make
+partial-answer readiness claims, or claim product correctness.
 
 `broker_invoked` and `live_provider_called` are PR2 execution facts. They are
 not downstream evidence, citation, source-obligation, Sufficiency,
@@ -315,8 +323,9 @@ Runtime success requires:
    `current_answer_contract` plus `SearchExecutorHandoff` directly, authorizes
    a fake-provider validation action, and emits sanitized
    `SearchResultCandidate` records only. PR2 adds broker/direct live
-   invocation scaffolding and does not run live validation unless separately
-   licensed. No fetch/read, custody, citations, source-obligation
+   invocation scaffolding. LIVE-RUN-01 adds the inert request-packet and
+   broker-envelope harness but does not run provider or broker transport unless
+   separately licensed. No fetch/read, custody, citations, source-obligation
    satisfaction, Sufficiency, FAP, Author, partial-answer readiness, or product
    correctness claims.
 3. `AG-SEARCH-RESULT-CANDIDATE-PACKET-01` - define and reduce
