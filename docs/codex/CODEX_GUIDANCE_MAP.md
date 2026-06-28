@@ -156,6 +156,10 @@ SearchResultCandidatePacket
 before fetch/read. It preserves sanitized live-search candidate lineage, but
 search candidates are not evidence, not citation-eligible, and the packet does
 not satisfy source obligations.
+`FetchReadContentPacket` / `SanitizedContentReference` is the bounded
+readable-content handoff after `SearchResultCandidatePacket` and before
+EvidenceLedger custody; it is not evidence, not citation-eligible, and does not
+satisfy source obligations.
 
 Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
 RunKernel/current_answer_contract second-half semantic architecture.
