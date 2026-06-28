@@ -57,6 +57,9 @@ citation, source-obligation, Sufficiency, FinalAnswerPacket, Author,
 partial-readiness, or product-correctness authority. Existing
 `core/search_providers.py` wrappers, including Serper, may be reused only behind
 a governed live-search-validation adapter.
+`SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
+before fetch/read. It consumes sanitized live-search candidates, but the packet
+is not evidence, not citation-eligible, and does not satisfy source obligations.
 
 The historical AG-LIVE-BOUND-01 / AG-LIVE-BRIDGE-01 plan below is retained as
 planning history for a later product-run validation after the second-half

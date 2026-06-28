@@ -152,6 +152,11 @@ SearchResultCandidatePacket
 -> Author prose only
 ```
 
+`SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
+before fetch/read. It preserves sanitized live-search candidate lineage, but
+search candidates are not evidence, not citation-eligible, and the packet does
+not satisfy source obligations.
+
 Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
 RunKernel/current_answer_contract second-half semantic architecture.
 Partial-answer readiness is later, after the

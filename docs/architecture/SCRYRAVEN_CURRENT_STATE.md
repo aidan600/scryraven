@@ -99,6 +99,10 @@ Current summary:
   when needed -> ScrutineerReview -> ComponentCoverageRecord proposals ->
   ContractAmendmentRecord proposals -> SufficiencyJudgment ->
   FinalAnswerPacket -> Author prose only`.
+- `SearchResultCandidatePacket` is the durable non-evidence candidate handoff
+  before fetch/read. It preserves sanitized live-search candidate lineage, but
+  search candidates are not evidence, not citation-eligible, and the packet does
+  not satisfy source obligations.
 - `AnalysisGapSearchProposal` is the future proposal shape for analysis,
   specialist, or Scrutineer-discovered search gaps. It must route back through
   RunKernel authority and must not dispatch on its own.
