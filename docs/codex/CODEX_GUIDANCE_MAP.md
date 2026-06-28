@@ -18,6 +18,13 @@ are repo files; use repo-visible files and the current phase prompt.
   [CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
   Codex edits and tests in the workspace sandbox; exact-approved Git commands
   publish.
+- **Generic provider-proxy broker operator flow:** read
+  [../operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md](../operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md)
+  and [../operator/BROKER_REACTIVATION_RUNBOOK.md](../operator/BROKER_REACTIVATION_RUNBOOK.md)
+  when a phase separately licenses a trusted-local brokered provider call.
+  The reusable helper is `scripts/run_provider_proxy_broker_once.py`; it starts
+  the private broker locally, generates a temporary token, delegates to the
+  generic client, writes sanitized output under `output/`, and stops the broker.
 - **Proof class and actual app delta questions:** read
   [PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md).
 - **Validation buckets, high-custody tiers, and timeout reporting:** read
@@ -114,6 +121,13 @@ input/prose, make partial-answer readiness claims, or claim product correctness.
 `broker_invoked` and `live_provider_called` are PR2 execution facts, not
 downstream closed-surface flags or evidence/readiness authority. Raw provider
 payload and raw search response retention remain false in all modes.
+
+Generic broker operator flow after BROKER-OPERATOR-FLOW-01: use
+`scripts/run_provider_proxy_broker_once.py` for future separately licensed
+trusted-local provider-proxy calls. The helper and broker contract remain
+provider/operation/query/max_results only. Future task-specific harnesses, such
+as LIVE-RUN-01, map the returned sanitized generic results after the broker
+returns. That mapping does not belong inside the broker.
 
 `provider_preference_hint` is only a hint. Live provider authority must come from
 an explicit RunKernel-authorized validation action. Existing provider wrappers

@@ -30,6 +30,18 @@ Tracked generic provider-proxy client:
 scripts/request_provider_proxy_broker.py
 ```
 
+Preferred one-run local operator helper:
+
+```text
+scripts/run_provider_proxy_broker_once.py
+```
+
+Detailed reusable flow:
+
+```text
+docs/operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md
+```
+
 Public non-secret private-broker template:
 
 ```text
@@ -41,6 +53,10 @@ Required local environment variable for the client shell:
 ```text
 SCRYRAVEN_BROKER_TOKEN
 ```
+
+The one-run helper generates this token automatically for the private broker
+subprocess and the tracked client. The token is temporary, is not a permanent
+secret, and must not be pasted into chat or committed.
 
 ## Broker Contract
 
@@ -95,7 +111,31 @@ raw_provider_payload_retained: false
 raw_search_response_retained: false
 ```
 
-## Restart Broker
+## Preferred One-Run Helper
+
+For a separately licensed trusted-local provider call, prefer the reusable
+helper. It starts the private broker on `127.0.0.1:8765`, generates a temporary
+broker token, loads `SERPER_API_KEY` from the current process or explicit local
+operator env files without printing it, delegates to the generic client, writes
+sanitized output under `output/`, and stops the broker subprocess afterward.
+
+```powershell
+py scripts\run_provider_proxy_broker_once.py `
+  --provider serper `
+  --operation search `
+  --query "<trusted-local approved query>" `
+  --max-results 5 `
+  --output output\<sanitized-provider-proxy-response>.json `
+  --broker-url http://127.0.0.1:8765/run `
+  --private-broker-path C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py `
+  --env-file C:\Users\aidan\ScryRavenLiveBroker\.env `
+  --confirm-provider-call
+```
+
+Use the lower-level client command only when the private broker is already
+running in a token-loaded shell.
+
+## Manual Restart Broker
 
 Run from a private PowerShell shell that already has the broker token and
 provider credentials loaded. Do not paste tokens or provider keys into chat or
@@ -111,7 +151,7 @@ py C:\Users\aidan\ScryRavenLiveBroker\scryraven_live_broker.py
 If the broker runs in a separate terminal, keep that terminal open while making
 the provider-proxy request.
 
-## Broker Client Command Shape
+## Lower-Level Broker Client Command Shape
 
 Run from the repository root in a shell that can see `SCRYRAVEN_BROKER_TOKEN`:
 
@@ -134,6 +174,10 @@ flags set to true.
 Use only sanitized broker output under `output/`. Do not paste or commit tokens,
 secrets, `.env` contents, provider keys, raw prompts, raw provider payloads, raw
 model responses, private logs, DB rows, cache rows, or full traces.
+
+Future task-specific harnesses must transform sanitized broker output after the
+broker returns. Do not add task-specific mapping, reduction, job ids, validation
+profiles, or answer policy to the broker.
 
 ## Codex Acknowledgement Template
 
