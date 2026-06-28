@@ -390,6 +390,25 @@ from core.initial_answer_contract_acceptance_runtime import (
 from core.initial_answer_contract_acceptance_runtime import (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE as INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME,
 )
+from core.live_search_validation_runtime import (
+    LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP,
+    LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP,
+    LIVE_SEARCH_VALIDATION_MAX_SELECTED_TASKS,
+    LIVE_SEARCH_VALIDATION_REASON,
+    LIVE_SEARCH_VALIDATION_SCHEMA_VERSION,
+    LiveSearchValidationRuntimeError,
+    build_live_search_validation_projection,
+    build_live_search_validation_state,
+)
+from core.live_search_validation_runtime import (
+    LIVE_SEARCH_VALIDATION_STAGE as LIVE_SEARCH_VALIDATION_STAGE_NAME,
+)
+from core.live_search_validation_runtime import (
+    contract_ref_from_contract as _live_validation_contract_ref_from_contract,
+)
+from core.live_search_validation_runtime import (
+    handoff_ref_from_handoff_state as _live_validation_handoff_ref_from_handoff_state,
+)
 from core.scout_disambiguation_runtime import (
     SCOUT_DISAMBIGUATION_REASON,
     SCOUT_DISAMBIGUATION_SCHEMA_VERSION,
@@ -472,6 +491,7 @@ SEARCH_PLANNER_PRODUCTION_STAGE = SEARCH_PLANNER_PRODUCTION_STAGE_NAME
 SCOUT_DISAMBIGUATION_STAGE = SCOUT_DISAMBIGUATION_STAGE_NAME
 SEARCH_PLANNER_REVISION_STAGE = SEARCH_PLANNER_REVISION_STAGE_NAME
 SEARCH_EXECUTOR_HANDOFF_STAGE = SEARCH_EXECUTOR_HANDOFF_STAGE_NAME
+LIVE_SEARCH_VALIDATION_STAGE = LIVE_SEARCH_VALIDATION_STAGE_NAME
 INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE = (
     INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE_NAME
 )
@@ -594,6 +614,7 @@ class ActionType(str, Enum):
     SCOUT_DISAMBIGUATE = "scout_disambiguate"
     SEARCH_PLANNER_REVISE = "search_planner_revise"
     SEARCH_EXECUTOR_HANDOFF = "search_executor_handoff"
+    LIVE_SEARCH_VALIDATE = "live_search_validate"
     INITIAL_ANSWER_CONTRACT_ACCEPT = "initial_answer_contract_accept"
     SEMANTIC_OBSERVATION_ADMIT = "semantic_observation_admit"
     COMPONENT_COVERAGE_REDUCE = "component_coverage_reduce"
@@ -667,6 +688,7 @@ class ObservationType(str, Enum):
     SCOUT_DISAMBIGUATION_REPORTED = "scout_disambiguation_reported"
     SEARCH_PLANNER_REVISED = "search_planner_revised"
     SEARCH_EXECUTOR_HANDOFF_CREATED = "search_executor_handoff_created"
+    LIVE_SEARCH_VALIDATED = "live_search_validated"
     INITIAL_ANSWER_CONTRACT_ACCEPTED = "initial_answer_contract_accepted"
     SEMANTIC_OBSERVATION_ADMITTED = "semantic_observation_admitted"
     COMPONENT_COVERAGE_REDUCED = "component_coverage_reduced"
@@ -1059,6 +1081,13 @@ class RunState:
     search_executor_handoff_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    live_search_validation_state: dict[str, Any] = field(default_factory=dict)
+    live_search_validation_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    live_search_validation_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     initial_answer_contract: dict[str, Any] = field(default_factory=dict)
     initial_answer_contract_projection: dict[str, Any] = field(default_factory=dict)
     initial_answer_contract_history: list[dict[str, Any]] = field(
@@ -1394,6 +1423,15 @@ class RunState:
             search_executor_handoff_history=deepcopy(
                 self.search_executor_handoff_history
             ),
+            live_search_validation_state=deepcopy(
+                self.live_search_validation_state
+            ),
+            live_search_validation_projection=deepcopy(
+                self.live_search_validation_projection
+            ),
+            live_search_validation_history=deepcopy(
+                self.live_search_validation_history
+            ),
             initial_answer_contract=deepcopy(self.initial_answer_contract),
             initial_answer_contract_projection=deepcopy(
                 self.initial_answer_contract_projection
@@ -1719,6 +1757,9 @@ class KernelTraceProjection:
     search_executor_handoff_state: Mapping[str, Any]
     search_executor_handoff_projection: Mapping[str, Any]
     search_executor_handoff_history: Sequence[Mapping[str, Any]]
+    live_search_validation_state: Mapping[str, Any]
+    live_search_validation_projection: Mapping[str, Any]
+    live_search_validation_history: Sequence[Mapping[str, Any]]
     initial_answer_contract: Mapping[str, Any]
     initial_answer_contract_projection: Mapping[str, Any]
     initial_answer_contract_history: Sequence[Mapping[str, Any]]
@@ -1887,6 +1928,15 @@ class KernelTraceProjection:
             "search_executor_handoff_history": [
                 _safe_mapping(item)
                 for item in self.search_executor_handoff_history
+            ],
+            "live_search_validation_state": _safe_mapping(
+                self.live_search_validation_state
+            ),
+            "live_search_validation_projection": _safe_mapping(
+                self.live_search_validation_projection
+            ),
+            "live_search_validation_history": [
+                _safe_mapping(item) for item in self.live_search_validation_history
             ],
             "initial_answer_contract": _safe_mapping(self.initial_answer_contract),
             "initial_answer_contract_projection": _safe_mapping(
@@ -2796,6 +2846,176 @@ class RunKernel:
             expected_observation_type=(
                 ObservationType.SEARCH_EXECUTOR_HANDOFF_CREATED
             ),
+        )
+
+    def authorize_live_search_validation(
+        self,
+        *,
+        selected_search_task_ids: Sequence[str],
+        provider_authorized: str | None = None,
+        provider_call_cap: int = LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP,
+        results_per_task_cap: int = (
+            LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP
+        ),
+        parent_current_contract_version: str | None = None,
+        parent_current_contract_digest: str | None = None,
+        handoff_id: str | None = None,
+        handoff_digest: str | None = None,
+        raw_provider_payload_retained: bool = False,
+        raw_search_response_retained: bool = False,
+        no_fetch_read_policy_active: bool = True,
+        request_id: str | None = None,
+        reason: str = LIVE_SEARCH_VALIDATION_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        if not self.state.current_answer_contract:
+            raise RunKernelTransitionError(
+                "live search validation requires current_answer_contract"
+            )
+        if not self.state.search_executor_handoff_state:
+            raise RunKernelTransitionError(
+                "live search validation requires SearchExecutorHandoff"
+            )
+        current_ref = _live_validation_contract_ref_from_contract(
+            self.state.current_answer_contract,
+            source="current_answer_contract",
+        )
+        handoff_ref = _live_validation_handoff_ref_from_handoff_state(
+            self.state.search_executor_handoff_state
+        )
+        if not current_ref:
+            raise RunKernelTransitionError(
+                "live search validation requires accepted current_answer_contract"
+            )
+        if not handoff_ref:
+            raise RunKernelTransitionError(
+                "live search validation requires reduced SearchExecutorHandoff"
+            )
+        if (
+            _safe_mapping(handoff_ref.get("parent_current_contract_ref"))
+            != current_ref
+        ):
+            raise RunKernelTransitionError(
+                "live search validation requires handoff bound to current_answer_contract"
+            )
+        if parent_current_contract_version and (
+            parent_current_contract_version != current_ref.get("contract_version")
+        ):
+            raise RunKernelTransitionError(
+                "live search validation parent current contract version is stale"
+            )
+        if parent_current_contract_digest and (
+            parent_current_contract_digest != current_ref.get("contract_digest")
+        ):
+            raise RunKernelTransitionError(
+                "live search validation parent current contract digest is stale"
+            )
+        if handoff_id and handoff_id != handoff_ref.get("handoff_id"):
+            raise RunKernelTransitionError(
+                "live search validation handoff_id is stale"
+            )
+        if handoff_digest and handoff_digest != handoff_ref.get("handoff_digest"):
+            raise RunKernelTransitionError(
+                "live search validation handoff_digest is stale"
+            )
+
+        selected_ids = _preserve_text_list(selected_search_task_ids)
+        if not selected_ids:
+            raise RunKernelTransitionError(
+                "live search validation requires selected_search_task_ids"
+            )
+        if len(selected_ids) != len(set(selected_ids)):
+            raise RunKernelTransitionError(
+                "live search validation selected search_task_ids must be unique"
+            )
+        if len(selected_ids) > LIVE_SEARCH_VALIDATION_MAX_SELECTED_TASKS:
+            raise RunKernelTransitionError(
+                "live search validation selected task count exceeds PR1 cap"
+            )
+        known_task_ids = {
+            _clean_text(task.get("search_task_id"), limit=260)
+            for task in self.state.search_executor_handoff_state.get(
+                "search_task_records",
+                [],
+            )
+            if isinstance(task, Mapping)
+        }
+        missing_task_ids = [
+            task_id for task_id in selected_ids if task_id not in known_task_ids
+        ]
+        if missing_task_ids:
+            raise RunKernelTransitionError(
+                "live search validation selected task ids are missing from "
+                "SearchExecutorHandoff: "
+                + ", ".join(missing_task_ids)
+            )
+        clean_provider = _clean_text(provider_authorized, limit=120)
+        if not clean_provider:
+            raise RunKernelTransitionError(
+                "live search validation requires explicit provider_authorized"
+            )
+        clean_provider_call_cap = _live_validation_positive_int(
+            provider_call_cap,
+            "live search validation requires provider_call_cap",
+        )
+        clean_results_cap = _live_validation_positive_int(
+            results_per_task_cap,
+            "live search validation requires results_per_task_cap",
+        )
+        if (
+            clean_provider_call_cap
+            > LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP
+        ):
+            raise RunKernelTransitionError(
+                "live search validation provider_call_cap exceeds PR1 default"
+            )
+        if (
+            clean_results_cap
+            > LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP
+        ):
+            raise RunKernelTransitionError(
+                "live search validation results_per_task_cap exceeds PR1 default"
+            )
+        if raw_provider_payload_retained is not False:
+            raise RunKernelTransitionError(
+                "live search validation requires raw_provider_payload_retained false"
+            )
+        if raw_search_response_retained is not False:
+            raise RunKernelTransitionError(
+                "live search validation requires raw_search_response_retained false"
+            )
+        if no_fetch_read_policy_active is not True:
+            raise RunKernelTransitionError(
+                "live search validation requires no_fetch_read_policy_active true"
+            )
+        _reject_live_validation_closed_surface_inputs(inputs or {})
+        merged_inputs = {
+            **dict(inputs or {}),
+            "run_id": self.state.run_id,
+            "request_id": request_id or self.state.request_id,
+            "stage": LIVE_SEARCH_VALIDATION_STAGE,
+            "action_type": ActionType.LIVE_SEARCH_VALIDATE.value,
+            "expected_observation_type": ObservationType.LIVE_SEARCH_VALIDATED.value,
+            "schema_version": LIVE_SEARCH_VALIDATION_SCHEMA_VERSION,
+            "parent_current_contract_version": current_ref.get("contract_version"),
+            "parent_current_contract_digest": current_ref.get("contract_digest"),
+            "handoff_id": handoff_ref.get("handoff_id"),
+            "handoff_digest": handoff_ref.get("handoff_digest"),
+            "selected_search_task_ids": selected_ids,
+            "provider_authorized": clean_provider,
+            "provider_call_cap": clean_provider_call_cap,
+            "results_per_task_cap": clean_results_cap,
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+            "no_fetch_read_policy_active": True,
+            "reason": reason,
+        }
+        return self.authorize(
+            stage=LIVE_SEARCH_VALIDATION_STAGE,
+            action_type=ActionType.LIVE_SEARCH_VALIDATE,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=ObservationType.LIVE_SEARCH_VALIDATED,
         )
 
     def authorize_initial_answer_contract_acceptance(
@@ -10623,6 +10843,35 @@ class RunKernel:
                 deepcopy(handoff_projection)
             )
             self.state.projections[action.stage] = deepcopy(handoff_projection)
+        elif action.action_type is ActionType.LIVE_SEARCH_VALIDATE:
+            try:
+                validation_state = build_live_search_validation_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    current_parent_current_contract=(
+                        self.state.current_answer_contract
+                    ),
+                    current_search_executor_handoff_state=(
+                        self.state.search_executor_handoff_state
+                    ),
+                    existing_validation_history=(
+                        self.state.live_search_validation_history
+                    ),
+                )
+                validation_projection = build_live_search_validation_projection(
+                    validation_state=validation_state
+                )
+            except LiveSearchValidationRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.live_search_validation_state = validation_state
+            self.state.live_search_validation_projection = validation_projection
+            self.state.live_search_validation_history.append(
+                deepcopy(validation_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(validation_projection)
         elif action.action_type is ActionType.INITIAL_ANSWER_CONTRACT_ACCEPT:
             proposal_payload = _safe_mapping(
                 observation.payload.get("question_meaning_record")
@@ -13223,6 +13472,47 @@ def _preserve_text_list(value: Any) -> list[str]:
     return out
 
 
+def _live_validation_positive_int(value: Any, message: str) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise RunKernelTransitionError(message) from exc
+    if parsed <= 0:
+        raise RunKernelTransitionError(message)
+    return parsed
+
+
+def _reject_live_validation_closed_surface_inputs(
+    inputs: Mapping[str, Any],
+) -> None:
+    closed_keys = {
+        "author_input",
+        "author_input_created",
+        "broker_invoked",
+        "citation_eligible",
+        "citation_requested",
+        "evidence_ledger_admission",
+        "evidence_ledger_admitted",
+        "fetch_read_executed",
+        "fetch_read_requested",
+        "final_answer_packet",
+        "final_answer_packet_created",
+        "live_provider_called",
+        "partial_answer_ready",
+        "raw_provider_payload",
+        "raw_search_response",
+        "source_obligation_satisfied",
+        "sufficiency_decided",
+    }
+    for key, value in _safe_mapping(inputs).items():
+        normalized = str(key).casefold()
+        if normalized in closed_keys and value not in (None, False, {}, []):
+            raise RunKernelTransitionError(
+                "live search validation cannot request closed surface: "
+                + str(key)
+            )
+
+
 def _scout_hint_ids_from_report(report: Mapping[str, Any]) -> set[str]:
     hint_ids: set[str] = set()
     for key in (
@@ -13603,6 +13893,7 @@ __all__ = [
     "SEARCH_PLANNER_PRODUCTION_STAGE",
     "SEARCH_PLANNER_REVISION_STAGE",
     "SEARCH_EXECUTOR_HANDOFF_STAGE",
+    "LIVE_SEARCH_VALIDATION_STAGE",
     "SCOUT_DISAMBIGUATION_STAGE",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_REASON",
     "SEMANTIC_PRODUCER_BUNDLE_COMMIT_STAGE",

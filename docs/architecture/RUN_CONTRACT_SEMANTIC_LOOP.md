@@ -3,8 +3,8 @@
 ## 1. Status
 
 Status: Current doctrine after PR #330 /
-`AG-SEARCH-EXECUTOR-HANDOFF-01` and during
-`AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`.
+`AG-SEARCH-EXECUTOR-HANDOFF-01` and PR1 of
+`AG-LIVE-XAXIS-VALIDATION-01A`.
 
 Proof class: `docs_architecture_update`.
 
@@ -75,8 +75,10 @@ not the LLM reasoner; it is the authority hub and reducer owner.
 
 ## 2. First Live Validation Boundary
 
-The next implementation gate is `AG-LIVE-XAXIS-VALIDATION-01A`, a search-only
-live validation slice.
+`AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduces the RunKernel-owned
+search-only validation seam. PR1 is offline-governed: fake provider result
+metadata is injected in tests, no live provider is called, and no broker is
+invoked. PR2 is the later broker/direct live invocation gate.
 
 That validation must consume these two current authorities directly:
 
@@ -96,15 +98,14 @@ The first live validation must not claim or perform any of the following:
 - `FinalAnswerPacket`;
 - Author input or Author prose;
 - partial-answer readiness;
-- product answer correctness.
+- product correctness or product answer correctness.
 
 `provider_preference_hint` is only a hint carried by offline search intent. Live
-provider authority must come from a future explicit RunKernel-authorized
-validation action. Existing provider wrappers in `core/search_providers.py`,
-including the Serper wrapper, may be reused only behind a new governed
-live-search-validation adapter that enforces action authorization, budget,
-redaction, sanitized output, and closed fetch/read/evidence/citation/FAP/Author
-surfaces.
+provider authority must come from an explicit RunKernel-authorized validation
+action. Existing provider wrappers in `core/search_providers.py`, including the
+Serper wrapper, may be reused only behind a governed live-search-validation
+adapter that enforces action authorization, budget, redaction, sanitized
+output, and closed fetch/read/evidence/citation/FAP/Author surfaces.
 
 `core/offline_search_executor_bridge.py` is legacy/offline scaffolding for the
 old X-axis proof path. For the new handoff-consuming live path it must be
@@ -300,12 +301,13 @@ Runtime success requires:
    SearchExecutorHandoff is search intent only, defines the second-half
    packet/report chain, and narrows the next live step to search-result
    candidate validation.
-2. `AG-LIVE-XAXIS-VALIDATION-01A` - search-only live validation. Consume
-   `current_answer_contract` plus `SearchExecutorHandoff` directly, authorize a
-   governed live-search-validation action, and emit sanitized
-   `SearchResultCandidate` records only. No fetch/read, custody, citations,
-   Sufficiency, FAP, Author, partial-answer readiness, or product correctness
-   claims.
+2. `AG-LIVE-XAXIS-VALIDATION-01A` - search-only live validation. PR1 consumes
+   `current_answer_contract` plus `SearchExecutorHandoff` directly, authorizes
+   a fake-provider validation action, and emits sanitized
+   `SearchResultCandidate` records only. PR2 handles broker/direct live
+   invocation. No fetch/read, custody, citations, source-obligation
+   satisfaction, Sufficiency, FAP, Author, partial-answer readiness, or product
+   correctness claims.
 3. `AG-SEARCH-RESULT-CANDIDATE-PACKET-01` - define and reduce
    `SearchResultCandidatePacket` from sanitized result candidates.
 4. `AG-FETCH-READ-CONTENT-REFERENCE-01` - create `FetchReadContentPacket` and
