@@ -81,15 +81,19 @@ metadata is injected in tests, no live provider is called, and no broker is
 invoked. PR2 adds broker/direct invocation scaffolding only: the shared request,
 cap, normalizer, redaction, and output-packet shapes can represent a future
 licensed broker or trusted-local provider call, but PR2 does not run live
-validation, call a broker job, fetch/read, retrieve, or admit evidence.
+validation, call a broker, fetch/read, retrieve, or admit evidence. Durable
+broker contact should use the generic provider-proxy contract, not a
+phase-specific broker job.
 `AG-LIVE-XAXIS-VALIDATION-01A-LIVE-RUN-01` adds an inert trusted-local harness
 for preparing the repo-visible request packet and optional broker envelope from
 deterministic current-contract plus SearchExecutorHandoff state. The harness may
 also reduce an operator-supplied sanitized provider-result JSON file through the
-existing RunKernel validation path, but it does not call providers, call broker
-jobs, load credentials, fetch/read, retrieve, admit evidence, create citations,
-decide Sufficiency, create FinalAnswerPacket state, create Author input, make
-partial-answer readiness claims, or claim product correctness.
+existing RunKernel validation path. When actual provider contact is separately
+licensed, it should use the generic provider-proxy broker contract and sanitized
+provider-result JSON, not a phase-specific broker job. The harness does not call
+providers, call a broker, load credentials, fetch/read, retrieve, admit evidence,
+create citations, decide Sufficiency, create FinalAnswerPacket state, create
+Author input, make partial-answer readiness claims, or claim product correctness.
 
 `broker_invoked` and `live_provider_called` are PR2 execution facts. They are
 not downstream evidence, citation, source-obligation, Sufficiency,

@@ -1,0 +1,267 @@
+from __future__ import annotations
+
+import ast
+import json
+from pathlib import Path
+from typing import Any, Mapping
+
+import pytest
+
+from scripts import request_provider_proxy_broker as client
+
+ROOT = Path(__file__).resolve().parents[1]
+SCRIPT = ROOT / "scripts" / "request_provider_proxy_broker.py"
+
+
+def _output_path(name: str) -> Path:
+    return ROOT / "output" / name
+
+
+def _sample_broker_response() -> dict[str, Any]:
+    return {
+        "results": [
+            {
+                "title": "Example Result",
+                "link": "https://example.gov/current",
+                "domain": "example.gov",
+                "snippet": "Sanitized result snippet.",
+                "date": "2026-06-28",
+                "rank": 1,
+                "call_index": 1,
+            }
+        ],
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+    return imported
+
+
+def test_request_shape_is_generic_provider_proxy_not_phase_job_policy() -> None:
+    payload = client.build_provider_proxy_request(
+        provider="serper",
+        operation="search",
+        query="current official example",
+        max_results=5,
+    )
+
+    assert payload == {
+        "request_kind": client.REQUEST_KIND,
+        "provider": "serper",
+        "operation": "search",
+        "query": "current official example",
+        "max_results": 5,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+    rendered = json.dumps(payload).casefold()
+    assert "job_id" not in rendered
+    assert "validation_profile" not in rendered
+    assert "runkernel" not in rendered
+    assert "evidenceledger" not in rendered
+
+
+@pytest.mark.parametrize("max_results", [0, 11])
+def test_request_rejects_unbounded_max_results(max_results: int) -> None:
+    with pytest.raises(client.ProviderProxyClientError, match="max_results"):
+        client.build_provider_proxy_request(
+            provider="serper",
+            operation="search",
+            query="current official example",
+            max_results=max_results,
+        )
+
+
+def test_client_refuses_non_loopback_urls_and_requires_token_and_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(client.TOKEN_ENV_VAR, raising=False)
+    assert client.main(
+        [
+            "--broker-url",
+            "http://127.0.0.1:8765/run",
+            "--provider",
+            "serper",
+            "--query",
+            "current official example",
+            "--output",
+            "output/broker_dumb_proxy_missing_token.json",
+            "--confirm-provider-call",
+        ]
+    ) == 2
+
+    assert client.main(
+        [
+            "--broker-url",
+            "https://broker.example.com/run",
+            "--provider",
+            "serper",
+            "--query",
+            "current official example",
+            "--output",
+            "output/broker_dumb_proxy_nonlocal.json",
+            "--token",
+            "local-token",
+            "--confirm-provider-call",
+        ]
+    ) == 2
+
+    assert client.main(
+        [
+            "--broker-url",
+            "http://127.0.0.1:8765/run",
+            "--provider",
+            "serper",
+            "--query",
+            "current official example",
+            "--output",
+            "output/broker_dumb_proxy_no_confirm.json",
+            "--token",
+            "local-token",
+        ]
+    ) == 2
+
+
+def test_client_writes_only_sanitized_results_under_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    output_path = _output_path("broker_dumb_proxy_sanitized_response.json")
+    captured: dict[str, Any] = {}
+
+    def fake_post(
+        broker_url: str,
+        token: str,
+        payload: Mapping[str, Any],
+    ) -> tuple[int, dict[str, Any]]:
+        captured["broker_url"] = broker_url
+        captured["token"] = token
+        captured["payload"] = dict(payload)
+        return 200, _sample_broker_response()
+
+    monkeypatch.setattr(client, "_post_broker_json", fake_post)
+
+    rc = client.main(
+        [
+            "--broker-url",
+            "http://127.0.0.1:8765/run",
+            "--provider",
+            "serper",
+            "--operation",
+            "search",
+            "--query",
+            "current official example",
+            "--max-results",
+            "5",
+            "--output",
+            str(output_path),
+            "--token",
+            "local-token",
+            "--confirm-provider-call",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["broker_url"] == "http://127.0.0.1:8765/run"
+    assert captured["token"] == "local-token"
+    assert captured["payload"]["provider"] == "serper"
+    written = json.loads(output_path.read_text(encoding="utf-8"))
+    assert written["request_kind"] == client.REQUEST_KIND
+    assert written["result_count"] == 1
+    assert written["raw_provider_payload_retained"] is False
+    assert written["raw_search_response_retained"] is False
+    assert written["results"] == [
+        {
+            "title": "Example Result",
+            "url": "https://example.gov/current",
+            "domain": "example.gov",
+            "snippet": "Sanitized result snippet.",
+            "published_or_observed_date": "2026-06-28",
+            "result_rank": 1,
+            "provider_call_index": 1,
+        }
+    ]
+
+
+def test_client_refuses_output_outside_output() -> None:
+    assert client.main(
+        [
+            "--broker-url",
+            "http://127.0.0.1:8765/run",
+            "--provider",
+            "serper",
+            "--query",
+            "current official example",
+            "--output",
+            str(ROOT / "not-output" / "broker_response.json"),
+            "--token",
+            "local-token",
+            "--confirm-provider-call",
+        ]
+    ) == 2
+
+
+@pytest.mark.parametrize(
+    "forbidden",
+    [
+        "raw_provider_payload",
+        "raw_search_response",
+        "raw_content",
+        "auth",
+        "token",
+        "secret",
+        "prompt",
+        "full_trace",
+        "db_row",
+    ],
+)
+def test_sanitizer_rejects_raw_or_private_fields(forbidden: str) -> None:
+    response = _sample_broker_response()
+    response["results"][0][forbidden] = "private"
+
+    with pytest.raises(client.ProviderProxyClientError):
+        client.sanitize_broker_response(
+            response,
+            provider="serper",
+            operation="search",
+        )
+
+
+def test_sanitizer_rejects_raw_retention_true() -> None:
+    response = _sample_broker_response()
+    response["raw_provider_payload_retained"] = True
+
+    with pytest.raises(client.ProviderProxyClientError, match="raw provider"):
+        client.sanitize_broker_response(
+            response,
+            provider="serper",
+            operation="search",
+        )
+
+
+def test_static_boundary_has_no_dotenv_provider_or_scry_authority_imports() -> None:
+    imported = _imports(SCRIPT)
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "dotenv" not in imported
+    assert "core.search_providers" not in imported
+    assert "core.validation_profiles" not in imported
+    assert "core.run_kernel" not in imported
+    for token in (
+        "load_dotenv",
+        "SERPER_API_KEY",
+        "ALLOWLISTED_JOBS",
+        "validation_profile",
+        "EvidenceLedger",
+        "RunKernel",
+        "subprocess",
+    ):
+        assert token not in source
