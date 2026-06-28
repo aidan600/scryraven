@@ -20,17 +20,22 @@ RunKernel-owned, offline-governed search-only validation seam that consumes
 sanitized `SearchResultCandidate` records only from injected fake-provider
 results. PR2 adds broker/direct invocation scaffolding only: shared request,
 cap, provider allowlist, candidate normalizer, redaction, output-packet, and
-RunKernel reduction shapes. PR2 does not run live validation, call a broker job,
-or call a provider unless separately licensed after review.
+RunKernel reduction shapes. Durable broker contact should use the generic
+provider-proxy contract, not a phase-specific broker job. PR2 does not run live
+validation, call a broker, or call a provider unless separately licensed after
+review.
 `AG-LIVE-XAXIS-VALIDATION-01A-LIVE-RUN-01` adds the inert repo-visible
 trusted-local harness for preparing the request packet and optional broker
 envelope from deterministic current-contract plus SearchExecutorHandoff state.
 It can reduce a separately supplied sanitized provider-result JSON file through
 the existing RunKernel path, including an explicit empty result list for the
-selected task, but it does not call providers, call broker jobs, load `.env`,
+selected task, but it does not call providers, call a broker, load `.env`,
 read secrets, retain raw provider/search responses, fetch/read, retrieve, admit
 EvidenceLedger custody, create citations, decide Sufficiency, create FAP or
 Author input, make partial-readiness claims, or claim product correctness.
+When actual provider contact is separately licensed, LIVE-RUN-01 should consume
+sanitized results from the generic provider-proxy broker contract, not a
+phase-specific broker job.
 
 `AG-LIVE-XAXIS-VALIDATION-01A` must not fetch/read content, admit
 `EvidenceLedger` custody, create citations, claim citation eligibility, claim
@@ -151,18 +156,16 @@ would require provider routing/depth/query/citation/Author changes.
 
 ## Broker Boundary
 
-The repo-visible broker path is suitable for requesting allowlisted local jobs
-and receiving sanitized broker responses. It now sends an approved validation
-profile request shape derived from `core/validation_profiles.py`; private broker
-implementation remains outside the repo.
+The durable repo-visible broker path is a generic provider-proxy request and
+sanitized response boundary. It is no longer a phase/job-specific allowlist or
+validation-profile governor. Private broker implementation remains outside the
+repo.
 
-- The broker is proven for a sanitized client boundary plus component/discovery
-  shapes, including provider discovery and Author-lane smoke.
-- The tracked client does not accept arbitrary commands and does not load
-  `.env`.
-- A private broker may map an allowlisted `job_id` to the approved product
-  entrypoint and profile request, load private credentials there, enforce a
-  one-run fuse, and return sanitized packet/results only.
+- The tracked provider-proxy client does not accept arbitrary commands and does
+  not load `.env`.
+- A private broker may hold provider credentials privately, enforce loopback,
+  token, supported provider, supported operation, bounded `max_results`, and a
+  local run fuse, then return sanitized provider results only.
 - The broker must not own provider policy, provider routing/depth/order, query
   generation, retrieval ranking/filtering, citation policy, semantic
   sufficiency, Author behavior, or product answer policy.
@@ -363,7 +366,10 @@ Caps: max ScryRaven runs 1; max search dispatches 2; max fetch/read operations 3
 Output packet: output/ag_live_bound_01_packet.json.
 Packet marker: LOCAL/UNTRACKED — DO NOT COMMIT.
 Do not inspect .env, secrets, raw provider payloads, raw prompts, raw model requests, raw model responses, private logs, DB/cache rows, full raw traces, or unrelated generated artifacts.
-Fail closed and do not retry on unknown broker job, missing config, provider/model/search/fetch/read error, cap exhaustion, citation mismatch, retention violation, or any need for unlicensed provider/routing/query/citation/Author behavior changes.
+Fail closed and do not retry on token error, missing config, unsupported provider
+or operation, `max_results` violation, provider/model/search/fetch/read error,
+cap exhaustion, citation mismatch, retention violation, or any need for
+unlicensed provider/routing/query/citation/Author behavior changes.
 ```
 
 ## Recommended Final Action

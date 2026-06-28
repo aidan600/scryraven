@@ -93,20 +93,23 @@ search-only validation seam. It consumes `current_answer_contract` plus
 records only from injected fake-provider results. PR2 adds broker/direct
 invocation scaffolding only: shared request/cap/output schema, provider
 allowlist, sanitized candidate normalizer, redaction posture, inert wrappers,
-and the same RunKernel reduction path. PR2 does not run live validation, call a
-broker job, call providers, fetch/read, retrieve, admit EvidenceLedger custody,
-create citations, satisfy source obligations, decide Sufficiency, create
-FinalAnswerPacket state, create Author input/prose, make partial-answer
-readiness claims, or claim product correctness unless a later phase separately
-licenses it.
+and the same RunKernel reduction path. Durable broker contact should use the
+generic provider-proxy contract, not a phase-specific broker job. PR2 does not
+run live validation, call a broker, call providers, fetch/read, retrieve, admit
+EvidenceLedger custody, create citations, satisfy source obligations, decide
+Sufficiency, create FinalAnswerPacket state, create Author input/prose, make
+partial-answer readiness claims, or claim product correctness unless a later
+phase separately licenses it.
 `AG-LIVE-XAXIS-VALIDATION-01A-LIVE-RUN-01` adds an inert trusted-local harness
 that prepares the repo-visible request packet and optional broker envelope from
-deterministic current-contract plus SearchExecutorHandoff state. It can reduce
-a separately supplied sanitized provider-result JSON file through the existing
-RunKernel path, but it does not call providers, call broker jobs, load `.env`,
-read secrets, fetch/read, retrieve, admit evidence, create citations, decide
-Sufficiency, create FinalAnswerPacket state, create Author input/prose, make
-partial-answer readiness claims, or claim product correctness.
+deterministic current-contract plus SearchExecutorHandoff state. When actual
+provider contact is separately licensed, the harness should use the generic
+provider-proxy broker contract and separately supplied sanitized provider-result
+JSON, not a phase-specific broker job. It can reduce sanitized provider-result
+JSON through the existing RunKernel path, but it does not call providers, call a
+broker, load `.env`, read secrets, fetch/read, retrieve, admit evidence, create
+citations, decide Sufficiency, create FinalAnswerPacket state, create Author
+input/prose, make partial-answer readiness claims, or claim product correctness.
 
 `broker_invoked` and `live_provider_called` are PR2 execution facts, not
 downstream closed-surface flags or evidence/readiness authority. Raw provider
@@ -272,7 +275,8 @@ content is explicitly pasted into the current prompt or committed here.
   fake-provider results. PR2 is broker/direct invocation scaffolding only and
   remains inert unless live validation is separately licensed. LIVE-RUN-01 is
   the inert request-packet and broker-envelope harness; actual provider contact
-  remains separately licensed and trusted-local or broker-private.
+  remains separately licensed and trusted-local or broker-private through the
+  generic provider-proxy broker contract.
 - `AG-LIVE-XAXIS-VALIDATION-01A` must keep fetch/read, EvidenceLedger custody,
   citations, source-obligation satisfaction, Sufficiency, FAP, Author,
   partial-answer readiness, and product correctness closed.

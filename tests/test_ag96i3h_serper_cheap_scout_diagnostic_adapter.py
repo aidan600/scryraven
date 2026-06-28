@@ -227,27 +227,37 @@ def test_ag96i3e_live_budget_remains_one_provider_search_call_for_serper() -> No
         budget.mark_provider_search_call()
 
 
-def test_private_broker_template_includes_serper_one_call_job_without_secret_values() -> None:
+def test_private_broker_template_includes_generic_serper_proxy_without_secret_values() -> None:
     module = _load_template_module()
-    job = module.ALLOWLISTED_JOBS["ag96i3e-serper-discovery-once"]
 
-    assert job["provider"] == "serper"
-    assert job["required_private_env_keys"] == [_SERPER_ENV_KEY]
-    assert job["max_provider_search_calls"] == 1
-    assert job["max_fetch_read_attempts"] == 0
-    assert job["max_model_calls"] == 0
-    assert job["max_author_executor_calls"] == 0
-    assert job["retries_allowed"] is False
-    assert "--provider" in job["template_command"]
-    assert "serper" in job["template_command"]
-    assert "--max-results" in job["template_command"]
-    assert "5" in job["template_command"]
-    assert "--confirm-live-provider-call" in job["template_command"]
+    assert module.REQUEST_KIND == "generic_provider_proxy_request"
+    assert "serper" in module.SUPPORTED_PROVIDERS
+    assert "search" in module.SUPPORTED_OPERATIONS
+    assert module.MAX_RESULTS_CAP == 10
+    request = module.validate_provider_proxy_request(
+        {
+            "request_kind": module.REQUEST_KIND,
+            "provider": "serper",
+            "operation": "search",
+            "query": "official current discovery",
+            "max_results": 5,
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+        }
+    )
+    assert request == {
+        "provider": "serper",
+        "operation": "search",
+        "query": "official current discovery",
+        "max_results": 5,
+    }
 
     source = TEMPLATE.read_text(encoding="utf-8")
     assert "replace-in-private-copy" in source
     assert "placeholder-for-unit-test" not in source
     assert "test-key" not in source
+    assert _SERPER_ENV_KEY not in source
+    assert "ALLOWLISTED_JOBS" not in source
 
 
 def test_static_guard_no_product_routing_changes_for_serper() -> None:
