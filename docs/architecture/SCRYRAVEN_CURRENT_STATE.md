@@ -95,8 +95,9 @@ Current summary:
 - The second-half semantic packet/report chain is:
   `SearchResultCandidatePacket -> FetchReadContentPacket /
   SanitizedContentReference -> EvidenceLedger custody ->
-  EvidenceRelativeAnalysisPacket / AnalystReport -> SpecialistAnalysisPacket
-  when needed -> ScrutineerReview -> ComponentCoverageRecord proposals ->
+  EvidenceRelativeAnalysisPacket / AnalystReport -> FollowupSearchIntentPacket /
+  AnalysisGapSearchProposal -> SpecialistAnalysisPacket when needed ->
+  ScrutineerReview -> ComponentCoverageRecord proposals ->
   ContractAmendmentRecord proposals -> SufficiencyJudgment ->
   FinalAnswerPacket -> Author prose only`.
 - `SearchResultCandidatePacket` is the durable non-evidence candidate handoff
@@ -122,9 +123,14 @@ Current summary:
   ComponentCoverage, citation eligibility, source-obligation satisfaction,
   Sufficiency, FinalAnswerPacket, Author input, readiness, partial-answer
   readiness, or product correctness.
-- `AnalysisGapSearchProposal` is the future proposal shape for analysis,
-  specialist, or Scrutineer-discovered search gaps. It must route back through
-  RunKernel authority and must not dispatch on its own.
+- `AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01` introduces
+  `FollowupSearchIntentPacket` / `AnalysisGapSearchProposal` as the current
+  proposal-only gap-to-search-intent posture from validated
+  `EvidenceRelativeAnalysisPacket` / `analyst_report.analysis_gap_proposals`.
+  It is not search authorization, not a query plan, does not create
+  SearchExecutorHandoff, does not dispatch search, does not create evidence,
+  and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains
+  required before any executable search work exists.
 - Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent
   new RunKernel/current_answer_contract second-half semantic architecture.
 - Partial-answer readiness is premature until an evidence-relative
@@ -136,6 +142,7 @@ Current summary:
   `AG-FETCH-READ-CONTENT-REFERENCE-01`,
   `AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01`,
   `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01`,
+  `AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01`,
   then later `AG-PARTIAL-ANSWER-READINESS-01`.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
   history, not the immediate post-#330 search-only validation plan.

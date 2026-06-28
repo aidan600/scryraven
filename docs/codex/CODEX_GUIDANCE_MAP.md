@@ -143,6 +143,7 @@ SearchResultCandidatePacket
 -> FetchReadContentPacket / SanitizedContentReference
 -> EvidenceLedger custody
 -> EvidenceRelativeAnalysisPacket / AnalystReport
+-> FollowupSearchIntentPacket / AnalysisGapSearchProposal
 -> SpecialistAnalysisPacket, when needed
 -> ScrutineerReview
 -> ComponentCoverageRecord proposals
@@ -176,6 +177,14 @@ Analyst proposal records; it is not SemanticObservation admission and does not
 create ComponentCoverage, citation eligibility, source-obligation satisfaction,
 Sufficiency, FinalAnswerPacket, Author input, readiness, partial-answer
 readiness, search dispatch, query plans, or product correctness.
+`AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01` introduces
+`FollowupSearchIntentPacket` / `AnalysisGapSearchProposal` as the current
+proposal-only gap-to-search-intent posture from validated
+`EvidenceRelativeAnalysisPacket` / `analyst_report.analysis_gap_proposals`.
+It is not search authorization, not a query plan, does not create
+SearchExecutorHandoff, does not dispatch search, does not create evidence, and
+RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains required
+before any executable search work exists.
 
 Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
 RunKernel/current_answer_contract second-half semantic architecture.
@@ -188,7 +197,8 @@ The roadmap order is:
 `AG-SEARCH-RESULT-CANDIDATE-PACKET-01`,
 `AG-FETCH-READ-CONTENT-REFERENCE-01`,
 `AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01`,
-`AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01`, then later
+`AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01`,
+`AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01`, then later
 `AG-PARTIAL-ANSWER-READINESS-01`.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live
