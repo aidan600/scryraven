@@ -196,7 +196,7 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | SearchExecutorHandoff | Creates offline executable search intent only. It does not execute providers, fetch/read, custody, citations, sufficiency, FAP, Author, or partial-answer readiness. |
 | Live search validation adapter | Future governed adapter that may execute provider search only when RunKernel authorizes a validation action. It emits sanitized SearchResultCandidate records only in the first live slice. |
 | SearchResultCandidatePacket | Future packet for sanitized result candidates. It is not EvidenceLedger custody and does not satisfy obligations. |
-| FetchReadContentPacket / SanitizedContentReference | Future fetch/read packet and existing bounded content reference surface. They provide sanitized content inputs, not final readiness. |
+| FetchReadContentPacket / SanitizedContentReference | bounded readable-content handoff after SearchResultCandidatePacket and before EvidenceLedger custody. It is not evidence, not citation-eligible, and does not satisfy source obligations. |
 | EvidenceLedger | Owns evidence custody and source-obligation state after admissible sanitized content exists. |
 | SemanticObservation | Records evidence-relative semantic observations. |
 | EvidenceRelativeAnalysisPacket / AnalystReport | Future evidence-relative analysis report that consumes admitted custody/content and records meaning, caveats, conflicts, and gaps without final prose authority. |
