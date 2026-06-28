@@ -114,6 +114,14 @@ Current summary:
   count/digest lineage, but this custody is not semantic support, not
   citation-eligible, does not satisfy source obligations, and does not decide
   Sufficiency/FAP/Author readiness or product correctness.
+- `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01` introduces
+  `EvidenceRelativeAnalysisPacket` with embedded `analyst_report` as
+  proposal-only evidence-relative meaning after EvidenceLedger custody. It
+  consumes fetch/read custody IDs and digests plus injected offline Analyst
+  proposal records; it is not SemanticObservation admission and does not create
+  ComponentCoverage, citation eligibility, source-obligation satisfaction,
+  Sufficiency, FinalAnswerPacket, Author input, readiness, partial-answer
+  readiness, or product correctness.
 - `AnalysisGapSearchProposal` is the future proposal shape for analysis,
   specialist, or Scrutineer-discovered search gaps. It must route back through
   RunKernel authority and must not dispatch on its own.

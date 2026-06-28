@@ -168,6 +168,14 @@ count/digest lineage only; they do not create semantic support, citation
 eligibility, source-obligation satisfaction, ComponentCoverage, Sufficiency,
 FinalAnswerPacket material, Author input, partial readiness, or product
 correctness.
+`AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01` introduces
+`EvidenceRelativeAnalysisPacket` with embedded `analyst_report` as
+proposal-only evidence-relative meaning after EvidenceLedger custody. It
+consumes EvidenceLedger fetch/read custody IDs and digests plus injected offline
+Analyst proposal records; it is not SemanticObservation admission and does not
+create ComponentCoverage, citation eligibility, source-obligation satisfaction,
+Sufficiency, FinalAnswerPacket, Author input, readiness, partial-answer
+readiness, search dispatch, query plans, or product correctness.
 
 Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
 RunKernel/current_answer_contract second-half semantic architecture.

@@ -158,7 +158,8 @@ Required second-half semantic loop:
 13. A fetch/read phase creates FetchReadContentPacket / SanitizedContentReference.
 14. EvidenceLedger records candidate/content custody only from sanitized,
     admissible fetch/read packet references.
-15. EvidenceRelativeAnalysisPacket / AnalystReport records evidence-relative meaning.
+15. EvidenceRelativeAnalysisPacket / AnalystReport records proposal-only
+    evidence-relative meaning after EvidenceLedger custody.
 16. SpecialistAnalysisPacket records specialized analysis when needed.
 17. ScrutineerReview reviews support, conflicts, drift, and gaps.
 18. ComponentCoverageRecord proposals bind admitted observations to components.
@@ -201,7 +202,7 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | EvidenceLedger fetch/read candidate custody | RunKernel-authorized reducer that admits FetchReadContentPacket / SanitizedContentReference packet, candidate, reference, status, URL/domain/title, and bounded-content count/digest lineage into EvidenceLedger candidate/content custody. It is not semantic support, citation eligibility, source-obligation satisfaction, ComponentCoverage, Sufficiency, FinalAnswerPacket material, Author input, partial readiness, or product correctness. |
 | EvidenceLedger | Owns evidence custody and source-obligation state after admissible sanitized content exists. |
 | SemanticObservation | Records evidence-relative semantic observations. |
-| EvidenceRelativeAnalysisPacket / AnalystReport | Future evidence-relative analysis report that consumes admitted custody/content and records meaning, caveats, conflicts, and gaps without final prose authority. |
+| EvidenceRelativeAnalysisPacket / AnalystReport | Current standalone proposal-only evidence-relative analysis packet with embedded `analyst_report`; it consumes EvidenceLedger fetch/read custody IDs/digests and injected offline Analyst proposal records, is not SemanticObservation admission, and does not create ComponentCoverage, citation eligibility, source-obligation satisfaction, Sufficiency, FinalAnswerPacket, Author input, readiness, search dispatch, or final prose authority. |
 | SpecialistAnalysisPacket | Future specialist analysis packet when quantitative, legal, technical, or other specialist reasoning is needed. |
 | ScrutineerReview | Future review packet for support, conflicts, drift, and gap review. |
 | AnalysisGapSearchProposal | Future proposal from Analyst/Specialist/Scrutineer back to RunKernel when analysis reveals a search gap. It is a proposal, not a dispatch. |
@@ -344,10 +345,15 @@ Runtime success requires:
    EvidenceLedger candidate/content custody, preserving lineage only and still
    without semantic support, citations, source-obligation satisfaction,
    Sufficiency, FAP, Author input, partial readiness, or product correctness.
-6. `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01` - define
-   `EvidenceRelativeAnalysisPacket` / `AnalystReport` over admitted
-   custody/content, with `AnalysisGapSearchProposal` for analysis-discovered
-   gaps.
+6. `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01` - introduce
+   `EvidenceRelativeAnalysisPacket` with embedded `analyst_report` over
+   EvidenceLedger fetch/read custody. It records proposal-only
+   evidence-relative meaning after EvidenceLedger custody, including findings,
+   caveats, contradictions, and analysis gap proposals, but it is not
+   SemanticObservation admission and does not create ComponentCoverage,
+   citation eligibility, source-obligation satisfaction, Sufficiency,
+   FinalAnswerPacket, Author input, readiness, search dispatch, or product
+   correctness.
 7. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
    Analyst/Specialist/Scrutineer/Sufficiency/FAP prerequisites exist as a
    coherent evidence-relative chain.
