@@ -1,7 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-FINAL-ANSWER-PACKET-HARDENING-01` after
+`AUTHOR-PROSE-ONLY-FINALIZATION-01` after
+`AG-FINAL-ANSWER-PACKET-HARDENING-01`,
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
 `AG-SCRUTINEER-REVIEW-01`,
@@ -21,6 +22,7 @@ For current authority doctrine and Codex routing, read:
 - `docs/architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md`
 - `docs/architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md`
 - `docs/architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md`
+- `docs/architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
@@ -47,7 +49,8 @@ Current summary:
   ComponentCoverage consumes admitted meaning and custody bindings; Sufficiency
   decides readiness; hardened FinalAnswerPacket consumes SufficiencyReadiness
   and packages an Author-safe handoff in the canonical `final_answer_packet`
-  stage/state slot; Author writes prose only.
+  stage/state slot; AuthorProseFinalization consumes hardened FAP only and
+  writes prose-only state/projection/history; Author writes prose only.
 - The coherent front half is:
   `SearchPlanner -> initial_answer_contract -> Scout -> SearchPlannerRevision ->
   amendment admission/application -> current_answer_contract ->
@@ -215,6 +218,18 @@ Current summary:
   defers citation eligibility/rendering, preserves source-obligation posture
   but does not satisfy source obligations, runs no live calls, and claims no
   product correctness.
+- `AUTHOR-PROSE-ONLY-FINALIZATION-01` opens AuthorProseFinalization as the
+  prose-only finalization surface. It consumes hardened FAP only plus
+  AuthorProsePolicy knobs for
+  style/format/brevity/source-pass-through/uncertainty, partial-answer, blocked
+  answer, and citation-display presentation. It writes
+  `author_prose_state`, `author_prose_projection`, and
+  `author_prose_history`, does not call a model or provider, does not execute
+  old Author, does not render citations, does not satisfy source obligations,
+  does not claim product correctness, does not mutate current_answer_contract,
+  and does not write canonical output to legacy `author_observation` /
+  `final_answer_outcome`. AuthorProseConformanceReview is
+  dogfood/testing-only, not production-blocking.
 - Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a
   downstream gap unless solved later without packet sprawl.
 - The packet/bridge budget rule is now explicit: no new packet or bridge unless
@@ -265,7 +280,7 @@ Current summary:
   `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
   `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
   `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
-  then Author prose-only finalization.
+  then `AUTHOR-PROSE-ONLY-FINALIZATION-01`.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
   history, not the immediate post-#330 search-only validation plan.
 - Passive/shadow surfaces are not product readiness.

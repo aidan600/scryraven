@@ -103,5 +103,7 @@ RunKernel reduction boundary, guards the reducer/product path, is cheap enough
 for local phase validation, and is not promoted to `fast_pr` because it is
 phase-detail coverage rather than a broad sentinel.
 
-Author prose-only finalization comes next. That later phase may consume the
-hardened FAP posture, but this phase does not jump ahead to Author execution.
+Historical handoff note from this FAP phase: Author prose-only finalization comes next.
+`AUTHOR-PROSE-ONLY-FINALIZATION-01` now consumes the hardened FAP posture as a
+separate prose-only surface. FAP hardening itself still does not jump ahead to
+Author execution.

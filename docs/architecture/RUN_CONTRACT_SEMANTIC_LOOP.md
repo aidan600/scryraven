@@ -10,7 +10,8 @@ Status: Current doctrine after PR #342 /
 `AG-SCRUTINEER-REVIEW-01`, and
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`, and
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`, and
-`AG-FINAL-ANSWER-PACKET-HARDENING-01`.
+`AG-FINAL-ANSWER-PACKET-HARDENING-01`, and
+`AUTHOR-PROSE-ONLY-FINALIZATION-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -73,7 +74,8 @@ ComponentCoverage consumes admitted meaning and custody bindings.
 Sufficiency decides readiness.
 Hardened FinalAnswerPacket consumes SufficiencyReadiness and packages an
 Author-safe handoff.
-Author writes prose only.
+AuthorProseFinalization consumes hardened FAP only and writes prose-only
+state/projection/history.
 ```
 
 The deterministic contract is not a substitute for semantic understanding.
@@ -212,7 +214,14 @@ Required second-half semantic loop:
     posture, defers citation eligibility/rendering, preserves
     source-obligation posture without satisfying source obligations, and does
     not execute Author or create prose.
-26. Author writes prose only from FAP-safe material.
+26. `AUTHOR-PROSE-ONLY-FINALIZATION-01` records
+    RunKernel.AuthorProseFinalization as the prose-only finalization surface.
+    It consumes hardened FAP only plus AuthorProsePolicy, writes
+    `author_prose_state`, `author_prose_projection`, and
+    `author_prose_history`, and keeps old Author execution, model/provider
+    calls, citation rendering, source-obligation satisfaction,
+    current_answer_contract mutation, legacy `author_observation` /
+    `final_answer_outcome`, and product-correctness claims closed.
 ```
 
 PR #323 proved this offline blocked X-axis after a component-shaped plan already
@@ -259,7 +268,8 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | SufficiencyReadiness | RunKernel-owned pre-FAP readiness reducer. It produces component-level and answer-level readiness (`full_answer_ready`, `partial_answer_ready`, `blocked`, `followup_required`, `contested`, `insufficient_evidence`, `not_applicable`) plus safe FAP handoff preview refs and caveats. It does not create FinalAnswerPacket, Author input, citation eligibility, source-obligation satisfaction, current_answer_contract mutation, live calls, or product correctness. |
 | SufficiencyJudgment | Owns answerability/readiness decision after prerequisite custody, semantic, coverage, and amendment inputs exist. |
 | FinalAnswerPacket | RunKernel-owned hardened FAP handoff. It consumes SufficiencyReadiness and writes the canonical `final_answer_packet` stage/state slot without using old AG-92C/AG-96 FAP/Author authority. It preserves full/partial/blocked/follow-up/contested/insufficient/not-applicable posture, preserves citation requirements while deferring citation eligibility/rendering, preserves source-obligation posture without satisfying source obligations, and does not execute Author or create prose. |
-| Author | Prose-only; no custody, support, readiness, citation, or contract authority. |
+| AuthorProseFinalization | Prose-only finalization surface. It consumes hardened FAP only and policy knobs for style/format/brevity/source-pass-through/uncertainty, writes AuthorProse state/projection/history, and has no custody, support, readiness, citation, source-obligation, product-correctness, or contract authority. |
+| Author | Legacy/old Author execution remains closed unless explicitly reopened. |
 
 Historical broad Analyst, Economist, and Scrutineer runtime surfaces are not yet
 a coherent new RunKernel/current_answer_contract second-half semantic
@@ -564,9 +574,31 @@ execute Author or create prose, does not create executable Author input, does
 not mutate `current_answer_contract`, does not run live calls, and does not
 claim product correctness. It preserves citation requirements but defers
 citation eligibility/rendering. It preserves source-obligation posture but does
-not satisfy source obligations. Author prose-only finalization comes next.
+not satisfy source obligations. AuthorProseFinalization now consumes this
+hardened FAP surface.
 
-## 14. Immediate Roadmap
+## 14. AuthorProseFinalization
+
+AUTHOR-PROSE-ONLY-FINALIZATION-01 adds AuthorProseFinalization as the
+prose-only finalization surface. It consumes hardened FAP only and applies
+AuthorProsePolicy knobs for
+style/format/brevity/source-pass-through/uncertainty, partial-answer,
+blocked-answer, and citation-display presentation.
+
+RunKernel authorizes `AUTHOR_PROSE_FINALIZE`, reduces
+`AUTHOR_PROSE_FINALIZED`, and writes `author_prose_state`,
+`author_prose_projection`, `author_prose_history`, and
+`projections["author_prose_finalization"]`. It does not write canonical output
+to legacy `author_observation` / `final_answer_outcome`.
+
+The surface does not call a model or provider, does not execute old Author,
+does not render citations, does not satisfy source obligations, does not claim
+product correctness, and does not mutate current_answer_contract.
+
+AuthorProseConformanceReview is dogfood/testing-only. It checks for authority
+laundering in tests and dogfood review, but it is not production-blocking.
+
+## 15. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
@@ -639,7 +671,11 @@ not satisfy source obligations. Author prose-only finalization comes next.
     full/partial/blocked/follow-up/contested/insufficient/not-applicable posture
     without Author prose, citation rendering, source-obligation satisfaction,
     live calls, or product-correctness claims.
-16. Author prose-only finalization - Author writes only from FAP-safe material.
+16. `AUTHOR-PROSE-ONLY-FINALIZATION-01` - completed prose-only finalization.
+    It consumes hardened FAP only, exposes presentation knobs, and keeps model
+    calls, old Author execution, citation rendering, source-obligation
+    satisfaction, current_answer_contract mutation, legacy output slots, and
+    product-correctness claims closed.
 
 The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
 history. It is not the immediate post-#330 validation plan and must not be used
