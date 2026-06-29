@@ -5,8 +5,9 @@
 Status: Current doctrine after PR #342 /
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and
 `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, refreshed after
-`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` and
-`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`.
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`, and
+`AG-SCRUTINEER-REVIEW-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -180,8 +181,9 @@ Required second-half semantic loop:
     EvidenceRelativeAnalysisPacket, SemanticObservation, and ComponentCoverage.
 20. ComponentCoverage consumes admitted observations plus evidence/custody
     bindings and preserves component/source-obligation lineage.
-21. ScrutineerReview reviews support, conflicts, drift, and gaps when mode
-    policy requires it.
+21. `AG-SCRUTINEER-REVIEW-01` records RunKernel-reduced ScrutineerReview
+    posture over support, conflicts, drift, gaps, coverage, and remediation
+    state when mode policy requires it.
 22. SpecialistAnalysisPacket records source-bound calculation/economist-style
     specialized analysis when needed after the admission bridge path exists.
 23. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
@@ -226,7 +228,7 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | EvidenceRelativeAnalysisPacket / AnalystReport | Current standalone proposal-only evidence-relative analysis packet with embedded `analyst_report`; it consumes EvidenceLedger fetch/read custody IDs/digests and injected offline Analyst proposal records, is not SemanticObservation admission, and does not create ComponentCoverage, citation eligibility, source-obligation satisfaction, Sufficiency, FinalAnswerPacket, Author input, readiness, search dispatch, or final prose authority. |
 | FollowupSearchIntentPacket / AnalysisGapSearchProposal | Current proposal-only gap-to-search-intent posture from validated `EvidenceRelativeAnalysisPacket` / `analyst_report.analysis_gap_proposals`. It is not search authorization, not a query plan, does not create SearchExecutorHandoff, does not dispatch search, does not create evidence, and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains required before any executable search work exists. |
 | SpecialistAnalysisPacket | Deferred future specialist packet, starting with source-bound calculation/economist-style reasoning only rather than broad legal or technical interpretation. |
-| ScrutineerReview | Future review packet for support, conflicts, drift, and gap review; absent from Fast MVP, red-flag-triggered in Balanced, required in Deep. |
+| ScrutineerReview | RunKernel-reduced supervisory review/sign-off layer for Analyst work product, not product authority. It can require remediation and reference FollowupSearchIntent proposal refs, but it does not authorize search or run remediation. Fast has no Scrutineer in MVP, Balanced uses Scrutineer on red flags and should preserve remediation budget when invoked, and Deep requires Scrutineer later without full Deep orchestration in this phase. |
 | AnalysisGapSearchProposal | Current reviewable proposal record inside `FollowupSearchIntentPacket`. It carries gap lineage, hints, and structural review readiness only; it is a proposal, not a dispatch. |
 | ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations and custody bindings exist. |
 | ContractAmendmentRecord / admission / application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
@@ -235,11 +237,11 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | FinalAnswerPacket | Owns Author-safe handoff. |
 | Author | Prose-only; no custody, support, readiness, citation, or contract authority. |
 
-Existing Analyst, Economist, and Scrutineer runtime surfaces are not yet a
-coherent new RunKernel/current_answer_contract second-half semantic
-architecture. Treat them as legacy, passive, bounded, or specialized surfaces
-until a future phase wires an evidence-relative Analyst/Specialist/Scrutineer
-packet chain into the current contract loop.
+Historical broad Analyst, Economist, and Scrutineer runtime surfaces are not yet
+a coherent new RunKernel/current_answer_contract second-half semantic
+architecture. Treat them as legacy, passive, bounded, or specialized surfaces.
+The current Scrutineer MVP is limited to RunKernel-reduced review state over the
+completed Analyst/admission/coverage/remediation path.
 
 ## 5. Contract Mutation Discipline
 
@@ -396,12 +398,12 @@ correctness. FollowupSearchIntent remains proposal-only and non-authorizing.
 Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a downstream
 gap unless a later phase solves it without packet sprawl.
 
-Next likely gate after this bridge is Scrutineer MVP.
-
-Fast has no Scrutineer in MVP. Balanced uses Scrutineer on red flags. Deep
-requires Scrutineer and reserves post-Scrutineer response budget. Deep allows
-max 3 follow-up loops by default and max 4 only with explicit RunKernel extra
-recovery authorization.
+`AG-SCRUTINEER-REVIEW-01` now adds the first RunKernel-reduced Scrutineer MVP.
+Fast has no Scrutineer in MVP. Balanced uses Scrutineer on red flags and should
+preserve remediation budget when Scrutineer is invoked. Deep requires
+Scrutineer later and reserves post-Scrutineer response budget, but full Deep
+orchestration is not implemented here. Deep allows max 3 follow-up loops by
+default and max 4 only with explicit RunKernel extra recovery authorization.
 
 Specialist MVP is deferred and should start as source-bound
 calculation/economist-style reasoning only, not broad legal or technical
@@ -440,11 +442,35 @@ SearchResultCandidatePacket
 
 Readable support can reduce through SemanticObservation admission and
 ComponentCoverage. Unreadable, stale, insufficient, or contradictory outcomes
-remain blocked/follow-up-required/contested without support. Scrutineer comes
-next. No Sufficiency/FAP/Author/citation/source-obligation
-satisfaction/product correctness is proved.
+remain blocked/follow-up-required/contested without support. No
+Sufficiency/FAP/Author/citation/source-obligation satisfaction/product
+correctness is proved.
 
-## 10. Immediate Roadmap
+## 10. Scrutineer Review
+
+`AG-SCRUTINEER-REVIEW-01` introduces Scrutineer as a supervisory
+review/sign-off layer for Analyst work product, not product authority. It can
+perform initial review and final verification over Analyst support,
+SemanticObservation admission, ComponentCoverage posture, FollowupSearchIntent
+refs, follow-up authorization projection refs, fixture-backed reentry refs, and
+unresolved blocked/follow-up/contested posture.
+
+Scrutineer does not authorize search and does not run remediation. It can
+require remediation and point to follow-up proposal refs. Follow-up
+authorization remains RunKernel-owned through
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`.
+
+If Analyst and Scrutineer remain in conflict, contested posture must be
+preserved for future FAP/Author. A signed-off Scrutineer review signs off only
+Analyst work product; it does not sign off a final answer and does not claim
+product correctness.
+
+Fast has no Scrutineer in MVP. Balanced uses Scrutineer on red flags and should
+preserve remediation budget when Scrutineer is invoked. Deep requires
+Scrutineer later and more remediation budget, but full Deep orchestration is not
+implemented by this phase.
+
+## 11. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
@@ -501,8 +527,11 @@ satisfaction/product correctness is proved.
     follow-up search work from proposal-only FollowupSearchIntent, and
     fixture-backed reentry proves the existing candidate/read/custody/analysis/
     admission/coverage chain without live providers.
-12. Scrutineer MVP - next likely gate. Apply review depth by mode:
-    no Scrutineer in Fast MVP, red flags in Balanced, required in Deep.
+12. `AG-SCRUTINEER-REVIEW-01` - completed implementation. Adds
+    RunKernel-reduced ScrutineerReview initial review and final verification
+    over Analyst/admission/coverage/remediation posture. It does not authorize
+    search, run remediation, create Sufficiency/FAP/Author/citation/
+    source-obligation satisfaction, or claim product correctness.
 13. Source-bound calculation Specialist MVP - deferred specialist start point,
     not broad legal or technical interpretation.
 14. Sufficiency / partial-answer readiness - later, only after ComponentCoverage,

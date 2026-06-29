@@ -435,6 +435,16 @@ from core.scout_disambiguation_runtime import (
 from core.scout_disambiguation_runtime import (
     contract_ref_from_contract as _scout_contract_ref_from_contract,
 )
+from core.scrutineer_review_runtime import (
+    SCRUTINEER_REVIEW_REASON,
+    ScrutineerReviewRuntimeError,
+    build_scrutineer_review_action_inputs,
+    build_scrutineer_review_projection,
+    build_scrutineer_review_state,
+)
+from core.scrutineer_review_runtime import (
+    SCRUTINEER_REVIEW_STAGE as SCRUTINEER_REVIEW_STAGE_NAME,
+)
 from core.search_executor_handoff_runtime import (
     SEARCH_EXECUTOR_HANDOFF_REASON,
     SEARCH_EXECUTOR_HANDOFF_SCHEMA_VERSION,
@@ -533,6 +543,7 @@ SUFFICIENCY_JUDGMENT_STAGE = "sufficiency_judgment"
 FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_SEARCH_AUTHORIZATION_STAGE = FOLLOWUP_SEARCH_AUTHORIZATION_STAGE_NAME
+SCRUTINEER_REVIEW_STAGE = SCRUTINEER_REVIEW_STAGE_NAME
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
 FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE = "followup_provider_job_execution"
@@ -646,6 +657,7 @@ class ActionType(str, Enum):
     FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_SEARCH_AUTHORIZE = "followup_search_authorize"
+    SCRUTINEER_REVIEW_REDUCE = "scrutineer_review_reduce"
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
     FOLLOWUP_PROVIDER_JOB_EXECUTE = "followup_provider_job_execute"
@@ -721,6 +733,7 @@ class ObservationType(str, Enum):
     FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_SEARCH_AUTHORIZED = "followup_search_authorized"
+    SCRUTINEER_REVIEW_REDUCED = "scrutineer_review_reduced"
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
     FOLLOWUP_PROVIDER_JOB_EXECUTION_OBSERVED = (
@@ -1118,6 +1131,9 @@ class RunState:
     component_coverage_state: dict[str, Any] = field(default_factory=dict)
     component_coverage_projection: dict[str, Any] = field(default_factory=dict)
     component_coverage_history: list[dict[str, Any]] = field(default_factory=list)
+    scrutineer_review_state: dict[str, Any] = field(default_factory=dict)
+    scrutineer_review_projection: dict[str, Any] = field(default_factory=dict)
+    scrutineer_review_history: list[dict[str, Any]] = field(default_factory=list)
     component_gap_recovery_history: list[dict[str, Any]] = field(
         default_factory=list
     )
@@ -1464,6 +1480,9 @@ class RunState:
             component_coverage_state=deepcopy(self.component_coverage_state),
             component_coverage_projection=deepcopy(self.component_coverage_projection),
             component_coverage_history=deepcopy(self.component_coverage_history),
+            scrutineer_review_state=deepcopy(self.scrutineer_review_state),
+            scrutineer_review_projection=deepcopy(self.scrutineer_review_projection),
+            scrutineer_review_history=deepcopy(self.scrutineer_review_history),
             component_gap_recovery_history=deepcopy(
                 self.component_gap_recovery_history
             ),
@@ -1782,6 +1801,9 @@ class KernelTraceProjection:
     component_coverage_state: Mapping[str, Any]
     component_coverage_projection: Mapping[str, Any]
     component_coverage_history: Sequence[Mapping[str, Any]]
+    scrutineer_review_state: Mapping[str, Any]
+    scrutineer_review_projection: Mapping[str, Any]
+    scrutineer_review_history: Sequence[Mapping[str, Any]]
     component_gap_recovery_history: Sequence[Mapping[str, Any]]
     contract_amendment_admission_state: Mapping[str, Any]
     contract_amendment_admission_projection: Mapping[str, Any]
@@ -1975,6 +1997,13 @@ class KernelTraceProjection:
             ),
             "component_coverage_history": [
                 _safe_mapping(item) for item in self.component_coverage_history
+            ],
+            "scrutineer_review_state": _safe_mapping(self.scrutineer_review_state),
+            "scrutineer_review_projection": _safe_mapping(
+                self.scrutineer_review_projection
+            ),
+            "scrutineer_review_history": [
+                _safe_mapping(item) for item in self.scrutineer_review_history
             ],
             "component_gap_recovery_history": [
                 _safe_mapping(item)
@@ -4276,6 +4305,28 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.FOLLOWUP_SEARCH_AUTHORIZED,
+        )
+
+    def authorize_scrutineer_review(
+        self,
+        *,
+        scrutineer_review_record: Mapping[str, Any],
+        reason: str = SCRUTINEER_REVIEW_REASON,
+    ) -> AuthorizedAction:
+        try:
+            inputs = build_scrutineer_review_action_inputs(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                scrutineer_review_record=scrutineer_review_record,
+            )
+        except ScrutineerReviewRuntimeError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SCRUTINEER_REVIEW_STAGE,
+            action_type=ActionType.SCRUTINEER_REVIEW_REDUCE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.SCRUTINEER_REVIEW_REDUCED,
         )
 
     def authorize_followup_authorization_consumption(
@@ -11454,6 +11505,29 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 authorization_projection
             )
+        elif action.action_type is ActionType.SCRUTINEER_REVIEW_REDUCE:
+            try:
+                scrutineer_state = build_scrutineer_review_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    existing_review_projection=self.state.scrutineer_review_projection,
+                )
+                scrutineer_projection = build_scrutineer_review_projection(
+                    scrutineer_review_state=scrutineer_state
+                )
+            except ScrutineerReviewRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.scrutineer_review_state = scrutineer_state
+            self.state.scrutineer_review_projection = scrutineer_projection
+            self.state.scrutineer_review_history.append(
+                deepcopy(scrutineer_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                scrutineer_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHORIZATION_CONSUME:
             followup_state = _safe_mapping(
                 observation.payload.get("followup_authorization_state")
@@ -13926,6 +14000,7 @@ __all__ = [
     "FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_AUTHORIZATION_STAGE",
     "FOLLOWUP_SEARCH_AUTHORIZATION_STAGE",
+    "SCRUTINEER_REVIEW_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",
