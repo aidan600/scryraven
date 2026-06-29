@@ -192,8 +192,10 @@ this seam. The proof showed that ComponentCoverage can reduce meaningful support
 only after admitted `SemanticObservation` exists; the current packet chain by
 itself does not admit semantic support.
 
-Current next gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, before
-Scrutineer or Specialist. The bridge is justified only if it proves:
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` is complete, before Scrutineer or
+Specialist. It is the controlled promotion from Analyst support proposal to
+admitted SemanticObservation and is justified because ComponentCoverage consumes
+it immediately. The completed bridge proves:
 
 ```text
 EvidenceRelativeAnalysisPacket support finding
@@ -201,7 +203,7 @@ EvidenceRelativeAnalysisPacket support finding
 -> ComponentCoverage reduction
 ```
 
-It is not justified if it proves only:
+It would not have been justified if it proved only:
 
 ```text
 EvidenceRelativeAnalysisPacket support finding
@@ -249,7 +251,7 @@ The roadmap order is:
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`,
 `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, then
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
-Scrutineer MVP,
+next likely gate after this bridge is Scrutineer MVP,
 source-bound calculation Specialist MVP,
 Sufficiency / partial-answer readiness,
 FAP hardening,
@@ -277,7 +279,8 @@ content is explicitly pasted into the current prompt or committed here.
   context, not current next-step doctrine. For historical AG-96 context, read
   `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
 - **Integrated run-contract semantic loop:** read
-  `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md` for the
+  `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md` and
+  `docs/architecture/AG_SEMANTIC_OBSERVATION_ADMISSION_BRIDGE_01.md` for the
   post-#342 SemanticObservation admission / ComponentCoverage checkpoint, then
   `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md` for the current doctrine
   connecting AG-SEM semantic authority to ComponentSearchPlan, Scout,

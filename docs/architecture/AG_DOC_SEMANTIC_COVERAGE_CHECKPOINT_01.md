@@ -3,7 +3,8 @@
 ## Status
 
 Status: docs/source checkpoint for the post-Pro-review semantic coverage
-doctrine after PR #342 / `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`.
+doctrine after PR #342 / `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`,
+refreshed after `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`.
 
 Baseline: `main@c46ed06` (`c46ed0617bfd3b449ca43d1634c13b3b52b2a8fe`).
 
@@ -14,8 +15,9 @@ docs-posture assertion only. It does not edit product code, create runtime
 packets, create reducers, run live providers, call the broker, run retrieval,
 call models, execute Author, create a FinalAnswerPacket, or create Author input.
 
-The immediate next implementation gate is
-`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`.
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` is now the controlled promotion
+from Analyst support proposal to admitted SemanticObservation. The immediate
+next likely implementation gate is Scrutineer MVP.
 
 ## Recent Merged Phases
 
@@ -48,12 +50,15 @@ SearchExecutorHandoff
 -> EvidenceRelativeAnalysisPacket / analyst_report
 -> FollowupSearchIntentPacket / AnalysisGapSearchProposal
 -> ComponentCoverage reliability proof
--> next: SemanticObservation admission bridge
+-> SemanticObservation admission bridge
 -> ComponentCoverage reduction
+-> next: Scrutineer MVP
 ```
 
-The chain is useful, but it is not yet admitted semantic support. The current
-packet chain alone does not let ComponentCoverage consume meaningful support.
+The upstream packet chain through FollowupSearchIntent remains useful proposal
+and custody lineage, but it is not admitted semantic support by itself. The
+admission bridge now supplies the controlled promotion that lets
+ComponentCoverage consume meaningful support.
 
 Semantic posture progression:
 
@@ -85,10 +90,10 @@ FinalAnswerPacket material, and Author-safe prose.
    search authorization or query planning.
 6. PR #342 showed that the current chain needs admitted `SemanticObservation`
    before ComponentCoverage can consume support.
-7. The next phase should bridge Analyst support findings into
-   `SemanticObservation` admission and immediately prove ComponentCoverage
-   consumption.
-8. The next bridge must not create another durable proposal packet unless a
+7. The bridge now promotes eligible Analyst support findings into
+   RunKernel-authorized `SemanticObservation` admission and immediately proves
+   ComponentCoverage consumption.
+8. The bridge must not create another durable proposal packet unless a
    reducer/consumer absolutely requires it and the phase stops for review.
 9. Broker is local/private validation plumbing for Codex/ChatGPT/operator runs,
    not installed-product authority and not product follow-up policy.
@@ -132,8 +137,8 @@ A new packet or bridge is suspect when it:
 - creates another proposal layer without reduction;
 - has no immediate consumer in the same or next phase.
 
-For `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, the bridge is justified only
-if it proves this immediate consumer path:
+For `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, the bridge is justified
+because it proves this immediate consumer path:
 
 ```text
 EvidenceRelativeAnalysisPacket support finding
@@ -170,23 +175,34 @@ The missing bridge is therefore not "one more proposal." The missing bridge is
 controlled promotion from proposal-stage support into admitted semantic meaning,
 with ComponentCoverage consuming that admitted meaning immediately.
 
-## Next Implementation Gate
+## Bridge Implementation Result
 
-`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` should be a minimal consumer bridge.
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` is a minimal consumer bridge. It is
+the controlled promotion from Analyst support proposal to admitted
+SemanticObservation and is justified because ComponentCoverage consumes it
+immediately.
 
-Required proof shape:
+Completed proof shape:
 
-- consume `EvidenceRelativeAnalysisPacket` support findings and their
+- consume validated `EvidenceRelativeAnalysisPacket` support findings and their
   EvidenceLedger/fetch-read custody bindings;
 - require RunKernel authorization before any `SemanticObservation` is admitted;
 - preserve accepted answer contract component lineage;
 - preserve source-obligation and custody lineage;
 - reduce ComponentCoverage from admitted `SemanticObservation` and bound content;
+- keep ComponentCoverage reduction separate from the bridge helper;
+- avoid creating a new durable proposal packet;
 - keep FollowupSearchIntent proposal-only and non-authorizing;
 - keep blocked/follow-up gap lineage visible, with stable blocker linkage only
   if it can be solved without packet sprawl;
-- prove no FAP, Author input, Author call, Sufficiency decision, live provider
-  behavior, broker call, retrieval, model call, or product correctness claim.
+- prove no source-obligation satisfaction, citation eligibility, Sufficiency,
+  FAP, Author input, live search, provider calls, broker calls, retrieval,
+  fetch/read execution, model calls, or product correctness claim.
+
+Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a downstream
+gap unless a later phase solves it without packet sprawl.
+
+Next likely gate after this bridge is Scrutineer MVP.
 
 Stop conditions for that phase:
 

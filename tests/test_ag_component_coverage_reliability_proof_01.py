@@ -881,7 +881,7 @@ def test_static_import_and_call_guards_keep_closed_surfaces_closed() -> None:
 def test_docs_record_component_coverage_reliability_proof_posture() -> None:
     required = (
         "ComponentCoverage reliability proof is complete",
-        "Current next gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`",
+        "`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` is complete",
         "must not create another durable proposal packet",
         "SemanticObservation/admission bridge",
         "packet/bridge budget rule",

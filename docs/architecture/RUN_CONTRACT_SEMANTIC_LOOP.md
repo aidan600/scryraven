@@ -4,7 +4,8 @@
 
 Status: Current doctrine after PR #342 /
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and
-`AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`.
+`AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, refreshed after
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -167,9 +168,9 @@ Required second-half semantic loop:
 17. ComponentCoverage reliability proof showed that the packet chain can expose
     support and blocker posture, but meaningful ComponentCoverage reduction
     requires admitted SemanticObservation.
-18. `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` must turn source-bound
-    Analyst support proposals into RunKernel-authorized admitted semantic
-    observations without adding another durable proposal packet.
+18. `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` turns source-bound Analyst
+    support proposals into RunKernel-authorized admitted semantic observations
+    without adding another durable proposal packet.
 19. ComponentCoverage consumes admitted observations plus evidence/custody
     bindings and preserves component/source-obligation lineage.
 20. ScrutineerReview reviews support, conflicts, drift, and gaps when mode
@@ -334,16 +335,21 @@ Runtime success requires:
 - RunKernel or the correct owner authorizes/reduces/acts;
 - focused test proves the real consumer path.
 
-## 8. SemanticObservation Admission Gate
+## 8. SemanticObservation Admission Bridge
 
-The ComponentCoverage reliability proof is complete. The current chain through
-`FollowupSearchIntentPacket` is coherent proposal/custody lineage, but the
-`component_coverage_reliability_report` showed that ComponentCoverage can reduce
-meaningful support only after admitted `SemanticObservation` exists.
+The ComponentCoverage reliability proof is complete, and
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` now supplies the minimal
+controlled promotion from Analyst support proposal to admitted SemanticObservation.
+The bridge is justified because ComponentCoverage consumes it immediately.
 
-Current next gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, not another
-standalone proposal packet. The bridge is justified only because it has an
-immediate consumer: ComponentCoverage.
+The bridge is not a new durable proposal packet. It consumes validated
+`EvidenceRelativeAnalysisPacket` support findings plus bounded fetch/read
+content and EvidenceLedger custody refs, obtains RunKernel authorization, and
+reduces the existing SemanticObservation admission runtime.
+
+ComponentCoverage reduction remains separate. The bridge admits meaning; it does
+not create ComponentCoverage by itself. ComponentCoverage must consume the
+admitted observation and content binding through its own reducer.
 
 The packet/bridge budget rule: no new packet or bridge unless it crosses a
 trust/raw-data boundary, becomes durable reducer input, needs stable downstream
@@ -354,7 +360,7 @@ is suspect if it only restates lineage, only says closed flags remain false, is
 only consumed by its own tests, creates another proposal layer without
 reduction, or has no immediate consumer in the same or next phase.
 
-For the next gate, success must prove:
+The completed bridge proof is:
 
 ```text
 EvidenceRelativeAnalysisPacket support finding
@@ -375,6 +381,15 @@ and not product follow-up policy. Modes change budget and review depth, not
 semantic authority. Follow-up policy should be based on logical depth, loop
 budget, query fanout, and RunKernel approval rather than
 one-query-per-proposal.
+
+The bridge does not create source-obligation satisfaction, citation eligibility,
+Sufficiency, FinalAnswerPacket, Author input, live search, provider calls,
+broker calls, retrieval, fetch/read execution, model calls, or product
+correctness. FollowupSearchIntent remains proposal-only and non-authorizing.
+Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a downstream
+gap unless a later phase solves it without packet sprawl.
+
+Next likely gate after this bridge is Scrutineer MVP.
 
 Fast has no Scrutineer in MVP. Balanced uses Scrutineer on red flags. Deep
 requires Scrutineer and reserves post-Scrutineer response budget. Deep allows
@@ -438,12 +453,11 @@ reopened.
 9. `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01` - memorialize the post-#342
    doctrine, Project Source refresh packet, packet/bridge budget rule, and next
    implementation gate.
-10. `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` - next implementation. Bridge
-    Analyst support findings into RunKernel-authorized `SemanticObservation`
-    admission and immediately prove ComponentCoverage consumption. Do not add
-    another durable proposal packet unless a reducer/consumer absolutely
-    requires it and implementation stops for review.
-11. Scrutineer MVP - after the admission bridge, apply review depth by mode:
+10. `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` - completed implementation.
+    Bridges Analyst support findings into RunKernel-authorized
+    `SemanticObservation` admission and immediately proves ComponentCoverage
+    consumption. It does not add another durable proposal packet.
+11. Scrutineer MVP - next likely gate. Apply review depth by mode:
     no Scrutineer in Fast MVP, red flags in Balanced, required in Deep.
 12. Source-bound calculation Specialist MVP - deferred specialist start point,
     not broad legal or technical interpretation.
