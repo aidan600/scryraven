@@ -1,7 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-SCRUTINEER-REVIEW-01` after
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` after
+`AG-SCRUTINEER-REVIEW-01`,
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, PR #342 /
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`, and the docs checkpoint.
@@ -15,6 +16,7 @@ For current authority doctrine and Codex routing, read:
 - `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md`
 - `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`
 - `docs/architecture/AG_SCRUTINEER_REVIEW_01.md`
+- `docs/architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
@@ -104,7 +106,7 @@ Current summary:
   AnalysisGapSearchProposal -> ComponentCoverage reliability proof ->
   SemanticObservation admission bridge -> ComponentCoverage reduction ->
   AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01 first governed remediation loop ->
-  ScrutineerReview`.
+  ScrutineerReview -> Specialist source-bound calculation`.
 - `SearchResultCandidatePacket` is the durable non-evidence candidate handoff
   before fetch/read. It preserves sanitized live-search candidate lineage, but
   search candidates are not evidence, not citation-eligible, and the packet does
@@ -173,6 +175,16 @@ Current summary:
   remediation. Follow-up authorization remains RunKernel-owned through
   `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`. If Analyst and Scrutineer
   remain in conflict, contested posture must be preserved for future FAP/Author.
+- `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` introduces the first useful
+  Specialist MVP as source-bound deterministic calculation only. Specialist is
+  not product authority. RunKernel owns Specialist calculation reduction into
+  canonical Specialist state/projection/history. Inputs must be source-bound and
+  lineage-preserving; invalid/stale/contradictory/missing-lineage calculations
+  remain blocked, invalid_input, or contested. Scrutineer can review Specialist
+  calculation posture but does not calculate or authorize. Specialist does not
+  decide ComponentCoverage, Sufficiency, FAP, Author, citation eligibility,
+  source-obligation satisfaction, current_answer_contract mutation, or product
+  correctness.
 - Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a
   downstream gap unless solved later without packet sprawl.
 - The packet/bridge budget rule is now explicit: no new packet or bridge unless
@@ -193,8 +205,9 @@ Current summary:
   post-Scrutineer remediation budget, with max 3 follow-up loops by default and
   max 4 only with explicit RunKernel extra recovery authorization; full Deep
   orchestration is not implemented by the Scrutineer MVP.
-- Specialist MVP is deferred and should start as source-bound
-  calculation/economist-style reasoning only.
+- Existing Economist surfaces remain legacy/passive unless deliberately reused
+  without authority revival. The Specialist MVP is source-bound calculation
+  only, not broad legal, technical, medical, or generic expert reasoning.
 - The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan
   shadow, old Analyst/Economist/Scrutineer paths, source-class recovery bridges,
   and broad pipeline orchestrator paths are legacy/passive/closed unless
@@ -218,8 +231,8 @@ Current summary:
   `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
   `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
   `AG-SCRUTINEER-REVIEW-01`,
-  then source-bound calculation Specialist MVP,
-  then Sufficiency / partial-answer readiness,
+  `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
+  then `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
   then FAP hardening,
   then Author prose-only finalization.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
