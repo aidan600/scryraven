@@ -1,7 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` after
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` after
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
 `AG-SCRUTINEER-REVIEW-01`,
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, PR #342 /
@@ -17,6 +18,7 @@ For current authority doctrine and Codex routing, read:
 - `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`
 - `docs/architecture/AG_SCRUTINEER_REVIEW_01.md`
 - `docs/architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md`
+- `docs/architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
@@ -185,6 +187,17 @@ Current summary:
   decide ComponentCoverage, Sufficiency, FAP, Author, citation eligibility,
   source-obligation satisfaction, current_answer_contract mutation, or product
   correctness.
+- `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` introduces the pre-FAP readiness
+  reducer. SufficiencyReadiness is RunKernel-owned and reduces deterministic
+  component-level and answer-level readiness into
+  `sufficiency_readiness_state`, `sufficiency_readiness_projection`, and
+  `sufficiency_readiness_history`. It supports `full_answer_ready`,
+  `partial_answer_ready`, `blocked`, `followup_required`, `contested`,
+  `insufficient_evidence`, and `not_applicable` posture. It does not create
+  FinalAnswerPacket, Author input, citation eligibility, source-obligation
+  satisfaction, current_answer_contract mutation, live calls, or product
+  correctness. It emits only a safe FAP handoff preview of refs, caveats, and
+  prohibited upgrades.
 - Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a
   downstream gap unless solved later without packet sprawl.
 - The packet/bridge budget rule is now explicit: no new packet or bridge unless
@@ -216,8 +229,8 @@ Current summary:
   coherent new RunKernel/current_answer_contract second-half semantic
   architecture. The current Scrutineer MVP is limited to RunKernel-reduced
   review state over the completed Analyst/admission/coverage/remediation path.
-- Partial-answer readiness is premature until ComponentCoverage, Sufficiency,
-  FAP, and Author-safe prerequisites are coherent.
+- Old AG-92C Sufficiency/FAP and AG-96/FAP/Author surfaces remain
+  legacy/passive/closed unless explicitly reopened. FAP hardening comes next.
 - The roadmap order is:
   `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
   `AG-LIVE-XAXIS-VALIDATION-01A`,
@@ -232,7 +245,7 @@ Current summary:
   `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
   `AG-SCRUTINEER-REVIEW-01`,
   `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
-  then `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
+  `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
   then FAP hardening,
   then Author prose-only finalization.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
