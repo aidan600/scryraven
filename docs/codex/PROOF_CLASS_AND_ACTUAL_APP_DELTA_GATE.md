@@ -27,26 +27,85 @@ live_product_proof
 
 A phase must not use broader completion language than its proof class supports.
 
+## Product-Facing Progress Default
+
+Default to product-path integration or product-facing dogfood output that reuses
+existing machinery. A non-product phase must carry a short leash: it must name
+the current-path consumer or blocker it clarifies/removes, explain why product
+path work is not licensed or safe in that phase, and name the mandatory next
+product-path checkpoint.
+
+Another harness, proof, packet, projection, registry, or passive record is not
+progress by default. It is allowed only when it has a named current-path
+consumer or removes a named blocker for an existing current-path consumer. If
+that consumer or blocker cannot be named, stop before implementation.
+
+Hard stop: do not add another harness, proof, packet, projection, registry, or
+passive record without a named current-path consumer or named blocker removal.
+
 ## Required phase fields
 
 Every phase brief and final bundle should include:
 
 ```text
 Proof class:
+Product-facing progress type:
 Product path affected:
 Runtime consumer:
+Actual consumer seam:
 Actual app delta:
+User-facing/reviewable output delta:
+Non-product exception leash:
+Mandatory next product-path checkpoint:
+Existing machinery reused:
+New machinery introduced:
+Why this is not reinventing an existing surface:
+Old path treatment:
+Human-reviewable product output:
 Non-proofs:
+Live validation status:
 Bridge or exit condition:
 ```
 
 Definitions:
 
 - **Proof class** states what kind of evidence the phase actually produces.
+- **Product-facing progress type** states whether the phase is product-path
+  integration, product-facing dry-run/dogfood output, quarantine/docs-process
+  work, fixture-only proof with a leash, offline harness proof with a leash,
+  live-search-only validation, or live product proof.
 - **Product path affected** states whether ordinary `run_pipeline()`, CLI/product execution, UI product execution, or only a harness/test/script is affected.
 - **Runtime consumer** names the actual function/module that consumes the new authority, schema, state, or output.
+- **Actual consumer seam** names the producer-to-consumer boundary being proved,
+  including whether the consumer is RunKernel-owned, passive, fixture-only,
+  offline harness, live-search-only validation, product-facing dry-run proof,
+  legacy/passive/historical, or closed unless separately licensed.
 - **Actual app delta** states what the ordinary app can do after the phase that it could not do before.
+- **User-facing/reviewable output delta** states what a user or reviewer can
+  newly inspect. If the answer is "none," state that plainly.
+- **Non-product exception leash** states why this phase is allowed to be
+  non-product work, how it is bounded, and what product-path checkpoint follows.
+- **Mandatory next product-path checkpoint** names the next checkpoint that must
+  convert, integrate, dogfood, or retire the clarified surface. If no checkpoint
+  can be named, the phase should stop.
+- **Existing machinery reused** names the current runtime/test/doc surfaces this
+  phase builds on instead of replacing.
+- **New machinery introduced** names every new packet, reducer, harness,
+  projection, registry, static test, or doc surface. For docs-only quarantine,
+  this should be limited to docs/tests.
+- **Why this is not reinventing an existing surface** explains why the change
+  consolidates, classifies, integrates, or removes a blocker instead of adding a
+  parallel authority or proof lane.
+- **Old path treatment** states whether the old path is deleted, demoted,
+  bypassed, subordinated, retained as passive/legacy/history, or closed until a
+  later licensed phase. If no old path exists, state that explicitly.
+- **Human-reviewable product output** states whether the phase emits actual
+  human-reviewable product-shaped output, such as prose, or only structural
+  proof/projections/packets. Human-readable output is not product correctness
+  unless the proof class and validation actually support that claim.
 - **Non-proofs** states what the phase explicitly does not prove.
+- **Live validation status** states whether live validation was run, prohibited,
+  not licensed, or separately licensed with exact scope.
 - **Bridge or exit condition** states how a harness/passive proof becomes product-path work later, or how it will be fixtureized/retired.
 
 When validation scope matters, keep the phase prompt compact but explicit:
@@ -68,15 +127,26 @@ Before implementation, answer:
 
 ```text
 What can the actual app do after this phase that it could not do before?
+What product-facing progress type is this?
 Does this affect the ordinary user-query path, or only a component/test harness?
 What runtime function consumes the new state?
 Is the consumer in run_pipeline()/ordinary product execution, CLI execution, a fixture harness, or a standalone script?
+What user-facing or reviewer-facing output changes?
+If this is non-product work, what is the exception leash and mandatory next product-path checkpoint?
+What existing machinery is reused?
+What new machinery is introduced?
+Why is this not reinventing an existing surface?
 What old authority path is removed, demoted, bypassed, or subordinated?
+Which old path is retained only as passive/legacy/history?
 What exact test or command proves the claim?
+Does the output qualify as human-reviewable product output or only structural proof?
+Was live validation run, prohibited, or not licensed?
 What does this phase explicitly not prove?
 ```
 
-If the answer is vague, stop and run an integration or authority-path audit before continuing.
+If the actual app delta, consumer seam, exception leash, or next product-path
+checkpoint is vague, stop and run an integration or authority-path audit before
+continuing.
 
 ## Harness rule
 
@@ -102,6 +172,11 @@ Does run_pipeline() consume this, or not?
 Component proofs may be valuable, but they must not be described as product-path completion unless `run_pipeline()` or the ordinary runtime path consumes them.
 
 Hidden harness drift is a stop condition.
+
+Adding another harness, proof, packet, projection, or passive registry without a
+named current-path consumer or named blocker removal is a hard stop. The right
+next action is to integrate existing machinery, dogfood through the product path,
+or retire/demote the unused surface.
 
 ## Author harness recovery lesson
 
@@ -196,12 +271,24 @@ Bridge or exit condition: later observation admission and coverage reducer phase
 During PR/final-bundle review, explicitly check:
 
 - What proof class does the PR actually establish?
+- What product-facing progress type did it choose?
 - Does the claimed completion language match that proof class?
+- What actual consumer seam was proved?
 - What can the actual app do now that it could not do before?
+- What user-facing or reviewable output changed?
+- If this is non-product work, what exception leash and mandatory next
+  product-path checkpoint keep it from drifting?
+- What existing machinery was reused?
+- What new machinery was introduced?
+- Why is this not reinventing an existing surface?
 - Is the new authority object consumed by the runtime path it governs?
 - Is the runtime consumer in ordinary `run_pipeline()`/product execution, CLI execution, a fixture harness, or a standalone script?
 - Did the PR merely add trace/projection/storage?
 - What old authority path was deleted, demoted, bypassed, or subordinated?
+- What old path was retained as passive/legacy/historical, and is it clearly
+  quarantined?
+- Is the output human-reviewable product output or structural proof only?
+- Was live validation run, prohibited, not licensed, or separately licensed?
 - If this is a harness, what is the bridge, fixtureize, or retire exit condition?
 - Did live validation remain explicitly licensed and gated?
 
@@ -220,10 +307,24 @@ A live component proof is not a live product proof.
 Stop if:
 
 - proof class is missing;
+- product-facing progress type is missing;
 - actual app delta is vague;
 - runtime consumer is unnamed;
+- actual consumer seam is unnamed;
+- user-facing/reviewable output delta is vague;
+- non-product exception leash is missing for non-product work;
+- mandatory next product-path checkpoint is missing for non-product work;
+- existing machinery reused is unstated;
+- new machinery introduced is unstated;
+- why-this-is-not-reinventing is unstated;
 - product completion is claimed from a component harness;
+- product correctness is claimed from fixture/offline proof;
+- live product validation is claimed from live-search-only or offline proof;
+- citation rendering, source-obligation satisfaction, or AuthorProse product
+  proof is claimed from the current fixture/offline chain;
 - trace/projection/storage is treated as runtime consumption;
+- another harness/proof/packet/projection/passive record is proposed without a
+  named current-path consumer or named blocker removal;
 - a harness continues beyond one or two phases without a product-path checkpoint;
 - live validation is implied rather than explicitly licensed;
 - secrets, `.env`, raw provider payloads, raw prompts, raw model responses, private logs, DB/cache rows, or full traces are required.

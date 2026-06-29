@@ -1,7 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AUTHOR-PROSE-ONLY-FINALIZATION-01` after
+`AG-CURRENT-PATH-QUARANTINE-01`, following
+`AUTHOR-PROSE-ONLY-FINALIZATION-01`,
 `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
@@ -23,12 +24,17 @@ For current authority doctrine and Codex routing, read:
 - `docs/architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md`
 - `docs/architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md`
 - `docs/architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md`
+- `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
 
 Current summary:
 
+- `AG_CURRENT_PATH_QUARANTINE_01.md` is the current registry for proof class,
+  consumer-seam, current/legacy/passive/closed status, old-path treatment, and
+  explicit non-proofs. It is quarantine/classification only, not product
+  behavior.
 - ScryRaven is the public project name.
 - RunAuthority / RunKernel is the current authority direction.
 - `core/pipeline_orchestrator.py` is a coordination shell with remaining
@@ -262,8 +268,8 @@ Current summary:
   architecture. The current Scrutineer MVP is limited to RunKernel-reduced
   review state over the completed Analyst/admission/coverage/remediation path.
 - Old AG-92C Sufficiency/FAP and AG-96/FAP/Author surfaces remain
-  legacy/passive/closed unless explicitly reopened. Author prose-only
-  finalization comes next.
+  legacy/passive/closed unless explicitly reopened. AuthorProseFinalization is
+  now complete as the current prose-only surface and consumes hardened FAP only.
 - The roadmap order is:
   `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
   `AG-LIVE-XAXIS-VALIDATION-01A`,
@@ -281,6 +287,18 @@ Current summary:
   `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
   `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
   then `AUTHOR-PROSE-ONLY-FINALIZATION-01`.
+
+What this current-state summary does not prove:
+
+- ordinary-query execution;
+- source acquisition quality;
+- fetch/read survival on real sources;
+- semantic support from messy live evidence;
+- citation rendering;
+- citation eligibility in user-visible output;
+- source-obligation satisfaction;
+- product correctness;
+- product-quality Author prose.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
   history, not the immediate post-#330 search-only validation plan.
 - Passive/shadow surfaces are not product readiness.

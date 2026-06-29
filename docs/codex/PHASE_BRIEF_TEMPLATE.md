@@ -61,15 +61,42 @@ Primary outcome:
 
 Required proof, product, and validation posture:
 Proof class:
+Product-facing progress type:
 Product path affected:
 Runtime consumer:
+Actual consumer seam:
 Actual app delta:
+User-facing/reviewable output delta:
+Non-product exception leash:
+Mandatory next product-path checkpoint:
+Existing machinery reused:
+New machinery introduced:
+Why this is not reinventing an existing surface:
+Old path treatment:
+Human-reviewable product output:
 Validation bucket:
 Test classification / promotion posture:
 New tests:
 Fast_pr promotion rationale, if any:
 Non-proofs:
+Live validation status:
 Bridge or exit condition:
+
+Product-facing progress type must be one of:
+- product-path integration
+- product-facing dry-run/dogfood output
+- quarantine/docs-process work
+- fixture-only proof with explicit product-path leash
+- offline harness proof with explicit product-path leash
+- live-search-only validation with explicit live license
+- live product proof with explicit live license
+
+For any non-product phase, fill in the non-product exception leash. It must
+name why product-path work is not licensed or safe in this phase, the current
+path consumer or blocker being clarified/removed, the mandatory next
+product-path checkpoint, existing machinery reused, any new machinery
+introduced, why the work is not reinventing an existing surface, and the exact
+non-proofs.
 
 New tests must be classified before being added to permanent bucket manifests.
 

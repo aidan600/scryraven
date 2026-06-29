@@ -79,6 +79,33 @@ proof class, protected surface, runtime/product path guarded, expected cost,
 promotion posture, demotion or retirement condition, and why the test is or is
 not a `fast_pr` candidate.
 
+## Required Validation Reporting Fields
+
+Phase validation summaries must state:
+
+- proof class;
+- product-facing progress type;
+- actual consumer seam;
+- actual user-facing app delta;
+- user-facing/reviewable output delta;
+- non-product exception leash, when applicable;
+- mandatory next product-path checkpoint, when applicable;
+- existing machinery reused;
+- new machinery introduced;
+- why the work is not reinventing an existing surface;
+- old path treatment;
+- explicit non-proofs;
+- whether the output is human-reviewable product output or structural proof
+  only;
+- whether live validation was run;
+- whether live validation was prohibited, not licensed, or separately licensed.
+
+For current-path and quarantine work, use
+`docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md` to classify surfaces as
+current authority path, passive/supporting projection, fixture-only proof,
+offline harness, live-search-only validation, product-facing dry-run proof,
+legacy/passive/historical, or closed unless separately licensed.
+
 Do not add a test to `fast_pr` merely because the phase added it. A promoted
 `fast_pr` entry must be a cheap broad sentinel, not a phase-detail test.
 

@@ -41,6 +41,28 @@ closed-surface changes, live validation, secrets/private data, destructive git,
 merge/rebase/force-push, broad scope expansion, or unresolved failing tests that
 imply a design decision.
 
+## Product-facing progress default
+
+Default to converting existing machinery into product-path output rather than
+adding new fixture/proof/projection layers. Every phase brief and final bundle
+should state the product-facing progress type, the actual user-facing or
+reviewable output delta, the actual consumer seam, existing machinery reused,
+new machinery introduced, old path treatment, and why the work is not
+reinventing an existing surface.
+
+Non-product phases are allowed only with an explicit non-product exception
+leash. The non-product exception leash must state proof class, reason
+product-path work is not licensed or safe in this phase, named blocker or
+current-path consumer, mandatory next product-path checkpoint, and explicit
+non-proofs. For the current quarantine sequence, the mandatory next product-path
+checkpoint is `AG-FIXTURE-DOGFOOD-INTEGRATION-01`.
+
+Stop if actual app delta is vague, if a new harness/proof/packet/projection is
+proposed without a named current-path consumer or blocker removal, or if fixture
+or offline proof is being described as product correctness, live product
+validation, citation rendering, source-obligation satisfaction, or
+AuthorProse product proof.
+
 ## Local Codex publication model
 
 The normal sandbox may keep `.git/` and GitHub authentication protected. Do
@@ -105,7 +127,9 @@ not claim it was changed; proceed carefully.
 - `docs/codex/CODEX_GUIDANCE_MAP.md`
 - `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md`
 - `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md`
+- `docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md`
 - `docs/codex/EXECUTION_PLAN_TEMPLATE.md`
 - `docs/codex/PHASE_BRIEF_TEMPLATE.md`
+- `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md`
 - `docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md` only for legacy
   Controller-handoff maintenance when explicitly selected
