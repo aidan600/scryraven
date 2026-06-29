@@ -153,7 +153,8 @@ SearchResultCandidatePacket
 -> AG-SCRUTINEER-REVIEW-01 ScrutineerReview
 -> AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01 Specialist source-bound calculation
 -> AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01 SufficiencyReadiness
--> next: FAP hardening
+-> AG-FINAL-ANSWER-PACKET-HARDENING-01 hardened FinalAnswerPacket handoff
+-> next: Author prose-only finalization
 ```
 
 `SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
@@ -275,8 +276,7 @@ calculate or authorize it. Specialist does not decide ComponentCoverage,
 Sufficiency, FAP, Author, citation eligibility, source-obligation satisfaction,
 current_answer_contract mutation, or product correctness. Existing Economist
 surfaces remain legacy/passive unless deliberately reused without authority
-revival. The next likely phase is
-FAP hardening.
+revival.
 
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` is complete as the pre-FAP
 readiness reducer. Use
@@ -293,6 +293,21 @@ current_answer_contract mutation, live calls, or product correctness. Old
 AG-92C Sufficiency/FAP and AG-96/FAP/Author surfaces remain
 legacy/passive/closed unless explicitly reopened.
 
+`AG-FINAL-ANSWER-PACKET-HARDENING-01` is complete as the hardened FAP handoff
+surface. Use
+`docs/architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md` when working near
+this seam. The reducer consumes SufficiencyReadiness and writes the existing
+canonical `final_answer_packet` stage/state slot:
+`state.final_answer_packet`, `state.final_answer_authority_projection`, and
+`state.projections["final_answer_packet"]`. It preserves
+full/partial/blocked/follow-up/contested/insufficient/not-applicable posture,
+including `packet_created: false` for `not_applicable`. It does not use old
+AG-92C/AG-96 FAP/Author authority, does not execute Author or create prose,
+preserves citation requirements but defers citation eligibility/rendering,
+preserves source-obligation posture but does not satisfy source obligations,
+does not run live calls, and does not claim product correctness. Author
+prose-only finalization comes next.
+
 The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
 old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
 pipeline orchestrator paths are legacy/passive/closed unless explicitly
@@ -302,8 +317,8 @@ Historical broad Analyst, Economist, and Scrutineer surfaces are not yet a
 coherent new RunKernel/current_answer_contract second-half semantic
 architecture. The current Scrutineer MVP is limited to RunKernel-reduced review
 state over the completed Analyst/admission/coverage/remediation path.
-FAP hardening comes next and should consume SufficiencyReadiness refs/caveats
-without reviving closed AG-92C or AG-96 FAP/Author authority.
+Author prose-only finalization comes next and should consume hardened FAP
+refs/caveats without reviving closed AG-92C or AG-96 FAP/Author authority.
 
 The roadmap order is:
 `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
@@ -320,7 +335,7 @@ The roadmap order is:
 `AG-SCRUTINEER-REVIEW-01`,
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
-FAP hardening,
+`AG-FINAL-ANSWER-PACKET-HARDENING-01`,
 Author prose-only finalization.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live

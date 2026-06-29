@@ -379,7 +379,8 @@ def test_docs_record_sufficiency_readiness_phase_posture() -> None:
         "current_answer_contract mutation",
         "live calls",
         "product correctness",
-        "FAP hardening comes next",
+        "AG-FINAL-ANSWER-PACKET-HARDENING-01",
+        "Author prose-only finalization comes next",
         "AG-92C Sufficiency/FAP",
         "AG-96/FAP/Author surfaces remain legacy/passive/closed",
     )

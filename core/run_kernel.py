@@ -44,6 +44,13 @@ from core.contract_amendment_application_runtime import (
 )
 from core.evidence_ledger import EvidenceLedger
 from core.final_answer_packet import _safe_json
+from core.final_answer_packet_hardening_runtime import (
+    FINAL_ANSWER_PACKET_HARDENING_REASON,
+    FinalAnswerPacketHardeningRuntimeError,
+    build_final_answer_packet_hardening_action_inputs,
+    build_hardened_final_answer_packet_projection,
+    build_hardened_final_answer_packet_state,
+)
 from core.followup_author_evidence_content_bridge_runtime import (
     FOLLOWUP_AUTHOR_EVIDENCE_CONTENT_BRIDGE_REASON,
     af4b2_authority_projection_from_record,
@@ -678,6 +685,7 @@ class ActionType(str, Enum):
     EVIDENCE_LEDGER_REDUCE = "evidence_ledger_reduce"
     SEARCH_JUDGMENT_DECIDE = "search_judgment_decide"
     SUFFICIENCY_JUDGMENT_DECIDE = "sufficiency_judgment_decide"
+    FINAL_ANSWER_PACKET_HARDEN = "final_answer_packet_harden"
     FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_SEARCH_AUTHORIZE = "followup_search_authorize"
@@ -758,6 +766,7 @@ class ObservationType(str, Enum):
     EVIDENCE_CUSTODY_OBSERVED = "evidence_custody_observed"
     SEARCH_JUDGMENT_DECIDED = "search_judgment_decided"
     SUFFICIENCY_JUDGMENT_DECIDED = "sufficiency_judgment_decided"
+    FINAL_ANSWER_PACKET_HARDENED = "final_answer_packet_hardened"
     FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_SEARCH_AUTHORIZED = "followup_search_authorized"
@@ -1227,6 +1236,7 @@ class RunState:
     sufficiency_judgment_projection: dict[str, Any] = field(default_factory=dict)
     sufficiency_judgment_history: list[dict[str, Any]] = field(default_factory=list)
     final_answer_packet: dict[str, Any] = field(default_factory=dict)
+    final_answer_packet_history: list[dict[str, Any]] = field(default_factory=list)
     author_observation: dict[str, Any] = field(default_factory=dict)
     final_answer_outcome: dict[str, Any] = field(default_factory=dict)
     final_answer_authority_projection: dict[str, Any] = field(default_factory=dict)
@@ -1590,6 +1600,7 @@ class RunState:
                 self.sufficiency_judgment_history
             ),
             final_answer_packet=deepcopy(self.final_answer_packet),
+            final_answer_packet_history=deepcopy(self.final_answer_packet_history),
             author_observation=deepcopy(self.author_observation),
             final_answer_outcome=deepcopy(self.final_answer_outcome),
             final_answer_authority_projection=deepcopy(
@@ -1895,6 +1906,7 @@ class KernelTraceProjection:
     sufficiency_judgment_projection: Mapping[str, Any]
     sufficiency_judgment_history: Sequence[Mapping[str, Any]]
     final_answer_packet: Mapping[str, Any]
+    final_answer_packet_history: Sequence[Mapping[str, Any]]
     author_observation: Mapping[str, Any]
     final_answer_outcome: Mapping[str, Any]
     final_answer_authority_projection: Mapping[str, Any]
@@ -2148,6 +2160,9 @@ class KernelTraceProjection:
                 _safe_mapping(item) for item in self.sufficiency_judgment_history
             ],
             "final_answer_packet": _safe_mapping(self.final_answer_packet),
+            "final_answer_packet_history": [
+                _safe_mapping(item) for item in self.final_answer_packet_history
+            ],
             "author_observation": _safe_mapping(self.author_observation),
             "final_answer_outcome": _safe_mapping(self.final_answer_outcome),
             "final_answer_authority_projection": _safe_mapping(
@@ -4488,6 +4503,39 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.SUFFICIENCY_READINESS_DECIDED,
+        )
+
+    def authorize_final_answer_packet_hardening(
+        self,
+        *,
+        reason: str = FINAL_ANSWER_PACKET_HARDENING_REASON,
+    ) -> AuthorizedAction:
+        if not self.state.sufficiency_readiness_state:
+            raise RunKernelTransitionError(
+                "hardened FinalAnswerPacket requires sufficiency_readiness_state"
+            )
+        if not self.state.sufficiency_readiness_projection:
+            raise RunKernelTransitionError(
+                "hardened FinalAnswerPacket requires sufficiency_readiness_projection"
+            )
+        try:
+            inputs = build_final_answer_packet_hardening_action_inputs(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                sufficiency_readiness_state=self.state.sufficiency_readiness_state,
+                sufficiency_readiness_projection=(
+                    self.state.sufficiency_readiness_projection
+                ),
+                sufficiency_readiness_history=self.state.sufficiency_readiness_history,
+            )
+        except FinalAnswerPacketHardeningRuntimeError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FINAL_ANSWER_PACKET_STAGE,
+            action_type=ActionType.FINAL_ANSWER_PACKET_HARDEN,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.FINAL_ANSWER_PACKET_HARDENED,
         )
 
     def authorize_followup_authorization_consumption(
@@ -11568,6 +11616,41 @@ class RunKernel:
             )
             self.state.projections[action.stage] = deepcopy(
                 self.state.sufficiency_judgment_projection
+            )
+        elif action.action_type is ActionType.FINAL_ANSWER_PACKET_HARDEN:
+            try:
+                fap_state = build_hardened_final_answer_packet_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    sufficiency_readiness_state=(
+                        self.state.sufficiency_readiness_state
+                    ),
+                    sufficiency_readiness_projection=(
+                        self.state.sufficiency_readiness_projection
+                    ),
+                    sufficiency_readiness_history=(
+                        self.state.sufficiency_readiness_history
+                    ),
+                )
+                fap_projection = build_hardened_final_answer_packet_projection(
+                    fap_state=fap_state,
+                    existing_final_answer_authority_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                )
+            except FinalAnswerPacketHardeningRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            if fap_projection.get("packet_created") is True:
+                self.state.final_answer_packet = fap_state
+            else:
+                self.state.final_answer_packet = {}
+            self.state.final_answer_authority_projection = fap_projection
+            self.state.final_answer_packet_history.append(deepcopy(fap_projection))
+            self.state.projections[FINAL_ANSWER_PACKET_STAGE] = deepcopy(
+                fap_projection
             )
         elif action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE:
             packet_projection = _safe_mapping(
