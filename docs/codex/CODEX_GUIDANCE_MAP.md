@@ -147,8 +147,10 @@ SearchResultCandidatePacket
 -> EvidenceRelativeAnalysisPacket / AnalystReport
 -> FollowupSearchIntentPacket / AnalysisGapSearchProposal
 -> ComponentCoverage reliability proof
--> next: SemanticObservation admission bridge
+-> SemanticObservation admission bridge
 -> ComponentCoverage reduction
+-> AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01 first governed remediation loop
+-> next: Scrutineer MVP
 ```
 
 `SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
@@ -230,6 +232,16 @@ follow-up loops by default and max 4 only with explicit RunKernel extra
 recovery authorization. Specialist MVP is deferred and should start as
 source-bound calculation/economist-style reasoning only.
 
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` is complete as the first governed
+remediation loop. FollowupSearchIntent remains proposal-only; RunKernel owns
+follow-up search authorization; the authorized work identity/query bundle is not
+live dispatch. Fixture-backed reentry proves the future product path without
+live providers through SearchResultCandidatePacket, FetchReadContentPacket,
+EvidenceLedger, EvidenceRelativeAnalysisPacket, SemanticObservation, and
+ComponentCoverage. Unresolved results remain blocked/follow-up-required/
+contested. Scrutineer comes next. No Sufficiency/FAP/Author/citation/
+source-obligation satisfaction/product correctness is proved.
+
 The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
 old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
 pipeline orchestrator paths are legacy/passive/closed unless explicitly
@@ -251,7 +263,8 @@ The roadmap order is:
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`,
 `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, then
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
-next likely gate after this bridge is Scrutineer MVP,
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
+next likely gate after this loop is Scrutineer MVP,
 source-bound calculation Specialist MVP,
 Sufficiency / partial-answer readiness,
 FAP hardening,
@@ -279,9 +292,11 @@ content is explicitly pasted into the current prompt or committed here.
   context, not current next-step doctrine. For historical AG-96 context, read
   `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
 - **Integrated run-contract semantic loop:** read
-  `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md` and
+  `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`,
   `docs/architecture/AG_SEMANTIC_OBSERVATION_ADMISSION_BRIDGE_01.md` for the
-  post-#342 SemanticObservation admission / ComponentCoverage checkpoint, then
+  post-#342 SemanticObservation admission / ComponentCoverage checkpoint, and
+  `docs/architecture/AG_FOLLOWUP_SEARCH_AUTHORIZATION_REENTRY_01.md` for the
+  first governed remediation loop, then
   `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md` for the current doctrine
   connecting AG-SEM semantic authority to ComponentSearchPlan, Scout,
   SearchExecutor, EvidenceLedger, SufficiencyJudgment, FinalAnswerPacket, and

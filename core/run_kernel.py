@@ -372,6 +372,16 @@ from core.followup_runkernel_reducers import (
 from core.followup_runkernel_reducers import (
     FOLLOWUP_RECHECK_FALSE_FLAGS as _FOLLOWUP_RECHECK_FALSE_FLAGS,
 )
+from core.followup_search_authorization_runtime import (
+    FOLLOWUP_SEARCH_AUTHORIZATION_REASON,
+    FollowupSearchAuthorizationRuntimeError,
+    build_followup_search_authorization_action_inputs,
+    build_followup_search_authorization_projection,
+    build_followup_search_authorization_state,
+)
+from core.followup_search_authorization_runtime import (
+    FOLLOWUP_SEARCH_AUTHORIZATION_STAGE as FOLLOWUP_SEARCH_AUTHORIZATION_STAGE_NAME,
+)
 from core.followup_sufficiency_recheck_runtime import (
     FOLLOWUP_SUFFICIENCY_RECHECK_MODE,
     build_followup_sufficiency_recheck_record,
@@ -522,6 +532,7 @@ SEARCH_JUDGMENT_STAGE = "search_judgment"
 SUFFICIENCY_JUDGMENT_STAGE = "sufficiency_judgment"
 FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
+FOLLOWUP_SEARCH_AUTHORIZATION_STAGE = FOLLOWUP_SEARCH_AUTHORIZATION_STAGE_NAME
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
 FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE = "followup_provider_job_execution"
@@ -634,6 +645,7 @@ class ActionType(str, Enum):
     SUFFICIENCY_JUDGMENT_DECIDE = "sufficiency_judgment_decide"
     FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
     AUTHOR_EXECUTE = "author_execute"
+    FOLLOWUP_SEARCH_AUTHORIZE = "followup_search_authorize"
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
     FOLLOWUP_PROVIDER_JOB_EXECUTE = "followup_provider_job_execute"
@@ -708,6 +720,7 @@ class ObservationType(str, Enum):
     SUFFICIENCY_JUDGMENT_DECIDED = "sufficiency_judgment_decided"
     FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
+    FOLLOWUP_SEARCH_AUTHORIZED = "followup_search_authorized"
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
     FOLLOWUP_PROVIDER_JOB_EXECUTION_OBSERVED = (
@@ -4224,6 +4237,45 @@ class RunKernel:
             or self.state.followup_author_model_request_assembly_state
             or self.state.followup_author_execution_from_af4d_state
             or self.state.followup_author_response_finalization_state
+        )
+
+    def authorize_followup_search(
+        self,
+        *,
+        followup_search_intent_packet: Mapping[str, Any],
+        mode: str = "Balanced",
+        proposal_ids: Sequence[str] = (),
+        logical_depth: int = 1,
+        unresolved_blocker_ids: Sequence[str] = (),
+        new_evidence_expected: bool = True,
+        extra_recovery_authorized: bool = False,
+        reason: str = FOLLOWUP_SEARCH_AUTHORIZATION_REASON,
+    ) -> AuthorizedAction:
+        try:
+            inputs = build_followup_search_authorization_action_inputs(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                followup_search_intent_packet=followup_search_intent_packet,
+                current_answer_contract=self.state.current_answer_contract,
+                existing_authorization_projection=self.state.projections.get(
+                    FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
+                    {},
+                ),
+                mode=mode,
+                proposal_ids=proposal_ids,
+                logical_depth=logical_depth,
+                unresolved_blocker_ids=unresolved_blocker_ids,
+                new_evidence_expected=new_evidence_expected,
+                extra_recovery_authorized=extra_recovery_authorized,
+            )
+        except FollowupSearchAuthorizationRuntimeError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
+            action_type=ActionType.FOLLOWUP_SEARCH_AUTHORIZE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.FOLLOWUP_SEARCH_AUTHORIZED,
         )
 
     def authorize_followup_authorization_consumption(
@@ -11379,6 +11431,29 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.final_answer_outcome
             )
+        elif action.action_type is ActionType.FOLLOWUP_SEARCH_AUTHORIZE:
+            try:
+                authorization_state = build_followup_search_authorization_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    existing_authorization_projection=self.state.projections.get(
+                        FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
+                        {},
+                    ),
+                )
+                authorization_projection = (
+                    build_followup_search_authorization_projection(
+                        authorization_state=authorization_state
+                    )
+                )
+            except FollowupSearchAuthorizationRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.projections[action.stage] = deepcopy(
+                authorization_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHORIZATION_CONSUME:
             followup_state = _safe_mapping(
                 observation.payload.get("followup_authorization_state")
@@ -13850,6 +13925,7 @@ __all__ = [
     "AUTHOR_EXECUTION_STAGE",
     "FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_AUTHORIZATION_STAGE",
+    "FOLLOWUP_SEARCH_AUTHORIZATION_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",

@@ -1,8 +1,9 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` after PR #342 /
-`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and the docs checkpoint.
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` after
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, PR #342 /
+`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`, and the docs checkpoint.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -99,8 +100,9 @@ Current summary:
   SanitizedContentReference -> EvidenceLedger custody ->
   EvidenceRelativeAnalysisPacket / AnalystReport -> FollowupSearchIntentPacket /
   AnalysisGapSearchProposal -> ComponentCoverage reliability proof ->
-  SemanticObservation admission bridge -> ComponentCoverage reduction -> next:
-  Scrutineer MVP`.
+  SemanticObservation admission bridge -> ComponentCoverage reduction ->
+  AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01 first governed remediation loop ->
+  next: Scrutineer MVP`.
 - `SearchResultCandidatePacket` is the durable non-evidence candidate handoff
   before fetch/read. It preserves sanitized live-search candidate lineage, but
   search candidates are not evidence, not citation-eligible, and the packet does
@@ -149,6 +151,17 @@ Current summary:
   eligibility, Sufficiency, FinalAnswerPacket, Author input, live search,
   provider calls, broker calls, retrieval, fetch/read execution, model calls, or
   product correctness.
+- `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` is the first governed
+  remediation loop. FollowupSearchIntent remains proposal-only; RunKernel owns
+  follow-up search authorization; the authorized work identity/query bundle is
+  not live dispatch. Fixture-backed reentry proves the future product path
+  without live providers through `SearchResultCandidatePacket`,
+  `FetchReadContentPacket`, `EvidenceLedger`,
+  `EvidenceRelativeAnalysisPacket`, `SemanticObservation`, and
+  `ComponentCoverage`. Unresolved results remain
+  blocked/follow-up-required/contested. Scrutineer comes next. No
+  Sufficiency/FAP/Author/citation/source-obligation satisfaction/product
+  correctness is proved.
 - Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a
   downstream gap unless solved later without packet sprawl.
 - The packet/bridge budget rule is now explicit: no new packet or bridge unless
@@ -188,7 +201,8 @@ Current summary:
   `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`,
   `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`,
   `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
-  next likely gate after this bridge is Scrutineer MVP,
+  `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
+  next likely gate after this loop is Scrutineer MVP,
   then source-bound calculation Specialist MVP,
   then Sufficiency / partial-answer readiness,
   then FAP hardening,
