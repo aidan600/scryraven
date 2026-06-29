@@ -5,7 +5,8 @@
 Status: Current doctrine after PR #342 /
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and
 `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, refreshed after
-`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`.
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` and
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -171,16 +172,22 @@ Required second-half semantic loop:
 18. `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` turns source-bound Analyst
     support proposals into RunKernel-authorized admitted semantic observations
     without adding another durable proposal packet.
-19. ComponentCoverage consumes admitted observations plus evidence/custody
+19. `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` is the first governed
+    remediation loop: RunKernel owns follow-up search authorization, creates a
+    bounded authorized work identity/query bundle, and fixture-backed reentry
+    proves the future product path without live providers through
+    SearchResultCandidatePacket, FetchReadContentPacket, EvidenceLedger,
+    EvidenceRelativeAnalysisPacket, SemanticObservation, and ComponentCoverage.
+20. ComponentCoverage consumes admitted observations plus evidence/custody
     bindings and preserves component/source-obligation lineage.
-20. ScrutineerReview reviews support, conflicts, drift, and gaps when mode
+21. ScrutineerReview reviews support, conflicts, drift, and gaps when mode
     policy requires it.
-21. SpecialistAnalysisPacket records source-bound calculation/economist-style
+22. SpecialistAnalysisPacket records source-bound calculation/economist-style
     specialized analysis when needed after the admission bridge path exists.
-22. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
-23. Sufficiency consumes contract/custody/semantic/coverage/amendment state and decides readiness.
-24. FinalAnswerPacket packages Author-safe material.
-25. Author writes prose only from FAP-safe material.
+23. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
+24. Sufficiency consumes contract/custody/semantic/coverage/amendment state and decides readiness.
+25. FinalAnswerPacket packages Author-safe material.
+26. Author writes prose only from FAP-safe material.
 ```
 
 PR #323 proved this offline blocked X-axis after a component-shaped plan already
@@ -405,7 +412,39 @@ old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
 pipeline orchestrator paths are legacy/passive/closed unless explicitly
 reopened.
 
-## 9. Immediate Roadmap
+## 9. Follow-Up Search Authorization Reentry
+
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` completes the first governed
+remediation loop after the SemanticObservation admission bridge.
+FollowupSearchIntent remains proposal-only and does not authorize search.
+RunKernel owns follow-up search authorization, including mode budget, logical
+depth, current-contract lineage, review readiness, duplicate-work checks, and
+source-class criteria.
+
+The authorized work identity/query bundle is not live dispatch. It is
+SearchExecutorHandoff-style work identity only so existing candidate packet
+lineage can reenter the chain. It does not mutate SearchExecutorHandoff state,
+call providers, call a broker, run retrieval, perform live fetch/read, admit
+evidence by itself, satisfy obligations, or create readiness.
+
+Fixture-backed reentry proves the future product path without live providers:
+
+```text
+SearchResultCandidatePacket
+-> FetchReadContentPacket
+-> EvidenceLedger
+-> EvidenceRelativeAnalysisPacket
+-> SemanticObservation
+-> ComponentCoverage
+```
+
+Readable support can reduce through SemanticObservation admission and
+ComponentCoverage. Unreadable, stale, insufficient, or contradictory outcomes
+remain blocked/follow-up-required/contested without support. Scrutineer comes
+next. No Sufficiency/FAP/Author/citation/source-obligation
+satisfaction/product correctness is proved.
+
+## 10. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
@@ -457,15 +496,20 @@ reopened.
     Bridges Analyst support findings into RunKernel-authorized
     `SemanticObservation` admission and immediately proves ComponentCoverage
     consumption. It does not add another durable proposal packet.
-11. Scrutineer MVP - next likely gate. Apply review depth by mode:
+11. `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` - completed implementation.
+    Adds the first governed remediation loop: RunKernel authorizes bounded
+    follow-up search work from proposal-only FollowupSearchIntent, and
+    fixture-backed reentry proves the existing candidate/read/custody/analysis/
+    admission/coverage chain without live providers.
+12. Scrutineer MVP - next likely gate. Apply review depth by mode:
     no Scrutineer in Fast MVP, red flags in Balanced, required in Deep.
-12. Source-bound calculation Specialist MVP - deferred specialist start point,
+13. Source-bound calculation Specialist MVP - deferred specialist start point,
     not broad legal or technical interpretation.
-13. Sufficiency / partial-answer readiness - later, only after ComponentCoverage,
+14. Sufficiency / partial-answer readiness - later, only after ComponentCoverage,
     Sufficiency, FAP, and Author-safe prerequisites are coherent.
-14. FAP hardening - package Author-safe material from admitted/covered/readiness
+15. FAP hardening - package Author-safe material from admitted/covered/readiness
     state.
-15. Author prose-only finalization - Author writes only from FAP-safe material.
+16. Author prose-only finalization - Author writes only from FAP-safe material.
 
 The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
 history. It is not the immediate post-#330 validation plan and must not be used
