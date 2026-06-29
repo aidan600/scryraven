@@ -82,6 +82,34 @@ FULL_ARRAY_KEYS = (
     "content_ref_digests",
     "semantic_ref_evidence_ids",
     "source_obligation_refs",
+    "author_materialization_content_refs",
+)
+FORBIDDEN_RAW_OR_FULL_MATERIALIZATION_KEYS = (
+    "author_materialization_content_refs",
+    "raw_content",
+    "raw_text",
+    "raw_source_text",
+    "text_excerpts",
+    "bounded_text",
+    "prompt",
+    "prompt_text",
+    "raw_prompt",
+    "system_prompt",
+    "provider_payload",
+    "raw_provider_payload",
+    "model_payload",
+    "model_request",
+    "model_response",
+    "raw_model_response",
+    "db_row",
+    "db_rows",
+    "cache",
+    "cache_row",
+    "cache_rows",
+    "full_trace",
+    "log",
+    "logs",
+    "private_logs",
 )
 
 
@@ -229,7 +257,7 @@ def _payload(packet: FinalAnswerPacket):
 
 def _expected_envelope(packet: FinalAnswerPacket) -> dict[str, Any]:
     projection = packet.semantic_content_coverage_ref_projection
-    return {
+    expected = {
         "schema_version": (
             FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_SCHEMA_VERSION
         ),
@@ -268,6 +296,13 @@ def _expected_envelope(packet: FinalAnswerPacket) -> dict[str, Any]:
         "raw_prompt_included": False,
         "provider_payload_included": False,
     }
+    material_refs = projection.get("author_materialization_content_refs")
+    if material_refs:
+        expected["author_materialization_content_ref_count"] = len(material_refs)
+        expected["author_materialization_content_ref_digest"] = _stable_safe_digest(
+            material_refs
+        )
+    return expected
 
 
 def _stable_safe_digest(value: Any) -> str:
@@ -280,23 +315,49 @@ def _stable_safe_digest(value: Any) -> str:
     ).hexdigest()
 
 
+def _walk_keys(value: Any) -> set[str]:
+    if isinstance(value, Mapping):
+        keys = {str(key) for key in value}
+        for item in value.values():
+            keys.update(_walk_keys(item))
+        return keys
+    if isinstance(value, (list, tuple)):
+        keys: set[str] = set()
+        for item in value:
+            keys.update(_walk_keys(item))
+        return keys
+    return set()
+
+
+def _assert_no_raw_or_full_materialization_content(surface: Mapping[str, Any]) -> None:
+    surface_keys = _walk_keys(surface)
+    for forbidden in FORBIDDEN_RAW_OR_FULL_MATERIALIZATION_KEYS:
+        assert forbidden not in surface_keys
+
+
 def _assert_trace_ref_sealed(trace_ref: Mapping[str, Any]) -> None:
     for key in FULL_ARRAY_KEYS:
         assert key not in trace_ref
     for forbidden in (
         "raw_source_text",
+        "raw_text",
+        "bounded_text",
         "text_excerpts",
         "prompt_text",
         "raw_prompt",
         "provider_payload",
         "raw_provider_payload",
+        "model_payload",
         "model_response",
         "raw_model_response",
         "final_prose",
         "final_text",
         "db_row",
+        "db_rows",
         "cache",
+        "cache_rows",
         "full_trace",
+        "private_logs",
         "logs",
     ):
         assert forbidden not in trace_ref
@@ -307,6 +368,7 @@ def test_author_payload_envelope_derives_from_fap_projection_only() -> None:
     payload = _payload(packet)
     envelope = dict(payload.semantic_content_coverage_ref_envelope)
     projection = packet.semantic_content_coverage_ref_projection
+    material_refs = projection["author_materialization_content_refs"]
 
     assert envelope == _expected_envelope(packet)
     assert envelope["schema_version"] == (
@@ -333,6 +395,11 @@ def test_author_payload_envelope_derives_from_fap_projection_only() -> None:
         packet.semantic_packet_evidence_bindings
     )
     assert "semantic_packet_evidence_bindings" not in envelope
+    assert envelope["author_materialization_content_ref_count"] == len(material_refs)
+    assert envelope["author_materialization_content_ref_digest"] == _stable_safe_digest(
+        material_refs
+    )
+    assert "author_materialization_content_refs" not in envelope
     assert envelope["content_refs_available"] is True
     assert envelope["coverage_refs_available"] is True
     assert envelope["author_payload_visible"] is True
@@ -342,6 +409,7 @@ def test_author_payload_envelope_derives_from_fap_projection_only() -> None:
     assert envelope["model_request_visible"] is False
     assert envelope["raw_content_included"] is False
     assert envelope["bounded_text_included"] is False
+    _assert_no_raw_or_full_materialization_content(envelope)
 
 
 @pytest.mark.parametrize(
@@ -388,6 +456,9 @@ def test_author_payload_envelope_trace_ref_is_digest_and_counts_only() -> None:
     payload = _payload(packet)
     envelope = dict(payload.semantic_content_coverage_ref_envelope)
     trace_ref = payload.to_trace_ref()[TRACE_REF_KEY]
+    material_refs = packet.semantic_content_coverage_ref_projection[
+        "author_materialization_content_refs"
+    ]
 
     assert trace_ref["schema_version"] == (
         FINAL_ANSWER_AUTHOR_PAYLOAD_SEMANTIC_CONTENT_COVERAGE_REF_ENVELOPE_TRACE_SCHEMA_VERSION
@@ -413,6 +484,11 @@ def test_author_payload_envelope_trace_ref_is_digest_and_counts_only() -> None:
         packet.semantic_packet_evidence_bindings
     )
     assert "semantic_packet_evidence_bindings" not in trace_ref
+    assert trace_ref["author_materialization_content_ref_count"] == len(material_refs)
+    assert trace_ref["author_materialization_content_ref_digest"] == _stable_safe_digest(
+        material_refs
+    )
+    assert "author_materialization_content_refs" not in trace_ref
     assert trace_ref["author_payload_visible"] is True
     assert trace_ref["authority_payload_visible"] is False
     assert trace_ref["authority_block_visible"] is False
@@ -423,6 +499,7 @@ def test_author_payload_envelope_trace_ref_is_digest_and_counts_only() -> None:
     assert trace_ref["bounded_text_included"] is False
     assert trace_ref["raw_prompt_included"] is False
     assert trace_ref["provider_payload_included"] is False
+    _assert_no_raw_or_full_materialization_content(trace_ref)
     _assert_trace_ref_sealed(trace_ref)
 
 
@@ -549,10 +626,36 @@ def test_author_payload_envelope_non_delta_surfaces_and_raw_leakage_scan() -> No
         "cache": {"private_marker": "SENTINEL_CACHE"},
         "full_trace": {"private_marker": "SENTINEL_FULL_TRACE"},
         "logs": ["SENTINEL_LOGS"],
+        "author_materialization_content_refs": [
+            {
+                "content_ref_id": CONTENT_REF_ID,
+                "content_digest": CONTENT_DIGEST,
+                "bounded_text": "SENTINEL_MATERIALIZATION_BOUNDED_TEXT",
+                "raw_text": "SENTINEL_MATERIALIZATION_RAW_TEXT",
+                "raw_prompt": "SENTINEL_MATERIALIZATION_RAW_PROMPT",
+                "provider_payload": {
+                    "private_marker": "SENTINEL_MATERIALIZATION_PROVIDER_PAYLOAD"
+                },
+                "model_response": "SENTINEL_MATERIALIZATION_MODEL_RESPONSE",
+                "db_rows": ["SENTINEL_MATERIALIZATION_DB_ROWS"],
+                "cache_rows": ["SENTINEL_MATERIALIZATION_CACHE_ROWS"],
+                "full_trace": "SENTINEL_MATERIALIZATION_FULL_TRACE",
+                "private_logs": ["SENTINEL_MATERIALIZATION_PRIVATE_LOGS"],
+            }
+        ],
     }
     tainted_payload = _payload(_manual_packet(tainted_projection))
     tainted_packet = _manual_packet(tainted_projection).with_author_input_payload(
         tainted_payload
+    )
+    _assert_no_raw_or_full_materialization_content(
+        tainted_payload.semantic_content_coverage_ref_envelope
+    )
+    _assert_no_raw_or_full_materialization_content(
+        tainted_payload.to_trace_ref()[TRACE_REF_KEY]
+    )
+    _assert_no_raw_or_full_materialization_content(
+        tainted_packet.author_input_refs[TRACE_REF_KEY]
     )
     encoded = json.dumps(
         (
@@ -579,6 +682,15 @@ def test_author_payload_envelope_non_delta_surfaces_and_raw_leakage_scan() -> No
         "SENTINEL_CACHE",
         "SENTINEL_FULL_TRACE",
         "SENTINEL_LOGS",
+        "SENTINEL_MATERIALIZATION_BOUNDED_TEXT",
+        "SENTINEL_MATERIALIZATION_RAW_TEXT",
+        "SENTINEL_MATERIALIZATION_RAW_PROMPT",
+        "SENTINEL_MATERIALIZATION_PROVIDER_PAYLOAD",
+        "SENTINEL_MATERIALIZATION_MODEL_RESPONSE",
+        "SENTINEL_MATERIALIZATION_DB_ROWS",
+        "SENTINEL_MATERIALIZATION_CACHE_ROWS",
+        "SENTINEL_MATERIALIZATION_FULL_TRACE",
+        "SENTINEL_MATERIALIZATION_PRIVATE_LOGS",
     ):
         assert forbidden not in encoded
 
