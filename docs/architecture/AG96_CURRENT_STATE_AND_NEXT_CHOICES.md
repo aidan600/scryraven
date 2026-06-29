@@ -7,6 +7,13 @@ This note records the repo-visible AG-96 state after the AG-96C
 guidance snapshot only. It is not a ChatGPT Project Source file and does not
 authorize runtime behavior changes.
 
+Post-#342 checkpoint note: AG-96 followup surfaces, the SearchWorkPlan shadow,
+offline SearchExecutor bridge, source-class recovery bridges, and broad pipeline
+orchestrator paths are legacy/passive/closed unless explicitly reopened. The
+current productization next gate is
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, not an AG-96 follow-up,
+SearchWorkPlan, Specialist, Scrutineer, or partial-answer readiness phase.
+
 ## AG-96C SearchWorkPlan Lane
 
 AG-96C currently models `SearchWorkPlan` as a passive RunKernel shadow

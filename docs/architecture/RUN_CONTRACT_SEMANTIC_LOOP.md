@@ -2,9 +2,9 @@
 
 ## 1. Status
 
-Status: Current doctrine after PR #330 /
-`AG-SEARCH-EXECUTOR-HANDOFF-01` and PR2 of
-`AG-LIVE-XAXIS-VALIDATION-01A`.
+Status: Current doctrine after PR #342 /
+`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and
+`AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -62,9 +62,9 @@ AnswerContract records obligations and statuses.
 Workers propose observations or amendments.
 RunKernel validates/reduces.
 EvidenceLedger records custody.
-SemanticObservation records evidence-relative meaning.
-ComponentCoverage records component support.
-SufficiencyJudgment decides readiness.
+SemanticObservation admission promotes proposal-stage meaning into admitted meaning.
+ComponentCoverage consumes admitted meaning and custody bindings.
+Sufficiency decides readiness.
 FinalAnswerPacket packages Author-safe handoff.
 Author writes prose only.
 ```
@@ -164,16 +164,20 @@ Required second-half semantic loop:
     Analyst gap proposals into proposal-only follow-up search intent; this is
     reviewable structure, not authorization, not a query plan, and not
     SearchExecutorHandoff/search dispatch/evidence.
-17. ComponentCoverage reliability proof must show whether the packet chain can
-    feed meaningful ComponentCoverage outcomes, or expose missing bridges. It is
-    no new standalone proposal packet.
-18. If required, a minimal SemanticObservation/admission bridge turns
-    source-bound Analyst support proposals into admitted semantic observations.
-19. SpecialistAnalysisPacket records specialized analysis when needed.
-20. ScrutineerReview reviews support, conflicts, drift, and gaps.
-21. ComponentCoverageRecord proposals bind admitted observations to components.
+17. ComponentCoverage reliability proof showed that the packet chain can expose
+    support and blocker posture, but meaningful ComponentCoverage reduction
+    requires admitted SemanticObservation.
+18. `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` must turn source-bound
+    Analyst support proposals into RunKernel-authorized admitted semantic
+    observations without adding another durable proposal packet.
+19. ComponentCoverage consumes admitted observations plus evidence/custody
+    bindings and preserves component/source-obligation lineage.
+20. ScrutineerReview reviews support, conflicts, drift, and gaps when mode
+    policy requires it.
+21. SpecialistAnalysisPacket records source-bound calculation/economist-style
+    specialized analysis when needed after the admission bridge path exists.
 22. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
-23. SufficiencyJudgment consumes contract/custody/semantic/coverage/amendment state and decides readiness.
+23. Sufficiency consumes contract/custody/semantic/coverage/amendment state and decides readiness.
 24. FinalAnswerPacket packages Author-safe material.
 25. Author writes prose only from FAP-safe material.
 ```
@@ -206,17 +210,17 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | SearchPlannerRevision | Consumes Scout report and proposes revised plan/amendments. It does not own authority. |
 | SearchExecutorHandoff | Creates offline executable search intent only. It does not execute providers, fetch/read, custody, citations, sufficiency, FAP, Author, or partial-answer readiness. |
 | Live search validation adapter | Future governed adapter that may execute provider search only when RunKernel authorizes a validation action. It emits sanitized SearchResultCandidate records only in the first live slice. |
-| SearchResultCandidatePacket | Future packet for sanitized result candidates. It is not EvidenceLedger custody and does not satisfy obligations. |
+| SearchResultCandidatePacket | Durable packet for sanitized result candidates. It preserves non-evidence discovery lineage, is not EvidenceLedger custody, and does not satisfy obligations. |
 | FetchReadContentPacket / SanitizedContentReference | bounded readable-content handoff after SearchResultCandidatePacket and before EvidenceLedger custody. It is not evidence, not citation-eligible, and does not satisfy source obligations. |
 | EvidenceLedger fetch/read candidate custody | RunKernel-authorized reducer that admits FetchReadContentPacket / SanitizedContentReference packet, candidate, reference, status, URL/domain/title, and bounded-content count/digest lineage into EvidenceLedger candidate/content custody. It is not semantic support, citation eligibility, source-obligation satisfaction, ComponentCoverage, Sufficiency, FinalAnswerPacket material, Author input, partial readiness, or product correctness. |
 | EvidenceLedger | Owns evidence custody and source-obligation state after admissible sanitized content exists. |
-| SemanticObservation | Records evidence-relative semantic observations. |
+| SemanticObservation | Controlled RunKernel-authorized promotion from proposal-stage meaning into admitted evidence-relative semantic observations. |
 | EvidenceRelativeAnalysisPacket / AnalystReport | Current standalone proposal-only evidence-relative analysis packet with embedded `analyst_report`; it consumes EvidenceLedger fetch/read custody IDs/digests and injected offline Analyst proposal records, is not SemanticObservation admission, and does not create ComponentCoverage, citation eligibility, source-obligation satisfaction, Sufficiency, FinalAnswerPacket, Author input, readiness, search dispatch, or final prose authority. |
 | FollowupSearchIntentPacket / AnalysisGapSearchProposal | Current proposal-only gap-to-search-intent posture from validated `EvidenceRelativeAnalysisPacket` / `analyst_report.analysis_gap_proposals`. It is not search authorization, not a query plan, does not create SearchExecutorHandoff, does not dispatch search, does not create evidence, and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains required before any executable search work exists. |
-| SpecialistAnalysisPacket | Future specialist analysis packet when quantitative, legal, technical, or other specialist reasoning is needed. |
-| ScrutineerReview | Future review packet for support, conflicts, drift, and gap review. |
+| SpecialistAnalysisPacket | Deferred future specialist packet, starting with source-bound calculation/economist-style reasoning only rather than broad legal or technical interpretation. |
+| ScrutineerReview | Future review packet for support, conflicts, drift, and gap review; absent from Fast MVP, red-flag-triggered in Balanced, required in Deep. |
 | AnalysisGapSearchProposal | Current reviewable proposal record inside `FollowupSearchIntentPacket`. It carries gap lineage, hints, and structural review readiness only; it is a proposal, not a dispatch. |
-| ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations exist. |
+| ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations and custody bindings exist. |
 | ContractAmendmentRecord / admission / application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
 | AnswerContractAuthorityMap | Passive authority map over components, custody, binding, readiness, and FAP state. It does not mutate the contract. |
 | SufficiencyJudgment | Owns answerability/readiness decision after prerequisite custody, semantic, coverage, and amendment inputs exist. |
@@ -330,30 +334,50 @@ Runtime success requires:
 - RunKernel or the correct owner authorizes/reduces/acts;
 - focused test proves the real consumer path.
 
-## 8. ComponentCoverage Reliability Gate
+## 8. SemanticObservation Admission Gate
 
-Current next gate is ComponentCoverage reliability proof. The current chain
-through `FollowupSearchIntentPacket` is coherent, but it must prove consumption
-before the architecture adds another durable packet. The phase-focus artifact is
-`component_coverage_reliability_report`.
+The ComponentCoverage reliability proof is complete. The current chain through
+`FollowupSearchIntentPacket` is coherent proposal/custody lineage, but the
+`component_coverage_reliability_report` showed that ComponentCoverage can reduce
+meaningful support only after admitted `SemanticObservation` exists.
 
-The packet budget rule: no new packet unless it crosses a trust/raw-data
-boundary, becomes durable reducer input, needs stable downstream IDs/digests,
-records canonical state, or prevents raw/private leakage. A packet is suspect if
-it only restates lineage, only says closed flags remain false, is only consumed
-by its own tests, or creates another proposal layer without reduction.
+Current next gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, not another
+standalone proposal packet. The bridge is justified only because it has an
+immediate consumer: ComponentCoverage.
 
-If this proof exposes `SemanticObservation/admission bridge` as the missing
-consumer path, the next implementation gate is a minimal
-`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` before Scrutineer or Specialist.
+The packet/bridge budget rule: no new packet or bridge unless it crosses a
+trust/raw-data boundary, becomes durable reducer input, needs stable downstream
+IDs/digests consumed by more than one stage, records canonical or
+reducer-admitted state, prevents raw/private/provider material from leaking
+forward, or removes a named blocker for an existing consumer. A packet or bridge
+is suspect if it only restates lineage, only says closed flags remain false, is
+only consumed by its own tests, creates another proposal layer without
+reduction, or has no immediate consumer in the same or next phase.
+
+For the next gate, success must prove:
+
+```text
+EvidenceRelativeAnalysisPacket support finding
+-> RunKernel-authorized SemanticObservation admission
+-> ComponentCoverage reduction
+```
+
+It is not success to prove only:
+
+```text
+EvidenceRelativeAnalysisPacket support finding
+-> new packet
+-> future consumer later
+```
 
 Broker is local/private validation plumbing, not installed-product authority
 and not product follow-up policy. Modes change budget and review depth, not
-authority. Follow-up policy should be based on logical depth, loop budget,
-RunKernel approval, and query fanout rather than one-query-per-proposal.
+semantic authority. Follow-up policy should be based on logical depth, loop
+budget, query fanout, and RunKernel approval rather than
+one-query-per-proposal.
 
 Fast has no Scrutineer in MVP. Balanced uses Scrutineer on red flags. Deep
-requires Scrutineer and reserve post-Scrutineer response budget. Deep allows
+requires Scrutineer and reserves post-Scrutineer response budget. Deep allows
 max 3 follow-up loops by default and max 4 only with explicit RunKernel extra
 recovery authorization.
 
@@ -407,12 +431,27 @@ reopened.
    SearchExecutorHandoff, does not dispatch search, does not create evidence,
    and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains
    required.
-8. `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` - prove whether the current
-   packet chain can be consumed into ComponentCoverage outcomes, or identify
-   the exact missing bridge without adding another durable packet.
-9. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
-   Analyst/Specialist/Scrutineer/Sufficiency/FAP prerequisites exist as a
-   coherent evidence-relative chain.
+8. `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` - complete in PR #342. It proved
+   that ComponentCoverage can reduce meaningful support only after
+   SemanticObservation admission exists, and that the current packet chain alone
+   does not admit semantic support.
+9. `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01` - memorialize the post-#342
+   doctrine, Project Source refresh packet, packet/bridge budget rule, and next
+   implementation gate.
+10. `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` - next implementation. Bridge
+    Analyst support findings into RunKernel-authorized `SemanticObservation`
+    admission and immediately prove ComponentCoverage consumption. Do not add
+    another durable proposal packet unless a reducer/consumer absolutely
+    requires it and implementation stops for review.
+11. Scrutineer MVP - after the admission bridge, apply review depth by mode:
+    no Scrutineer in Fast MVP, red flags in Balanced, required in Deep.
+12. Source-bound calculation Specialist MVP - deferred specialist start point,
+    not broad legal or technical interpretation.
+13. Sufficiency / partial-answer readiness - later, only after ComponentCoverage,
+    Sufficiency, FAP, and Author-safe prerequisites are coherent.
+14. FAP hardening - package Author-safe material from admitted/covered/readiness
+    state.
+15. Author prose-only finalization - Author writes only from FAP-safe material.
 
 The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
 history. It is not the immediate post-#330 validation plan and must not be used

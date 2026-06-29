@@ -66,11 +66,12 @@ AG-95R/S/T retires the old decision from active visibility export;
 ControllerRecoveryDecision is historical/offline diagnostic parity only for this
 lane.
 
-Current authority baseline after PR #330:
-`AG-SEARCH-EXECUTOR-HANDOFF-01` completes the front-half handoff from
-`current_answer_contract` into offline executable search intent. The coherent
-front half is `SearchPlanner -> initial_answer_contract -> Scout ->
-SearchPlannerRevision -> amendment admission/application ->
+Current authority baseline after PR #342:
+`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` proves that the second-half packet
+chain can expose support and blocker posture, but ComponentCoverage can reduce
+meaningful support only after admitted `SemanticObservation` exists. The
+coherent front half remains `SearchPlanner -> initial_answer_contract -> Scout
+-> SearchPlannerRevision -> amendment admission/application ->
 current_answer_contract -> SearchExecutorHandoff`.
 
 RunKernel / RunAuthority remains root authority. AnswerContractAuthorityMap owns
@@ -118,21 +119,28 @@ Current integrated-loop doctrine is in
 `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`: semantic producer / planner
 understands; RunKernel governs; AnswerContract records obligations and statuses;
 workers propose observations or amendments; RunKernel validates/reduces;
-EvidenceLedger records custody; SemanticObservation records evidence-relative
-meaning; ComponentCoverage records component support; SufficiencyJudgment
-decides readiness; FinalAnswerPacket packages Author-safe handoff; Author writes
-prose only. The second-half chain is now ordered as SearchResultCandidatePacket
--> FetchReadContentPacket / SanitizedContentReference -> EvidenceLedger custody
--> EvidenceRelativeAnalysisPacket / AnalystReport -> SpecialistAnalysisPacket
-when needed -> ScrutineerReview -> ComponentCoverageRecord proposals ->
-ContractAmendmentRecord proposals -> SufficiencyJudgment -> FinalAnswerPacket
--> Author prose only.
+EvidenceLedger records custody; SemanticObservation admission promotes
+proposal-stage meaning into admitted meaning; ComponentCoverage consumes
+admitted meaning and custody bindings; Sufficiency decides readiness;
+FinalAnswerPacket packages Author-safe handoff; Author writes prose only. The
+current second-half chain is SearchResultCandidatePacket -> FetchReadContentPacket
+/ SanitizedContentReference -> EvidenceLedger custody ->
+EvidenceRelativeAnalysisPacket / AnalystReport -> FollowupSearchIntentPacket /
+AnalysisGapSearchProposal -> ComponentCoverage reliability proof -> next:
+SemanticObservation admission bridge -> ComponentCoverage reduction.
+
+The next implementation gate is
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`. It must prove
+`EvidenceRelativeAnalysisPacket` support finding -> RunKernel-authorized
+`SemanticObservation` admission -> ComponentCoverage reduction in the same
+phase, without adding another durable proposal packet unless a reducer/consumer
+absolutely requires it and implementation stops for review.
 
 Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
 RunKernel/current_answer_contract second-half semantic architecture. Partial
-answer readiness is later, after the
-Analyst/Specialist/Scrutineer/Sufficiency/FAP prerequisites exist. Passive/
-shadow surfaces are not product readiness.
+answer readiness remains premature until ComponentCoverage, Sufficiency, FAP,
+and Author-safe prerequisites are coherent. Passive/shadow surfaces are not
+product readiness.
 
 ### No orchestrator brain
 
@@ -176,22 +184,25 @@ Authority-collapse phases should move toward these canonical owners:
   not own final answerability, citation eligibility, source-obligation
   satisfaction, FinalAnswerPacket readiness, partial-answer readiness, product
   correctness, or Author-safe payload readiness.
-- **Live search validation adapter / SearchResultCandidatePacket** are future
-  second-half surfaces. The first adapter may execute provider search only when
-  RunKernel authorizes a validation action, and its first output is sanitized
-  `SearchResultCandidate` records only. Candidate packets are not
-  EvidenceLedger custody and do not satisfy source obligations.
+- **Live search validation adapter / SearchResultCandidatePacket** are
+  second-half candidate-lineage surfaces. A live adapter may execute provider
+  search only when RunKernel authorizes a validation action, and its first
+  output is sanitized `SearchResultCandidate` records only. Candidate packets
+  are not EvidenceLedger custody and do not satisfy source obligations.
 - **SemanticProducer / SearchPlanner / Scout** are workers in the integrated
   run-contract semantic loop. They may propose question meaning, components,
   ambiguity posture, search plans, disambiguation reports, or amendment
   candidates when RunKernel authorizes their work. They do not mutate canonical
   contract state.
 - **SemanticObservation / ComponentCoverage / ContractAmendmentRecord** are the
-  semantic accountability pathway for evidence-relative meaning, component
-  support, and proposed contract changes. AG-SEM-08 admits amendment proposals
-  without mutating the accepted contract. AG-RUN-CONTRACT-MUTATION-LOOP-01
-  applies admitted amendments through RunKernel into `current_answer_contract`,
-  while `initial_answer_contract` remains immutable genesis state.
+  semantic accountability pathway for admitted evidence-relative meaning,
+  component support, and proposed contract changes. `SemanticObservation`
+  admission is the controlled RunKernel-authorized promotion from proposal to
+  admitted meaning; ComponentCoverage consumes admitted meaning and
+  evidence/custody bindings. AG-SEM-08 admits amendment proposals without
+  mutating the accepted contract. AG-RUN-CONTRACT-MUTATION-LOOP-01 applies
+  admitted amendments through RunKernel into `current_answer_contract`, while
+  `initial_answer_contract` remains immutable genesis state.
 - **FinalAnswerPacket** owns final evidence selection, citation eligibility,
   Author-facing posture, answer readiness, caveats, and handoff fields needed to
   write the final answer.

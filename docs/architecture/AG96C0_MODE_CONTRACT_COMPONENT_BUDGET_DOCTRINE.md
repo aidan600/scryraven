@@ -21,6 +21,18 @@ query/depth policy, live ScryRaven/proplex calls, secrets, `.env`, raw provider
 payloads, raw prompts, DB rows, private logs, caches, full raw traces, local
 output packets, broad historical rewrites, and AG-96B2 dogfood implementation.
 
+Post-#342 checkpoint note:
+`AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01` preserves AG-96C0 as historical mode
+budget doctrine, but the current semantic-coverage rule is sharper: modes change
+budget and review depth, not semantic authority. Fast has no Scrutineer in MVP.
+Balanced uses Scrutineer only on red flags. Deep requires Scrutineer and
+post-Scrutineer response budget. Deep allows max 3 follow-up loops by default
+and max 4 only with explicit RunKernel extra recovery authorization. Follow-up
+limits are ceilings, not targets, and logical depth plus authorized query fanout
+matters more than raw query count. `SearchWorkPlan` remains legacy/passive/closed
+unless explicitly reopened; the current next implementation is
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`.
+
 ## 2. Why AG-96C0 exists
 
 AG-96B0 and AG-96B1 clarified the official-source acquisition lane:

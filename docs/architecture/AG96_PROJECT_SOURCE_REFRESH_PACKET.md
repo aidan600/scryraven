@@ -6,6 +6,12 @@ This is a repo-visible refresh packet for maintaining external project-source
 material. It is not itself a ChatGPT Project Source file and does not assume
 that any ChatGPT Project Source is present in this repository.
 
+Post-#342 checkpoint note: this AG-96 packet is historical AG-96 maintenance
+context. The current semantic-coverage Project Source refresh packet is in
+`docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`, and the current
+next implementation gate is
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`.
+
 ## Mechanical Replacement Notes
 
 SourceDoc02:
