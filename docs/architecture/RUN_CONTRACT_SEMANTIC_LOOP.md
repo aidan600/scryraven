@@ -8,7 +8,8 @@ Status: Current doctrine after PR #342 /
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
 `AG-SCRUTINEER-REVIEW-01`, and
-`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`.
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`, and
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -192,8 +193,18 @@ Required second-half semantic loop:
     Sufficiency, FinalAnswerPacket, Author, citations, source obligations,
     contract mutation, or product correctness.
 23. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
-24. Sufficiency consumes contract/custody/semantic/coverage/amendment state and decides readiness.
-25. FinalAnswerPacket packages Author-safe material.
+24. `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` records
+    RunKernel.SufficiencyReadiness as the pre-FAP readiness reducer. It consumes
+    current contract, ComponentCoverage, admitted SemanticObservation refs,
+    ScrutineerReview posture, Specialist calculation posture, and follow-up
+    budget posture, then decides component-level and answer-level readiness.
+    It supports `full_answer_ready`, `partial_answer_ready`, `blocked`,
+    `followup_required`, `contested`, `insufficient_evidence`, and
+    `not_applicable`. It does not create FinalAnswerPacket, Author input,
+    citation eligibility, source-obligation satisfaction,
+    current_answer_contract mutation, live calls, or product correctness.
+25. FinalAnswerPacket hardening packages Author-safe material from admitted,
+    covered, readiness-reduced state.
 26. Author writes prose only from FAP-safe material.
 ```
 
@@ -238,6 +249,7 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations and custody bindings exist. |
 | ContractAmendmentRecord / admission / application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
 | AnswerContractAuthorityMap | Passive authority map over components, custody, binding, readiness, and FAP state. It does not mutate the contract. |
+| SufficiencyReadiness | RunKernel-owned pre-FAP readiness reducer. It produces component-level and answer-level readiness (`full_answer_ready`, `partial_answer_ready`, `blocked`, `followup_required`, `contested`, `insufficient_evidence`, `not_applicable`) plus safe FAP handoff preview refs and caveats. It does not create FinalAnswerPacket, Author input, citation eligibility, source-obligation satisfaction, current_answer_contract mutation, live calls, or product correctness. |
 | SufficiencyJudgment | Owns answerability/readiness decision after prerequisite custody, semantic, coverage, and amendment inputs exist. |
 | FinalAnswerPacket | Owns Author-safe handoff. |
 | Author | Prose-only; no custody, support, readiness, citation, or contract authority. |
@@ -500,7 +512,30 @@ source-bound lineage, but Scrutineer does not calculate or authorize Specialist
 output. Existing Economist surfaces remain legacy/passive unless deliberately
 reused without authority revival.
 
-## 12. Immediate Roadmap
+## 12. Sufficiency Readiness
+
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` introduces
+RunKernel.SufficiencyReadiness as the pre-FAP readiness reducer.
+SufficiencyReadiness is RunKernel-owned. It produces component-level and
+answer-level readiness from the current answer contract, ComponentCoverage,
+admitted SemanticObservation refs, ScrutineerReview posture, Specialist
+calculation posture, and follow-up budget posture.
+
+The reducer writes `sufficiency_readiness_state`,
+`sufficiency_readiness_projection`, and `sufficiency_readiness_history`. It
+supports `full_answer_ready`, `partial_answer_ready`, `blocked`,
+`followup_required`, `contested`, `insufficient_evidence`, and `not_applicable`
+posture. It emits a safe `fap_handoff_preview` containing refs, caveats, and
+prohibited upgrades only.
+
+SufficiencyReadiness does not create FinalAnswerPacket, Author input, answer
+prose, citation eligibility, source-obligation satisfaction,
+current_answer_contract mutation, live calls, provider/broker/retrieval/
+fetch/read/model behavior, or product correctness. Old AG-92C Sufficiency/FAP
+and AG-96/FAP/Author surfaces remain legacy/passive/closed unless explicitly
+reopened. FAP hardening comes next.
+
+## 13. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
@@ -564,8 +599,10 @@ reused without authority revival.
     source-obligation satisfaction, or claim product correctness.
 13. `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` - completed Specialist start
     point for source-bound deterministic calculation only.
-14. `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` - next, only after ComponentCoverage,
-    Sufficiency, FAP, and Author-safe prerequisites are coherent.
+14. `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` - completed pre-FAP
+    RunKernel-owned readiness reduction for full/partial/blocked/follow-up/
+    contested/insufficient/not-applicable posture without creating FAP or
+    Author input.
 15. FAP hardening - package Author-safe material from admitted/covered/readiness
     state.
 16. Author prose-only finalization - Author writes only from FAP-safe material.

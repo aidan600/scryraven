@@ -510,6 +510,16 @@ from core.specialist_source_bound_calculation_runtime import (
 from core.specialist_source_bound_calculation_runtime import (
     SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE as SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE_NAME,
 )
+from core.sufficiency_readiness_runtime import (
+    SUFFICIENCY_READINESS_REASON,
+    SufficiencyReadinessRuntimeError,
+    build_sufficiency_readiness_action_inputs,
+    build_sufficiency_readiness_projection,
+    build_sufficiency_readiness_state,
+)
+from core.sufficiency_readiness_runtime import (
+    SUFFICIENCY_READINESS_STAGE as SUFFICIENCY_READINESS_STAGE_NAME,
+)
 
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
@@ -557,6 +567,7 @@ SCRUTINEER_REVIEW_STAGE = SCRUTINEER_REVIEW_STAGE_NAME
 SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE = (
     SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE_NAME
 )
+SUFFICIENCY_READINESS_STAGE = SUFFICIENCY_READINESS_STAGE_NAME
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
 FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE = "followup_provider_job_execution"
@@ -674,6 +685,7 @@ class ActionType(str, Enum):
     SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCE = (
         "specialist_source_bound_calculation_reduce"
     )
+    SUFFICIENCY_READINESS_DECIDE = "sufficiency_readiness_decide"
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
     FOLLOWUP_PROVIDER_JOB_EXECUTE = "followup_provider_job_execute"
@@ -753,6 +765,7 @@ class ObservationType(str, Enum):
     SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCED = (
         "specialist_source_bound_calculation_reduced"
     )
+    SUFFICIENCY_READINESS_DECIDED = "sufficiency_readiness_decided"
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
     FOLLOWUP_PROVIDER_JOB_EXECUTION_OBSERVED = (
@@ -1162,6 +1175,11 @@ class RunState:
     specialist_source_bound_calculation_history: list[dict[str, Any]] = field(
         default_factory=list
     )
+    sufficiency_readiness_state: dict[str, Any] = field(default_factory=dict)
+    sufficiency_readiness_projection: dict[str, Any] = field(default_factory=dict)
+    sufficiency_readiness_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     component_gap_recovery_history: list[dict[str, Any]] = field(
         default_factory=list
     )
@@ -1520,6 +1538,15 @@ class RunState:
             specialist_source_bound_calculation_history=deepcopy(
                 self.specialist_source_bound_calculation_history
             ),
+            sufficiency_readiness_state=deepcopy(
+                self.sufficiency_readiness_state
+            ),
+            sufficiency_readiness_projection=deepcopy(
+                self.sufficiency_readiness_projection
+            ),
+            sufficiency_readiness_history=deepcopy(
+                self.sufficiency_readiness_history
+            ),
             component_gap_recovery_history=deepcopy(
                 self.component_gap_recovery_history
             ),
@@ -1844,6 +1871,9 @@ class KernelTraceProjection:
     specialist_source_bound_calculation_state: Mapping[str, Any]
     specialist_source_bound_calculation_projection: Mapping[str, Any]
     specialist_source_bound_calculation_history: Sequence[Mapping[str, Any]]
+    sufficiency_readiness_state: Mapping[str, Any]
+    sufficiency_readiness_projection: Mapping[str, Any]
+    sufficiency_readiness_history: Sequence[Mapping[str, Any]]
     component_gap_recovery_history: Sequence[Mapping[str, Any]]
     contract_amendment_admission_state: Mapping[str, Any]
     contract_amendment_admission_projection: Mapping[str, Any]
@@ -2054,6 +2084,15 @@ class KernelTraceProjection:
             "specialist_source_bound_calculation_history": [
                 _safe_mapping(item)
                 for item in self.specialist_source_bound_calculation_history
+            ],
+            "sufficiency_readiness_state": _safe_mapping(
+                self.sufficiency_readiness_state
+            ),
+            "sufficiency_readiness_projection": _safe_mapping(
+                self.sufficiency_readiness_projection
+            ),
+            "sufficiency_readiness_history": [
+                _safe_mapping(item) for item in self.sufficiency_readiness_history
             ],
             "component_gap_recovery_history": [
                 _safe_mapping(item)
@@ -4403,6 +4442,52 @@ class RunKernel:
             expected_observation_type=(
                 ObservationType.SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCED
             ),
+        )
+
+    def authorize_sufficiency_readiness(
+        self,
+        *,
+        mode: str = "Balanced",
+        reason: str = SUFFICIENCY_READINESS_REASON,
+    ) -> AuthorizedAction:
+        try:
+            inputs = build_sufficiency_readiness_action_inputs(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                mode=mode,
+                current_answer_contract=(
+                    self.state.current_answer_contract
+                    or self.state.initial_answer_contract
+                ),
+                component_coverage_projection=self.state.component_coverage_projection,
+                component_coverage_history=self.state.component_coverage_history,
+                semantic_observation_admission_projection=(
+                    self.state.semantic_observation_admission_projection
+                ),
+                semantic_observation_admission_history=(
+                    self.state.semantic_observation_admission_history
+                ),
+                scrutineer_review_projection=self.state.scrutineer_review_projection,
+                scrutineer_review_history=self.state.scrutineer_review_history,
+                specialist_source_bound_calculation_projection=(
+                    self.state.specialist_source_bound_calculation_projection
+                ),
+                specialist_source_bound_calculation_history=(
+                    self.state.specialist_source_bound_calculation_history
+                ),
+                followup_search_authorization_projection=self.state.projections.get(
+                    FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
+                    {},
+                ),
+            )
+        except SufficiencyReadinessRuntimeError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SUFFICIENCY_READINESS_STAGE,
+            action_type=ActionType.SUFFICIENCY_READINESS_DECIDE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.SUFFICIENCY_READINESS_DECIDED,
         )
 
     def authorize_followup_authorization_consumption(
@@ -11635,6 +11720,61 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 specialist_projection
             )
+        elif action.action_type is ActionType.SUFFICIENCY_READINESS_DECIDE:
+            try:
+                readiness_state = build_sufficiency_readiness_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    current_answer_contract=(
+                        self.state.current_answer_contract
+                        or self.state.initial_answer_contract
+                    ),
+                    component_coverage_projection=(
+                        self.state.component_coverage_projection
+                    ),
+                    component_coverage_history=self.state.component_coverage_history,
+                    semantic_observation_admission_projection=(
+                        self.state.semantic_observation_admission_projection
+                    ),
+                    semantic_observation_admission_history=(
+                        self.state.semantic_observation_admission_history
+                    ),
+                    scrutineer_review_projection=(
+                        self.state.scrutineer_review_projection
+                    ),
+                    scrutineer_review_history=self.state.scrutineer_review_history,
+                    specialist_source_bound_calculation_projection=(
+                        self.state.specialist_source_bound_calculation_projection
+                    ),
+                    specialist_source_bound_calculation_history=(
+                        self.state.specialist_source_bound_calculation_history
+                    ),
+                    followup_search_authorization_projection=(
+                        self.state.projections.get(
+                            FOLLOWUP_SEARCH_AUTHORIZATION_STAGE,
+                            {},
+                        )
+                    ),
+                    existing_readiness_projection=(
+                        self.state.sufficiency_readiness_projection
+                    ),
+                )
+                readiness_projection = build_sufficiency_readiness_projection(
+                    readiness_state=readiness_state
+                )
+            except SufficiencyReadinessRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.sufficiency_readiness_state = readiness_state
+            self.state.sufficiency_readiness_projection = readiness_projection
+            self.state.sufficiency_readiness_history.append(
+                deepcopy(readiness_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                readiness_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHORIZATION_CONSUME:
             followup_state = _safe_mapping(
                 observation.payload.get("followup_authorization_state")
@@ -14109,6 +14249,7 @@ __all__ = [
     "FOLLOWUP_SEARCH_AUTHORIZATION_STAGE",
     "SCRUTINEER_REVIEW_STAGE",
     "SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE",
+    "SUFFICIENCY_READINESS_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",

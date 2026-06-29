@@ -152,7 +152,8 @@ SearchResultCandidatePacket
 -> AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01 first governed remediation loop
 -> AG-SCRUTINEER-REVIEW-01 ScrutineerReview
 -> AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01 Specialist source-bound calculation
--> next: AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01
+-> AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01 SufficiencyReadiness
+-> next: FAP hardening
 ```
 
 `SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
@@ -275,7 +276,22 @@ Sufficiency, FAP, Author, citation eligibility, source-obligation satisfaction,
 current_answer_contract mutation, or product correctness. Existing Economist
 surfaces remain legacy/passive unless deliberately reused without authority
 revival. The next likely phase is
-`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`.
+FAP hardening.
+
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` is complete as the pre-FAP
+readiness reducer. Use
+`docs/architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md` when working
+near this seam. SufficiencyReadiness is RunKernel-owned and reduces
+component-level and answer-level readiness into `sufficiency_readiness_state`,
+`sufficiency_readiness_projection`, and `sufficiency_readiness_history`. It
+supports `full_answer_ready`, `partial_answer_ready`, `blocked`,
+`followup_required`, `contested`, `insufficient_evidence`, and
+`not_applicable` posture. It emits a safe FAP handoff preview of refs, caveats,
+and prohibited upgrades only. It does not create FinalAnswerPacket, Author
+input, citation eligibility, source-obligation satisfaction,
+current_answer_contract mutation, live calls, or product correctness. Old
+AG-92C Sufficiency/FAP and AG-96/FAP/Author surfaces remain
+legacy/passive/closed unless explicitly reopened.
 
 The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
 old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
@@ -286,8 +302,8 @@ Historical broad Analyst, Economist, and Scrutineer surfaces are not yet a
 coherent new RunKernel/current_answer_contract second-half semantic
 architecture. The current Scrutineer MVP is limited to RunKernel-reduced review
 state over the completed Analyst/admission/coverage/remediation path.
-Partial-answer readiness remains premature until ComponentCoverage, Sufficiency,
-FAP, and Author-safe prerequisites are coherent.
+FAP hardening comes next and should consume SufficiencyReadiness refs/caveats
+without reviving closed AG-92C or AG-96 FAP/Author authority.
 
 The roadmap order is:
 `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
