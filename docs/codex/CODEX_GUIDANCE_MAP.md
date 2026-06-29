@@ -154,7 +154,7 @@ SearchResultCandidatePacket
 -> AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01 Specialist source-bound calculation
 -> AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01 SufficiencyReadiness
 -> AG-FINAL-ANSWER-PACKET-HARDENING-01 hardened FinalAnswerPacket handoff
--> next: Author prose-only finalization
+-> AUTHOR-PROSE-ONLY-FINALIZATION-01 AuthorProseFinalization prose surface
 ```
 
 `SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
@@ -305,8 +305,22 @@ including `packet_created: false` for `not_applicable`. It does not use old
 AG-92C/AG-96 FAP/Author authority, does not execute Author or create prose,
 preserves citation requirements but defers citation eligibility/rendering,
 preserves source-obligation posture but does not satisfy source obligations,
-does not run live calls, and does not claim product correctness. Author
-prose-only finalization comes next.
+does not run live calls, and does not claim product correctness.
+
+`AUTHOR-PROSE-ONLY-FINALIZATION-01` is complete as the prose-only finalization
+surface. Use
+`docs/architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md` when working near this
+seam. AuthorProseFinalization consumes hardened FAP only plus
+AuthorProsePolicy knobs for
+style/format/brevity/source-pass-through/uncertainty, partial-answer,
+blocked-answer, and citation-display presentation. It writes
+`author_prose_state`, `author_prose_projection`, `author_prose_history`, and
+`state.projections["author_prose_finalization"]`. It does not call a model or
+provider, does not execute old Author, does not render citations, does not
+satisfy source obligations, does not claim product correctness, does not mutate
+current_answer_contract, and does not write canonical output to legacy
+`author_observation` / `final_answer_outcome`. AuthorProseConformanceReview is
+dogfood/testing-only, not production-blocking.
 
 The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
 old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
@@ -316,9 +330,8 @@ reopened.
 Historical broad Analyst, Economist, and Scrutineer surfaces are not yet a
 coherent new RunKernel/current_answer_contract second-half semantic
 architecture. The current Scrutineer MVP is limited to RunKernel-reduced review
-state over the completed Analyst/admission/coverage/remediation path.
-Author prose-only finalization comes next and should consume hardened FAP
-refs/caveats without reviving closed AG-92C or AG-96 FAP/Author authority.
+state over the completed Analyst/admission/coverage/remediation path and the
+completed hardened FAP -> AuthorProseFinalization path.
 
 The roadmap order is:
 `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
@@ -336,7 +349,7 @@ The roadmap order is:
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
 `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
-Author prose-only finalization.
+`AUTHOR-PROSE-ONLY-FINALIZATION-01`.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live
 provider, model, search, fetch, and retrieval calls remain closed by default

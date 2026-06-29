@@ -15,6 +15,16 @@ from enum import Enum
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.author_prose_finalization_runtime import (
+    AUTHOR_PROSE_FINALIZATION_REASON,
+    AuthorProseFinalizationRuntimeError,
+    build_author_prose_finalization_action_inputs,
+    build_author_prose_finalization_projection,
+    build_author_prose_finalization_state,
+)
+from core.author_prose_finalization_runtime import (
+    AUTHOR_PROSE_FINALIZATION_STAGE as AUTHOR_PROSE_FINALIZATION_STAGE_NAME,
+)
 from core.component_coverage_reduction_runtime import (
     COMPONENT_COVERAGE_REDUCTION_REASON,
     ComponentCoverageReductionError,
@@ -568,6 +578,7 @@ EVIDENCE_LEDGER_STAGE = "evidence_ledger"
 SEARCH_JUDGMENT_STAGE = "search_judgment"
 SUFFICIENCY_JUDGMENT_STAGE = "sufficiency_judgment"
 FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
+AUTHOR_PROSE_FINALIZATION_STAGE = AUTHOR_PROSE_FINALIZATION_STAGE_NAME
 AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_SEARCH_AUTHORIZATION_STAGE = FOLLOWUP_SEARCH_AUTHORIZATION_STAGE_NAME
 SCRUTINEER_REVIEW_STAGE = SCRUTINEER_REVIEW_STAGE_NAME
@@ -686,6 +697,7 @@ class ActionType(str, Enum):
     SEARCH_JUDGMENT_DECIDE = "search_judgment_decide"
     SUFFICIENCY_JUDGMENT_DECIDE = "sufficiency_judgment_decide"
     FINAL_ANSWER_PACKET_HARDEN = "final_answer_packet_harden"
+    AUTHOR_PROSE_FINALIZE = "author_prose_finalize"
     FINAL_ANSWER_PACKET_PREPARE = "final_answer_packet_prepare"
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_SEARCH_AUTHORIZE = "followup_search_authorize"
@@ -767,6 +779,7 @@ class ObservationType(str, Enum):
     SEARCH_JUDGMENT_DECIDED = "search_judgment_decided"
     SUFFICIENCY_JUDGMENT_DECIDED = "sufficiency_judgment_decided"
     FINAL_ANSWER_PACKET_HARDENED = "final_answer_packet_hardened"
+    AUTHOR_PROSE_FINALIZED = "author_prose_finalized"
     FINAL_ANSWER_PACKET_PREPARED = "final_answer_packet_prepared"
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_SEARCH_AUTHORIZED = "followup_search_authorized"
@@ -1240,6 +1253,9 @@ class RunState:
     author_observation: dict[str, Any] = field(default_factory=dict)
     final_answer_outcome: dict[str, Any] = field(default_factory=dict)
     final_answer_authority_projection: dict[str, Any] = field(default_factory=dict)
+    author_prose_state: dict[str, Any] = field(default_factory=dict)
+    author_prose_projection: dict[str, Any] = field(default_factory=dict)
+    author_prose_history: list[dict[str, Any]] = field(default_factory=list)
     followup_authorization_state: dict[str, Any] = field(default_factory=dict)
     followup_authorization_projection: dict[str, Any] = field(default_factory=dict)
     followup_authorization_history: list[dict[str, Any]] = field(default_factory=list)
@@ -1606,6 +1622,9 @@ class RunState:
             final_answer_authority_projection=deepcopy(
                 self.final_answer_authority_projection
             ),
+            author_prose_state=deepcopy(self.author_prose_state),
+            author_prose_projection=deepcopy(self.author_prose_projection),
+            author_prose_history=deepcopy(self.author_prose_history),
             followup_authorization_state=deepcopy(self.followup_authorization_state),
             followup_authorization_projection=deepcopy(
                 self.followup_authorization_projection
@@ -1910,6 +1929,9 @@ class KernelTraceProjection:
     author_observation: Mapping[str, Any]
     final_answer_outcome: Mapping[str, Any]
     final_answer_authority_projection: Mapping[str, Any]
+    author_prose_state: Mapping[str, Any]
+    author_prose_projection: Mapping[str, Any]
+    author_prose_history: Sequence[Mapping[str, Any]]
     followup_authorization_state: Mapping[str, Any]
     followup_authorization_projection: Mapping[str, Any]
     followup_authorization_history: Sequence[Mapping[str, Any]]
@@ -2168,6 +2190,11 @@ class KernelTraceProjection:
             "final_answer_authority_projection": _safe_mapping(
                 self.final_answer_authority_projection
             ),
+            "author_prose_state": _safe_mapping(self.author_prose_state),
+            "author_prose_projection": _safe_mapping(self.author_prose_projection),
+            "author_prose_history": [
+                _safe_mapping(item) for item in self.author_prose_history
+            ],
             "followup_authorization_state": _safe_mapping(
                 self.followup_authorization_state
             ),
@@ -4536,6 +4563,36 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.FINAL_ANSWER_PACKET_HARDENED,
+        )
+
+    def authorize_author_prose_finalization(
+        self,
+        *,
+        policy: Mapping[str, Any] | None = None,
+        reason: str = AUTHOR_PROSE_FINALIZATION_REASON,
+    ) -> AuthorizedAction:
+        if not self.state.final_answer_authority_projection:
+            raise RunKernelTransitionError(
+                "Author prose finalization requires final_answer_authority_projection"
+            )
+        try:
+            inputs = build_author_prose_finalization_action_inputs(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                final_answer_packet_state=self.state.final_answer_packet,
+                final_answer_authority_projection=(
+                    self.state.final_answer_authority_projection
+                ),
+                policy=policy,
+            )
+        except AuthorProseFinalizationRuntimeError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=AUTHOR_PROSE_FINALIZATION_STAGE,
+            action_type=ActionType.AUTHOR_PROSE_FINALIZE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=ObservationType.AUTHOR_PROSE_FINALIZED,
         )
 
     def authorize_followup_authorization_consumption(
@@ -11652,6 +11709,33 @@ class RunKernel:
             self.state.projections[FINAL_ANSWER_PACKET_STAGE] = deepcopy(
                 fap_projection
             )
+        elif action.action_type is ActionType.AUTHOR_PROSE_FINALIZE:
+            try:
+                author_prose_state = build_author_prose_finalization_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    final_answer_packet_state=self.state.final_answer_packet,
+                    final_answer_authority_projection=(
+                        self.state.final_answer_authority_projection
+                    ),
+                )
+                author_prose_projection = build_author_prose_finalization_projection(
+                    author_prose_state=author_prose_state,
+                    existing_author_prose_projection=(
+                        self.state.author_prose_projection
+                    ),
+                )
+            except AuthorProseFinalizationRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.author_prose_state = author_prose_state
+            self.state.author_prose_projection = author_prose_projection
+            self.state.author_prose_history.append(deepcopy(author_prose_projection))
+            self.state.projections[AUTHOR_PROSE_FINALIZATION_STAGE] = deepcopy(
+                author_prose_projection
+            )
         elif action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE:
             packet_projection = _safe_mapping(
                 observation.payload.get("packet_projection")
@@ -14327,6 +14411,7 @@ def _canonical_sufficiency_judgment_projection(
 
 __all__ = [
     "AUTHOR_EXECUTION_STAGE",
+    "AUTHOR_PROSE_FINALIZATION_STAGE",
     "FINAL_ANSWER_PACKET_STAGE",
     "FOLLOWUP_AUTHORIZATION_STAGE",
     "FOLLOWUP_SEARCH_AUTHORIZATION_STAGE",

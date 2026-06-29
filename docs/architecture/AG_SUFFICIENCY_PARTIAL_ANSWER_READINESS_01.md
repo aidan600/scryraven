@@ -105,4 +105,6 @@ depth/routing, or claim product correctness.
 
 Old AG-92C Sufficiency/FAP and AG-96/FAP/Author surfaces remain
 legacy/passive/closed unless a later phase explicitly reopens them. FAP
-hardening comes next, followed by Author prose-only finalization.
+hardening comes next, followed by Author prose-only finalization. Historical
+handoff note: Author prose-only finalization comes next after hardened FAP;
+`AUTHOR-PROSE-ONLY-FINALIZATION-01` now completes that prose-only surface.
