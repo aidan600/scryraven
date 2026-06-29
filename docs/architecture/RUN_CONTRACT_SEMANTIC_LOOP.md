@@ -6,8 +6,9 @@ Status: Current doctrine after PR #342 /
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and
 `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, refreshed after
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
-`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`, and
-`AG-SCRUTINEER-REVIEW-01`.
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
+`AG-SCRUTINEER-REVIEW-01`, and
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -184,8 +185,12 @@ Required second-half semantic loop:
 21. `AG-SCRUTINEER-REVIEW-01` records RunKernel-reduced ScrutineerReview
     posture over support, conflicts, drift, gaps, coverage, and remediation
     state when mode policy requires it.
-22. SpecialistAnalysisPacket records source-bound calculation/economist-style
-    specialized analysis when needed after the admission bridge path exists.
+22. `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` records RunKernel-reduced
+    Specialist source-bound deterministic calculation state when already
+    source-bound numeric inputs exist. Specialist records calculation posture
+    only; it is not product authority and does not decide ComponentCoverage,
+    Sufficiency, FinalAnswerPacket, Author, citations, source obligations,
+    contract mutation, or product correctness.
 23. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
 24. Sufficiency consumes contract/custody/semantic/coverage/amendment state and decides readiness.
 25. FinalAnswerPacket packages Author-safe material.
@@ -227,7 +232,7 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | SemanticObservation | Controlled RunKernel-authorized promotion from proposal-stage meaning into admitted evidence-relative semantic observations. |
 | EvidenceRelativeAnalysisPacket / AnalystReport | Current standalone proposal-only evidence-relative analysis packet with embedded `analyst_report`; it consumes EvidenceLedger fetch/read custody IDs/digests and injected offline Analyst proposal records, is not SemanticObservation admission, and does not create ComponentCoverage, citation eligibility, source-obligation satisfaction, Sufficiency, FinalAnswerPacket, Author input, readiness, search dispatch, or final prose authority. |
 | FollowupSearchIntentPacket / AnalysisGapSearchProposal | Current proposal-only gap-to-search-intent posture from validated `EvidenceRelativeAnalysisPacket` / `analyst_report.analysis_gap_proposals`. It is not search authorization, not a query plan, does not create SearchExecutorHandoff, does not dispatch search, does not create evidence, and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains required before any executable search work exists. |
-| SpecialistAnalysisPacket | Deferred future specialist packet, starting with source-bound calculation/economist-style reasoning only rather than broad legal or technical interpretation. |
+| Specialist source-bound calculation | RunKernel-reduced deterministic calculation state over already source-bound numeric inputs. Specialist is source-bound calculation only, not broad legal, medical, technical, or generic expert reasoning. It preserves input/formula/unit/caveat/blocker lineage and keeps ComponentCoverage, Sufficiency, FinalAnswerPacket, Author, citation eligibility, source-obligation satisfaction, contract mutation, and product correctness closed. |
 | ScrutineerReview | RunKernel-reduced supervisory review/sign-off layer for Analyst work product, not product authority. It can require remediation and reference FollowupSearchIntent proposal refs, but it does not authorize search or run remediation. Fast has no Scrutineer in MVP, Balanced uses Scrutineer on red flags and should preserve remediation budget when invoked, and Deep requires Scrutineer later without full Deep orchestration in this phase. |
 | AnalysisGapSearchProposal | Current reviewable proposal record inside `FollowupSearchIntentPacket`. It carries gap lineage, hints, and structural review readiness only; it is a proposal, not a dispatch. |
 | ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations and custody bindings exist. |
@@ -405,8 +410,8 @@ Scrutineer later and reserves post-Scrutineer response budget, but full Deep
 orchestration is not implemented here. Deep allows max 3 follow-up loops by
 default and max 4 only with explicit RunKernel extra recovery authorization.
 
-Specialist MVP is deferred and should start as source-bound
-calculation/economist-style reasoning only, not broad legal or technical
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` now adds the first Specialist MVP as
+source-bound deterministic calculation only, not broad legal or technical
 interpretation.
 
 The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
@@ -470,7 +475,32 @@ preserve remediation budget when Scrutineer is invoked. Deep requires
 Scrutineer later and more remediation budget, but full Deep orchestration is not
 implemented by this phase.
 
-## 11. Immediate Roadmap
+## 11. Specialist Source-Bound Calculation
+
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` introduces Specialist as a
+RunKernel-reduced source-bound deterministic calculation seam. Inputs must be
+source-bound and lineage-preserving, with typed numeric values, units, component
+ids, input digests, currentness/source-class posture, caveats, and
+source/custody/content/SemanticObservation/Analyst refs when available.
+
+Supported operators are `sum`, `difference`, `product`, `ratio`, `percentage`,
+`percentage_point_difference`, `simple_rate`, and `weighted_average`.
+Invalid, stale, contradictory, mixed-unit, missing-unit, missing-lineage,
+non-numeric, denominator-zero, or unsupported-formula calculations remain
+blocked, invalid_input, or contested. The runtime does not parse arbitrary
+formulas, execute arbitrary code, infer missing values, or calculate from
+raw/unbounded text.
+
+Specialist is not product authority. A successful Specialist calculation does
+not create ComponentCoverage, Sufficiency, FinalAnswerPacket, Author input,
+citation eligibility, source-obligation satisfaction, current_answer_contract
+mutation, or product correctness. Scrutineer can review Specialist calculation
+posture and flag unsupported calculation, stale input, contradiction, or missing
+source-bound lineage, but Scrutineer does not calculate or authorize Specialist
+output. Existing Economist surfaces remain legacy/passive unless deliberately
+reused without authority revival.
+
+## 12. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
@@ -532,9 +562,9 @@ implemented by this phase.
     over Analyst/admission/coverage/remediation posture. It does not authorize
     search, run remediation, create Sufficiency/FAP/Author/citation/
     source-obligation satisfaction, or claim product correctness.
-13. Source-bound calculation Specialist MVP - deferred specialist start point,
-    not broad legal or technical interpretation.
-14. Sufficiency / partial-answer readiness - later, only after ComponentCoverage,
+13. `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` - completed Specialist start
+    point for source-bound deterministic calculation only.
+14. `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` - next, only after ComponentCoverage,
     Sufficiency, FAP, and Author-safe prerequisites are coherent.
 15. FAP hardening - package Author-safe material from admitted/covered/readiness
     state.

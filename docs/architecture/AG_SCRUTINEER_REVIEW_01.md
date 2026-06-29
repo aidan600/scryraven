@@ -73,5 +73,5 @@ SemanticObservation admission, ComponentCoverage, Sufficiency, FinalAnswerPacket
 state, Author input, citations, source-obligation satisfaction, live calls,
 broker calls, retrieval, model calls, product correctness, or contract mutation.
 
-The next likely phase after Scrutineer is source-bound calculation Specialist
-MVP.
+The next likely phase after Scrutineer was source-bound calculation Specialist MVP,
+now completed by `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`.

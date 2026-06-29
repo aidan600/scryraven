@@ -25,6 +25,7 @@ from core.evidence_relative_analysis_packet import (
     evidence_relative_analysis_packet_ref_from_packet,
     validate_evidence_relative_analysis_packet,
 )
+from core.specialist_source_bound_calculation_runtime import calculation_ref_from_record
 
 SCRUTINEER_REVIEW_SCHEMA_VERSION = "scrutineer_review_ag_scrutineer_review_01_v1"
 SCRUTINEER_REVIEW_ACTION_SCHEMA_VERSION = (
@@ -60,6 +61,8 @@ ISSUE_KINDS = frozenset(
         "followup_attempt_unresolved",
         "closed_surface_violation",
         "lineage_mismatch",
+        "missing_source_bound_lineage",
+        "unsupported_calculation",
     }
 )
 
@@ -241,6 +244,8 @@ def build_scrutineer_review_record(
     semantic_observation_admission_history: Sequence[Mapping[str, Any]] = (),
     component_coverage_projection: Mapping[str, Any] | None = None,
     component_coverage_history: Sequence[Mapping[str, Any]] = (),
+    specialist_source_bound_calculation_projection: Mapping[str, Any] | None = None,
+    specialist_source_bound_calculation_history: Sequence[Mapping[str, Any]] = (),
     followup_search_intent_packet: Mapping[str, Any] | None = None,
     followup_authorization_projection: Mapping[str, Any] | None = None,
     followup_reentry_refs: Mapping[str, Any] | None = None,
@@ -283,11 +288,16 @@ def build_scrutineer_review_record(
         component_coverage_projection,
         component_coverage_history,
     )
+    specialist_calculation_refs = _specialist_calculation_refs(
+        specialist_source_bound_calculation_projection,
+        specialist_source_bound_calculation_history,
+    )
     followup_proposals = _followup_proposals(followup_packet)
     reviewed_refs = _reviewed_artifact_refs(
         analysis_packet=analysis_packet,
         admissions=admissions,
         coverage_refs=coverage_refs,
+        specialist_calculation_refs=specialist_calculation_refs,
         followup_packet=followup_packet,
         followup_authorization_projection=followup_authorization_projection,
         followup_reentry_refs=followup_reentry_refs,
@@ -297,6 +307,7 @@ def build_scrutineer_review_record(
         analysis_packet=analysis_packet,
         admissions=admissions,
         component_coverage_projection=_safe_mapping(component_coverage_projection),
+        specialist_calculation_refs=specialist_calculation_refs,
         followup_proposals=followup_proposals,
         unresolved_component_posture=_safe_mapping(unresolved_component_posture),
         review_pass_kind=pass_kind,
@@ -661,6 +672,7 @@ def _review_issues(
     analysis_packet: Mapping[str, Any],
     admissions: Sequence[Mapping[str, Any]],
     component_coverage_projection: Mapping[str, Any],
+    specialist_calculation_refs: Sequence[Mapping[str, Any]],
     followup_proposals: Sequence[Mapping[str, Any]],
     unresolved_component_posture: Mapping[str, Any],
     review_pass_kind: str,
@@ -739,6 +751,8 @@ def _review_issues(
                 ),
             )
         )
+
+    issues.extend(_specialist_calculation_issues(specialist_calculation_refs))
 
     for gap in gaps:
         followup_ref = _matching_followup_proposal_ref(gap, followup_proposals)
@@ -911,6 +925,92 @@ def _coverage_issues(
     return issues
 
 
+def _specialist_calculation_issues(
+    calculation_refs: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    issues: list[dict[str, Any]] = []
+    for calculation in calculation_refs:
+        status = _clean_token(calculation.get("calculation_status"), limit=80)
+        component_id = _clean_token(calculation.get("component_id"), limit=260)
+        blocker_kinds = {
+            _clean_token(blocker.get("blocker_kind"), limit=120)
+            for blocker in _safe_list(calculation.get("blockers"))
+            if isinstance(blocker, Mapping)
+        }
+        if status in {"blocked", "invalid_input"}:
+            if blocker_kinds & {
+                "missing_source_bound_input",
+                "insufficient_lineage",
+            }:
+                issues.append(
+                    _issue(
+                        "missing_source_bound_lineage",
+                        severity="high",
+                        component_id=component_id,
+                        source_ref=_specialist_calculation_ref(calculation),
+                        recommended_remediation=(
+                            "Keep Specialist calculation blocked until every "
+                            "numeric input carries source/custody/content or "
+                            "SemanticObservation lineage."
+                        ),
+                    )
+                )
+            if blocker_kinds & {
+                "unsupported_formula",
+                "non_numeric_input",
+                "missing_unit",
+                "incompatible_units",
+                "denominator_zero",
+                "invalid_input",
+                "missing_output_unit",
+                "missing_weight",
+            }:
+                issues.append(
+                    _issue(
+                        "unsupported_calculation",
+                        severity="high",
+                        component_id=component_id,
+                        source_ref=_specialist_calculation_ref(calculation),
+                        recommended_remediation=(
+                            "Do not use unsupported, non-numeric, mixed-unit, "
+                            "or unsafe Specialist calculations as support."
+                        ),
+                    )
+                )
+        if status == "contested" or blocker_kinds & {
+            "stale_input",
+            "weak_source_class",
+            "contradictory_input",
+        }:
+            if "contradictory_input" in blocker_kinds:
+                issues.append(
+                    _issue(
+                        "contradiction_unresolved",
+                        severity="high",
+                        component_id=component_id,
+                        source_ref=_specialist_calculation_ref(calculation),
+                        recommended_remediation=(
+                            "Preserve contested Specialist calculation posture "
+                            "until contradictory numeric inputs are resolved."
+                        ),
+                    )
+                )
+            if blocker_kinds & {"stale_input", "weak_source_class"}:
+                issues.append(
+                    _issue(
+                        "currentness_unresolved",
+                        severity="high",
+                        component_id=component_id,
+                        source_ref=_specialist_calculation_ref(calculation),
+                        recommended_remediation=(
+                            "Specialist calculation with stale, unknown, or weak "
+                            "input posture cannot be clean support."
+                        ),
+                    )
+                )
+    return issues
+
+
 def _issue_for_gap(
     gap: Mapping[str, Any],
     *,
@@ -1042,6 +1142,7 @@ def _reviewed_artifact_refs(
     analysis_packet: Mapping[str, Any],
     admissions: Sequence[Mapping[str, Any]],
     coverage_refs: Sequence[Mapping[str, Any]],
+    specialist_calculation_refs: Sequence[Mapping[str, Any]],
     followup_packet: Mapping[str, Any],
     followup_authorization_projection: Mapping[str, Any] | None,
     followup_reentry_refs: Mapping[str, Any] | None,
@@ -1066,6 +1167,10 @@ def _reviewed_artifact_refs(
             ),
             "semantic_observation_admission_refs": [dict(item) for item in admissions],
             "component_coverage_refs": [dict(item) for item in coverage_refs],
+            "specialist_source_bound_calculation_refs": [
+                _specialist_calculation_ref(item)
+                for item in specialist_calculation_refs
+            ],
             "followup_search_intent_ref": followup_search_intent_packet_ref_from_packet(
                 followup_packet
             )
@@ -1119,6 +1224,21 @@ def _coverage_refs(
             continue
         refs.append(_coverage_ref(mapped))
     return tuple(_dedupe_by_digest(refs, "coverage_record_digest"))
+
+
+def _specialist_calculation_refs(
+    projection: Mapping[str, Any] | None,
+    history: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    refs: list[dict[str, Any]] = []
+    for item in [*list(history or ()), projection or {}]:
+        mapped = _safe_mapping(item)
+        if not mapped:
+            continue
+        ref = _specialist_calculation_ref(mapped)
+        if ref:
+            refs.append(ref)
+    return tuple(_dedupe_by_digest(refs, "record_digest"))
 
 
 def _followup_proposals(packet: Mapping[str, Any]) -> tuple[dict[str, Any], ...]:
@@ -1249,6 +1369,48 @@ def _coverage_ref(coverage: Mapping[str, Any]) -> dict[str, Any]:
             "semantic_support_status": coverage.get("semantic_support_status"),
             "currentness_posture": coverage.get("currentness_posture"),
             "followup_need": coverage.get("followup_need"),
+        }
+    )
+
+
+def _specialist_calculation_ref(calculation: Mapping[str, Any]) -> dict[str, Any]:
+    ref = calculation_ref_from_record(calculation)
+    result = _safe_mapping(calculation.get("result"))
+    input_records = [
+        _safe_mapping(item)
+        for item in _safe_list(calculation.get("input_records"))
+        if isinstance(item, Mapping)
+    ]
+    component_id = None
+    for item in input_records:
+        component_id = _clean_token(item.get("component_id"), limit=260)
+        if component_id:
+            break
+    return _without_empty(
+        {
+            **ref,
+            "component_id": component_id,
+            "formula_digest": calculation.get("formula_digest"),
+            "input_count": calculation.get("input_count"),
+            "blocker_count": calculation.get("blocker_count"),
+            "blockers": [
+                {
+                    "blocker_kind": _clean_token(
+                        _safe_mapping(blocker).get("blocker_kind"),
+                        limit=120,
+                    ),
+                    "blocker_digest": _clean_token(
+                        _safe_mapping(blocker).get("blocker_digest"),
+                        limit=128,
+                    ),
+                }
+                for blocker in _safe_list(calculation.get("blockers"))
+                if isinstance(blocker, Mapping)
+            ],
+            "result_digest": result.get("result_digest"),
+            "result_unit": result.get("unit"),
+            "scrutineer_recalculates": False,
+            "scrutineer_authorizes_calculation": False,
         }
     )
 

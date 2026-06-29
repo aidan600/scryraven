@@ -151,7 +151,8 @@ SearchResultCandidatePacket
 -> ComponentCoverage reduction
 -> AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01 first governed remediation loop
 -> AG-SCRUTINEER-REVIEW-01 ScrutineerReview
--> next: source-bound calculation Specialist MVP
+-> AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01 Specialist source-bound calculation
+-> next: AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01
 ```
 
 `SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
@@ -231,8 +232,8 @@ Scrutineer in MVP. Balanced uses Scrutineer on red flags. Deep requires
 Scrutineer later and reserves post-Scrutineer response budget; full Deep
 orchestration is not part of the Scrutineer MVP. Deep allows max 3 follow-up
 loops by default and max 4 only with explicit RunKernel extra recovery
-authorization. Specialist MVP is deferred and should start as source-bound
-calculation/economist-style reasoning only.
+authorization. `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` is now complete as
+source-bound calculation/economist-style reasoning only.
 
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` is complete as the first governed
 remediation loop. FollowupSearchIntent remains proposal-only; RunKernel owns
@@ -258,8 +259,23 @@ If Analyst and Scrutineer remain in conflict, contested posture must be
 preserved for future FAP/Author. Fast has no Scrutineer in MVP. Balanced uses
 Scrutineer on red flags and should preserve remediation budget when Scrutineer
 is invoked. Deep requires Scrutineer later, with more remediation budget, but
-full Deep orchestration is not part of this phase. The next likely phase is
-source-bound calculation Specialist MVP.
+full Deep orchestration is not part of this phase.
+
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01` is complete as the first useful
+Specialist MVP. Use
+`docs/architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md` when working
+near this seam. Specialist is source-bound deterministic calculation only, not
+product authority and not broad legal, medical, technical, or generic expert
+reasoning. RunKernel owns Specialist calculation reduction. Inputs must be
+source-bound and lineage-preserving; invalid, stale, contradictory, mixed-unit,
+non-numeric, missing-lineage, or unsupported-formula calculations remain blocked
+or contested. Scrutineer can review Specialist calculation posture but does not
+calculate or authorize it. Specialist does not decide ComponentCoverage,
+Sufficiency, FAP, Author, citation eligibility, source-obligation satisfaction,
+current_answer_contract mutation, or product correctness. Existing Economist
+surfaces remain legacy/passive unless deliberately reused without authority
+revival. The next likely phase is
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`.
 
 The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
 old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
@@ -286,8 +302,8 @@ The roadmap order is:
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
 `AG-SCRUTINEER-REVIEW-01`,
-source-bound calculation Specialist MVP,
-Sufficiency / partial-answer readiness,
+`AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
 FAP hardening,
 Author prose-only finalization.
 

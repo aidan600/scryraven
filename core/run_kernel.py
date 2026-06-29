@@ -500,6 +500,16 @@ from core.semantic_producer_bundle_commit_runtime import (
     normalize_semantic_producer_bundle_payload,
     stage_semantic_producer_bundle_commit,
 )
+from core.specialist_source_bound_calculation_runtime import (
+    SPECIALIST_SOURCE_BOUND_CALCULATION_REASON,
+    SpecialistSourceBoundCalculationRuntimeError,
+    build_specialist_source_bound_calculation_action_inputs,
+    build_specialist_source_bound_calculation_projection,
+    build_specialist_source_bound_calculation_state,
+)
+from core.specialist_source_bound_calculation_runtime import (
+    SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE as SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE_NAME,
+)
 
 RUN_KERNEL_TRACE_KEY = "run_kernel"
 
@@ -544,6 +554,9 @@ FINAL_ANSWER_PACKET_STAGE = "final_answer_packet"
 AUTHOR_EXECUTION_STAGE = "author_execution"
 FOLLOWUP_SEARCH_AUTHORIZATION_STAGE = FOLLOWUP_SEARCH_AUTHORIZATION_STAGE_NAME
 SCRUTINEER_REVIEW_STAGE = SCRUTINEER_REVIEW_STAGE_NAME
+SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE = (
+    SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE_NAME
+)
 FOLLOWUP_AUTHORIZATION_STAGE = "followup_authorization_consumption"
 FOLLOWUP_EXECUTION_STAGE = "followup_fixture_execution"
 FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE = "followup_provider_job_execution"
@@ -658,6 +671,9 @@ class ActionType(str, Enum):
     AUTHOR_EXECUTE = "author_execute"
     FOLLOWUP_SEARCH_AUTHORIZE = "followup_search_authorize"
     SCRUTINEER_REVIEW_REDUCE = "scrutineer_review_reduce"
+    SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCE = (
+        "specialist_source_bound_calculation_reduce"
+    )
     FOLLOWUP_AUTHORIZATION_CONSUME = "followup_authorization_consume"
     FOLLOWUP_FIXTURE_EXECUTE = "followup_fixture_execute"
     FOLLOWUP_PROVIDER_JOB_EXECUTE = "followup_provider_job_execute"
@@ -734,6 +750,9 @@ class ObservationType(str, Enum):
     AUTHOR_OUTPUT_OBSERVED = "author_output_observed"
     FOLLOWUP_SEARCH_AUTHORIZED = "followup_search_authorized"
     SCRUTINEER_REVIEW_REDUCED = "scrutineer_review_reduced"
+    SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCED = (
+        "specialist_source_bound_calculation_reduced"
+    )
     FOLLOWUP_AUTHORIZATION_CONSUMED = "followup_authorization_consumed"
     FOLLOWUP_EXECUTION_OBSERVED = "followup_execution_observed"
     FOLLOWUP_PROVIDER_JOB_EXECUTION_OBSERVED = (
@@ -1134,6 +1153,15 @@ class RunState:
     scrutineer_review_state: dict[str, Any] = field(default_factory=dict)
     scrutineer_review_projection: dict[str, Any] = field(default_factory=dict)
     scrutineer_review_history: list[dict[str, Any]] = field(default_factory=list)
+    specialist_source_bound_calculation_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    specialist_source_bound_calculation_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    specialist_source_bound_calculation_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     component_gap_recovery_history: list[dict[str, Any]] = field(
         default_factory=list
     )
@@ -1483,6 +1511,15 @@ class RunState:
             scrutineer_review_state=deepcopy(self.scrutineer_review_state),
             scrutineer_review_projection=deepcopy(self.scrutineer_review_projection),
             scrutineer_review_history=deepcopy(self.scrutineer_review_history),
+            specialist_source_bound_calculation_state=deepcopy(
+                self.specialist_source_bound_calculation_state
+            ),
+            specialist_source_bound_calculation_projection=deepcopy(
+                self.specialist_source_bound_calculation_projection
+            ),
+            specialist_source_bound_calculation_history=deepcopy(
+                self.specialist_source_bound_calculation_history
+            ),
             component_gap_recovery_history=deepcopy(
                 self.component_gap_recovery_history
             ),
@@ -1804,6 +1841,9 @@ class KernelTraceProjection:
     scrutineer_review_state: Mapping[str, Any]
     scrutineer_review_projection: Mapping[str, Any]
     scrutineer_review_history: Sequence[Mapping[str, Any]]
+    specialist_source_bound_calculation_state: Mapping[str, Any]
+    specialist_source_bound_calculation_projection: Mapping[str, Any]
+    specialist_source_bound_calculation_history: Sequence[Mapping[str, Any]]
     component_gap_recovery_history: Sequence[Mapping[str, Any]]
     contract_amendment_admission_state: Mapping[str, Any]
     contract_amendment_admission_projection: Mapping[str, Any]
@@ -2004,6 +2044,16 @@ class KernelTraceProjection:
             ),
             "scrutineer_review_history": [
                 _safe_mapping(item) for item in self.scrutineer_review_history
+            ],
+            "specialist_source_bound_calculation_state": _safe_mapping(
+                self.specialist_source_bound_calculation_state
+            ),
+            "specialist_source_bound_calculation_projection": _safe_mapping(
+                self.specialist_source_bound_calculation_projection
+            ),
+            "specialist_source_bound_calculation_history": [
+                _safe_mapping(item)
+                for item in self.specialist_source_bound_calculation_history
             ],
             "component_gap_recovery_history": [
                 _safe_mapping(item)
@@ -4327,6 +4377,32 @@ class RunKernel:
             reason=reason,
             inputs=inputs,
             expected_observation_type=ObservationType.SCRUTINEER_REVIEW_REDUCED,
+        )
+
+    def authorize_specialist_source_bound_calculation(
+        self,
+        *,
+        specialist_source_bound_calculation_record: Mapping[str, Any],
+        reason: str = SPECIALIST_SOURCE_BOUND_CALCULATION_REASON,
+    ) -> AuthorizedAction:
+        try:
+            inputs = build_specialist_source_bound_calculation_action_inputs(
+                run_id=self.state.run_id,
+                request_id=self.state.request_id,
+                specialist_source_bound_calculation_record=(
+                    specialist_source_bound_calculation_record
+                ),
+            )
+        except SpecialistSourceBoundCalculationRuntimeError as exc:
+            raise RunKernelTransitionError(str(exc)) from exc
+        return self.authorize(
+            stage=SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE,
+            action_type=ActionType.SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCE,
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=(
+                ObservationType.SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCED
+            ),
         )
 
     def authorize_followup_authorization_consumption(
@@ -11528,6 +11604,37 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 scrutineer_projection
             )
+        elif action.action_type is (
+            ActionType.SPECIALIST_SOURCE_BOUND_CALCULATION_REDUCE
+        ):
+            try:
+                specialist_state = build_specialist_source_bound_calculation_state(
+                    action_id=action.action_id,
+                    action_inputs=action.inputs,
+                    observation_payload=observation.payload,
+                    run_id=self.state.run_id,
+                    request_id=self.state.request_id,
+                    existing_calculation_projection=(
+                        self.state.specialist_source_bound_calculation_projection
+                    ),
+                )
+                specialist_projection = (
+                    build_specialist_source_bound_calculation_projection(
+                        calculation_state=specialist_state
+                    )
+                )
+            except SpecialistSourceBoundCalculationRuntimeError as exc:
+                raise RunKernelTransitionError(str(exc)) from exc
+            self.state.specialist_source_bound_calculation_state = specialist_state
+            self.state.specialist_source_bound_calculation_projection = (
+                specialist_projection
+            )
+            self.state.specialist_source_bound_calculation_history.append(
+                deepcopy(specialist_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(
+                specialist_projection
+            )
         elif action.action_type is ActionType.FOLLOWUP_AUTHORIZATION_CONSUME:
             followup_state = _safe_mapping(
                 observation.payload.get("followup_authorization_state")
@@ -14001,6 +14108,7 @@ __all__ = [
     "FOLLOWUP_AUTHORIZATION_STAGE",
     "FOLLOWUP_SEARCH_AUTHORIZATION_STAGE",
     "SCRUTINEER_REVIEW_STAGE",
+    "SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",
     "FOLLOWUP_PROVIDER_JOB_EXECUTION_STAGE",
