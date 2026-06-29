@@ -1,8 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01` after PR #342 /
-`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`.
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` after PR #342 /
+`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` and the docs checkpoint.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -98,8 +98,9 @@ Current summary:
   `SearchResultCandidatePacket -> FetchReadContentPacket /
   SanitizedContentReference -> EvidenceLedger custody ->
   EvidenceRelativeAnalysisPacket / AnalystReport -> FollowupSearchIntentPacket /
-  AnalysisGapSearchProposal -> ComponentCoverage reliability proof -> next:
-  SemanticObservation admission bridge -> ComponentCoverage reduction`.
+  AnalysisGapSearchProposal -> ComponentCoverage reliability proof ->
+  SemanticObservation admission bridge -> ComponentCoverage reduction -> next:
+  Scrutineer MVP`.
 - `SearchResultCandidatePacket` is the durable non-evidence candidate handoff
   before fetch/read. It preserves sanitized live-search candidate lineage, but
   search candidates are not evidence, not citation-eligible, and the packet does
@@ -136,10 +137,20 @@ Current summary:
   `component_coverage_reliability_report` showed that ComponentCoverage can
   reduce meaningful support only after admitted `SemanticObservation` exists.
   The packet chain by itself does not admit semantic support.
-- Current next gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, a minimal
-  bridge before Scrutineer or Specialist. It must prove
+- `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` completes the minimal bridge
+  before Scrutineer or Specialist. It is the controlled promotion from Analyst
+  support proposal to admitted SemanticObservation, justified because
+  ComponentCoverage consumes it immediately:
   `EvidenceRelativeAnalysisPacket` support finding -> RunKernel-authorized
   `SemanticObservation` admission -> ComponentCoverage reduction.
+- The bridge is not a new durable proposal packet. ComponentCoverage reduction
+  remains separate and must consume the admitted observation and content binding.
+- The bridge does not create source-obligation satisfaction, citation
+  eligibility, Sufficiency, FinalAnswerPacket, Author input, live search,
+  provider calls, broker calls, retrieval, fetch/read execution, model calls, or
+  product correctness.
+- Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a
+  downstream gap unless solved later without packet sprawl.
 - The packet/bridge budget rule is now explicit: no new packet or bridge unless
   it crosses a trust/raw-data boundary, becomes durable reducer input, needs
   stable downstream IDs/digests consumed by more than one stage, records
@@ -176,8 +187,8 @@ Current summary:
   `AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01`,
   `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`,
   `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`,
-  next `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
-  then Scrutineer MVP,
+  `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
+  next likely gate after this bridge is Scrutineer MVP,
   then source-bound calculation Specialist MVP,
   then Sufficiency / partial-answer readiness,
   then FAP hardening,
