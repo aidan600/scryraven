@@ -1,7 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` after
+`AG-SCRUTINEER-REVIEW-01` after
+`AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, PR #342 /
 `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`, and the docs checkpoint.
 
@@ -13,6 +14,7 @@ For current authority doctrine and Codex routing, read:
 
 - `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md`
 - `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`
+- `docs/architecture/AG_SCRUTINEER_REVIEW_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
@@ -102,7 +104,7 @@ Current summary:
   AnalysisGapSearchProposal -> ComponentCoverage reliability proof ->
   SemanticObservation admission bridge -> ComponentCoverage reduction ->
   AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01 first governed remediation loop ->
-  next: Scrutineer MVP`.
+  ScrutineerReview`.
 - `SearchResultCandidatePacket` is the durable non-evidence candidate handoff
   before fetch/read. It preserves sanitized live-search candidate lineage, but
   search candidates are not evidence, not citation-eligible, and the packet does
@@ -159,9 +161,18 @@ Current summary:
   `FetchReadContentPacket`, `EvidenceLedger`,
   `EvidenceRelativeAnalysisPacket`, `SemanticObservation`, and
   `ComponentCoverage`. Unresolved results remain
-  blocked/follow-up-required/contested. Scrutineer comes next. No
+  blocked/follow-up-required/contested. No
   Sufficiency/FAP/Author/citation/source-obligation satisfaction/product
   correctness is proved.
+- `AG-SCRUTINEER-REVIEW-01` introduces ScrutineerReview as a supervisory
+  review/sign-off layer for Analyst work product, not product authority. It can
+  perform initial review and final verification over Analyst support,
+  SemanticObservation admission, ComponentCoverage posture, FollowupSearchIntent
+  refs, and follow-up remediation results. It can require remediation and point
+  to follow-up proposal refs, but it does not authorize search and does not run
+  remediation. Follow-up authorization remains RunKernel-owned through
+  `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`. If Analyst and Scrutineer
+  remain in conflict, contested posture must be preserved for future FAP/Author.
 - Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a
   downstream gap unless solved later without packet sprawl.
 - The packet/bridge budget rule is now explicit: no new packet or bridge unless
@@ -177,17 +188,21 @@ Current summary:
 - Modes change budget and review depth, not semantic authority. Follow-up policy
   should use logical depth, loop budget, query fanout, and RunKernel approval,
   not one-query-per-proposal. Fast has no Scrutineer in MVP. Balanced uses
-  Scrutineer on red flags. Deep requires Scrutineer and post-Scrutineer
-  response budget, with max 3 follow-up loops by default and max 4 only with
-  explicit RunKernel extra recovery authorization.
+  Scrutineer on red flags and should preserve remediation budget when
+  Scrutineer is invoked. Deep requires Scrutineer later and more
+  post-Scrutineer remediation budget, with max 3 follow-up loops by default and
+  max 4 only with explicit RunKernel extra recovery authorization; full Deep
+  orchestration is not implemented by the Scrutineer MVP.
 - Specialist MVP is deferred and should start as source-bound
   calculation/economist-style reasoning only.
 - The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan
   shadow, old Analyst/Economist/Scrutineer paths, source-class recovery bridges,
   and broad pipeline orchestrator paths are legacy/passive/closed unless
   explicitly reopened.
-- Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent
-  new RunKernel/current_answer_contract second-half semantic architecture.
+- Historical broad Analyst, Economist, and Scrutineer surfaces are not yet a
+  coherent new RunKernel/current_answer_contract second-half semantic
+  architecture. The current Scrutineer MVP is limited to RunKernel-reduced
+  review state over the completed Analyst/admission/coverage/remediation path.
 - Partial-answer readiness is premature until ComponentCoverage, Sufficiency,
   FAP, and Author-safe prerequisites are coherent.
 - The roadmap order is:
@@ -202,7 +217,7 @@ Current summary:
   `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`,
   `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
   `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
-  next likely gate after this loop is Scrutineer MVP,
+  `AG-SCRUTINEER-REVIEW-01`,
   then source-bound calculation Specialist MVP,
   then Sufficiency / partial-answer readiness,
   then FAP hardening,

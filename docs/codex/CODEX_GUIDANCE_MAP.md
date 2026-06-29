@@ -150,7 +150,8 @@ SearchResultCandidatePacket
 -> SemanticObservation admission bridge
 -> ComponentCoverage reduction
 -> AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01 first governed remediation loop
--> next: Scrutineer MVP
+-> AG-SCRUTINEER-REVIEW-01 ScrutineerReview
+-> next: source-bound calculation Specialist MVP
 ```
 
 `SearchResultCandidatePacket` is now the durable non-evidence candidate handoff
@@ -227,10 +228,11 @@ not product follow-up policy. Modes change budget and review depth, not
 semantic authority. Follow-up policy should be based on logical depth, loop
 budget, query fanout, and RunKernel approval, not one-query-per-proposal. Fast has no
 Scrutineer in MVP. Balanced uses Scrutineer on red flags. Deep requires
-Scrutineer and reserves post-Scrutineer response budget; Deep allows max 3
-follow-up loops by default and max 4 only with explicit RunKernel extra
-recovery authorization. Specialist MVP is deferred and should start as
-source-bound calculation/economist-style reasoning only.
+Scrutineer later and reserves post-Scrutineer response budget; full Deep
+orchestration is not part of the Scrutineer MVP. Deep allows max 3 follow-up
+loops by default and max 4 only with explicit RunKernel extra recovery
+authorization. Specialist MVP is deferred and should start as source-bound
+calculation/economist-style reasoning only.
 
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01` is complete as the first governed
 remediation loop. FollowupSearchIntent remains proposal-only; RunKernel owns
@@ -239,16 +241,35 @@ live dispatch. Fixture-backed reentry proves the future product path without
 live providers through SearchResultCandidatePacket, FetchReadContentPacket,
 EvidenceLedger, EvidenceRelativeAnalysisPacket, SemanticObservation, and
 ComponentCoverage. Unresolved results remain blocked/follow-up-required/
-contested. Scrutineer comes next. No Sufficiency/FAP/Author/citation/
-source-obligation satisfaction/product correctness is proved.
+contested. No Sufficiency/FAP/Author/citation/source-obligation
+satisfaction/product correctness is proved.
+
+`AG-SCRUTINEER-REVIEW-01` is complete as the first useful Scrutineer MVP. Use
+`docs/architecture/AG_SCRUTINEER_REVIEW_01.md` when working near this seam.
+Scrutineer is a supervisory review/sign-off layer for Analyst work product, not
+product authority. It reviews Analyst support, admitted SemanticObservation
+posture, ComponentCoverage posture, FollowupSearchIntent refs, follow-up
+authorization refs, fixture-backed reentry refs, and unresolved blocked/
+follow-up/contested posture. Scrutineer can perform initial review and final
+verification, require remediation, and point to follow-up proposal refs, but it
+does not authorize search and does not run remediation. Follow-up authorization
+remains RunKernel-owned through `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`.
+If Analyst and Scrutineer remain in conflict, contested posture must be
+preserved for future FAP/Author. Fast has no Scrutineer in MVP. Balanced uses
+Scrutineer on red flags and should preserve remediation budget when Scrutineer
+is invoked. Deep requires Scrutineer later, with more remediation budget, but
+full Deep orchestration is not part of this phase. The next likely phase is
+source-bound calculation Specialist MVP.
 
 The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
 old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
 pipeline orchestrator paths are legacy/passive/closed unless explicitly
 reopened.
 
-Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
-RunKernel/current_answer_contract second-half semantic architecture.
+Historical broad Analyst, Economist, and Scrutineer surfaces are not yet a
+coherent new RunKernel/current_answer_contract second-half semantic
+architecture. The current Scrutineer MVP is limited to RunKernel-reduced review
+state over the completed Analyst/admission/coverage/remediation path.
 Partial-answer readiness remains premature until ComponentCoverage, Sufficiency,
 FAP, and Author-safe prerequisites are coherent.
 
@@ -264,7 +285,7 @@ The roadmap order is:
 `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`, then
 `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
-next likely gate after this loop is Scrutineer MVP,
+`AG-SCRUTINEER-REVIEW-01`,
 source-bound calculation Specialist MVP,
 Sufficiency / partial-answer readiness,
 FAP hardening,
@@ -297,6 +318,8 @@ content is explicitly pasted into the current prompt or committed here.
   post-#342 SemanticObservation admission / ComponentCoverage checkpoint, and
   `docs/architecture/AG_FOLLOWUP_SEARCH_AUTHORIZATION_REENTRY_01.md` for the
   first governed remediation loop, then
+  `docs/architecture/AG_SCRUTINEER_REVIEW_01.md` for the supervisory
+  Analyst/admission/coverage/remediation review layer, then
   `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md` for the current doctrine
   connecting AG-SEM semantic authority to ComponentSearchPlan, Scout,
   SearchExecutor, EvidenceLedger, SufficiencyJudgment, FinalAnswerPacket, and
