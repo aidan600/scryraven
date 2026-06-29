@@ -27,6 +27,12 @@ are repo files; use repo-visible files and the current phase prompt.
   generic client, writes sanitized output under `output/`, and stops the broker.
 - **Proof class and actual app delta questions:** read
   [PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md).
+- **Current path registry and quarantine classifications:** read
+  [../architecture/AG_CURRENT_PATH_QUARANTINE_01.md](../architecture/AG_CURRENT_PATH_QUARANTINE_01.md)
+  when a phase needs to distinguish current authority path, passive/supporting
+  projections, fixture-only proof, offline harnesses, live-search-only
+  validation, product-facing dry-run proof, legacy/historical surfaces, and
+  closed surfaces.
 - **Validation buckets, high-custody tiers, and timeout reporting:** read
   [VALIDATION_BUCKETS.md](VALIDATION_BUCKETS.md) and
   [CI_VALIDATION_ERGONOMICS.md](CI_VALIDATION_ERGONOMICS.md). Choose the
@@ -69,6 +75,12 @@ SearchWork, QueryPlan, and SearchExecutorHandoff are work-description or
 handoff surfaces only; they do not decide answerability, source-obligation
 satisfaction, final readiness, citation eligibility, partial-answer readiness,
 or Author handoff.
+
+`AG_CURRENT_PATH_QUARANTINE_01.md` is the current registry for proof class,
+consumer seams, current/legacy/passive/closed status, old-path treatment,
+human-reviewable output posture, explicit non-proofs, and live-validation
+status. It is quarantine/classification only and does not prove product
+behavior.
 
 Historical completed baseline retained for context: PR #318 completed
 ComponentSearchPlan naming / subordination cleanup; PR #319 /
@@ -373,6 +385,8 @@ content is explicitly pasted into the current prompt or committed here.
   context, not current next-step doctrine. For historical AG-96 context, read
   `docs/architecture/AG96_CURRENT_STATE_AND_NEXT_CHOICES.md`.
 - **Integrated run-contract semantic loop:** read
+  `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md` for the current path
+  registry and consumer-seam matrix, then
   `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`,
   `docs/architecture/AG_SEMANTIC_OBSERVATION_ADMISSION_BRIDGE_01.md` for the
   post-#342 SemanticObservation admission / ComponentCoverage checkpoint, and

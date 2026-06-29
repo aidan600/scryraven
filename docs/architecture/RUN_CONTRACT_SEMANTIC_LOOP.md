@@ -11,9 +11,14 @@ Status: Current doctrine after PR #342 /
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`, and
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`, and
 `AG-FINAL-ANSWER-PACKET-HARDENING-01`, and
-`AUTHOR-PROSE-ONLY-FINALIZATION-01`.
+`AUTHOR-PROSE-ONLY-FINALIZATION-01`, and
+`AG-CURRENT-PATH-QUARANTINE-01`.
 
-Proof class: `docs_architecture_update`.
+Proof class: `docs_only`.
+
+For the current path registry, proof-class map, consumer-seam matrix, legacy
+quarantine labels, and explicit non-proofs, read
+`docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md`.
 
 The front half is now coherent through SearchExecutorHandoff:
 
@@ -598,7 +603,21 @@ product correctness, and does not mutate current_answer_contract.
 AuthorProseConformanceReview is dogfood/testing-only. It checks for authority
 laundering in tests and dogfood review, but it is not production-blocking.
 
-## 15. Immediate Roadmap
+## 15. What This Document Does Not Prove
+
+This document and the quarantine registry do not prove:
+
+- ordinary-query execution;
+- source acquisition quality;
+- fetch/read survival on real sources;
+- semantic support from messy live evidence;
+- citation rendering;
+- citation eligibility in user-visible output;
+- source-obligation satisfaction;
+- product correctness;
+- product-quality Author prose.
+
+## 16. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
