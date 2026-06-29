@@ -6,6 +6,10 @@ behavior changes.
 
 Cross-reference: [RETRIEVAL_AND_FAILURE_UX_ROADMAP.md](RETRIEVAL_AND_FAILURE_UX_ROADMAP.md).
 
+Current semantic-coverage productization roadmap: see
+`architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`. The current next
+implementation gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`.
+
 ## Implemented in codebase
 
 - **P0 — Query typing, utilization, retries:** Router emits `query_type` / entity signals; [`core/retrieval_quality.py`](../core/retrieval_quality.py) implements utilization scoring and disambiguation retries; orchestrator logs metrics to `output/execution_log.jsonl`.

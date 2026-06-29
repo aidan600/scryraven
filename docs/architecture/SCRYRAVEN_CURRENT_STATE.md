@@ -1,8 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-LIVE-XAXIS-VALIDATION-01A` PR2 after PR #330 /
-`AG-SEARCH-EXECUTOR-HANDOFF-01`.
+`AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01` after PR #342 /
+`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`.
 
 This file used to contain a long Controller-era rollup under a current-looking
 filename. That body is preserved as historical record at
@@ -11,6 +11,7 @@ filename. That body is preserved as historical record at
 For current authority doctrine and Codex routing, read:
 
 - `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md`
+- `docs/architecture/AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
@@ -32,10 +33,11 @@ Current summary:
   RunKernel / RunAuthority governs action authorization, accepted contract
   state, and reducer-gated mutation; Scout, SearchPlannerRevision, and
   SearchExecutorHandoff are workers; EvidenceLedger owns custody only after
-  admissible sanitized content exists; SemanticObservation and ComponentCoverage
-  own evidence-relative meaning and support; SufficiencyJudgment decides
-  readiness; FinalAnswerPacket packages Author-safe handoff; Author writes
-  prose only.
+  admissible sanitized content exists; SemanticObservation admission is the
+  controlled promotion from proposal-stage meaning to admitted meaning;
+  ComponentCoverage consumes admitted meaning and custody bindings; Sufficiency
+  decides readiness; FinalAnswerPacket packages Author-safe handoff; Author
+  writes prose only.
 - The coherent front half is:
   `SearchPlanner -> initial_answer_contract -> Scout -> SearchPlannerRevision ->
   amendment admission/application -> current_answer_contract ->
@@ -92,14 +94,12 @@ Current summary:
 - `core/offline_search_executor_bridge.py` remains legacy/offline scaffolding
   for the old X-axis proof path. It should be demoted, retired, or ignored for
   the new handoff-consuming live path.
-- The second-half semantic packet/report chain is:
+- The current semantic-coverage chain is:
   `SearchResultCandidatePacket -> FetchReadContentPacket /
   SanitizedContentReference -> EvidenceLedger custody ->
   EvidenceRelativeAnalysisPacket / AnalystReport -> FollowupSearchIntentPacket /
-  AnalysisGapSearchProposal -> SpecialistAnalysisPacket when needed ->
-  ScrutineerReview -> ComponentCoverageRecord proposals ->
-  ContractAmendmentRecord proposals -> SufficiencyJudgment ->
-  FinalAnswerPacket -> Author prose only`.
+  AnalysisGapSearchProposal -> ComponentCoverage reliability proof -> next:
+  SemanticObservation admission bridge -> ComponentCoverage reduction`.
 - `SearchResultCandidatePacket` is the durable non-evidence candidate handoff
   before fetch/read. It preserves sanitized live-search candidate lineage, but
   search candidates are not evidence, not citation-eligible, and the packet does
@@ -131,27 +131,28 @@ Current summary:
   SearchExecutorHandoff, does not dispatch search, does not create evidence,
   and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains
   required before any executable search work exists.
-- Current next gate is ComponentCoverage reliability proof, not another
-  standalone proposal packet. The current chain through
-  `FollowupSearchIntentPacket` is useful, but it must prove consumption into
-  ComponentCoverage or expose the missing bridge before Scrutineer, Specialist,
-  Sufficiency, FAP, or Author work proceeds. The phase-focus proof artifact is
-  `component_coverage_reliability_report`.
-- If the proof exposes `SemanticObservation/admission bridge` as the missing
-  reducer input, the next phase should be a minimal
-  `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` before Scrutineer or
-  Specialist.
-- The packet budget rule is now explicit: no new packet unless it crosses a
-  trust/raw-data boundary, becomes durable reducer input, needs stable
-  downstream IDs/digests, records canonical state, or prevents raw/private
-  leakage. A packet is suspect if it only restates lineage, only says closed
-  flags remain false, is only consumed by its own tests, or creates another
-  proposal layer without reduction.
+- `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` completed the
+  ComponentCoverage reliability proof. The phase-focus
+  `component_coverage_reliability_report` showed that ComponentCoverage can
+  reduce meaningful support only after admitted `SemanticObservation` exists.
+  The packet chain by itself does not admit semantic support.
+- Current next gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`, a minimal
+  bridge before Scrutineer or Specialist. It must prove
+  `EvidenceRelativeAnalysisPacket` support finding -> RunKernel-authorized
+  `SemanticObservation` admission -> ComponentCoverage reduction.
+- The packet/bridge budget rule is now explicit: no new packet or bridge unless
+  it crosses a trust/raw-data boundary, becomes durable reducer input, needs
+  stable downstream IDs/digests consumed by more than one stage, records
+  canonical or reducer-admitted state, prevents raw/private/provider leakage, or
+  removes a named blocker for an existing consumer. A packet or bridge is
+  suspect if it only restates lineage, only says closed flags remain false, is
+  only consumed by its own tests, creates another proposal layer without
+  reduction, or has no immediate consumer in the same or next phase.
 - Broker is local/private validation plumbing, not installed-product authority
   and not product follow-up policy.
-- Modes change budget and review depth, not authority. Follow-up policy should
-  use logical depth, loop budget, RunKernel approval, and query fanout, not
-  one-query-per-proposal. Fast has no Scrutineer in MVP. Balanced uses
+- Modes change budget and review depth, not semantic authority. Follow-up policy
+  should use logical depth, loop budget, query fanout, and RunKernel approval,
+  not one-query-per-proposal. Fast has no Scrutineer in MVP. Balanced uses
   Scrutineer on red flags. Deep requires Scrutineer and post-Scrutineer
   response budget, with max 3 follow-up loops by default and max 4 only with
   explicit RunKernel extra recovery authorization.
@@ -163,8 +164,8 @@ Current summary:
   explicitly reopened.
 - Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent
   new RunKernel/current_answer_contract second-half semantic architecture.
-- Partial-answer readiness is premature until an evidence-relative
-  Analyst/Specialist/Scrutineer/Sufficiency/FAP packet chain exists.
+- Partial-answer readiness is premature until ComponentCoverage, Sufficiency,
+  FAP, and Author-safe prerequisites are coherent.
 - The roadmap order is:
   `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
   `AG-LIVE-XAXIS-VALIDATION-01A`,
@@ -174,7 +175,13 @@ Current summary:
   `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01`,
   `AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01`,
   `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`,
-  then later `AG-PARTIAL-ANSWER-READINESS-01`.
+  `AG-DOC-SEMANTIC-COVERAGE-CHECKPOINT-01`,
+  next `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`,
+  then Scrutineer MVP,
+  then source-bound calculation Specialist MVP,
+  then Sufficiency / partial-answer readiness,
+  then FAP hardening,
+  then Author prose-only finalization.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
   history, not the immediate post-#330 search-only validation plan.
 - Passive/shadow surfaces are not product readiness.

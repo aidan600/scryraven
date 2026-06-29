@@ -79,6 +79,7 @@ DOCS = (
     ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
     ROOT / "docs" / "architecture" / "AG_COMPONENT_COVERAGE_RELIABILITY_PROOF_01.md",
+    ROOT / "docs" / "architecture" / "AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md",
 )
 
 REPORT_NAME = "component_coverage_reliability_report"
@@ -879,14 +880,18 @@ def test_static_import_and_call_guards_keep_closed_surfaces_closed() -> None:
 
 def test_docs_record_component_coverage_reliability_proof_posture() -> None:
     required = (
-        "Current next gate is ComponentCoverage reliability proof",
-        "no new standalone proposal packet",
+        "ComponentCoverage reliability proof is complete",
+        "Current next gate is `AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01`",
+        "must not create another durable proposal packet",
         "SemanticObservation/admission bridge",
-        "packet budget rule",
-        "A packet is suspect",
+        "packet/bridge budget rule",
+        "A packet or bridge is suspect",
+        "EvidenceRelativeAnalysisPacket support finding",
+        "RunKernel-authorized SemanticObservation admission",
+        "ComponentCoverage reduction",
         "Broker is local/private validation plumbing",
-        "Modes change budget and review depth, not authority",
-        "logical depth, loop budget, RunKernel approval, and query fanout",
+        "Modes change budget and review depth, not semantic authority",
+        "logical depth, loop budget, query fanout, and RunKernel approval",
         "Fast has no Scrutineer in MVP",
         "Balanced uses Scrutineer on red flags",
         "Deep requires Scrutineer",
