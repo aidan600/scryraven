@@ -106,6 +106,15 @@ def test_case_a_full_answer_prose_uses_hardened_fap_only() -> None:
     assert projection["answer_text"]
     assert not projection["answer_text"].lstrip().startswith("{")
     assert "hardened packet" in projection["answer_text"]
+    assert any(block.get("block_text") for block in projection["answer_blocks"])
+    assert all("body" not in block for block in projection["answer_blocks"])
+    assert any(
+        block.get("block_text")
+        for block in kernel.state.author_prose_state["answer_blocks"]
+    )
+    assert all(
+        "body" not in block for block in kernel.state.author_prose_state["answer_blocks"]
+    )
     assert projection["mandatory_caveats"]
     assert projection["prohibited_upgrades"]
     assert projection["prohibited_claims"]
@@ -353,6 +362,12 @@ def test_case_j_closed_surfaces_static_and_runtime_guards() -> None:
     runtime_text = RUNTIME_MODULE.read_text(encoding="utf-8")
     assert "AUTHOR_EXECUTE" not in runtime_text
     assert "citation_eligible\": True" not in runtime_text
+    assert '"body",' in runtime_text
+    assert '"raw_text",' in runtime_text
+    assert '"bounded_text",' in runtime_text
+    assert '"prompt",' in runtime_text
+    assert '"provider_payload",' in runtime_text
+    assert '"model_response",' in runtime_text
     run_kernel_source = RUN_KERNEL_MODULE.read_text(encoding="utf-8")
     assert "AUTHOR_PROSE_FINALIZE" in run_kernel_source
     assert "author_prose_state" in run_kernel_source

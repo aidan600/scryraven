@@ -1101,19 +1101,19 @@ def _format_answer_text(
         lines: list[str] = []
         for block in blocks:
             title = block.get("title")
-            body = block.get("body")
+            block_text = block.get("block_text")
             items = _text_list(block.get("items"), limit=1_000)
             if title:
                 lines.append(f"{title}:")
-            if body:
-                lines.append(f"- {body}")
+            if block_text:
+                lines.append(f"- {block_text}")
             lines.extend(f"- {item}" for item in items)
         return "\n".join(lines)
 
     paragraphs: list[str] = []
     for block in blocks:
         title = block.get("title")
-        body = _clean_text(block.get("body"), limit=2_000)
+        block_text = _clean_text(block.get("block_text"), limit=2_000)
         items = _text_list(block.get("items"), limit=1_000)
         if policy.format_profile is FormatProfile.ANSWER_THEN_EVIDENCE and title:
             prefix = f"{title}: "
@@ -1122,8 +1122,8 @@ def _format_answer_text(
         else:
             prefix = ""
         text_parts = []
-        if body:
-            text_parts.append(body)
+        if block_text:
+            text_parts.append(block_text)
         text_parts.extend(items)
         if text_parts:
             paragraphs.append(prefix + " ".join(text_parts))
@@ -1230,13 +1230,13 @@ def _component_label(entry: Mapping[str, Any]) -> str:
 def _block(
     block_type: str,
     title: str,
-    body: str | None,
+    block_text: str | None,
     items: Sequence[str],
 ) -> dict[str, Any]:
     return {
         "block_type": block_type,
         "title": title,
-        "body": body,
+        "block_text": block_text,
         "items": list(items),
     }
 
