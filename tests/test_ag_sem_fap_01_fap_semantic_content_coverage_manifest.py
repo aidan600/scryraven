@@ -13,6 +13,7 @@ import pytest
 
 from core.final_answer_packet import (
     FINAL_ANSWER_PACKET_SEMANTIC_CONTENT_COVERAGE_REF_PROJECTION_SCHEMA_VERSION,
+    _safe_json,
 )
 from core.final_answer_runtime_adapter import build_final_answer_packet
 from core.run_authority_sufficiency import (
@@ -182,6 +183,59 @@ def _expected_source_digest() -> str:
     ).hexdigest()
 
 
+def _stable_safe_digest(value: Any) -> str:
+    return sha256(
+        json.dumps(
+            _safe_json(value),
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _expected_serialized_projection_ref(
+    projection: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected = {
+        "schema_version": projection["schema_version"],
+        "available": True,
+        "source_authority": projection["source_authority"],
+        "source_schema_version": projection["source_schema_version"],
+        "source_projection_digest": projection["source_projection_digest"],
+        "semantic_state_facts_digest": projection["semantic_state_facts_digest"],
+        "accepted_contract_digest": projection["accepted_contract_digest"],
+        "content_refs_available": True,
+        "coverage_refs_available": True,
+        "component_ref_count": len(projection["component_refs"]),
+        "coverage_record_ref_count": len(projection["coverage_record_refs"]),
+        "semantic_observation_ref_count": len(
+            projection["semantic_observation_refs"]
+        ),
+        "sanitized_content_ref_count": len(projection["sanitized_content_ref_ids"]),
+        "content_ref_digest_count": len(projection["content_ref_digests"]),
+        "semantic_ref_evidence_id_count": len(
+            projection["semantic_ref_evidence_ids"]
+        ),
+        "semantic_source_ref_binding_count": len(
+            projection["semantic_source_ref_bindings"]
+        ),
+        "source_obligation_ref_count": len(projection["source_obligation_refs"]),
+        "raw_content_included": False,
+        "bounded_text_included": False,
+        "prompt_visible": False,
+        "author_payload_visible": False,
+        "model_request_visible": False,
+        "final_text_included": False,
+    }
+    material_refs = projection.get("author_materialization_content_refs")
+    if material_refs:
+        expected["author_materialization_content_ref_count"] = len(material_refs)
+        expected["author_materialization_content_ref_digest"] = _stable_safe_digest(
+            material_refs
+        )
+    return expected
+
+
 def _walk_keys(value: Any) -> set[str]:
     if isinstance(value, dict):
         keys = set(value)
@@ -231,12 +285,25 @@ def test_fap_projection_derives_refs_and_digests_from_sufficiency_only() -> None
     assert projection["author_payload_visible"] is False
     assert projection["model_request_visible"] is False
     assert projection["final_text_included"] is False
+    serialized_projection = _expected_serialized_projection_ref(projection)
     assert packet.to_dict()["semantic_content_coverage_ref_projection"] == (
-        projection
+        serialized_projection
     )
     assert packet.to_trace_fragment()["final_answer_packet"][
         "semantic_content_coverage_ref_projection"
-    ] == projection
+    ] == serialized_projection
+    for full_ref_key in (
+        "component_refs",
+        "coverage_record_refs",
+        "semantic_observation_refs",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "semantic_ref_evidence_ids",
+        "semantic_source_ref_bindings",
+        "source_obligation_refs",
+        "author_materialization_content_refs",
+    ):
+        assert full_ref_key not in serialized_projection
 
 
 def test_fap_manifest_enriches_available_content_and_coverage_refs() -> None:
@@ -255,24 +322,39 @@ def test_fap_manifest_enriches_available_content_and_coverage_refs() -> None:
     assert manifest["source_projection_digest"] == projection[
         "source_projection_digest"
     ]
-    assert manifest["component_refs"] == [COMPONENT_REF]
-    assert manifest["coverage_record_refs"] == [COVERAGE_REF]
-    assert manifest["semantic_observation_refs"] == [OBSERVATION_REF]
-    assert manifest["sanitized_content_ref_ids"] == [CONTENT_REF_ID]
-    assert manifest["content_ref_digests"] == [CONTENT_DIGEST]
-    assert manifest["semantic_ref_evidence_ids"] == [SEMANTIC_EVIDENCE_ID]
-    assert manifest["semantic_source_ref_bindings"] == [SEMANTIC_SOURCE_BINDING]
-    assert manifest["source_obligation_refs"] == [SOURCE_OBLIGATION_REF]
+    assert manifest["component_ref_count"] == len(projection["component_refs"])
+    assert manifest["coverage_record_ref_count"] == len(
+        projection["coverage_record_refs"]
+    )
+    assert manifest["semantic_observation_ref_count"] == len(
+        projection["semantic_observation_refs"]
+    )
+    assert manifest["sanitized_content_ref_count"] == len(
+        projection["sanitized_content_ref_ids"]
+    )
+    assert manifest["content_ref_digest_count"] == len(
+        projection["content_ref_digests"]
+    )
+    assert manifest["semantic_ref_evidence_id_count"] == len(
+        projection["semantic_ref_evidence_ids"]
+    )
+    assert manifest["semantic_source_ref_binding_count"] == len(
+        projection["semantic_source_ref_bindings"]
+    )
+    assert manifest["author_materialization_content_ref_count"] == len(
+        projection["author_materialization_content_refs"]
+    )
+    assert manifest["author_materialization_content_ref_digest"] == _stable_safe_digest(
+        projection["author_materialization_content_refs"]
+    )
+    assert manifest["source_obligation_ref_count"] == len(
+        projection["source_obligation_refs"]
+    )
     assert manifest["evidence_ids"] == [packet.evidence_allowed[0].evidence_id]
     assert manifest["semantic_packet_evidence_binding_available"] is True
     assert manifest["semantic_packet_evidence_binding_count"] == 1
     assert manifest["semantic_packet_evidence_binding_digest"]
-    assert manifest["semantic_packet_evidence_bindings"][0][
-        "origin_evidence_ref_id"
-    ] == SEMANTIC_EVIDENCE_ID
-    assert manifest["semantic_packet_evidence_bindings"][0][
-        "packet_evidence_id"
-    ] == packet.evidence_allowed[0].evidence_id
+    assert "semantic_packet_evidence_bindings" not in manifest
     assert manifest["citation_source_ids"] == [101]
     assert manifest["raw_content_included"] is False
     assert manifest["bounded_text_included"] is False
@@ -281,8 +363,20 @@ def test_fap_manifest_enriches_available_content_and_coverage_refs() -> None:
     assert manifest["author_payload_ref_envelope_available"] is True
     assert manifest["model_request_visible"] is False
     assert manifest["final_text_included"] is False
-    assert "coverage_record_ids" not in manifest
-    assert "coverage_record_digests" not in manifest
+    for full_ref_key in (
+        "component_refs",
+        "coverage_record_refs",
+        "coverage_record_ids",
+        "coverage_record_digests",
+        "semantic_observation_refs",
+        "sanitized_content_ref_ids",
+        "content_ref_digests",
+        "semantic_ref_evidence_ids",
+        "semantic_source_ref_bindings",
+        "source_obligation_refs",
+        "author_materialization_content_refs",
+    ):
+        assert full_ref_key not in manifest
 
 
 @pytest.mark.parametrize(
@@ -323,7 +417,7 @@ def test_unavailable_sufficiency_projection_preserves_deferred_manifest_behavior
     assert "semantic_observation_refs" not in manifest
 
 
-def test_fap_projection_does_not_change_author_payload_or_citation_surfaces() -> None:
+def test_fap_projection_adds_controlled_context_without_changing_citation_surfaces() -> None:
     packet = _packet()
     packet_without_projection = replace(
         packet,
@@ -341,9 +435,12 @@ def test_fap_projection_does_not_change_author_payload_or_citation_surfaces() ->
         author_effort="low",
     )
 
-    assert payload.prompt == payload_without_projection.prompt
+    assert payload.prompt != payload_without_projection.prompt
+    assert "CONTROLLED SEMANTIC CONTEXT" in payload.prompt
+    assert "CONTROLLED SEMANTIC CONTEXT" in payload.authority_block
+    assert "CONTROLLED SEMANTIC CONTEXT" not in payload_without_projection.prompt
     assert payload.authority_payload == payload_without_projection.authority_payload
-    assert payload.authority_block == payload_without_projection.authority_block
+    assert payload.authority_block != payload_without_projection.authority_block
     assert payload.semantic_content_coverage_ref_envelope
     assert payload_without_projection.semantic_content_coverage_ref_envelope == {}
     assert packet.citation_records == packet_without_projection.citation_records
@@ -469,8 +566,26 @@ def test_fap_projection_raw_leakage_scan() -> None:
         "full_trace",
         "logs",
     }
-    for item in scanned:
+    exported_scanned = (
+        packet.to_dict()["semantic_content_coverage_ref_projection"],
+        packet.semantic_evidence_authority_manifest,
+        payload.semantic_content_coverage_ref_envelope,
+        payload.to_trace_ref(),
+    )
+    for item in exported_scanned:
         assert _walk_keys(item).isdisjoint(forbidden_keys)
+    assert "author_materialization_content_refs" not in _walk_keys(
+        packet.to_dict()["semantic_content_coverage_ref_projection"]
+    )
+    assert "author_materialization_content_refs" not in _walk_keys(
+        packet.semantic_evidence_authority_manifest
+    )
+    assert "author_materialization_content_refs" not in _walk_keys(
+        payload.semantic_content_coverage_ref_envelope
+    )
+    assert "author_materialization_content_refs" not in _walk_keys(
+        payload.to_trace_ref()
+    )
 
 
 def test_static_guards_keep_fap_projection_out_of_closed_surfaces() -> None:
