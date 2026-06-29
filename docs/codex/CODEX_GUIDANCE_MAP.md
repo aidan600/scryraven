@@ -186,6 +186,37 @@ SearchExecutorHandoff, does not dispatch search, does not create evidence, and
 RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains required
 before any executable search work exists.
 
+Current next gate is ComponentCoverage reliability proof, not another standalone
+proposal packet. Use
+`docs/architecture/AG_COMPONENT_COVERAGE_RELIABILITY_PROOF_01.md` and the
+phase-focus `component_coverage_reliability_report` posture when working near
+this seam. The current chain through `FollowupSearchIntentPacket` is useful, but
+it must prove consumption into ComponentCoverage or expose the missing bridge.
+If the proof exposes `SemanticObservation/admission bridge` as the missing
+consumer path, the next phase is a minimal
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` before Scrutineer or Specialist.
+
+The packet budget rule: no new packet unless it crosses a trust/raw-data
+boundary, becomes durable reducer input, needs stable downstream IDs/digests,
+records canonical state, or prevents raw/private leakage. A packet is suspect if
+it only restates lineage, only says closed flags remain false, is only consumed
+by its own tests, or creates another proposal layer without reduction.
+
+Broker is local/private validation plumbing, not installed-product authority and
+not product follow-up policy. Modes change budget and review depth, not
+authority. Follow-up policy should be based on logical depth, loop budget,
+RunKernel approval, and query fanout, not one-query-per-proposal. Fast has no
+Scrutineer in MVP. Balanced uses Scrutineer on red flags. Deep requires
+Scrutineer and reserves post-Scrutineer response budget; Deep allows max 3
+follow-up loops by default and max 4 only with explicit RunKernel extra
+recovery authorization. Specialist MVP is deferred and should start as
+source-bound calculation/economist-style reasoning only.
+
+The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
+old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
+pipeline orchestrator paths are legacy/passive/closed unless explicitly
+reopened.
+
 Existing Analyst, Economist, and Scrutineer surfaces are not yet a coherent new
 RunKernel/current_answer_contract second-half semantic architecture.
 Partial-answer readiness is later, after the
@@ -198,7 +229,8 @@ The roadmap order is:
 `AG-FETCH-READ-CONTENT-REFERENCE-01`,
 `AG-EVIDENCE-LEDGER-CANDIDATE-CUSTODY-01`,
 `AG-ANALYST-EVIDENCE-RELATIVE-REPORT-01`,
-`AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01`, then later
+`AG-ANALYSIS-GAP-FOLLOWUP-SEARCH-01`,
+`AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01`, then later
 `AG-PARTIAL-ANSWER-READINESS-01`.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live

@@ -164,13 +164,18 @@ Required second-half semantic loop:
     Analyst gap proposals into proposal-only follow-up search intent; this is
     reviewable structure, not authorization, not a query plan, and not
     SearchExecutorHandoff/search dispatch/evidence.
-17. SpecialistAnalysisPacket records specialized analysis when needed.
-18. ScrutineerReview reviews support, conflicts, drift, and gaps.
-19. ComponentCoverageRecord proposals bind admitted observations to components.
-20. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
-21. SufficiencyJudgment consumes contract/custody/semantic/coverage/amendment state and decides readiness.
-22. FinalAnswerPacket packages Author-safe material.
-23. Author writes prose only from FAP-safe material.
+17. ComponentCoverage reliability proof must show whether the packet chain can
+    feed meaningful ComponentCoverage outcomes, or expose missing bridges. It is
+    no new standalone proposal packet.
+18. If required, a minimal SemanticObservation/admission bridge turns
+    source-bound Analyst support proposals into admitted semantic observations.
+19. SpecialistAnalysisPacket records specialized analysis when needed.
+20. ScrutineerReview reviews support, conflicts, drift, and gaps.
+21. ComponentCoverageRecord proposals bind admitted observations to components.
+22. ContractAmendmentRecord proposals add/revise/supersede obligations when evidence changes meaning.
+23. SufficiencyJudgment consumes contract/custody/semantic/coverage/amendment state and decides readiness.
+24. FinalAnswerPacket packages Author-safe material.
+25. Author writes prose only from FAP-safe material.
 ```
 
 PR #323 proved this offline blocked X-axis after a component-shaped plan already
@@ -325,7 +330,43 @@ Runtime success requires:
 - RunKernel or the correct owner authorizes/reduces/acts;
 - focused test proves the real consumer path.
 
-## 8. Immediate Roadmap
+## 8. ComponentCoverage Reliability Gate
+
+Current next gate is ComponentCoverage reliability proof. The current chain
+through `FollowupSearchIntentPacket` is coherent, but it must prove consumption
+before the architecture adds another durable packet. The phase-focus artifact is
+`component_coverage_reliability_report`.
+
+The packet budget rule: no new packet unless it crosses a trust/raw-data
+boundary, becomes durable reducer input, needs stable downstream IDs/digests,
+records canonical state, or prevents raw/private leakage. A packet is suspect if
+it only restates lineage, only says closed flags remain false, is only consumed
+by its own tests, or creates another proposal layer without reduction.
+
+If this proof exposes `SemanticObservation/admission bridge` as the missing
+consumer path, the next implementation gate is a minimal
+`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` before Scrutineer or Specialist.
+
+Broker is local/private validation plumbing, not installed-product authority
+and not product follow-up policy. Modes change budget and review depth, not
+authority. Follow-up policy should be based on logical depth, loop budget,
+RunKernel approval, and query fanout rather than one-query-per-proposal.
+
+Fast has no Scrutineer in MVP. Balanced uses Scrutineer on red flags. Deep
+requires Scrutineer and reserve post-Scrutineer response budget. Deep allows
+max 3 follow-up loops by default and max 4 only with explicit RunKernel extra
+recovery authorization.
+
+Specialist MVP is deferred and should start as source-bound
+calculation/economist-style reasoning only, not broad legal or technical
+interpretation.
+
+The AG-96 followup stack, offline SearchExecutor bridge, SearchWorkPlan shadow,
+old Analyst/Economist/Scrutineer paths, source-class recovery bridges, and broad
+pipeline orchestrator paths are legacy/passive/closed unless explicitly
+reopened.
+
+## 9. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
@@ -366,7 +407,10 @@ Runtime success requires:
    SearchExecutorHandoff, does not dispatch search, does not create evidence,
    and RunKernel/SearchPlanner/SearchExecutorHandoff authorization remains
    required.
-8. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
+8. `AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01` - prove whether the current
+   packet chain can be consumed into ComponentCoverage outcomes, or identify
+   the exact missing bridge without adding another durable packet.
+9. `AG-PARTIAL-ANSWER-READINESS-01` - later, only after the
    Analyst/Specialist/Scrutineer/Sufficiency/FAP prerequisites exist as a
    coherent evidence-relative chain.
 
