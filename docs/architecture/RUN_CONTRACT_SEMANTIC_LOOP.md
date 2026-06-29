@@ -9,7 +9,8 @@ Status: Current doctrine after PR #342 /
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
 `AG-SCRUTINEER-REVIEW-01`, and
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`, and
-`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`.
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`, and
+`AG-FINAL-ANSWER-PACKET-HARDENING-01`.
 
 Proof class: `docs_architecture_update`.
 
@@ -70,7 +71,8 @@ EvidenceLedger records custody.
 SemanticObservation admission promotes proposal-stage meaning into admitted meaning.
 ComponentCoverage consumes admitted meaning and custody bindings.
 Sufficiency decides readiness.
-FinalAnswerPacket packages Author-safe handoff.
+Hardened FinalAnswerPacket consumes SufficiencyReadiness and packages an
+Author-safe handoff.
 Author writes prose only.
 ```
 
@@ -203,8 +205,13 @@ Required second-half semantic loop:
     `not_applicable`. It does not create FinalAnswerPacket, Author input,
     citation eligibility, source-obligation satisfaction,
     current_answer_contract mutation, live calls, or product correctness.
-25. FinalAnswerPacket hardening packages Author-safe material from admitted,
-    covered, readiness-reduced state.
+25. `AG-FINAL-ANSWER-PACKET-HARDENING-01` opens the hardened FAP handoff
+    surface. It consumes SufficiencyReadiness, uses the existing canonical
+    `final_answer_packet` stage/state slot, preserves
+    full/partial/blocked/follow-up/contested/insufficient/not-applicable
+    posture, defers citation eligibility/rendering, preserves
+    source-obligation posture without satisfying source obligations, and does
+    not execute Author or create prose.
 26. Author writes prose only from FAP-safe material.
 ```
 
@@ -251,7 +258,7 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | AnswerContractAuthorityMap | Passive authority map over components, custody, binding, readiness, and FAP state. It does not mutate the contract. |
 | SufficiencyReadiness | RunKernel-owned pre-FAP readiness reducer. It produces component-level and answer-level readiness (`full_answer_ready`, `partial_answer_ready`, `blocked`, `followup_required`, `contested`, `insufficient_evidence`, `not_applicable`) plus safe FAP handoff preview refs and caveats. It does not create FinalAnswerPacket, Author input, citation eligibility, source-obligation satisfaction, current_answer_contract mutation, live calls, or product correctness. |
 | SufficiencyJudgment | Owns answerability/readiness decision after prerequisite custody, semantic, coverage, and amendment inputs exist. |
-| FinalAnswerPacket | Owns Author-safe handoff. |
+| FinalAnswerPacket | RunKernel-owned hardened FAP handoff. It consumes SufficiencyReadiness and writes the canonical `final_answer_packet` stage/state slot without using old AG-92C/AG-96 FAP/Author authority. It preserves full/partial/blocked/follow-up/contested/insufficient/not-applicable posture, preserves citation requirements while deferring citation eligibility/rendering, preserves source-obligation posture without satisfying source obligations, and does not execute Author or create prose. |
 | Author | Prose-only; no custody, support, readiness, citation, or contract authority. |
 
 Historical broad Analyst, Economist, and Scrutineer runtime surfaces are not yet
@@ -533,9 +540,33 @@ prose, citation eligibility, source-obligation satisfaction,
 current_answer_contract mutation, live calls, provider/broker/retrieval/
 fetch/read/model behavior, or product correctness. Old AG-92C Sufficiency/FAP
 and AG-96/FAP/Author surfaces remain legacy/passive/closed unless explicitly
-reopened. FAP hardening comes next.
+reopened.
 
-## 13. Immediate Roadmap
+## 13. FinalAnswerPacket Hardening
+
+`AG-FINAL-ANSWER-PACKET-HARDENING-01` opens the hardened FAP handoff surface as
+RunKernel.FinalAnswerPacket. It consumes SufficiencyReadiness and writes the
+existing canonical `final_answer_packet` stage/state slot:
+`state.final_answer_packet`, `state.final_answer_authority_projection`, and
+`state.projections["final_answer_packet"]`.
+
+The reducer maps `full_answer_ready`, `partial_answer_ready`, `blocked`,
+`followup_required`, `contested`, `insufficient_evidence`, and
+`not_applicable` into `full_answer_packet_ready`,
+`partial_answer_packet_ready`, `blocked_answer_packet`,
+`followup_required_packet`, `contested_answer_packet`,
+`insufficient_evidence_packet`, and `not_applicable`. For `not_applicable`, it
+records a no-packet posture with `packet_created: false` and no normal
+`packet_id`.
+
+The hardened FAP does not use old AG-92C/AG-96 FAP/Author authority, does not
+execute Author or create prose, does not create executable Author input, does
+not mutate `current_answer_contract`, does not run live calls, and does not
+claim product correctness. It preserves citation requirements but defers
+citation eligibility/rendering. It preserves source-obligation posture but does
+not satisfy source obligations. Author prose-only finalization comes next.
+
+## 14. Immediate Roadmap
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
@@ -603,8 +634,11 @@ reopened. FAP hardening comes next.
     RunKernel-owned readiness reduction for full/partial/blocked/follow-up/
     contested/insufficient/not-applicable posture without creating FAP or
     Author input.
-15. FAP hardening - package Author-safe material from admitted/covered/readiness
-    state.
+15. `AG-FINAL-ANSWER-PACKET-HARDENING-01` - completed hardened FAP handoff.
+    It consumes SufficiencyReadiness and preserves
+    full/partial/blocked/follow-up/contested/insufficient/not-applicable posture
+    without Author prose, citation rendering, source-obligation satisfaction,
+    live calls, or product-correctness claims.
 16. Author prose-only finalization - Author writes only from FAP-safe material.
 
 The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning

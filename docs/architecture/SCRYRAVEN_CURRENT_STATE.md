@@ -1,7 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01` after
+`AG-FINAL-ANSWER-PACKET-HARDENING-01` after
+`AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
 `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
 `AG-SCRUTINEER-REVIEW-01`,
 `AG-FOLLOWUP-SEARCH-AUTHORIZATION-REENTRY-01`,
@@ -19,6 +20,7 @@ For current authority doctrine and Codex routing, read:
 - `docs/architecture/AG_SCRUTINEER_REVIEW_01.md`
 - `docs/architecture/AG_SPECIALIST_SOURCE_BOUND_CALCULATION_01.md`
 - `docs/architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md`
+- `docs/architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
@@ -43,8 +45,9 @@ Current summary:
   admissible sanitized content exists; SemanticObservation admission is the
   controlled promotion from proposal-stage meaning to admitted meaning;
   ComponentCoverage consumes admitted meaning and custody bindings; Sufficiency
-  decides readiness; FinalAnswerPacket packages Author-safe handoff; Author
-  writes prose only.
+  decides readiness; hardened FinalAnswerPacket consumes SufficiencyReadiness
+  and packages an Author-safe handoff in the canonical `final_answer_packet`
+  stage/state slot; Author writes prose only.
 - The coherent front half is:
   `SearchPlanner -> initial_answer_contract -> Scout -> SearchPlannerRevision ->
   amendment admission/application -> current_answer_contract ->
@@ -198,6 +201,20 @@ Current summary:
   satisfaction, current_answer_contract mutation, live calls, or product
   correctness. It emits only a safe FAP handoff preview of refs, caveats, and
   prohibited upgrades.
+- `AG-FINAL-ANSWER-PACKET-HARDENING-01` opens the hardened FAP handoff surface.
+  It consumes SufficiencyReadiness and writes the existing canonical
+  `final_answer_packet` stage/state slot: `state.final_answer_packet`,
+  `state.final_answer_authority_projection`, and
+  `state.projections["final_answer_packet"]`. It preserves
+  full/partial/blocked/follow-up/contested/insufficient/not-applicable posture
+  as `full_answer_packet_ready`, `partial_answer_packet_ready`,
+  `blocked_answer_packet`, `followup_required_packet`,
+  `contested_answer_packet`, `insufficient_evidence_packet`, and
+  `not_applicable`. It does not use old AG-92C/AG-96 FAP/Author authority,
+  does not execute Author or create prose, preserves citation requirements but
+  defers citation eligibility/rendering, preserves source-obligation posture
+  but does not satisfy source obligations, runs no live calls, and claims no
+  product correctness.
 - Blocked/follow-up gap-to-ComponentCoverage blocker lineage remains a
   downstream gap unless solved later without packet sprawl.
 - The packet/bridge budget rule is now explicit: no new packet or bridge unless
@@ -230,7 +247,8 @@ Current summary:
   architecture. The current Scrutineer MVP is limited to RunKernel-reduced
   review state over the completed Analyst/admission/coverage/remediation path.
 - Old AG-92C Sufficiency/FAP and AG-96/FAP/Author surfaces remain
-  legacy/passive/closed unless explicitly reopened. FAP hardening comes next.
+  legacy/passive/closed unless explicitly reopened. Author prose-only
+  finalization comes next.
 - The roadmap order is:
   `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
   `AG-LIVE-XAXIS-VALIDATION-01A`,
@@ -246,7 +264,7 @@ Current summary:
   `AG-SCRUTINEER-REVIEW-01`,
   `AG-SPECIALIST-SOURCE-BOUND-CALCULATION-01`,
   `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
-  then FAP hardening,
+  `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
   then Author prose-only finalization.
 - The historical broad `AG-LIVE-BOUND-01` product-run plan is later planning
   history, not the immediate post-#330 search-only validation plan.
