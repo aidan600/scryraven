@@ -57,6 +57,7 @@ def offline_balanced_run_config(
     ordinary_live_source_custody_anchor_groups: Sequence[Any] = (),
     enable_ordinary_live_semantic_coverage: bool = False,
     enable_ordinary_live_authority_consolidation: bool = False,
+    enable_ordinary_live_main_runkernel_coverage: bool = False,
 ) -> RunConfig:
     return RunConfig(
         query=query,
@@ -95,6 +96,9 @@ def offline_balanced_run_config(
         ),
         enable_ordinary_live_authority_consolidation=(
             enable_ordinary_live_authority_consolidation
+        ),
+        enable_ordinary_live_main_runkernel_coverage=(
+            enable_ordinary_live_main_runkernel_coverage
         ),
     )
 
@@ -358,6 +362,7 @@ def run_offline_ordinary_pipeline(
     ordinary_live_source_custody_anchor_groups: Sequence[Any] = (),
     enable_ordinary_live_semantic_coverage: bool = False,
     enable_ordinary_live_authority_consolidation: bool = False,
+    enable_ordinary_live_main_runkernel_coverage: bool = False,
 ) -> tuple[dict[str, Any], Any]:
     captured = install_handoff_capture(monkeypatch, capture_stages=capture_stages)
     deps = harness.deps()
@@ -392,6 +397,9 @@ def run_offline_ordinary_pipeline(
             ),
             enable_ordinary_live_authority_consolidation=(
                 enable_ordinary_live_authority_consolidation
+            ),
+            enable_ordinary_live_main_runkernel_coverage=(
+                enable_ordinary_live_main_runkernel_coverage
             ),
         ),
         deps,

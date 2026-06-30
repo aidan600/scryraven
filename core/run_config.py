@@ -105,6 +105,9 @@ class RunConfig:
     # Optional ordinary-path authority consolidation precondition. Defaults preserve behavior.
     enable_ordinary_live_authority_consolidation: bool = False
 
+    # Optional ordinary main RunKernel coverage repair. Defaults preserve behavior.
+    enable_ordinary_live_main_runkernel_coverage: bool = False
+
 
 @dataclass
 class RunDeps:
