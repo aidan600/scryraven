@@ -50,6 +50,10 @@ def test_generates_three_reviewable_author_prose_packets(tmp_path: Path) -> None
     assert partial["author_prose_output"]["unresolved_component_ids"] == [
         "component:optional-context"
     ]
+    assert partial["scenario"]["current_answer_contract_ref"]["component_count"] == 2
+    assert "component:optional-context" in partial["scenario"][
+        "current_answer_contract_ref"
+    ]["component_ids"]
 
     assert contested["sufficiency_readiness_status"]["final_readiness_status"] == (
         "contested"
@@ -158,6 +162,38 @@ def test_static_script_guards_avoid_old_author_and_old_fap_imports() -> None:
     assert forbidden_calls.isdisjoint(calls)
 
 
+def test_static_script_guards_partial_scenario_against_contract_mutation() -> None:
+    tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+
+    function_names = {
+        node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)
+    }
+    calls = _called_names(tree)
+    assert "_add_component" not in function_names
+    assert "_add_component" not in calls
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign | ast.AnnAssign | ast.AugAssign):
+            targets = list(getattr(node, "targets", ())) or [node.target]
+            for target in targets:
+                assert not _contains_attr_or_key(
+                    target,
+                    "current_answer_contract",
+                )
+                assert not _contains_attr_or_key(
+                    target,
+                    "accepted_answer_component_count",
+                )
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            assert not (
+                node.func.attr == "append"
+                and _contains_attr_or_key(
+                    node.func.value,
+                    "accepted_answer_component_refs",
+                )
+            )
+
+
 def test_docs_note_records_command_scenarios_and_non_proofs() -> None:
     text = DOC.read_text(encoding="utf-8")
 
@@ -207,3 +243,24 @@ def _imports_and_calls(path: Path) -> tuple[set[str], set[str]]:
             elif isinstance(func, ast.Attribute):
                 called_names.add(func.attr)
     return imported_names, called_names
+
+
+def _called_names(tree: ast.AST) -> set[str]:
+    called_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                called_names.add(func.id)
+            elif isinstance(func, ast.Attribute):
+                called_names.add(func.attr)
+    return called_names
+
+
+def _contains_attr_or_key(node: ast.AST, name: str) -> bool:
+    for child in ast.walk(node):
+        if isinstance(child, ast.Attribute) and child.attr == name:
+            return True
+        if isinstance(child, ast.Constant) and child.value == name:
+            return True
+    return False
