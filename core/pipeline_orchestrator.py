@@ -113,6 +113,10 @@ from core.lifecycle_trace_projection import (
 from core.lifecycle_trace_projection import (
     weak_corpus_lifecycle_facts as _weak_corpus_lifecycle_facts,
 )
+from core.live_ordinary_candidate_handoff_runtime import (
+    ORDINARY_LIVE_CANDIDATE_HANDOFF_TRACE_KEY,
+    execute_ordinary_live_candidate_handoff,
+)
 from core.nutrition_author_notes import (
     _format_nutrition_partial_evidence_author_note as _format_nutrition_partial_evidence_author_note,  # noqa: F401
 )
@@ -1017,6 +1021,52 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     query_type = router_query_preparation_contract.query_type
     primary_entity = router_query_preparation_contract.primary_entity
     entities_list = router_query_preparation_contract.entities_list
+
+    ordinary_live_candidate_handoff_projection: dict[str, Any] = {}
+    if config.enable_ordinary_live_candidate_handoff:
+        candidate_handoff_kernel = RunKernel.start(
+            run_id=f"{run_id}:ordinary-live-candidate-handoff",
+            request_id=f"{session_id}:ordinary-live-candidate-handoff",
+            request={
+                "parent_run_id": run_id,
+                "parent_request_id": session_id,
+                "mode": strategy,
+                "current_date": current_date,
+                "runtime_consumer": "core.pipeline_orchestrator.run_pipeline",
+            },
+        )
+        ordinary_live_candidate_handoff = execute_ordinary_live_candidate_handoff(
+            run_kernel=candidate_handoff_kernel,
+            query=query,
+            requested_mode=strategy,
+            run_contract_projection=run_contract_projection,
+            route_projection=run_kernel.state.projections.get("route_request", {}),
+            core_topic=core_topic,
+            candidate_results=config.ordinary_live_candidate_handoff_results,
+            provider_authorized=config.ordinary_live_candidate_handoff_provider,
+        )
+        ordinary_live_candidate_handoff_projection = (
+            ordinary_live_candidate_handoff.projection
+        )
+        ordinary_live_candidate_handoff_projection.update(
+            {
+                "parent_run_kernel_run_id": run_kernel.state.run_id,
+                "candidate_handoff_run_kernel_run_id": (
+                    candidate_handoff_kernel.state.run_id
+                ),
+                "candidate_handoff_run_kernel_request_id": (
+                    candidate_handoff_kernel.state.request_id
+                ),
+                "candidate_handoff_state_owner": (
+                    "ordinary_live_candidate_handoff_run_kernel"
+                ),
+                "main_answer_kernel_semantic_state_preserved_before_retrieval": (
+                    not run_kernel.state.initial_answer_contract
+                    and not run_kernel.state.semantic_observation_admission_history
+                    and not run_kernel.state.component_coverage_history
+                ),
+            }
+        )
 
     all_passages: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
@@ -4012,6 +4062,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         code_version_metadata_builder=current_code_version_metadata,
     )
     execution_trace = post_author_output_packaging.execution_trace
+    if ordinary_live_candidate_handoff_projection:
+        execution_trace[ORDINARY_LIVE_CANDIDATE_HANDOFF_TRACE_KEY] = (
+            ordinary_live_candidate_handoff_projection
+        )
     output_word_count = post_author_output_packaging.output_word_count
     execution_log_entry = post_author_output_packaging.execution_log_entry
     persistence_side_effect_result = execute_persistence_side_effects(

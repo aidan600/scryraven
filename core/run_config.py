@@ -86,6 +86,13 @@ class RunConfig:
     # Optional source-custody policy. None preserves ordinary CLI/UI behavior.
     source_custody_policy: SourceCustodyPolicy | None = None
 
+    # Optional ordinary-path candidate handoff repair. Defaults preserve CLI/UI behavior.
+    enable_ordinary_live_candidate_handoff: bool = False
+    ordinary_live_candidate_handoff_results: (
+        list[dict[str, Any]] | dict[str, Any]
+    ) = field(default_factory=list)
+    ordinary_live_candidate_handoff_provider: str = "offline-fake-search"
+
 
 @dataclass
 class RunDeps:
