@@ -27,6 +27,7 @@ from core.contract_amendment_record import (  # noqa: E402
 from core.live_search_validation_runtime import (  # noqa: E402
     LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP,
     LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE,
+    LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
     LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP,
     build_live_search_validation_observation_payload,
 )
@@ -278,6 +279,17 @@ class FrontHalf:
     output_dir: Path
 
 
+@dataclass(frozen=True, slots=True)
+class InProcessLiveCandidateHandoff:
+    """In-memory-only carrier for replay consumers that need the live RunKernel."""
+
+    run_kernel: RunKernel
+    candidate_packet: dict[str, Any]
+    validation_packet: dict[str, Any]
+    sanitized_provider_results: tuple[dict[str, Any], ...]
+    provider_results_ref: dict[str, Any]
+
+
 class DeterministicPassportFeePlannerAdapter:
     """Repo-visible deterministic adapter; never calls a model or provider."""
 
@@ -447,6 +459,120 @@ def reduce_results(
         encoding="utf-8",
     )
     return validation_packet
+
+
+def reduce_existing_sanitized_provider_results_in_process(
+    *,
+    query: str,
+    provider_results_path: str | Path,
+    output_dir: str | Path = DEFAULT_OUTPUT_DIR,
+) -> InProcessLiveCandidateHandoff:
+    """Replay existing sanitized provider results while preserving RunKernel.
+
+    This helper performs no provider, broker, search, fetch/read, model, or
+    retrieval call.  It exists only for in-process consumers that must keep the
+    RunKernel authority lineage alive; the returned object must not be
+    serialized.
+    """
+
+    target = _phase_output_dir(output_dir)
+    results_path = _phase_output_path(provider_results_path)
+    front_half = build_front_half(query=query, output_dir=target)
+    sanitized_results, envelope = load_sanitized_provider_results(results_path)
+    task_id = front_half.selected_search_task_ids[0]
+    action = front_half.kernel.authorize_live_search_validation(
+        selected_search_task_ids=front_half.selected_search_task_ids,
+        provider_authorized=DEFAULT_PROVIDER,
+        provider_call_cap=MAX_PROVIDER_CALLS,
+        results_per_task_cap=MAX_RESULTS,
+        parent_current_contract_version=front_half.kernel.state.current_answer_contract[
+            "accepted_contract_version"
+        ],
+        parent_current_contract_digest=front_half.kernel.state.current_answer_contract[
+            "accepted_contract_digest"
+        ],
+        handoff_id=front_half.kernel.state.search_executor_handoff_state[
+            "handoff_id"
+        ],
+        handoff_digest=front_half.kernel.state.search_executor_handoff_state[
+            "handoff_digest"
+        ],
+    )
+    payload = build_live_search_validation_observation_payload(
+        action=action,
+        current_answer_contract=front_half.kernel.state.current_answer_contract,
+        search_executor_handoff_state=(
+            front_half.kernel.state.search_executor_handoff_state
+        ),
+        provider_used=DEFAULT_PROVIDER,
+        provider_results_by_task={task_id: sanitized_results},
+        provider_calls_attempted_count=0,
+        provider_calls_completed_count=0,
+        execution_mode=LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
+        broker_invoked=False,
+        live_provider_called=False,
+    )
+    front_half.kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=ObservationType.LIVE_SEARCH_VALIDATED,
+            status=RunStageStatus.COMPLETED,
+            payload=payload,
+        )
+    )
+    candidate_packet = validate_search_result_candidate_packet(
+        build_search_result_candidate_packet_from_live_validation_state(
+            front_half.kernel.state.live_search_validation_state
+        )
+    )
+    official_current = any(
+        appears_official_current_government_source(result)
+        for result in sanitized_results
+    )
+    candidate_packet_status = _candidate_packet_status(candidate_packet)
+    result, failure_layer = _candidate_acquisition_result(
+        sanitized_results=sanitized_results,
+        official_current=official_current,
+        candidate_packet_status=candidate_packet_status,
+    )
+    validation_packet = _base_packet(
+        front_half=front_half,
+        query=query,
+        provider_used=envelope.get("provider") or DEFAULT_PROVIDER,
+        provider_calls_attempted=0,
+        provider_calls_completed=0,
+        broker_invoked=False,
+        live_provider_called=False,
+        sanitized_provider_results=sanitized_results,
+        search_result_candidate_packet=candidate_packet,
+        likely_acquisition_result=result,
+        likely_failure_layer=failure_layer,
+        budget_exhausted=False,
+    )
+    validation_packet.update(
+        {
+            "packet_kind": "limited_live_search_candidate_in_process_replay_packet",
+            "sanitized_provider_results_replayed_from_existing_local_output": True,
+            "provider_search_calls_performed_by_replay": 0,
+            "broker_calls_performed_by_replay": 0,
+            "model_calls_performed_by_replay": 0,
+            "fetch_read_calls_performed_by_replay": 0,
+            "runkernel_preserved_for_handoff": True,
+            "candidate_packet_json_is_output_not_state_source": True,
+            "projection_to_runkernel_rehydration": False,
+        }
+    )
+    return InProcessLiveCandidateHandoff(
+        run_kernel=front_half.kernel,
+        candidate_packet=candidate_packet,
+        validation_packet=validation_packet,
+        sanitized_provider_results=tuple(dict(item) for item in sanitized_results),
+        provider_results_ref={
+            "path": _rel(results_path),
+            "digest": _file_digest(results_path),
+            "result_count": len(sanitized_results),
+        },
+    )
 
 
 def build_front_half(*, query: str, output_dir: Path) -> FrontHalf:
@@ -1388,6 +1514,10 @@ def _json_safe(value: Any) -> Any:
 
 def _normalize_key(key: Any) -> str:
     return str(key or "").strip().casefold().replace("-", "_").replace(" ", "_")
+
+
+def _file_digest(path: str | Path) -> str:
+    return sha256(Path(path).read_bytes()).hexdigest()
 
 
 def _rel(path: str | Path) -> str:

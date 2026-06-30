@@ -34,6 +34,9 @@ from core.run_kernel import RunKernel  # noqa: E402
 from core.search_result_candidate_packet import (  # noqa: E402
     validate_search_result_candidate_packet,
 )
+from scripts.ag_limited_live_search_candidate_01 import (  # noqa: E402
+    InProcessLiveCandidateHandoff,
+)
 
 PHASE = "AG-LIVE-SOURCE-SURVIVAL-FETCH-READ-CUSTODY-01"
 MODE = "PROOF"
@@ -332,6 +335,17 @@ class FetchReadResult:
     retrieved_or_observed_at: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class InProcessSourceSurvivalHandoff:
+    """In-memory-only carrier for replay consumers that need the live RunKernel."""
+
+    run_kernel: RunKernel
+    source_survival_packet: dict[str, Any]
+    fetch_read_content_packet: dict[str, Any]
+    sanitized_content_reference: dict[str, Any]
+    evidence_ledger_projection: dict[str, Any]
+
+
 class _RedirectLimiter(HTTPRedirectHandler):
     def __init__(self) -> None:
         super().__init__()
@@ -501,6 +515,89 @@ def fetch_read_custody(
         validation_packet_path=validation_packet_path,
     )
     target = _phase_output_dir(output_dir)
+    run_kernel = RunKernel.start(
+        run_id=str(selection.candidate_packet["run_id"]),
+        request_id=str(selection.candidate_packet["request_id"]),
+        request={
+            "phase": PHASE,
+            "mode": MODE,
+            "proof_class": PROOF_CLASS,
+            "query_text_retained": False,
+            "provider_calls": PROVIDER_CALLS,
+            "broker_calls": BROKER_CALLS,
+            "model_calls": MODEL_CALLS,
+            "fetch_read_calls": MAX_FETCH_READ_CALLS,
+        },
+    )
+    packet, _fetch_read_packet, _reference, _ledger_projection = (
+        _execute_fetch_read_custody(
+            selection=selection,
+            run_kernel=run_kernel,
+            target=target,
+            fetcher=fetcher,
+            in_process_handoff=False,
+        )
+    )
+    return packet
+
+
+def fetch_read_custody_in_process(
+    *,
+    candidate_handoff: InProcessLiveCandidateHandoff,
+    output_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    confirm_fetch_read: bool = False,
+    fetcher: Callable[[str], FetchReadResult] | None = None,
+) -> InProcessSourceSurvivalHandoff:
+    """Perform fetch/read and EvidenceLedger custody on the live candidate kernel."""
+
+    if not confirm_fetch_read:
+        raise SourceSurvivalError(
+            "confirm_fetch_read_required",
+            "fetch-read-custody in-process requires --confirm-fetch-read",
+            failure_layer="operator_confirmation",
+        )
+    selection = _candidate_selection_from_handoff(candidate_handoff)
+    target = _phase_output_dir(output_dir)
+    packet, fetch_read_packet, reference, ledger_projection = _execute_fetch_read_custody(
+        selection=selection,
+        run_kernel=candidate_handoff.run_kernel,
+        target=target,
+        fetcher=fetcher,
+        in_process_handoff=True,
+    )
+    if (
+        packet.get("selected_source_survived") != "source_survival_pass"
+        or fetch_read_packet is None
+        or reference is None
+        or ledger_projection is None
+    ):
+        raise SourceSurvivalError(
+            str(packet.get("selected_source_survived") or "source_survival_fail"),
+            str(packet.get("fetch_read_failure_reason") or "source survival failed"),
+            failure_layer=str(packet.get("likely_failure_layer_if_not_pass") or "custody"),
+        )
+    return InProcessSourceSurvivalHandoff(
+        run_kernel=candidate_handoff.run_kernel,
+        source_survival_packet=packet,
+        fetch_read_content_packet=fetch_read_packet,
+        sanitized_content_reference=reference,
+        evidence_ledger_projection=ledger_projection,
+    )
+
+
+def _execute_fetch_read_custody(
+    *,
+    selection: PriorCandidateSelection,
+    run_kernel: RunKernel,
+    target: Path,
+    fetcher: Callable[[str], FetchReadResult] | None,
+    in_process_handoff: bool = False,
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+]:
     selected = selection.selected_candidate
     fetch = fetcher or _fetch_public_url_once
     fetch_read_calls_attempted = 1
@@ -533,20 +630,6 @@ def fetch_read_custody(
         )
         fetch_read_packet = validate_fetch_read_content_packet(fetch_read_packet)
         reference = dict(fetch_read_packet["reference_records"][0])
-        run_kernel = RunKernel.start(
-            run_id=str(selection.candidate_packet["run_id"]),
-            request_id=str(selection.candidate_packet["request_id"]),
-            request={
-                "phase": PHASE,
-                "mode": MODE,
-                "proof_class": PROOF_CLASS,
-                "query_text_retained": False,
-                "provider_calls": PROVIDER_CALLS,
-                "broker_calls": BROKER_CALLS,
-                "model_calls": MODEL_CALLS,
-                "fetch_read_calls": MAX_FETCH_READ_CALLS,
-            },
-        )
         ledger_projection = reduce_fetch_read_content_packet_into_evidence_ledger(
             run_kernel=run_kernel,
             fetch_read_content_packet=fetch_read_packet,
@@ -601,6 +684,8 @@ def fetch_read_custody(
             "redirects_sanitized": (
                 list(fetch_result.redirects_sanitized) if fetch_result else []
             ),
+            "runkernel_preserved_for_handoff": in_process_handoff,
+            "projection_to_runkernel_rehydration": False,
         }
     )
     validate_source_survival_packet(packet)
@@ -615,7 +700,7 @@ def fetch_read_custody(
         _source_markdown(packet),
         encoding="utf-8",
     )
-    return packet
+    return packet, fetch_read_packet, reference, ledger_projection
 
 
 def load_prior_candidate_selection(
@@ -668,6 +753,55 @@ def load_prior_candidate_selection(
             if DEFAULT_SANITIZED_PROVIDER_RESULTS.exists()
             else None
         ),
+        "search_result_candidate_packet_ref": {
+            "packet_id": candidate_packet.get("packet_id"),
+            "packet_digest": candidate_packet.get("packet_digest"),
+            "candidate_count": candidate_packet.get("candidate_count"),
+            "schema_version": candidate_packet.get("schema_version"),
+        },
+        "validation_packet_result": validation_packet.get(
+            "likely_acquisition_result"
+        ),
+    }
+    return PriorCandidateSelection(
+        candidate_packet=candidate_packet,
+        validation_packet=validation_packet,
+        selected_candidate=dict(selected),
+        prior_refs=_json_safe(prior_refs),
+    )
+
+
+def _candidate_selection_from_handoff(
+    candidate_handoff: InProcessLiveCandidateHandoff,
+) -> PriorCandidateSelection:
+    candidate_packet = validate_search_result_candidate_packet(
+        candidate_handoff.candidate_packet
+    )
+    validation_packet = _safe_mapping(candidate_handoff.validation_packet)
+    selected = _rank_one_candidate(candidate_packet)
+    summary = _rank_one_validation_summary(validation_packet)
+    if (
+        selected.get("domain") != REQUIRED_DOMAIN
+        or selected.get("result_rank") != SELECTED_RANK
+        or summary.get("domain") != REQUIRED_DOMAIN
+        or summary.get("rank") != SELECTED_RANK
+        or summary.get("url") != selected.get("url")
+        or validation_packet.get("likely_acquisition_result")
+        != "candidate_acquisition_pass"
+        or validation_packet.get("search_result_candidate_packet_status")
+        != "built_and_validated"
+    ):
+        raise SourceSurvivalError(
+            "prior_candidate_packet_missing_or_mismatched",
+            "in-process candidate handoff is missing or mismatched",
+            failure_layer="prior_candidate_packet",
+        )
+    prior_refs = {
+        "prior_phase": PRIOR_PHASE,
+        "handoff_kind": "in_process_live_candidate_handoff",
+        "candidate_packet_json_used_as_state_source": False,
+        "run_kernel_preserved_in_memory": True,
+        "provider_results_ref": dict(candidate_handoff.provider_results_ref),
         "search_result_candidate_packet_ref": {
             "packet_id": candidate_packet.get("packet_id"),
             "packet_digest": candidate_packet.get("packet_digest"),
