@@ -178,8 +178,14 @@ class GeneratedReviewPacket:
 class DeterministicDogfoodPlannerAdapter:
     """Repo-visible planner fixture; never calls a model or provider."""
 
-    def __init__(self, *, include_optional_context_component: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        include_optional_context_component: bool = False,
+        phase: str = PHASE,
+    ) -> None:
         self.include_optional_context_component = include_optional_context_component
+        self.phase = phase
 
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
         return _planner_adapter_result(
@@ -187,6 +193,7 @@ class DeterministicDogfoodPlannerAdapter:
             include_optional_context_component=(
                 self.include_optional_context_component
             ),
+            phase=self.phase,
         )
 
 
@@ -338,9 +345,27 @@ def _packet_from_state(
     *,
     candidate_count: int = 1,
     include_optional_context_component: bool = False,
+    user_query_text: str = DEFAULT_QUERY,
+    run_id: str = DEFAULT_RUN_ID,
+    request_id: str = DEFAULT_REQUEST_ID,
+    phase: str = PHASE,
+    proof_class: str = PROOF_CLASS,
+    query_class: str = "deterministic fixture dogfood",
+    front_half_source: str = "deterministic_fixture_dogfood",
+    route_ref: str = "ag-fixture-dogfood-integration-01",
+    run_ref: str = "ag-fixture-dogfood-integration-01",
 ) -> tuple[Any, dict[str, Any]]:
     kernel = _build_front_half_kernel(
         include_optional_context_component=include_optional_context_component,
+        user_query_text=user_query_text,
+        run_id=run_id,
+        request_id=request_id,
+        phase=phase,
+        proof_class=proof_class,
+        query_class=query_class,
+        front_half_source=front_half_source,
+        route_ref=route_ref,
+        run_ref=run_ref,
     )
     _reduce_validation(kernel, results=_fake_results(kernel, count=candidate_count))
     packet = build_search_result_candidate_packet_from_live_validation_state(
@@ -352,23 +377,41 @@ def _packet_from_state(
 def _build_front_half_kernel(
     *,
     include_optional_context_component: bool = False,
+    user_query_text: str = DEFAULT_QUERY,
+    run_id: str = DEFAULT_RUN_ID,
+    request_id: str = DEFAULT_REQUEST_ID,
+    phase: str = PHASE,
+    proof_class: str = PROOF_CLASS,
+    query_class: str = "deterministic fixture dogfood",
+    front_half_source: str = "deterministic_fixture_dogfood",
+    route_ref: str = "ag-fixture-dogfood-integration-01",
+    run_ref: str = "ag-fixture-dogfood-integration-01",
 ) -> RunKernel:
     kernel = RunKernel.start(
-        run_id=DEFAULT_RUN_ID,
-        request_id=DEFAULT_REQUEST_ID,
+        run_id=run_id,
+        request_id=request_id,
         request={
-            "phase": PHASE,
-            "proof_class": PROOF_CLASS,
-            "query_class": "deterministic fixture dogfood",
+            "phase": phase,
+            "proof_class": proof_class,
+            "query_class": query_class,
             "query_text_retained": False,
         },
     )
     _reduce_deterministic_planner(
         kernel,
         include_optional_context_component=include_optional_context_component,
+        user_query_text=user_query_text,
+        phase=phase,
+        front_half_source=front_half_source,
+        route_ref=route_ref,
+        run_ref=run_ref,
     )
     _accept_initial_contract(kernel)
-    _apply_current_contract_caveat(kernel)
+    _apply_current_contract_caveat(
+        kernel,
+        user_query_text=user_query_text,
+        phase=phase,
+    )
     _reduce_search_executor_handoff(kernel)
     return kernel
 
@@ -377,20 +420,25 @@ def _reduce_deterministic_planner(
     kernel: RunKernel,
     *,
     include_optional_context_component: bool = False,
+    user_query_text: str = DEFAULT_QUERY,
+    phase: str = PHASE,
+    front_half_source: str = "deterministic_fixture_dogfood",
+    route_ref: str = "ag-fixture-dogfood-integration-01",
+    run_ref: str = "ag-fixture-dogfood-integration-01",
 ) -> None:
     planner_input = SearchPlannerInput(
         run_id=kernel.state.run_id,
         request_id=kernel.state.request_id,
-        user_query_text=DEFAULT_QUERY,
+        user_query_text=user_query_text,
         requested_mode="balanced",
         safe_context={
-            "phase": PHASE,
-            "front_half_source": "deterministic_fixture_dogfood",
+            "phase": phase,
+            "front_half_source": front_half_source,
             "source_policy": "official-current",
             "not_product_path": True,
         },
-        route_context_ref={"route_ref": "ag-fixture-dogfood-integration-01"},
-        run_context_ref={"run_ref": "ag-fixture-dogfood-integration-01"},
+        route_context_ref={"route_ref": route_ref},
+        run_context_ref={"run_ref": run_ref},
         parent_initial_contract_ref=planner_contract_ref_from_contract(
             kernel.state.initial_answer_contract,
             source="initial_answer_contract",
@@ -409,6 +457,7 @@ def _reduce_deterministic_planner(
         planner_input=planner_input,
         adapter=DeterministicDogfoodPlannerAdapter(
             include_optional_context_component=include_optional_context_component,
+            phase=phase,
         ),
     )
     kernel.reduce(
@@ -437,9 +486,19 @@ def _accept_initial_contract(kernel: RunKernel) -> None:
     )
 
 
-def _apply_current_contract_caveat(kernel: RunKernel) -> None:
+def _apply_current_contract_caveat(
+    kernel: RunKernel,
+    *,
+    user_query_text: str = DEFAULT_QUERY,
+    phase: str = PHASE,
+) -> None:
     accepted = kernel.state.initial_answer_contract
-    record = _current_contract_caveat_record(kernel, accepted)
+    record = _current_contract_caveat_record(
+        kernel,
+        accepted,
+        user_query_text=user_query_text,
+        phase=phase,
+    )
     action = kernel.authorize_contract_amendment_admission(
         amendment_record_id=record.amendment_record_id,
         amendment_record_digest=record.record_digest,
@@ -933,14 +992,20 @@ def _planner_adapter_result(
     planner_input: Mapping[str, Any],
     *,
     include_optional_context_component: bool = False,
+    phase: str = PHASE,
 ) -> dict[str, Any]:
     query_ref = _mapping(planner_input.get("user_query_ref"))
+    user_query_text = (
+        str(planner_input.get("user_query_text_for_planning") or "").strip()
+        or str(query_ref.get("preview") or "").strip()
+        or DEFAULT_QUERY
+    )
     answer_components = [
         {
             "component_id": COMPONENT_ID,
             "component_revision": "1",
             "user_facing_label": "Official current public fact",
-            "user_facing_question": DEFAULT_QUERY,
+            "user_facing_question": user_query_text,
             "requirement_posture": "required",
             "acceptance_criteria": [
                 "preserve fixture source/content/custody lineage",
@@ -988,7 +1053,8 @@ def _planner_adapter_result(
         )
     return {
         "question_meaning_summary": (
-            "Prepare an official-current fixture chain for AuthorProse dogfood."
+            "Prepare an official-current deterministic chain for reviewable "
+            f"AuthorProse output from: {user_query_text}"
         ),
         "requested_output": "Reviewable AuthorProse dry-run packet.",
         "semantic_slots": [
@@ -1013,7 +1079,7 @@ def _planner_adapter_result(
             {
                 "component_id": COMPONENT_ID,
                 "requirement_id": SEARCH_REQUIREMENT_ID,
-                "requirement_summary": DEFAULT_QUERY,
+                "requirement_summary": user_query_text,
                 "source_obligation_candidate_ids": [SOURCE_OBLIGATION_ID],
                 "preferred_source_kinds": ["official"],
                 "recency_requirement": "current",
@@ -1021,7 +1087,7 @@ def _planner_adapter_result(
         ],
         "material_ambiguity_posture": "clear",
         "mandatory_caveats": [
-            "AG-FIXTURE dogfood uses deterministic offline fixtures only."
+            f"{phase} uses deterministic offline fixtures only."
         ],
         "prohibited_upgrades": [
             "No live provider/model/search/fetch/read/retrieval, citation rendering, old Author, or product-correctness claim."
@@ -1033,7 +1099,7 @@ def _planner_adapter_result(
             "Fixture candidate/read material is deterministic and sanitized."
         ],
         "unsupported_outputs": [
-            "Live product correctness is outside AG-FIXTURE-DOGFOOD-INTEGRATION-01."
+            f"Live product correctness is outside {phase}."
         ],
         "planner_model_metadata": {
             "provider": "deterministic_fixture_adapter",
@@ -1049,13 +1115,16 @@ def _planner_adapter_result(
 def _current_contract_caveat_record(
     kernel: RunKernel,
     accepted: Mapping[str, Any],
+    *,
+    user_query_text: str = DEFAULT_QUERY,
+    phase: str = PHASE,
 ) -> ContractAmendmentRecord:
     operation = AmendmentOperation(
         operation_id="operation:add-ag-fixture-dogfood-caveat",
         operation_kind=AmendmentOperationKind.ADD_CAVEAT,
         operation_payload={
             "caveat": (
-                "AG-FIXTURE dogfood state is deterministic fixture state for "
+                f"{phase} state is deterministic offline dry-run state for "
                 "review packet generation, not live product validation."
             ),
             "component_id": COMPONENT_ID,
@@ -1065,7 +1134,11 @@ def _current_contract_caveat_record(
         amendment_record_id="amendment:ag-fixture-dogfood-current-contract",
         run_id=kernel.state.run_id,
         request_id=kernel.state.request_id,
-        request_digest=_request_digest(),
+        request_digest=_request_digest(
+            phase=phase,
+            request_id=kernel.state.request_id,
+            query=user_query_text,
+        ),
         parent_contract_version=str(accepted["accepted_contract_version"]),
         parent_contract_digest=str(accepted["accepted_contract_digest"]),
         parent_question_meaning_record_id=accepted.get(
@@ -1094,7 +1167,7 @@ def _current_contract_caveat_record(
         prohibited_upgrades=(
             "Do not treat fixture output as citation rendering or source-obligation satisfaction.",
         ),
-        metadata={"phase": PHASE},
+        metadata={"phase": phase},
     )
 
 
@@ -1118,10 +1191,28 @@ def _source_refs_from_contract(contract: Mapping[str, Any]) -> list[dict[str, An
 def _supported_chain_with_candidate_packet(
     *,
     include_optional_context_component: bool = False,
+    user_query_text: str = DEFAULT_QUERY,
+    run_id: str = DEFAULT_RUN_ID,
+    request_id: str = DEFAULT_REQUEST_ID,
+    phase: str = PHASE,
+    proof_class: str = PROOF_CLASS,
+    query_class: str = "deterministic fixture dogfood",
+    front_half_source: str = "deterministic_fixture_dogfood",
+    route_ref: str = "ag-fixture-dogfood-integration-01",
+    run_ref: str = "ag-fixture-dogfood-integration-01",
 ) -> dict[str, Any]:
     kernel, candidate_packet = _packet_from_state(
         candidate_count=1,
         include_optional_context_component=include_optional_context_component,
+        user_query_text=user_query_text,
+        run_id=run_id,
+        request_id=request_id,
+        phase=phase,
+        proof_class=proof_class,
+        query_class=query_class,
+        front_half_source=front_half_source,
+        route_ref=route_ref,
+        run_ref=run_ref,
     )
     candidate_packet = validate_search_result_candidate_packet(
         deepcopy(candidate_packet)
@@ -1709,11 +1800,16 @@ def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _request_digest() -> str:
+def _request_digest(
+    *,
+    phase: str = PHASE,
+    request_id: str = DEFAULT_REQUEST_ID,
+    query: str = DEFAULT_QUERY,
+) -> str:
     payload = {
-        "phase": PHASE,
-        "request_id": DEFAULT_REQUEST_ID,
-        "query": DEFAULT_QUERY,
+        "phase": phase,
+        "request_id": request_id,
+        "query": query,
     }
     return sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
