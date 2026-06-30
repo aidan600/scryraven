@@ -487,3 +487,254 @@ def test_no_official_current_source_is_localized_as_acquisition_failure() -> Non
     assert packet["likely_failure_layer_if_not_pass"] == (
         "official_current_source_acquisition"
     )
+
+
+def _retained_fixture(
+    tmp_path: Path,
+    name: str,
+    *,
+    provider_payload: Mapping[str, Any] | None = None,
+) -> tuple[Path, Path]:
+    source_dir = _output_dir(f"retained-preflight-{name}")
+    provider_results = _write_json(
+        source_dir / "sanitized_provider_results.json",
+        provider_payload or _generic_provider_output([_official_result()]),
+    )
+    harness.reduce_results(
+        query=harness.DEFAULT_QUERY,
+        provider_results_path=provider_results,
+        output_dir=source_dir,
+    )
+
+    repo = tmp_path / f"repo-{name}"
+    retained = repo / "output" / harness.RETAINED_ARTIFACT_OUTPUT_DIR_NAME
+    _write_json(
+        retained / "sanitized_provider_results.json",
+        provider_payload or _generic_provider_output([_official_result()]),
+    )
+    candidate = _read_json(source_dir / "search_result_candidate_packet.json")
+    _write_json(retained / "search_candidate_packet.json", candidate)
+    _write_json(retained / "search_result_candidate_packet.json", candidate)
+    return repo, retained
+
+
+def test_retained_artifact_preflight_passes_on_sanitized_repo_output_fixture(
+    tmp_path: Path,
+) -> None:
+    repo, retained = _retained_fixture(tmp_path, "pass")
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "PASS"
+    assert result["artifact_dir"]["repo_relative_path"].replace("\\", "/") == (
+        "output/ag_live_ordinary_search_candidate_01b"
+    )
+    assert result["artifact_dir"]["under_repo_output"] is True
+    assert result["provider_result_count"] == 1
+    assert result["candidate_count"] == 1
+    assert result["raw_retention_flags"] == {
+        "provider_results_raw_provider_payload_retained": False,
+        "provider_results_raw_search_response_retained": False,
+        "candidate_packet_raw_provider_payload_retained": False,
+        "candidate_packet_raw_search_response_retained": False,
+    }
+    assert all(result["candidate_lineage_status"].values())
+    assert result["closed_surfaces_not_invoked"] == {
+        "provider_calls": 0,
+        "broker_calls": 0,
+        "fetch_read_calls": 0,
+        "retrieval_calls": 0,
+        "model_calls": 0,
+        "evidence_ledger_admissions": 0,
+        "citation_operations": 0,
+        "sufficiency_fap_author_operations": 0,
+    }
+
+
+def test_retained_artifact_preflight_missing_files_are_named_blocker(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "missing-repo"
+    retained = repo / "output" / harness.RETAINED_ARTIFACT_OUTPUT_DIR_NAME
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_LOCAL_ARTIFACT_MISSING"
+    assert result["missing_artifacts"] == list(harness.RETAINED_ARTIFACT_REQUIRED_NAMES)
+
+    repo, retained = _retained_fixture(tmp_path, "missing-file")
+    (retained / "search_candidate_packet.json").unlink()
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_LOCAL_ARTIFACT_MISSING"
+    assert result["missing_artifacts"] == ["search_candidate_packet.json"]
+
+
+def test_retained_artifact_preflight_unreadable_or_invalid_json_blocks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, retained = _retained_fixture(tmp_path, "unreadable")
+
+    def unreadable(path: Path) -> bool:
+        return path.name != "sanitized_provider_results.json"
+
+    monkeypatch.setattr(harness, "_read_permission", unreadable)
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_LOCAL_ARTIFACT_UNREADABLE"
+    assert result["unreadable_artifacts"] == ["sanitized_provider_results.json"]
+
+    repo, retained = _retained_fixture(tmp_path, "invalid-json")
+    (retained / "sanitized_provider_results.json").write_text(
+        "{not json",
+        encoding="utf-8",
+    )
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_LOCAL_ARTIFACT_UNREADABLE"
+    assert result["unreadable_artifacts"] == ["sanitized_provider_results.json"]
+
+
+def test_retained_artifact_preflight_rejects_paths_outside_repo_output(
+    tmp_path: Path,
+) -> None:
+    repo, _retained = _retained_fixture(tmp_path, "outside-output")
+    outside = repo / "not-output" / harness.RETAINED_ARTIFACT_OUTPUT_DIR_NAME
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=outside,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_OUTPUT_BOUNDARY"
+    assert result["artifact_dir"]["under_repo_output"] is False
+
+
+def test_retained_artifact_preflight_rejects_raw_private_and_retention_flags(
+    tmp_path: Path,
+) -> None:
+    repo, retained = _retained_fixture(tmp_path, "raw-private")
+    payload = _generic_provider_output([_official_result()])
+    payload["results"][0]["raw_provider_payload"] = "private"
+    _write_json(retained / "sanitized_provider_results.json", payload)
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_RAW_OR_PRIVATE_FIELD"
+
+    repo, retained = _retained_fixture(tmp_path, "raw-retention")
+    payload = _generic_provider_output([_official_result()])
+    payload["raw_search_response_retained"] = True
+    _write_json(retained / "sanitized_provider_results.json", payload)
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_RETENTION_FLAG"
+
+
+def test_retained_artifact_preflight_detects_path_mismatch_without_alt_content_read(
+    tmp_path: Path,
+) -> None:
+    active_repo = tmp_path / "ScryRaven"
+    alt_repo, _retained = _retained_fixture(tmp_path, "path-mismatch")
+
+    result = harness.preflight_retained_live_artifacts(
+        repo_root=active_repo,
+        alternate_repo_roots=[alt_repo],
+    )
+
+    assert result["decision"] == "BLOCKED_LOCAL_ARTIFACT_PATH_MISMATCH"
+    assert result["missing_artifacts"] == list(harness.RETAINED_ARTIFACT_REQUIRED_NAMES)
+    assert result["alternate_artifact_locations"][0]["all_required_artifacts_exist"] is True
+    assert result["alternate_artifact_locations"][0]["contents_read"] is False
+    alt_metadata = result["alternate_artifact_locations"][0]["artifact_metadata"]
+    assert "top_level_keys" not in alt_metadata["sanitized_provider_results.json"]
+
+
+def test_retained_artifact_preflight_rejects_candidate_lineage_mismatch(
+    tmp_path: Path,
+) -> None:
+    repo, retained = _retained_fixture(tmp_path, "lineage")
+    packet = _read_json(retained / "search_candidate_packet.json")
+    packet["candidate_records"] = []
+    packet["candidate_count"] = 0
+    _write_json(retained / "search_candidate_packet.json", packet)
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "BLOCKED_CANDIDATE_LINEAGE"
+
+
+def test_retained_artifact_preflight_summary_omits_full_artifact_contents(
+    tmp_path: Path,
+) -> None:
+    repo, retained = _retained_fixture(tmp_path, "metadata-only")
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+    encoded = json.dumps(result, sort_keys=True)
+
+    assert "Passport Fees" not in encoded
+    assert "Official passport book renewal fee information" not in encoded
+    assert "https://travel.state.gov/content/travel/en/passports/how-apply/fees.html" not in encoded
+    assert result["artifact_metadata"]["sanitized_provider_results.json"][
+        "top_level_keys"
+    ] == [
+        "operation",
+        "provider",
+        "raw_provider_payload_retained",
+        "raw_search_response_retained",
+        "request_kind",
+        "result_count",
+        "results",
+    ]
+
+
+def test_retained_artifact_preflight_callable_is_future_fetch_read_gate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, retained = _retained_fixture(tmp_path, "future-gate")
+    closed_calls: list[str] = []
+
+    def forbidden_front_half(*_args: Any, **_kwargs: Any) -> None:
+        closed_calls.append("front_half")
+        raise AssertionError("preflight must not build or reduce live validation")
+
+    monkeypatch.setattr(harness, "build_front_half", forbidden_front_half)
+
+    result = harness.preflight_retained_live_artifacts(
+        artifact_dir=retained,
+        repo_root=repo,
+    )
+
+    assert result["decision"] == "PASS"
+    assert closed_calls == []
+    assert result["closed_surfaces_not_invoked"]["fetch_read_calls"] == 0
