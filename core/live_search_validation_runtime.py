@@ -30,6 +30,7 @@ LIVE_SEARCH_VALIDATION_OWNER = "RunKernel.LiveSearchValidation"
 LIVE_SEARCH_VALIDATION_MAX_SELECTED_TASKS = 2
 LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP = 2
 LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP = 2
+LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP = 5
 LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE = "offline_fake"
 LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE = "broker_live"
 LIVE_SEARCH_VALIDATION_EXECUTION_MODE_DIRECT_LIVE = "direct_live"
@@ -557,9 +558,9 @@ def build_live_search_validation_state(
         raise LiveSearchValidationRuntimeError(
             "live search validation provider_call_cap exceeds PR1 default"
         )
-    if results_per_task_cap > LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP:
+    if results_per_task_cap > LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP:
         raise LiveSearchValidationRuntimeError(
-            "live search validation results_per_task_cap exceeds PR1 default"
+            "live search validation results_per_task_cap exceeds explicit cap"
         )
     if _positive_int(validation.get("provider_call_cap"), "provider_call_cap") != provider_call_cap:
         raise LiveSearchValidationRuntimeError(
@@ -945,9 +946,9 @@ def _validate_action_inputs(inputs: Mapping[str, Any]) -> None:
         raise LiveSearchValidationRuntimeError(
             "live search validation provider_call_cap exceeds PR1 default"
         )
-    if results_per_task_cap > LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP:
+    if results_per_task_cap > LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP:
         raise LiveSearchValidationRuntimeError(
-            "live search validation results_per_task_cap exceeds PR1 default"
+            "live search validation results_per_task_cap exceeds explicit cap"
         )
     if inputs.get("raw_provider_payload_retained") is not False:
         raise LiveSearchValidationRuntimeError(
@@ -1681,6 +1682,7 @@ def _digest_json(value: Any) -> str:
 __all__ = [
     "LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP",
     "LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP",
+    "LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP",
     "LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE",
     "LIVE_SEARCH_VALIDATION_EXECUTION_MODE_DIRECT_LIVE",
     "LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE",

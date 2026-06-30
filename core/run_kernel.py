@@ -420,6 +420,7 @@ from core.initial_answer_contract_acceptance_runtime import (
 from core.live_search_validation_runtime import (
     LIVE_SEARCH_VALIDATION_DEFAULT_PROVIDER_CALL_CAP,
     LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP,
+    LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP,
     LIVE_SEARCH_VALIDATION_MAX_SELECTED_TASKS,
     LIVE_SEARCH_VALIDATION_REASON,
     LIVE_SEARCH_VALIDATION_SCHEMA_VERSION,
@@ -3144,10 +3145,10 @@ class RunKernel:
             )
         if (
             clean_results_cap
-            > LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP
+            > LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP
         ):
             raise RunKernelTransitionError(
-                "live search validation results_per_task_cap exceeds PR1 default"
+                "live search validation results_per_task_cap exceeds explicit cap"
             )
         if raw_provider_payload_retained is not False:
             raise RunKernelTransitionError(
