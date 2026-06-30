@@ -11,8 +11,8 @@ adds, promotes, demotes, or retires tests.
 New tests start as `phase_focus` unless the phase explicitly justifies another
 bucket.
 
-Do not add a new test to a permanent bucket manifest until the phase brief or
-PR notes classify it with the fields below. Promotion to `fast_pr`,
+Do not add a new test to a permanent bucket manifest until the phase brief or PR
+notes classify it with the fields below. Promotion to `fast_pr`,
 `semantic_lane`, `semantic_search_lane`, `author_lane`, or `full` must be
 deliberate, cheap enough for the chosen bucket, and tied to the proof class the
 phase actually claims.
@@ -31,14 +31,15 @@ phase actually claims.
 
 ## Required New-Test Classification
 
-Every new test needs this classification before it is added to a permanent
-bucket manifest:
+Every new test needs this classification before it is added to a permanent bucket
+manifest:
 
 ```text
 Test path/node id:
 Proof class:
 Validation bucket:
-Protected surface guarded:
+Surface guarded:
+High-custody or closed-this-phase surface, if any:
 Runtime/product path guarded:
 Expected cost:
 Promotion posture:
@@ -53,11 +54,14 @@ Field guidance:
   [PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md).
 - **Validation bucket** is one of `docs_only`, `fast_pr`, `phase_focus`,
   `semantic_lane`, `semantic_search_lane`, `author_lane`, or `full`.
-- **Protected surface guarded** names the custody, contract, authority,
-  semantic, or operator surface the test protects.
-- **Runtime/product path guarded** states whether ordinary product execution,
-  CLI execution, a component harness, a reducer, a fixture, docs, or no runtime
-  path is guarded.
+- **Surface guarded** names the custody, contract, authority, semantic, operator,
+  product, or docs surface the test protects.
+- **High-custody or closed-this-phase surface, if any** uses the active surface
+  vocabulary from the Build / Proof / Repair playbook. "Protected surface" is
+  retired as active phase-control vocabulary.
+- **Runtime/product path guarded** states whether ordinary product execution, CLI
+  execution, a component harness, a reducer, a fixture, docs, or no runtime path
+  is guarded.
 - **Expected cost** should be concrete enough to explain why the test belongs in
   the chosen bucket.
 - **Promotion posture** states whether the test stays local, is a sentinel
@@ -74,8 +78,8 @@ Field guidance:
 contract boundary where a serious regression would be caught quickly.
 
 Do not use `fast_pr` for phase-detail tests, exhaustive custody checks,
-long-running end-to-end coverage, semantic record build-out, or tests whose
-main value is explaining a single phase's implementation detail.
+long-running end-to-end coverage, semantic record build-out, or tests whose main
+value is explaining a single phase's implementation detail.
 
 ## Semantic Record Guidance
 
@@ -89,19 +93,19 @@ The following tests normally belong in `phase_focus` first:
 - Sufficiency coverage-consumption tests.
 
 Promote one of these to `fast_pr` only when it has become a cheap broad sentinel
-for a runtime-consumed contract. Otherwise keep it as phase-focused proof or
-move it into `semantic_lane` when durable semantic validation owns it.
+for a runtime-consumed contract. Otherwise keep it as phase-focused proof or move
+it into `semantic_lane` when durable semantic validation owns it.
 
 ## Author Custody Detail
 
-Author custody detail tests belong in `author_lane` unless the phase
-deliberately chooses exactly one cheap broad sentinel for `fast_pr`.
+Author custody detail tests belong in `author_lane` unless the phase deliberately
+chooses exactly one cheap broad sentinel for `fast_pr`.
 
-The sentinel must be inexpensive, stable, and representative of a broad
-contract boundary. Detailed Author invocation construction, materialization,
-adapter accounting, finalization, prompt/content-shape, or high-custody
-end-to-end tests should stay out of ordinary PR tax unless explicitly promoted
-with a clear cost and sentinel rationale.
+The sentinel must be inexpensive, stable, and representative of a broad contract
+boundary. Detailed Author invocation construction, materialization, adapter
+accounting, finalization, prompt/content-shape, or high-custody end-to-end tests
+should stay out of ordinary PR tax unless explicitly promoted with a clear cost
+and sentinel rationale.
 
 ## Full Suite Posture
 
@@ -109,5 +113,5 @@ The `full` suite is not ordinary PR tax. Use it for push-to-main, manual serious
 validation, or explicitly licensed phases that need complete offline coverage.
 
 Do not route a test to `full` merely because it is expensive. Expensive tests
-still need an owner, retirement posture, and a reason they are not represented
-by cheaper focused or sentinel coverage.
+still need an owner, retirement posture, and a reason they are not represented by
+cheaper focused or sentinel coverage.
