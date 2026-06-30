@@ -20,8 +20,10 @@ answer output is introduced.
 
 Non-product exception leash: this phase is allowed only because it quarantines
 existing ambiguity and blocks future proof-layer drift. It must not add runtime
-behavior or another harness. The mandatory next product-path checkpoint is
-`AG-FIXTURE-DOGFOOD-INTEGRATION-01`.
+behavior or another harness. This historical quarantine phase was followed by
+the #353 fixture dogfood, #354 partial scenario repair, and #355 ordinary-query
+local dry-run work. The current mandatory next product checkpoint is tightly
+scoped limited live validation.
 
 Existing machinery reused: current docs, current runtime/test seams, existing
 AuthorProseFinalization static guards, and existing phase-focus tests.
@@ -227,5 +229,6 @@ Future phase briefs, validation notes, and final bundles should state:
 - whether live validation was run;
 - whether live validation was prohibited, not licensed, or separately licensed.
 
-For this quarantine sequence, the mandatory next product-path checkpoint is
-`AG-FIXTURE-DOGFOOD-INTEGRATION-01`.
+This quarantine sequence was followed by #353 fixture dogfood, #354 partial
+scenario repair, and #355 ordinary-query local dry-run work. The current
+mandatory next product checkpoint is tightly scoped limited live validation.

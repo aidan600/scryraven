@@ -54,14 +54,44 @@ Non-product phases are allowed only with an explicit non-product exception
 leash. The non-product exception leash must state proof class, reason
 product-path work is not licensed or safe in this phase, named blocker or
 current-path consumer, mandatory next product-path checkpoint, and explicit
-non-proofs. For the current quarantine sequence, the mandatory next product-path
-checkpoint is `AG-FIXTURE-DOGFOOD-INTEGRATION-01`.
+non-proofs. For the current post-#352 through #355 sequence, the mandatory next
+product checkpoint is tightly scoped limited live validation, not another proof
+layer or fixture dogfood checkpoint.
 
 Stop if actual app delta is vague, if a new harness/proof/packet/projection is
 proposed without a named current-path consumer or blocker removal, or if fixture
 or offline proof is being described as product correctness, live product
 validation, citation rendering, source-obligation satisfaction, or
 AuthorProse product proof.
+
+## Phase mode gate
+
+Every phase must declare exactly one mode:
+
+```text
+Mode: BUILD | PROOF | REPAIR
+```
+
+BUILD is the default. A Build phase must move ScryRaven closer to answering real
+user questions, target a usable-answer verdict of YES, and produce a user-style
+input, local command, API path, app path, reviewable answer artifact, answer
+output behavior, product-path repair, or legacy-path deletion/quarantine that
+affects the user-answer flow. A Build PR may cross multiple internal seams when
+that is the smallest useful vertical slice.
+
+PROOF is an explicit exception. It must target NO-BUT-JUSTIFIED, answer a named
+technical question that blocks Build work, carry the non-product exception leash,
+state what cannot be claimed, identify throwaway/fixture/proof-only code, and
+name a mandatory next Build checkpoint. No second Proof phase for the same
+blocker is allowed without explicit user approval.
+
+REPAIR fixes a named integrity defect in a product-moving path or in this
+repo-doc operating system. Product-path repair should target YES. Repo-doc or
+process repair may target NO-BUT-JUSTIFIED only when it names the
+product-moving failure it prevents and the next Build/product checkpoint it
+protects. Repair work should remove the defect, add a practical regression
+guard, make the path or operating system more honest, and avoid broad cleanup or
+new architecture.
 
 ## Local Codex publication model
 
