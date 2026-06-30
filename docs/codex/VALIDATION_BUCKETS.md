@@ -6,8 +6,8 @@ ScryRaven validation is tiered so ordinary pull requests stay fast while
 high-custody phases can still request broader proof explicitly. Choose the
 smallest bucket that can prove the current change.
 
-Use [TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md) when a
-phase adds, promotes, demotes, or retires tests.
+Use [TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md) when a phase
+adds, promotes, demotes, or retires tests.
 
 | Bucket | Use when | Contents | Default routing |
 | --- | --- | --- | --- |
@@ -19,37 +19,36 @@ phase adds, promotes, demotes, or retires tests.
 | `author_lane` | Comprehensive Author-lane custody validation. | `tests/buckets/author_lane.txt`, including the former inline AF/U/V/W/X/Y/Z/AC/AD/AE/AF4/AF5 custody set and adjacent RunKernel/final-answer files. | Manual `workflow_dispatch` or explicitly phase-licensed validation only. |
 | `full` | Complete offline suite. | `python -m pytest -q` using the configured tracked test root. Generated outputs, local review mirrors, caches, logs, secrets, and other local artifacts must not be collected. | Push to `main` and manual serious validation only. |
 
-`semantic_lane` and `semantic_search_lane` are not default `fast_pr` scope
-because they are domain validation sweeps, not tiny broad sentinels. Run them
-when a phase changes semantic record construction, ordinary semantic producer
-handoff, semantic sufficiency consumption, ledger-qualified coverage integrity,
-SearchJudgment consumption of semantic missing assessments, or QueryPlan
-handling of semantic component gaps. `fast_pr` remains the ordinary PR tax.
+`semantic_lane` and `semantic_search_lane` are not default `fast_pr` scope because
+they are domain validation sweeps, not tiny broad sentinels. Run them when a
+phase changes semantic record construction, ordinary semantic producer handoff,
+semantic sufficiency consumption, ledger-qualified coverage integrity,
+SearchJudgment consumption of semantic missing assessments, or QueryPlan handling
+of semantic component gaps. `fast_pr` remains the ordinary PR tax.
 
-Run `author_lane` when a phase touches FinalAnswerPacket, Author payload,
-Author prompt/materialization, Author invocation/execution, citation handoff,
-or final response behavior. This lane is high-custody and comparatively
-expensive; it is not default PR tax. Run `full` for push-to-main, manual
-serious validation, or a phase that explicitly needs the complete offline
-suite.
+Run `author_lane` when a phase touches FinalAnswerPacket, Author payload, Author
+prompt/materialization, Author invocation/execution, citation handoff, or final
+response behavior. This lane is high-custody and comparatively expensive; it is
+not default PR tax. Run `full` for push-to-main, manual serious validation, or a
+phase that explicitly needs the complete offline suite.
 
 ## Generated-output Collection Hygiene
 
-`full` is an offline tracked-test sweep, not a request to collect generated
-local artifacts. Root pytest collection should be constrained by repo test
-configuration to `tests/`; generated directories such as `output/`,
-`local_output/`, `local_outputs/`, `cache/`, `caches/`, `logs/`,
-`private_logs/`, `secrets/`, and `output/local_review/` are not validation
-inputs and must not be committed or collected.
+`full` is an offline tracked-test sweep, not a request to collect generated local
+artifacts. Root pytest collection should be constrained by repo test configuration
+to `tests/`; generated directories such as `output/`, `local_output/`,
+`local_outputs/`, `cache/`, `caches/`, `logs/`, `private_logs/`, `secrets/`, and
+`output/local_review/` are not validation inputs and must not be committed or
+collected.
 
 The validation bucket runner also disables python-dotenv for its pytest
-subprocesses so local `.env` files are not read during offline collection.
-The runner uses ignored `.pytest_cache/basetemp/<bucket>` storage as pytest
-basetemp by default; set `SCRYRAVEN_PYTEST_BASETEMP` to override that for a
-local environment.
+subprocesses so local `.env` files are not read during offline collection. The
+runner uses ignored `.pytest_cache/basetemp/<bucket>` storage as pytest basetemp
+by default; set `SCRYRAVEN_PYTEST_BASETEMP` to override that for a local
+environment.
 
-If root collection starts walking those directories, fix the collection route
-or report the blocker. Do not delete user output directories to make validation
+If root collection starts walking those directories, fix the collection route or
+report the blocker. Do not delete user output directories to make validation
 pass.
 
 ## AG-BAL / AG-BAL-HARDEN Routing
@@ -68,16 +67,16 @@ become cheap durable sentinels with a clear owner and cost posture.
 
 ## Required New-Test Classification
 
-Adding a test requires stating whether it is `phase_focus`, a `fast_pr`
-sentinel candidate, `semantic_lane`, `semantic_search_lane`, `author_lane`, or
-full-only before adding it to any permanent bucket manifest.
+Adding a test requires stating whether it is `phase_focus`, a `fast_pr` sentinel
+candidate, `semantic_lane`, `semantic_search_lane`, `author_lane`, or full-only
+before adding it to any permanent bucket manifest.
 
 New tests start as `phase_focus` unless explicitly justified otherwise. Use the
-required fields in
-[TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md), including the
-proof class, protected surface, runtime/product path guarded, expected cost,
-promotion posture, demotion or retirement condition, and why the test is or is
-not a `fast_pr` candidate.
+required fields in [TEST_CLASSIFICATION_LIBRARY.md](TEST_CLASSIFICATION_LIBRARY.md),
+including the proof class, surface guarded, high-custody or closed-this-phase
+surface if any, runtime/product path guarded, expected cost, promotion posture,
+demotion or retirement condition, and why the test is or is not a `fast_pr`
+candidate.
 
 ## Required Validation Reporting Fields
 
@@ -95,16 +94,17 @@ Phase validation summaries must state:
 - why the work is not reinventing an existing surface;
 - old path treatment;
 - explicit non-proofs;
-- whether the output is human-reviewable product output or structural proof
-  only;
+- whether the output is human-reviewable product output or structural proof only;
 - whether live validation was run;
 - whether live validation was prohibited, not licensed, or separately licensed.
 
 For current-path and quarantine work, use
 `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md` to classify surfaces as
-current authority path, passive/supporting projection, fixture-only proof,
-offline harness, live-search-only validation, product-facing dry-run proof,
-legacy/passive/historical, or closed unless separately licensed.
+current internal authority path, current product-consumed path,
+passive/supporting projection, fixture-only proof, offline harness,
+integration-staging harness, product-facing dry-run proof, legacy/passive/
+historical, historical/proof-only debt, or closed-this-phase unless explicitly
+licensed.
 
 Do not add a test to `fast_pr` merely because the phase added it. A promoted
 `fast_pr` entry must be a cheap broad sentinel, not a phase-detail test.
@@ -129,8 +129,8 @@ The manifest has four entries:
 - `tests/test_run_kernel_ag91h.py::test_run_kernel_start_creates_run_state_with_request_identity`
   keeps a minimal RunKernel authority/start-state sentinel.
 - `tests/test_final_answer_author_runkernel_ag91k.py::test_run_kernel_authorizes_and_reduces_final_answer_packet_preparation`
-  proves the final-answer/Author authority path without running the wider
-  Author custody chain.
+  proves the final-answer/Author authority path without running the wider Author
+  custody chain.
 - `tests/test_ag96i3af5c_offline_author_lane_e2e_smoke.py::test_af5c_offline_author_lane_e2e_smoke_exposes_final_answer_output`
   keeps one offline Author-lane end-to-end smoke proof.
 - `tests/test_ag96i3af6a_broker_alignment.py::test_af6a_fake_mode_has_sanitized_output_without_model_call_budget`
