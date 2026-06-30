@@ -42,8 +42,16 @@ def _output_dir(name: str) -> Path:
     return ROOT / "output" / "ag_limited_live_search_candidate_01" / name
 
 
+def _current_run_output_dir(name: str) -> Path:
+    return ROOT / "output" / "ag_live_ordinary_search_candidate_01b" / name
+
+
 def _provider_results_path(name: str) -> Path:
     return _output_dir(name) / "sanitized_provider_results.json"
+
+
+def _current_run_provider_results_path(name: str) -> Path:
+    return _current_run_output_dir(name) / "sanitized_provider_results.json"
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> Path:
@@ -188,6 +196,7 @@ def test_reduce_results_builds_candidate_packet_from_five_sanitized_records() ->
     assert (out / "validation_packet.json").exists()
     assert (out / "validation_packet.md").exists()
     assert (out / "search_result_candidate_packet.json").exists()
+    assert (out / "search_candidate_packet.json").exists()
     assert packet["sanitized_provider_result_count"] == 5
     assert packet["provider_calls_attempted"] == 1
     assert packet["provider_calls_completed"] == 1
@@ -197,8 +206,36 @@ def test_reduce_results_builds_candidate_packet_from_five_sanitized_records() ->
     assert packet["likely_acquisition_result"] == "candidate_acquisition_pass"
     assert packet["at_least_one_result_appears_official_current_government_source"] is True
     candidate_packet = _read_json(out / "search_result_candidate_packet.json")
+    current_run_candidate_packet = _read_json(out / "search_candidate_packet.json")
+    assert current_run_candidate_packet == candidate_packet
     assert candidate_packet["candidate_count"] == 5
     assert candidate_packet["candidate_records"][0]["domain"] == "travel.state.gov"
+
+
+def test_reduce_results_accepts_current_run_output_dir_under_repo_output() -> None:
+    out = _current_run_output_dir("reduce-pass")
+    provider_results = _write_json(
+        _current_run_provider_results_path("reduce-pass"),
+        _generic_provider_output([_official_result()]),
+    )
+
+    packet = harness.reduce_results(
+        query="current passport renewal fees official government site",
+        provider_results_path=provider_results,
+        output_dir=out,
+    )
+
+    assert (out / "validation_packet.json").exists()
+    assert (out / "search_candidate_packet.json").exists()
+    assert (out / "search_result_candidate_packet.json").exists()
+    assert packet["search_candidate_packet_path"].endswith("search_candidate_packet.json")
+    assert packet["search_result_candidate_packet_path"].endswith(
+        "search_result_candidate_packet.json"
+    )
+    assert packet["search_result_candidate_packet_status"] == "built_and_validated"
+    assert packet["provider_calls_attempted"] == 1
+    assert packet["provider_calls_completed"] == 1
+    assert packet["validation_reducer_provider_free"] is True
 
 
 def test_cap_above_explicit_licensed_ceiling_fails_closed() -> None:
@@ -341,15 +378,32 @@ def test_downstream_surfaces_remain_explicitly_closed_false() -> None:
         assert record[key] is expected
 
 
-def test_output_paths_must_stay_under_phase_output_dir() -> None:
-    with pytest.raises(harness.LimitedLiveSearchCandidateError, match="output-dir"):
+def test_output_paths_must_stay_under_repo_local_output_dir(tmp_path: Path) -> None:
+    out = ROOT / "output" / "other_phase"
+    packet = harness.prepare_request(
+        query=harness.DEFAULT_QUERY,
+        output_dir=out,
+    )
+
+    assert (out / "request_packet.json").exists()
+    assert packet["expected_output_paths"]["request_packet"].replace("\\", "/").startswith(
+        "output/other_phase"
+    )
+
+    with pytest.raises(
+        harness.LimitedLiveSearchCandidateError,
+        match="repo-local output",
+    ):
         harness.prepare_request(
             query=harness.DEFAULT_QUERY,
-            output_dir=ROOT / "output" / "other_phase",
+            output_dir=tmp_path / "outside-output",
         )
 
-    with pytest.raises(harness.LimitedLiveSearchCandidateError, match="paths"):
-        harness.load_sanitized_provider_results(ROOT / "output" / "other.json")
+    with pytest.raises(
+        harness.LimitedLiveSearchCandidateError,
+        match="repo-local output",
+    ):
+        harness.load_sanitized_provider_results(tmp_path / "other.json")
 
 
 def test_no_old_author_fap_pipeline_paths_are_imported_or_called() -> None:

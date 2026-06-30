@@ -83,6 +83,7 @@ MAX_SEARCH_TASKS = 1
 MAX_PROVIDER_CALLS = 1
 MAX_RESULTS = 5
 MODEL_CALLS = 0
+OUTPUT_ROOT = ROOT / "output"
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "ag_limited_live_search_candidate_01"
 DEFAULT_PROVIDER_RESULTS = DEFAULT_OUTPUT_DIR / "sanitized_provider_results.json"
 REQUEST_PACKET_NAME = "request_packet.json"
@@ -90,6 +91,7 @@ REQUEST_MARKDOWN_NAME = "request_packet.md"
 VALIDATION_PACKET_NAME = "validation_packet.json"
 VALIDATION_MARKDOWN_NAME = "validation_packet.md"
 CANDIDATE_PACKET_NAME = "search_result_candidate_packet.json"
+CURRENT_RUN_CANDIDATE_PACKET_NAME = "search_candidate_packet.json"
 MANDATORY_NEXT_BUILD_CHECKPOINT = (
     "targeted live source-survival / fetch-read / evidence-custody phase if "
     "candidate acquisition passes, or targeted acquisition repair if live "
@@ -101,7 +103,7 @@ SEARCH_REQUIREMENT_ID = "searchreq:adult-us-passport-book-renewal-fee"
 
 OPENED_SURFACES = [
     "trusted-local generic provider-proxy brokered serper search, max one call",
-    "sanitized provider result records under output/ag_limited_live_search_candidate_01/",
+    "sanitized provider result records under repo-local output/",
     "RunKernel live_search_validation reduction into SearchResultCandidatePacket",
 ]
 CLOSED_SURFACES = [
@@ -337,6 +339,9 @@ def prepare_request(
                 "validation_packet": _rel(target / VALIDATION_PACKET_NAME),
                 "validation_markdown": _rel(target / VALIDATION_MARKDOWN_NAME),
                 "search_result_candidate_packet": _rel(target / CANDIDATE_PACKET_NAME),
+                "search_candidate_packet": _rel(
+                    target / CURRENT_RUN_CANDIDATE_PACKET_NAME
+                ),
             },
             "operator_blocked_status_is_distinct_from_inconclusive": True,
             "validation_inconclusive_meaning": (
@@ -413,6 +418,8 @@ def reduce_results(
     )
     candidate_packet_path = target / CANDIDATE_PACKET_NAME
     _write_json(candidate_packet_path, candidate_packet)
+    current_run_candidate_packet_path = target / CURRENT_RUN_CANDIDATE_PACKET_NAME
+    _write_json(current_run_candidate_packet_path, candidate_packet)
 
     official_current = any(
         appears_official_current_government_source(result)
@@ -444,6 +451,7 @@ def reduce_results(
             "provider_results_path": _rel(results_path),
             "provider_results_envelope": envelope,
             "search_result_candidate_packet_path": _rel(candidate_packet_path),
+            "search_candidate_packet_path": _rel(current_run_candidate_packet_path),
             "validation_reducer_provider_free": True,
             "decision_this_run_makes": (
                 "Can the ordinary-query/SearchExecutorHandoff path acquire "
@@ -1317,13 +1325,7 @@ def _phase_output_dir(path: str | Path) -> Path:
     if not raw.is_absolute():
         raw = ROOT / raw
     resolved = raw.resolve()
-    allowed = DEFAULT_OUTPUT_DIR.resolve()
-    try:
-        resolved.relative_to(allowed)
-    except ValueError as exc:
-        raise LimitedLiveSearchCandidateError(
-            "output-dir must stay under output/ag_limited_live_search_candidate_01/"
-        ) from exc
+    _require_repo_output_path(resolved, error_prefix="output-dir")
     resolved.mkdir(parents=True, exist_ok=True)
     return resolved
 
@@ -1333,14 +1335,18 @@ def _phase_output_path(path: str | Path) -> Path:
     if not raw.is_absolute():
         raw = ROOT / raw
     resolved = raw.resolve()
-    allowed = DEFAULT_OUTPUT_DIR.resolve()
+    _require_repo_output_path(resolved, error_prefix="provider/result/output paths")
+    return resolved
+
+
+def _require_repo_output_path(path: Path, *, error_prefix: str) -> None:
+    allowed = OUTPUT_ROOT.resolve()
     try:
-        resolved.relative_to(allowed)
+        path.relative_to(allowed)
     except ValueError as exc:
         raise LimitedLiveSearchCandidateError(
-            "provider/result/output paths must stay under output/ag_limited_live_search_candidate_01/"
+            f"{error_prefix} must stay under repo-local output/"
         ) from exc
-    return resolved
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
