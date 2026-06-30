@@ -143,6 +143,10 @@ from core.ordinary_continuation_spine_gate import (
     scout_continuation_spine_gate_defaults,
     scout_continuation_spine_gate_exception_trace,
 )
+from core.ordinary_live_authority_consolidation_runtime import (
+    ORDINARY_LIVE_AUTHORITY_CONSOLIDATION_TRACE_KEY,
+    execute_ordinary_live_authority_consolidation,
+)
 from core.ordinary_live_semantic_coverage_runtime import (
     ORDINARY_LIVE_SEMANTIC_COVERAGE_TRACE_KEY,
     execute_ordinary_live_semantic_coverage,
@@ -1033,9 +1037,11 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ordinary_live_candidate_handoff_projection: dict[str, Any] = {}
     ordinary_live_source_custody_projection: dict[str, Any] = {}
     ordinary_live_semantic_coverage_projection: dict[str, Any] = {}
+    ordinary_live_authority_consolidation_projection: dict[str, Any] = {}
     candidate_handoff_kernel: RunKernel | None = None
     ordinary_live_candidate_handoff = None
     ordinary_live_source_custody = None
+    ordinary_live_semantic_coverage = None
     if config.enable_ordinary_live_candidate_handoff:
         candidate_handoff_kernel = RunKernel.start(
             run_id=f"{run_id}:ordinary-live-candidate-handoff",
@@ -1109,6 +1115,17 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         ordinary_live_semantic_coverage_projection = (
             ordinary_live_semantic_coverage.projection
+        )
+    if config.enable_ordinary_live_authority_consolidation:
+        ordinary_live_authority_consolidation = (
+            execute_ordinary_live_authority_consolidation(
+                main_run_kernel=run_kernel,
+                child_run_kernel=candidate_handoff_kernel,
+                semantic_coverage_result=ordinary_live_semantic_coverage,
+            )
+        )
+        ordinary_live_authority_consolidation_projection = (
+            ordinary_live_authority_consolidation.projection
         )
 
     all_passages: list[dict[str, Any]] = []
@@ -4116,6 +4133,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if ordinary_live_semantic_coverage_projection:
         execution_trace[ORDINARY_LIVE_SEMANTIC_COVERAGE_TRACE_KEY] = (
             ordinary_live_semantic_coverage_projection
+        )
+    if ordinary_live_authority_consolidation_projection:
+        execution_trace[ORDINARY_LIVE_AUTHORITY_CONSOLIDATION_TRACE_KEY] = (
+            ordinary_live_authority_consolidation_projection
         )
     output_word_count = post_author_output_packaging.output_word_count
     execution_log_entry = post_author_output_packaging.execution_log_entry
