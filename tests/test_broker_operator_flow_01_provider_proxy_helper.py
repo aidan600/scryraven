@@ -94,6 +94,65 @@ def test_helper_refuses_output_outside_output() -> None:
     ) == 2
 
 
+def test_helper_output_preflight_failure_prevents_env_broker_and_client(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def fake_preflight(path: Path) -> Path:
+        captured["preflight_path"] = path
+        raise client.OutputHygieneError(
+            reason="output_directory_not_writable",
+            output_path=path,
+            error_type="PermissionError",
+        )
+
+    def fail_after_preflight(*_args: Any, **_kwargs: Any) -> Any:
+        captured["called_after_preflight"] = True
+        raise AssertionError("output preflight failure must stop before live setup")
+
+    monkeypatch.setattr(client, "prepare_output_path_for_sanitized_write", fake_preflight)
+    monkeypatch.setattr(helper, "generate_temporary_broker_token", fail_after_preflight)
+    monkeypatch.setattr(helper, "broker_environment", fail_after_preflight)
+    monkeypatch.setattr(helper, "start_private_broker", fail_after_preflight)
+    monkeypatch.setattr(helper, "run_generic_provider_client", fail_after_preflight)
+
+    rc = helper.main(
+        [
+            "--provider",
+            "serper",
+            "--operation",
+            "search",
+            "--query",
+            "current official example",
+            "--max-results",
+            "5",
+            "--output",
+            "output/broker_operator_preflight_blocks.json",
+            "--private-broker-path",
+            str(ROOT / "private-does-not-run.py"),
+            "--env-file",
+            str(ROOT / ".env"),
+            "--confirm-provider-call",
+        ]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert "preflight_path" in captured
+    assert "called_after_preflight" not in captured
+    assert client.OUTPUT_HYGIENE_DECISION in err
+    assert "output_directory_not_writable" in err
+    assert "temporary-token" not in err
+    assert "serper-secret" not in err
+    assert ".env" not in err
+    assert "api_key" not in err.casefold()
+    assert "raw_provider_payload\":" not in err
+    assert "raw_search_response\":" not in err
+    assert "full_trace" not in err
+
+
 def test_helper_generates_temporary_token_without_printing_it(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
