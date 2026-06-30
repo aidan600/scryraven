@@ -494,6 +494,9 @@ def _load_and_validate_inputs(
         "evidence_ledger_projection": ledger,
         "custody_record": custody_record,
         "bounded_text": bounded_text,
+        "bounded_text_selection": _safe_mapping(
+            reference.get("bounded_text_selection")
+        ),
         "bounded_content_reference_id": reference.get("reference_id"),
         "bounded_content_digest": reference.get("excerpt_digest"),
         "bounded_content_char_count": len(bounded_text),
@@ -783,6 +786,9 @@ def _base_packet(
             "bounded_content_reference_id": context["bounded_content_reference_id"],
             "bounded_content_digest": context["bounded_content_digest"],
             "bounded_content_char_count": context["bounded_content_char_count"],
+            "bounded_text_selection": _safe_mapping(
+                context.get("bounded_text_selection")
+            ),
             "evidence_relative_analysis_proposal_id": analysis_ref.get("report_id"),
             "evidence_relative_analysis_proposal_digest": analysis_ref.get("report_digest"),
             "evidence_relative_analysis_proposal_ref": analysis_ref,

@@ -10,6 +10,7 @@ create Author input.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
@@ -34,6 +35,11 @@ FETCH_READ_CONTENT_PACKET_POSTURE = (
     "bounded_fetch_read_content_identity_handoff_before_evidence_ledger_custody"
 )
 FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS = 2_000
+BOUNDED_TEXT_SELECTION_CONTEXT_POSTURES = frozenset(
+    {
+        "single_contiguous_window",
+    }
+)
 
 FETCH_READ_STATUSES = frozenset(
     {
@@ -246,6 +252,154 @@ class FetchReadContentReferenceError(ValueError):
 
 
 @dataclass(frozen=True, slots=True)
+class BoundedTextSelection:
+    """One bounded, source-derived readable-text window plus safe selector metadata."""
+
+    bounded_text: str
+    bounded_text_char_count: int
+    bounded_text_digest: str
+    selection_strategy: str
+    required_anchor_count: int
+    matched_anchors: tuple[str, ...]
+    matched_anchor_count: int
+    missing_anchors: tuple[str, ...]
+    selected_window_start_offset: int
+    selected_window_end_offset: int
+    local_context_posture: str = "single_contiguous_window"
+    anti_anchor_laundering_passed: bool = True
+    not_semantic_support: bool = True
+    not_citation_eligible: bool = True
+    not_source_obligation_satisfied: bool = True
+
+    def to_metadata(self) -> dict[str, Any]:
+        return {
+            "bounded_text_char_count": self.bounded_text_char_count,
+            "bounded_text_digest": self.bounded_text_digest,
+            "selection_strategy": self.selection_strategy,
+            "required_anchor_count": self.required_anchor_count,
+            "matched_anchors": list(self.matched_anchors),
+            "matched_anchor_count": self.matched_anchor_count,
+            "missing_anchors": list(self.missing_anchors),
+            "selected_window_start_offset": self.selected_window_start_offset,
+            "selected_window_end_offset": self.selected_window_end_offset,
+            "local_context_posture": self.local_context_posture,
+            "anti_anchor_laundering_passed": self.anti_anchor_laundering_passed,
+            "not_semantic_support": self.not_semantic_support,
+            "not_citation_eligible": self.not_citation_eligible,
+            "not_source_obligation_satisfied": self.not_source_obligation_satisfied,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _AnchorMatch:
+    group_index: int
+    label: str
+    term: str
+    start: int
+    end: int
+
+
+def select_bounded_answer_bearing_text(
+    readable_text: str,
+    max_chars: int = FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
+    required_or_preferred_anchors: Sequence[Any] = (),
+    component_text: str | None = None,
+    claim_under_test: str | None = None,
+) -> BoundedTextSelection:
+    """Select one coherent bounded window from sanitized readable text.
+
+    The selector is deterministic and local: it consumes only already-sanitized
+    readable text and optional caller-supplied anchor groups.  It never stitches
+    distant fragments together.  Missing anchors remain missing in the metadata
+    so downstream semantic checks can fail honestly.
+    """
+
+    del component_text, claim_under_test
+    if max_chars <= 0:
+        raise FetchReadContentReferenceError("bounded text selector requires positive max_chars")
+    collapsed = _collapse_readable_text(readable_text)
+    bounded_limit = min(max_chars, FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS)
+    anchor_groups = _normalize_anchor_groups(required_or_preferred_anchors)
+    if not collapsed:
+        return _selection_from_window(
+            text="",
+            start=0,
+            end=0,
+            anchor_groups=anchor_groups,
+            matches=(),
+            strategy="empty_readable_text",
+        )
+    matches = _anchor_matches(collapsed, anchor_groups)
+    if len(collapsed) <= bounded_limit:
+        strategy = (
+            "full_text_within_cap"
+            if matches or not anchor_groups
+            else "full_text_within_cap_no_anchor_match"
+        )
+        return _selection_from_window(
+            text=collapsed,
+            start=0,
+            end=len(collapsed),
+            anchor_groups=anchor_groups,
+            matches=matches,
+            strategy=strategy,
+        )
+    if not matches:
+        return _selection_from_window(
+            text=collapsed,
+            start=0,
+            end=bounded_limit,
+            anchor_groups=anchor_groups,
+            matches=(),
+            strategy="prefix_fallback_no_anchor_match",
+        )
+
+    best: tuple[tuple[int, int, int, int, int], int, int, tuple[_AnchorMatch, ...]] | None = None
+    for start in _candidate_window_starts(matches, text_length=len(collapsed), max_chars=bounded_limit):
+        end = min(len(collapsed), start + bounded_limit)
+        window_matches = tuple(match for match in matches if start <= match.start and match.end <= end)
+        matched_group_count = len({match.group_index for match in window_matches})
+        occurrence_count = len(window_matches)
+        anchor_span = _window_anchor_span(window_matches)
+        full_match = int(bool(anchor_groups) and matched_group_count == len(anchor_groups))
+        score = (
+            full_match,
+            matched_group_count,
+            occurrence_count,
+            -anchor_span,
+            -start,
+        )
+        candidate = (score, start, end, window_matches)
+        if best is None or score > best[0]:
+            best = candidate
+
+    if best is None:
+        return _selection_from_window(
+            text=collapsed,
+            start=0,
+            end=bounded_limit,
+            anchor_groups=anchor_groups,
+            matches=(),
+            strategy="prefix_fallback_no_candidate_window",
+        )
+    _score, start, end, window_matches = best
+    matched_group_count = len({match.group_index for match in window_matches})
+    strategy = (
+        "answer_anchor_single_contiguous_window"
+        if matched_group_count == len(anchor_groups)
+        else "best_available_anchor_single_contiguous_window"
+    )
+    return _selection_from_window(
+        text=collapsed,
+        start=start,
+        end=end,
+        anchor_groups=anchor_groups,
+        matches=window_matches,
+        strategy=strategy,
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class SanitizedContentReference:
     """One sanitized fetch/read content identity reference.
 
@@ -438,6 +592,7 @@ class SanitizedContentReference:
                 ),
                 "redirect_count": _optional_int(material.get("redirect_count")),
                 **text_payload,
+                **_bounded_text_selection_payload(material, text_payload),
                 **_POSTURE_TRUE_FLAGS,
                 **_CLOSED_FALSE_FLAGS,
             }
@@ -868,6 +1023,8 @@ def _validate_sanitized_content_reference(
     _positive_int(safe.get("result_rank"), "content reference requires result_rank")
     if safe.get("bounded_text"):
         _validate_bounded_text_digest(safe)
+    if safe.get("bounded_text_selection"):
+        _validate_bounded_text_selection_metadata(safe["bounded_text_selection"], safe)
     declared_digest = _required_token(
         safe.get("reference_digest"),
         "content reference requires reference_digest",
@@ -1093,6 +1250,78 @@ def _bounded_text_payload(material: Mapping[str, Any]) -> dict[str, Any]:
         "bounded_character_count": bounded_character_count,
         "excerpt_digest": excerpt_digest,
     }
+
+
+def _bounded_text_selection_payload(
+    material: Mapping[str, Any],
+    text_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw = material.get("bounded_text_selection")
+    if not raw:
+        return {}
+    metadata = _safe_mapping(raw)
+    _validate_bounded_text_selection_metadata(metadata, text_payload)
+    return {"bounded_text_selection": metadata}
+
+
+def _validate_bounded_text_selection_metadata(
+    metadata: Mapping[str, Any],
+    reference_or_text_payload: Mapping[str, Any],
+) -> None:
+    safe = _safe_mapping(metadata)
+    allowed = {
+        "bounded_text_char_count",
+        "bounded_text_digest",
+        "selection_strategy",
+        "required_anchor_count",
+        "matched_anchors",
+        "matched_anchor_count",
+        "missing_anchors",
+        "selected_window_start_offset",
+        "selected_window_end_offset",
+        "local_context_posture",
+        "anti_anchor_laundering_passed",
+        "not_semantic_support",
+        "not_citation_eligible",
+        "not_source_obligation_satisfied",
+    }
+    extra = sorted(set(safe) - allowed)
+    if extra:
+        raise FetchReadContentReferenceError(
+            "bounded text selection metadata contains unsupported keys: "
+            + ", ".join(extra)
+        )
+    if safe.get("local_context_posture") not in BOUNDED_TEXT_SELECTION_CONTEXT_POSTURES:
+        raise FetchReadContentReferenceError("bounded text selection context posture mismatch")
+    for key in (
+        "anti_anchor_laundering_passed",
+        "not_semantic_support",
+        "not_citation_eligible",
+        "not_source_obligation_satisfied",
+    ):
+        if safe.get(key) is not True:
+            raise FetchReadContentReferenceError(f"bounded text selection metadata requires {key}")
+    count = _optional_int(safe.get("bounded_text_char_count"))
+    if count != reference_or_text_payload.get("bounded_character_count"):
+        raise FetchReadContentReferenceError("bounded text selection character count mismatch")
+    if safe.get("bounded_text_digest") != reference_or_text_payload.get("excerpt_digest"):
+        raise FetchReadContentReferenceError("bounded text selection digest mismatch")
+    start = _optional_int(safe.get("selected_window_start_offset"))
+    end = _optional_int(safe.get("selected_window_end_offset"))
+    if start is None or end is None or start < 0 or end < start:
+        raise FetchReadContentReferenceError("bounded text selection offsets invalid")
+    if end - start != count:
+        raise FetchReadContentReferenceError("bounded text selection offsets do not match bounded count")
+    required_count = _optional_int(safe.get("required_anchor_count"))
+    matched_count = _optional_int(safe.get("matched_anchor_count"))
+    if required_count is None or matched_count is None or matched_count > required_count:
+        raise FetchReadContentReferenceError("bounded text selection anchor counts invalid")
+    matched = _text_list(safe.get("matched_anchors"), limit=120)
+    missing = _text_list(safe.get("missing_anchors"), limit=120)
+    if matched_count != len(matched):
+        raise FetchReadContentReferenceError("bounded text selection matched anchor count mismatch")
+    if required_count != len(matched) + len(missing):
+        raise FetchReadContentReferenceError("bounded text selection required anchor count mismatch")
 
 
 def _validate_bounded_text_digest(reference: Mapping[str, Any]) -> None:
@@ -1397,6 +1626,131 @@ def _text_list(value: Any, *, limit: int = 160) -> list[str]:
     return out
 
 
+def _collapse_readable_text(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
+def _normalize_anchor_groups(anchors: Sequence[Any]) -> tuple[tuple[str, tuple[str, ...]], ...]:
+    groups: list[tuple[str, tuple[str, ...]]] = []
+    for anchor in anchors:
+        if isinstance(anchor, str):
+            alternatives = tuple(
+                item.strip()
+                for item in re.split(r"\s+/\s+|\|", anchor)
+                if item.strip()
+            )
+        elif isinstance(anchor, Sequence):
+            alternatives = tuple(str(item).strip() for item in anchor if str(item).strip())
+        else:
+            alternatives = (str(anchor).strip(),) if str(anchor).strip() else ()
+        normalized = tuple(dict.fromkeys(alternatives))
+        if not normalized:
+            continue
+        label = "/".join(normalized)
+        groups.append((label, normalized))
+    return tuple(groups)
+
+
+def _anchor_matches(
+    text: str,
+    anchor_groups: Sequence[tuple[str, tuple[str, ...]]],
+) -> tuple[_AnchorMatch, ...]:
+    matches: list[_AnchorMatch] = []
+    for group_index, (label, alternatives) in enumerate(anchor_groups):
+        for term in alternatives:
+            for match in _iter_anchor_term_matches(text, term):
+                matches.append(
+                    _AnchorMatch(
+                        group_index=group_index,
+                        label=label,
+                        term=term,
+                        start=match.start(),
+                        end=match.end(),
+                    )
+                )
+    return tuple(sorted(matches, key=lambda item: (item.start, item.end, item.group_index, item.term)))
+
+
+def _iter_anchor_term_matches(text: str, term: str) -> tuple[re.Match[str], ...]:
+    normalized = " ".join(str(term or "").split())
+    if not normalized:
+        return ()
+    if normalized.startswith("$") and normalized[1:].isdigit():
+        pattern = rf"(?<!\w)\$\s*{re.escape(normalized[1:])}\b"
+    else:
+        escaped = re.escape(normalized).replace(r"\ ", r"\s+")
+        prefix = r"\b" if normalized[0].isalnum() else r"(?<!\w)"
+        suffix = r"\b" if normalized[-1].isalnum() else r"(?!\w)"
+        pattern = f"{prefix}{escaped}{suffix}"
+    return tuple(re.finditer(pattern, text, flags=re.IGNORECASE))
+
+
+def _candidate_window_starts(
+    matches: Sequence[_AnchorMatch],
+    *,
+    text_length: int,
+    max_chars: int,
+) -> tuple[int, ...]:
+    starts = {0, max(0, text_length - max_chars)}
+    context_margin = min(240, max_chars // 4)
+    for match in matches:
+        for raw in (
+            match.start,
+            match.start - context_margin,
+            match.start - (max_chars // 3),
+            match.end - max_chars,
+        ):
+            starts.add(_clamp_window_start(raw, text_length=text_length, max_chars=max_chars))
+    return tuple(sorted(starts))
+
+
+def _clamp_window_start(value: int, *, text_length: int, max_chars: int) -> int:
+    latest = max(0, text_length - max_chars)
+    return max(0, min(latest, value))
+
+
+def _window_anchor_span(matches: Sequence[_AnchorMatch]) -> int:
+    if not matches:
+        return 0
+    return max(match.end for match in matches) - min(match.start for match in matches)
+
+
+def _selection_from_window(
+    *,
+    text: str,
+    start: int,
+    end: int,
+    anchor_groups: Sequence[tuple[str, tuple[str, ...]]],
+    matches: Sequence[_AnchorMatch],
+    strategy: str,
+) -> BoundedTextSelection:
+    bounded_text = text[start:end].rstrip()
+    end = start + len(bounded_text)
+    matched_indices = {match.group_index for match in matches if start <= match.start and match.end <= end}
+    matched_anchors = tuple(
+        label
+        for index, (label, _alternatives) in enumerate(anchor_groups)
+        if index in matched_indices
+    )
+    missing_anchors = tuple(
+        label
+        for index, (label, _alternatives) in enumerate(anchor_groups)
+        if index not in matched_indices
+    )
+    return BoundedTextSelection(
+        bounded_text=bounded_text,
+        bounded_text_char_count=len(bounded_text),
+        bounded_text_digest=_digest_json({"bounded_text": bounded_text}),
+        selection_strategy=strategy,
+        required_anchor_count=len(anchor_groups),
+        matched_anchors=matched_anchors,
+        matched_anchor_count=len(matched_anchors),
+        missing_anchors=missing_anchors,
+        selected_window_start_offset=start,
+        selected_window_end_offset=end,
+    )
+
+
 def _ordered_unique(value: Any) -> list[str]:
     if isinstance(value, str):
         items = [value]
@@ -1471,6 +1825,8 @@ __all__ = [
     "FETCH_READ_CONTENT_PACKET_TRACE_KEY",
     "FETCH_READ_CONTENT_RECORD_KIND",
     "FETCH_READ_STATUSES",
+    "BOUNDED_TEXT_SELECTION_CONTEXT_POSTURES",
+    "BoundedTextSelection",
     "FetchReadContentPacket",
     "FetchReadContentRecord",
     "FetchReadContentReferenceError",
@@ -1480,5 +1836,6 @@ __all__ = [
     "build_sanitized_content_reference_from_candidate",
     "fetch_read_content_packet_ref_from_packet",
     "reduce_candidate_packet_and_sanitized_reads_to_fetch_read_packet",
+    "select_bounded_answer_bearing_text",
     "validate_fetch_read_content_packet",
 ]

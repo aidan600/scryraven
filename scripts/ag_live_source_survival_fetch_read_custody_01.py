@@ -24,8 +24,10 @@ from core.evidence_ledger_lifecycle import (  # noqa: E402
 )
 from core.fetch_read_content_reference import (  # noqa: E402
     FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
+    BoundedTextSelection,
     build_fetch_read_content_packet_from_candidate_packet,
     fetch_read_content_packet_ref_from_packet,
+    select_bounded_answer_bearing_text,
     validate_fetch_read_content_packet,
 )
 from core.run_kernel import RunKernel  # noqa: E402
@@ -63,6 +65,15 @@ SOURCE_MARKDOWN_NAME = "source_survival_packet.md"
 FETCH_READ_PACKET_NAME = "fetch_read_content_packet.json"
 CONTENT_REFERENCE_NAME = "sanitized_content_reference.json"
 LEDGER_PROJECTION_NAME = "evidence_ledger_projection.json"
+TARGET_COMPONENT_TEXT = "adult U.S. passport book renewal fee"
+TARGET_COMPONENT_CLAIM_UNDER_TEST = "adult U.S. passport book renewal fee is $130"
+TARGET_COMPONENT_ANCHOR_GROUPS = (
+    ("adult", "age 16", "16 and older"),
+    ("passport",),
+    ("book",),
+    ("renew", "renewal"),
+    ("$130", "130"),
+)
 
 SELECTED_RANK = 1
 REQUIRED_DOMAIN = "travel.state.gov"
@@ -433,6 +444,7 @@ def prepare_request(
         content_type=None,
         fetched_byte_count=0,
         sanitized_readable_text=None,
+        bounded_text_selection=None,
         fetch_read_packet=None,
         sanitized_content_reference=None,
         evidence_ledger_projection=None,
@@ -497,6 +509,7 @@ def fetch_read_custody(
     fetch_read_packet: dict[str, Any] | None = None
     reference: dict[str, Any] | None = None
     ledger_projection: dict[str, Any] | None = None
+    bounded_text_selection: BoundedTextSelection | None = None
     survived = "source_survival_fail"
     failure_layer: str | None = "url_fetch_read"
     failure_reason: str | None = None
@@ -505,11 +518,13 @@ def fetch_read_custody(
         fetch_result = fetch(str(selected["url"]))
         fetch_read_calls_completed = 1
         _validate_fetch_result(fetch_result, selected=selected)
-        bounded_text = _bounded_current_path_text(fetch_result.sanitized_text)
+        bounded_text_selection = _bounded_current_path_selection(
+            fetch_result.sanitized_text
+        )
         material = _sanitized_fetch_read_material(
             selection=selection,
             fetch_result=fetch_result,
-            bounded_text=bounded_text,
+            bounded_text_selection=bounded_text_selection,
         )
         fetch_read_packet = build_fetch_read_content_packet_from_candidate_packet(
             selection.candidate_packet,
@@ -563,10 +578,13 @@ def fetch_read_custody(
         content_type=fetch_result.content_type if fetch_result else None,
         fetched_byte_count=fetch_result.fetched_byte_count if fetch_result else 0,
         sanitized_readable_text=(
-            _bounded_current_path_text(fetch_result.sanitized_text)
+            bounded_text_selection.bounded_text
+            if bounded_text_selection
+            else _bounded_current_path_text(fetch_result.sanitized_text)
             if fetch_result
             else None
         ),
+        bounded_text_selection=bounded_text_selection,
         fetch_read_packet=fetch_read_packet,
         sanitized_content_reference=reference,
         evidence_ledger_projection=ledger_projection,
@@ -842,9 +860,10 @@ def _sanitized_fetch_read_material(
     *,
     selection: PriorCandidateSelection,
     fetch_result: FetchReadResult,
-    bounded_text: str,
+    bounded_text_selection: BoundedTextSelection,
 ) -> dict[str, Any]:
     candidate = selection.selected_candidate
+    bounded_text = bounded_text_selection.bounded_text
     return {
         "candidate_id": candidate["candidate_id"],
         "candidate_digest": candidate["candidate_digest"],
@@ -876,6 +895,7 @@ def _sanitized_fetch_read_material(
         "bounded_text_sanitized": True,
         "bounded_text_bounded": True,
         "bounded_text_char_count": len(bounded_text),
+        "bounded_text_selection": bounded_text_selection.to_metadata(),
         "raw_page_content_retained": False,
         "raw_page_text_retained": False,
         "raw_headers_retained": False,
@@ -896,6 +916,7 @@ def _base_packet(
     content_type: str | None,
     fetched_byte_count: int,
     sanitized_readable_text: str | None,
+    bounded_text_selection: BoundedTextSelection | None,
     fetch_read_packet: Mapping[str, Any] | None,
     sanitized_content_reference: Mapping[str, Any] | None,
     evidence_ledger_projection: Mapping[str, Any] | None,
@@ -934,6 +955,8 @@ def _base_packet(
                 "and product correctness remain closed."
             ),
             "prior_phase_refs_and_digests": selection.prior_refs,
+            "target_component_text": TARGET_COMPONENT_TEXT,
+            "target_component_claim_under_test": TARGET_COMPONENT_CLAIM_UNDER_TEST,
             "selected_candidate": {
                 "candidate_id": selected.get("candidate_id"),
                 "candidate_digest": selected.get("candidate_digest"),
@@ -976,6 +999,11 @@ def _base_packet(
             "sanitized_readable_content_char_count": len(excerpt or ""),
             "sanitized_readable_content_digest": content_digest,
             "bounded_excerpt": excerpt,
+            "bounded_text_selection": (
+                bounded_text_selection.to_metadata()
+                if bounded_text_selection
+                else {}
+            ),
             "bounded_excerpt_posture": {
                 "review_debug_only": True,
                 "not_answer_material": True,
@@ -1148,6 +1176,7 @@ def _ledger_summary(projection: Mapping[str, Any] | None) -> dict[str, Any]:
 
 def _content_reference_ref(reference: Mapping[str, Any] | None) -> dict[str, Any]:
     safe = _safe_mapping(reference)
+    selection = _safe_mapping(safe.get("bounded_text_selection"))
     return _without_empty(
         {
             "reference_id": safe.get("reference_id"),
@@ -1157,6 +1186,7 @@ def _content_reference_ref(reference: Mapping[str, Any] | None) -> dict[str, Any
             "fetch_read_status": safe.get("fetch_read_status"),
             "bounded_text_char_count": safe.get("bounded_character_count"),
             "bounded_text_digest": safe.get("excerpt_digest"),
+            "bounded_text_selection": selection,
             "not_semantic_support": safe.get("not_semantic_support"),
             "not_citation_eligible": safe.get("not_citation_eligible"),
         }
@@ -1179,10 +1209,17 @@ def _extract_readable_text(
 
 
 def _bounded_current_path_text(text: str) -> str:
-    collapsed = _collapse_text(text)
-    if len(collapsed) > FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS:
-        return collapsed[:FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS].rstrip()
-    return collapsed
+    return _bounded_current_path_selection(text).bounded_text
+
+
+def _bounded_current_path_selection(text: str) -> BoundedTextSelection:
+    return select_bounded_answer_bearing_text(
+        text,
+        max_chars=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
+        required_or_preferred_anchors=TARGET_COMPONENT_ANCHOR_GROUPS,
+        component_text=TARGET_COMPONENT_TEXT,
+        claim_under_test=TARGET_COMPONENT_CLAIM_UNDER_TEST,
+    )
 
 
 def _bounded_review_excerpt(text: str | None) -> str | None:
