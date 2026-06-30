@@ -23,11 +23,24 @@ Do not access secrets, `.env`, API keys, raw provider payloads, raw prompts, DB
 rows, private logs, caches, full raw traces, local output packets, or private
 artifacts unless a phase explicitly scopes safe redacted access.
 
-Safety-sensitive surfaces are high-custody and phase-bounded, not sacred. Treat
-surfaces as licensed when the phase explicitly opens them, closed when the phase
-keeps them out of scope, target surfaces when they are intentionally being
-strangled or simplified, and historical surfaces when they are retained as
-record rather than current doctrine.
+## Surface vocabulary
+
+Use current phase-boundary words precisely:
+
+- **target surface** = the thing this phase is meant to inspect, change, reduce,
+  move, simplify, retire, or strangle.
+- **high-custody surface** = important/risky behavior that may be changed only
+  with narrow scope, named tests, and stop conditions.
+- **closed-this-phase surface** = do not touch in this phase.
+- **historical surface** = retained as record, not current doctrine or product
+  path.
+- **strangler target** = a surface to reduce, bypass, demote, subordinate, or
+  delete over time.
+- **licensed surface** = explicitly opened by the phase brief.
+
+"Protected" is retired as active phase-control vocabulary because it can imply
+"do not touch." When a surface is important and risky but intended to be changed,
+call it a high-custody target or strangler target, not protected.
 
 ## Bounded autonomy and escalation
 
@@ -37,9 +50,9 @@ phase, formatting/pre-commit fixes, self-review, final-bundle preparation, and P
 creation when explicitly authorized.
 
 Stop and ask for product choices, unresolved architecture forks, unlicensed or
-closed-surface changes, live validation, secrets/private data, destructive git,
-merge/rebase/force-push, broad scope expansion, or unresolved failing tests that
-imply a design decision.
+closed-this-phase surface changes, live validation, secrets/private data,
+destructive git, merge/rebase/force-push, broad scope expansion, or unresolved
+failing tests that imply a design decision.
 
 ## Product-facing progress default
 
@@ -64,13 +77,28 @@ or offline proof is being described as product correctness, live product
 validation, citation rendering, source-obligation satisfaction, or
 AuthorProse product proof.
 
+Skeptical outside-reviewer question:
+
+```text
+Is this finally building the app, or is it building convincing apparatus around the app?
+```
+
+A phase brief is invalid if a skeptical reviewer could fairly describe the
+deliverable as "a nice collection of harnesses" and the ordinary product path
+still cannot demonstrate the claimed behavior.
+
 ## Phase mode gate
 
-Every phase must declare exactly one mode:
+Build / Proof / Repair is the active phase operating system. Every phase must
+declare exactly one mode:
 
 ```text
 Mode: BUILD | PROOF | REPAIR
 ```
+
+"Prove Mode" is retired as a global workflow label. Proof is only a phase mode
+under Build / Proof / Repair, and it is an exception with a leash, non-claims, a
+named blocker, and a mandatory next Build/product checkpoint.
 
 BUILD is the default. A Build phase must move ScryRaven closer to answering real
 user questions, target a usable-answer verdict of YES, and produce a user-style
@@ -92,6 +120,42 @@ product-moving failure it prevents and the next Build/product checkpoint it
 protects. Repair work should remove the defect, add a practical regression
 guard, make the path or operating system more honest, and avoid broad cleanup or
 new architecture.
+
+## Harness labels and expiration
+
+Every new harness, proof-only script, replay path, packet-only demo, or
+non-product scaffold must carry exactly one label:
+
+- **PRODUCT-PATH-REGRESSION:** a harness/test guarding behavior already consumed
+  by the ordinary product path. Healthy and durable.
+- **SEAM-DIAGNOSTIC:** a temporary harness to isolate a failure or uncertainty at
+  one seam. Must name the product seam and exit condition.
+- **INTEGRATION-STAGING:** a temporary scaffold used while wiring a real product
+  path. Must name the ordinary runtime consumer and integration deadline.
+- **EXPLORATORY-PROOF-ONLY:** non-product learning/proof. Must not be named like
+  product behavior and must have an integrate/reject/delete decision.
+- **SHADOW-PRODUCT-HARNESS:** a product-shaped alternate path beside the product.
+  This is failure unless explicitly authorized for review-only diagnosis.
+
+Required fields for any new harness/proof-only script/replay path:
+
+```text
+Harness label:
+Ordinary product path guarded or fed:
+Runtime consumer:
+Why ordinary product-path work cannot be done directly:
+Integration deadline:
+Exit condition:
+Why this is not a shadow product path:
+Forbidden interpretation:
+```
+
+A harness created in phase N should be consumed, converted to a product-path
+regression guard, deleted, or marked historical/proof-only debt by phase N+1. It
+may survive to N+2 only if N+1 exposed a specific blocker and N+2 is explicitly
+the integration/retirement phase. After N+2, unconsumed harness/proof scaffolding
+is historical/proof-only debt by default and must not be cited as product
+progress.
 
 ## Local Codex publication model
 
@@ -144,8 +208,8 @@ RunAuthority / RunKernel or canonical state path named by the phase.
 
 Run focused offline checks appropriate to the phase. Do not run live/integration
 checks unless explicitly scoped. Final responses should summarize changed files,
-checks and results, licensed/closed/target surfaces, live-validation status, PR
-status, and recommended final action.
+checks and results, licensed/closed-this-phase/target surfaces, live-validation
+status, PR status, and recommended final action.
 
 ## Reasoning posture
 

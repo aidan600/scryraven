@@ -1,7 +1,11 @@
-# ScryRaven Architecture Groove / Prove Codex Playbook
+# ScryRaven Build / Proof / Repair Playbook
 
-Status: Recommended repo-tracked playbook
+Status: Recommended repo-tracked playbook for product-engineering phases.
 Suggested repo path: `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md`
+
+Historical note: this file used to be titled Architecture Groove / Prove Codex
+Playbook. That phrase is retired as active workflow language. Build / Proof /
+Repair is the active phase operating system.
 
 ## Purpose
 
@@ -15,6 +19,37 @@ still mention earlier working names such as ProPlex, FauxPlex, and FauxPlexity;
 the `proplex` package, `python -m proplex`, `PROPLEX_*` environment names,
 `proplex.db`, and `proplex_*` state keys remain supported compatibility surfaces
 unless a phase explicitly removes them.
+
+## Phase operating system
+
+Build / Proof / Repair is the active phase operating system. Every phase must
+name exactly one delivery mode:
+
+```text
+Mode: BUILD | PROOF | REPAIR
+```
+
+"Prove Mode" is retired as a global workflow label. Proof is only a phase mode
+under Build / Proof / Repair, and it is an exception with a leash, non-claims, a
+named blocker, and a mandatory next Build/product checkpoint.
+
+- **BUILD** is the default. It must move a user-style question closer to usable
+  answer output through ordinary product/CLI/app execution or a reviewable
+  product-path dry-run artifact.
+- **PROOF** is a leashed exception. It answers one named uncertainty that blocks
+  Build work and must name the next Build/product checkpoint.
+- **REPAIR** fixes a named defect in a product-moving path or in the
+  repo-visible operating system that governs product-moving work.
+
+Skeptical outside-reviewer question:
+
+```text
+Is this finally building the app, or is it building convincing apparatus around the app?
+```
+
+A phase brief is invalid if a skeptical reviewer could fairly describe the
+deliverable as "a nice collection of harnesses" and the ordinary product path
+still cannot demonstrate the claimed behavior.
 
 ## Path B branch / PR workflow
 
@@ -57,7 +92,7 @@ can satisfy the brief without creating avoidable user coordination work.
 
 ### Tiny slice phase
 
-Use a tiny slice when the brief licenses one narrow seam, one safety-sensitive
+Use a tiny slice when the brief licenses one narrow seam, one high-custody
 surface, or one uncertain migration step. The plan may be only two or three
 bullets.
 
@@ -82,12 +117,41 @@ Use a review-only phase when the user asks for an audit, inventory, or critique
 without implementation. Do not modify code unless the brief explicitly expands
 from review into implementation.
 
-### Local/live dogfood phase
+### Local/live validation phase
 
-Use a dogfood phase only when live validation is explicitly scoped with a query
-class, run cap, provider/model/search budget, packet path, redaction plan,
-decision, and stop condition. Otherwise live ScryRaven/proplex provider, model,
-search, or retrieval calls remain disabled.
+Use a live validation phase only when live validation is explicitly scoped with a
+query class, run cap, provider/model/search/fetch/read budget, packet path,
+redaction plan, decision, and stop condition. Otherwise live ScryRaven/proplex
+provider, model, search, or retrieval calls remain disabled.
+
+## Product path requirement for Build and product-facing Repair
+
+Every Build or product-facing Repair phase must state:
+
+```text
+Ordinary entrypoint:
+User-style demonstration input:
+Forbidden substitute outputs:
+Product-path pass condition:
+Product-path fail condition:
+```
+
+Forbidden substitute outputs for product-path claims:
+
+- harness-only path
+- fixture-only path
+- proof-only script
+- replay-only path
+- packet-only artifact
+- projection-only artifact
+- docs-only doctrine
+- shadow vertical slice
+
+Pass condition: a user-style input enters through the ordinary product/CLI/app
+path and produces the claimed reviewable output.
+
+Fail condition: the ordinary product path cannot consume the change. Stop with a
+blocker report instead of demonstrating the behavior beside the product.
 
 ## Codex Cloud and local validation roles
 
@@ -109,29 +173,17 @@ request them unless the phase explicitly scopes safe redacted access.
 Codex should reduce user coordination burden. Do not stop for issues that are
 fixable within the phase scope.
 
-Proceed autonomously for:
+Proceed autonomously for relevant file inspection, scoped implementation,
+in-scope test additions or updates, in-scope test failure fixes, stale docs links
+or formatting caused by the phase, formatting, lint, pre-commit fixes,
+final-bundle preparation, and PR creation when explicitly authorized by the
+phase brief.
 
-- relevant file inspection;
-- scoped implementation;
-- in-scope test additions or updates;
-- in-scope test failure fixes;
-- stale docs links or formatting caused by the phase;
-- formatting, lint, and pre-commit fixes;
-- final-bundle preparation;
-- PR creation when explicitly authorized by the phase brief.
-
-Stop and ask for a user decision only for:
-
-- product choices;
-- architecture forks not resolved by the brief or repo doctrine;
-- unlicensed or closed-surface changes;
-- live validation or live-call budget;
-- secrets, private data, `.env`, DB rows, private logs, caches, raw provider
-  payloads, raw prompts, full raw traces, or local output packets;
-- destructive git (`reset`, destructive `clean`, branch deletion, history rewrite);
-- merge, squash merge, rebase, or force-push;
-- broad scope expansion;
-- unresolved failing tests whose fix changes the meaning of the phase.
+Stop and ask for a user decision only for product choices, architecture forks not
+resolved by the brief or repo doctrine, unlicensed or closed-this-phase surface
+changes, live validation or live-call budget, secrets/private data, destructive
+git, merge/squash/rebase/force-push, broad scope expansion, or unresolved failing
+tests whose fix changes the meaning of the phase.
 
 Use this stop packet when escalation is required:
 
@@ -155,12 +207,13 @@ RECOMMENDATION:
 
 ## Allowed by default in a phase
 
-If the phase prompt approves Architecture Groove / Prove Mode, Codex may:
+If the phase prompt approves Build / Proof / Repair Path B work, Codex may:
 
 - inspect repo files;
 - edit within scope;
 - run offline tests;
-- add in-scope tests/harnesses;
+- add in-scope tests/harnesses only when the phase labels them and names the
+  runtime consumer, deadline, and exit condition;
 - add compact validation artifacts tied to the phase;
 - make local checkpoint commits;
 - fix in-scope failures;
@@ -170,56 +223,104 @@ If the phase prompt approves Architecture Groove / Prove Mode, Codex may:
 
 ## Not allowed by default
 
-Codex must not:
+Codex must not merge, squash merge, rebase, force-push, delete branches, reset,
+clean destructively, alter `main`, run live ScryRaven/proplex provider/model/search
+calls, access secrets/env/API keys, inspect DBs/private logs/generated
+outputs/caches/virtualenvs unless explicitly scoped, or change closed-this-phase
+surfaces outside phase scope.
 
-- merge;
-- squash merge;
-- rebase;
-- force-push;
-- delete branches;
-- reset;
-- clean destructively;
-- alter `main`;
-- run live ScryRaven/proplex provider/model/search calls;
-- access secrets/env/API keys;
-- inspect DBs/private logs/generated outputs/caches/virtualenvs unless explicitly
-  scoped;
-- change closed or unlicensed surfaces outside phase scope.
-
-## Surface Boundary Vocabulary
+## Surface vocabulary
 
 Use current phase-boundary words precisely:
 
-- **Licensed surface:** explicitly allowed for inspection or change in this
-  phase.
-- **Closed surface:** out of scope for this phase.
-- **Target surface:** intentionally being reduced, moved, simplified, or retired
-  over time.
-- **Historical surface:** retained as project history, not current doctrine.
-- **Safety-sensitive surface:** high-custody behavior that needs explicit scope,
-  tests, and validation boundaries.
+- **Licensed surface:** explicitly opened by the phase brief.
+- **Target surface:** the thing this phase is meant to inspect, change, reduce,
+  move, simplify, retire, or strangle.
+- **High-custody surface:** important/risky behavior that may be changed only
+  with narrow scope, named tests, and stop conditions.
+- **Closed-this-phase surface:** do not touch in this phase.
+- **Historical surface:** retained as record, not current doctrine or product
+  path.
+- **Strangler target:** a surface to reduce, bypass, demote, subordinate, or
+  delete over time.
 
-The word "protected" may appear in older phase records, but it should not mean
-sacred. A phase may change a safety-sensitive surface only when the brief names
-the surface, allowed behavior, tests, and validation boundary. Treat unexpected
-changes as stop conditions:
+"Protected" is retired as active phase-control vocabulary because it can imply
+"do not touch." When a surface is important and risky but intended to be changed,
+call it a high-custody target or strangler target, not protected.
 
-- Analyst/Economist/Author handoff;
-- Analyst skip behavior;
-- Economist shortcut behavior;
-- raw quantitative/Economist material exposure;
-- Scrutineer policy;
-- provider routing;
-- prompt semantics;
-- source ranking/filtering;
-- persistence schema;
-- weak-corpus/source-class/retrieval-stop runtime behavior;
-- live-run behavior.
+Treat unexpected changes to high-custody or closed-this-phase surfaces as stop
+conditions. Common examples include Analyst/Economist/Author handoff, Analyst
+skip behavior, Economist shortcut behavior, raw quantitative/Economist material
+exposure, Scrutineer policy, provider routing, prompt semantics, source
+ranking/filtering, persistence schema, weak-corpus/source-class/retrieval-stop
+runtime behavior, and live-run behavior.
 
 `core/pipeline_orchestrator.py` is not architecture-successful merely because a
 phase leaves it untouched. It is a coordination shell with remaining authority
-debt. It may be closed in ordinary product behavior phases, and it may be a
-licensed target surface in orchestrator-strangulation phases.
+debt. It may be closed-this-phase in ordinary product behavior phases, and it may
+be a licensed target surface or strangler target in orchestrator-strangulation
+phases.
+
+## Current authority and product-consumption vocabulary
+
+Use these labels instead of allowing "current authority path" to imply that the
+installed app/product consumes the surface:
+
+- **current internal authority path:** canonically owned or reduced by
+  RunKernel/RunAuthority or another named current authority, but not necessarily
+  product-visible.
+- **current product-consumed path:** consumed by ordinary CLI/app/product flow.
+- **fixture-only proof:** fixture-backed proof of a seam, not product-consumed.
+- **offline harness / proof-only harness:** offline scaffold or script, not live
+  and not product-consumed unless the ordinary path consumes it.
+- **integration-staging harness:** temporary scaffold while wiring a named
+  product consumer.
+- **product-facing dry-run output:** reviewable output through a local/dry-run
+  path; useful but not live product correctness.
+- **live product path:** explicitly licensed live product execution that reaches
+  the claimed product output.
+- **historical/proof-only debt:** retained proof or harness history that must not
+  be cited as current product progress.
+
+A surface may be current internal authority and still have only fixture-only,
+offline-harness, or product-facing-dry-run proof. Use current product-consumed
+path only when ordinary product/CLI/app flow actually consumes the behavior.
+
+## Harness labels and expiration
+
+Every new harness, proof-only script, replay path, packet-only demo, or
+non-product scaffold must carry exactly one label:
+
+- **PRODUCT-PATH-REGRESSION:** a harness/test guarding behavior already consumed
+  by the ordinary product path. Healthy and durable.
+- **SEAM-DIAGNOSTIC:** a temporary harness to isolate a failure or uncertainty at
+  one seam. Must name the product seam and exit condition.
+- **INTEGRATION-STAGING:** a temporary scaffold used while wiring a real product
+  path. Must name the ordinary runtime consumer and integration deadline.
+- **EXPLORATORY-PROOF-ONLY:** non-product learning/proof. Must not be named like
+  product behavior and must have an integrate/reject/delete decision.
+- **SHADOW-PRODUCT-HARNESS:** a product-shaped alternate path beside the product.
+  This is failure unless explicitly authorized for review-only diagnosis.
+
+Required fields:
+
+```text
+Harness label:
+Ordinary product path guarded or fed:
+Runtime consumer:
+Why ordinary product-path work cannot be done directly:
+Integration deadline:
+Exit condition:
+Why this is not a shadow product path:
+Forbidden interpretation:
+```
+
+A harness created in phase N should be consumed, converted to a product-path
+regression guard, deleted, or marked historical/proof-only debt by phase N+1. It
+may survive to N+2 only if N+1 exposed a specific blocker and N+2 is explicitly
+the integration/retirement phase. After N+2, unconsumed harness/proof scaffolding
+is historical/proof-only debt by default and must not be cited as product
+progress.
 
 ## AG-89+ RunAuthority work
 
@@ -248,8 +349,8 @@ The local packet must not be committed. Legacy naming note: the terms `truth
 review`, `truth packet`, and `live truth review` are retired. Use
 `output-quality review packet` for local answer/source-quality review artifacts.
 
-It should include exact queries, full final answers, final cited URLs, visible
-source sections/snippets, sanitized CLI-visible telemetry, and
+The packet should include exact queries, full final answers, final cited URLs,
+visible source sections/snippets, sanitized CLI-visible telemetry, and
 unavailable-telemetry notes.
 
 It must not include `.env`, API keys/secrets, DB rows, raw provider payloads, raw
@@ -277,7 +378,7 @@ Return:
 8. Commands run and results
 9. Behavior changes
 10. Answer-contract / fulfillment / handoff changes, if any
-11. Licensed/closed/target surface changes, if any
+11. Licensed/closed-this-phase/target/high-custody surface changes, if any
 12. Telemetry/validation artifacts added, with consumer/decision/deletion criteria
 13. Risky-surface scan
 14. Live validation used or not used
