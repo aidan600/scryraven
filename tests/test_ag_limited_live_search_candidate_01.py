@@ -7,6 +7,7 @@ from typing import Any, Mapping
 
 import pytest
 
+from core import retained_live_artifact_preflight as retained_preflight
 from core.live_search_validation_runtime import (
     LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP,
     LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP,
@@ -523,7 +524,7 @@ def test_retained_artifact_preflight_passes_on_sanitized_repo_output_fixture(
 ) -> None:
     repo, retained = _retained_fixture(tmp_path, "pass")
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -554,23 +555,49 @@ def test_retained_artifact_preflight_passes_on_sanitized_repo_output_fixture(
     }
 
 
+def test_ag_script_preflight_command_remains_operator_wrapper(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    repo, retained = _retained_fixture(tmp_path, "script-compat")
+
+    assert harness.preflight_retained_live_artifacts is (
+        retained_preflight.preflight_retained_live_artifacts
+    )
+    result = harness.main(
+        [
+            "preflight-retained-artifacts",
+            "--repo-root",
+            str(repo),
+            "--artifact-dir",
+            str(retained),
+        ]
+    )
+
+    assert result == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["decision"] == "PASS"
+
+
 def test_retained_artifact_preflight_missing_files_are_named_blocker(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "missing-repo"
     retained = repo / "output" / harness.RETAINED_ARTIFACT_OUTPUT_DIR_NAME
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
 
     assert result["decision"] == "BLOCKED_LOCAL_ARTIFACT_MISSING"
-    assert result["missing_artifacts"] == list(harness.RETAINED_ARTIFACT_REQUIRED_NAMES)
+    assert result["missing_artifacts"] == list(
+        retained_preflight.RETAINED_ARTIFACT_REQUIRED_NAMES
+    )
 
     repo, retained = _retained_fixture(tmp_path, "missing-file")
     (retained / "search_candidate_packet.json").unlink()
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -588,8 +615,8 @@ def test_retained_artifact_preflight_unreadable_or_invalid_json_blocks(
     def unreadable(path: Path) -> bool:
         return path.name != "sanitized_provider_results.json"
 
-    monkeypatch.setattr(harness, "_read_permission", unreadable)
-    result = harness.preflight_retained_live_artifacts(
+    monkeypatch.setattr(retained_preflight, "_read_permission", unreadable)
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -602,7 +629,7 @@ def test_retained_artifact_preflight_unreadable_or_invalid_json_blocks(
         "{not json",
         encoding="utf-8",
     )
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -617,7 +644,7 @@ def test_retained_artifact_preflight_rejects_paths_outside_repo_output(
     repo, _retained = _retained_fixture(tmp_path, "outside-output")
     outside = repo / "not-output" / harness.RETAINED_ARTIFACT_OUTPUT_DIR_NAME
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=outside,
         repo_root=repo,
     )
@@ -634,7 +661,7 @@ def test_retained_artifact_preflight_rejects_raw_private_and_retention_flags(
     payload["results"][0]["raw_provider_payload"] = "private"
     _write_json(retained / "sanitized_provider_results.json", payload)
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -646,7 +673,7 @@ def test_retained_artifact_preflight_rejects_raw_private_and_retention_flags(
     payload["raw_search_response_retained"] = True
     _write_json(retained / "sanitized_provider_results.json", payload)
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -660,13 +687,15 @@ def test_retained_artifact_preflight_detects_path_mismatch_without_alt_content_r
     active_repo = tmp_path / "ScryRaven"
     alt_repo, _retained = _retained_fixture(tmp_path, "path-mismatch")
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         repo_root=active_repo,
         alternate_repo_roots=[alt_repo],
     )
 
     assert result["decision"] == "BLOCKED_LOCAL_ARTIFACT_PATH_MISMATCH"
-    assert result["missing_artifacts"] == list(harness.RETAINED_ARTIFACT_REQUIRED_NAMES)
+    assert result["missing_artifacts"] == list(
+        retained_preflight.RETAINED_ARTIFACT_REQUIRED_NAMES
+    )
     assert result["alternate_artifact_locations"][0]["all_required_artifacts_exist"] is True
     assert result["alternate_artifact_locations"][0]["contents_read"] is False
     alt_metadata = result["alternate_artifact_locations"][0]["artifact_metadata"]
@@ -682,7 +711,7 @@ def test_retained_artifact_preflight_rejects_candidate_lineage_mismatch(
     packet["candidate_count"] = 0
     _write_json(retained / "search_candidate_packet.json", packet)
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -695,7 +724,7 @@ def test_retained_artifact_preflight_summary_omits_full_artifact_contents(
 ) -> None:
     repo, retained = _retained_fixture(tmp_path, "metadata-only")
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )
@@ -730,7 +759,7 @@ def test_retained_artifact_preflight_callable_is_future_fetch_read_gate(
 
     monkeypatch.setattr(harness, "build_front_half", forbidden_front_half)
 
-    result = harness.preflight_retained_live_artifacts(
+    result = retained_preflight.preflight_retained_live_artifacts(
         artifact_dir=retained,
         repo_root=repo,
     )

@@ -24,14 +24,14 @@ from core.fetch_read_content_reference import (
     FetchReadContentReferenceError,
     validate_fetch_read_content_packet,
 )
+from core.retained_live_artifact_preflight import (
+    RETAINED_ARTIFACT_PREFLIGHT_PASS,
+    preflight_retained_live_artifacts,
+)
 from core.run_kernel import RunKernel, RunState
 from core.search_result_candidate_packet import (
     SearchResultCandidatePacketError,
     validate_search_result_candidate_packet,
-)
-from scripts.ag_limited_live_search_candidate_01 import (
-    RETAINED_ARTIFACT_PREFLIGHT_PASS,
-    preflight_retained_live_artifacts,
 )
 
 PHASE = "AG-LIVE-SOURCE-EVIDENCE-ADMISSION-PRODUCT-CONSUMPTION-01"
