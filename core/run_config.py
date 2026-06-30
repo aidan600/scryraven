@@ -93,6 +93,12 @@ class RunConfig:
     ) = field(default_factory=list)
     ordinary_live_candidate_handoff_provider: str = "offline-fake-search"
 
+    # Optional ordinary-path source-custody repair. Defaults preserve CLI/UI behavior.
+    enable_ordinary_live_source_custody: bool = False
+    ordinary_live_source_custody_anchor_groups: tuple[Any, ...] = field(
+        default_factory=tuple
+    )
+
 
 @dataclass
 class RunDeps:
@@ -134,6 +140,9 @@ class RunDeps:
 
     # Optional offline-only adapter for authorized component-gap recovery.
     component_gap_recovery_adapter: Callable[..., Any] | None = None
+
+    # Optional offline/fake fetch-read adapter for ordinary source custody.
+    ordinary_live_source_fetch_read: Callable[..., Any] | None = None
 
 
 @dataclass

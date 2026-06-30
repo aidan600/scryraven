@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -53,6 +53,8 @@ def offline_balanced_run_config(
         Sequence[dict[str, Any]] | Mapping[str, Any] | None
     ) = None,
     ordinary_live_candidate_handoff_provider: str = "offline-fake-search",
+    enable_ordinary_live_source_custody: bool = False,
+    ordinary_live_source_custody_anchor_groups: Sequence[Any] = (),
 ) -> RunConfig:
     return RunConfig(
         query=query,
@@ -81,6 +83,10 @@ def offline_balanced_run_config(
         ),
         ordinary_live_candidate_handoff_provider=(
             ordinary_live_candidate_handoff_provider
+        ),
+        enable_ordinary_live_source_custody=enable_ordinary_live_source_custody,
+        ordinary_live_source_custody_anchor_groups=tuple(
+            ordinary_live_source_custody_anchor_groups
         ),
     )
 
@@ -339,8 +345,17 @@ def run_offline_ordinary_pipeline(
         Sequence[dict[str, Any]] | Mapping[str, Any] | None
     ) = None,
     ordinary_live_candidate_handoff_provider: str = "offline-fake-search",
+    enable_ordinary_live_source_custody: bool = False,
+    ordinary_live_source_fetch_read: Any | None = None,
+    ordinary_live_source_custody_anchor_groups: Sequence[Any] = (),
 ) -> tuple[dict[str, Any], Any]:
     captured = install_handoff_capture(monkeypatch, capture_stages=capture_stages)
+    deps = harness.deps()
+    if ordinary_live_source_fetch_read is not None:
+        deps = replace(
+            deps,
+            ordinary_live_source_fetch_read=ordinary_live_source_fetch_read,
+        )
     outcome = orchestrator.run_pipeline(
         offline_balanced_run_config(
             query=harness.query,
@@ -358,8 +373,12 @@ def run_offline_ordinary_pipeline(
             ordinary_live_candidate_handoff_provider=(
                 ordinary_live_candidate_handoff_provider
             ),
+            enable_ordinary_live_source_custody=enable_ordinary_live_source_custody,
+            ordinary_live_source_custody_anchor_groups=(
+                ordinary_live_source_custody_anchor_groups
+            ),
         ),
-        harness.deps(),
+        deps,
         NullStatusWriter(),
         CostAccumulator(),
     )

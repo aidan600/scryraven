@@ -143,6 +143,10 @@ from core.ordinary_continuation_spine_gate import (
     scout_continuation_spine_gate_defaults,
     scout_continuation_spine_gate_exception_trace,
 )
+from core.ordinary_live_source_custody_runtime import (
+    ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY,
+    execute_ordinary_live_source_custody,
+)
 from core.ordinary_semantic_producer_runtime import (
     execute_ordinary_semantic_producer_handoff_from_scope,
 )
@@ -1023,6 +1027,9 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     entities_list = router_query_preparation_contract.entities_list
 
     ordinary_live_candidate_handoff_projection: dict[str, Any] = {}
+    ordinary_live_source_custody_projection: dict[str, Any] = {}
+    candidate_handoff_kernel: RunKernel | None = None
+    ordinary_live_candidate_handoff = None
     if config.enable_ordinary_live_candidate_handoff:
         candidate_handoff_kernel = RunKernel.start(
             run_id=f"{run_id}:ordinary-live-candidate-handoff",
@@ -1066,6 +1073,26 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
                     and not run_kernel.state.component_coverage_history
                 ),
             }
+        )
+    if config.enable_ordinary_live_source_custody:
+        ordinary_live_source_custody = execute_ordinary_live_source_custody(
+            run_kernel=candidate_handoff_kernel,
+            parent_run_id=run_kernel.state.run_id,
+            parent_request_id=session_id,
+            candidate_packet=(
+                ordinary_live_candidate_handoff.candidate_packet
+                if ordinary_live_candidate_handoff is not None
+                else None
+            ),
+            fetch_read=deps.ordinary_live_source_fetch_read,
+            required_or_preferred_anchors=(
+                config.ordinary_live_source_custody_anchor_groups
+            ),
+            component_text=core_topic,
+            claim_under_test=None,
+        )
+        ordinary_live_source_custody_projection = (
+            ordinary_live_source_custody.projection
         )
 
     all_passages: list[dict[str, Any]] = []
@@ -4065,6 +4092,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if ordinary_live_candidate_handoff_projection:
         execution_trace[ORDINARY_LIVE_CANDIDATE_HANDOFF_TRACE_KEY] = (
             ordinary_live_candidate_handoff_projection
+        )
+    if ordinary_live_source_custody_projection:
+        execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY] = (
+            ordinary_live_source_custody_projection
         )
     output_word_count = post_author_output_packaging.output_word_count
     execution_log_entry = post_author_output_packaging.execution_log_entry
