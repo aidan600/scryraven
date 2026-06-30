@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 from copy import deepcopy
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -43,6 +44,10 @@ def _read_json(path: Path) -> dict[str, Any]:
     decoded = json.loads(path.read_text(encoding="utf-8"))
     assert isinstance(decoded, dict)
     return decoded
+
+
+def _file_digest(path: Path) -> str:
+    return sha256(path.read_bytes()).hexdigest()
 
 
 def _source_survival_packet(*, result: str = "source_survival_pass") -> dict[str, Any]:
@@ -330,6 +335,36 @@ def test_source_bound_bounded_content_fixture_admits_one_semantic_observation(
     assert packet["semantic_observation_id"]
     assert fixture["kernel"].state.semantic_observation_admission_history
     assert (tmp_path / "out" / "semantic_observation_projection.json").exists()
+
+
+def test_semantic_support_packet_names_358_input_artifact_digests_accurately(
+    tmp_path: Path,
+) -> None:
+    fixture = _fixture_inputs(tmp_path)
+
+    packet = _reduce(tmp_path, fixture, run_kernel=fixture["kernel"])
+
+    assert "prior_357_digest" not in packet
+    assert "prior_358_digest" not in packet
+    for key in packet:
+        if key.startswith("prior_357"):
+            encoded = json.dumps(packet[key], sort_keys=True)
+            assert _file_digest(fixture["paths"]["source_survival_packet"]) not in encoded
+            assert _file_digest(fixture["paths"]["fetch_read_content_packet"]) not in encoded
+            assert _file_digest(fixture["paths"]["sanitized_content_reference"]) not in encoded
+            assert _file_digest(fixture["paths"]["evidence_ledger_projection"]) not in encoded
+    assert packet["prior_358_source_survival_packet_digest"] == _file_digest(
+        fixture["paths"]["source_survival_packet"]
+    )
+    assert packet["prior_358_fetch_read_content_packet_digest"] == _file_digest(
+        fixture["paths"]["fetch_read_content_packet"]
+    )
+    assert packet["prior_358_sanitized_content_reference_digest"] == _file_digest(
+        fixture["paths"]["sanitized_content_reference"]
+    )
+    assert packet["prior_358_evidence_ledger_projection_digest"] == _file_digest(
+        fixture["paths"]["evidence_ledger_projection"]
+    )
 
 
 def test_component_coverage_reduction_requires_the_admitted_semantic_observation(

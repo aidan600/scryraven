@@ -65,7 +65,6 @@ PRODUCT_FACING_PROGRESS_TYPE = (
     "live component proof over already-custodied bounded content; standalone "
     "review harness only"
 )
-PRIOR_357_REF = "PR #357"
 PRIOR_358_REF = "PR #358"
 DEFAULT_INPUT_DIR = ROOT / "output" / "ag_live_source_survival_fetch_read_custody_01"
 DEFAULT_OUTPUT_DIR = ROOT / "output" / "ag_live_semantic_support_coverage_01"
@@ -747,6 +746,11 @@ def _base_packet(
     analysis_ref = evidence_relative_analysis_packet_ref_from_packet(analysis_packet)
     semantic_ref = _semantic_ref(bridge_result)
     coverage_ref = _coverage_ref(coverage_projection)
+    prior_357_refs = _safe_mapping(
+        _safe_mapping(context["source_survival_packet"]).get(
+            "prior_phase_refs_and_digests"
+        )
+    )
     return _without_empty(
         {
             "phase": PHASE,
@@ -754,10 +758,20 @@ def _base_packet(
             "usable_answer_verdict_target": USABLE_ANSWER_VERDICT_TARGET,
             "proof_class": PROOF_CLASS,
             "product_facing_progress_type": PRODUCT_FACING_PROGRESS_TYPE,
-            "prior_357_ref": PRIOR_357_REF,
+            "prior_357_refs_and_digests": prior_357_refs,
             "prior_358_ref": PRIOR_358_REF,
-            "prior_357_digest": context["path_digests"].get("source_survival_packet"),
-            "prior_358_digest": context["path_digests"].get("fetch_read_content_packet"),
+            "prior_358_source_survival_packet_digest": context["path_digests"].get(
+                "source_survival_packet"
+            ),
+            "prior_358_fetch_read_content_packet_digest": context["path_digests"].get(
+                "fetch_read_content_packet"
+            ),
+            "prior_358_sanitized_content_reference_digest": context[
+                "path_digests"
+            ].get("sanitized_content_reference"),
+            "prior_358_evidence_ledger_projection_digest": context[
+                "path_digests"
+            ].get("evidence_ledger_projection"),
             "input_358_paths": dict(context["paths"]),
             "selected_source_domain": selected.get("domain"),
             "selected_source_url": selected.get("url"),
