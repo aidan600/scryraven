@@ -32,6 +32,13 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG = (
+    "--ordinary-live-main-runkernel-coverage-dry-run"
+)
+
+if ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG not in sys.argv[1:]:
+    load_dotenv()
+
 # Ensure the project root is on sys.path when run as "python -m proplex" from
 # outside the repo root (e.g. installed as a script).
 _HERE = Path(__file__).resolve().parent
@@ -68,7 +75,6 @@ from core.run_config import RunConfig, RunDeps  # noqa: E402
 from core.text_utils import clean_json_response  # noqa: E402
 from proplex.env_aliases import get_env_alias  # noqa: E402
 from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
-    ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
     OrdinaryLiveEntrypointDryRunDeps,
     build_ordinary_live_entrypoint_dry_run_config,
     format_ordinary_live_entrypoint_dry_run_status,
@@ -265,8 +271,6 @@ def _run_ordinary_live_entrypoint_dry_run(
 
 
 def main(argv: list[str] | None = None) -> int:
-    if not _argv_requests_ordinary_live_dry_run(argv):
-        load_dotenv()
     args = _parse_args(sys.argv[1:] if argv is None else list(argv))
     log = _build_logger(args.verbose)
 

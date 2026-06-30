@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import importlib
+import json
 import os
 import subprocess
 import sys
@@ -10,7 +12,6 @@ from typing import Any
 
 import pytest
 
-import proplex.__main__ as cli
 from core.ordinary_live_main_runkernel_coverage_runtime import (
     ORDINARY_LIVE_MAIN_RUNKERNEL_COVERAGE_TRACE_KEY,
 )
@@ -33,6 +34,37 @@ OFFLINE_PROVIDER_ENV_KEYS = (
     "OPENAI_API_KEY",
     "OPENROUTER_API_KEY",
 )
+IMPORT_TIME_TIMEOUT_ENV_KEYS = (
+    "TAVILY_SEARCH_TIMEOUT_SEC",
+    "LINKUP_SEARCH_TIMEOUT_SEC",
+    "BRAVE_SEARCH_TIMEOUT_SEC",
+    "SERPER_SEARCH_TIMEOUT_SEC",
+    "EXA_SEARCH_TIMEOUT_SEC",
+)
+
+
+def test_normal_cli_startup_loads_dotenv_before_search_provider_import(
+    tmp_path: Path,
+) -> None:
+    result = _run_search_provider_startup_probe(
+        tmp_path,
+        argv_after_query=[],
+    )
+
+    assert result["search_providers_imported_by_cli_core_imports"] is True
+    assert result["brave_search_timeout_sec"] == 17.0
+
+
+def test_dry_run_startup_skips_dotenv_before_search_provider_import(
+    tmp_path: Path,
+) -> None:
+    result = _run_search_provider_startup_probe(
+        tmp_path,
+        argv_after_query=[ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG],
+    )
+
+    assert result["search_providers_imported_by_cli_core_imports"] is True
+    assert result["brave_search_timeout_sec"] == 8.0
 
 
 def test_actual_proplex_entrypoint_reaches_main_runkernel_coverage_dry_run() -> None:
@@ -64,6 +96,7 @@ def test_default_cli_runconfig_keeps_ordinary_live_dry_run_disabled(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    cli = _import_cli_with_dotenv_disabled(monkeypatch)
     captured: dict[str, Any] = {}
 
     def fake_run_pipeline(config: Any, deps: Any, _status: Any, _accumulator: Any) -> Any:
@@ -98,6 +131,7 @@ def test_dry_run_cli_builds_enabled_runconfig_and_skips_live_key_validation(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
+    cli = _import_cli_with_dotenv_disabled(monkeypatch)
     captured: dict[str, Any] = {}
 
     def fail_key_validation(**_kwargs: Any) -> list[str]:
@@ -178,6 +212,74 @@ def _success_trace() -> dict[str, Any]:
             },
         }
     }
+
+
+def _run_search_provider_startup_probe(
+    tmp_path: Path,
+    *,
+    argv_after_query: list[str],
+) -> dict[str, Any]:
+    (tmp_path / ".env").write_text(
+        "BRAVE_SEARCH_TIMEOUT_SEC=17\n",
+        encoding="utf-8",
+    )
+    probe = tmp_path / "startup_probe.py"
+    # python-dotenv searches from cwd when a debugger trace is active; this keeps
+    # the probe on the test-created .env instead of any repository-local file.
+    probe.write_text(
+        "\n".join(
+            (
+                "from __future__ import annotations",
+                "import json",
+                "import sys",
+                f"sys.path.insert(0, {str(ROOT)!r})",
+                f"sys.argv = ['proplex', 'probe query', *{argv_after_query!r}]",
+                "sys.settrace(lambda *_args: None)",
+                "try:",
+                "    import proplex.__main__  # noqa: F401",
+                "finally:",
+                "    sys.settrace(None)",
+                "already_imported = 'core.search_providers' in sys.modules",
+                "if already_imported:",
+                "    search_providers = sys.modules['core.search_providers']",
+                "else:",
+                "    import core.search_providers as search_providers",
+                "print(json.dumps({",
+                "    'search_providers_imported_by_cli_core_imports': already_imported,",
+                "    'brave_search_timeout_sec': search_providers.BRAVE_SEARCH_TIMEOUT_SEC,",
+                "}))",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [sys.executable, str(probe)],
+        cwd=tmp_path,
+        env=_startup_probe_env(),
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    return json.loads(proc.stdout)
+
+
+def _startup_probe_env() -> dict[str, str]:
+    env = os.environ.copy()
+    for key in (*OFFLINE_PROVIDER_ENV_KEYS, *IMPORT_TIME_TIMEOUT_ENV_KEYS):
+        env.pop(key, None)
+    env.pop("PYTHON_DOTENV_DISABLED", None)
+    python_path = str(ROOT)
+    if env.get("PYTHONPATH"):
+        python_path = python_path + os.pathsep + env["PYTHONPATH"]
+    env["PYTHONPATH"] = python_path
+    return env
+
+
+def _import_cli_with_dotenv_disabled(monkeypatch: pytest.MonkeyPatch) -> Any:
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
+    return importlib.import_module("proplex.__main__")
 
 
 def _imports(path: Path) -> set[str]:
