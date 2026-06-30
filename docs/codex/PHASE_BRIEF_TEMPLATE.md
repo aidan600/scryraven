@@ -59,6 +59,25 @@ Phase-end publication:
 Primary outcome:
 <One sentence: what this phase must accomplish.>
 
+Mode:
+BUILD | PROOF | REPAIR
+
+Usable-answer verdict target:
+YES | NO-BUT-JUSTIFIED
+
+Build / Proof / Repair approval standard:
+- BUILD is the default and must move ScryRaven closer to answering real user
+  questions; the usable-answer verdict target is YES.
+- PROOF is an explicit exception to reduce uncertainty before Build work; the
+  usable-answer verdict target is NO-BUT-JUSTIFIED, with a mandatory next Build
+  checkpoint and proof-only/non-claim boundaries.
+- REPAIR fixes a named integrity defect in a product-moving path or in the
+  repo-doc operating system. Product-path repair targets YES; repo-doc/process
+  repair may target NO-BUT-JUSTIFIED only when it names the product-moving
+  failure prevented and the next Build/product checkpoint protected.
+- Current repo-doc posture: after #352 through #355, the next gate is tightly
+  scoped limited live validation, not another proof layer.
+
 Required proof, product, and validation posture:
 Proof class:
 Product-facing progress type:

@@ -53,7 +53,7 @@ def test_current_path_registry_classifies_required_surfaces() -> None:
         "Proof class: `docs_only` plus phase-focused docs-posture/static guards.",
         "Product-facing progress type: quarantine/docs-process work.",
         "Actual user-facing app delta: none.",
-        "mandatory next product-path checkpoint is `AG-FIXTURE-DOGFOOD-INTEGRATION-01`",
+        "current mandatory next product checkpoint is tightly scoped limited live validation",
         "Existing machinery reused:",
         "New machinery introduced:",
         "Why this is not reinventing an existing surface:",
@@ -188,7 +188,7 @@ def test_normal_entrypoints_require_product_path_quarantine_fields() -> None:
         "whether live validation was run",
         "live validation was prohibited",
         "not licensed",
-        "ag-fixture-dogfood-integration-01",
+        "tightly scoped limited live validation",
     )
     for field in required_fields:
         assert field in combined_lower
@@ -201,7 +201,7 @@ def test_agents_contains_standing_product_facing_progress_default() -> None:
         "## Product-facing progress default",
         "Default to converting existing machinery into product-path output",
         "non-product exception leash",
-        "mandatory next product-path checkpoint is `AG-FIXTURE-DOGFOOD-INTEGRATION-01`",
+        "mandatory next product checkpoint is tightly scoped limited live validation",
         "actual app delta is vague",
         "new harness/proof/packet/projection",
         "named current-path consumer or blocker removal",

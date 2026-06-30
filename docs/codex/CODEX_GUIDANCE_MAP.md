@@ -51,11 +51,20 @@ are repo files; use repo-visible files and the current phase prompt.
 
 ## Current Productization Posture
 
-ScryRaven is post-PR #342 /
-post-AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01. The completed baseline includes
-the earlier offline X-axis proof through blocked FAP / Author handoff, a coherent
-front half through SearchExecutorHandoff, and the semantic-coverage packet chain
-through ComponentCoverage reliability proof:
+Current compact posture: PR #352 current-path quarantine is complete, PR #353
+fixture dogfood AuthorProse packets are complete, PR #354 partial scenario
+contract-origin repair is complete, and PR #355 ordinary-query local dry-run to
+AuthorProse is complete. The next gate is tightly scoped limited live validation,
+not another proof layer. Build / Proof / Repair mode must be declared in phase
+briefs: Build is the default product-moving mode, Proof is an exception that
+requires NO-BUT-JUSTIFIED plus a mandatory next Build checkpoint, and Repair
+must fix a named integrity defect.
+
+Historical baseline, not current posture: ScryRaven was post-PR #342 /
+post-AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01. That completed baseline
+included the earlier offline X-axis proof through blocked FAP / Author handoff,
+a coherent front half through SearchExecutorHandoff, and the semantic-coverage
+packet chain through ComponentCoverage reliability proof:
 
 ```text
 SearchPlanner
@@ -345,7 +354,8 @@ architecture. The current Scrutineer MVP is limited to RunKernel-reduced review
 state over the completed Analyst/admission/coverage/remediation path and the
 completed hardened FAP -> AuthorProseFinalization path.
 
-The roadmap order is:
+Historical roadmap baseline, not the current next gate: the earlier roadmap
+order was:
 `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
 `AG-LIVE-XAXIS-VALIDATION-01A`,
 `AG-SEARCH-RESULT-CANDIDATE-PACKET-01`,
@@ -362,6 +372,10 @@ The roadmap order is:
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
 `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
 `AUTHOR-PROSE-ONLY-FINALIZATION-01`.
+
+That roadmap has now advanced through the #352-#355 current-path quarantine,
+fixture dogfood, partial scenario repair, and ordinary-query local dry-run work.
+The current next gate is tightly scoped limited live validation.
 
 AG-BAL-HARDEN and the component executor contract are not live validation: live
 provider, model, search, fetch, and retrieval calls remain closed by default

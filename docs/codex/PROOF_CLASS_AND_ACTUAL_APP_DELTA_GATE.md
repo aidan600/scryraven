@@ -11,6 +11,59 @@ A component harness can prove a seam, but it does not improve the product until 
 
 This document makes the proof class and actual product delta explicit before implementation starts and again in the final bundle.
 
+## Phase Mode Gate
+
+Every phase must declare exactly one delivery intent:
+
+```text
+Mode: BUILD | PROOF | REPAIR
+```
+
+Phase mode is delivery intent: whether the phase is building product-path answer
+flow, proving a bounded technical question, or repairing an integrity defect.
+Proof class is evidence type: what kind of validation the phase can honestly
+claim. Both must be stated because a strong proof class can still be non-product
+work until a Build phase consumes it.
+
+BUILD is the default mode. Its purpose is to move ScryRaven closer to answering
+real user questions, and its usable-answer verdict must be YES. Definition of
+done requires a user-style input, local command, API path, app path, or
+reviewable answer artifact that did not exist before. Valid Build outputs
+include ordinary-query dry-run output, reviewable AuthorProse answer packets,
+CLI/app-visible answer output, source/citation behavior that affects answer
+output, product-path repair that makes user-answer flow more honest, or deletion
+or quarantine of a legacy path blocking answer flow. A BUILD phase may be larger
+than one seam when that is the smallest useful vertical slice. New packets,
+registries, doctrine, proofs, fixture-only proofs, or refactors are not valid as
+sole Build outputs unless they move a user query closer to answer text through a
+runtime consumer.
+
+PROOF mode is an explicit exception. Its purpose is to reduce uncertainty before
+a Build phase, and its usable-answer verdict must be NO-BUT-JUSTIFIED. A Proof
+phase must answer a named technical question, explain why Build mode cannot
+happen first, set an exact timebox/scope cap, state what product decision it
+unlocks, state what cannot be claimed, identify throwaway/fixture-only/proof-only
+code, and name a mandatory next Build phase. No second Proof phase for the same
+blocker is allowed without explicit user approval. A PROOF phase must not be
+described as forward product progress unless and until a Build phase consumes
+it.
+
+REPAIR mode fixes an integrity defect in an existing product-moving path or in
+the operating system that governs product-moving work. The usable-answer verdict
+must be YES when the repair restores or improves product-path behavior. For
+repo-doc/process repair only, the verdict may be NO-BUT-JUSTIFIED, but the phase
+must name the product-moving failure it prevents and the next Build/product
+checkpoint it protects. Definition of done requires removing the defect, adding
+a regression guard when practical, making the product-moving path or operating
+system more honest, and avoiding broad cleanup or new architecture.
+
+Universal review question: did this make ScryRaven closer to producing a usable
+answer? Allowed verdicts are YES, NO-BUT-JUSTIFIED, and NO-NOT-JUSTIFIED. Reject
+or request changes for NO-NOT-JUSTIFIED.
+
+Current repo-doc posture: after #352 through #355, the next gate is tightly
+scoped limited live validation, not another proof layer.
+
 ## Required proof classes
 
 Every implementation phase must identify one proof class:
