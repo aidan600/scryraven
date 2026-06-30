@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+CORE = ROOT / "core"
 DOCS = ROOT / "docs"
 
 AGENTS_DOC = ROOT / "AGENTS.md"
@@ -15,6 +17,9 @@ VALIDATION_BUCKETS_DOC = DOCS / "codex" / "VALIDATION_BUCKETS.md"
 PHASE_TEMPLATE_DOC = DOCS / "codex" / "PHASE_BRIEF_TEMPLATE.md"
 PLAYBOOK_DOC = DOCS / "codex" / "ARCHITECTURE_GROOVE_PLAYBOOK.md"
 TEST_CLASSIFICATION_DOC = DOCS / "codex" / "TEST_CLASSIFICATION_LIBRARY.md"
+
+AUTHOR_PROSE_RUNTIME = CORE / "author_prose_finalization_runtime.py"
+RUN_KERNEL = CORE / "run_kernel.py"
 
 CURRENT_GUIDANCE_DOCS = (
     AGENTS_DOC,
@@ -34,6 +39,28 @@ def _source(path: Path) -> str:
 
 def _collapsed(value: str) -> str:
     return " ".join(value.split())
+
+
+def _sym(*parts: str) -> str:
+    return "".join(parts)
+
+
+def _imports_and_calls(path: Path) -> tuple[set[str], set[str]]:
+    tree = ast.parse(_source(path))
+    imported: set[str] = set()
+    called: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                called.add(func.id)
+            elif isinstance(func, ast.Attribute):
+                called.add(func.attr)
+    return imported, called
 
 
 def test_current_guidance_retired_prove_mode_and_uses_bpr() -> None:
@@ -252,3 +279,65 @@ def test_what_this_phase_does_not_prove_is_visible_in_current_docs() -> None:
     )
     for phrase in non_proofs:
         assert phrase in combined
+
+
+def test_author_prose_current_path_does_not_call_old_author_or_old_fap() -> None:
+    imports, calls = _imports_and_calls(AUTHOR_PROSE_RUNTIME)
+    forbidden_imports = {
+        _sym("core", ".", "pipeline_orchestrator"),
+        _sym("core", ".", "final_answer_packet_runtime"),
+        _sym("core", ".", "final_answer_runtime_adapter"),
+        _sym("core", ".", "followup_final_answer_packet_runtime"),
+        _sym("core", ".", "author_execution_runtime"),
+        _sym("core", ".", "runtime_prompt_assembly"),
+        _sym("core", ".", "search_providers"),
+        _sym("core", ".", "retrieval"),
+        _sym("open", "ai"),
+        _sym("re", "quests"),
+        _sym("ht", "tpx"),
+        _sym("dot", "env"),
+        _sym("sub", "process"),
+    }
+    forbidden_calls = {
+        _sym("execute", "_author"),
+        _sym("execute", "_author_action"),
+        _sym("derive", "_author_input_payload"),
+        _sym("prepare_final_answer_packet", "_author_handoff_from_scope"),
+        _sym("execute_final_answer_packet", "_prepare_action"),
+        _sym("render", "_citation"),
+        _sym("run", "_pipeline"),
+        _sym("call", "_broker"),
+        _sym("invoke", "_broker"),
+        _sym("search", "_web"),
+        _sym("retr", "ieve"),
+        _sym("dispatch", "_retrieval"),
+        _sym("fetch", "_url"),
+        _sym("fetch", "_page"),
+        _sym("read", "_url"),
+        _sym("ask", "_model"),
+        _sym("P", "open"),
+    }
+    assert imports.isdisjoint(forbidden_imports)
+    assert calls.isdisjoint(forbidden_calls)
+
+    run_kernel = _source(RUN_KERNEL)
+    start = run_kernel.index("elif action.action_type is ActionType.AUTHOR_PROSE_FINALIZE:")
+    end = run_kernel.index(
+        "elif action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE:",
+        start,
+    )
+    author_prose_branch = run_kernel[start:end]
+    assert "build_author_prose_finalization_state(" in author_prose_branch
+    assert "build_author_prose_finalization_projection(" in author_prose_branch
+    for token in (
+        _sym("execute", "_author"),
+        _sym("author", "_execution"),
+        _sym("runtime", "_prompt_assembly"),
+        _sym("prepare_final_answer_packet", "_author_handoff_from_scope"),
+        _sym("execute_final_answer_packet", "_prepare_action"),
+        _sym("followup", "_final_answer_packet"),
+        _sym("author", "_observation"),
+        _sym("final_answer", "_outcome"),
+        _sym("run", "_pipeline"),
+    ):
+        assert token not in author_prose_branch
