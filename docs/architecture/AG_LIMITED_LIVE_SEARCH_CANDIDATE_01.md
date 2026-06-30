@@ -88,10 +88,36 @@ Output path:
 output/ag_limited_live_search_candidate_01/
 ```
 
-`prepare-request` and `reduce-results` do not call providers, brokers, models,
-fetch/read, retrieval, EvidenceLedger, citations, Sufficiency, FAP, Author, or
-AuthorProse. The broker remains private credential plumbing and returns
-sanitized provider-result records only.
+Retained `01B` local artifacts can be preflighted without live calls or
+fetch/read:
+
+```powershell
+py scripts\ag_limited_live_search_candidate_01.py preflight-retained-artifacts `
+  --repo-root C:\Users\aidan\ScryRaven
+```
+
+The preflight checks only:
+
+```text
+output/ag_live_ordinary_search_candidate_01b/sanitized_provider_results.json
+output/ag_live_ordinary_search_candidate_01b/search_candidate_packet.json
+output/ag_live_ordinary_search_candidate_01b/search_result_candidate_packet.json
+```
+
+It returns a sanitized metadata summary with exactly one decision:
+`PASS`, `BLOCKED_LOCAL_ARTIFACT_MISSING`,
+`BLOCKED_LOCAL_ARTIFACT_UNREADABLE`,
+`BLOCKED_LOCAL_ARTIFACT_PATH_MISMATCH`, `BLOCKED_OUTPUT_BOUNDARY`,
+`BLOCKED_RAW_OR_PRIVATE_FIELD`, `BLOCKED_RETENTION_FLAG`, or
+`BLOCKED_CANDIDATE_LINEAGE`. It reports repo-relative paths, existence,
+readability, JSON top-level keys, candidate count, raw-retention flags, and
+candidate-lineage status only. It does not print full artifact contents and does
+not read alternate-checkout artifact contents.
+
+`prepare-request`, `reduce-results`, and `preflight-retained-artifacts` do not
+call providers, brokers, models, fetch/read, retrieval, EvidenceLedger,
+citations, Sufficiency, FAP, Author, or AuthorProse. The broker remains private
+credential plumbing and returns sanitized provider-result records only.
 
 ## Decision
 
