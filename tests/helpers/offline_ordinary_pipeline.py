@@ -4,7 +4,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import core.pipeline_orchestrator as orchestrator
 from core.cost_accounting import CostAccumulator
@@ -48,6 +48,11 @@ def offline_balanced_run_config(
     run_id: str,
     cap_policy: Any | None = None,
     smart_search_judgment_model: bool = False,
+    enable_ordinary_live_candidate_handoff: bool = False,
+    ordinary_live_candidate_handoff_results: (
+        Sequence[dict[str, Any]] | Mapping[str, Any] | None
+    ) = None,
+    ordinary_live_candidate_handoff_provider: str = "offline-fake-search",
 ) -> RunConfig:
     return RunConfig(
         query=query,
@@ -66,6 +71,17 @@ def offline_balanced_run_config(
         run_authority_search_judgment_smart_model=smart_search_judgment_model,
         run_authority_sufficiency_smart_model=False,
         cap_policy=cap_policy,
+        enable_ordinary_live_candidate_handoff=(
+            enable_ordinary_live_candidate_handoff
+        ),
+        ordinary_live_candidate_handoff_results=(
+            dict(ordinary_live_candidate_handoff_results)
+            if isinstance(ordinary_live_candidate_handoff_results, Mapping)
+            else list(ordinary_live_candidate_handoff_results or ())
+        ),
+        ordinary_live_candidate_handoff_provider=(
+            ordinary_live_candidate_handoff_provider
+        ),
     )
 
 
@@ -318,6 +334,11 @@ def run_offline_ordinary_pipeline(
     capture_stages: Sequence[str],
     cap_policy: Any | None = None,
     smart_search_judgment_model: bool = False,
+    enable_ordinary_live_candidate_handoff: bool = False,
+    ordinary_live_candidate_handoff_results: (
+        Sequence[dict[str, Any]] | Mapping[str, Any] | None
+    ) = None,
+    ordinary_live_candidate_handoff_provider: str = "offline-fake-search",
 ) -> tuple[dict[str, Any], Any]:
     captured = install_handoff_capture(monkeypatch, capture_stages=capture_stages)
     outcome = orchestrator.run_pipeline(
@@ -328,6 +349,15 @@ def run_offline_ordinary_pipeline(
             run_id=run_id,
             cap_policy=cap_policy,
             smart_search_judgment_model=smart_search_judgment_model,
+            enable_ordinary_live_candidate_handoff=(
+                enable_ordinary_live_candidate_handoff
+            ),
+            ordinary_live_candidate_handoff_results=(
+                ordinary_live_candidate_handoff_results
+            ),
+            ordinary_live_candidate_handoff_provider=(
+                ordinary_live_candidate_handoff_provider
+            ),
         ),
         harness.deps(),
         NullStatusWriter(),
