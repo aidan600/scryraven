@@ -32,8 +32,6 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # Ensure the project root is on sys.path when run as "python -m proplex" from
 # outside the repo root (e.g. installed as a script).
 _HERE = Path(__file__).resolve().parent
@@ -41,6 +39,7 @@ _ROOT = _HERE.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
+import core.pipeline_orchestrator as pipeline_orchestrator  # noqa: E402
 from core.cost_accounting import CostAccumulator  # noqa: E402
 from core.llm import ask_model, compute_similarities, embed_texts  # noqa: E402
 from core.official_canonical_recovery_visibility_export import (  # noqa: E402
@@ -68,6 +67,12 @@ from core.retrieval import (  # noqa: E402
 from core.run_config import RunConfig, RunDeps  # noqa: E402
 from core.text_utils import clean_json_response  # noqa: E402
 from proplex.env_aliases import get_env_alias  # noqa: E402
+from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
+    ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
+    OrdinaryLiveEntrypointDryRunDeps,
+    build_ordinary_live_entrypoint_dry_run_config,
+    format_ordinary_live_entrypoint_dry_run_status,
+)
 
 OUTPUT_DIR = _ROOT / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -184,6 +189,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Write report to FILE instead of stdout",
     )
     p.add_argument(
+        ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
+        action="store_true",
+        dest="ordinary_live_main_runkernel_coverage_dry_run",
+        help=(
+            "Run a default-off offline dry-run that visibly reaches ordinary-live "
+            "main RunKernel coverage without live calls."
+        ),
+    )
+    p.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Print DEBUG log to stderr",
@@ -195,9 +209,69 @@ def _parse_domains(raw: str) -> list[str]:
     return [x.strip().lower() for x in raw.split(",") if x.strip()]
 
 
+def _argv_requests_ordinary_live_dry_run(argv: list[str] | None) -> bool:
+    raw = sys.argv[1:] if argv is None else list(argv)
+    return ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG in raw
+
+
+def _run_ordinary_live_entrypoint_dry_run(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    current_date = datetime.now().strftime("%B %d, %Y")
+    config = build_ordinary_live_entrypoint_dry_run_config(
+        query=args.query,
+        mode=args.mode,
+        current_date=current_date,
+        include_domains=_parse_domains(args.include_domains),
+        exclude_domains=_parse_domains(args.exclude_domains),
+    )
+    dry_run_deps_builder = OrdinaryLiveEntrypointDryRunDeps(
+        output_dir=OUTPUT_DIR,
+        logger=log,
+    )
+    deps = dry_run_deps_builder.to_run_deps()
+
+    status = NullStatusWriter()
+    accumulator = CostAccumulator()
+    original_db_enabled = pipeline_orchestrator.DB_ENABLED
+    original_kb_review_agent = pipeline_orchestrator.kb_review_agent
+    pipeline_orchestrator.DB_ENABLED = False
+    pipeline_orchestrator.kb_review_agent = lambda *_args, **_kwargs: {}
+    try:
+        outcome = run_pipeline(config, deps, status, accumulator)
+    except PipelineError as exc:
+        print(f"ERROR: Pipeline failed during ordinary-live dry-run - {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        log.exception("Unexpected ordinary-live dry-run error")
+        print(f"ERROR: Unexpected ordinary-live dry-run error - {exc}", file=sys.stderr)
+        return 1
+    finally:
+        pipeline_orchestrator.DB_ENABLED = original_db_enabled
+        pipeline_orchestrator.kb_review_agent = original_kb_review_agent
+
+    dry_run_output = format_ordinary_live_entrypoint_dry_run_status(
+        execution_trace=outcome.execution_trace,
+    )
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(dry_run_output, encoding="utf-8")
+        print(f"Dry-run status written to {out_path}", file=sys.stderr)
+    else:
+        print(dry_run_output)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = _parse_args(argv)
+    if not _argv_requests_ordinary_live_dry_run(argv):
+        load_dotenv()
+    args = _parse_args(sys.argv[1:] if argv is None else list(argv))
     log = _build_logger(args.verbose)
+
+    if args.ordinary_live_main_runkernel_coverage_dry_run:
+        return _run_ordinary_live_entrypoint_dry_run(args=args, log=log)
 
     # Validate required model-provider keys early so the error message is clean.
     missing_keys = missing_required_api_keys(
