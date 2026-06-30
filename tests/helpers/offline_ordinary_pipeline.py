@@ -55,6 +55,7 @@ def offline_balanced_run_config(
     ordinary_live_candidate_handoff_provider: str = "offline-fake-search",
     enable_ordinary_live_source_custody: bool = False,
     ordinary_live_source_custody_anchor_groups: Sequence[Any] = (),
+    enable_ordinary_live_semantic_coverage: bool = False,
 ) -> RunConfig:
     return RunConfig(
         query=query,
@@ -87,6 +88,9 @@ def offline_balanced_run_config(
         enable_ordinary_live_source_custody=enable_ordinary_live_source_custody,
         ordinary_live_source_custody_anchor_groups=tuple(
             ordinary_live_source_custody_anchor_groups
+        ),
+        enable_ordinary_live_semantic_coverage=(
+            enable_ordinary_live_semantic_coverage
         ),
     )
 
@@ -348,6 +352,7 @@ def run_offline_ordinary_pipeline(
     enable_ordinary_live_source_custody: bool = False,
     ordinary_live_source_fetch_read: Any | None = None,
     ordinary_live_source_custody_anchor_groups: Sequence[Any] = (),
+    enable_ordinary_live_semantic_coverage: bool = False,
 ) -> tuple[dict[str, Any], Any]:
     captured = install_handoff_capture(monkeypatch, capture_stages=capture_stages)
     deps = harness.deps()
@@ -376,6 +381,9 @@ def run_offline_ordinary_pipeline(
             enable_ordinary_live_source_custody=enable_ordinary_live_source_custody,
             ordinary_live_source_custody_anchor_groups=(
                 ordinary_live_source_custody_anchor_groups
+            ),
+            enable_ordinary_live_semantic_coverage=(
+                enable_ordinary_live_semantic_coverage
             ),
         ),
         deps,

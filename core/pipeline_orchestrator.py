@@ -143,6 +143,10 @@ from core.ordinary_continuation_spine_gate import (
     scout_continuation_spine_gate_defaults,
     scout_continuation_spine_gate_exception_trace,
 )
+from core.ordinary_live_semantic_coverage_runtime import (
+    ORDINARY_LIVE_SEMANTIC_COVERAGE_TRACE_KEY,
+    execute_ordinary_live_semantic_coverage,
+)
 from core.ordinary_live_source_custody_runtime import (
     ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY,
     execute_ordinary_live_source_custody,
@@ -1028,8 +1032,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
 
     ordinary_live_candidate_handoff_projection: dict[str, Any] = {}
     ordinary_live_source_custody_projection: dict[str, Any] = {}
+    ordinary_live_semantic_coverage_projection: dict[str, Any] = {}
     candidate_handoff_kernel: RunKernel | None = None
     ordinary_live_candidate_handoff = None
+    ordinary_live_source_custody = None
     if config.enable_ordinary_live_candidate_handoff:
         candidate_handoff_kernel = RunKernel.start(
             run_id=f"{run_id}:ordinary-live-candidate-handoff",
@@ -1093,6 +1099,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         )
         ordinary_live_source_custody_projection = (
             ordinary_live_source_custody.projection
+        )
+    if config.enable_ordinary_live_semantic_coverage:
+        ordinary_live_semantic_coverage = execute_ordinary_live_semantic_coverage(
+            run_kernel=candidate_handoff_kernel,
+            parent_run_id=run_kernel.state.run_id,
+            parent_request_id=session_id,
+            source_custody_result=ordinary_live_source_custody,
+        )
+        ordinary_live_semantic_coverage_projection = (
+            ordinary_live_semantic_coverage.projection
         )
 
     all_passages: list[dict[str, Any]] = []
@@ -4096,6 +4112,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if ordinary_live_source_custody_projection:
         execution_trace[ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY] = (
             ordinary_live_source_custody_projection
+        )
+    if ordinary_live_semantic_coverage_projection:
+        execution_trace[ORDINARY_LIVE_SEMANTIC_COVERAGE_TRACE_KEY] = (
+            ordinary_live_semantic_coverage_projection
         )
     output_word_count = post_author_output_packaging.output_word_count
     execution_log_entry = post_author_output_packaging.execution_log_entry
