@@ -23,6 +23,7 @@ CURRENT_GUIDANCE = [
     ROOT / "docs" / "codex" / "ARCHITECTURE_GROOVE_PLAYBOOK.md",
     ROOT / "docs" / "codex" / "PHASE_BRIEF_TEMPLATE.md",
     ROOT / "docs" / "codex" / "EXECUTION_PLAN_TEMPLATE.md",
+    ROOT / "docs" / "codex" / "PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md",
     CURRENT_STATE,
 ]
 
@@ -41,16 +42,18 @@ def test_ag94g_map_exists_and_names_orchestrator_as_target_surface() -> None:
     assert "Decision Packet For Next Strangler Phase" in text
 
 
-def test_current_guidance_uses_licensed_closed_target_historical_vocabulary() -> None:
+def test_current_guidance_uses_current_surface_vocabulary() -> None:
     combined = "\n".join(_read(path) for path in CURRENT_GUIDANCE)
 
     for phrase in (
-        "Licensed surface",
-        "Closed surface",
-        "Target surface",
-        "Historical surface",
-        "Safety-sensitive surface",
-        "protected\" should not mean sacred",
+        "licensed surface",
+        "target surface",
+        "high-custody surface",
+        "closed-this-phase surface",
+        "historical surface",
+        "strangler target",
+        "Protected\" is retired as active phase-control vocabulary",
+        "call it a high-custody target or strangler target, not protected",
     ):
         assert phrase in combined
 
@@ -58,7 +61,7 @@ def test_current_guidance_uses_licensed_closed_target_historical_vocabulary() ->
     assert "not architecture success" in combined
 
 
-def test_current_guidance_does_not_make_orchestrator_sacred_or_protected() -> None:
+def test_current_guidance_does_not_make_orchestrator_sacred() -> None:
     combined = "\n".join(_read(path).casefold() for path in CURRENT_GUIDANCE)
     normalized = " ".join(combined.replace("`", "").split())
 
@@ -72,6 +75,7 @@ def test_current_guidance_does_not_make_orchestrator_sacred_or_protected() -> No
     assert [phrase for phrase in forbidden_phrases if phrase in combined] == []
     assert "core/pipeline_orchestrator.py is a coordination shell" in normalized
     assert "licensed target surface" in normalized
+    assert "strangler target" in normalized
 
 
 def test_current_state_is_redirect_stub_and_history_is_preserved() -> None:
