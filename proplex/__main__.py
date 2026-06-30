@@ -41,6 +41,9 @@ LIVE_ACQUISITION_READABILITY_STATUS_FLAG = (
 LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG = (
     "--live-source-evidence-admission-status-dry-run"
 )
+LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG = (
+    "--live-citation-source-obligation-readiness-status-dry-run"
+)
 
 if not any(
     flag in sys.argv[1:]
@@ -48,6 +51,7 @@ if not any(
         ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
         LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
         LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG,
+        LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
     )
 ):
     load_dotenv()
@@ -89,6 +93,9 @@ from core.text_utils import clean_json_response  # noqa: E402
 from proplex.env_aliases import get_env_alias  # noqa: E402
 from proplex.live_acquisition_readability_status import (  # noqa: E402
     build_live_acquisition_readability_status,
+)
+from proplex.live_citation_source_obligation_readiness_status import (  # noqa: E402
+    build_live_citation_source_obligation_readiness_status,
 )
 from proplex.live_source_evidence_admission_status import (  # noqa: E402
     build_live_source_evidence_admission_status,
@@ -242,6 +249,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
+        action="store_true",
+        dest="live_citation_source_obligation_readiness_status_dry_run",
+        help=(
+            "Consume retained source/evidence custody status and print citation/"
+            "source-obligation readiness posture without live calls, citations, "
+            "source-obligation satisfaction, or answer prose."
+        ),
+    )
+    p.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Print DEBUG log to stderr",
@@ -360,6 +377,35 @@ def _run_live_source_evidence_admission_status(
     return result.return_code
 
 
+def _run_live_citation_source_obligation_readiness_status(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    try:
+        result = build_live_citation_source_obligation_readiness_status(
+            query=args.query,
+            repo_root=_ROOT,
+        )
+    except Exception as exc:
+        log.exception(
+            "Unexpected live citation/source-obligation readiness status error"
+        )
+        print(
+            "ERROR: Unexpected live citation/source-obligation readiness "
+            f"status error - {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(result.output, encoding="utf-8")
+        print(f"Status written to {out_path}", file=sys.stderr)
+    else:
+        print(result.output)
+    return result.return_code
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else list(argv))
     log = _build_logger(args.verbose)
@@ -372,6 +418,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.live_source_evidence_admission_status_dry_run:
         return _run_live_source_evidence_admission_status(args=args, log=log)
+
+    if args.live_citation_source_obligation_readiness_status_dry_run:
+        return _run_live_citation_source_obligation_readiness_status(
+            args=args,
+            log=log,
+        )
 
     # Validate required model-provider keys early so the error message is clean.
     missing_keys = missing_required_api_keys(

@@ -24,6 +24,7 @@ PRODUCT_ROOTS = (ROOT / "proplex", ROOT / "core")
 KNOWN_PRODUCT_STATUS_MODULES = (
     ROOT / "proplex" / "live_acquisition_readability_status.py",
     ROOT / "proplex" / "live_source_evidence_admission_status.py",
+    ROOT / "proplex" / "live_citation_source_obligation_readiness_status.py",
 )
 RETAINED_PREFLIGHT_MODULE = ROOT / "core" / "retained_live_artifact_preflight.py"
 
