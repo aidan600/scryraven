@@ -35,8 +35,17 @@ from dotenv import load_dotenv
 ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG = (
     "--ordinary-live-main-runkernel-coverage-dry-run"
 )
+LIVE_ACQUISITION_READABILITY_STATUS_FLAG = (
+    "--live-acquisition-readability-status-dry-run"
+)
 
-if ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG not in sys.argv[1:]:
+if not any(
+    flag in sys.argv[1:]
+    for flag in (
+        ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
+        LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
+    )
+):
     load_dotenv()
 
 # Ensure the project root is on sys.path when run as "python -m proplex" from
@@ -74,6 +83,9 @@ from core.retrieval import (  # noqa: E402
 from core.run_config import RunConfig, RunDeps  # noqa: E402
 from core.text_utils import clean_json_response  # noqa: E402
 from proplex.env_aliases import get_env_alias  # noqa: E402
+from proplex.live_acquisition_readability_status import (  # noqa: E402
+    build_live_acquisition_readability_status,
+)
 from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
     OrdinaryLiveEntrypointDryRunDeps,
     build_ordinary_live_entrypoint_dry_run_config,
@@ -204,6 +216,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
+        action="store_true",
+        dest="live_acquisition_readability_status_dry_run",
+        help=(
+            "Consume retained sanitized live acquisition/readability artifacts "
+            "and print status without live calls or answer prose."
+        ),
+    )
+    p.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Print DEBUG log to stderr",
@@ -270,12 +291,41 @@ def _run_ordinary_live_entrypoint_dry_run(
     return 0
 
 
+def _run_live_acquisition_readability_status(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    try:
+        result = build_live_acquisition_readability_status(
+            query=args.query,
+            repo_root=_ROOT,
+        )
+    except Exception as exc:
+        log.exception("Unexpected live acquisition/readability status error")
+        print(
+            f"ERROR: Unexpected live acquisition/readability status error - {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(result.output, encoding="utf-8")
+        print(f"Status written to {out_path}", file=sys.stderr)
+    else:
+        print(result.output)
+    return result.return_code
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else list(argv))
     log = _build_logger(args.verbose)
 
     if args.ordinary_live_main_runkernel_coverage_dry_run:
         return _run_ordinary_live_entrypoint_dry_run(args=args, log=log)
+
+    if args.live_acquisition_readability_status_dry_run:
+        return _run_live_acquisition_readability_status(args=args, log=log)
 
     # Validate required model-provider keys early so the error message is clean.
     missing_keys = missing_required_api_keys(
