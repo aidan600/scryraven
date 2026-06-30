@@ -14,6 +14,8 @@ DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
 TOKEN_ENV_VAR = "SCRYRAVEN_BROKER_TOKEN"
 TOKEN_HEADER = "X-ScryRaven-Broker-Token"
 REQUEST_KIND = "generic_provider_proxy_request"
+OUTPUT_HYGIENE_DECISION = "BLOCKED_OUTPUT_HYGIENE"
+OUTPUT_PREFLIGHT_SENTINEL = ".scryraven_provider_proxy_output_preflight.tmp"
 SUPPORTED_PROVIDERS = frozenset({"serper"})
 SUPPORTED_OPERATIONS = frozenset({"search"})
 MAX_RESULTS_CAP = 10
@@ -65,6 +67,26 @@ class ProviderProxyClientError(ValueError):
     """Raised when the generic provider-proxy request or response is unsafe."""
 
 
+class OutputHygieneError(ProviderProxyClientError):
+    """Raised when sanitized output storage is unavailable before live contact."""
+
+    def __init__(
+        self,
+        *,
+        reason: str,
+        output_path: Path,
+        error_type: str | None = None,
+    ) -> None:
+        self.summary = build_output_hygiene_failure_summary(
+            output_path=output_path,
+            reason=reason,
+            error_type=error_type,
+        )
+        super().__init__(
+            f"{OUTPUT_HYGIENE_DECISION}: {reason} at {self.summary['output_path']}"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
@@ -83,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
             )
 
         output_path = _resolve_output_path(args.output)
-        _require_output_path(output_path)
+        prepare_output_path_for_sanitized_write(output_path)
         payload = build_provider_proxy_request(
             provider=args.provider,
             operation=args.operation,
@@ -97,10 +119,12 @@ def main(argv: list[str] | None = None) -> int:
             operation=payload["operation"],
         )
         rendered = json.dumps(sanitized, indent=2, sort_keys=True) + "\n"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(rendered, encoding="utf-8")
         print(rendered, end="")
         print(f"wrote sanitized provider-proxy response to {output_path}")
+    except OutputHygieneError as exc:
+        print_output_hygiene_failure_summary(exc)
+        return 2
     except ProviderProxyClientError as exc:
         print(f"refusing provider-proxy broker request: {exc}", file=sys.stderr)
         return 2
@@ -186,6 +210,89 @@ def sanitize_broker_response(
         "raw_provider_payload_retained": False,
         "raw_search_response_retained": False,
     }
+
+
+def prepare_output_path_for_sanitized_write(path: Path) -> Path:
+    """Create and prove the output directory before broker/provider contact."""
+
+    try:
+        _require_output_path(path)
+        output_dir = path.parent
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise OutputHygieneError(
+                reason="could_not_create_output_directory",
+                output_path=path,
+                error_type=exc.__class__.__name__,
+            ) from exc
+        if not output_dir.is_dir():
+            raise OutputHygieneError(
+                reason="output_directory_path_is_not_a_directory",
+                output_path=path,
+            )
+        if path.exists() and path.is_dir():
+            raise OutputHygieneError(
+                reason="output_file_path_is_a_directory",
+                output_path=path,
+            )
+        sentinel = output_dir / OUTPUT_PREFLIGHT_SENTINEL
+        if sentinel.exists():
+            raise OutputHygieneError(
+                reason="output_preflight_sentinel_already_exists",
+                output_path=path,
+            )
+        try:
+            sentinel.write_text("", encoding="utf-8")
+        except OSError as exc:
+            raise OutputHygieneError(
+                reason="output_directory_not_writable",
+                output_path=path,
+                error_type=exc.__class__.__name__,
+            ) from exc
+        try:
+            sentinel.unlink()
+        except OSError as exc:
+            raise OutputHygieneError(
+                reason="output_preflight_sentinel_cleanup_failed",
+                output_path=path,
+                error_type=exc.__class__.__name__,
+            ) from exc
+        return path
+    except ProviderProxyClientError:
+        raise
+    except OSError as exc:
+        raise OutputHygieneError(
+            reason="output_hygiene_preflight_failed",
+            output_path=path,
+            error_type=exc.__class__.__name__,
+        ) from exc
+
+
+def build_output_hygiene_failure_summary(
+    *,
+    output_path: Path,
+    reason: str,
+    error_type: str | None = None,
+) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "decision": OUTPUT_HYGIENE_DECISION,
+            "output_path": _safe_output_path(output_path),
+            "output_directory": _safe_output_path(output_path.parent),
+            "sanitized_reason": _clean_token(reason, limit=120),
+            "error_type": _clean_token(error_type, limit=120),
+            "broker_invoked": False,
+            "provider_client_invoked": False,
+            "live_provider_called": False,
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+        }
+    )
+
+
+def print_output_hygiene_failure_summary(exc: OutputHygieneError) -> None:
+    print(json.dumps(exc.summary, indent=2, sort_keys=True), file=sys.stderr)
 
 
 def normalize_provider_result(
@@ -290,7 +397,17 @@ def _require_output_path(path: Path) -> None:
     try:
         path.relative_to(output_root)
     except ValueError as exc:
-        raise ProviderProxyClientError("output path must stay under output/") from exc
+        raise OutputHygieneError(
+            reason="output_path_outside_repo_output_boundary",
+            output_path=path,
+        ) from exc
+
+
+def _safe_output_path(path: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(ROOT))
+    except ValueError:
+        return str(path.resolve())
 
 
 def _reject_forbidden_keys(value: Any, *, context: str) -> None:

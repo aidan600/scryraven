@@ -191,6 +191,109 @@ def test_client_writes_only_sanitized_results_under_output(
     ]
 
 
+def test_client_preflights_nested_output_before_broker_post(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(client, "ROOT", tmp_path)
+    monkeypatch.setattr(client, "OUTPUT_DIR", tmp_path / "output")
+    output_path = tmp_path / "output" / "nested" / "broker_response.json"
+    captured: dict[str, Any] = {}
+
+    def fake_post(
+        broker_url: str,
+        token: str,
+        payload: Mapping[str, Any],
+    ) -> tuple[int, dict[str, Any]]:
+        captured["broker_url"] = broker_url
+        captured["token"] = token
+        captured["payload"] = dict(payload)
+        assert output_path.parent.is_dir()
+        assert not (output_path.parent / client.OUTPUT_PREFLIGHT_SENTINEL).exists()
+        return 200, _sample_broker_response()
+
+    monkeypatch.setattr(client, "_post_broker_json", fake_post)
+
+    rc = client.main(
+        [
+            "--broker-url",
+            "http://127.0.0.1:8765/run",
+            "--provider",
+            "serper",
+            "--operation",
+            "search",
+            "--query",
+            "current official example",
+            "--max-results",
+            "5",
+            "--output",
+            "output/nested/broker_response.json",
+            "--token",
+            "local-token",
+            "--confirm-provider-call",
+        ]
+    )
+
+    assert rc == 0
+    assert captured["broker_url"] == "http://127.0.0.1:8765/run"
+    assert output_path.is_file()
+
+
+def test_client_output_directory_file_collision_blocks_before_broker_post(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(client, "ROOT", tmp_path)
+    monkeypatch.setattr(client, "OUTPUT_DIR", tmp_path / "output")
+    blocked_dir = tmp_path / "output" / "blocked"
+    blocked_dir.parent.mkdir(parents=True)
+    blocked_dir.write_text("not a directory\n", encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    def fake_post(
+        broker_url: str,
+        token: str,
+        payload: Mapping[str, Any],
+    ) -> tuple[int, dict[str, Any]]:
+        captured["called"] = True
+        return 200, _sample_broker_response()
+
+    monkeypatch.setattr(client, "_post_broker_json", fake_post)
+
+    rc = client.main(
+        [
+            "--broker-url",
+            "http://127.0.0.1:8765/run",
+            "--provider",
+            "serper",
+            "--operation",
+            "search",
+            "--query",
+            "current official example",
+            "--max-results",
+            "5",
+            "--output",
+            "output/blocked/broker_response.json",
+            "--token",
+            "local-token",
+            "--confirm-provider-call",
+        ]
+    )
+
+    err = capsys.readouterr().err
+    assert rc == 2
+    assert captured == {}
+    assert client.OUTPUT_HYGIENE_DECISION in err
+    assert "could_not_create_output_directory" in err
+    assert "local-token" not in err
+    assert ".env" not in err
+    assert "api_key" not in err.casefold()
+    assert "raw_provider_payload\":" not in err
+    assert "raw_search_response\":" not in err
+    assert "full_trace" not in err
+
+
 def test_client_refuses_output_outside_output() -> None:
     assert client.main(
         [

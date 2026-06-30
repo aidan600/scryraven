@@ -34,7 +34,9 @@ def main(argv: list[str] | None = None) -> int:
             raise ProviderProxyOperatorError(
                 "pass --confirm-provider-call to acknowledge a live provider call"
             )
-        client._require_output_path(client._resolve_output_path(args.output))
+        client.prepare_output_path_for_sanitized_write(
+            client._resolve_output_path(args.output)
+        )
         token = generate_temporary_broker_token()
         env = broker_environment(
             provider=args.provider,
@@ -58,6 +60,9 @@ def main(argv: list[str] | None = None) -> int:
             output=args.output,
             token=token,
         )
+    except client.OutputHygieneError as exc:
+        client.print_output_hygiene_failure_summary(exc)
+        return 2
     except (ProviderProxyOperatorError, client.ProviderProxyClientError) as exc:
         print(f"refusing provider-proxy broker operator run: {exc}", file=sys.stderr)
         return 2
