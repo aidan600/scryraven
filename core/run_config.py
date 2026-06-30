@@ -99,6 +99,9 @@ class RunConfig:
         default_factory=tuple
     )
 
+    # Optional ordinary-path semantic coverage repair. Defaults preserve behavior.
+    enable_ordinary_live_semantic_coverage: bool = False
+
 
 @dataclass
 class RunDeps:
