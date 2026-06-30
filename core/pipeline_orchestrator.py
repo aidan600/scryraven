@@ -147,6 +147,10 @@ from core.ordinary_live_authority_consolidation_runtime import (
     ORDINARY_LIVE_AUTHORITY_CONSOLIDATION_TRACE_KEY,
     execute_ordinary_live_authority_consolidation,
 )
+from core.ordinary_live_main_runkernel_coverage_runtime import (
+    ORDINARY_LIVE_MAIN_RUNKERNEL_COVERAGE_TRACE_KEY,
+    execute_ordinary_live_main_runkernel_coverage,
+)
 from core.ordinary_live_semantic_coverage_runtime import (
     ORDINARY_LIVE_SEMANTIC_COVERAGE_TRACE_KEY,
     execute_ordinary_live_semantic_coverage,
@@ -1038,10 +1042,12 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     ordinary_live_source_custody_projection: dict[str, Any] = {}
     ordinary_live_semantic_coverage_projection: dict[str, Any] = {}
     ordinary_live_authority_consolidation_projection: dict[str, Any] = {}
+    ordinary_live_main_runkernel_coverage_projection: dict[str, Any] = {}
     candidate_handoff_kernel: RunKernel | None = None
     ordinary_live_candidate_handoff = None
     ordinary_live_source_custody = None
     ordinary_live_semantic_coverage = None
+    ordinary_live_main_runkernel_coverage = None
     if config.enable_ordinary_live_candidate_handoff:
         candidate_handoff_kernel = RunKernel.start(
             run_id=f"{run_id}:ordinary-live-candidate-handoff",
@@ -1127,7 +1133,6 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         ordinary_live_authority_consolidation_projection = (
             ordinary_live_authority_consolidation.projection
         )
-
     all_passages: list[dict[str, Any]] = []
     seen_urls: set[str] = set()
     collected_images: set[str] = set()
@@ -4122,6 +4127,26 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         code_version_metadata_builder=current_code_version_metadata,
     )
     execution_trace = post_author_output_packaging.execution_trace
+    if config.enable_ordinary_live_main_runkernel_coverage:
+        ordinary_live_main_runkernel_coverage = (
+            execute_ordinary_live_main_runkernel_coverage(
+                main_run_kernel=run_kernel,
+                query=query,
+                requested_mode=strategy,
+                run_contract_projection=run_contract_projection,
+                route_projection=run_kernel.state.projections.get("route_request", {}),
+                core_topic=core_topic,
+                candidate_results=config.ordinary_live_candidate_handoff_results,
+                provider_authorized=config.ordinary_live_candidate_handoff_provider,
+                fetch_read=deps.ordinary_live_source_fetch_read,
+                required_or_preferred_anchors=(
+                    config.ordinary_live_source_custody_anchor_groups
+                ),
+            )
+        )
+        ordinary_live_main_runkernel_coverage_projection = (
+            ordinary_live_main_runkernel_coverage.projection
+        )
     if ordinary_live_candidate_handoff_projection:
         execution_trace[ORDINARY_LIVE_CANDIDATE_HANDOFF_TRACE_KEY] = (
             ordinary_live_candidate_handoff_projection
@@ -4137,6 +4162,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     if ordinary_live_authority_consolidation_projection:
         execution_trace[ORDINARY_LIVE_AUTHORITY_CONSOLIDATION_TRACE_KEY] = (
             ordinary_live_authority_consolidation_projection
+        )
+    if ordinary_live_main_runkernel_coverage_projection:
+        execution_trace[ORDINARY_LIVE_MAIN_RUNKERNEL_COVERAGE_TRACE_KEY] = (
+            ordinary_live_main_runkernel_coverage_projection
         )
     output_word_count = post_author_output_packaging.output_word_count
     execution_log_entry = post_author_output_packaging.execution_log_entry

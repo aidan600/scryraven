@@ -149,12 +149,20 @@ class OrdinaryLiveCandidateHandoffResult:
 class _OrdinaryPlannerAdapter:
     query: str
     core_topic: str | None = None
+    component_id: str = _COMPONENT_ID
+    source_obligation_id: str = _SOURCE_OBLIGATION_ID
+    search_requirement_id: str = _SEARCH_REQUIREMENT_ID
+    planner_purpose: str = "candidate_handoff"
 
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
         return _planner_adapter_result(
             planner_input,
             query=self.query,
             core_topic=self.core_topic,
+            component_id=self.component_id,
+            source_obligation_id=self.source_obligation_id,
+            search_requirement_id=self.search_requirement_id,
+            planner_purpose=self.planner_purpose,
         )
 
 
@@ -182,11 +190,23 @@ def execute_ordinary_live_candidate_handoff(
     core_topic: str | None = None,
     candidate_results: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
     provider_authorized: str,
+    component_id: str | None = None,
+    source_obligation_id: str | None = None,
+    search_requirement_id: str | None = None,
+    planner_purpose: str = "candidate_handoff",
 ) -> OrdinaryLiveCandidateHandoffResult:
     """Reduce structured offline candidate inputs through the ordinary RunKernel."""
 
     base = _base_projection(enabled=True)
     try:
+        component_id = _clean_text(component_id, limit=160) or _COMPONENT_ID
+        source_obligation_id = (
+            _clean_text(source_obligation_id, limit=160) or _SOURCE_OBLIGATION_ID
+        )
+        search_requirement_id = (
+            _clean_text(search_requirement_id, limit=160) or _SEARCH_REQUIREMENT_ID
+        )
+        planner_purpose = _clean_text(planner_purpose, limit=120) or "candidate_handoff"
         normalized_results = _normalize_candidate_results(candidate_results)
         results_per_task_cap = _results_per_task_cap(normalized_results)
         _ensure_front_half_state(
@@ -198,6 +218,10 @@ def execute_ordinary_live_candidate_handoff(
             core_topic=core_topic,
             provider_authorized=provider_authorized,
             results_per_task_cap=results_per_task_cap,
+            component_id=component_id,
+            source_obligation_id=source_obligation_id,
+            search_requirement_id=search_requirement_id,
+            planner_purpose=planner_purpose,
         )
         current_contract = run_kernel.state.current_answer_contract
         if not current_contract:
@@ -346,6 +370,10 @@ def _ensure_front_half_state(
     core_topic: str | None,
     provider_authorized: str,
     results_per_task_cap: int,
+    component_id: str,
+    source_obligation_id: str,
+    search_requirement_id: str,
+    planner_purpose: str,
 ) -> None:
     if run_kernel.state.current_answer_contract:
         if not run_kernel.state.search_executor_handoff_state:
@@ -356,6 +384,40 @@ def _ensure_front_half_state(
             )
         return
     if run_kernel.state.initial_answer_contract:
+        if planner_purpose == "main_answer_coverage":
+            _ensure_existing_component_ref(
+                run_kernel.state.initial_answer_contract,
+                component_id=component_id,
+            )
+            _reduce_search_planner(
+                run_kernel=run_kernel,
+                query=query,
+                requested_mode=requested_mode,
+                run_contract_projection=run_contract_projection,
+                route_projection=route_projection,
+                core_topic=core_topic,
+                component_id=component_id,
+                source_obligation_id=source_obligation_id,
+                search_requirement_id=search_requirement_id,
+                planner_purpose=planner_purpose,
+            )
+            _apply_current_contract_candidate_caveat(
+                run_kernel,
+                query=query,
+                component_id=component_id,
+                planner_purpose=planner_purpose,
+            )
+            if not run_kernel.state.current_answer_contract:
+                raise OrdinaryLiveCandidateHandoffError(
+                    "accepted_current_answer_contract_missing",
+                    "ordinary live main coverage did not create current contract",
+                )
+            _reduce_search_executor_handoff(
+                run_kernel,
+                provider_authorized=provider_authorized,
+                results_per_task_cap=results_per_task_cap,
+            )
+            return
         raise OrdinaryLiveCandidateHandoffError(
             "accepted_current_answer_contract_missing",
             "ordinary live candidate handoff found initial contract without current contract",
@@ -367,9 +429,18 @@ def _ensure_front_half_state(
         run_contract_projection=run_contract_projection,
         route_projection=route_projection,
         core_topic=core_topic,
+        component_id=component_id,
+        source_obligation_id=source_obligation_id,
+        search_requirement_id=search_requirement_id,
+        planner_purpose=planner_purpose,
     )
     _accept_initial_contract(run_kernel)
-    _apply_current_contract_candidate_caveat(run_kernel, query=query)
+    _apply_current_contract_candidate_caveat(
+        run_kernel,
+        query=query,
+        component_id=component_id,
+        planner_purpose=planner_purpose,
+    )
     if not run_kernel.state.current_answer_contract:
         raise OrdinaryLiveCandidateHandoffError(
             "accepted_current_answer_contract_missing",
@@ -382,6 +453,20 @@ def _ensure_front_half_state(
     )
 
 
+def _ensure_existing_component_ref(
+    accepted_contract: Mapping[str, Any],
+    *,
+    component_id: str,
+) -> None:
+    for ref in accepted_contract.get("accepted_answer_component_refs", []):
+        if isinstance(ref, Mapping) and ref.get("component_id") == component_id:
+            return
+    raise OrdinaryLiveCandidateHandoffError(
+        "main_answer_component_binding_missing",
+        "ordinary live main coverage requires an existing accepted component",
+    )
+
+
 def _reduce_search_planner(
     *,
     run_kernel: RunKernel,
@@ -390,6 +475,10 @@ def _reduce_search_planner(
     run_contract_projection: Mapping[str, Any],
     route_projection: Mapping[str, Any] | None,
     core_topic: str | None,
+    component_id: str,
+    source_obligation_id: str,
+    search_requirement_id: str,
+    planner_purpose: str,
 ) -> None:
     normalized_query = _clean_text(query, limit=500) or "ordinary user query"
     planner_input = SearchPlannerInput(
@@ -434,7 +523,14 @@ def _reduce_search_planner(
     result = execute_search_planner_action(
         action=action,
         planner_input=planner_input,
-        adapter=_OrdinaryPlannerAdapter(query=normalized_query, core_topic=core_topic),
+        adapter=_OrdinaryPlannerAdapter(
+            query=normalized_query,
+            core_topic=core_topic,
+            component_id=component_id,
+            source_obligation_id=source_obligation_id,
+            search_requirement_id=search_requirement_id,
+            planner_purpose=planner_purpose,
+        ),
     )
     run_kernel.reduce(
         Observation.from_action(
@@ -475,6 +571,8 @@ def _apply_current_contract_candidate_caveat(
     run_kernel: RunKernel,
     *,
     query: str,
+    component_id: str,
+    planner_purpose: str,
 ) -> None:
     accepted = run_kernel.state.initial_answer_contract
     if not accepted:
@@ -482,7 +580,13 @@ def _apply_current_contract_candidate_caveat(
             "initial_answer_contract_missing",
             "ordinary live candidate handoff requires initial answer contract",
         )
-    record = _candidate_caveat_record(run_kernel, accepted, query=query)
+    record = _candidate_caveat_record(
+        run_kernel,
+        accepted,
+        query=query,
+        component_id=component_id,
+        planner_purpose=planner_purpose,
+    )
     action = run_kernel.authorize_contract_amendment_admission(
         amendment_record_id=record.amendment_record_id,
         amendment_record_digest=record.record_digest,
@@ -575,19 +679,72 @@ def _planner_adapter_result(
     *,
     query: str,
     core_topic: str | None,
+    component_id: str,
+    source_obligation_id: str,
+    search_requirement_id: str,
+    planner_purpose: str,
 ) -> dict[str, Any]:
     query_ref = _safe_mapping(planner_input.get("user_query_ref"))
     label = _clean_text(core_topic, limit=160) or _clean_text(query, limit=160) or "Primary source candidate"
     question = _clean_text(query, limit=300) or label
-    return {
-        "question_meaning_summary": (
+    main_answer_component = planner_purpose == "main_answer_coverage"
+    if main_answer_component:
+        summary = (
+            "Prepare one main ordinary answer component for bounded source "
+            "custody, SemanticObservation admission, and ComponentCoverage."
+        )
+        requested_output = (
+            "Readiness-compatible ComponentCoverage input for the main answer "
+            "component; no answer text."
+        )
+        component_criteria = [
+            "bind bounded sanitized source content to the accepted answer component",
+            "do not create readiness, citations, source-obligation satisfaction, or answer text",
+        ]
+        component_caveats = [
+            "ComponentCoverage is structural readiness input only."
+        ]
+        component_prohibited = [
+            "Do not claim SufficiencyReadiness, FinalAnswerPacket, Author, citations, source-obligation satisfaction, answer text, or product correctness."
+        ]
+        planner_caveats = [
+            "This ordinary repair seam validates main RunKernel source coverage only and does not answer."
+        ]
+        planner_prohibited = [
+            "No SufficiencyReadiness, FAP, Author, citation rendering, source-obligation satisfaction, or product-correctness claim."
+        ]
+        slot_id = "slot:ordinary-live-main-answer-source"
+        obligation_kind = "ordinary_live_main_answer_source"
+        model_adapter_name = "deterministic_ordinary_live_main_runkernel_coverage_adapter"
+    else:
+        summary = (
             "Prepare one ordinary product-path search candidate handoff for the "
             "current user query."
-        ),
-        "requested_output": "Sanitized SearchResultCandidate records only; no answer.",
+        )
+        requested_output = "Sanitized SearchResultCandidate records only; no answer."
+        component_criteria = [
+            "discover structured source candidate records",
+            "do not answer from snippets or search candidates",
+        ]
+        component_caveats = ["SearchResultCandidate records are non-evidence."]
+        component_prohibited = [
+            "Do not claim source-obligation satisfaction from search snippets."
+        ]
+        planner_caveats = [
+            "This ordinary repair seam validates search candidates only and does not answer."
+        ]
+        planner_prohibited = [
+            "No fetch/read, EvidenceLedger, citations, Sufficiency, FAP, Author, or product-correctness claim."
+        ]
+        slot_id = "slot:ordinary-live-candidate-source"
+        obligation_kind = "ordinary_structured_source_candidate"
+        model_adapter_name = "deterministic_ordinary_live_candidate_handoff_adapter"
+    return {
+        "question_meaning_summary": summary,
+        "requested_output": requested_output,
         "semantic_slots": [
             {
-                "slot_id": "slot:ordinary-live-candidate-source",
+                "slot_id": slot_id,
                 "slot_kind": "source_basis",
                 "status": "explicit",
                 "selected_value": "structured offline source candidate input",
@@ -596,53 +753,42 @@ def _planner_adapter_result(
         ],
         "answer_components": [
             {
-                "component_id": _COMPONENT_ID,
+                "component_id": component_id,
                 "component_revision": "1",
                 "user_facing_label": label,
                 "user_facing_question": question,
                 "requirement_posture": "required",
-                "acceptance_criteria": [
-                    "discover structured source candidate records",
-                    "do not answer from snippets or search candidates",
-                ],
-                "semantic_slot_ids": ["slot:ordinary-live-candidate-source"],
-                "source_obligation_candidate_ids": [_SOURCE_OBLIGATION_ID],
+                "acceptance_criteria": component_criteria,
+                "semantic_slot_ids": [slot_id],
+                "source_obligation_candidate_ids": [source_obligation_id],
                 "allowed_support_kinds": ["direct"],
                 "max_inference_depth": 0,
-                "mandatory_caveats": [
-                    "SearchResultCandidate records are non-evidence."
-                ],
-                "prohibited_upgrades": [
-                    "Do not claim source-obligation satisfaction from search snippets."
-                ],
+                "mandatory_caveats": component_caveats,
+                "prohibited_upgrades": component_prohibited,
                 "materiality": "material",
             }
         ],
         "source_obligation_candidates": [
             {
-                "candidate_id": _SOURCE_OBLIGATION_ID,
-                "obligation_kind": "ordinary_structured_source_candidate",
-                "component_candidate_ids": [_COMPONENT_ID],
+                "candidate_id": source_obligation_id,
+                "obligation_kind": obligation_kind,
+                "component_candidate_ids": [component_id],
                 "strictness": "required",
             }
         ],
         "component_search_requirements": [
             {
-                "component_id": _COMPONENT_ID,
-                "requirement_id": _SEARCH_REQUIREMENT_ID,
+                "component_id": component_id,
+                "requirement_id": search_requirement_id,
                 "requirement_summary": question,
-                "source_obligation_candidate_ids": [_SOURCE_OBLIGATION_ID],
+                "source_obligation_candidate_ids": [source_obligation_id],
                 "preferred_source_kinds": ["official", "primary", "canonical"],
                 "recency_requirement": "current_if_user_question_requires_currentness",
             }
         ],
         "material_ambiguity_posture": "clear",
-        "mandatory_caveats": [
-            "This ordinary repair seam validates search candidates only and does not answer."
-        ],
-        "prohibited_upgrades": [
-            "No fetch/read, EvidenceLedger, citations, Sufficiency, FAP, Author, or product-correctness claim."
-        ],
+        "mandatory_caveats": planner_caveats,
+        "prohibited_upgrades": planner_prohibited,
         "normalization_obligations": [
             "Treat the query as source-candidate discovery only."
         ],
@@ -653,12 +799,13 @@ def _planner_adapter_result(
             "Final answer creation is outside ordinary live candidate handoff repair."
         ],
         "planner_model_metadata": {
-            "provider": "deterministic_ordinary_live_candidate_handoff_adapter",
+            "provider": model_adapter_name,
             "model_adapter_enabled": False,
             "raw_prompt_retained": False,
             "raw_model_response_retained": False,
             "provider_payload_retained": False,
             "prompt_hash": query_ref.get("digest"),
+            "front_half_source": planner_purpose,
         },
     }
 
@@ -668,20 +815,45 @@ def _candidate_caveat_record(
     accepted: Mapping[str, Any],
     *,
     query: str,
+    component_id: str,
+    planner_purpose: str,
 ) -> ContractAmendmentRecord:
+    main_answer_component = planner_purpose == "main_answer_coverage"
+    caveat = (
+        "Ordinary live main RunKernel coverage records source coverage only; "
+        "coverage is not readiness, citation rendering, source-obligation "
+        "satisfaction, answer text, or product correctness."
+        if main_answer_component
+        else (
+            "Ordinary live candidate handoff records search candidates only; "
+            "candidates are not evidence."
+        )
+    )
+    amendment_id = (
+        "amendment:ordinary-live-main-runkernel-coverage-integration-01"
+        if main_answer_component
+        else "amendment:ordinary-live-candidate-handoff-repair-01"
+    )
+    operation_id = (
+        "operation:add-ordinary-live-main-coverage-caveat"
+        if main_answer_component
+        else "operation:add-ordinary-live-candidate-caveat"
+    )
+    phase = (
+        "AG-ORDINARY-LIVE-MAIN-RUNKERNEL-COVERAGE-INTEGRATION-01"
+        if main_answer_component
+        else ORDINARY_LIVE_CANDIDATE_HANDOFF_PHASE
+    )
     operation = AmendmentOperation(
-        operation_id="operation:add-ordinary-live-candidate-caveat",
+        operation_id=operation_id,
         operation_kind=AmendmentOperationKind.ADD_CAVEAT,
         operation_payload={
-            "caveat": (
-                "Ordinary live candidate handoff records search candidates only; "
-                "candidates are not evidence."
-            ),
-            "component_id": _COMPONENT_ID,
+            "caveat": caveat,
+            "component_id": component_id,
         },
     )
     return ContractAmendmentRecord(
-        amendment_record_id="amendment:ordinary-live-candidate-handoff-repair-01",
+        amendment_record_id=amendment_id,
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
         request_digest=_digest_text(query),
@@ -695,7 +867,7 @@ def _candidate_caveat_record(
         ),
         accepted_contract_ref=f"contract:{accepted['accepted_contract_version']}:accepted",
         trigger_refs=AmendmentTriggerRefs(
-            gap_refs=("repair:ordinary-live-candidate-handoff",),
+            gap_refs=(f"repair:{planner_purpose}",),
             currentness_refs=("repair:source-candidate-authority-before-retrieval",),
         ),
         operations=(operation,),
@@ -705,14 +877,14 @@ def _candidate_caveat_record(
         weakening_posture=WeakeningPosture.NONE,
         mode_permission_posture=ModePermissionPosture.WITHIN_MODE,
         disposition=ProposalDisposition.ELIGIBLE_FOR_FUTURE_ACCEPTANCE,
-        required_caveats=("SearchResultCandidate records remain non-evidence.",),
+        required_caveats=(caveat,),
         prohibited_upgrades=(
             "Do not use provider_preference_hint as live provider authority.",
         ),
         metadata={
-            "phase": ORDINARY_LIVE_CANDIDATE_HANDOFF_PHASE,
+            "phase": phase,
             "mode": ORDINARY_LIVE_CANDIDATE_HANDOFF_MODE,
-            "front_half_source": "ordinary_run_pipeline_default_disabled_repair",
+            "front_half_source": planner_purpose,
         },
     )
 
