@@ -7,17 +7,24 @@ Use when: drafting Codex phase briefs, implementing authority/custody/semantic/p
 
 ScryRaven phases must not claim more than they prove.
 
-A component harness can prove a seam, but it does not improve the product until the ordinary runtime consumes that seam.
+A component harness can prove a seam, but it does not improve the product until
+the ordinary runtime consumes that seam.
 
-This document makes the proof class and actual product delta explicit before implementation starts and again in the final bundle.
+This document makes the proof class and actual product delta explicit before
+implementation starts and again in the final bundle.
 
 ## Phase Mode Gate
 
-Every phase must declare exactly one delivery intent:
+Build / Proof / Repair is the active phase operating system. Every phase must
+declare exactly one delivery intent:
 
 ```text
 Mode: BUILD | PROOF | REPAIR
 ```
+
+"Prove Mode" is retired as a global workflow label. Proof is only a phase mode
+under Build / Proof / Repair, and it is an exception with a leash, non-claims, a
+named blocker, and a mandatory next Build/product checkpoint.
 
 Phase mode is delivery intent: whether the phase is building product-path answer
 flow, proving a bounded technical question, or repairing an integrity defect.
@@ -45,24 +52,52 @@ happen first, set an exact timebox/scope cap, state what product decision it
 unlocks, state what cannot be claimed, identify throwaway/fixture-only/proof-only
 code, and name a mandatory next Build phase. No second Proof phase for the same
 blocker is allowed without explicit user approval. A PROOF phase must not be
-described as forward product progress unless and until a Build phase consumes
-it.
+described as forward product progress unless and until a Build phase consumes it.
 
 REPAIR mode fixes an integrity defect in an existing product-moving path or in
 the operating system that governs product-moving work. The usable-answer verdict
 must be YES when the repair restores or improves product-path behavior. For
 repo-doc/process repair only, the verdict may be NO-BUT-JUSTIFIED, but the phase
 must name the product-moving failure it prevents and the next Build/product
-checkpoint it protects. Definition of done requires removing the defect, adding
-a regression guard when practical, making the product-moving path or operating
+checkpoint it protects. Definition of done requires removing the defect, adding a
+regression guard when practical, making the product-moving path or operating
 system more honest, and avoiding broad cleanup or new architecture.
 
 Universal review question: did this make ScryRaven closer to producing a usable
 answer? Allowed verdicts are YES, NO-BUT-JUSTIFIED, and NO-NOT-JUSTIFIED. Reject
 or request changes for NO-NOT-JUSTIFIED.
 
+Skeptical outside-reviewer question:
+
+```text
+Is this finally building the app, or is it building convincing apparatus around the app?
+```
+
+A phase brief is invalid if a skeptical reviewer could fairly describe the
+deliverable as "a nice collection of harnesses" and the ordinary product path
+still cannot demonstrate the claimed behavior.
+
 Current repo-doc posture: after #352 through #355, the next gate is tightly
 scoped limited live validation, not another proof layer.
+
+## Surface vocabulary
+
+Use precise vocabulary instead of the retired active phrase protected surface:
+
+- **licensed surface:** explicitly opened by the phase brief.
+- **target surface:** the thing this phase is meant to inspect, change, reduce,
+  move, simplify, retire, or strangle.
+- **high-custody surface:** important/risky behavior requiring narrow scope,
+  named tests, and stop conditions.
+- **closed-this-phase surface:** do not touch in this phase.
+- **historical surface:** retained as record, not current doctrine or product
+  path.
+- **strangler target:** a surface to reduce, bypass, demote, subordinate, or
+  delete over time.
+
+"Protected" is retired as active phase-control vocabulary because it can imply
+"do not touch." When a surface is important and risky but intended to be changed,
+call it a high-custody target or strangler target, not protected.
 
 ## Required proof classes
 
@@ -89,12 +124,37 @@ path work is not licensed or safe in that phase, and name the mandatory next
 product-path checkpoint.
 
 Another harness, proof, packet, projection, registry, or passive record is not
-progress by default. It is allowed only when it has a named current-path
-consumer or removes a named blocker for an existing current-path consumer. If
-that consumer or blocker cannot be named, stop before implementation.
+progress by default. It is allowed only when it has a named current-path consumer
+or removes a named blocker for an existing current-path consumer. If that
+consumer or blocker cannot be named, stop before implementation.
 
 Hard stop: do not add another harness, proof, packet, projection, registry, or
 passive record without a named current-path consumer or named blocker removal.
+
+## Current authority and product-consumed distinction
+
+Do not let "current authority path" imply that the ordinary product path consumes
+or demonstrates the behavior. Use the narrower labels below:
+
+- **current internal authority path:** canonically owned or reduced by
+  RunKernel/RunAuthority or another named current authority, but not necessarily
+  product-visible.
+- **current product-consumed path:** consumed by ordinary CLI/app/product flow.
+- **fixture-only proof:** fixture-backed proof of a seam, not product-consumed.
+- **offline harness / proof-only harness:** offline scaffold or script, not live
+  and not product-consumed unless the ordinary path consumes it.
+- **integration-staging harness:** temporary scaffold while wiring a named product
+  consumer.
+- **product-facing dry-run proof:** reviewable output through a local/dry-run
+  path; useful but not live product correctness.
+- **live product path:** explicitly licensed live product execution that reaches
+  the claimed product output.
+- **historical/proof-only debt:** retained proof or harness history that must not
+  be cited as current product progress.
+
+A surface can be current internal authority while still having only fixture-only,
+offline-harness, or product-facing-dry-run proof. Use current product-consumed
+path only when ordinary product/CLI/app flow actually consumes the behavior.
 
 ## Required phase fields
 
@@ -127,15 +187,19 @@ Definitions:
   integration, product-facing dry-run/dogfood output, quarantine/docs-process
   work, fixture-only proof with a leash, offline harness proof with a leash,
   live-search-only validation, or live product proof.
-- **Product path affected** states whether ordinary `run_pipeline()`, CLI/product execution, UI product execution, or only a harness/test/script is affected.
-- **Runtime consumer** names the actual function/module that consumes the new authority, schema, state, or output.
+- **Product path affected** states whether ordinary `run_pipeline()`, CLI/product
+  execution, UI product execution, or only a harness/test/script is affected.
+- **Runtime consumer** names the actual function/module that consumes the new
+  authority, schema, state, or output.
 - **Actual consumer seam** names the producer-to-consumer boundary being proved,
-  including whether the consumer is RunKernel-owned, passive, fixture-only,
-  offline harness, live-search-only validation, product-facing dry-run proof,
-  legacy/passive/historical, or closed unless separately licensed.
-- **Actual app delta** states what the ordinary app can do after the phase that it could not do before.
-- **User-facing/reviewable output delta** states what a user or reviewer can
-  newly inspect. If the answer is "none," state that plainly.
+  including whether the consumer is current internal authority, current
+  product-consumed, passive, fixture-only, offline harness, live-search-only
+  validation, product-facing dry-run proof, legacy/passive/historical, or closed
+  unless separately licensed.
+- **Actual app delta** states what the ordinary app can do after the phase that it
+  could not do before.
+- **User-facing/reviewable output delta** states what a user or reviewer can newly
+  inspect. If the answer is "none," state that plainly.
 - **Non-product exception leash** states why this phase is allowed to be
   non-product work, how it is bounded, and what product-path checkpoint follows.
 - **Mandatory next product-path checkpoint** names the next checkpoint that must
@@ -159,20 +223,37 @@ Definitions:
 - **Non-proofs** states what the phase explicitly does not prove.
 - **Live validation status** states whether live validation was run, prohibited,
   not licensed, or separately licensed with exact scope.
-- **Bridge or exit condition** states how a harness/passive proof becomes product-path work later, or how it will be fixtureized/retired.
+- **Bridge or exit condition** states how a harness/passive proof becomes
+  product-path work later, or how it will be fixtureized/retired.
 
-When validation scope matters, keep the phase prompt compact but explicit:
+## Build/product-facing Repair substitute-output gate
+
+Every BUILD or product-facing REPAIR phase must include:
 
 ```text
-Validation bucket:
-Exact bucket command(s):
-Exact phase_focus test path(s) or node id(s):
-Full offline required:
-Intentionally not run:
+Ordinary entrypoint:
+User-style demonstration input:
+Forbidden substitute outputs:
+Product-path pass condition:
+Product-path fail condition:
 ```
 
-This lets future prompts rely on repo-visible validation guidance instead of
-repasting the whole lane doctrine.
+Forbidden substitute outputs:
+
+- harness-only path
+- fixture-only path
+- proof-only script
+- replay-only path
+- packet-only artifact
+- projection-only artifact
+- docs-only doctrine
+- shadow vertical slice
+
+Pass condition: a user-style input enters through the ordinary product/CLI/app
+path and produces the claimed reviewable output.
+
+Fail condition: the ordinary product path cannot consume the change. Stop with a
+blocker report instead of demonstrating the behavior beside the product.
 
 ## Required pre-phase questions
 
@@ -201,9 +282,53 @@ If the actual app delta, consumer seam, exception leash, or next product-path
 checkpoint is vague, stop and run an integration or authority-path audit before
 continuing.
 
-## Harness rule
+## Harness label and expiration rule
 
 A harness is allowed, but only with a short leash.
+
+Every new harness, proof-only script, replay path, packet-only demo, or
+non-product scaffold must carry exactly one label:
+
+```text
+PRODUCT-PATH-REGRESSION
+SEAM-DIAGNOSTIC
+INTEGRATION-STAGING
+EXPLORATORY-PROOF-ONLY
+SHADOW-PRODUCT-HARNESS
+```
+
+Definitions:
+
+- PRODUCT-PATH-REGRESSION: a harness/test guarding behavior already consumed by
+  the ordinary product path. Healthy and durable.
+- SEAM-DIAGNOSTIC: temporary harness to isolate a failure or uncertainty at one
+  seam. Must name the product seam and exit condition.
+- INTEGRATION-STAGING: temporary scaffold used while wiring a real product path.
+  Must name ordinary runtime consumer and integration deadline.
+- EXPLORATORY-PROOF-ONLY: non-product learning/proof. Must not be named like
+  product behavior and must have integrate/reject/delete decision.
+- SHADOW-PRODUCT-HARNESS: a product-shaped alternate path beside the product.
+  Failure unless explicitly authorized for review-only diagnosis.
+
+Required fields for any new harness/proof-only script/replay path:
+
+```text
+Harness label:
+Ordinary product path guarded or fed:
+Runtime consumer:
+Why ordinary product-path work cannot be done directly:
+Integration deadline:
+Exit condition:
+Why this is not a shadow product path:
+Forbidden interpretation:
+```
+
+A harness created in phase N should be consumed, converted to product-path
+regression guard, deleted, or marked historical/proof-only debt by phase N+1. It
+may survive to N+2 only if N+1 exposed a specific blocker and N+2 is explicitly
+the integration/retirement phase. After N+2, unconsumed harness/proof scaffolding
+is historical/proof-only debt by default and must not be cited as product
+progress.
 
 A good harness phase must state:
 
@@ -214,110 +339,10 @@ It proves this exact interface/invariant.
 The next step is integrate, fixtureize, or retire.
 ```
 
-No component proof should get more than one or two phases without a product-path checkpoint.
-
-Default checkpoint:
-
-```text
-Does run_pipeline() consume this, or not?
-```
-
-Component proofs may be valuable, but they must not be described as product-path completion unless `run_pipeline()` or the ordinary runtime path consumes them.
-
-Hidden harness drift is a stop condition.
-
-Adding another harness, proof, packet, projection, or passive registry without a
-named current-path consumer or named blocker removal is a hard stop. The right
-next action is to integrate existing machinery, dogfood through the product path,
-or retire/demote the unused surface.
-
-## Author harness recovery lesson
-
-AG-CHECK-01 proved ordinary `run_pipeline()` already consumes packet-constrained Author authority through:
-
-```text
-FinalAnswerPacket -> AuthorExecutor -> RunOutcome
-```
-
-The AF4B2 -> AF4C -> AF4D -> AF5A -> AF5B lane is a component harness / reference lab. It is partially shared and bridgeable, but it is not the ordinary product path today.
-
-Correct posture:
-
-```text
-The AF4B2 -> AF5B lane is not the ordinary product path.
-Do not promote it by implication.
-When future phases touch Author payload/materialization/execution/finalization,
-harvest its lessons deliberately.
-```
-
-Avoid both bad reactions:
-
-```text
-Bad reaction A: "The harness was fake, throw it away."
-Bad reaction B: "We spent time on it, so install it."
-```
-
-The right reaction is:
-
-```text
-Treat it as a stricter Author-custody reference lab.
-Harvest its invariants when a real Author-facing product phase opens.
-```
-
-## Harness lessons worth preserving
-
-When a future Author-facing product phase opens, consider deliberately harvesting:
-
-- bounded Author evidence content;
-- explicit invocation construction;
-- explicit model-request assembly;
-- fake/mock-live/live/brokered adapter accounting;
-- sanitized candidate response and finalization posture;
-- no raw prompt/provider/model retention;
-- broker/private adapter remains credential plumbing only.
-
-Do not deepen the Author harness by default.
-
-## Semantic-contract phase example
-
-For the current AG-SEM-05 through AG-SEM-10 completion checkpoint and next gates,
-see
-`docs/architecture/AG_SEM_05_10_COMPLETION_AND_NEXT_GATES.md`.
-
-For AG-SEM-01 Passive Semantic Contract Foundation:
-
-```text
-Proof class: schema_or_passive_record
-Product path affected: no runtime product behavior yet
-Runtime consumer: none yet; future RunAuthority/Sufficiency consumers named but closed
-Actual app delta: repo gains passive semantic contract records/invariants for future authority work
-Non-proofs: no product behavior, no Balanced loop, no Author change, no live proof
-Bridge or exit condition: later canonical reducer accepts answer components into ordinary RunAuthority chain
-```
-
-## Docs/test sanitation example
-
-For AG-DOC-TEST-SANITY-01:
-
-```text
-Proof class: docs_only plus validation-routing / test-collection sanitation
-Product path affected: none
-Runtime consumer: none
-Actual app delta: none; repo-visible guidance and offline collection routing improve
-Non-proofs: no live validation, no product recovery behavior change, no full-suite repair
-Bridge or exit condition: AG-LIVE-BOUND-01 can use shorter repo-doc-backed prompts
-```
-
-For AG-SEM-02:
-
-```text
-Proof class: schema_or_passive_record
-Product path affected: no runtime product behavior yet
-Runtime consumer: none yet; future SemanticObservation admission reducer named but closed
-Actual app delta: repo gains sanitized content-reference and SemanticObservation schemas
-Non-proofs: no canonical coverage, no Sufficiency consumer, no provider/search behavior, no Author behavior
-Bridge or exit condition: later observation admission and coverage reducer phases
-```
+No component proof should get more than one or two phases without a product-path
+checkpoint. Hidden harness drift is a stop condition. The right next action is to
+integrate existing machinery, dogfood through the product path, or retire/demote
+the unused surface.
 
 ## Review checks
 
@@ -335,7 +360,8 @@ During PR/final-bundle review, explicitly check:
 - What new machinery was introduced?
 - Why is this not reinventing an existing surface?
 - Is the new authority object consumed by the runtime path it governs?
-- Is the runtime consumer in ordinary `run_pipeline()`/product execution, CLI execution, a fixture harness, or a standalone script?
+- Is the runtime consumer in ordinary `run_pipeline()`/product execution, CLI
+  execution, a fixture harness, or a standalone script?
 - Did the PR merely add trace/projection/storage?
 - What old authority path was deleted, demoted, bypassed, or subordinated?
 - What old path was retained as passive/legacy/historical, and is it clearly
@@ -349,9 +375,13 @@ During PR/final-bundle review, explicitly check:
 
 Live validation remains default-off.
 
-`live_component_proof` requires a licensed component harness, call cap, redaction plan, output packet path, and stop condition.
+`live_component_proof` requires a licensed component harness, call cap,
+redaction plan, output packet path, and stop condition.
 
-`live_product_proof` requires a licensed ordinary product-path command, exact query or query class, run cap, provider/model/search/fetch/read budget, redaction plan, output packet path, decision the run will make, and stop condition.
+`live_product_proof` requires a licensed ordinary product-path command, exact
+query or query class, run cap, provider/model/search/fetch/read budget,
+redaction plan, output packet path, decision the run will make, and stop
+condition.
 
 A live component proof is not a live product proof.
 
@@ -380,4 +410,5 @@ Stop if:
   named current-path consumer or named blocker removal;
 - a harness continues beyond one or two phases without a product-path checkpoint;
 - live validation is implied rather than explicitly licensed;
-- secrets, `.env`, raw provider payloads, raw prompts, raw model responses, private logs, DB/cache rows, or full traces are required.
+- secrets, `.env`, raw provider payloads, raw prompts, raw model responses,
+  private logs, DB/cache rows, or full traces are required.
