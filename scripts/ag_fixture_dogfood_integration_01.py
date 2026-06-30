@@ -122,6 +122,7 @@ DEFAULT_QUERY = "fixture dogfood official permit threshold"
 DEFAULT_RUN_ID = "run:ag-fixture-dogfood-integration-01"
 DEFAULT_REQUEST_ID = "request:ag-fixture-dogfood-integration-01"
 COMPONENT_ID = "component:official-current-public-fact"
+OPTIONAL_COMPONENT_ID = "component:optional-context"
 SOURCE_OBLIGATION_ID = "obligation:official-current-public-source"
 SEARCH_REQUIREMENT_ID = "searchreq:official-current-public-fact"
 
@@ -177,8 +178,16 @@ class GeneratedReviewPacket:
 class DeterministicDogfoodPlannerAdapter:
     """Repo-visible planner fixture; never calls a model or provider."""
 
+    def __init__(self, *, include_optional_context_component: bool = False) -> None:
+        self.include_optional_context_component = include_optional_context_component
+
     def produce(self, planner_input: Mapping[str, Any]) -> Mapping[str, Any]:
-        return _planner_adapter_result(planner_input)
+        return _planner_adapter_result(
+            planner_input,
+            include_optional_context_component=(
+                self.include_optional_context_component
+            ),
+        )
 
 
 def generate_review_packets(
@@ -279,11 +288,8 @@ def _build_partial_packet() -> dict[str, Any]:
             "the partial posture instead of hiding the unresolved component."
         ),
     )
-    chain = _supported_chain_with_candidate_packet()
-    _add_component(
-        chain["kernel"],
-        component_id="component:optional-context",
-        required=False,
+    chain = _supported_chain_with_candidate_packet(
+        include_optional_context_component=True,
     )
     _reduce_readiness_fap_author(chain["kernel"])
     return _review_packet(spec, chain)
@@ -328,8 +334,14 @@ def _build_contested_packet() -> dict[str, Any]:
     return _review_packet(spec, chain)
 
 
-def _packet_from_state(*, candidate_count: int = 1) -> tuple[Any, dict[str, Any]]:
-    kernel = _build_front_half_kernel()
+def _packet_from_state(
+    *,
+    candidate_count: int = 1,
+    include_optional_context_component: bool = False,
+) -> tuple[Any, dict[str, Any]]:
+    kernel = _build_front_half_kernel(
+        include_optional_context_component=include_optional_context_component,
+    )
     _reduce_validation(kernel, results=_fake_results(kernel, count=candidate_count))
     packet = build_search_result_candidate_packet_from_live_validation_state(
         kernel.state.live_search_validation_state
@@ -337,7 +349,10 @@ def _packet_from_state(*, candidate_count: int = 1) -> tuple[Any, dict[str, Any]
     return kernel, packet
 
 
-def _build_front_half_kernel() -> RunKernel:
+def _build_front_half_kernel(
+    *,
+    include_optional_context_component: bool = False,
+) -> RunKernel:
     kernel = RunKernel.start(
         run_id=DEFAULT_RUN_ID,
         request_id=DEFAULT_REQUEST_ID,
@@ -348,14 +363,21 @@ def _build_front_half_kernel() -> RunKernel:
             "query_text_retained": False,
         },
     )
-    _reduce_deterministic_planner(kernel)
+    _reduce_deterministic_planner(
+        kernel,
+        include_optional_context_component=include_optional_context_component,
+    )
     _accept_initial_contract(kernel)
     _apply_current_contract_caveat(kernel)
     _reduce_search_executor_handoff(kernel)
     return kernel
 
 
-def _reduce_deterministic_planner(kernel: RunKernel) -> None:
+def _reduce_deterministic_planner(
+    kernel: RunKernel,
+    *,
+    include_optional_context_component: bool = False,
+) -> None:
     planner_input = SearchPlannerInput(
         run_id=kernel.state.run_id,
         request_id=kernel.state.request_id,
@@ -385,7 +407,9 @@ def _reduce_deterministic_planner(kernel: RunKernel) -> None:
     result = execute_search_planner_action(
         action=action,
         planner_input=planner_input,
-        adapter=DeterministicDogfoodPlannerAdapter(),
+        adapter=DeterministicDogfoodPlannerAdapter(
+            include_optional_context_component=include_optional_context_component,
+        ),
     )
     kernel.reduce(
         Observation.from_action(
@@ -905,34 +929,63 @@ def _specialist_record(
     )
 
 
-def _add_component(
-    kernel: Any,
+def _planner_adapter_result(
+    planner_input: Mapping[str, Any],
     *,
-    component_id: str,
-    required: bool,
+    include_optional_context_component: bool = False,
 ) -> dict[str, Any]:
-    component = deepcopy(
-        kernel.state.current_answer_contract["accepted_answer_component_refs"][0]
-    )
-    component["component_id"] = component_id
-    component["component_revision"] = "1"
-    component["component_digest"] = f"digest:{component_id}"
-    component["requirement_posture"] = "required" if required else "optional"
-    component["materiality"] = "material" if required else "non_material"
-    component["mandatory_caveats"] = [
-        f"Component {component_id} is unresolved in the readiness preview."
-    ]
-    component["prohibited_upgrades"] = [
-        f"Do not upgrade component {component_id} beyond supported readiness."
-    ]
-    refs = kernel.state.current_answer_contract["accepted_answer_component_refs"]
-    refs.append(component)
-    kernel.state.current_answer_contract["accepted_answer_component_count"] = len(refs)
-    return component
-
-
-def _planner_adapter_result(planner_input: Mapping[str, Any]) -> dict[str, Any]:
     query_ref = _mapping(planner_input.get("user_query_ref"))
+    answer_components = [
+        {
+            "component_id": COMPONENT_ID,
+            "component_revision": "1",
+            "user_facing_label": "Official current public fact",
+            "user_facing_question": DEFAULT_QUERY,
+            "requirement_posture": "required",
+            "acceptance_criteria": [
+                "preserve fixture source/content/custody lineage",
+                "produce AuthorProse without live validation claims",
+            ],
+            "semantic_slot_ids": ["slot:query-class"],
+            "source_obligation_candidate_ids": [SOURCE_OBLIGATION_ID],
+            "allowed_support_kinds": ["direct"],
+            "max_inference_depth": 0,
+            "mandatory_caveats": [
+                "Fixture current-path output does not prove live validation."
+            ],
+            "prohibited_upgrades": [
+                "Do not claim citation rendering or source-obligation satisfaction."
+            ],
+            "materiality": "material",
+        }
+    ]
+    if include_optional_context_component:
+        answer_components.append(
+            {
+                "component_id": OPTIONAL_COMPONENT_ID,
+                "component_revision": "1",
+                "user_facing_label": "Optional context",
+                "user_facing_question": (
+                    "Optional fixture context that is intentionally left "
+                    "uncovered by the deterministic dogfood source chain."
+                ),
+                "requirement_posture": "optional",
+                "acceptance_criteria": [
+                    "preserve unresolved optional posture when no coverage exists"
+                ],
+                "semantic_slot_ids": ["slot:query-class"],
+                "source_obligation_candidate_ids": [],
+                "allowed_support_kinds": ["direct"],
+                "max_inference_depth": 0,
+                "mandatory_caveats": [
+                    "Component component:optional-context is unresolved in the readiness preview."
+                ],
+                "prohibited_upgrades": [
+                    "Do not upgrade component component:optional-context beyond supported readiness."
+                ],
+                "materiality": "non_material",
+            }
+        )
     return {
         "question_meaning_summary": (
             "Prepare an official-current fixture chain for AuthorProse dogfood."
@@ -947,30 +1000,7 @@ def _planner_adapter_result(planner_input: Mapping[str, Any]) -> dict[str, Any]:
                 "materiality": "material",
             }
         ],
-        "answer_components": [
-            {
-                "component_id": COMPONENT_ID,
-                "component_revision": "1",
-                "user_facing_label": "Official current public fact",
-                "user_facing_question": DEFAULT_QUERY,
-                "requirement_posture": "required",
-                "acceptance_criteria": [
-                    "preserve fixture source/content/custody lineage",
-                    "produce AuthorProse without live validation claims",
-                ],
-                "semantic_slot_ids": ["slot:query-class"],
-                "source_obligation_candidate_ids": [SOURCE_OBLIGATION_ID],
-                "allowed_support_kinds": ["direct"],
-                "max_inference_depth": 0,
-                "mandatory_caveats": [
-                    "Fixture current-path output does not prove live validation."
-                ],
-                "prohibited_upgrades": [
-                    "Do not claim citation rendering or source-obligation satisfaction."
-                ],
-                "materiality": "material",
-            }
-        ],
+        "answer_components": answer_components,
         "source_obligation_candidates": [
             {
                 "candidate_id": SOURCE_OBLIGATION_ID,
@@ -1085,8 +1115,14 @@ def _source_refs_from_contract(contract: Mapping[str, Any]) -> list[dict[str, An
     return refs
 
 
-def _supported_chain_with_candidate_packet() -> dict[str, Any]:
-    kernel, candidate_packet = _packet_from_state(candidate_count=1)
+def _supported_chain_with_candidate_packet(
+    *,
+    include_optional_context_component: bool = False,
+) -> dict[str, Any]:
+    kernel, candidate_packet = _packet_from_state(
+        candidate_count=1,
+        include_optional_context_component=include_optional_context_component,
+    )
     candidate_packet = validate_search_result_candidate_packet(
         deepcopy(candidate_packet)
     )

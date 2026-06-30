@@ -29,8 +29,10 @@ default.
 - `01_full_supported`: candidate/content/custody through Analyst support,
   SemanticObservation admission, ComponentCoverage, Specialist, Scrutineer,
   SufficiencyReadiness, hardened FAP, and AuthorProse.
-- `02_partial_unresolved`: one supported component plus an unresolved optional
-  component; AuthorProse preserves partial posture.
+- `02_partial_unresolved`: the deterministic planner fixture emits one
+  supported component plus `component:optional-context` before initial contract
+  acceptance; only the first component receives fixture coverage, so
+  AuthorProse preserves partial posture without direct contract mutation.
 - `03_contested_weak_evidence`: supported custody/coverage with weak or stale
   Specialist inputs; Sufficiency, FAP, and AuthorProse preserve contested
   posture.
