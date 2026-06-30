@@ -7,6 +7,11 @@ from typing import Any, Mapping
 
 import pytest
 
+from core.live_search_validation_runtime import (
+    LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP,
+    LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP,
+)
+from core.run_kernel import RunKernelTransitionError
 from scripts import ag_limited_live_search_candidate_01 as harness
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -116,6 +121,11 @@ def test_prepare_request_includes_exact_query_mode_caps_redaction_and_paths() ->
     assert packet["original_user_style_query"] == harness.USER_FACING_QUESTION
     assert packet["live_budget"]["max_provider_search_calls_total"] == 1
     assert packet["live_budget"]["max_results"] == 5
+    assert packet["live_budget"]["budget_scope"] == (
+        "phase-local licensed budget; not a global default"
+    )
+    assert packet["live_budget"]["ordinary_default_results_per_task_cap"] == 2
+    assert packet["live_budget"]["explicit_results_per_task_ceiling"] == 5
     assert packet["live_budget"]["model_calls"] == 0
     assert packet["raw_provider_payload_retained"] is False
     assert packet["raw_search_response_retained"] is False
@@ -128,6 +138,22 @@ def test_prepare_request_includes_exact_query_mode_caps_redaction_and_paths() ->
     ) or packet["expected_output_paths"]["request_packet"].startswith(
         "output/ag_limited_live_search_candidate_01"
     )
+
+
+def test_global_default_results_per_task_cap_remains_two() -> None:
+    assert LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP == 2
+    assert LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP == 5
+    front_half = harness.build_front_half(
+        query=harness.DEFAULT_QUERY,
+        output_dir=_output_dir("global-default"),
+    )
+
+    action = front_half.kernel.authorize_live_search_validation(
+        selected_search_task_ids=front_half.selected_search_task_ids,
+        provider_authorized="serper",
+    )
+
+    assert action.inputs["results_per_task_cap"] == 2
 
 
 def test_prepare_request_and_reduce_results_do_not_import_provider_transport() -> None:
@@ -173,6 +199,32 @@ def test_reduce_results_builds_candidate_packet_from_five_sanitized_records() ->
     candidate_packet = _read_json(out / "search_result_candidate_packet.json")
     assert candidate_packet["candidate_count"] == 5
     assert candidate_packet["candidate_records"][0]["domain"] == "travel.state.gov"
+
+
+def test_cap_above_explicit_licensed_ceiling_fails_closed() -> None:
+    front_half = harness.build_front_half(
+        query=harness.DEFAULT_QUERY,
+        output_dir=_output_dir("above-ceiling-action"),
+    )
+
+    with pytest.raises(RunKernelTransitionError, match="explicit cap"):
+        front_half.kernel.authorize_live_search_validation(
+            selected_search_task_ids=front_half.selected_search_task_ids,
+            provider_authorized="serper",
+            results_per_task_cap=6,
+        )
+
+    too_many_results = [_official_result(rank=index) for index in range(1, 7)]
+    provider_results = _write_json(
+        _provider_results_path("above-ceiling-results"),
+        _generic_provider_output(too_many_results),
+    )
+    with pytest.raises(harness.LimitedLiveSearchCandidateError, match="max results cap 5"):
+        harness.reduce_results(
+            query=harness.DEFAULT_QUERY,
+            provider_results_path=provider_results,
+            output_dir=_output_dir("above-ceiling-results"),
+        )
 
 
 def test_reducer_accepts_allowed_alias_fields_only() -> None:

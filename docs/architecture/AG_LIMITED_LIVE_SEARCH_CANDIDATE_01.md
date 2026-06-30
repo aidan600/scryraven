@@ -25,6 +25,10 @@ What is the current adult U.S. passport book renewal fee?
 
 ## Caps
 
+These caps are phase-local licensed budget, not the global live-search
+validation default. Ordinary/default live validation remains at 2 results per
+task unless a phase explicitly passes a separately licensed cap.
+
 - max ScryRaven validation runs: 1
 - max search tasks: 1
 - max provider search calls total: 1

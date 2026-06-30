@@ -25,7 +25,9 @@ from core.contract_amendment_record import (  # noqa: E402
     WeakeningPosture,
 )
 from core.live_search_validation_runtime import (  # noqa: E402
+    LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP,
     LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE,
+    LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP,
     build_live_search_validation_observation_payload,
 )
 from core.run_kernel import (  # noqa: E402
@@ -659,12 +661,19 @@ def _base_packet(
             "broker_invoked": broker_invoked,
             "live_provider_called": live_provider_called,
             "live_budget": {
+                "budget_scope": "phase-local licensed budget; not a global default",
                 "max_scry_raven_validation_runs": 1,
                 "max_search_tasks": MAX_SEARCH_TASKS,
                 "max_provider_search_calls_total": MAX_PROVIDER_CALLS,
                 "provider": DEFAULT_PROVIDER,
                 "operation": DEFAULT_OPERATION,
                 "max_results": MAX_RESULTS,
+                "ordinary_default_results_per_task_cap": (
+                    LIVE_SEARCH_VALIDATION_DEFAULT_RESULTS_PER_TASK_CAP
+                ),
+                "explicit_results_per_task_ceiling": (
+                    LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP
+                ),
                 "model_calls": MODEL_CALLS,
                 "broker_calls": "max 1 trusted-local generic provider-proxy call",
                 "fetch_read_calls": 0,
