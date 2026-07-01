@@ -28,6 +28,7 @@ from typing import Any, Callable
 import pytest
 
 import core.dprime_assessment_validation as assessment_validation
+import core.dprime_one_shot_provider_boundary as provider_boundary
 import core.dprime_support_proposal_schema as dprime
 import proplex.live_semantic_coverage_status as semantic_status
 from core.dprime_model_review_assessment import (
@@ -72,7 +73,13 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
     calls: list[dict[str, Any]] = []
 
     def fake_review(prompt: str, **kwargs: Any) -> dict[str, Any]:
-        calls.append({"prompt": prompt, "input_packet": kwargs["input_packet"]})
+        calls.append(
+            {
+                "prompt": prompt,
+                "input_packet": kwargs["input_packet"],
+                "boundary_ref": kwargs["one_shot_provider_boundary_ref"],
+            }
+        )
         assert "EvidenceRelativeSupportAssessment" in prompt
         assert "bounded_text" not in json.dumps(kwargs["input_packet"])
         return _assessment_payload()
@@ -85,6 +92,10 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
     )
 
     assert calls and len(calls) == 1
+    assert calls[0]["input_packet"]["one_shot_provider_boundary_ref"]["status"] == (
+        "not approved"
+    )
+    assert calls[0]["boundary_ref"]["status"] == "not approved"
     assert result.decision == dprime.BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED
     assert result.return_code == 2
     assert "D-prime model review status: completed" in result.output
@@ -97,6 +108,8 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
     assert "SemanticObservation admission status: unavailable" in result.output
     assert "ComponentCoverage status: unavailable" in result.output
     dprime_status = result.payload["dprime_status"]
+    assert dprime_status["prompt_license_ref"]["fake_test_callable_only"] is True
+    assert dprime_status["prompt_license_ref"]["callable_kind"] == "fake_test"
     assert dprime_status["model_review_call_count"] == 1
     assert dprime_status["objects_created"]["evidence_relative_support_assessment"] is True
     assert dprime_status["objects_created"]["validated_support_proposal"] is False
@@ -109,6 +122,96 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False
     assert result.decision != "PASS"
+
+
+def test_real_call_style_without_approved_boundary_blocks_before_callable(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    calls = 0
+
+    def future_adapter(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return _assessment_payload()
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_real_license(),
+        dprime_model_review_callable=future_adapter,
+    )
+
+    assert calls == 0
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_INPUT_INVALID
+    assert result.payload["dprime_status"]["model_review_call_count"] == 0
+    assert "approved one-shot provider boundary" in result.output
+
+
+def test_test_only_boundary_cannot_authorize_real_call_style(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    calls = 0
+
+    def future_adapter(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return _assessment_payload()
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+        dprime_one_shot_provider_boundary=_approved_fixture_boundary(),
+        dprime_model_review_license=_real_license(),
+        dprime_model_review_callable=future_adapter,
+    )
+
+    assert calls == 0
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_INPUT_INVALID
+    assert result.payload["dprime_status"]["model_review_call_count"] == 0
+    assert "test-only provider boundary" in result.output
+
+
+def test_real_call_style_uses_approved_non_test_boundary_and_adapter_ref(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    calls: list[dict[str, Any]] = []
+
+    def future_adapter(_prompt: str, **kwargs: Any) -> dict[str, Any]:
+        calls.append(
+            {
+                "input_packet": kwargs["input_packet"],
+                "boundary_ref": kwargs["one_shot_provider_boundary_ref"],
+            }
+        )
+        return _assessment_payload()
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+        dprime_one_shot_provider_boundary=_approved_real_protocol_boundary(),
+        dprime_model_review_license=_real_license(),
+        dprime_model_review_callable=future_adapter,
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["boundary_ref"]["status"] == "approved"
+    boundary_ref = calls[0]["input_packet"]["one_shot_provider_boundary_ref"]
+    assert boundary_ref["status"] == "approved"
+    assert boundary_ref["boundary_ref"]["test_only"] is False
+    assert boundary_ref["boundary_ref"]["one_shot_adapter_ref"] == (
+        "fixture-one-shot-adapter-ref:dprime-prerun-adapter-gate-01"
+    )
+    assert result.decision == dprime.BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED
+    assert result.payload["dprime_status"]["model_review_call_count"] == 1
+    assert (
+        result.payload["dprime_status"]["objects_created"][
+            "validated_support_proposal"
+        ]
+        is False
+    )
 
 
 def test_one_call_cap_and_no_retries_on_timeout(tmp_path: Path) -> None:
@@ -489,6 +592,60 @@ def _run_with_payload(repo_root: Path, payload: dict[str, Any]) -> Any:
 
 def _license() -> DPrimeModelReviewLicense:
     return DPrimeModelReviewLicense(enabled=True)
+
+
+def _real_license() -> DPrimeModelReviewLicense:
+    return DPrimeModelReviewLicense(
+        license_id="fixture-license:dprime-real-one-shot-adapter-gate-01",
+        enabled=True,
+        test_only=False,
+        callable_kind="real_one_shot",
+        one_shot_adapter_ref=(
+            "fixture-one-shot-adapter-ref:dprime-prerun-adapter-gate-01"
+        ),
+    )
+
+
+def _approved_fixture_boundary() -> dict[str, Any]:
+    return {
+        "boundary_id": "dprime-one-shot-provider-boundary:fixture-approval-ref",
+        "phase": provider_boundary.DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_PHASE,
+        "enabled": True,
+        "default_disabled": False,
+        "test_only": True,
+        "provider_model_selection_status": "approval_ref_present",
+        "provider_model_approval_ref": (
+            "fixture-approval-ref:dprime-one-shot-provider-boundary-01"
+        ),
+        "max_provider_attempts": 1,
+        "retry_policy": "forbidden",
+        "fallback_policy": "forbidden",
+        "timeout_policy": "fail_closed",
+        "raw_prompt_retention": False,
+        "raw_model_response_retention": False,
+        "provider_payload_retention": False,
+        "real_call_authorized": True,
+        "call_count": 0,
+        "provider_switching_allowed": False,
+        "closed_surface_flags": provider_boundary.default_closed_surface_flags(),
+    }
+
+
+def _approved_real_protocol_boundary() -> dict[str, Any]:
+    boundary = _approved_fixture_boundary()
+    boundary.update(
+        {
+            "boundary_id": (
+                "dprime-one-shot-provider-boundary:fixture-real-protocol-ref"
+            ),
+            "test_only": False,
+            "one_shot_adapter_proven": True,
+            "one_shot_adapter_ref": (
+                "fixture-one-shot-adapter-ref:dprime-prerun-adapter-gate-01"
+            ),
+        }
+    )
+    return boundary
 
 
 def _assessment_payload(support_relation: str = "directly_supports") -> dict[str, Any]:

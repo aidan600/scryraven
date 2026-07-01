@@ -143,6 +143,32 @@ def test_safe_one_shot_boundary_shape_only_approves_exact_contract() -> None:
         assert result.status != "approved", label
 
 
+def test_real_call_boundary_requires_one_shot_adapter_ref_and_proof() -> None:
+    missing_adapter = _approved_fixture_boundary()
+    missing_adapter.update({"test_only": False})
+
+    result = provider_boundary.validate_dprime_one_shot_provider_boundary(
+        missing_adapter
+    )
+
+    assert result.status == "not approved"
+    blocker_text = " ".join(result.blockers)
+    assert "proven one-shot adapter status" in blocker_text
+    assert "explicit one-shot adapter ref" in blocker_text
+
+    approved = _approved_real_protocol_boundary()
+    validation = provider_boundary.validate_dprime_one_shot_provider_boundary(
+        approved
+    )
+
+    assert validation.status == "approved"
+    assert validation.boundary_ref["test_only"] is False
+    assert validation.boundary_ref["one_shot_adapter_proven"] is True
+    assert validation.boundary_ref["one_shot_adapter_ref"] == (
+        "fixture-one-shot-adapter-ref:dprime-prerun-adapter-gate-01"
+    )
+
+
 def test_broad_helper_shape_rejected_fail_closed() -> None:
     candidate = _approved_fixture_boundary()
     candidate.update(
@@ -174,6 +200,23 @@ def test_broad_helper_shape_rejected_fail_closed() -> None:
     assert "multiple attempts" in blocker_text
     assert "fallback is forbidden" in blocker_text
     assert "retries are forbidden" in blocker_text
+
+
+def test_broad_helper_declaration_remains_rejected_even_with_adapter_flag() -> None:
+    candidate = _approved_real_protocol_boundary()
+    candidate.update(
+        {
+            "candidate_helper": "core.llm.ask_model",
+            "one_shot_adapter_proven": True,
+        }
+    )
+
+    result = provider_boundary.validate_dprime_one_shot_provider_boundary(
+        candidate
+    )
+
+    assert result.status == "rejected"
+    assert "broad model helper candidate is unsafe" in " ".join(result.blockers)
 
 
 def test_boundary_module_avoids_real_provider_imports() -> None:
@@ -242,6 +285,23 @@ def _approved_fixture_boundary() -> dict[str, Any]:
         "provider_switching_allowed": False,
         "closed_surface_flags": provider_boundary.default_closed_surface_flags(),
     }
+
+
+def _approved_real_protocol_boundary() -> dict[str, Any]:
+    boundary = _approved_fixture_boundary()
+    boundary.update(
+        {
+            "boundary_id": (
+                "dprime-one-shot-provider-boundary:fixture-real-protocol-ref"
+            ),
+            "test_only": False,
+            "one_shot_adapter_proven": True,
+            "one_shot_adapter_ref": (
+                "fixture-one-shot-adapter-ref:dprime-prerun-adapter-gate-01"
+            ),
+        }
+    )
+    return boundary
 
 
 def _imports(path: Path) -> set[str]:

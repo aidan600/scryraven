@@ -278,6 +278,7 @@ def build_live_semantic_coverage_status(
             assessment_validator_status=dprime_status.assessment_validator_status,
             license=dprime_model_review_license,
             model_review_callable=dprime_model_review_callable,
+            one_shot_provider_boundary=dprime_one_shot_provider_boundary,
         )
         return _blocked_dprime_model_review_assessment_result(
             query=query,

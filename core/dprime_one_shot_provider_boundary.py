@@ -171,6 +171,7 @@ class DPrimeOneShotProviderBoundary:
     provider_switching_allowed: bool = False
     candidate_helper: str | None = None
     one_shot_adapter_proven: bool = False
+    one_shot_adapter_ref: str | None = None
     closed_surface_flags: Mapping[str, bool] = field(
         default_factory=lambda: default_closed_surface_flags()
     )
@@ -260,6 +261,10 @@ class DPrimeOneShotProviderBoundary:
                 limit=260,
             ),
             one_shot_adapter_proven=safe.get("one_shot_adapter_proven") is True,
+            one_shot_adapter_ref=_clean_text(
+                safe.get("one_shot_adapter_ref"),
+                limit=320,
+            ),
             closed_surface_flags=_closed_surface_flags_from_mapping(
                 safe.get("closed_surface_flags")
             ),
@@ -290,6 +295,7 @@ class DPrimeOneShotProviderBoundary:
             "provider_switching_allowed": self.provider_switching_allowed,
             "candidate_helper": self.candidate_helper,
             "one_shot_adapter_proven": self.one_shot_adapter_proven,
+            "one_shot_adapter_ref": self.one_shot_adapter_ref,
             "closed_surface_flags": dict(self.closed_surface_flags),
         }
 
@@ -401,9 +407,10 @@ def _safety_blockers(boundary: DPrimeOneShotProviderBoundary) -> list[str]:
     if boundary.call_count > boundary.max_provider_attempts:
         blockers.append("D-prime provider boundary call count exceeds attempt cap")
     helper = _normalize_token(boundary.candidate_helper)
-    if helper in _BROAD_HELPER_CANDIDATES and not boundary.one_shot_adapter_proven:
+    if helper in _BROAD_HELPER_CANDIDATES:
         blockers.append(
-            "broad model helper candidate is unsafe without a proven one-shot adapter"
+            "broad model helper candidate is unsafe without a product-owned "
+            "one-shot adapter"
         )
     closed_flags = _closed_surface_flags_from_mapping(boundary.closed_surface_flags)
     for key in sorted(_CLOSED_SURFACE_FALSE_FLAGS):
@@ -435,6 +442,15 @@ def _approval_blockers(boundary: DPrimeOneShotProviderBoundary) -> list[str]:
         blockers.append(
             "D-prime approved boundary requires explicit provider/model approval ref"
         )
+    if boundary.test_only is not True:
+        if boundary.one_shot_adapter_proven is not True:
+            blockers.append(
+                "D-prime real-call boundary requires proven one-shot adapter status"
+            )
+        if not boundary.one_shot_adapter_ref:
+            blockers.append(
+                "D-prime real-call boundary requires explicit one-shot adapter ref"
+            )
     return blockers
 
 
