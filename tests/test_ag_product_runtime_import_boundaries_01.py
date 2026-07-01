@@ -29,6 +29,7 @@ KNOWN_PRODUCT_STATUS_MODULES = (
 )
 RETAINED_PREFLIGHT_MODULE = ROOT / "core" / "retained_live_artifact_preflight.py"
 DPRIME_SCHEMA_MODULE = ROOT / "core" / "dprime_support_proposal_schema.py"
+DPRIME_PREFLIGHT_MODULE = ROOT / "core" / "dprime_evidence_frame_preflight.py"
 
 
 def test_known_product_status_modules_do_not_import_ag_scripts() -> None:
@@ -55,6 +56,25 @@ def test_dprime_schema_module_does_not_import_ag_scripts() -> None:
     assert _ag_script_imports(DPRIME_SCHEMA_MODULE) == []
 
 
+def test_dprime_preflight_module_does_not_import_ag_scripts() -> None:
+    assert _ag_script_imports(DPRIME_PREFLIGHT_MODULE) == []
+
+
+def test_dprime_preflight_module_avoids_live_provider_imports() -> None:
+    forbidden_imports = {
+        "core.pipeline_orchestrator",
+        "core.search_providers",
+        "core.retrieval",
+        "core.retrieval_dispatch_runtime",
+        "openai",
+        "requests",
+        "httpx",
+        "dotenv",
+        "subprocess",
+    }
+    assert _imports(DPRIME_PREFLIGHT_MODULE).isdisjoint(forbidden_imports)
+
+
 def _ag_script_imports(path: Path) -> list[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported: list[str] = []
@@ -74,6 +94,17 @@ def _ag_script_imports(path: Path) -> list[str]:
                     if str(alias.name).startswith("ag_")
                 )
     return sorted(imported)
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imported: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+    return imported
 
 
 def _is_ag_script_module(module: str) -> bool:

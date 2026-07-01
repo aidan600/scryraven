@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
-DPRIME_PHASE = "DPRIME-SCHEMA-CLI-BLOCKER-01"
+DPRIME_PHASE = "DPRIME-PREFLIGHT-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
@@ -411,6 +411,8 @@ class DPrimeStatusPayload:
     semantic_support_source: str = "unavailable; D-prime preflight missing"
     decision: str = BLOCKED_DPRIME_PREFLIGHT_MISSING
     blocker_detail: str = "D-prime EvidenceFramePreflight is not implemented"
+    evidence_frame_preflight_ref: Mapping[str, Any] = field(default_factory=dict)
+    evidence_frame_preflight_created: bool = False
 
     def __post_init__(self) -> None:
         if self.schema_status != DPRIME_SCHEMA_STATUS_AVAILABLE:
@@ -441,9 +443,10 @@ class DPrimeStatusPayload:
             "semantic_support_source": self.semantic_support_source,
             "decision": self.decision,
             "blocker_detail": self.blocker_detail,
+            "evidence_frame_preflight_ref": dict(self.evidence_frame_preflight_ref),
             "authority_boundary_nonclaims": list(AUTHORITY_BOUNDARY_NONCLAIMS),
             "objects_created": {
-                "evidence_frame_preflight": False,
+                "evidence_frame_preflight": self.evidence_frame_preflight_created,
                 "evidence_relative_support_assessment": False,
                 "validated_support_proposal": False,
                 "run_kernel_support_proposal_admission_request": False,
@@ -467,16 +470,26 @@ def build_dprime_status_payload(
         else EvidenceFramePreflight.from_mapping(evidence_frame_preflight)
     )
     if preflight.preflight_status != "passed":
+        blocker_detail = (
+            "; ".join(_text_tuple(preflight.blockers))
+            or "D-prime EvidenceFramePreflight failed validation"
+        )
         return DPrimeStatusPayload(
             preflight_status=preflight.preflight_status,
+            semantic_support_source="unavailable; D-prime preflight failed",
             decision=BLOCKED_DPRIME_PREFLIGHT_FAILED,
-            blocker_detail="D-prime EvidenceFramePreflight failed validation",
+            blocker_detail=blocker_detail,
+            evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
+            evidence_frame_preflight_created=True,
         )
     return DPrimeStatusPayload(
         preflight_status="passed",
         model_review_status="not licensed",
+        semantic_support_source="unavailable; D-prime model review not licensed",
         decision=BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
         blocker_detail="D-prime model review is not licensed in this phase",
+        evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
+        evidence_frame_preflight_created=True,
     )
 
 

@@ -156,24 +156,45 @@ def test_negative_control_profile_cannot_claim_product_or_model_success() -> Non
         )
 
 
-def test_cli_status_reports_dprime_preflight_missing(tmp_path: Path) -> None:
+def test_schema_status_payload_without_preflight_reports_missing() -> None:
+    payload = dprime.build_dprime_status_payload().to_dict()
+
+    assert payload["preflight_status"] == "missing"
+    assert payload["decision"] == dprime.BLOCKED_DPRIME_PREFLIGHT_MISSING
+    assert payload["objects_created"]["evidence_frame_preflight"] is False
+    assert (
+        payload["semantic_support_source"]
+        == "unavailable; D-prime preflight missing"
+    )
+
+
+def test_cli_status_reports_dprime_preflight_passed_model_review_blocker(
+    tmp_path: Path,
+) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
 
     result = build_live_semantic_coverage_status(query=QUERY, repo_root=repo_root)
 
-    assert result.decision == dprime.BLOCKED_DPRIME_PREFLIGHT_MISSING
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert result.return_code == 2
     assert "D-prime schema status: available" in result.output
-    assert "D-prime preflight status: missing" in result.output
+    assert "D-prime preflight status: passed" in result.output
+    assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert "D-prime proposal validation status: not reached" in result.output
     assert "RunKernel support admission status: not reached" in result.output
     assert "SemanticObservation admission status: unavailable" in result.output
     assert "ComponentCoverage status: unavailable" in result.output
-    assert "semantic support source: unavailable; D-prime preflight missing" in result.output
-    assert f"decision: {dprime.BLOCKED_DPRIME_PREFLIGHT_MISSING}" in result.output
+    assert (
+        "semantic support source: unavailable; D-prime model review not licensed"
+        in result.output
+    )
+    assert (
+        f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
+        in result.output
+    )
     assert result.payload["dprime_status"]["objects_created"] == {
-        "evidence_frame_preflight": False,
+        "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": False,
         "validated_support_proposal": False,
         "run_kernel_support_proposal_admission_request": False,

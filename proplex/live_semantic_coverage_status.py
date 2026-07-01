@@ -18,8 +18,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_support_proposal_schema import (
-    BLOCKED_DPRIME_PREFLIGHT_MISSING,
+    BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
+    BLOCKED_DPRIME_PREFLIGHT_FAILED,
     DPRIME_PHASE,
     DPrimeStatusPayload,
     build_dprime_status_payload,
@@ -212,7 +214,45 @@ def build_live_semantic_coverage_status(
             detail="component/source-obligation lineage is not present enough to attempt binding",
         )
 
-    dprime_status = build_dprime_status_payload()
+    try:
+        fetch_read_content_packet = _read_json(
+            root / FETCH_READ_ARTIFACT_DIR / FETCH_READ_CONTENT_PACKET_NAME
+        )
+    except FileNotFoundError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_MISSING,
+            detail=f"missing fetch/read artifact: {Path(exc.filename or '').name}",
+        )
+    except PermissionError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_UNREADABLE,
+            detail=f"unreadable fetch/read artifact: {Path(exc.filename or '').name}",
+        )
+    except json.JSONDecodeError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_UNREADABLE,
+            detail=f"fetch/read artifact is not JSON: {exc.msg}",
+        )
+    except OSError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_UNREADABLE,
+            detail=f"could not read fetch/read artifact: {exc}",
+        )
+
+    evidence_frame_preflight = build_evidence_frame_preflight(
+        fetch_read_content_packet=fetch_read_content_packet,
+        source_evidence_admission_ref=admission_ref,
+        citation_source_obligation_readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+    )
+    dprime_status = build_dprime_status_payload(
+        evidence_frame_preflight=evidence_frame_preflight,
+    )
     if dprime_status.decision != PASS_DECISION:
         return _blocked_dprime_status_result(
             query=query,
@@ -226,9 +266,7 @@ def build_live_semantic_coverage_status(
 
     try:
         semantic_result = build_retained_custody_semantic_coverage(
-            fetch_read_content_packet=_read_json(
-                root / FETCH_READ_ARTIFACT_DIR / FETCH_READ_CONTENT_PACKET_NAME
-            ),
+            fetch_read_content_packet=fetch_read_content_packet,
             expected_candidate_id=_clean_text(admission_ref.get("candidate_id"), limit=320),
             expected_reference_id=_clean_text(admission_ref.get("reference_id"), limit=320),
         )
@@ -574,6 +612,7 @@ def _blocked_dprime_status_result(
     dprime_status: DPrimeStatusPayload,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
+    not_reached_reason = _dprime_not_reached_reason(dprime)
     payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
@@ -589,29 +628,27 @@ def _blocked_dprime_status_result(
         semantic_ref={
             "status": dprime["semantic_observation_admission_status"],
             "observation_ref": "unavailable",
-            "reasons": [
-                "D-prime preflight is missing, so no SemanticObservation exists"
-            ],
+            "reasons": [not_reached_reason],
         },
         coverage_ref={
             "status": dprime["component_coverage_status"],
             "coverage_ref": "unavailable",
             "component_id": _component_id(component_ref),
-            "reasons": [
-                "D-prime preflight is missing, so no ComponentCoverage exists"
-            ],
+            "reasons": [not_reached_reason],
         },
         decision=dprime["decision"],
         blocker_detail=dprime["blocker_detail"],
-        next_blocked_surface=NEXT_BLOCKED_SURFACE,
+        next_blocked_surface=_dprime_next_blocked_surface(dprime),
     )
     payload.update(
         {
             "dprime_status": dprime,
             "semantic_support_source": dprime["semantic_support_source"],
-            "semantic_support_custody_distinction_preserved": False,
+            "semantic_support_custody_distinction_preserved": (
+                dprime["preflight_status"] == "passed"
+            ),
             "analyst_support_proposal_consumer": (
-                "not reached; D-prime preflight missing"
+                f"not reached; {dprime['blocker_detail']}"
             ),
         }
     )
@@ -623,10 +660,28 @@ def _blocked_dprime_status_result(
             detail="status output contained forbidden material",
         )
     return LiveSemanticCoverageStatusResult(
-        decision=BLOCKED_DPRIME_PREFLIGHT_MISSING,
+        decision=dprime["decision"],
         output=output,
         payload=payload,
     )
+
+
+def _dprime_not_reached_reason(dprime: Mapping[str, Any]) -> str:
+    decision = str(dprime.get("decision") or "")
+    if decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED:
+        return "D-prime model review is not licensed, so no downstream support object exists"
+    if decision == BLOCKED_DPRIME_PREFLIGHT_FAILED:
+        return "D-prime preflight failed, so no downstream support object exists"
+    return "D-prime preflight is missing, so no downstream support object exists"
+
+
+def _dprime_next_blocked_surface(dprime: Mapping[str, Any]) -> str:
+    decision = str(dprime.get("decision") or "")
+    if decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED:
+        return "D-prime model review"
+    if decision == BLOCKED_DPRIME_PREFLIGHT_FAILED:
+        return "D-prime EvidenceFramePreflight repair"
+    return NEXT_BLOCKED_SURFACE
 
 
 def _base_semantic_payload(
