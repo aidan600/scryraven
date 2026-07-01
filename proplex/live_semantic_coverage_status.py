@@ -21,6 +21,8 @@ from typing import Any, Mapping, Sequence
 from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
+    BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
+    BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING,
     BLOCKED_DPRIME_PREFLIGHT_FAILED,
     DPRIME_PHASE,
     DPrimeStatusPayload,
@@ -404,6 +406,14 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         ),
         f"D-prime schema status: {dprime.get('schema_status')}",
         f"D-prime preflight status: {dprime.get('preflight_status')}",
+        (
+            "D-prime negative-control profile status: "
+            f"{dprime.get('negative_control_profile_status')}"
+        ),
+        (
+            "D-prime negative-control profile ref/digest: "
+            f"{_format_dprime_negative_control_profile_ref(dprime.get('negative_control_profile_ref'))}"
+        ),
         f"D-prime model review status: {dprime.get('model_review_status')}",
         f"D-prime assessment status: {dprime.get('assessment_status')}",
         (
@@ -670,6 +680,11 @@ def _dprime_not_reached_reason(dprime: Mapping[str, Any]) -> str:
     decision = str(dprime.get("decision") or "")
     if decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED:
         return "D-prime model review is not licensed, so no downstream support object exists"
+    if decision in {
+        BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING,
+        BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
+    }:
+        return "D-prime negative-control profile is unavailable, so no downstream support object exists"
     if decision == BLOCKED_DPRIME_PREFLIGHT_FAILED:
         return "D-prime preflight failed, so no downstream support object exists"
     return "D-prime preflight is missing, so no downstream support object exists"
@@ -679,6 +694,11 @@ def _dprime_next_blocked_surface(dprime: Mapping[str, Any]) -> str:
     decision = str(dprime.get("decision") or "")
     if decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED:
         return "D-prime model review"
+    if decision in {
+        BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING,
+        BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
+    }:
+        return "D-prime negative-control profile"
     if decision == BLOCKED_DPRIME_PREFLIGHT_FAILED:
         return "D-prime EvidenceFramePreflight repair"
     return NEXT_BLOCKED_SURFACE
@@ -911,6 +931,15 @@ def _format_source_obligation_ref(value: Any) -> str:
     if not ids:
         return "unavailable"
     return ", ".join(ids) + " (lineage present; satisfaction not claimed)"
+
+
+def _format_dprime_negative_control_profile_ref(value: Any) -> str:
+    ref = _safe_mapping(value)
+    profile_id = _clean_text(ref.get("profile_id"), limit=260)
+    profile_digest = _clean_text(ref.get("profile_digest"), limit=128)
+    if profile_id and profile_digest:
+        return f"{profile_id} / {profile_digest}"
+    return profile_id or profile_digest or "unavailable"
 
 
 def _component_id(component_ref: Mapping[str, Any]) -> str | None:

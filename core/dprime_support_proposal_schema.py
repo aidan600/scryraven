@@ -11,11 +11,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
-DPRIME_PHASE = "DPRIME-PREFLIGHT-01"
+import core.dprime_negative_control_profile as dprime_negative_controls
+
+DPRIME_PHASE = "DPRIME-NEGATIVE-CONTROL-PROFILE-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
 BLOCKED_DPRIME_PREFLIGHT_FAILED = "BLOCKED_DPRIME_PREFLIGHT_FAILED"
+BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING = (
+    "BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING"
+)
+BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED = (
+    "BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED"
+)
 BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED = (
     "BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED"
 )
@@ -82,11 +90,15 @@ LATER_PHASE_STATUSES = frozenset(
 )
 
 AUTHORITY_BOUNDARY_NONCLAIMS = (
+    "preflight pass != semantic support",
+    "negative-control profile available != semantic support",
     "assessment != proposal",
     "proposal != admitted support",
     "validation pass != RunKernel admission",
     "validator challenge recommendation != RunKernel challenge",
     "SemanticObservation admission != ComponentCoverage binding",
+    "ComponentCoverage != citation eligibility",
+    "citation eligibility != answer correctness",
 )
 
 
@@ -402,6 +414,7 @@ class DPrimeStatusPayload:
 
     schema_status: str = DPRIME_SCHEMA_STATUS_AVAILABLE
     preflight_status: str = DPRIME_STATUS_MISSING
+    negative_control_profile_status: str = DPRIME_STATUS_NOT_REACHED
     model_review_status: str = DPRIME_STATUS_NOT_REACHED
     assessment_status: str = DPRIME_STATUS_NOT_REACHED
     proposal_validation_status: str = DPRIME_STATUS_NOT_REACHED
@@ -413,6 +426,8 @@ class DPrimeStatusPayload:
     blocker_detail: str = "D-prime EvidenceFramePreflight is not implemented"
     evidence_frame_preflight_ref: Mapping[str, Any] = field(default_factory=dict)
     evidence_frame_preflight_created: bool = False
+    negative_control_profile_ref: Mapping[str, Any] = field(default_factory=dict)
+    negative_control_profile_consumed: bool = False
 
     def __post_init__(self) -> None:
         if self.schema_status != DPRIME_SCHEMA_STATUS_AVAILABLE:
@@ -430,6 +445,11 @@ class DPrimeStatusPayload:
             "phase": DPRIME_PHASE,
             "schema_status": self.schema_status,
             "preflight_status": self.preflight_status,
+            "negative_control_profile_status": self.negative_control_profile_status,
+            "negative_control_profile_ref": dict(self.negative_control_profile_ref),
+            "negative_control_profile_consumed": (
+                self.negative_control_profile_consumed
+            ),
             "model_review_status": self.model_review_status,
             "assessment_status": self.assessment_status,
             "proposal_validation_status": self.proposal_validation_status,
@@ -456,9 +476,13 @@ class DPrimeStatusPayload:
         }
 
 
+_DEFAULT_NEGATIVE_CONTROL_PROFILE_SENTINEL = object()
+
+
 def build_dprime_status_payload(
     *,
     evidence_frame_preflight: Mapping[str, Any] | EvidenceFramePreflight | None = None,
+    negative_control_profile: Any = _DEFAULT_NEGATIVE_CONTROL_PROFILE_SENTINEL,
 ) -> DPrimeStatusPayload:
     """Return the earliest D-prime blocker known in this phase."""
 
@@ -482,14 +506,62 @@ def build_dprime_status_payload(
             evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
             evidence_frame_preflight_created=True,
         )
+    profile = (
+        dprime_negative_controls.build_default_negative_control_profile()
+        if negative_control_profile is _DEFAULT_NEGATIVE_CONTROL_PROFILE_SENTINEL
+        else negative_control_profile
+    )
+    profile_validation = dprime_negative_controls.validate_negative_control_profile(
+        profile
+    )
+    profile_ref = _safe_mapping(profile_validation.profile_ref)
+    if (
+        profile_validation.profile_status
+        == dprime_negative_controls.NEGATIVE_CONTROL_PROFILE_STATUS_MISSING
+    ):
+        return DPrimeStatusPayload(
+            preflight_status="passed",
+            negative_control_profile_status="missing",
+            semantic_support_source=(
+                "unavailable; D-prime negative-control profile missing"
+            ),
+            decision=BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING,
+            blocker_detail=(
+                profile_validation.blocker_detail
+                or "D-prime negative-control profile is missing"
+            ),
+            evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
+            evidence_frame_preflight_created=True,
+            negative_control_profile_ref=profile_ref,
+        )
+    if not profile_validation.passed:
+        return DPrimeStatusPayload(
+            preflight_status="passed",
+            negative_control_profile_status="failed",
+            semantic_support_source=(
+                "unavailable; D-prime negative-control profile failed"
+            ),
+            decision=BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
+            blocker_detail=(
+                profile_validation.blocker_detail
+                or "D-prime negative-control profile failed validation"
+            ),
+            evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
+            evidence_frame_preflight_created=True,
+            negative_control_profile_ref=profile_ref,
+            negative_control_profile_consumed=True,
+        )
     return DPrimeStatusPayload(
         preflight_status="passed",
+        negative_control_profile_status="available",
         model_review_status="not licensed",
         semantic_support_source="unavailable; D-prime model review not licensed",
         decision=BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
         blocker_detail="D-prime model review is not licensed in this phase",
         evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
         evidence_frame_preflight_created=True,
+        negative_control_profile_ref=profile_ref,
+        negative_control_profile_consumed=True,
     )
 
 
@@ -759,6 +831,8 @@ def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
 __all__ = [
     "AUTHORITY_BOUNDARY_NONCLAIMS",
     "BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED",
+    "BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED",
+    "BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING",
     "BLOCKED_DPRIME_PREFLIGHT_FAILED",
     "BLOCKED_DPRIME_PREFLIGHT_MISSING",
     "BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING",
