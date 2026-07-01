@@ -30,6 +30,9 @@ KNOWN_PRODUCT_STATUS_MODULES = (
 RETAINED_PREFLIGHT_MODULE = ROOT / "core" / "retained_live_artifact_preflight.py"
 DPRIME_SCHEMA_MODULE = ROOT / "core" / "dprime_support_proposal_schema.py"
 DPRIME_PREFLIGHT_MODULE = ROOT / "core" / "dprime_evidence_frame_preflight.py"
+DPRIME_NEGATIVE_CONTROL_PROFILE_MODULE = (
+    ROOT / "core" / "dprime_negative_control_profile.py"
+)
 
 
 def test_known_product_status_modules_do_not_import_ag_scripts() -> None:
@@ -60,6 +63,10 @@ def test_dprime_preflight_module_does_not_import_ag_scripts() -> None:
     assert _ag_script_imports(DPRIME_PREFLIGHT_MODULE) == []
 
 
+def test_dprime_negative_control_profile_module_does_not_import_ag_scripts() -> None:
+    assert _ag_script_imports(DPRIME_NEGATIVE_CONTROL_PROFILE_MODULE) == []
+
+
 def test_dprime_preflight_module_avoids_live_provider_imports() -> None:
     forbidden_imports = {
         "core.pipeline_orchestrator",
@@ -73,6 +80,23 @@ def test_dprime_preflight_module_avoids_live_provider_imports() -> None:
         "subprocess",
     }
     assert _imports(DPRIME_PREFLIGHT_MODULE).isdisjoint(forbidden_imports)
+
+
+def test_dprime_negative_control_profile_module_avoids_live_provider_imports() -> None:
+    forbidden_imports = {
+        "core.pipeline_orchestrator",
+        "core.search_providers",
+        "core.retrieval",
+        "core.retrieval_dispatch_runtime",
+        "openai",
+        "requests",
+        "httpx",
+        "dotenv",
+        "subprocess",
+    }
+    assert _imports(DPRIME_NEGATIVE_CONTROL_PROFILE_MODULE).isdisjoint(
+        forbidden_imports
+    )
 
 
 def _ag_script_imports(path: Path) -> list[str]:

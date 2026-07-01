@@ -160,6 +160,7 @@ def test_schema_status_payload_without_preflight_reports_missing() -> None:
     payload = dprime.build_dprime_status_payload().to_dict()
 
     assert payload["preflight_status"] == "missing"
+    assert payload["negative_control_profile_status"] == "not reached"
     assert payload["decision"] == dprime.BLOCKED_DPRIME_PREFLIGHT_MISSING
     assert payload["objects_created"]["evidence_frame_preflight"] is False
     assert (
@@ -179,6 +180,8 @@ def test_cli_status_reports_dprime_preflight_passed_model_review_blocker(
     assert result.return_code == 2
     assert "D-prime schema status: available" in result.output
     assert "D-prime preflight status: passed" in result.output
+    assert "D-prime negative-control profile status: available" in result.output
+    assert "D-prime negative-control profile ref/digest:" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert "D-prime proposal validation status: not reached" in result.output
@@ -193,6 +196,13 @@ def test_cli_status_reports_dprime_preflight_passed_model_review_blocker(
         f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
         in result.output
     )
+    assert (
+        result.payload["dprime_status"]["negative_control_profile_status"]
+        == "available"
+    )
+    assert result.payload["dprime_status"]["negative_control_profile_ref"][
+        "profile_digest"
+    ]
     assert result.payload["dprime_status"]["objects_created"] == {
         "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": False,

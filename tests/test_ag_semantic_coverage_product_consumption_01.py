@@ -88,6 +88,8 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert "EvidenceRelativeAnalysisPacket / AnalystReport" in result.output
     assert "D-prime schema status: available" in result.output
     assert "D-prime preflight status: passed" in result.output
+    assert "D-prime negative-control profile status: available" in result.output
+    assert "D-prime negative-control profile ref/digest:" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert "D-prime proposal validation status: not reached" in result.output
@@ -130,6 +132,9 @@ def test_product_status_blocks_without_current_path_support_signal(
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["schema_status"] == "available"
     assert dprime_status["preflight_status"] == "passed"
+    assert dprime_status["negative_control_profile_status"] == "available"
+    assert dprime_status["negative_control_profile_ref"]["profile_digest"]
+    assert dprime_status["negative_control_profile_consumed"] is True
     assert dprime_status["model_review_status"] == "not licensed"
     assert dprime_status["objects_created"]["evidence_frame_preflight"] is True
     assert dprime_status["objects_created"]["validated_support_proposal"] is False
@@ -181,6 +186,7 @@ def test_same_lane_unrelated_bounded_text_does_not_create_semantic_support(
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert result.return_code == 2
     assert _DPRIME_MODEL_REVIEW_DETAIL in result.output
+    assert "D-prime negative-control profile status: available" in result.output
     support = result.payload["analyst_support_proposal_ref"]
     assert support["status"] == "not reached"
     assert support["proposal_ref"] == "unavailable"
@@ -220,6 +226,7 @@ def test_product_status_blocks_before_retained_support_consumer(
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert result.return_code == 2
     assert "D-prime preflight status: passed" in result.output
+    assert "D-prime negative-control profile status: available" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "Analyst support proposal status: not reached" in result.output
     assert (
