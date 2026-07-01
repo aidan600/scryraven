@@ -16,8 +16,13 @@ from core.dprime_assessment_validation import (
     ASSESSMENT_VALIDATOR_STATUS_NOT_REACHED,
     assessment_validator_availability_status,
 )
+from core.dprime_one_shot_provider_boundary import (
+    PROVIDER_BOUNDARY_STATUS_NOT_APPROVED,
+    DPrimeOneShotProviderBoundary,
+    validate_dprime_one_shot_provider_boundary,
+)
 
-DPRIME_PHASE = "DPRIME-MODEL-REVIEW-ASSESSMENT-SLICE-01"
+DPRIME_PHASE = "DPRIME-ONE-SHOT-PROVIDER-BOUNDARY-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
@@ -118,6 +123,7 @@ AUTHORITY_BOUNDARY_NONCLAIMS = (
     "preflight pass != semantic support",
     "negative-control profile available != semantic support",
     "assessment validator available != semantic support",
+    "provider boundary approved != semantic support",
     "model-reviewed assessment != proposal",
     "assessment != proposal",
     "proposal != admitted support",
@@ -457,6 +463,9 @@ class DPrimeStatusPayload:
     evidence_frame_preflight_created: bool = False
     negative_control_profile_ref: Mapping[str, Any] = field(default_factory=dict)
     negative_control_profile_consumed: bool = False
+    one_shot_provider_boundary_status: str = PROVIDER_BOUNDARY_STATUS_NOT_APPROVED
+    one_shot_provider_boundary_ref: Mapping[str, Any] = field(default_factory=dict)
+    one_shot_provider_boundary_consumed: bool = False
 
     def __post_init__(self) -> None:
         if self.schema_status != DPRIME_SCHEMA_STATUS_AVAILABLE:
@@ -480,6 +489,15 @@ class DPrimeStatusPayload:
                 self.negative_control_profile_consumed
             ),
             "assessment_validator_status": self.assessment_validator_status,
+            "one_shot_provider_boundary_status": (
+                self.one_shot_provider_boundary_status
+            ),
+            "one_shot_provider_boundary_ref": dict(
+                self.one_shot_provider_boundary_ref
+            ),
+            "one_shot_provider_boundary_consumed": (
+                self.one_shot_provider_boundary_consumed
+            ),
             "model_review_status": self.model_review_status,
             "assessment_status": self.assessment_status,
             "proposal_validation_status": self.proposal_validation_status,
@@ -513,6 +531,9 @@ def build_dprime_status_payload(
     *,
     evidence_frame_preflight: Mapping[str, Any] | EvidenceFramePreflight | None = None,
     negative_control_profile: Any = _DEFAULT_NEGATIVE_CONTROL_PROFILE_SENTINEL,
+    one_shot_provider_boundary: (
+        Mapping[str, Any] | DPrimeOneShotProviderBoundary | None
+    ) = None,
 ) -> DPrimeStatusPayload:
     """Return the earliest D-prime blocker known in this phase."""
 
@@ -581,6 +602,9 @@ def build_dprime_status_payload(
             negative_control_profile_ref=profile_ref,
             negative_control_profile_consumed=True,
         )
+    provider_boundary_validation = validate_dprime_one_shot_provider_boundary(
+        one_shot_provider_boundary
+    )
     return DPrimeStatusPayload(
         preflight_status="passed",
         negative_control_profile_status="available",
@@ -595,6 +619,9 @@ def build_dprime_status_payload(
         evidence_frame_preflight_created=True,
         negative_control_profile_ref=profile_ref,
         negative_control_profile_consumed=True,
+        one_shot_provider_boundary_status=provider_boundary_validation.status,
+        one_shot_provider_boundary_ref=provider_boundary_validation.to_status_ref(),
+        one_shot_provider_boundary_consumed=True,
     )
 
 

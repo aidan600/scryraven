@@ -97,13 +97,13 @@ CLOSED_DOWNSTREAM_SURFACES = (
     "final answer packet",
     "Author/AuthorProse",
     "answer text",
-    "product correctness",
+    "product-quality correctness claim",
 )
 EXPLICIT_NON_CLAIM = (
     "This phase does not prove source-obligation satisfaction, citation "
     "eligibility, citation rendering, answerability, SufficiencyReadiness, "
     "final answer packet readiness, Author correctness, final answer quality, "
-    "or product correctness."
+    "or product-quality correctness."
 )
 
 _READINESS_BLOCKER_MAP = {
@@ -168,6 +168,7 @@ def build_live_semantic_coverage_status(
     *,
     query: str,
     repo_root: str | Path,
+    dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
     dprime_model_review_license: Mapping[str, Any] | None = None,
     dprime_model_review_callable: Callable[..., Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
@@ -257,6 +258,7 @@ def build_live_semantic_coverage_status(
     )
     dprime_status = build_dprime_status_payload(
         evidence_frame_preflight=evidence_frame_preflight,
+        one_shot_provider_boundary=dprime_one_shot_provider_boundary,
     )
     if (
         dprime_status.decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
@@ -449,6 +451,10 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "D-prime assessment validator status: "
             f"{dprime.get('assessment_validator_status')}"
+        ),
+        (
+            "D-prime one-shot provider boundary status: "
+            f"{dprime.get('one_shot_provider_boundary_status')}"
         ),
         f"D-prime model review status: {dprime.get('model_review_status')}",
         (

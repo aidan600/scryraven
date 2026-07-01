@@ -56,7 +56,7 @@ def test_default_ordinary_cli_remains_blocked_without_model_review_license(
     result = build_live_semantic_coverage_status(query=QUERY, repo_root=repo_root)
 
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
-    assert "phase: DPRIME-MODEL-REVIEW-ASSESSMENT-SLICE-01" in result.output
+    assert "phase: DPRIME-ONE-SHOT-PROVIDER-BOUNDARY-01" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert (
