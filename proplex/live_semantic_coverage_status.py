@@ -5,9 +5,10 @@ retained live acquisition/readability, source/evidence custody, and
 citation/source-obligation readiness status chain, then reports whether the
 current SemanticObservation + ComponentCoverage lane can be product-consumed.
 
-It performs no live calls, creates no Analyst support finding, and does not
-infer semantic support from URL/domain/snippet/custody/lineage or ad hoc text
-matching.
+It performs no live calls and creates only a bounded Analyst
+``possible_support_proposal`` through product-owned/current-path support. It
+does not infer semantic support from URL/domain/snippet/custody/lineage or
+ad hoc text matching.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from proplex.live_source_evidence_admission_status import (
 )
 
 PHASE = "AG-SEMANTIC-COVERAGE-CONSUMER-REPAIR-01"
-MODE = "BUILD"
+MODE = "REPAIR"
 USABLE_ANSWER_VERDICT_TARGET = "YES"
 LIVE_SEMANTIC_COVERAGE_STATUS_FLAG = "--live-semantic-coverage-status-dry-run"
 

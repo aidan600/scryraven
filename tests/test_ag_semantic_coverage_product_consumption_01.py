@@ -66,7 +66,7 @@ def test_product_status_consumes_readiness_and_reports_semantic_coverage_pass(
 
     assert result.decision == "PASS"
     assert result.return_code == 0
-    assert "mode: BUILD" in result.output
+    assert "mode: REPAIR" in result.output
     assert "ordinary entrypoint: python -m proplex" in result.output
     assert f"status flag: {LIVE_SEMANTIC_COVERAGE_STATUS_FLAG}" in result.output
     assert "usable-answer verdict target: YES" in result.output
