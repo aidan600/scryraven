@@ -22,7 +22,7 @@ from core.dprime_one_shot_provider_boundary import (
     validate_dprime_one_shot_provider_boundary,
 )
 
-DPRIME_PHASE = "DPRIME-MODEL-REVIEW-ASSESSMENT-SLICE-01"
+DPRIME_PHASE = "DPRIME-ONE-SHOT-PROVIDER-BOUNDARY-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
