@@ -19,37 +19,53 @@ from __future__ import annotations
 
 import ast
 import importlib
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+import proplex.live_semantic_coverage_status as semantic_status
+from core.fetch_read_content_reference import (
+    build_fetch_read_content_packet_from_candidate_packet,
+)
+from core.search_result_candidate_packet import (
+    SearchResultCandidatePacket,
+    SearchResultCandidateRecord,
+)
 from proplex.live_semantic_coverage_status import (
     LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
     build_live_semantic_coverage_status,
 )
-from tests.test_ag_live_acquisition_readability_product_consumption_01 import (
-    QUERY,
-    _retained_repo,
-)
+from tests.test_ag_limited_live_search_candidate_01 import _generic_provider_output
+from tests.test_ag_search_result_candidate_packet_01 import _packet_from_state
+
+QUERY = "What is the current adult U.S. passport book renewal fee?"
 
 ROOT = Path(__file__).resolve().parents[1]
 PRODUCT_MODULE = ROOT / "proplex" / "live_semantic_coverage_status.py"
+PASSPORT_COMPONENT_ID = "component:adult-us-passport-book-renewal-fee"
+PASSPORT_OBLIGATION_ID = "obligation:official-current-passport-fee-source"
+PASSPORT_URL = "https://travel.state.gov/en/passports/apply/help/fees.html"
+PASSPORT_TEXT = (
+    "The U.S. Department of State passport fees page lists the adult passport "
+    "book renewal by mail fee as $130."
+)
 
 
-def test_product_status_consumes_readiness_and_reports_semantic_coverage_blocker(
+def test_product_status_consumes_readiness_and_reports_semantic_coverage_pass(
     tmp_path: Path,
 ) -> None:
-    repo_root, candidate = _retained_repo(tmp_path)
+    repo_root, candidate = _passport_retained_repo(tmp_path)
 
     result = build_live_semantic_coverage_status(
         query=QUERY,
         repo_root=repo_root,
     )
 
-    assert result.decision == "BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING"
-    assert result.return_code == 2
+    assert result.decision == "PASS"
+    assert result.return_code == 0
     assert "mode: BUILD" in result.output
     assert "ordinary entrypoint: python -m proplex" in result.output
     assert f"status flag: {LIVE_SEMANTIC_COVERAGE_STATUS_FLAG}" in result.output
@@ -64,14 +80,17 @@ def test_product_status_consumes_readiness_and_reports_semantic_coverage_blocker
         "not_yet_semantically_supported"
     ) in result.output
     assert "EvidenceRelativeAnalysisPacket / AnalystReport" in result.output
-    assert "SemanticObservation admission status: BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING" in result.output
-    assert "SemanticObservation id/ref/digest: unavailable" in result.output
-    assert "ComponentCoverage status: BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING" in result.output
-    assert "ComponentCoverage id/ref/digest: unavailable" in result.output
+    assert "Analyst support proposal status: proposal_created" in result.output
+    assert "Analyst support proposal ref/digest: evidence-relative-finding:" in result.output
+    assert "SemanticObservation admission status: admitted" in result.output
+    assert "SemanticObservation id/ref/digest: semantic-observation:" in result.output
+    assert "ComponentCoverage status: bound" in result.output
+    assert "ComponentCoverage id/ref/digest: coverage:retained-passport-fee:" in result.output
     assert f"component id/ref: {candidate['component_id']}" in result.output
+    assert "coverage bound" in result.output
     assert "source obligation id/ref:" in result.output
-    assert "semantic support cannot be inferred from URL/domain/snippet/custody/lineage" in result.output
-    assert "coverage cannot bind to custody/lineage alone" in result.output
+    assert "semantic support source: retained bounded sanitized content" in result.output
+    assert "semantic support/custody distinction preserved: true" in result.output
     assert "ad hoc semantic matcher/heuristic avoided: true" in result.output
     assert "raw/private retention: false" in result.output
     assert "citation eligibility/rendering" in result.output
@@ -79,21 +98,80 @@ def test_product_status_consumes_readiness_and_reports_semantic_coverage_blocker
     assert "SufficiencyReadiness" in result.output
     assert "FinalAnswerPacket" in result.output
     assert "Author/AuthorProse" in result.output
-    assert "decision: BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING" in result.output
+    assert "decision: PASS" in result.output
 
+    support = result.payload["analyst_support_proposal_ref"]
+    assert support["status"] == "proposal_created"
+    assert support["retained_bounded_content_ref"]["bounded_content_digest"]
     semantic = result.payload["semantic_observation_admission_ref"]
-    assert semantic["status"] == "BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING"
+    assert semantic["status"] == "admitted"
+    assert semantic["observation_digest"]
     coverage = result.payload["component_coverage_ref"]
-    assert coverage["status"] == "BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING"
-    assert coverage["component_id"] == candidate["component_id"]
+    assert coverage["status"] == "bound"
+    assert coverage["coverage_record_digest"]
     admission = result.payload["source_evidence_admission_ref"]
     assert admission["candidate_content_custody_is_semantic_support"] is False
     assert result.payload["ad_hoc_semantic_matcher_avoided"] is True
     assert "bounded_text" not in result.output
-    assert "official current Example Program permit threshold is 500" not in result.output
+    assert PASSPORT_TEXT not in result.output
     assert "source-obligation satisfaction claimed: true" not in result.output
     assert "citation eligibility claimed: true" not in result.output
     assert "answer prose:" not in result.output
+
+
+@pytest.mark.parametrize(
+    ("blocker", "detail"),
+    [
+        (
+            "BLOCKED_RETAINED_BOUNDED_CONTENT_MISSING",
+            "retained bounded sanitized content is missing",
+        ),
+        (
+            "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER",
+            "Analyst support proposal schema could not be produced",
+        ),
+        (
+            "BLOCKED_SEMANTIC_OBSERVATION_ADMISSION",
+            "SemanticObservation admission rejected the proposal",
+        ),
+        (
+            "BLOCKED_COMPONENT_COVERAGE_BINDING",
+            "ComponentCoverage could not bind the admitted observation",
+        ),
+    ],
+)
+def test_product_status_reports_precise_semantic_consumer_blockers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    blocker: str,
+    detail: str,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+
+    def fail_consumer(**_kwargs: Any) -> Any:
+        raise semantic_status.RetainedCustodyAnalystSupportProposalError(
+            blocker,
+            detail,
+        )
+
+    monkeypatch.setattr(
+        semantic_status,
+        "build_retained_custody_semantic_coverage",
+        fail_consumer,
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+    )
+
+    assert result.decision == blocker
+    assert result.return_code == 2
+    assert f"Analyst support proposal status: {blocker}" in result.output
+    assert f"decision: {blocker}" in result.output
+    assert f"blocker detail: {detail}" in result.output
+    assert "next blocked surface:" in result.output
+    assert PASSPORT_TEXT not in result.output
 
 
 def test_cli_flag_is_default_off_and_skips_live_key_validation(
@@ -105,7 +183,7 @@ def test_cli_flag_is_default_off_and_skips_live_key_validation(
 
     def fake_status(**_kwargs: Any) -> Any:
         calls.append("status")
-        return SimpleNamespace(return_code=0, output="decision: BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING")
+        return SimpleNamespace(return_code=0, output="decision: PASS")
 
     def fail_key_validation(**_kwargs: Any) -> list[str]:
         raise AssertionError("status path must not validate live provider keys")
@@ -120,7 +198,7 @@ def test_cli_flag_is_default_off_and_skips_live_key_validation(
     assert cli.main([QUERY, LIVE_SEMANTIC_COVERAGE_STATUS_FLAG]) == 0
 
     assert calls == ["status"]
-    assert "decision: BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING" in capsys.readouterr().out
+    assert "decision: PASS" in capsys.readouterr().out
 
 
 def test_product_status_module_avoids_live_calls_scripts_and_ad_hoc_semantics() -> None:
@@ -159,6 +237,146 @@ def test_product_status_module_avoids_live_calls_scripts_and_ad_hoc_semantics() 
     assert imported.isdisjoint(forbidden_imports)
     assert not any(name == "scripts" or name.startswith("scripts.") for name in imported)
     assert called.isdisjoint(forbidden_calls)
+
+
+def _passport_retained_repo(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
+    repo_root = tmp_path / "repo"
+    search_dir = repo_root / "output" / "ag_live_ordinary_search_candidate_01b"
+    fetch_dir = repo_root / "output" / "ag_live_source_survival_fetch_read_01"
+    _kernel, base_packet = _packet_from_state(candidate_count=1)
+    base = base_packet["candidate_records"][0]
+    candidate = SearchResultCandidateRecord(
+        run_id=base_packet["run_id"],
+        request_id=base_packet["request_id"],
+        current_answer_contract_ref=base_packet["current_answer_contract_ref"],
+        search_executor_handoff_ref=base_packet["search_executor_handoff_ref"],
+        search_task_id=base["search_task_id"],
+        provider_authorized=base["provider_authorized"],
+        provider_used=base["provider_used"],
+        provider_call_index=base["provider_call_index"],
+        result_rank=1,
+        title="Passport Fees",
+        url=PASSPORT_URL,
+        domain="travel.state.gov",
+        candidate_id="search-result-candidate:adult-passport-fee",
+        candidate_digest="candidate-digest-adult-passport-fee",
+        validation_id=base.get("validation_id"),
+        parent_live_search_validation_ref=base.get("parent_live_search_validation_ref"),
+        query_intent_id=base.get("query_intent_id"),
+        component_id=PASSPORT_COMPONENT_ID,
+        source_obligation_candidate_ids=(PASSPORT_OBLIGATION_ID,),
+        snippet="Official current passport fee information.",
+        published_or_observed_date="2026-06-30",
+    ).to_dict()
+    candidate_packet = SearchResultCandidatePacket(
+        run_id=base_packet["run_id"],
+        request_id=base_packet["request_id"],
+        current_answer_contract_ref=base_packet["current_answer_contract_ref"],
+        search_executor_handoff_ref=base_packet["search_executor_handoff_ref"],
+        candidate_records=[candidate],
+        selected_search_task_ids=base_packet["selected_search_task_ids"],
+        provider_authorized=base_packet["provider_authorized"],
+        provider_used=base_packet["provider_used"],
+        parent_live_search_validation_ref=base_packet.get(
+            "parent_live_search_validation_ref",
+            {},
+        ),
+    ).to_dict()
+    fetch_packet = build_fetch_read_content_packet_from_candidate_packet(
+        candidate_packet,
+        [_passport_readable_material(candidate_packet)],
+    )
+    provider_result = {
+        "title": candidate["title"],
+        "url": candidate["url"],
+        "domain": candidate["domain"],
+        "snippet": candidate["snippet"],
+        "published_or_observed_date": candidate["published_or_observed_date"],
+        "result_rank": candidate["result_rank"],
+        "provider_call_index": candidate["provider_call_index"],
+    }
+    search_dir.mkdir(parents=True, exist_ok=True)
+    fetch_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(
+        search_dir / "sanitized_provider_results.json",
+        _generic_provider_output([provider_result]),
+    )
+    _write_json(search_dir / "search_candidate_packet.json", candidate_packet)
+    _write_json(search_dir / "search_result_candidate_packet.json", candidate_packet)
+    _write_json(fetch_dir / "fetch_read_content_packet.json", fetch_packet)
+    _write_json(fetch_dir / "live_source_survival_summary.json", _summary(fetch_packet))
+    return repo_root, candidate
+
+
+def _passport_readable_material(packet: dict[str, Any]) -> dict[str, Any]:
+    candidate = packet["candidate_records"][0]
+    return {
+        "candidate_id": candidate["candidate_id"],
+        "candidate_digest": candidate["candidate_digest"],
+        "run_id": packet["run_id"],
+        "request_id": packet["request_id"],
+        "current_answer_contract_digest": packet["current_answer_contract_digest"],
+        "search_executor_handoff_digest": packet["search_executor_handoff_digest"],
+        "search_result_candidate_packet_id": packet["packet_id"],
+        "search_result_candidate_packet_digest": packet["packet_digest"],
+        "fetch_read_status": "readable",
+        "attempted_url": candidate["url"],
+        "resolved_url": candidate["url"],
+        "resolved_domain": candidate["domain"],
+        "content_type": "text/html",
+        "http_status": 200,
+        "retrieved_or_observed_at": "2026-06-30T00:00:00Z",
+        "content_title": "Passport Fees",
+        "bounded_text": PASSPORT_TEXT,
+        "bounded_text_sanitized": True,
+        "bounded_text_bounded": True,
+        "bounded_text_char_count": len(PASSPORT_TEXT),
+        "raw_page_content_retained": False,
+        "raw_headers_retained": False,
+    }
+
+
+def _summary(fetch_packet: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "decision": "PASS",
+        "readable_content_handoff_created": True,
+        "retention_flags": {
+            "headers_retained": False,
+            "page_content_retained": False,
+            "page_html_retained": False,
+            "page_text_retained": False,
+            "private_material_retained": False,
+            "prompt_retained": False,
+            "provider_payload_retained": False,
+            "search_response_retained": False,
+            "unbounded_page_material_retained": False,
+        },
+        "closed_downstream_surfaces": {
+            "answer_text": False,
+            "author_or_authorprose": False,
+            "citation_eligibility_or_rendering": False,
+            "component_coverage": False,
+            "evidence_ledger_admission": False,
+            "final_answer_packet": False,
+            "product_correctness_claim": False,
+            "semantic_observation": False,
+            "source_obligation_satisfaction": False,
+            "sufficiency_readiness": False,
+        },
+        "fetch_read_content_packet_ref": {
+            "packet_id": fetch_packet["packet_id"],
+            "packet_digest": fetch_packet["packet_digest"],
+            "reference_count": fetch_packet["reference_count"],
+            "schema_version": fetch_packet["schema_version"],
+        },
+    }
+
+
+def _write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _import_cli_with_dotenv_disabled(monkeypatch: pytest.MonkeyPatch) -> Any:

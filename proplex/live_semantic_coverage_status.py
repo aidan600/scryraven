@@ -12,16 +12,26 @@ matching.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from core.retained_custody_analyst_support_proposal import (
+    RetainedCustodyAnalystSupportProposalError,
+    RetainedCustodySemanticCoverageResult,
+    build_retained_custody_semantic_coverage,
+)
 from proplex.live_citation_source_obligation_readiness_status import (
     PASS_DECISION,
     build_live_citation_source_obligation_readiness_status,
 )
+from proplex.live_source_evidence_admission_status import (
+    FETCH_READ_ARTIFACT_DIR,
+    FETCH_READ_CONTENT_PACKET_NAME,
+)
 
-PHASE = "AG-SEMANTIC-COVERAGE-PRODUCT-CONSUMPTION-01"
+PHASE = "AG-SEMANTIC-COVERAGE-CONSUMER-REPAIR-01"
 MODE = "BUILD"
 USABLE_ANSWER_VERDICT_TARGET = "YES"
 LIVE_SEMANTIC_COVERAGE_STATUS_FLAG = "--live-semantic-coverage-status-dry-run"
@@ -42,6 +52,12 @@ BLOCKED_COMPONENT_SOURCE_OBLIGATION_BINDING = (
 BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING = (
     "BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING"
 )
+BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER = (
+    "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+)
+BLOCKED_RETAINED_BOUNDED_CONTENT_MISSING = (
+    "BLOCKED_RETAINED_BOUNDED_CONTENT_MISSING"
+)
 BLOCKED_SEMANTIC_OBSERVATION_ADMISSION = (
     "BLOCKED_SEMANTIC_OBSERVATION_ADMISSION"
 )
@@ -53,13 +69,11 @@ BLOCKED_PRODUCT_IMPORT_BOUNDARY = "BLOCKED_PRODUCT_IMPORT_BOUNDARY"
 
 SEMANTIC_COVERAGE_MACHINERY_FOUND = (
     "core.evidence_relative_analysis_packet.EvidenceRelativeAnalysisPacket / AnalystReport",
+    "core.retained_custody_analyst_support_proposal.build_retained_custody_semantic_coverage",
     "core.semantic_observation_admission_bridge.admit_semantic_observations_from_analysis_support_findings",
     "core.semantic_observation_admission_runtime.build_semantic_observation_admission_state",
     "core.component_coverage_record.ComponentCoverageRecord",
     "core.component_coverage_reduction_runtime.build_component_coverage_reduction_state",
-)
-SEMANTIC_COVERAGE_MACHINERY_MISSING = (
-    "ordinary product-consumable retained-custody -> Analyst possible_support_proposal adapter"
 )
 NEXT_BLOCKED_SURFACE = (
     "targeted REPAIR for semantic coverage product-consumption blocker"
@@ -143,9 +157,10 @@ def build_live_semantic_coverage_status(
 ) -> LiveSemanticCoverageStatusResult:
     """Consume retained status chain and return CLI-safe semantic coverage status."""
 
+    root = _resolve_root(repo_root)
     readiness_status = build_live_citation_source_obligation_readiness_status(
         query=query,
-        repo_root=_resolve_root(repo_root),
+        repo_root=root,
     )
     if readiness_status.decision != PASS_DECISION:
         return _blocked_from_readiness_status(
@@ -188,17 +203,84 @@ def build_live_semantic_coverage_status(
             detail="component/source-obligation lineage is not present enough to attempt binding",
         )
 
-    semantic_ref = _semantic_observation_blocker_ref()
-    coverage_ref = _component_coverage_blocker_ref(component_ref=component_ref)
-    payload = _blocked_semantic_payload(
+    try:
+        semantic_result = build_retained_custody_semantic_coverage(
+            fetch_read_content_packet=_read_json(
+                root / FETCH_READ_ARTIFACT_DIR / FETCH_READ_CONTENT_PACKET_NAME
+            ),
+            expected_candidate_id=_clean_text(admission_ref.get("candidate_id"), limit=320),
+            expected_reference_id=_clean_text(admission_ref.get("reference_id"), limit=320),
+        )
+    except FileNotFoundError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_MISSING,
+            detail=f"missing fetch/read artifact: {Path(exc.filename or '').name}",
+        )
+    except PermissionError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_UNREADABLE,
+            detail=f"unreadable fetch/read artifact: {Path(exc.filename or '').name}",
+        )
+    except json.JSONDecodeError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_UNREADABLE,
+            detail=f"fetch/read artifact is not JSON: {exc.msg}",
+        )
+    except OSError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_FETCH_READ_ARTIFACT_UNREADABLE,
+            detail=f"could not read fetch/read artifact: {exc}",
+        )
+    except RetainedCustodyAnalystSupportProposalError as exc:
+        payload = _blocked_semantic_payload(
+            query=query,
+            readiness_payload=readiness_payload,
+            admission_ref=admission_ref,
+            readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            support_ref=_support_proposal_blocker_ref(
+                blocker=exc.blocker,
+                detail=exc.detail,
+            ),
+            semantic_ref=_semantic_observation_blocker_ref(
+                blocker=exc.blocker,
+                detail=exc.detail,
+            ),
+            coverage_ref=_component_coverage_blocker_ref(
+                component_ref=component_ref,
+                blocker=exc.blocker,
+                detail=exc.detail,
+            ),
+            decision=exc.blocker,
+            blocker_detail=exc.detail,
+            next_blocked_surface=exc.next_surface,
+        )
+        output = format_live_semantic_coverage_status(payload)
+        if not output_hygiene_passes(output):
+            return _blocked_result(
+                query=query,
+                blocker=BLOCKED_OUTPUT_HYGIENE,
+                detail="status output contained forbidden material",
+            )
+        return LiveSemanticCoverageStatusResult(
+            decision=exc.blocker,
+            output=output,
+            payload=payload,
+        )
+
+    payload = _pass_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
         admission_ref=admission_ref,
         readiness_ref=readiness_ref,
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
-        semantic_ref=semantic_ref,
-        coverage_ref=coverage_ref,
+        semantic_result=semantic_result,
     )
     output = format_live_semantic_coverage_status(payload)
     if not output_hygiene_passes(output):
@@ -208,7 +290,7 @@ def build_live_semantic_coverage_status(
             detail="status output contained forbidden material",
         )
     return LiveSemanticCoverageStatusResult(
-        decision=BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING,
+        decision=PASS_DECISION,
         output=output,
         payload=payload,
     )
@@ -220,91 +302,96 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     selected = _safe_mapping(payload.get("selected_candidate"))
     admission = _safe_mapping(payload.get("source_evidence_admission_ref"))
     readiness = _safe_mapping(payload.get("citation_source_obligation_readiness_ref"))
+    support = _safe_mapping(payload.get("analyst_support_proposal_ref"))
     semantic = _safe_mapping(payload.get("semantic_observation_admission_ref"))
     coverage = _safe_mapping(payload.get("component_coverage_ref"))
     closed = payload.get("closed_downstream_surfaces") or CLOSED_DOWNSTREAM_SURFACES
-    return "\n".join(
+    decision = str(payload.get("decision") or "")
+    lines = [
         (
-            "live semantic coverage status blocked",
-            f"phase: {PHASE}",
-            f"mode: {MODE}",
-            f"ordinary entrypoint: {payload.get('ordinary_entrypoint')}",
-            f"status flag: {LIVE_SEMANTIC_COVERAGE_STATUS_FLAG}",
-            f"user-style query: {payload.get('user_style_query')}",
-            (
-                "retained-artifact preflight status: "
-                f"{payload.get('retained_artifact_preflight_status')}"
-            ),
-            (
-                "retained search candidate status: "
-                f"{payload.get('retained_search_candidate_status')}"
-            ),
-            f"selected candidate rank: {selected.get('rank')}",
-            f"selected candidate domain: {selected.get('domain')}",
-            f"selected candidate URL: {selected.get('url')}",
-            f"fetch/read handoff status: {payload.get('fetch_read_handoff_status')}",
-            (
-                "source/evidence custody/admission status: "
-                f"{admission.get('status')}"
-            ),
-            (
-                "citation/source-obligation readiness posture before semantic support: "
-                f"{readiness.get('posture')}"
-            ),
-            (
-                "existing SemanticObservation/ComponentCoverage machinery found: "
-                f"{'; '.join(payload.get('semantic_coverage_machinery_found') or [])}"
-            ),
-            (
-                "missing product consumer: "
-                f"{payload.get('semantic_coverage_machinery_missing')}"
-            ),
-            (
-                "SemanticObservation admission status: "
-                f"{semantic.get('status')}"
-            ),
-            (
-                "SemanticObservation id/ref/digest: "
-                f"{semantic.get('observation_ref')}"
-            ),
-            (
-                "ComponentCoverage status: "
-                f"{coverage.get('status')}"
-            ),
-            (
-                "ComponentCoverage id/ref/digest: "
-                f"{coverage.get('coverage_ref')}"
-            ),
-            f"component id/ref: {_format_component_ref(payload.get('component_ref'))}",
-            (
-                "source obligation id/ref: "
-                f"{_format_source_obligation_ref(payload.get('source_obligation_ref'))}"
-            ),
-            (
-                "semantic support reasons or blocker: "
-                f"{'; '.join(semantic.get('reasons') or [])}"
-            ),
-            (
-                "component coverage reasons or blocker: "
-                f"{'; '.join(coverage.get('reasons') or [])}"
-            ),
-            (
-                "ad hoc semantic matcher/heuristic avoided: "
-                f"{_bool_text(payload.get('ad_hoc_semantic_matcher_avoided'))}"
-            ),
-            f"next blocked surface: {payload.get('next_blocked_surface')}",
-            f"raw/private retention: {_bool_text(payload.get('raw_private_retention'))}",
-            f"closed downstream surfaces: {', '.join(str(item) for item in closed)}",
-            f"usable-answer verdict target: {payload.get('usable_answer_verdict_target')}",
-            "answerability/correctness: not claimed",
-            (
-                "current status path live calls: provider/search/broker/fetch/read/"
-                "retrieval/model = 0"
-            ),
-            str(payload.get("non_claim")),
-            f"decision: {payload.get('decision')}",
+            "live semantic coverage status"
+            if decision == PASS_DECISION
+            else "live semantic coverage status blocked"
+        ),
+        f"phase: {PHASE}",
+        f"mode: {MODE}",
+        f"ordinary entrypoint: {payload.get('ordinary_entrypoint')}",
+        f"status flag: {LIVE_SEMANTIC_COVERAGE_STATUS_FLAG}",
+        f"user-style query: {payload.get('user_style_query')}",
+        (
+            "retained-artifact preflight status: "
+            f"{payload.get('retained_artifact_preflight_status')}"
+        ),
+        (
+            "retained search candidate status: "
+            f"{payload.get('retained_search_candidate_status')}"
+        ),
+        f"selected candidate rank: {selected.get('rank')}",
+        f"selected candidate domain: {selected.get('domain')}",
+        f"selected candidate URL: {selected.get('url')}",
+        f"fetch/read handoff status: {payload.get('fetch_read_handoff_status')}",
+        (
+            "source/evidence custody/admission status: "
+            f"{admission.get('status')}"
+        ),
+        (
+            "citation/source-obligation readiness posture before semantic support: "
+            f"{readiness.get('posture')}"
+        ),
+        (
+            "existing SemanticObservation/ComponentCoverage machinery found: "
+            f"{'; '.join(payload.get('semantic_coverage_machinery_found') or [])}"
+        ),
+        f"Analyst support proposal status: {support.get('status')}",
+        f"Analyst support proposal ref/digest: {support.get('proposal_ref')}",
+        f"SemanticObservation admission status: {semantic.get('status')}",
+        f"SemanticObservation id/ref/digest: {semantic.get('observation_ref')}",
+        f"ComponentCoverage status: {coverage.get('status')}",
+        f"ComponentCoverage id/ref/digest: {coverage.get('coverage_ref')}",
+        f"component id/ref: {_format_component_ref(payload.get('component_ref'))}",
+        (
+            "source obligation id/ref: "
+            f"{_format_source_obligation_ref(payload.get('source_obligation_ref'))}"
+        ),
+        (
+            "semantic support source: "
+            f"{payload.get('semantic_support_source')}"
+        ),
+        (
+            "semantic support/custody distinction preserved: "
+            f"{_bool_text(payload.get('semantic_support_custody_distinction_preserved'))}"
+        ),
+        (
+            "semantic support reasons or blocker: "
+            f"{'; '.join(semantic.get('reasons') or [])}"
+        ),
+        (
+            "component coverage reasons or blocker: "
+            f"{'; '.join(coverage.get('reasons') or [])}"
+        ),
+        (
+            "ad hoc semantic matcher/heuristic avoided: "
+            f"{_bool_text(payload.get('ad_hoc_semantic_matcher_avoided'))}"
+        ),
+        f"raw/private retention: {_bool_text(payload.get('raw_private_retention'))}",
+        f"closed downstream surfaces: {', '.join(str(item) for item in closed)}",
+        f"usable-answer verdict target: {payload.get('usable_answer_verdict_target')}",
+        "answerability/correctness: not claimed",
+        (
+            "current status path live calls: provider/search/broker/fetch/read/"
+            "retrieval/model = 0"
+        ),
+        str(payload.get("non_claim")),
+    ]
+    if decision != PASS_DECISION:
+        lines.extend(
+            [
+                f"blocker detail: {payload.get('blocker_detail')}",
+                f"next blocked surface: {payload.get('next_blocked_surface')}",
+            ]
         )
-    )
+    lines.append(f"decision: {decision}")
+    return "\n".join(lines)
 
 
 def output_hygiene_passes(output: str) -> bool:
@@ -312,34 +399,99 @@ def output_hygiene_passes(output: str) -> bool:
     return not any(token in lowered for token in _OUTPUT_FORBIDDEN_TOKENS)
 
 
-def _semantic_observation_blocker_ref() -> dict[str, Any]:
+def _support_proposal_blocker_ref(*, blocker: str, detail: str) -> dict[str, Any]:
     return {
-        "status": BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING,
+        "status": blocker,
+        "proposal_ref": "unavailable",
+        "reasons": [detail],
+    }
+
+
+def _semantic_observation_blocker_ref(
+    *,
+    blocker: str = BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING,
+    detail: str | None = None,
+) -> dict[str, Any]:
+    reasons = [
+        "current admission bridge requires a validated EvidenceRelativeAnalysisPacket",
+        "current admission bridge requires an Analyst possible_support_proposal",
+        "retained status chain provides custody and lineage but no product-consumable Analyst support finding",
+        "semantic support cannot be inferred from URL/domain/snippet/custody/lineage",
+        "semantic support cannot be inferred by ad hoc text matching in this phase",
+    ]
+    if detail:
+        reasons = [detail]
+    return {
+        "status": blocker,
         "observation_ref": "unavailable",
-        "reasons": [
-            "current admission bridge requires a validated EvidenceRelativeAnalysisPacket",
-            "current admission bridge requires an Analyst possible_support_proposal",
-            "retained status chain provides custody and lineage but no product-consumable Analyst support finding",
-            "semantic support cannot be inferred from URL/domain/snippet/custody/lineage",
-            "semantic support cannot be inferred by ad hoc text matching in this phase",
-        ],
+        "reasons": reasons,
     }
 
 
 def _component_coverage_blocker_ref(
     *,
     component_ref: Mapping[str, Any],
+    blocker: str = BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING,
+    detail: str | None = None,
 ) -> dict[str, Any]:
+    reasons = [
+        "ComponentCoverage reduction requires an admitted SemanticObservation",
+        "no SemanticObservation was admitted for the retained lane",
+        "coverage cannot bind to custody/lineage alone",
+    ]
+    if detail:
+        reasons = [detail]
     return {
-        "status": BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING,
+        "status": blocker,
         "coverage_ref": "unavailable",
         "component_id": _component_id(component_ref),
-        "reasons": [
-            "ComponentCoverage reduction requires an admitted SemanticObservation",
-            "no SemanticObservation was admitted for the retained lane",
-            "coverage cannot bind to custody/lineage alone",
-        ],
+        "reasons": reasons,
     }
+
+
+def _pass_semantic_payload(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    semantic_result: RetainedCustodySemanticCoverageResult,
+) -> dict[str, Any]:
+    support_ref = _support_proposal_ref(semantic_result)
+    semantic_ref = _semantic_observation_ref(semantic_result)
+    coverage_ref = _component_coverage_ref(semantic_result)
+    payload = _base_semantic_payload(
+        query=query,
+        readiness_payload=readiness_payload,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref={
+            **dict(component_ref),
+            "component_coverage_bound": True,
+        },
+        source_obligation_ref=source_obligation_ref,
+        support_ref=support_ref,
+        semantic_ref=semantic_ref,
+        coverage_ref=coverage_ref,
+        decision=PASS_DECISION,
+        blocker_detail=None,
+        next_blocked_surface=None,
+    )
+    payload.update(
+        {
+            "semantic_support_source": "retained bounded sanitized content",
+            "semantic_support_custody_distinction_preserved": True,
+            "analyst_support_proposal_consumer": (
+                "core.retained_custody_analyst_support_proposal"
+            ),
+            "retained_bounded_content_ref": support_ref.get(
+                "retained_bounded_content_ref"
+            ),
+        }
+    )
+    return payload
 
 
 def _blocked_semantic_payload(
@@ -350,11 +502,46 @@ def _blocked_semantic_payload(
     readiness_ref: Mapping[str, Any],
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
+    support_ref: Mapping[str, Any],
     semantic_ref: Mapping[str, Any],
     coverage_ref: Mapping[str, Any],
+    decision: str,
+    blocker_detail: str | None,
+    next_blocked_surface: str | None,
+) -> dict[str, Any]:
+    return _base_semantic_payload(
+        query=query,
+        readiness_payload=readiness_payload,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        support_ref=support_ref,
+        semantic_ref=semantic_ref,
+        coverage_ref=coverage_ref,
+        decision=decision,
+        blocker_detail=blocker_detail,
+        next_blocked_surface=next_blocked_surface or NEXT_BLOCKED_SURFACE,
+    )
+
+
+def _base_semantic_payload(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    support_ref: Mapping[str, Any],
+    semantic_ref: Mapping[str, Any],
+    coverage_ref: Mapping[str, Any],
+    decision: str,
+    blocker_detail: str | None,
+    next_blocked_surface: str | None,
 ) -> dict[str, Any]:
     selected = _safe_mapping(readiness_payload.get("selected_candidate"))
-    return {
+    payload = {
         "phase": PHASE,
         "mode": MODE,
         "ordinary_entrypoint": "python -m proplex",
@@ -381,22 +568,107 @@ def _blocked_semantic_payload(
         "source_evidence_admission_ref": dict(admission_ref),
         "citation_source_obligation_readiness_ref": dict(readiness_ref),
         "semantic_coverage_machinery_found": list(SEMANTIC_COVERAGE_MACHINERY_FOUND),
-        "semantic_coverage_machinery_missing": (
-            SEMANTIC_COVERAGE_MACHINERY_MISSING
-        ),
+        "analyst_support_proposal_ref": dict(support_ref),
         "semantic_observation_admission_ref": dict(semantic_ref),
         "component_coverage_ref": dict(coverage_ref),
         "component_ref": dict(component_ref),
         "source_obligation_ref": dict(source_obligation_ref),
+        "semantic_support_source": "retained bounded sanitized content",
+        "semantic_support_custody_distinction_preserved": (
+            decision == PASS_DECISION
+        ),
         "ad_hoc_semantic_matcher_avoided": True,
         "raw_private_retention": False,
         "closed_downstream_surfaces": CLOSED_DOWNSTREAM_SURFACES,
-        "next_blocked_surface": NEXT_BLOCKED_SURFACE,
+        "next_blocked_surface": next_blocked_surface,
         "usable_answer_verdict_target": USABLE_ANSWER_VERDICT_TARGET,
         "answerability_correctness": "not claimed",
         "non_claim": EXPLICIT_NON_CLAIM,
-        "decision": BLOCKED_SEMANTIC_COVERAGE_CONSUMER_MISSING,
+        "decision": decision,
     }
+    if blocker_detail:
+        payload["blocker_detail"] = blocker_detail
+    return payload
+
+
+def _support_proposal_ref(
+    semantic_result: RetainedCustodySemanticCoverageResult,
+) -> dict[str, Any]:
+    finding = _safe_mapping(semantic_result.analyst_finding)
+    analysis_ref = _safe_mapping(semantic_result.analysis_packet_ref)
+    return _without_empty(
+        {
+            "status": "proposal_created",
+            "proposal_ref": _id_digest_ref(
+                finding.get("finding_id"),
+                finding.get("finding_digest"),
+            ),
+            "finding_id": finding.get("finding_id"),
+            "finding_digest": finding.get("finding_digest"),
+            "analysis_packet_id": analysis_ref.get("packet_id"),
+            "analysis_packet_digest": analysis_ref.get("packet_digest"),
+            "reference_id": finding.get("reference_id"),
+            "reference_digest": finding.get("reference_digest"),
+            "candidate_id": finding.get("candidate_id"),
+            "candidate_digest": finding.get("candidate_digest"),
+            "retained_bounded_content_ref": {
+                "reference_id": finding.get("reference_id"),
+                "reference_digest": finding.get("reference_digest"),
+                "bounded_content_digest": finding.get("excerpt_digest"),
+                "bounded_character_count": finding.get("bounded_character_count"),
+            },
+            "reasons": [
+                "proposal created from retained bounded sanitized content",
+                "source/evidence custody and component lineage preserved",
+            ],
+        }
+    )
+
+
+def _semantic_observation_ref(
+    semantic_result: RetainedCustodySemanticCoverageResult,
+) -> dict[str, Any]:
+    ref = semantic_result.semantic_observation_ref
+    return _without_empty(
+        {
+            "status": "admitted",
+            "observation_ref": _id_digest_ref(
+                ref.get("observation_id"),
+                ref.get("observation_digest"),
+            ),
+            "observation_id": ref.get("observation_id"),
+            "observation_digest": ref.get("observation_digest"),
+            "content_refs": ref.get("content_refs"),
+            "evidence_refs": ref.get("evidence_refs"),
+            "reasons": [
+                "admitted through current SemanticObservation authority",
+            ],
+        }
+    )
+
+
+def _component_coverage_ref(
+    semantic_result: RetainedCustodySemanticCoverageResult,
+) -> dict[str, Any]:
+    ref = semantic_result.component_coverage_ref
+    return _without_empty(
+        {
+            "status": "bound",
+            "coverage_ref": _id_digest_ref(
+                ref.get("coverage_record_id"),
+                ref.get("coverage_record_digest"),
+            ),
+            "coverage_record_id": ref.get("coverage_record_id"),
+            "coverage_record_digest": ref.get("coverage_record_digest"),
+            "coverage_state": ref.get("coverage_state"),
+            "semantic_support_status": ref.get("semantic_support_status"),
+            "source_obligation_status": ref.get("source_obligation_status"),
+            "reasons": [
+                "bound through current ComponentCoverage authority",
+                "source-obligation satisfaction remains unclaimed",
+            ],
+        }
+    )
 
 
 def _blocked_from_readiness_status(
@@ -467,7 +739,12 @@ def _format_component_ref(value: Any) -> str:
         return "unavailable"
     digest = _clean_text(ref.get("current_answer_contract_digest"), limit=128)
     suffix = f"; contract_digest={digest}" if digest else ""
-    return f"{component_id} (lineage present{suffix}; coverage not bound)"
+    coverage = (
+        "coverage bound"
+        if ref.get("component_coverage_bound") is True
+        else "coverage not bound"
+    )
+    return f"{component_id} (lineage present{suffix}; {coverage})"
 
 
 def _format_source_obligation_ref(value: Any) -> str:
@@ -487,6 +764,19 @@ def _source_obligation_ids(source_obligation_ref: Mapping[str, Any]) -> list[str
 
 def _resolve_root(path: str | Path) -> Path:
     return Path(path).resolve()
+
+
+def _read_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def _id_digest_ref(identifier: Any, digest: Any) -> str:
+    clean_id = _clean_text(identifier, limit=320)
+    clean_digest = _clean_text(digest, limit=128)
+    if clean_id and clean_digest:
+        return f"{clean_id} / {clean_digest}"
+    return clean_id or clean_digest or "unavailable"
 
 
 def _clean_query(query: str) -> str:
@@ -530,6 +820,14 @@ def _bool_text(value: Any) -> str:
 
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in payload.items()
+        if value not in (None, "", [], {})
+    }
 
 
 __all__ = [
