@@ -69,9 +69,9 @@ def test_product_status_blocks_without_current_path_support_signal(
         repo_root=repo_root,
     )
 
-    assert result.decision == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert result.decision == "BLOCKED_DPRIME_PREFLIGHT_MISSING"
     assert result.return_code == 2
-    assert "mode: REPAIR" in result.output
+    assert "mode: BUILD" in result.output
     assert "ordinary entrypoint: python -m proplex" in result.output
     assert f"status flag: {LIVE_SEMANTIC_COVERAGE_STATUS_FLAG}" in result.output
     assert "usable-answer verdict target: YES" in result.output
@@ -85,46 +85,48 @@ def test_product_status_blocks_without_current_path_support_signal(
         "not_yet_semantically_supported"
     ) in result.output
     assert "EvidenceRelativeAnalysisPacket / AnalystReport" in result.output
-    assert _BLOCKED_SUPPORT_DETAIL in result.output
-    assert (
-        "Analyst support proposal status: "
-        "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
-    ) in result.output
+    assert "D-prime schema status: available" in result.output
+    assert "D-prime preflight status: missing" in result.output
+    assert "D-prime assessment status: not reached" in result.output
+    assert "D-prime proposal validation status: not reached" in result.output
+    assert "RunKernel support admission status: not reached" in result.output
+    assert _DPRIME_PREFLIGHT_DETAIL in result.output
+    assert "Analyst support proposal status: not reached" in result.output
     assert "Analyst support proposal ref/digest: unavailable" in result.output
-    assert (
-        "SemanticObservation admission status: "
-        "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
-    ) in result.output
+    assert "SemanticObservation admission status: unavailable" in result.output
     assert "SemanticObservation id/ref/digest: unavailable" in result.output
-    assert (
-        "ComponentCoverage status: BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
-    ) in result.output
+    assert "ComponentCoverage status: unavailable" in result.output
     assert "ComponentCoverage id/ref/digest: unavailable" in result.output
     assert f"component id/ref: {candidate['component_id']}" in result.output
     assert "coverage not bound" in result.output
     assert "source obligation id/ref:" in result.output
-    assert (
-        "semantic support source: unavailable; current-path support signal missing"
-    ) in result.output
+    assert "semantic support source: unavailable; D-prime preflight missing" in result.output
     assert "semantic support/custody distinction preserved: false" in result.output
     assert "ad hoc semantic matcher/heuristic avoided: true" in result.output
     assert "raw/private retention: false" in result.output
     assert "citation eligibility/rendering" in result.output
     assert "source-obligation satisfaction" in result.output
     assert "SufficiencyReadiness" in result.output
-    assert "FinalAnswerPacket" in result.output
+    assert "final answer packet" in result.output
     assert "Author/AuthorProse" in result.output
-    assert "decision: BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER" in result.output
+    assert "decision: BLOCKED_DPRIME_PREFLIGHT_MISSING" in result.output
 
     support = result.payload["analyst_support_proposal_ref"]
-    assert support["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert support["status"] == "not reached"
     assert support["proposal_ref"] == "unavailable"
     semantic = result.payload["semantic_observation_admission_ref"]
-    assert semantic["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert semantic["status"] == "unavailable"
     assert semantic["observation_ref"] == "unavailable"
     coverage = result.payload["component_coverage_ref"]
-    assert coverage["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert coverage["status"] == "unavailable"
     assert coverage["coverage_ref"] == "unavailable"
+    dprime = result.payload["dprime_status"]
+    assert dprime["schema_status"] == "available"
+    assert dprime["preflight_status"] == "missing"
+    assert dprime["objects_created"]["evidence_frame_preflight"] is False
+    assert dprime["objects_created"]["validated_support_proposal"] is False
+    assert dprime["objects_created"]["semantic_observation"] is False
+    assert dprime["objects_created"]["component_coverage"] is False
     admission = result.payload["source_evidence_admission_ref"]
     assert admission["candidate_content_custody_is_semantic_support"] is False
     assert result.payload["ad_hoc_semantic_matcher_avoided"] is True
@@ -135,11 +137,7 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert "answer prose:" not in result.output
 
 
-_BLOCKED_SUPPORT_DETAIL = (
-    "retained bounded content has custody and lineage but no current-path "
-    "semantic support signal strong enough to create an Analyst "
-    "possible_support_proposal"
-)
+_DPRIME_PREFLIGHT_DETAIL = "D-prime EvidenceFramePreflight is not implemented"
 
 
 def test_same_lane_unrelated_bounded_text_does_not_create_semantic_support(
@@ -172,17 +170,17 @@ def test_same_lane_unrelated_bounded_text_does_not_create_semantic_support(
         repo_root=repo_root,
     )
 
-    assert result.decision == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert result.decision == "BLOCKED_DPRIME_PREFLIGHT_MISSING"
     assert result.return_code == 2
-    assert _BLOCKED_SUPPORT_DETAIL in result.output
+    assert _DPRIME_PREFLIGHT_DETAIL in result.output
     support = result.payload["analyst_support_proposal_ref"]
-    assert support["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert support["status"] == "not reached"
     assert support["proposal_ref"] == "unavailable"
     semantic = result.payload["semantic_observation_admission_ref"]
-    assert semantic["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert semantic["status"] == "unavailable"
     assert semantic["observation_ref"] == "unavailable"
     coverage = result.payload["component_coverage_ref"]
-    assert coverage["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert coverage["status"] == "unavailable"
     assert coverage["coverage_ref"] == "unavailable"
     assert "ComponentCoverage id/ref/digest: unavailable" in result.output
     assert "SemanticObservation id/ref/digest: unavailable" in result.output
@@ -191,40 +189,14 @@ def test_same_lane_unrelated_bounded_text_does_not_create_semantic_support(
     assert UNRELATED_SAME_LANE_TEXT not in result.output
 
 
-@pytest.mark.parametrize(
-    ("blocker", "detail"),
-    [
-        (
-            "BLOCKED_RETAINED_BOUNDED_CONTENT_MISSING",
-            "retained bounded sanitized content is missing",
-        ),
-        (
-            "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER",
-            "Analyst support proposal schema could not be produced",
-        ),
-        (
-            "BLOCKED_SEMANTIC_OBSERVATION_ADMISSION",
-            "SemanticObservation admission rejected the proposal",
-        ),
-        (
-            "BLOCKED_COMPONENT_COVERAGE_BINDING",
-            "ComponentCoverage could not bind the admitted observation",
-        ),
-    ],
-)
-def test_product_status_reports_precise_semantic_consumer_blockers(
+def test_product_status_blocks_before_retained_support_consumer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    blocker: str,
-    detail: str,
 ) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
 
     def fail_consumer(**_kwargs: Any) -> Any:
-        raise semantic_status.RetainedCustodyAnalystSupportProposalError(
-            blocker,
-            detail,
-        )
+        raise AssertionError("D-prime preflight blocker must run before old consumer")
 
     monkeypatch.setattr(
         semantic_status,
@@ -237,11 +209,12 @@ def test_product_status_reports_precise_semantic_consumer_blockers(
         repo_root=repo_root,
     )
 
-    assert result.decision == blocker
+    assert result.decision == "BLOCKED_DPRIME_PREFLIGHT_MISSING"
     assert result.return_code == 2
-    assert f"Analyst support proposal status: {blocker}" in result.output
-    assert f"decision: {blocker}" in result.output
-    assert f"blocker detail: {detail}" in result.output
+    assert "D-prime preflight status: missing" in result.output
+    assert "Analyst support proposal status: not reached" in result.output
+    assert "decision: BLOCKED_DPRIME_PREFLIGHT_MISSING" in result.output
+    assert f"blocker detail: {_DPRIME_PREFLIGHT_DETAIL}" in result.output
     assert "next blocked surface:" in result.output
     assert PASSPORT_TEXT not in result.output
 

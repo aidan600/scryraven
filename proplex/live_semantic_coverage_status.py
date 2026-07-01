@@ -18,6 +18,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from core.dprime_support_proposal_schema import (
+    BLOCKED_DPRIME_PREFLIGHT_MISSING,
+    DPRIME_PHASE,
+    DPrimeStatusPayload,
+    build_dprime_status_payload,
+)
 from core.retained_custody_analyst_support_proposal import (
     RetainedCustodyAnalystSupportProposalError,
     RetainedCustodySemanticCoverageResult,
@@ -32,8 +38,8 @@ from proplex.live_source_evidence_admission_status import (
     FETCH_READ_CONTENT_PACKET_NAME,
 )
 
-PHASE = "AG-SEMANTIC-COVERAGE-CONSUMER-REPAIR-01"
-MODE = "REPAIR"
+PHASE = DPRIME_PHASE
+MODE = "BUILD"
 USABLE_ANSWER_VERDICT_TARGET = "YES"
 LIVE_SEMANTIC_COVERAGE_STATUS_FLAG = "--live-semantic-coverage-status-dry-run"
 
@@ -77,13 +83,13 @@ SEMANTIC_COVERAGE_MACHINERY_FOUND = (
     "core.component_coverage_reduction_runtime.build_component_coverage_reduction_state",
 )
 NEXT_BLOCKED_SURFACE = (
-    "targeted REPAIR for semantic coverage product-consumption blocker"
+    "D-prime EvidenceFramePreflight"
 )
 CLOSED_DOWNSTREAM_SURFACES = (
     "citation eligibility/rendering",
     "source-obligation satisfaction",
     "SufficiencyReadiness",
-    "FinalAnswerPacket",
+    "final answer packet",
     "Author/AuthorProse",
     "answer text",
     "product correctness",
@@ -91,7 +97,7 @@ CLOSED_DOWNSTREAM_SURFACES = (
 EXPLICIT_NON_CLAIM = (
     "This phase does not prove source-obligation satisfaction, citation "
     "eligibility, citation rendering, answerability, SufficiencyReadiness, "
-    "FinalAnswerPacket readiness, Author correctness, final answer quality, "
+    "final answer packet readiness, Author correctness, final answer quality, "
     "or product correctness."
 )
 
@@ -130,8 +136,10 @@ _OUTPUT_FORBIDDEN_TOKENS = frozenset(
         "model_response",
         "prompt:",
         "answer prose:",
+        "author prose",
         "citation_ready",
         "citation ready",
+        "finalanswerpacket",
     }
 )
 
@@ -202,6 +210,18 @@ def build_live_semantic_coverage_status(
             query=query,
             blocker=BLOCKED_COMPONENT_SOURCE_OBLIGATION_BINDING,
             detail="component/source-obligation lineage is not present enough to attempt binding",
+        )
+
+    dprime_status = build_dprime_status_payload()
+    if dprime_status.decision != PASS_DECISION:
+        return _blocked_dprime_status_result(
+            query=query,
+            readiness_payload=readiness_payload,
+            admission_ref=admission_ref,
+            readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            dprime_status=dprime_status,
         )
 
     try:
@@ -306,6 +326,7 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     support = _safe_mapping(payload.get("analyst_support_proposal_ref"))
     semantic = _safe_mapping(payload.get("semantic_observation_admission_ref"))
     coverage = _safe_mapping(payload.get("component_coverage_ref"))
+    dprime = _safe_mapping(payload.get("dprime_status"))
     closed = payload.get("closed_downstream_surfaces") or CLOSED_DOWNSTREAM_SURFACES
     decision = str(payload.get("decision") or "")
     lines = [
@@ -342,6 +363,18 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "existing SemanticObservation/ComponentCoverage machinery found: "
             f"{'; '.join(payload.get('semantic_coverage_machinery_found') or [])}"
+        ),
+        f"D-prime schema status: {dprime.get('schema_status')}",
+        f"D-prime preflight status: {dprime.get('preflight_status')}",
+        f"D-prime model review status: {dprime.get('model_review_status')}",
+        f"D-prime assessment status: {dprime.get('assessment_status')}",
+        (
+            "D-prime proposal validation status: "
+            f"{dprime.get('proposal_validation_status')}"
+        ),
+        (
+            "RunKernel support admission status: "
+            f"{dprime.get('run_kernel_support_admission_status')}"
         ),
         f"Analyst support proposal status: {support.get('status')}",
         f"Analyst support proposal ref/digest: {support.get('proposal_ref')}",
@@ -528,6 +561,72 @@ def _blocked_semantic_payload(
         "unavailable; current-path support signal missing"
     )
     return payload
+
+
+def _blocked_dprime_status_result(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    dprime_status: DPrimeStatusPayload,
+) -> LiveSemanticCoverageStatusResult:
+    dprime = dprime_status.to_dict()
+    payload = _base_semantic_payload(
+        query=query,
+        readiness_payload=readiness_payload,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        support_ref={
+            "status": dprime["assessment_status"],
+            "proposal_ref": "unavailable",
+            "reasons": [dprime["blocker_detail"]],
+        },
+        semantic_ref={
+            "status": dprime["semantic_observation_admission_status"],
+            "observation_ref": "unavailable",
+            "reasons": [
+                "D-prime preflight is missing, so no SemanticObservation exists"
+            ],
+        },
+        coverage_ref={
+            "status": dprime["component_coverage_status"],
+            "coverage_ref": "unavailable",
+            "component_id": _component_id(component_ref),
+            "reasons": [
+                "D-prime preflight is missing, so no ComponentCoverage exists"
+            ],
+        },
+        decision=dprime["decision"],
+        blocker_detail=dprime["blocker_detail"],
+        next_blocked_surface=NEXT_BLOCKED_SURFACE,
+    )
+    payload.update(
+        {
+            "dprime_status": dprime,
+            "semantic_support_source": dprime["semantic_support_source"],
+            "semantic_support_custody_distinction_preserved": False,
+            "analyst_support_proposal_consumer": (
+                "not reached; D-prime preflight missing"
+            ),
+        }
+    )
+    output = format_live_semantic_coverage_status(payload)
+    if not output_hygiene_passes(output):
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_OUTPUT_HYGIENE,
+            detail="status output contained forbidden material",
+        )
+    return LiveSemanticCoverageStatusResult(
+        decision=BLOCKED_DPRIME_PREFLIGHT_MISSING,
+        output=output,
+        payload=payload,
+    )
 
 
 def _base_semantic_payload(
