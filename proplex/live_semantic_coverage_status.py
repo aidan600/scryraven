@@ -16,9 +16,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
+from core.dprime_model_review_assessment import run_dprime_model_review_assessment
 from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
     BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
@@ -167,6 +168,8 @@ def build_live_semantic_coverage_status(
     *,
     query: str,
     repo_root: str | Path,
+    dprime_model_review_license: Mapping[str, Any] | None = None,
+    dprime_model_review_callable: Callable[..., Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     """Consume retained status chain and return CLI-safe semantic coverage status."""
 
@@ -255,6 +258,35 @@ def build_live_semantic_coverage_status(
     dprime_status = build_dprime_status_payload(
         evidence_frame_preflight=evidence_frame_preflight,
     )
+    if (
+        dprime_status.decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
+        and (
+            dprime_model_review_license is not None
+            or dprime_model_review_callable is not None
+        )
+    ):
+        model_review_result = run_dprime_model_review_assessment(
+            evidence_frame_preflight=evidence_frame_preflight.to_dict(),
+            fetch_read_content_packet=fetch_read_content_packet,
+            source_evidence_admission_ref=admission_ref,
+            citation_source_obligation_readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            negative_control_profile_ref=dprime_status.negative_control_profile_ref,
+            assessment_validator_status=dprime_status.assessment_validator_status,
+            license=dprime_model_review_license,
+            model_review_callable=dprime_model_review_callable,
+        )
+        return _blocked_dprime_model_review_assessment_result(
+            query=query,
+            readiness_payload=readiness_payload,
+            admission_ref=admission_ref,
+            readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            dprime_status=dprime_status,
+            model_review_result=model_review_result,
+        )
     if dprime_status.decision != PASS_DECISION:
         return _blocked_dprime_status_result(
             query=query,
@@ -419,7 +451,23 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
             f"{dprime.get('assessment_validator_status')}"
         ),
         f"D-prime model review status: {dprime.get('model_review_status')}",
+        (
+            "D-prime model review ref/digest: "
+            f"{_format_dprime_model_review_ref(dprime.get('model_review_ref'))}"
+        ),
         f"D-prime assessment status: {dprime.get('assessment_status')}",
+        (
+            "D-prime assessment validation status: "
+            f"{dprime.get('assessment_validation_status', 'not reached')}"
+        ),
+        (
+            "D-prime assessment ref/digest: "
+            f"{_format_dprime_assessment_ref(dprime.get('assessment_ref'))}"
+        ),
+        (
+            "D-prime model review call count: "
+            f"{dprime.get('model_review_call_count', 0)}"
+        ),
         (
             "D-prime proposal validation status: "
             f"{dprime.get('proposal_validation_status')}"
@@ -678,6 +726,89 @@ def _blocked_dprime_status_result(
         output=output,
         payload=payload,
     )
+
+
+def _blocked_dprime_model_review_assessment_result(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    dprime_status: DPrimeStatusPayload,
+    model_review_result: Any,
+) -> LiveSemanticCoverageStatusResult:
+    dprime = dprime_status.to_dict()
+    dprime.update(model_review_result.to_status_overlay())
+    objects_created = dict(dprime.get("objects_created") or {})
+    objects_created.update(model_review_result.objects_created)
+    dprime["objects_created"] = objects_created
+    payload = _base_semantic_payload(
+        query=query,
+        readiness_payload=readiness_payload,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        support_ref={
+            "status": "not reached",
+            "proposal_ref": "unavailable",
+            "reasons": [model_review_result.blocker_detail],
+        },
+        semantic_ref={
+            "status": "unavailable",
+            "observation_ref": "unavailable",
+            "reasons": [
+                "D-prime model-reviewed assessment is not admitted support",
+                "RunKernel support admission is not licensed",
+            ],
+        },
+        coverage_ref={
+            "status": "unavailable",
+            "coverage_ref": "unavailable",
+            "component_id": _component_id(component_ref),
+            "reasons": [
+                "ComponentCoverage requires admitted SemanticObservation",
+                "D-prime assessment-only review cannot bind coverage",
+            ],
+        },
+        decision=model_review_result.decision,
+        blocker_detail=model_review_result.blocker_detail,
+        next_blocked_surface=_model_review_next_blocked_surface(
+            model_review_result.decision
+        ),
+    )
+    payload.update(
+        {
+            "dprime_status": dprime,
+            "semantic_support_source": (
+                "unavailable; D-prime assessment-only model review is not support"
+            ),
+            "semantic_support_custody_distinction_preserved": True,
+            "analyst_support_proposal_consumer": (
+                f"not reached; {model_review_result.blocker_detail}"
+            ),
+        }
+    )
+    output = format_live_semantic_coverage_status(payload)
+    if not output_hygiene_passes(output):
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_OUTPUT_HYGIENE,
+            detail="status output contained forbidden material",
+        )
+    return LiveSemanticCoverageStatusResult(
+        decision=model_review_result.decision,
+        output=output,
+        payload=payload,
+    )
+
+
+def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == "BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED":
+        return "D-prime support proposal license"
+    return "D-prime model-review assessment"
 
 
 def _dprime_not_reached_reason(dprime: Mapping[str, Any]) -> str:
@@ -944,6 +1075,24 @@ def _format_dprime_negative_control_profile_ref(value: Any) -> str:
     if profile_id and profile_digest:
         return f"{profile_id} / {profile_digest}"
     return profile_id or profile_digest or "unavailable"
+
+
+def _format_dprime_model_review_ref(value: Any) -> str:
+    ref = _safe_mapping(value)
+    review_id = _clean_text(ref.get("model_review_id"), limit=260)
+    review_digest = _clean_text(ref.get("model_review_digest"), limit=128)
+    if review_id and review_digest:
+        return f"{review_id} / {review_digest}"
+    return review_id or review_digest or "unavailable"
+
+
+def _format_dprime_assessment_ref(value: Any) -> str:
+    ref = _safe_mapping(value)
+    assessment_id = _clean_text(ref.get("assessment_id"), limit=260)
+    assessment_digest = _clean_text(ref.get("assessment_digest"), limit=128)
+    if assessment_id and assessment_digest:
+        return f"{assessment_id} / {assessment_digest}"
+    return assessment_id or assessment_digest or "unavailable"
 
 
 def _component_id(component_ref: Mapping[str, Any]) -> str | None:
