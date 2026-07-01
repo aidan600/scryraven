@@ -814,6 +814,7 @@ _MANDATORY_CLOSED_SURFACE_FLAG_KEYS = (
 _AUTHORITY_FORBIDDEN_KEYS = frozenset(
     {
         "admitted_support",
+        "analysis_gap_search_proposal",
         "answer",
         "answer_text",
         "author",

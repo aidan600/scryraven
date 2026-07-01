@@ -36,6 +36,10 @@ DPRIME_NEGATIVE_CONTROL_PROFILE_MODULE = (
 DPRIME_ASSESSMENT_VALIDATION_MODULE = (
     ROOT / "core" / "dprime_assessment_validation.py"
 )
+DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE = (
+    ROOT / "core" / "dprime_model_review_assessment.py"
+)
+DPRIME_MODEL_REVIEW_PROMPT_MODULE = ROOT / "core" / "dprime_model_review_prompt.py"
 
 
 def test_known_product_status_modules_do_not_import_ag_scripts() -> None:
@@ -72,6 +76,11 @@ def test_dprime_negative_control_profile_module_does_not_import_ag_scripts() -> 
 
 def test_dprime_assessment_validation_module_does_not_import_ag_scripts() -> None:
     assert _ag_script_imports(DPRIME_ASSESSMENT_VALIDATION_MODULE) == []
+
+
+def test_dprime_model_review_modules_do_not_import_ag_scripts() -> None:
+    assert _ag_script_imports(DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE) == []
+    assert _ag_script_imports(DPRIME_MODEL_REVIEW_PROMPT_MODULE) == []
 
 
 def test_dprime_preflight_module_avoids_live_provider_imports() -> None:
@@ -121,6 +130,24 @@ def test_dprime_assessment_validation_module_avoids_live_provider_imports() -> N
     assert _imports(DPRIME_ASSESSMENT_VALIDATION_MODULE).isdisjoint(
         forbidden_imports
     )
+
+
+def test_dprime_model_review_modules_avoid_live_provider_imports() -> None:
+    forbidden_imports = {
+        "core.pipeline_orchestrator",
+        "core.search_providers",
+        "core.retrieval",
+        "core.retrieval_dispatch_runtime",
+        "openai",
+        "requests",
+        "httpx",
+        "dotenv",
+        "subprocess",
+    }
+    assert _imports(DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE).isdisjoint(
+        forbidden_imports
+    )
+    assert _imports(DPRIME_MODEL_REVIEW_PROMPT_MODULE).isdisjoint(forbidden_imports)
 
 
 def _ag_script_imports(path: Path) -> list[str]:
