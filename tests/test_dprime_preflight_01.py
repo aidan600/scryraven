@@ -96,6 +96,7 @@ def test_ordinary_cli_consumes_preflight_and_blocks_at_model_review(
     assert result.return_code == 2
     assert "D-prime preflight status: passed" in result.output
     assert "D-prime negative-control profile status: available" in result.output
+    assert "D-prime assessment validator status: available" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert (
         f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
@@ -104,6 +105,7 @@ def test_ordinary_cli_consumes_preflight_and_blocks_at_model_review(
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["negative_control_profile_status"] == "available"
     assert dprime_status["negative_control_profile_ref"]["profile_digest"]
+    assert dprime_status["assessment_validator_status"] == "available"
     assert dprime_status["objects_created"] == {
         "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": False,
@@ -134,6 +136,7 @@ def test_old_retained_support_consumer_not_reached_after_preflight_pass(
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert "D-prime preflight status: passed" in result.output
     assert "D-prime negative-control profile status: available" in result.output
+    assert "D-prime assessment validator status: available" in result.output
     assert "Analyst support proposal status: not reached" in result.output
 
 
@@ -151,6 +154,7 @@ def test_same_lane_unrelated_text_preflight_passes_but_creates_no_support(
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["preflight_status"] == "passed"
     assert dprime_status["negative_control_profile_status"] == "available"
+    assert dprime_status["assessment_validator_status"] == "available"
     assert dprime_status["objects_created"]["evidence_frame_preflight"] is True
     assert dprime_status["objects_created"]["evidence_relative_support_assessment"] is False
     assert dprime_status["objects_created"]["validated_support_proposal"] is False

@@ -414,6 +414,10 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
             "D-prime negative-control profile ref/digest: "
             f"{_format_dprime_negative_control_profile_ref(dprime.get('negative_control_profile_ref'))}"
         ),
+        (
+            "D-prime assessment validator status: "
+            f"{dprime.get('assessment_validator_status')}"
+        ),
         f"D-prime model review status: {dprime.get('model_review_status')}",
         f"D-prime assessment status: {dprime.get('assessment_status')}",
         (

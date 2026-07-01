@@ -12,6 +12,10 @@ from dataclasses import dataclass, field
 from typing import Any, Mapping, Sequence
 
 import core.dprime_negative_control_profile as dprime_negative_controls
+from core.dprime_assessment_validation import (
+    ASSESSMENT_VALIDATOR_STATUS_NOT_REACHED,
+    assessment_validator_availability_status,
+)
 
 DPRIME_PHASE = "DPRIME-NEGATIVE-CONTROL-PROFILE-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
@@ -92,6 +96,7 @@ LATER_PHASE_STATUSES = frozenset(
 AUTHORITY_BOUNDARY_NONCLAIMS = (
     "preflight pass != semantic support",
     "negative-control profile available != semantic support",
+    "assessment validator available != semantic support",
     "assessment != proposal",
     "proposal != admitted support",
     "validation pass != RunKernel admission",
@@ -415,6 +420,7 @@ class DPrimeStatusPayload:
     schema_status: str = DPRIME_SCHEMA_STATUS_AVAILABLE
     preflight_status: str = DPRIME_STATUS_MISSING
     negative_control_profile_status: str = DPRIME_STATUS_NOT_REACHED
+    assessment_validator_status: str = ASSESSMENT_VALIDATOR_STATUS_NOT_REACHED
     model_review_status: str = DPRIME_STATUS_NOT_REACHED
     assessment_status: str = DPRIME_STATUS_NOT_REACHED
     proposal_validation_status: str = DPRIME_STATUS_NOT_REACHED
@@ -450,6 +456,7 @@ class DPrimeStatusPayload:
             "negative_control_profile_consumed": (
                 self.negative_control_profile_consumed
             ),
+            "assessment_validator_status": self.assessment_validator_status,
             "model_review_status": self.model_review_status,
             "assessment_status": self.assessment_status,
             "proposal_validation_status": self.proposal_validation_status,
@@ -554,6 +561,9 @@ def build_dprime_status_payload(
     return DPrimeStatusPayload(
         preflight_status="passed",
         negative_control_profile_status="available",
+        assessment_validator_status=assessment_validator_availability_status(
+            profile_validation
+        ),
         model_review_status="not licensed",
         semantic_support_source="unavailable; D-prime model review not licensed",
         decision=BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
