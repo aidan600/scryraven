@@ -26,6 +26,7 @@ from typing import Any
 
 import pytest
 
+import core.dprime_support_proposal_schema as dprime
 import proplex.live_semantic_coverage_status as semantic_status
 from core.fetch_read_content_reference import (
     build_fetch_read_content_packet_from_candidate_packet,
@@ -69,7 +70,7 @@ def test_product_status_blocks_without_current_path_support_signal(
         repo_root=repo_root,
     )
 
-    assert result.decision == "BLOCKED_DPRIME_PREFLIGHT_MISSING"
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert result.return_code == 2
     assert "mode: BUILD" in result.output
     assert "ordinary entrypoint: python -m proplex" in result.output
@@ -86,11 +87,11 @@ def test_product_status_blocks_without_current_path_support_signal(
     ) in result.output
     assert "EvidenceRelativeAnalysisPacket / AnalystReport" in result.output
     assert "D-prime schema status: available" in result.output
-    assert "D-prime preflight status: missing" in result.output
+    assert "D-prime preflight status: passed" in result.output
+    assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert "D-prime proposal validation status: not reached" in result.output
     assert "RunKernel support admission status: not reached" in result.output
-    assert _DPRIME_PREFLIGHT_DETAIL in result.output
     assert "Analyst support proposal status: not reached" in result.output
     assert "Analyst support proposal ref/digest: unavailable" in result.output
     assert "SemanticObservation admission status: unavailable" in result.output
@@ -100,8 +101,11 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert f"component id/ref: {candidate['component_id']}" in result.output
     assert "coverage not bound" in result.output
     assert "source obligation id/ref:" in result.output
-    assert "semantic support source: unavailable; D-prime preflight missing" in result.output
-    assert "semantic support/custody distinction preserved: false" in result.output
+    assert (
+        "semantic support source: unavailable; D-prime model review not licensed"
+        in result.output
+    )
+    assert "semantic support/custody distinction preserved: true" in result.output
     assert "ad hoc semantic matcher/heuristic avoided: true" in result.output
     assert "raw/private retention: false" in result.output
     assert "citation eligibility/rendering" in result.output
@@ -109,7 +113,10 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert "SufficiencyReadiness" in result.output
     assert "final answer packet" in result.output
     assert "Author/AuthorProse" in result.output
-    assert "decision: BLOCKED_DPRIME_PREFLIGHT_MISSING" in result.output
+    assert (
+        f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
+        in result.output
+    )
 
     support = result.payload["analyst_support_proposal_ref"]
     assert support["status"] == "not reached"
@@ -120,13 +127,14 @@ def test_product_status_blocks_without_current_path_support_signal(
     coverage = result.payload["component_coverage_ref"]
     assert coverage["status"] == "unavailable"
     assert coverage["coverage_ref"] == "unavailable"
-    dprime = result.payload["dprime_status"]
-    assert dprime["schema_status"] == "available"
-    assert dprime["preflight_status"] == "missing"
-    assert dprime["objects_created"]["evidence_frame_preflight"] is False
-    assert dprime["objects_created"]["validated_support_proposal"] is False
-    assert dprime["objects_created"]["semantic_observation"] is False
-    assert dprime["objects_created"]["component_coverage"] is False
+    dprime_status = result.payload["dprime_status"]
+    assert dprime_status["schema_status"] == "available"
+    assert dprime_status["preflight_status"] == "passed"
+    assert dprime_status["model_review_status"] == "not licensed"
+    assert dprime_status["objects_created"]["evidence_frame_preflight"] is True
+    assert dprime_status["objects_created"]["validated_support_proposal"] is False
+    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is False
     admission = result.payload["source_evidence_admission_ref"]
     assert admission["candidate_content_custody_is_semantic_support"] is False
     assert result.payload["ad_hoc_semantic_matcher_avoided"] is True
@@ -137,7 +145,7 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert "answer prose:" not in result.output
 
 
-_DPRIME_PREFLIGHT_DETAIL = "D-prime EvidenceFramePreflight is not implemented"
+_DPRIME_MODEL_REVIEW_DETAIL = "D-prime model review is not licensed in this phase"
 
 
 def test_same_lane_unrelated_bounded_text_does_not_create_semantic_support(
@@ -170,9 +178,9 @@ def test_same_lane_unrelated_bounded_text_does_not_create_semantic_support(
         repo_root=repo_root,
     )
 
-    assert result.decision == "BLOCKED_DPRIME_PREFLIGHT_MISSING"
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert result.return_code == 2
-    assert _DPRIME_PREFLIGHT_DETAIL in result.output
+    assert _DPRIME_MODEL_REVIEW_DETAIL in result.output
     support = result.payload["analyst_support_proposal_ref"]
     assert support["status"] == "not reached"
     assert support["proposal_ref"] == "unavailable"
@@ -209,12 +217,16 @@ def test_product_status_blocks_before_retained_support_consumer(
         repo_root=repo_root,
     )
 
-    assert result.decision == "BLOCKED_DPRIME_PREFLIGHT_MISSING"
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert result.return_code == 2
-    assert "D-prime preflight status: missing" in result.output
+    assert "D-prime preflight status: passed" in result.output
+    assert "D-prime model review status: not licensed" in result.output
     assert "Analyst support proposal status: not reached" in result.output
-    assert "decision: BLOCKED_DPRIME_PREFLIGHT_MISSING" in result.output
-    assert f"blocker detail: {_DPRIME_PREFLIGHT_DETAIL}" in result.output
+    assert (
+        f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
+        in result.output
+    )
+    assert f"blocker detail: {_DPRIME_MODEL_REVIEW_DETAIL}" in result.output
     assert "next blocked surface:" in result.output
     assert PASSPORT_TEXT not in result.output
 
