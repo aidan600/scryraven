@@ -36,6 +36,9 @@ DPRIME_NEGATIVE_CONTROL_PROFILE_MODULE = (
 DPRIME_ASSESSMENT_VALIDATION_MODULE = (
     ROOT / "core" / "dprime_assessment_validation.py"
 )
+DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_MODULE = (
+    ROOT / "core" / "dprime_one_shot_provider_boundary.py"
+)
 DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE = (
     ROOT / "core" / "dprime_model_review_assessment.py"
 )
@@ -128,6 +131,23 @@ def test_dprime_assessment_validation_module_avoids_live_provider_imports() -> N
         "subprocess",
     }
     assert _imports(DPRIME_ASSESSMENT_VALIDATION_MODULE).isdisjoint(
+        forbidden_imports
+    )
+
+
+def test_dprime_one_shot_provider_boundary_module_avoids_live_provider_imports() -> None:
+    forbidden_imports = {
+        "core.pipeline_orchestrator",
+        "core.search_providers",
+        "core.retrieval",
+        "core.retrieval_dispatch_runtime",
+        "openai",
+        "requests",
+        "httpx",
+        "dotenv",
+        "subprocess",
+    }
+    assert _imports(DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_MODULE).isdisjoint(
         forbidden_imports
     )
 
