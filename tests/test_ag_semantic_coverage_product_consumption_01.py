@@ -52,9 +52,14 @@ PASSPORT_TEXT = (
     "The U.S. Department of State passport fees page lists the adult passport "
     "book renewal by mail fee as $130."
 )
+UNRELATED_SAME_LANE_TEXT = (
+    "This bounded sanitized retained page excerpt describes routine passport "
+    "photo requirements and appointment scheduling. It does not state an adult "
+    "passport book renewal fee."
+)
 
 
-def test_product_status_consumes_readiness_and_reports_semantic_coverage_pass(
+def test_product_status_blocks_without_current_path_support_signal(
     tmp_path: Path,
 ) -> None:
     repo_root, candidate = _passport_retained_repo(tmp_path)
@@ -64,8 +69,8 @@ def test_product_status_consumes_readiness_and_reports_semantic_coverage_pass(
         repo_root=repo_root,
     )
 
-    assert result.decision == "PASS"
-    assert result.return_code == 0
+    assert result.decision == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert result.return_code == 2
     assert "mode: REPAIR" in result.output
     assert "ordinary entrypoint: python -m proplex" in result.output
     assert f"status flag: {LIVE_SEMANTIC_COVERAGE_STATUS_FLAG}" in result.output
@@ -80,17 +85,28 @@ def test_product_status_consumes_readiness_and_reports_semantic_coverage_pass(
         "not_yet_semantically_supported"
     ) in result.output
     assert "EvidenceRelativeAnalysisPacket / AnalystReport" in result.output
-    assert "Analyst support proposal status: proposal_created" in result.output
-    assert "Analyst support proposal ref/digest: evidence-relative-finding:" in result.output
-    assert "SemanticObservation admission status: admitted" in result.output
-    assert "SemanticObservation id/ref/digest: semantic-observation:" in result.output
-    assert "ComponentCoverage status: bound" in result.output
-    assert "ComponentCoverage id/ref/digest: coverage:retained-passport-fee:" in result.output
+    assert _BLOCKED_SUPPORT_DETAIL in result.output
+    assert (
+        "Analyst support proposal status: "
+        "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    ) in result.output
+    assert "Analyst support proposal ref/digest: unavailable" in result.output
+    assert (
+        "SemanticObservation admission status: "
+        "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    ) in result.output
+    assert "SemanticObservation id/ref/digest: unavailable" in result.output
+    assert (
+        "ComponentCoverage status: BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    ) in result.output
+    assert "ComponentCoverage id/ref/digest: unavailable" in result.output
     assert f"component id/ref: {candidate['component_id']}" in result.output
-    assert "coverage bound" in result.output
+    assert "coverage not bound" in result.output
     assert "source obligation id/ref:" in result.output
-    assert "semantic support source: retained bounded sanitized content" in result.output
-    assert "semantic support/custody distinction preserved: true" in result.output
+    assert (
+        "semantic support source: unavailable; current-path support signal missing"
+    ) in result.output
+    assert "semantic support/custody distinction preserved: false" in result.output
     assert "ad hoc semantic matcher/heuristic avoided: true" in result.output
     assert "raw/private retention: false" in result.output
     assert "citation eligibility/rendering" in result.output
@@ -98,17 +114,17 @@ def test_product_status_consumes_readiness_and_reports_semantic_coverage_pass(
     assert "SufficiencyReadiness" in result.output
     assert "FinalAnswerPacket" in result.output
     assert "Author/AuthorProse" in result.output
-    assert "decision: PASS" in result.output
+    assert "decision: BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER" in result.output
 
     support = result.payload["analyst_support_proposal_ref"]
-    assert support["status"] == "proposal_created"
-    assert support["retained_bounded_content_ref"]["bounded_content_digest"]
+    assert support["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert support["proposal_ref"] == "unavailable"
     semantic = result.payload["semantic_observation_admission_ref"]
-    assert semantic["status"] == "admitted"
-    assert semantic["observation_digest"]
+    assert semantic["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert semantic["observation_ref"] == "unavailable"
     coverage = result.payload["component_coverage_ref"]
-    assert coverage["status"] == "bound"
-    assert coverage["coverage_record_digest"]
+    assert coverage["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert coverage["coverage_ref"] == "unavailable"
     admission = result.payload["source_evidence_admission_ref"]
     assert admission["candidate_content_custody_is_semantic_support"] is False
     assert result.payload["ad_hoc_semantic_matcher_avoided"] is True
@@ -117,6 +133,62 @@ def test_product_status_consumes_readiness_and_reports_semantic_coverage_pass(
     assert "source-obligation satisfaction claimed: true" not in result.output
     assert "citation eligibility claimed: true" not in result.output
     assert "answer prose:" not in result.output
+
+
+_BLOCKED_SUPPORT_DETAIL = (
+    "retained bounded content has custody and lineage but no current-path "
+    "semantic support signal strong enough to create an Analyst "
+    "possible_support_proposal"
+)
+
+
+def test_same_lane_unrelated_bounded_text_does_not_create_semantic_support(
+    tmp_path: Path,
+) -> None:
+    repo_root, candidate = _passport_retained_repo(
+        tmp_path,
+        bounded_text=UNRELATED_SAME_LANE_TEXT,
+    )
+    fetch_packet = json.loads(
+        (
+            repo_root
+            / "output"
+            / "ag_live_source_survival_fetch_read_01"
+            / "fetch_read_content_packet.json"
+        ).read_text(encoding="utf-8")
+    )
+    reference = fetch_packet["reference_records"][0]
+    assert reference["fetch_read_status"] == "readable"
+    assert reference["bounded_text_sanitized"] is True
+    assert reference["bounded_text_bounded"] is True
+    assert reference["bounded_character_count"] == len(UNRELATED_SAME_LANE_TEXT)
+    assert reference["excerpt_digest"]
+    assert reference["candidate_id"] == candidate["candidate_id"]
+    assert reference["component_id"] == PASSPORT_COMPONENT_ID
+    assert reference["source_obligation_candidate_ids"] == [PASSPORT_OBLIGATION_ID]
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+    )
+
+    assert result.decision == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert result.return_code == 2
+    assert _BLOCKED_SUPPORT_DETAIL in result.output
+    support = result.payload["analyst_support_proposal_ref"]
+    assert support["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert support["proposal_ref"] == "unavailable"
+    semantic = result.payload["semantic_observation_admission_ref"]
+    assert semantic["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert semantic["observation_ref"] == "unavailable"
+    coverage = result.payload["component_coverage_ref"]
+    assert coverage["status"] == "BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER"
+    assert coverage["coverage_ref"] == "unavailable"
+    assert "ComponentCoverage id/ref/digest: unavailable" in result.output
+    assert "SemanticObservation id/ref/digest: unavailable" in result.output
+    assert "Analyst support proposal ref/digest: unavailable" in result.output
+    assert "bounded_text" not in result.output
+    assert UNRELATED_SAME_LANE_TEXT not in result.output
 
 
 @pytest.mark.parametrize(
@@ -239,7 +311,11 @@ def test_product_status_module_avoids_live_calls_scripts_and_ad_hoc_semantics() 
     assert called.isdisjoint(forbidden_calls)
 
 
-def _passport_retained_repo(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
+def _passport_retained_repo(
+    tmp_path: Path,
+    *,
+    bounded_text: str = PASSPORT_TEXT,
+) -> tuple[Path, dict[str, Any]]:
     repo_root = tmp_path / "repo"
     search_dir = repo_root / "output" / "ag_live_ordinary_search_candidate_01b"
     fetch_dir = repo_root / "output" / "ag_live_source_survival_fetch_read_01"
@@ -284,7 +360,7 @@ def _passport_retained_repo(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     ).to_dict()
     fetch_packet = build_fetch_read_content_packet_from_candidate_packet(
         candidate_packet,
-        [_passport_readable_material(candidate_packet)],
+        [_passport_readable_material(candidate_packet, bounded_text=bounded_text)],
     )
     provider_result = {
         "title": candidate["title"],
@@ -308,7 +384,11 @@ def _passport_retained_repo(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
     return repo_root, candidate
 
 
-def _passport_readable_material(packet: dict[str, Any]) -> dict[str, Any]:
+def _passport_readable_material(
+    packet: dict[str, Any],
+    *,
+    bounded_text: str = PASSPORT_TEXT,
+) -> dict[str, Any]:
     candidate = packet["candidate_records"][0]
     return {
         "candidate_id": candidate["candidate_id"],
@@ -327,10 +407,10 @@ def _passport_readable_material(packet: dict[str, Any]) -> dict[str, Any]:
         "http_status": 200,
         "retrieved_or_observed_at": "2026-06-30T00:00:00Z",
         "content_title": "Passport Fees",
-        "bounded_text": PASSPORT_TEXT,
+        "bounded_text": bounded_text,
         "bounded_text_sanitized": True,
         "bounded_text_bounded": True,
-        "bounded_text_char_count": len(PASSPORT_TEXT),
+        "bounded_text_char_count": len(bounded_text),
         "raw_page_content_retained": False,
         "raw_headers_retained": False,
     }

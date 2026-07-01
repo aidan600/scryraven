@@ -2,9 +2,10 @@
 
 This module is product-owned support for the default-off semantic coverage
 status path. It consumes retained ``FetchReadContentPacket`` bounded sanitized
-content and EvidenceLedger custody, creates an existing
-``possible_support_proposal`` Analyst finding shape, then uses the existing
-SemanticObservation admission bridge and ComponentCoverage reducer.
+content and EvidenceLedger custody, and may create an existing
+``possible_support_proposal`` Analyst finding shape only when a valid
+current-path support signal exists. It must not infer support from URL, domain,
+snippet, custody, lineage, anchor count, or ad hoc text matching.
 
 It does not call providers, brokers, search, fetch/read, retrieval, models,
 scripts, citation rendering, Sufficiency, FAP, Author, or answer text.
@@ -170,6 +171,7 @@ def build_retained_custody_semantic_coverage(
         )
         _require_supported_lane(reference)
         _require_retained_bounded_content(reference)
+        _require_current_path_support_signal(reference)
 
         run_kernel = RunKernel.start(
             run_id=str(fetch_packet["run_id"]),
@@ -356,6 +358,18 @@ def _require_retained_bounded_content(reference: Mapping[str, Any]) -> None:
             BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER,
             "retained bounded content selection did not match required anchors",
         )
+
+
+def _require_current_path_support_signal(reference: Mapping[str, Any]) -> None:
+    del reference
+    raise RetainedCustodyAnalystSupportProposalError(
+        BLOCKED_ANALYST_SUPPORT_PROPOSAL_CONSUMER,
+        (
+            "retained bounded content has custody and lineage but no current-path "
+            "semantic support signal strong enough to create an Analyst "
+            "possible_support_proposal"
+        ),
+    )
 
 
 def _source_bound_support_proposal(

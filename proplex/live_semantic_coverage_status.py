@@ -5,9 +5,9 @@ retained live acquisition/readability, source/evidence custody, and
 citation/source-obligation readiness status chain, then reports whether the
 current SemanticObservation + ComponentCoverage lane can be product-consumed.
 
-It performs no live calls and creates only a bounded Analyst
-``possible_support_proposal`` through product-owned/current-path support. It
-does not infer semantic support from URL/domain/snippet/custody/lineage or
+It performs no live calls. The path may create a bounded Analyst
+``possible_support_proposal`` only when a valid current-path support signal
+exists; it must not infer support from URL/domain/snippet/custody/lineage or
 ad hoc text matching.
 """
 
@@ -510,7 +510,7 @@ def _blocked_semantic_payload(
     blocker_detail: str | None,
     next_blocked_surface: str | None,
 ) -> dict[str, Any]:
-    return _base_semantic_payload(
+    payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
         admission_ref=admission_ref,
@@ -524,6 +524,10 @@ def _blocked_semantic_payload(
         blocker_detail=blocker_detail,
         next_blocked_surface=next_blocked_surface or NEXT_BLOCKED_SURFACE,
     )
+    payload["semantic_support_source"] = (
+        "unavailable; current-path support signal missing"
+    )
+    return payload
 
 
 def _base_semantic_payload(
