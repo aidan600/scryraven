@@ -10,7 +10,6 @@ citations, source-obligation satisfaction, or correctness claims.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -547,18 +546,6 @@ def _read_json(path: Path) -> Any:
 
 def _resolve_root(path: str | Path) -> Path:
     return Path(path).resolve()
-
-
-def _path_under(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        normalized_path = os.path.normcase(str(path))
-        normalized_root = os.path.normcase(str(root))
-        return normalized_path == normalized_root or normalized_path.startswith(
-            normalized_root.rstrip("\\/") + os.sep
-        )
 
 
 def _clean_query(query: str) -> str:
