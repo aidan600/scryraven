@@ -113,7 +113,10 @@ _FORBIDDEN_INPUT_KEYS = frozenset(
         "unbounded_text",
     }
 )
-_FORBIDDEN_OUTPUT_KEYS = _FORBIDDEN_INPUT_KEYS | {"bounded_text"}
+_FORBIDDEN_OUTPUT_KEYS = _FORBIDDEN_INPUT_KEYS | {
+    "analysis_gap_search_proposal",
+    "bounded_text",
+}
 _DANGEROUS_TRUE_KEYS = frozenset(
     {
         "answer_text_created",
@@ -956,7 +959,7 @@ def _reject_forbidden_payload(
     forbidden = sorted(keys & forbidden_keys)
     if forbidden:
         raise DPrimeModelReviewAssessmentError(
-            f"{context} includes forbidden raw/private material"
+            f"{context} includes forbidden material"
         )
     dangerous = sorted(_dangerous_true_claims(value))
     if dangerous:

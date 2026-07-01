@@ -56,6 +56,7 @@ def test_default_ordinary_cli_remains_blocked_without_model_review_license(
     result = build_live_semantic_coverage_status(query=QUERY, repo_root=repo_root)
 
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
+    assert "phase: DPRIME-MODEL-REVIEW-ASSESSMENT-SLICE-01" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert (
@@ -179,6 +180,36 @@ def test_malformed_output_fails_closed_without_retry(tmp_path: Path) -> None:
     assert result.payload["dprime_status"]["objects_created"][
         "evidence_relative_support_assessment"
     ] is False
+
+
+def test_analysis_gap_search_proposal_output_fails_closed_without_echo(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    payload = _assessment_payload()
+    payload["analysis_gap_search_proposal"] = {
+        "proposal_text": "search again for broader evidence",
+    }
+
+    result = _run_with_payload(repo_root, payload)
+
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID
+    assert result.payload["dprime_status"]["objects_created"][
+        "evidence_relative_support_assessment"
+    ] is False
+    assert result.payload["dprime_status"]["objects_created"][
+        "validated_support_proposal"
+    ] is False
+    assert (
+        result.payload["dprime_status"]["objects_created"][
+            "run_kernel_support_proposal_admission_request"
+        ]
+        is False
+    )
+    assert result.payload["dprime_status"]["objects_created"]["semantic_observation"] is False
+    assert result.payload["dprime_status"]["objects_created"]["component_coverage"] is False
+    assert "analysis_gap_search_proposal" not in result.output
+    assert "search again for broader evidence" not in result.output
 
 
 @pytest.mark.parametrize(

@@ -17,7 +17,7 @@ from core.dprime_assessment_validation import (
     assessment_validator_availability_status,
 )
 
-DPRIME_PHASE = "DPRIME-ASSESSMENT-VALIDATION-01"
+DPRIME_PHASE = "DPRIME-MODEL-REVIEW-ASSESSMENT-SLICE-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
@@ -621,6 +621,7 @@ _AUTHORITY_FORBIDDEN_KEYS = frozenset(
         "admitted",
         "admitted_support",
         "admitted_semantic_observation",
+        "analysis_gap_search_proposal",
         "answer",
         "answer_prose",
         "answer_text",
