@@ -28,6 +28,7 @@ KNOWN_PRODUCT_STATUS_MODULES = (
     ROOT / "proplex" / "live_semantic_coverage_status.py",
 )
 RETAINED_PREFLIGHT_MODULE = ROOT / "core" / "retained_live_artifact_preflight.py"
+DPRIME_SCHEMA_MODULE = ROOT / "core" / "dprime_support_proposal_schema.py"
 
 
 def test_known_product_status_modules_do_not_import_ag_scripts() -> None:
@@ -48,6 +49,10 @@ def test_product_runtime_modules_do_not_import_ag_scripts() -> None:
 
 def test_retained_live_artifact_preflight_does_not_import_ag_scripts() -> None:
     assert _ag_script_imports(RETAINED_PREFLIGHT_MODULE) == []
+
+
+def test_dprime_schema_module_does_not_import_ag_scripts() -> None:
+    assert _ag_script_imports(DPRIME_SCHEMA_MODULE) == []
 
 
 def _ag_script_imports(path: Path) -> list[str]:
