@@ -159,6 +159,7 @@ def test_product_cli_consumes_profile_then_blocks_at_model_review(
     assert "D-prime preflight status: passed" in result.output
     assert "D-prime negative-control profile status: available" in result.output
     assert "D-prime negative-control profile ref/digest:" in result.output
+    assert "D-prime assessment validator status: available" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert "D-prime proposal validation status: not reached" in result.output
@@ -177,6 +178,7 @@ def test_product_cli_consumes_profile_then_blocks_at_model_review(
     assert dprime_status["negative_control_profile_status"] == "available"
     assert dprime_status["negative_control_profile_consumed"] is True
     assert dprime_status["negative_control_profile_ref"]["profile_digest"]
+    assert dprime_status["assessment_validator_status"] == "available"
 
 
 def test_same_lane_unrelated_bounded_text_remains_non_support(
@@ -193,6 +195,7 @@ def test_same_lane_unrelated_bounded_text_remains_non_support(
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["preflight_status"] == "passed"
     assert dprime_status["negative_control_profile_status"] == "available"
+    assert dprime_status["assessment_validator_status"] == "available"
     assert dprime_status["model_review_status"] == "not licensed"
     assert dprime_status["assessment_status"] == "not reached"
     assert dprime_status["proposal_validation_status"] == "not reached"
