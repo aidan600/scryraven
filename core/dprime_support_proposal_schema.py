@@ -17,7 +17,7 @@ from core.dprime_assessment_validation import (
     assessment_validator_availability_status,
 )
 
-DPRIME_PHASE = "DPRIME-NEGATIVE-CONTROL-PROFILE-01"
+DPRIME_PHASE = "DPRIME-ASSESSMENT-VALIDATION-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
