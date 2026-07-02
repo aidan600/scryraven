@@ -9,7 +9,8 @@ model-review callable because live/model/provider/search/fetch/read/retrieval
 calls are closed in this phase.
 Integration deadline: current phase.
 Exit condition: keep as the regression guard for RunKernel-owned D-prime
-decision -> materialization input authority insufficient.
+decision -> accepted/current contract authority -> SemanticObservation
+materialization.
 Why this is not a shadow product path: it invokes the product status builder and
 the RunKernel/SemanticObservation-owned materialization runtime, not a detached
 packet path.
@@ -46,7 +47,7 @@ from tests.test_dprime_model_review_assessment_slice_01 import (
 )
 
 
-def test_product_status_stops_at_materialization_input_authority(
+def test_product_status_consumes_contract_authority_and_materializes_semantic_observation(
     tmp_path: Path,
 ) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
@@ -54,11 +55,11 @@ def test_product_status_stops_at_materialization_input_authority(
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
+        dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
     )
     assert "RunKernel admission decision status: admitted" in result.output
-    assert "SemanticObservation admission status: unavailable" in result.output
-    assert "ComponentCoverage status: unavailable" in result.output
+    assert "SemanticObservation admission status: admitted" in result.output
+    assert "ComponentCoverage status: not licensed" in result.output
     assert "answerability/correctness: not claimed" in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -71,36 +72,43 @@ def test_product_status_stops_at_materialization_input_authority(
         dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     )
     assert dprime_status["run_kernel_admission_decision_status"] == "admitted"
-    assert dprime_status["semantic_observation_admission_status"] == "unavailable"
-    assert "semantic_observation_ref" not in dprime_status
+    assert dprime_status["semantic_observation_admission_status"] == "materialized"
+    assert dprime_status["semantic_observation_ref"]["owner"] == (
+        "RunKernel.SemanticObservationAdmission"
+    )
+    authority = dprime_status["accepted_current_answer_contract_authority_ref"]
+    assert authority["status"] == "authorized"
+    assert authority["owner"] == "RunKernel.DPrimeAnswerContractAuthority"
+    assert authority["retained_refs_are_lineage_only"] is True
+    assert authority["accepted_contract_digest"] == (
+        result.payload["component_ref"]["current_answer_contract_digest"]
+    )
+    assert authority["current_contract_digest"] == authority["accepted_contract_digest"]
     assert dprime_status["objects_created"] == {
         "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": True,
         "validated_support_proposal": True,
         "run_kernel_support_proposal_admission_request": True,
         "run_kernel_admission_decision": True,
-        "semantic_observation": False,
+        "semantic_observation": True,
         "component_coverage": False,
     }
     semantic = result.payload["semantic_observation_admission_ref"]
     coverage = result.payload["component_coverage_ref"]
-    assert semantic["status"] == "unavailable"
-    assert coverage["status"] == "unavailable"
+    assert semantic["status"] == "admitted"
+    assert semantic["observation_id"]
+    assert coverage["status"] == "not licensed"
     assert coverage["coverage_ref"] == "unavailable"
     assert result.payload["semantic_support_source"] == (
-        "unavailable; RunKernel admitted decision not materialized into "
-        "SemanticObservation"
+        "available from D-prime SemanticObservation; ComponentCoverage "
+        "not licensed"
     )
-    assert result.payload["next_blocked_surface"] == (
-        "D-prime SemanticObservation materialization input authority"
-    )
-    assert "missing ordinary D-prime product authority surface" in (
-        result.payload["blocker_detail"]
-    )
+    assert result.payload["next_blocked_surface"] == "D-prime ComponentCoverage binding"
+    assert "ComponentCoverage binding is not licensed" in result.payload["blocker_detail"]
     assert result.payload["component_ref"]["lineage_only"] is True
 
 
-def test_retained_contract_digest_lineage_is_not_materialization_authority(
+def test_retained_contract_digest_lineage_is_checked_not_counted_as_authority(
     tmp_path: Path,
 ) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
@@ -113,12 +121,15 @@ def test_retained_contract_digest_lineage_is_not_materialization_authority(
     assert component_ref["lineage_only"] is True
     assert component_ref["current_answer_contract_digest"]
     assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
+        dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
     )
-    assert "in-memory RunKernel" in result.payload["blocker_detail"]
-    assert semantic["status"] == "unavailable"
-    assert "semantic_observation_ref" not in dprime_status
-    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert semantic["status"] == "admitted"
+    authority = dprime_status["accepted_current_answer_contract_authority_ref"]
+    assert authority["retained_refs_are_lineage_only"] is True
+    assert authority["accepted_contract_digest"] == component_ref[
+        "current_answer_contract_digest"
+    ]
+    assert dprime_status["objects_created"]["semantic_observation"] is True
     assert dprime_status["objects_created"]["component_coverage"] is False
 
 
@@ -297,6 +308,51 @@ def test_materialization_runtime_does_not_reconstruct_contract_authority() -> No
         assert forbidden_assignment not in text
 
 
+def test_product_status_consumes_runkernel_contract_authority_surface(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+
+    result = _run_product_status_with_assessment(repo_root, _assessment_payload())
+
+    dprime_status = result.payload["dprime_status"]
+    authority = dprime_status["accepted_current_answer_contract_authority_ref"]
+    semantic = dprime_status["semantic_observation_ref"]
+    assert authority["status"] == "authorized"
+    assert authority["runtime_surface"] == (
+        "core.dprime_ordinary_contract_authority_runtime"
+    )
+    assert authority["owner"] == "RunKernel.DPrimeAnswerContractAuthority"
+    assert authority["run_id"]
+    assert authority["request_id"]
+    assert authority["accepted_contract_digest"] == authority["current_contract_digest"]
+    assert authority["retained_refs_are_lineage_only"] is True
+    assert dprime_status["objects_created"]["semantic_observation"] is True
+    assert semantic["runtime_surface"] == (
+        dprime_semantic.DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_SURFACE
+    )
+    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert result.payload["component_coverage_ref"]["status"] == "not licensed"
+
+
+def test_dprime_product_status_does_not_directly_mutate_answer_contract_state() -> None:
+    product_status = Path("proplex/live_semantic_coverage_status.py").read_text(
+        encoding="utf-8"
+    )
+    authority_runtime = Path(
+        "core/dprime_ordinary_contract_authority_runtime.py"
+    ).read_text(encoding="utf-8")
+
+    for text in (product_status, authority_runtime):
+        for forbidden_assignment in (
+            ".state.initial_answer_contract =",
+            ".state.initial_answer_contract_projection =",
+            ".state.current_answer_contract =",
+            ".state.current_answer_contract_projection =",
+        ):
+            assert forbidden_assignment not in text
+
+
 def test_materialization_output_hygiene_excludes_raw_private_and_closed_material(
     tmp_path: Path,
 ) -> None:
@@ -348,11 +404,8 @@ def test_architecture_doc_records_new_stop_and_closed_downstream_surfaces() -> N
         encoding="utf-8"
     )
 
-    assert "SemanticObservation materialization input authority insufficient" in text
-    assert (
-        "BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT"
-        in text
-    )
+    assert "ordinary D-prime accepted/current answer-contract authority" in text
+    assert "BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED" in text
     for closed_surface in (
         "`ComponentCoverage` binding",
         "citation/source-obligation satisfaction",

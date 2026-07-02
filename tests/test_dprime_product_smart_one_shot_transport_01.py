@@ -287,9 +287,7 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
     )
 
     assert len(fake_client.calls) == 1
-    assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
-    )
+    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
     assert "phase: DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01" in result.output
     dprime_status = result.payload["dprime_status"]
     assert (
@@ -331,7 +329,7 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
     assert dprime_status["objects_created"][
         "run_kernel_support_proposal_admission_request"
     ] is True
-    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["semantic_observation"] is True
     assert dprime_status["objects_created"]["component_coverage"] is False
 
 

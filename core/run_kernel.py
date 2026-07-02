@@ -48,6 +48,7 @@ from core.contract_amendment_application_runtime import (
     ContractAmendmentApplicationError,
     build_contract_amendment_application_projection,
     build_contract_amendment_application_state,
+    build_current_answer_contract_projection,
 )
 from core.contract_amendment_application_runtime import (
     CONTRACT_AMENDMENT_APPLICATION_STAGE as CONTRACT_AMENDMENT_APPLICATION_STAGE_NAME,
@@ -569,6 +570,12 @@ RECOVERED_SEMANTIC_DELTA_COMMIT_REASON = (
 )
 CONTRACT_AMENDMENT_ADMISSION_STAGE = CONTRACT_AMENDMENT_ADMISSION_STAGE_NAME
 CONTRACT_AMENDMENT_APPLICATION_STAGE = CONTRACT_AMENDMENT_APPLICATION_STAGE_NAME
+DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY_STAGE = (
+    "dprime_current_answer_contract_authority"
+)
+DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY_REASON = (
+    "dprime_current_answer_contract_authority_from_ordinary_product_status"
+)
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 ANSWER_CONTRACT_AUTHORITY_MAP_STAGE = "answer_contract_authority_map"
 OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE = "offline_search_executor_bridge"
@@ -689,6 +696,9 @@ class ActionType(str, Enum):
     SEMANTIC_PRODUCER_BUNDLE_COMMIT = "semantic_producer_bundle_commit"
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     CONTRACT_AMENDMENT_APPLY = "contract_amendment_apply"
+    DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY = (
+        "dprime_current_answer_contract_authority"
+    )
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -771,6 +781,9 @@ class ObservationType(str, Enum):
     SEMANTIC_PRODUCER_BUNDLE_COMMITTED = "semantic_producer_bundle_committed"
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     CONTRACT_AMENDMENT_APPLIED = "contract_amendment_applied"
+    DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORIZED = (
+        "dprime_current_answer_contract_authorized"
+    )
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -3287,6 +3300,68 @@ class RunKernel:
             inputs=merged_inputs,
             expected_observation_type=(
                 ObservationType.SEMANTIC_OBSERVATION_ADMITTED
+            ),
+        )
+
+    def authorize_dprime_current_answer_contract_authority(
+        self,
+        *,
+        expected_contract_version: str,
+        expected_contract_digest: str,
+        answer_component_id: str,
+        source_obligation_candidate_ids: Sequence[str],
+        fetch_read_content_packet_id: str,
+        fetch_read_content_packet_digest: str,
+        request_id: str | None = None,
+        reason: str = DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        """Authorize the narrow D-prime accepted/current contract surface."""
+
+        clean_source_ids = [
+            item
+            for item in (
+                _clean_text(value, limit=200)
+                for value in source_obligation_candidate_ids
+            )
+            if item
+        ]
+        for label, value in (
+            ("expected_contract_version", expected_contract_version),
+            ("expected_contract_digest", expected_contract_digest),
+            ("answer_component_id", answer_component_id),
+            ("fetch_read_content_packet_id", fetch_read_content_packet_id),
+            ("fetch_read_content_packet_digest", fetch_read_content_packet_digest),
+        ):
+            if not _clean_text(value, limit=260):
+                raise RunKernelTransitionError(
+                    "D-prime contract authority requires " f"{label} binding"
+                )
+        if not clean_source_ids:
+            raise RunKernelTransitionError(
+                "D-prime contract authority requires source-obligation lineage"
+            )
+        merged_inputs = {
+            "expected_contract_version": expected_contract_version,
+            "expected_contract_digest": expected_contract_digest,
+            "answer_component_id": answer_component_id,
+            "source_obligation_candidate_ids": clean_source_ids,
+            "fetch_read_content_packet_id": fetch_read_content_packet_id,
+            "fetch_read_content_packet_digest": fetch_read_content_packet_digest,
+            "request_id": request_id or self.state.request_id,
+            "component_coverage_bound": False,
+            "source_obligation_satisfied": False,
+            "citation_eligibility_claimed": False,
+            "product_correctness_claimed": False,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY_STAGE,
+            action_type=ActionType.DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORIZED
             ),
         )
 
@@ -11276,6 +11351,162 @@ class RunKernel:
                 deepcopy(acceptance_projection)
             )
             self.state.projections[action.stage] = deepcopy(acceptance_projection)
+        elif (
+            action.action_type
+            is ActionType.DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY
+        ):
+            if self.state.initial_answer_contract or self.state.current_answer_contract:
+                raise RunKernelTransitionError(
+                    "D-prime contract authority requires empty answer-contract state"
+                )
+            contract_payload = _safe_mapping(
+                observation.payload.get("answer_contract_authority")
+            )
+            if not contract_payload:
+                raise RunKernelTransitionError(
+                    "D-prime contract authority observation requires "
+                    "answer_contract_authority payload"
+                )
+            expected_version = _clean_text(
+                action.inputs.get("expected_contract_version"),
+                limit=200,
+            )
+            expected_digest = _clean_text(
+                action.inputs.get("expected_contract_digest"),
+                limit=128,
+            )
+            if (
+                _clean_text(contract_payload.get("accepted_contract_version"))
+                != expected_version
+                or _clean_text(
+                    contract_payload.get("accepted_contract_digest"),
+                    limit=128,
+                )
+                != expected_digest
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime contract authority digest/version mismatch"
+                )
+            if contract_payload.get("run_id") != self.state.run_id:
+                raise RunKernelTransitionError(
+                    "D-prime contract authority run_id mismatch"
+                )
+            if contract_payload.get("request_id") != self.state.request_id:
+                raise RunKernelTransitionError(
+                    "D-prime contract authority request_id mismatch"
+                )
+            component_id = _clean_text(action.inputs.get("answer_component_id"))
+            action_source_ids = {
+                _clean_text(item)
+                for item in action.inputs.get("source_obligation_candidate_ids", [])
+            }
+            action_source_ids.discard(None)
+            component_refs = [
+                _safe_mapping(item)
+                for item in contract_payload.get("accepted_answer_component_refs", [])
+                if isinstance(item, Mapping)
+            ]
+            matching_component = next(
+                (
+                    item
+                    for item in component_refs
+                    if item.get("component_id") == component_id
+                ),
+                {},
+            )
+            if not matching_component:
+                raise RunKernelTransitionError(
+                    "D-prime contract authority component binding missing"
+                )
+            payload_source_ids = {
+                _clean_text(item)
+                for item in matching_component.get(
+                    "source_obligation_candidate_ids",
+                    [],
+                )
+            }
+            payload_source_ids.discard(None)
+            if not action_source_ids or not action_source_ids.issubset(
+                payload_source_ids
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime contract authority source-obligation lineage mismatch"
+                )
+            lineage = _safe_mapping(contract_payload.get("lineage"))
+            if lineage.get("retained_refs_are_authority") is True:
+                raise RunKernelTransitionError(
+                    "retained D-prime refs cannot be answer-contract authority"
+                )
+            accepted_contract = deepcopy(dict(contract_payload))
+            accepted_contract["owner"] = "RunKernel.DPrimeAnswerContractAuthority"
+            accepted_contract["canonical_state"] = True
+            accepted_contract["trace_only"] = False
+            accepted_contract["storage_only"] = False
+            accepted_contract["authorized_action_id"] = action.action_id
+            current_contract = deepcopy(accepted_contract)
+            current_contract["owner"] = "RunKernel.CurrentAnswerContract"
+            current_contract["trace_key"] = "current_answer_contract"
+            current_contract["current_answer_contract_created"] = True
+            current_contract["lineage"] = {
+                **_safe_mapping(current_contract.get("lineage")),
+                "created_by": "RunKernel.DPrimeAnswerContractAuthority",
+                "created_from": [
+                    "ordinary_dprime_product_status",
+                    "retained_source_fetch_read_lineage",
+                    "component_source_obligation_lineage",
+                ],
+                "reducer_action_id": action.action_id,
+                "retained_refs_are_lineage_only": True,
+            }
+            accepted_projection = {
+                "owner": "RunKernel.DPrimeAnswerContractAuthority",
+                "schema_version": accepted_contract.get("schema_version"),
+                "canonical_state": True,
+                "trace_only": False,
+                "storage_only": False,
+                "run_id": self.state.run_id,
+                "request_id": self.state.request_id,
+                "authorized_action_id": action.action_id,
+                "accepted_contract_version": expected_version,
+                "accepted_contract_digest": expected_digest,
+                "parent_question_meaning_record_id": accepted_contract.get(
+                    "parent_question_meaning_record_id"
+                ),
+                "parent_question_meaning_record_digest": accepted_contract.get(
+                    "parent_question_meaning_record_digest"
+                ),
+                "accepted_answer_component_refs": deepcopy(component_refs),
+                "accepted_answer_component_count": len(component_refs),
+                "lineage": deepcopy(_safe_mapping(accepted_contract.get("lineage"))),
+                "coverage_created": False,
+                "semantic_observation_admitted": False,
+                "sufficiency_decided": False,
+                "final_answer_packet_created": False,
+                "author_input_created": False,
+                "citation_behavior_changed": False,
+                "provider_search_behavior_changed": False,
+                "runtime_behavior_changed": False,
+                "live_validation_not_run": True,
+            }
+            current_projection = build_current_answer_contract_projection(
+                current_answer_contract=current_contract
+            )
+            self.state.initial_answer_contract = accepted_contract
+            self.state.initial_answer_contract_projection = accepted_projection
+            self.state.initial_answer_contract_history.append(
+                deepcopy(accepted_projection)
+            )
+            self.state.current_answer_contract = current_contract
+            self.state.current_answer_contract_projection = current_projection
+            self.state.current_answer_contract_history.append(
+                deepcopy(current_projection)
+            )
+            self.state.projections[
+                INITIAL_ANSWER_CONTRACT_ACCEPTANCE_STAGE
+            ] = deepcopy(accepted_projection)
+            self.state.projections[
+                DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY_STAGE
+            ] = deepcopy(current_projection)
         elif action.action_type is ActionType.SEMANTIC_OBSERVATION_ADMIT:
             if not self.state.initial_answer_contract_projection:
                 raise RunKernelTransitionError(
