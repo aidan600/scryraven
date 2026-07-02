@@ -509,21 +509,36 @@ def run_dprime_model_review_assessment(
             model_review_ref=model_review_ref,
             prompt_license_ref=prompt_license_ref,
         )
-    except DPrimeModelReviewAssessmentError as exc:
+    except (
+        DPrimeModelReviewAssessmentError,
+        assessment_validation.DPrimeAssessmentValidationError,
+    ) as exc:
         return _blocked_result(
             decision=BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID,
             model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
             assessment_status=ASSESSMENT_STATUS_INVALID,
-            blocker_detail=str(exc),
+            blocker_detail=_model_review_output_invalid_blocker_detail(exc),
             input_packet_ref=packet.ref(),
             model_review_ref=model_review_ref,
             prompt_license_ref=prompt_license_ref,
             call_count=call_count,
         )
 
-    validation = assessment_validation.validate_evidence_relative_support_assessment(
-        assessment_payload,
-    )
+    try:
+        validation = assessment_validation.validate_evidence_relative_support_assessment(
+            assessment_payload,
+        )
+    except assessment_validation.DPrimeAssessmentValidationError as exc:
+        return _blocked_result(
+            decision=BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID,
+            model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
+            assessment_status=ASSESSMENT_STATUS_INVALID,
+            blocker_detail=_model_review_output_invalid_blocker_detail(exc),
+            input_packet_ref=packet.ref(),
+            model_review_ref=model_review_ref,
+            prompt_license_ref=prompt_license_ref,
+            call_count=call_count,
+        )
     assessment_ref = dict(validation.assessment_ref)
     return _result_from_validation(
         validation=validation,
@@ -812,6 +827,12 @@ def _parse_output_mapping(raw_output: Any) -> dict[str, Any]:
     raise DPrimeModelReviewAssessmentError(
         "D-prime model-review output must be a JSON object"
     )
+
+
+def _model_review_output_invalid_blocker_detail(exc: Exception) -> str:
+    if isinstance(exc, assessment_validation.DPrimeAssessmentValidationError):
+        return "D-prime model review output failed deterministic assessment validation"
+    return str(exc)
 
 
 def _blocked_result(
@@ -1204,7 +1225,7 @@ def _one_shot_model_review_adapter_ref(
                 {
                     "schema_version": adapter.get("schema_version"),
                     "adapter_ref": adapter.get("adapter_ref"),
-                    "phase": adapter.get("phase"),
+                    "phase": DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE,
                     "adapter_kind": adapter.get("adapter_kind"),
                     "one_shot_adapter_proven": adapter.get(
                         "one_shot_adapter_proven"

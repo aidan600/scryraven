@@ -308,6 +308,41 @@ def test_analysis_gap_search_proposal_output_fails_closed_without_echo(
     assert "search again for broader evidence" not in result.output
 
 
+def test_authority_upgrade_output_validation_error_fails_closed_without_traceback(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    payload = _assessment_payload()
+    payload["assessment_created"] = True
+
+    result = _run_with_payload(repo_root, payload)
+    dprime_status = result.payload["dprime_status"]
+
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID
+    assert dprime_status["model_review_status"] == "blocked"
+    assert dprime_status["assessment_status"] == "invalid"
+    assert dprime_status["model_review_call_count"] == 1
+    assert dprime_status["raw_prompt_retained"] is False
+    assert dprime_status["raw_model_response_retained"] is False
+    assert dprime_status["provider_payload_retained"] is False
+    assert dprime_status["objects_created"][
+        "evidence_relative_support_assessment"
+    ] is False
+    assert dprime_status["objects_created"]["validated_support_proposal"] is False
+    assert (
+        dprime_status["objects_created"][
+            "run_kernel_support_proposal_admission_request"
+        ]
+        is False
+    )
+    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert "DPrimeAssessmentValidationError" not in result.output
+    assert "Traceback" not in result.output
+    assert "assessment_created" not in result.output
+    assert PASSPORT_TEXT not in result.output
+
+
 @pytest.mark.parametrize(
     ("support_relation", "expected_decision", "expected_status"),
     [
