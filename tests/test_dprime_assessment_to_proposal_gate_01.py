@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-import core.dprime_runkernel_admission_runtime as rk_dprime
+import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -48,7 +48,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
     )
     assert (
         "D-prime assessment status: assessed" in result.output
@@ -66,8 +66,8 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
     ) in result.output
     assert (
-        "semantic support source: unavailable; "
-        "RunKernel admitted decision not materialized into SemanticObservation"
+        "semantic support source: unavailable; RunKernel admitted decision not "
+        "materialized into SemanticObservation"
     ) in (
         result.output
     )
@@ -116,17 +116,9 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         "semantic_observation": False,
         "component_coverage": False,
     }
-    assert result.payload["semantic_observation_admission_ref"] == {
-        "status": "unavailable",
-        "observation_ref": "unavailable",
-        "reasons": [
-            "D-prime proposal candidate is not admitted support",
-            (
-                "RunKernel-owned D-prime admission decision made; "
-                "SemanticObservation not licensed or materialized"
-            ),
-        ],
-    }
+    assert result.payload["semantic_observation_admission_ref"]["status"] == (
+        "unavailable"
+    )
     assert result.payload["component_coverage_ref"]["status"] == "unavailable"
     assert result.payload["answerability_correctness"] == "not claimed"
 

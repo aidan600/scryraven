@@ -280,6 +280,7 @@ class DPrimeModelReviewAssessmentResult:
     model_review_ref: Mapping[str, Any] = field(default_factory=dict)
     prompt_license_ref: Mapping[str, Any] = field(default_factory=dict)
     assessment_ref: Mapping[str, Any] = field(default_factory=dict)
+    assessment_material_ref: Mapping[str, Any] = field(default_factory=dict)
     assessment_validation_status: str = "not reached"
     support_relation: str | None = None
     proposal_validation_status: str = DPRIME_STATUS_NOT_REACHED
@@ -331,6 +332,7 @@ class DPrimeModelReviewAssessmentResult:
                 "prompt_license_ref": dict(self.prompt_license_ref),
                 "input_packet_ref": dict(self.input_packet_ref),
                 "assessment_ref": dict(self.assessment_ref),
+                "assessment_material_ref": dict(self.assessment_material_ref),
                 "support_relation": self.support_relation,
                 "proposal_validation_status": self.proposal_validation_status,
                 "support_proposal_validation_ref": dict(
@@ -578,6 +580,7 @@ def run_dprime_model_review_assessment(
         prompt_license_ref=prompt_license_ref,
         call_count=call_count,
         assessment_ref=assessment_ref,
+        assessment_material_ref=_assessment_material_ref(assessment_payload),
     )
 
 
@@ -713,6 +716,7 @@ def _result_from_validation(
     prompt_license_ref: Mapping[str, Any],
     call_count: int,
     assessment_ref: Mapping[str, Any],
+    assessment_material_ref: Mapping[str, Any],
 ) -> DPrimeModelReviewAssessmentResult:
     status = validation.validation_status
     relation = validation.support_relation
@@ -736,6 +740,7 @@ def _result_from_validation(
                 model_review_ref=model_review_ref,
                 prompt_license_ref=prompt_license_ref,
                 assessment_ref=assessment_ref,
+                assessment_material_ref=assessment_material_ref,
                 assessment_validation_status=status,
                 support_relation=relation,
                 proposal_validation_status=(
@@ -758,6 +763,7 @@ def _result_from_validation(
                 model_review_ref=model_review_ref,
                 prompt_license_ref=prompt_license_ref,
                 assessment_ref=assessment_ref,
+                assessment_material_ref=assessment_material_ref,
                 assessment_validation_status=status,
                 support_relation=relation,
                 proposal_validation_status=(
@@ -781,6 +787,7 @@ def _result_from_validation(
             model_review_ref=model_review_ref,
             prompt_license_ref=prompt_license_ref,
             assessment_ref=assessment_ref,
+            assessment_material_ref=assessment_material_ref,
             assessment_validation_status=status,
             support_relation=relation,
             proposal_validation_status=DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
@@ -801,6 +808,7 @@ def _result_from_validation(
             model_review_ref=model_review_ref,
             prompt_license_ref=prompt_license_ref,
             assessment_ref=assessment_ref,
+            assessment_material_ref=assessment_material_ref,
             assessment_validation_status=status,
             support_relation=relation,
             call_count=call_count,
@@ -815,6 +823,7 @@ def _result_from_validation(
             model_review_ref=model_review_ref,
             prompt_license_ref=prompt_license_ref,
             assessment_ref=assessment_ref,
+            assessment_material_ref=assessment_material_ref,
             assessment_validation_status=status,
             support_relation=relation,
             call_count=call_count,
@@ -832,6 +841,7 @@ def _result_from_validation(
             model_review_ref=model_review_ref,
             prompt_license_ref=prompt_license_ref,
             assessment_ref=assessment_ref,
+            assessment_material_ref=assessment_material_ref,
             assessment_validation_status=status,
             support_relation=relation,
             call_count=call_count,
@@ -848,6 +858,7 @@ def _result_from_validation(
         model_review_ref=model_review_ref,
         prompt_license_ref=prompt_license_ref,
         assessment_ref=assessment_ref,
+        assessment_material_ref=assessment_material_ref,
         assessment_validation_status=status,
         support_relation=relation,
         call_count=call_count,
@@ -902,6 +913,38 @@ def _normalized_assessment_payload(
     return payload
 
 
+def _assessment_material_ref(payload: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(payload)
+    return _without_empty(
+        {
+            "record_kind": safe.get("record_kind"),
+            "assessment_id": safe.get("assessment_id"),
+            "assessment_digest": safe.get("assessment_digest"),
+            "preflight_digest": safe.get("preflight_digest"),
+            "negative_control_profile_digest": safe.get(
+                "negative_control_profile_digest"
+            ),
+            "selector_ref": _safe_mapping(safe.get("selector_ref")),
+            "component_ref": _safe_mapping(safe.get("component_ref")),
+            "source_obligation_ref": _safe_mapping(safe.get("source_obligation_ref")),
+            "source_proposition": safe.get("source_proposition"),
+            "answer_component_claim": _safe_mapping(
+                safe.get("answer_component_claim")
+            ),
+            "support_relation": safe.get("support_relation"),
+            "required_qualifiers": _text_tuple(safe.get("required_qualifiers")),
+            "observed_qualifiers": _text_tuple(safe.get("observed_qualifiers")),
+            "missing_qualifiers": _text_tuple(safe.get("missing_qualifiers")),
+            "scope_check": _safe_mapping(safe.get("scope_check")),
+            "currentness_check": _safe_mapping(safe.get("currentness_check")),
+            "contradiction_check": _safe_mapping(safe.get("contradiction_check")),
+            "closed_surface_flags": _safe_mapping(safe.get("closed_surface_flags")),
+            "support_assessment_only": True,
+            "admitted_support": False,
+        }
+    )
+
+
 def _parse_output_mapping(raw_output: Any) -> dict[str, Any]:
     if isinstance(raw_output, Mapping):
         return dict(raw_output)
@@ -935,6 +978,7 @@ def _blocked_result(
     model_review_ref: Mapping[str, Any] | None = None,
     prompt_license_ref: Mapping[str, Any] | None = None,
     assessment_ref: Mapping[str, Any] | None = None,
+    assessment_material_ref: Mapping[str, Any] | None = None,
     assessment_validation_status: str = "not reached",
     support_relation: str | None = None,
     call_count: int = 0,
@@ -948,6 +992,7 @@ def _blocked_result(
         model_review_ref=dict(model_review_ref or {}),
         prompt_license_ref=dict(prompt_license_ref or {}),
         assessment_ref=dict(assessment_ref or {}),
+        assessment_material_ref=dict(assessment_material_ref or {}),
         assessment_validation_status=assessment_validation_status,
         support_relation=support_relation,
         call_count=call_count,

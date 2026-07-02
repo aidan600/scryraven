@@ -29,7 +29,7 @@ import pytest
 
 import core.dprime_assessment_validation as assessment_validation
 import core.dprime_one_shot_provider_boundary as provider_boundary
-import core.dprime_runkernel_admission_runtime as rk_dprime
+import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 import proplex.live_semantic_coverage_status as semantic_status
 from core.dprime_model_review_assessment import (
@@ -303,7 +303,7 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
     ] == "not configured"
     assert calls[0]["boundary_ref"]["status"] == "not approved"
     assert result.decision == (
-        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
     )
     assert result.return_code == 2
     assert "D-prime model review status: completed" in result.output
@@ -812,7 +812,7 @@ def test_old_retained_support_consumer_not_reached_with_injected_path(
     result = _run_with_payload(repo_root, _assessment_payload())
 
     assert result.decision == (
-        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
     )
     assert (
         "D-prime proposal validation status: "

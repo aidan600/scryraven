@@ -28,6 +28,12 @@ from core.dprime_runkernel_admission_runtime import (
     DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
     build_run_kernel_dprime_admission_decision,
 )
+from core.dprime_semantic_observation_materialization_runtime import (
+    BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED,
+    BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT,
+    DPrimeSemanticObservationMaterializationError,
+    materialize_dprime_semantic_observation_from_admitted_decision,
+)
 from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
     BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
@@ -315,6 +321,7 @@ def build_live_semantic_coverage_status(
             source_obligation_ref=source_obligation_ref,
             dprime_status=dprime_status,
             model_review_result=model_review_result,
+            fetch_read_content_packet=fetch_read_content_packet,
             run_kernel_admission_decision_status=(
                 dprime_run_kernel_admission_decision_status
             ),
@@ -820,6 +827,7 @@ def _blocked_dprime_model_review_assessment_result(
     source_obligation_ref: Mapping[str, Any],
     dprime_status: DPrimeStatusPayload,
     model_review_result: Any,
+    fetch_read_content_packet: Mapping[str, Any],
     run_kernel_admission_decision_status: str,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
@@ -832,6 +840,8 @@ def _blocked_dprime_model_review_assessment_result(
         == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
     )
     decision = None
+    semantic_materialization = None
+    materialization_error = None
     if proposal_validated:
         decision = build_run_kernel_dprime_admission_decision(
             _safe_mapping(dprime.get("run_kernel_support_admission_request_ref")),
@@ -844,6 +854,29 @@ def _blocked_dprime_model_review_assessment_result(
         dprime.update(decision.to_status_overlay())
         objects_created["run_kernel_admission_decision"] = True
         dprime["objects_created"] = objects_created
+        if decision.decision_status == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED:
+            try:
+                semantic_materialization = (
+                    materialize_dprime_semantic_observation_from_admitted_decision(
+                        decision=decision,
+                        assessment_material_ref=_safe_mapping(
+                            dprime.get("assessment_material_ref")
+                        ),
+                        validated_support_proposal_ref=_safe_mapping(
+                            dprime.get("validated_support_proposal_ref")
+                        ),
+                        fetch_read_content_packet=fetch_read_content_packet,
+                        source_evidence_admission_ref=admission_ref,
+                        component_ref=component_ref,
+                        source_obligation_ref=source_obligation_ref,
+                    )
+                )
+                dprime.update(semantic_materialization.to_status_overlay())
+                objects_created["semantic_observation"] = True
+                objects_created["component_coverage"] = False
+                dprime["objects_created"] = objects_created
+            except DPrimeSemanticObservationMaterializationError as exc:
+                materialization_error = exc
     support_ref = (
         {
             "status": DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
@@ -867,6 +900,63 @@ def _blocked_dprime_model_review_assessment_result(
             "reasons": [model_review_result.blocker_detail],
         }
     )
+    if semantic_materialization is not None:
+        semantic_ref = semantic_materialization.semantic_status_ref()
+        coverage_ref = semantic_materialization.coverage_status_ref(
+            component_id=_component_id(component_ref)
+        )
+        payload_decision = BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+        payload_detail = (
+            "D-prime SemanticObservation materialized through RunKernel-owned "
+            "admission; ComponentCoverage binding is not licensed"
+        )
+        next_surface = "D-prime ComponentCoverage binding"
+    else:
+        semantic_ref = {
+            "status": "unavailable",
+            "observation_ref": "unavailable",
+            "reasons": [
+                "D-prime proposal candidate is not admitted support",
+                (
+                    materialization_error.detail
+                    if materialization_error is not None
+                    else (
+                        "RunKernel-owned D-prime admission decision made; "
+                        "SemanticObservation not licensed or materialized"
+                        if decision is not None
+                        else (
+                            "RunKernel support admission request is ready; "
+                            "decision not made"
+                        )
+                    )
+                ),
+            ],
+        }
+        coverage_ref = {
+            "status": "unavailable",
+            "coverage_ref": "unavailable",
+            "component_id": _component_id(component_ref),
+            "reasons": [
+                "ComponentCoverage requires admitted SemanticObservation",
+                "D-prime proposal validation cannot bind coverage",
+            ],
+        }
+        payload_decision = (
+            materialization_error.blocker
+            if materialization_error is not None
+            else decision.blocker
+            if decision is not None
+            else model_review_result.decision
+        )
+        payload_detail = (
+            materialization_error.detail
+            if materialization_error is not None
+            else decision.blocker_detail
+            if decision is not None
+            else model_review_result.blocker_detail
+        )
+        next_surface = _model_review_next_blocked_surface(payload_decision)
+
     payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
@@ -875,45 +965,20 @@ def _blocked_dprime_model_review_assessment_result(
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
         support_ref=support_ref,
-        semantic_ref={
-            "status": "unavailable",
-            "observation_ref": "unavailable",
-            "reasons": [
-                "D-prime proposal candidate is not admitted support",
-                (
-                    "RunKernel-owned D-prime admission decision made; "
-                    "SemanticObservation not licensed or materialized"
-                    if decision is not None
-                    else (
-                        "RunKernel support admission request is ready; "
-                        "decision not made"
-                    )
-                ),
-            ],
-        },
-        coverage_ref={
-            "status": "unavailable",
-            "coverage_ref": "unavailable",
-            "component_id": _component_id(component_ref),
-            "reasons": [
-                "ComponentCoverage requires admitted SemanticObservation",
-                "D-prime proposal validation cannot bind coverage",
-            ],
-        },
-        decision=decision.blocker if decision is not None else model_review_result.decision,
-        blocker_detail=(
-            decision.blocker_detail if decision is not None else model_review_result.blocker_detail
-        ),
-        next_blocked_surface=_model_review_next_blocked_surface(
-            decision.blocker if decision is not None else model_review_result.decision
-        ),
+        semantic_ref=semantic_ref,
+        coverage_ref=coverage_ref,
+        decision=payload_decision,
+        blocker_detail=payload_detail,
+        next_blocked_surface=next_surface,
     )
     payload.update(
         {
             "dprime_status": dprime,
             "semantic_support_source": (
-                decision.semantic_support_source
-                if proposal_validated
+                semantic_materialization.to_status_overlay()["semantic_support_source"]
+                if semantic_materialization is not None
+                else decision.semantic_support_source
+                if proposal_validated and decision is not None
                 else "unavailable; D-prime assessment-only model review is not support"
             ),
             "semantic_support_custody_distinction_preserved": True,
@@ -935,13 +1000,17 @@ def _blocked_dprime_model_review_assessment_result(
             detail="status output contained forbidden material",
         )
     return LiveSemanticCoverageStatusResult(
-        decision=decision.blocker if decision is not None else model_review_result.decision,
+        decision=payload_decision,
         output=output,
         payload=payload,
     )
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED:
+        return "D-prime ComponentCoverage binding"
+    if decision == BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT:
+        return "D-prime SemanticObservation materialization input authority"
     if decision == BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED:
         return "D-prime SemanticObservation materialization"
     if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:

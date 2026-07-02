@@ -30,7 +30,7 @@ from typing import Any
 import core.dprime_assessment_validation as assessment_validation
 import core.dprime_one_shot_provider_boundary as provider_boundary
 import core.dprime_product_smart_one_shot_transport as route_transport
-import core.dprime_runkernel_admission_runtime as rk_dprime
+import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 from core.dprime_one_shot_model_review_adapter import (
     invoke_dprime_one_shot_model_review_adapter,
@@ -288,7 +288,7 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
 
     assert len(fake_client.calls) == 1
     assert result.decision == (
-        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
     )
     assert "phase: DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01" in result.output
     dprime_status = result.payload["dprime_status"]
