@@ -286,7 +286,7 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
     )
 
     assert len(fake_client.calls) == 1
-    assert result.decision == dprime.BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED
+    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
     assert "phase: DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01" in result.output
     dprime_status = result.payload["dprime_status"]
     assert (
@@ -312,7 +312,16 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
     assert dprime_status["assessment_validation_status"] == (
         assessment_validation.ASSESSMENT_SCHEMA_VALID
     )
-    assert dprime_status["objects_created"]["validated_support_proposal"] is False
+    assert (
+        dprime_status["proposal_validation_status"]
+        == dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+    )
+    assert (
+        dprime_status["run_kernel_support_admission_status"]
+        == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    )
+    assert dprime_status["validated_support_proposal_available"] is True
+    assert dprime_status["objects_created"]["validated_support_proposal"] is True
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False
 
