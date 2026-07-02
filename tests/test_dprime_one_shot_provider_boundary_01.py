@@ -34,6 +34,7 @@ from tests.test_ag_semantic_coverage_product_consumption_01 import (
 
 ROOT = Path(__file__).resolve().parents[1]
 BOUNDARY_MODULE = ROOT / "core" / "dprime_one_shot_provider_boundary.py"
+ADAPTER_REF = "fixture-one-shot-adapter-ref:dprime-adapter-contract-01"
 
 
 def test_default_boundary_status_is_product_consumed_and_not_approved(
@@ -46,6 +47,10 @@ def test_default_boundary_status_is_product_consumed_and_not_approved(
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert f"phase: {dprime.DPRIME_PHASE}" in result.output
     assert "D-prime one-shot provider boundary status: not approved" in result.output
+    assert (
+        "D-prime one-shot model-review adapter status: not configured"
+        in result.output
+    )
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime model review call count: 0" in result.output
     assert (
@@ -165,9 +170,7 @@ def test_real_call_boundary_requires_one_shot_adapter_ref_and_proof() -> None:
     assert validation.status == "approved"
     assert validation.boundary_ref["test_only"] is False
     assert validation.boundary_ref["one_shot_adapter_proven"] is True
-    assert validation.boundary_ref["one_shot_adapter_ref"] == (
-        "fixture-one-shot-adapter-ref:dprime-prerun-adapter-gate-01"
-    )
+    assert validation.boundary_ref["one_shot_adapter_ref"] == ADAPTER_REF
 
 
 def test_broad_helper_shape_rejected_fail_closed() -> None:
@@ -297,9 +300,7 @@ def _approved_real_protocol_boundary() -> dict[str, Any]:
             ),
             "test_only": False,
             "one_shot_adapter_proven": True,
-            "one_shot_adapter_ref": (
-                "fixture-one-shot-adapter-ref:dprime-prerun-adapter-gate-01"
-            ),
+            "one_shot_adapter_ref": ADAPTER_REF,
         }
     )
     return boundary

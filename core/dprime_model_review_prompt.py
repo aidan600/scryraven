@@ -1,9 +1,10 @@
 """Prompt/input boundary for D-prime assessment-only model review.
 
-The prompt is built only for an explicitly injected test/fake review callable.
-Callers may retain prompt metadata, but must not retain the raw prompt text or
-raw model response. This module imports no provider client and performs no
-model, search, retrieval, fetch/read, citation, Author, or RunKernel work.
+The prompt is built only for an explicitly licensed D-prime assessment review
+lane: the fake/test callable path or the product-owned one-shot adapter
+contract. Callers may retain prompt metadata, but must not retain the raw prompt
+text or raw model response. This module imports no provider client and performs
+no model, search, retrieval, fetch/read, citation, Author, or RunKernel work.
 """
 
 from __future__ import annotations

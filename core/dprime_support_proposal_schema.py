@@ -16,13 +16,18 @@ from core.dprime_assessment_validation import (
     ASSESSMENT_VALIDATOR_STATUS_NOT_REACHED,
     assessment_validator_availability_status,
 )
+from core.dprime_one_shot_model_review_adapter import (
+    ADAPTER_STATUS_NOT_CONFIGURED,
+    DPrimeOneShotModelReviewAdapter,
+    validate_dprime_one_shot_model_review_adapter,
+)
 from core.dprime_one_shot_provider_boundary import (
     PROVIDER_BOUNDARY_STATUS_NOT_APPROVED,
     DPrimeOneShotProviderBoundary,
     validate_dprime_one_shot_provider_boundary,
 )
 
-DPRIME_PHASE = "DPRIME-REAL-MODEL-REVIEW-PRERUN-ADAPTER-GATE-01"
+DPRIME_PHASE = "DPRIME-REAL-MODEL-REVIEW-ADAPTER-CONTRACT-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
@@ -124,6 +129,7 @@ AUTHORITY_BOUNDARY_NONCLAIMS = (
     "negative-control profile available != semantic support",
     "assessment validator available != semantic support",
     "provider boundary approved != semantic support",
+    "adapter contract valid != semantic support",
     "model-reviewed assessment != proposal",
     "assessment != proposal",
     "proposal != admitted support",
@@ -451,6 +457,7 @@ class DPrimeStatusPayload:
     negative_control_profile_status: str = DPRIME_STATUS_NOT_REACHED
     assessment_validator_status: str = ASSESSMENT_VALIDATOR_STATUS_NOT_REACHED
     model_review_status: str = DPRIME_STATUS_NOT_REACHED
+    model_review_call_count: int = 0
     assessment_status: str = DPRIME_STATUS_NOT_REACHED
     proposal_validation_status: str = DPRIME_STATUS_NOT_REACHED
     run_kernel_support_admission_status: str = DPRIME_STATUS_NOT_REACHED
@@ -466,6 +473,11 @@ class DPrimeStatusPayload:
     one_shot_provider_boundary_status: str = PROVIDER_BOUNDARY_STATUS_NOT_APPROVED
     one_shot_provider_boundary_ref: Mapping[str, Any] = field(default_factory=dict)
     one_shot_provider_boundary_consumed: bool = False
+    one_shot_model_review_adapter_status: str = ADAPTER_STATUS_NOT_CONFIGURED
+    one_shot_model_review_adapter_ref: Mapping[str, Any] = field(
+        default_factory=dict
+    )
+    one_shot_model_review_adapter_consumed: bool = False
 
     def __post_init__(self) -> None:
         if self.schema_status != DPRIME_SCHEMA_STATUS_AVAILABLE:
@@ -498,7 +510,17 @@ class DPrimeStatusPayload:
             "one_shot_provider_boundary_consumed": (
                 self.one_shot_provider_boundary_consumed
             ),
+            "one_shot_model_review_adapter_status": (
+                self.one_shot_model_review_adapter_status
+            ),
+            "one_shot_model_review_adapter_ref": dict(
+                self.one_shot_model_review_adapter_ref
+            ),
+            "one_shot_model_review_adapter_consumed": (
+                self.one_shot_model_review_adapter_consumed
+            ),
             "model_review_status": self.model_review_status,
+            "model_review_call_count": self.model_review_call_count,
             "assessment_status": self.assessment_status,
             "proposal_validation_status": self.proposal_validation_status,
             "run_kernel_support_admission_status": (
@@ -533,6 +555,9 @@ def build_dprime_status_payload(
     negative_control_profile: Any = _DEFAULT_NEGATIVE_CONTROL_PROFILE_SENTINEL,
     one_shot_provider_boundary: (
         Mapping[str, Any] | DPrimeOneShotProviderBoundary | None
+    ) = None,
+    one_shot_model_review_adapter: (
+        Mapping[str, Any] | DPrimeOneShotModelReviewAdapter | None
     ) = None,
 ) -> DPrimeStatusPayload:
     """Return the earliest D-prime blocker known in this phase."""
@@ -605,6 +630,9 @@ def build_dprime_status_payload(
     provider_boundary_validation = validate_dprime_one_shot_provider_boundary(
         one_shot_provider_boundary
     )
+    adapter_validation = validate_dprime_one_shot_model_review_adapter(
+        one_shot_model_review_adapter
+    )
     return DPrimeStatusPayload(
         preflight_status="passed",
         negative_control_profile_status="available",
@@ -622,6 +650,9 @@ def build_dprime_status_payload(
         one_shot_provider_boundary_status=provider_boundary_validation.status,
         one_shot_provider_boundary_ref=provider_boundary_validation.to_status_ref(),
         one_shot_provider_boundary_consumed=True,
+        one_shot_model_review_adapter_status=adapter_validation.status,
+        one_shot_model_review_adapter_ref=adapter_validation.to_status_ref(),
+        one_shot_model_review_adapter_consumed=True,
     )
 
 
