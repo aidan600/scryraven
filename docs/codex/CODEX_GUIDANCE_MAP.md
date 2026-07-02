@@ -391,6 +391,10 @@ content is explicitly pasted into the current prompt or committed here.
 
 - **General architectural workflow and Path B PR process:**
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
+- **D-prime evidence-relative model review overview:** read
+  `docs/architecture/DPRIME_ARCHITECTURE.md` for the current D-prime authority
+  split, allowed/forbidden outputs, negative controls, and post-#392
+  RunKernel-admission-missing stop point.
 - **Previous AG-SEM posture:** AG-SEM-05 through AG-SEM-10 completed the
   canonical reducer and conditional Sufficiency-consumption chain; AG-SEM-11
   and the later semantic atomicity work moved the ordinary semantic producer
