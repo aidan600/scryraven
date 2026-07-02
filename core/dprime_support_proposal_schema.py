@@ -8,11 +8,14 @@ admission decisions.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 import core.dprime_negative_control_profile as dprime_negative_controls
 from core.dprime_assessment_validation import (
+    ASSESSMENT_SCHEMA_VALID,
     ASSESSMENT_VALIDATOR_STATUS_NOT_REACHED,
     assessment_validator_availability_status,
 )
@@ -385,6 +388,64 @@ class ValidatedSupportProposal:
         )
 
 
+def build_validated_support_proposal_from_assessment(
+    *,
+    assessment_ref: Mapping[str, Any],
+    input_packet_ref: Mapping[str, Any],
+    model_review_ref: Mapping[str, Any],
+    prompt_license_ref: Mapping[str, Any],
+    assessment_validation_status: str,
+    support_relation: str | None,
+) -> ValidatedSupportProposal:
+    """Build a pre-admission D-prime proposal candidate from a valid assessment."""
+
+    if assessment_validation_status != ASSESSMENT_SCHEMA_VALID:
+        raise DPrimeSupportProposalSchemaError(
+            "support proposal requires a validator-valid assessment"
+        )
+    assessment = _safe_mapping(assessment_ref)
+    assessment_id = _clean_token(assessment.get("assessment_id"), limit=320)
+    assessment_digest = _clean_token(assessment.get("assessment_digest"), limit=128)
+    if not assessment_id or not assessment_digest:
+        raise DPrimeSupportProposalSchemaError(
+            "support proposal requires assessment id and digest lineage"
+        )
+    relation = _clean_token(support_relation, limit=160)
+    if relation not in {"directly_supports", "partially_supports"}:
+        raise DPrimeSupportProposalSchemaError(
+            "support proposal requires direct or partial support relation"
+        )
+    proposal_ref = _support_proposal_ref(
+        assessment_ref=assessment,
+        input_packet_ref=_safe_mapping(input_packet_ref),
+        model_review_ref=_safe_mapping(model_review_ref),
+        prompt_license_ref=_safe_mapping(prompt_license_ref),
+        assessment_validation_status=assessment_validation_status,
+        support_relation=relation,
+    )
+    validation_result = SupportProposalValidationResult(
+        validation_status=DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
+        blockers=(BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,),
+        warnings=(
+            "proposal candidate is not admitted support",
+            "RunKernel support admission is not licensed in this phase",
+        ),
+        metadata={
+            "assessment_validation_status": assessment_validation_status,
+            "support_relation": relation,
+            "lineage_only": True,
+        },
+    )
+    return ValidatedSupportProposal(
+        proposal_ref=proposal_ref,
+        validation_result=validation_result,
+        metadata={
+            "pre_admission_candidate": True,
+            "lineage_only": True,
+        },
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RunKernelSupportProposalAdmissionRequest:
     """Request shape for a future RunKernel admission decision."""
@@ -477,6 +538,8 @@ class DPrimeStatusPayload:
     assessment_status: str = DPRIME_STATUS_NOT_REACHED
     proposal_validation_status: str = DPRIME_STATUS_NOT_REACHED
     run_kernel_support_admission_status: str = DPRIME_STATUS_NOT_REACHED
+    run_kernel_decision: str = "not made"
+    admitted_support: bool = False
     semantic_observation_admission_status: str = DPRIME_STATUS_UNAVAILABLE
     component_coverage_status: str = DPRIME_STATUS_UNAVAILABLE
     semantic_support_source: str = "unavailable; D-prime preflight missing"
@@ -495,6 +558,9 @@ class DPrimeStatusPayload:
     )
     one_shot_model_review_adapter_consumed: bool = False
     product_model_route_ref: Mapping[str, Any] = field(default_factory=dict)
+    support_proposal_validation_ref: Mapping[str, Any] = field(default_factory=dict)
+    validated_support_proposal_ref: Mapping[str, Any] = field(default_factory=dict)
+    validated_support_proposal_available: bool = False
 
     def __post_init__(self) -> None:
         if self.schema_status != DPRIME_SCHEMA_STATUS_AVAILABLE:
@@ -505,6 +571,14 @@ class DPrimeStatusPayload:
             self.decision,
             context="DPrimeStatusPayload.decision",
         )
+        _reject_run_kernel_decision_status(
+            self.run_kernel_decision,
+            context="DPrimeStatusPayload.run_kernel_decision",
+        )
+        if self.admitted_support is not False:
+            raise DPrimeSupportProposalSchemaError(
+                "DPrimeStatusPayload cannot admit support"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -544,6 +618,17 @@ class DPrimeStatusPayload:
             "run_kernel_support_admission_status": (
                 self.run_kernel_support_admission_status
             ),
+            "run_kernel_decision": self.run_kernel_decision,
+            "admitted_support": False,
+            "support_proposal_validation_ref": dict(
+                self.support_proposal_validation_ref
+            ),
+            "validated_support_proposal_ref": dict(
+                self.validated_support_proposal_ref
+            ),
+            "validated_support_proposal_available": (
+                self.validated_support_proposal_available
+            ),
             "semantic_observation_admission_status": (
                 self.semantic_observation_admission_status
             ),
@@ -556,7 +641,9 @@ class DPrimeStatusPayload:
             "objects_created": {
                 "evidence_frame_preflight": self.evidence_frame_preflight_created,
                 "evidence_relative_support_assessment": False,
-                "validated_support_proposal": False,
+                "validated_support_proposal": (
+                    self.validated_support_proposal_available
+                ),
                 "run_kernel_support_proposal_admission_request": False,
                 "semantic_observation": False,
                 "component_coverage": False,
@@ -936,6 +1023,77 @@ def _normalize_key(value: Any) -> str:
     return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
 
 
+def _support_proposal_ref(
+    *,
+    assessment_ref: Mapping[str, Any],
+    input_packet_ref: Mapping[str, Any],
+    model_review_ref: Mapping[str, Any],
+    prompt_license_ref: Mapping[str, Any],
+    assessment_validation_status: str,
+    support_relation: str,
+) -> dict[str, Any]:
+    lineage = _without_empty(
+        {
+            "assessment_ref": dict(assessment_ref),
+            "input_packet_ref": _ref_subset(
+                input_packet_ref,
+                (
+                    "input_packet_schema_version",
+                    "input_packet_digest",
+                    "phase",
+                ),
+            ),
+            "model_review_ref": _ref_subset(
+                model_review_ref,
+                (
+                    "model_review_id",
+                    "model_review_digest",
+                    "phase",
+                ),
+            ),
+            "prompt_license_ref": _ref_subset(
+                prompt_license_ref,
+                (
+                    "license_id",
+                    "phase",
+                    "test_only",
+                    "enabled",
+                    "callable_kind",
+                    "fake_test_callable_only",
+                ),
+            ),
+            "assessment_validation_status": assessment_validation_status,
+            "support_relation": support_relation,
+            "lineage_only": True,
+            "pre_admission_candidate": True,
+        }
+    )
+    proposal_digest = _digest_json(lineage)
+    return {
+        "proposal_id": f"dprime-support-proposal:{proposal_digest[:16]}",
+        "proposal_digest": proposal_digest,
+        **lineage,
+    }
+
+
+def _ref_subset(value: Mapping[str, Any], keys: Sequence[str]) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    return _without_empty({key: safe.get(key) for key in keys})
+
+
+def _digest_json(value: Any) -> str:
+    encoded = json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"))
+    return sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: value
@@ -990,5 +1148,6 @@ __all__ = [
     "SUPPORT_PROPOSAL_VALIDATOR_STATUSES",
     "SupportProposalValidationResult",
     "ValidatedSupportProposal",
+    "build_validated_support_proposal_from_assessment",
     "build_dprime_status_payload",
 ]

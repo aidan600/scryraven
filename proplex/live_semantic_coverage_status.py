@@ -28,7 +28,9 @@ from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
     BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING,
     BLOCKED_DPRIME_PREFLIGHT_FAILED,
+    BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,
     DPRIME_PHASE,
+    DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
     DPrimeStatusPayload,
     build_dprime_status_payload,
 )
@@ -518,9 +520,15 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
             f"{dprime.get('proposal_validation_status')}"
         ),
         (
+            "D-prime validated proposal ref/digest: "
+            f"{_format_dprime_validated_support_proposal_ref(dprime.get('validated_support_proposal_ref'))}"
+        ),
+        (
             "RunKernel support admission status: "
             f"{dprime.get('run_kernel_support_admission_status')}"
         ),
+        f"RunKernel decision: {dprime.get('run_kernel_decision', 'not made')}",
+        f"admitted support: {_bool_text(dprime.get('admitted_support'))}",
         f"Analyst support proposal status: {support.get('status')}",
         f"Analyst support proposal ref/digest: {support.get('proposal_ref')}",
         f"SemanticObservation admission status: {semantic.get('status')}",
@@ -789,6 +797,33 @@ def _blocked_dprime_model_review_assessment_result(
     objects_created = dict(dprime.get("objects_created") or {})
     objects_created.update(model_review_result.objects_created)
     dprime["objects_created"] = objects_created
+    proposal_validated = (
+        dprime.get("proposal_validation_status")
+        == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+    )
+    support_ref = (
+        {
+            "status": DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
+            "proposal_ref": _id_digest_ref(
+                _safe_mapping(dprime.get("validated_support_proposal_ref")).get(
+                    "proposal_id"
+                ),
+                _safe_mapping(dprime.get("validated_support_proposal_ref")).get(
+                    "proposal_digest"
+                ),
+            ),
+            "reasons": [
+                "D-prime proposal candidate validated from assessment lineage",
+                "proposal candidate is not admitted support",
+            ],
+        }
+        if proposal_validated
+        else {
+            "status": "not reached",
+            "proposal_ref": "unavailable",
+            "reasons": [model_review_result.blocker_detail],
+        }
+    )
     payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
@@ -796,17 +831,13 @@ def _blocked_dprime_model_review_assessment_result(
         readiness_ref=readiness_ref,
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
-        support_ref={
-            "status": "not reached",
-            "proposal_ref": "unavailable",
-            "reasons": [model_review_result.blocker_detail],
-        },
+        support_ref=support_ref,
         semantic_ref={
             "status": "unavailable",
             "observation_ref": "unavailable",
             "reasons": [
-                "D-prime model-reviewed assessment is not admitted support",
-                "RunKernel support admission is not licensed",
+                "D-prime proposal candidate is not admitted support",
+                "RunKernel support admission is not licensed or made",
             ],
         },
         coverage_ref={
@@ -815,7 +846,7 @@ def _blocked_dprime_model_review_assessment_result(
             "component_id": _component_id(component_ref),
             "reasons": [
                 "ComponentCoverage requires admitted SemanticObservation",
-                "D-prime assessment-only review cannot bind coverage",
+                "D-prime proposal validation cannot bind coverage",
             ],
         },
         decision=model_review_result.decision,
@@ -828,11 +859,15 @@ def _blocked_dprime_model_review_assessment_result(
         {
             "dprime_status": dprime,
             "semantic_support_source": (
-                "unavailable; D-prime assessment-only model review is not support"
+                "unavailable; RunKernel admission not licensed"
+                if proposal_validated
+                else "unavailable; D-prime assessment-only model review is not support"
             ),
             "semantic_support_custody_distinction_preserved": True,
             "analyst_support_proposal_consumer": (
-                f"not reached; {model_review_result.blocker_detail}"
+                "D-prime proposal candidate validated; RunKernel admission not made"
+                if proposal_validated
+                else f"not reached; {model_review_result.blocker_detail}"
             ),
         }
     )
@@ -851,8 +886,8 @@ def _blocked_dprime_model_review_assessment_result(
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
-    if decision == "BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED":
-        return "D-prime support proposal license"
+    if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:
+        return "D-prime RunKernel support admission"
     return "D-prime model-review assessment"
 
 
@@ -1138,6 +1173,15 @@ def _format_dprime_assessment_ref(value: Any) -> str:
     if assessment_id and assessment_digest:
         return f"{assessment_id} / {assessment_digest}"
     return assessment_id or assessment_digest or "unavailable"
+
+
+def _format_dprime_validated_support_proposal_ref(value: Any) -> str:
+    ref = _safe_mapping(value)
+    proposal_id = _clean_text(ref.get("proposal_id"), limit=260)
+    proposal_digest = _clean_text(ref.get("proposal_digest"), limit=128)
+    if proposal_id and proposal_digest:
+        return f"{proposal_id} / {proposal_digest}"
+    return proposal_id or proposal_digest or "unavailable"
 
 
 def _dprime_product_smart_model_route_ref(

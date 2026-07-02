@@ -268,7 +268,7 @@ def test_model_review_prompt_metadata_retains_no_raw_prompt() -> None:
     assert "prompt" not in metadata
 
 
-def test_injected_fake_direct_support_assessment_blocks_before_proposal(
+def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_before_run_kernel(
     tmp_path: Path,
 ) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
@@ -301,7 +301,7 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
         "status"
     ] == "not configured"
     assert calls[0]["boundary_ref"]["status"] == "not approved"
-    assert result.decision == dprime.BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED
+    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
     assert result.return_code == 2
     assert "D-prime model review status: completed" in result.output
     assert "D-prime assessment status: assessed" in result.output
@@ -309,7 +309,16 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
         "D-prime assessment validation status: "
         f"{assessment_validation.ASSESSMENT_SCHEMA_VALID}"
     ) in result.output
-    assert "RunKernel support admission status: not reached" in result.output
+    assert (
+        "D-prime proposal validation status: "
+        f"{dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED}"
+    ) in result.output
+    assert (
+        "RunKernel support admission status: "
+        f"{dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING}"
+    ) in result.output
+    assert "RunKernel decision: not made" in result.output
+    assert "admitted support: false" in result.output
     assert "SemanticObservation admission status: unavailable" in result.output
     assert "ComponentCoverage status: unavailable" in result.output
     dprime_status = result.payload["dprime_status"]
@@ -330,8 +339,41 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
     assert dprime_status["prompt_license_ref"]["fake_test_callable_only"] is True
     assert dprime_status["prompt_license_ref"]["callable_kind"] == "fake_test"
     assert dprime_status["model_review_call_count"] == 1
+    assert (
+        dprime_status["proposal_validation_status"]
+        == dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+    )
+    assert (
+        dprime_status["run_kernel_support_admission_status"]
+        == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    )
+    assert dprime_status["run_kernel_decision"] == "not made"
+    assert dprime_status["admitted_support"] is False
+    assert dprime_status["validated_support_proposal_available"] is True
+    assert dprime_status["validated_support_proposal_ref"]["proposal_id"]
+    assert dprime_status["validated_support_proposal_ref"]["proposal_digest"]
+    assert (
+        dprime_status["validated_support_proposal_ref"]["assessment_ref"]
+        == dprime_status["assessment_ref"]
+    )
+    assert (
+        dprime_status["validated_support_proposal_ref"]["input_packet_ref"][
+            "input_packet_digest"
+        ]
+        == dprime_status["input_packet_ref"]["input_packet_digest"]
+    )
+    assert (
+        dprime_status["validated_support_proposal_ref"]["model_review_ref"][
+            "model_review_digest"
+        ]
+        == dprime_status["model_review_ref"]["model_review_digest"]
+    )
+    assert (
+        dprime_status["support_proposal_validation_ref"]["run_kernel_decision"]
+        == "not made"
+    )
     assert dprime_status["objects_created"]["evidence_relative_support_assessment"] is True
-    assert dprime_status["objects_created"]["validated_support_proposal"] is False
+    assert dprime_status["objects_created"]["validated_support_proposal"] is True
     assert (
         dprime_status["objects_created"][
             "run_kernel_support_proposal_admission_request"
@@ -743,8 +785,15 @@ def test_old_retained_support_consumer_not_reached_with_injected_path(
 
     result = _run_with_payload(repo_root, _assessment_payload())
 
-    assert result.decision == dprime.BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED
-    assert "Analyst support proposal status: not reached" in result.output
+    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert (
+        "D-prime proposal validation status: "
+        f"{dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED}"
+    ) in result.output
+    assert (
+        "Analyst support proposal status: "
+        f"{dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED}"
+    ) in result.output
 
 
 def test_bounded_evidence_window_count_mismatch_fails_closed(tmp_path: Path) -> None:

@@ -37,7 +37,6 @@ from core.dprime_one_shot_provider_boundary import (
     validate_dprime_one_shot_provider_boundary,
 )
 from core.dprime_support_proposal_schema import (
-    BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED,
     BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_ABSTAINED,
     BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED,
     BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_NON_SUPPORT,
@@ -45,7 +44,13 @@ from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_INPUT_INVALID,
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
     BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID,
+    BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,
+    BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING,
     DPRIME_MODEL_REVIEW_TRANSPORT_BLOCKERS,
+    DPRIME_STATUS_NOT_REACHED,
+    DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
+    DPrimeSupportProposalSchemaError,
+    build_validated_support_proposal_from_assessment,
 )
 
 DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE = (
@@ -152,14 +157,6 @@ _DANGEROUS_TRUE_KEYS = frozenset(
         "validated_support_proposal_created",
     }
 )
-_DOWNSTREAM_OBJECTS_FALSE = {
-    "validated_support_proposal": False,
-    "run_kernel_support_proposal_admission_request": False,
-    "semantic_observation": False,
-    "component_coverage": False,
-}
-
-
 class DPrimeModelReviewAssessmentError(ValueError):
     """Raised when the D-prime assessment slice must fail closed."""
 
@@ -284,6 +281,13 @@ class DPrimeModelReviewAssessmentResult:
     assessment_ref: Mapping[str, Any] = field(default_factory=dict)
     assessment_validation_status: str = "not reached"
     support_relation: str | None = None
+    proposal_validation_status: str = DPRIME_STATUS_NOT_REACHED
+    support_proposal_validation_ref: Mapping[str, Any] = field(default_factory=dict)
+    validated_support_proposal_ref: Mapping[str, Any] = field(default_factory=dict)
+    validated_support_proposal_available: bool = False
+    run_kernel_support_admission_status: str = DPRIME_STATUS_NOT_REACHED
+    run_kernel_decision: str = "not made"
+    admitted_support: bool = False
     call_count: int = 0
     raw_prompt_retained: bool = False
     raw_model_response_retained: bool = False
@@ -303,7 +307,10 @@ class DPrimeModelReviewAssessmentResult:
         }
         return {
             "evidence_relative_support_assessment": assessment_created,
-            **_DOWNSTREAM_OBJECTS_FALSE,
+            "validated_support_proposal": self.validated_support_proposal_available,
+            "run_kernel_support_proposal_admission_request": False,
+            "semantic_observation": False,
+            "component_coverage": False,
         }
 
     def to_status_overlay(self) -> dict[str, Any]:
@@ -319,6 +326,21 @@ class DPrimeModelReviewAssessmentResult:
                 "input_packet_ref": dict(self.input_packet_ref),
                 "assessment_ref": dict(self.assessment_ref),
                 "support_relation": self.support_relation,
+                "proposal_validation_status": self.proposal_validation_status,
+                "support_proposal_validation_ref": dict(
+                    self.support_proposal_validation_ref
+                ),
+                "validated_support_proposal_ref": dict(
+                    self.validated_support_proposal_ref
+                ),
+                "validated_support_proposal_available": (
+                    self.validated_support_proposal_available
+                ),
+                "run_kernel_support_admission_status": (
+                    self.run_kernel_support_admission_status
+                ),
+                "run_kernel_decision": "not made",
+                "admitted_support": False,
                 "model_review_call_count": self.call_count,
                 "raw_prompt_retained": False,
                 "raw_model_response_retained": False,
@@ -686,12 +708,40 @@ def _result_from_validation(
     status = validation.validation_status
     relation = validation.support_relation
     if status == assessment_validation.ASSESSMENT_SCHEMA_VALID:
+        try:
+            proposal = build_validated_support_proposal_from_assessment(
+                assessment_ref=assessment_ref,
+                input_packet_ref=input_packet_ref,
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                assessment_validation_status=status,
+                support_relation=relation,
+            )
+        except DPrimeSupportProposalSchemaError as exc:
+            return DPrimeModelReviewAssessmentResult(
+                decision=BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING,
+                model_review_status=MODEL_REVIEW_STATUS_COMPLETED,
+                assessment_status=ASSESSMENT_STATUS_ASSESSED,
+                blocker_detail=str(exc),
+                input_packet_ref=input_packet_ref,
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                assessment_ref=assessment_ref,
+                assessment_validation_status=status,
+                support_relation=relation,
+                proposal_validation_status=(
+                    BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING
+                ),
+                run_kernel_support_admission_status=DPRIME_STATUS_NOT_REACHED,
+                call_count=call_count,
+            )
         return DPrimeModelReviewAssessmentResult(
-            decision=BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED,
+            decision=BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,
             model_review_status=MODEL_REVIEW_STATUS_COMPLETED,
             assessment_status=ASSESSMENT_STATUS_ASSESSED,
             blocker_detail=(
-                "D-prime assessment is valid but proposal/admission is not licensed"
+                "D-prime support proposal validated; RunKernel admission is "
+                "not licensed in this phase"
             ),
             input_packet_ref=input_packet_ref,
             model_review_ref=model_review_ref,
@@ -699,6 +749,13 @@ def _result_from_validation(
             assessment_ref=assessment_ref,
             assessment_validation_status=status,
             support_relation=relation,
+            proposal_validation_status=DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
+            support_proposal_validation_ref=proposal.validation_result.to_dict(),
+            validated_support_proposal_ref=proposal.proposal_ref,
+            validated_support_proposal_available=True,
+            run_kernel_support_admission_status=(
+                BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+            ),
             call_count=call_count,
         )
     if status == assessment_validation.ASSESSMENT_ABSTAINED:
