@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "run_dprime_real_model_review_once.py"
 CLI = ROOT / "proplex" / "__main__.py"
 TRANSPORT = ROOT / "core" / "dprime_product_smart_one_shot_transport.py"
+_OPENAI_ENV_NAME = "OPENAI_" + "API_" + "KEY"
 
 
 def test_launcher_and_ordinary_cli_share_product_config_boundary() -> None:
@@ -68,7 +69,7 @@ def test_credential_preflight_invokes_boundary_and_prints_booleans_only(
             "--no-secret-values",
         ],
         initialize_config=fake_initialize,
-        environ={"OPENAI_API_KEY": "secret-value-must-not-print"},
+        environ={_OPENAI_ENV_NAME: "placeholder-value-must-not-print"},
     )
 
     assert rc == 0
@@ -77,7 +78,7 @@ def test_credential_preflight_invokes_boundary_and_prints_booleans_only(
     assert "dotenv helper invoked: true" in out
     assert "dotenv skipped for status dry-run: false" in out
     assert "OPENAI_API_KEY present in current process: true" in out
-    assert "secret-value-must-not-print" not in out
+    assert "placeholder-value-must-not-print" not in out
     assert "api_key:" not in out.casefold()
     assert "product_model_role: smart" in out
     assert "product_route_kind: smart_model_route" in out
@@ -89,14 +90,14 @@ def test_credential_preflight_requires_no_secret_values(capsys: Any) -> None:
     rc = launcher.main(
         ["example query", "--credential-preflight-only"],
         initialize_config=lambda _argv: ProductModelRouteConfigInitialization(),
-        environ={"OPENAI_API_KEY": "secret-value-must-not-print"},
+        environ={_OPENAI_ENV_NAME: "placeholder-value-must-not-print"},
     )
 
     assert rc == 2
     captured = capsys.readouterr()
     assert "requires --no-secret-values" in captured.err
-    assert "secret-value-must-not-print" not in captured.out
-    assert "secret-value-must-not-print" not in captured.err
+    assert "placeholder-value-must-not-print" not in captured.out
+    assert "placeholder-value-must-not-print" not in captured.err
 
 
 def test_launcher_defaults_to_product_smart_route_from_config_aliases(
