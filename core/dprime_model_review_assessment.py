@@ -50,6 +50,7 @@ from core.dprime_support_proposal_schema import (
     DPRIME_STATUS_NOT_REACHED,
     DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
     DPrimeSupportProposalSchemaError,
+    build_run_kernel_support_proposal_admission_request,
     build_validated_support_proposal_from_assessment,
 )
 
@@ -286,6 +287,9 @@ class DPrimeModelReviewAssessmentResult:
     validated_support_proposal_ref: Mapping[str, Any] = field(default_factory=dict)
     validated_support_proposal_available: bool = False
     run_kernel_support_admission_status: str = DPRIME_STATUS_NOT_REACHED
+    run_kernel_support_admission_request_ref: Mapping[str, Any] = field(
+        default_factory=dict
+    )
     run_kernel_decision: str = "not made"
     admitted_support: bool = False
     call_count: int = 0
@@ -308,7 +312,9 @@ class DPrimeModelReviewAssessmentResult:
         return {
             "evidence_relative_support_assessment": assessment_created,
             "validated_support_proposal": self.validated_support_proposal_available,
-            "run_kernel_support_proposal_admission_request": False,
+            "run_kernel_support_proposal_admission_request": bool(
+                self.run_kernel_support_admission_request_ref
+            ),
             "semantic_observation": False,
             "component_coverage": False,
         }
@@ -338,6 +344,9 @@ class DPrimeModelReviewAssessmentResult:
                 ),
                 "run_kernel_support_admission_status": (
                     self.run_kernel_support_admission_status
+                ),
+                "run_kernel_support_admission_request_ref": dict(
+                    self.run_kernel_support_admission_request_ref
                 ),
                 "run_kernel_decision": "not made",
                 "admitted_support": False,
@@ -735,13 +744,38 @@ def _result_from_validation(
                 run_kernel_support_admission_status=DPRIME_STATUS_NOT_REACHED,
                 call_count=call_count,
             )
+        try:
+            admission_request = build_run_kernel_support_proposal_admission_request(
+                proposal
+            )
+        except DPrimeSupportProposalSchemaError as exc:
+            return DPrimeModelReviewAssessmentResult(
+                decision=BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING,
+                model_review_status=MODEL_REVIEW_STATUS_COMPLETED,
+                assessment_status=ASSESSMENT_STATUS_ASSESSED,
+                blocker_detail=str(exc),
+                input_packet_ref=input_packet_ref,
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                assessment_ref=assessment_ref,
+                assessment_validation_status=status,
+                support_relation=relation,
+                proposal_validation_status=(
+                    BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING
+                ),
+                run_kernel_support_admission_status=DPRIME_STATUS_NOT_REACHED,
+                call_count=call_count,
+            )
+        admission_request_ref = _run_kernel_admission_request_ref(
+            admission_request.to_dict()
+        )
         return DPrimeModelReviewAssessmentResult(
             decision=BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,
             model_review_status=MODEL_REVIEW_STATUS_COMPLETED,
             assessment_status=ASSESSMENT_STATUS_ASSESSED,
             blocker_detail=(
-                "D-prime support proposal validated; RunKernel admission is "
-                "not licensed in this phase"
+                "D-prime support proposal validated; RunKernel admission request "
+                "is ready and RunKernel decision is not made"
             ),
             input_packet_ref=input_packet_ref,
             model_review_ref=model_review_ref,
@@ -753,9 +787,8 @@ def _result_from_validation(
             support_proposal_validation_ref=proposal.validation_result.to_dict(),
             validated_support_proposal_ref=proposal.proposal_ref,
             validated_support_proposal_available=True,
-            run_kernel_support_admission_status=(
-                BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
-            ),
+            run_kernel_support_admission_status=admission_request.request_status,
+            run_kernel_support_admission_request_ref=admission_request_ref,
             call_count=call_count,
         )
     if status == assessment_validation.ASSESSMENT_ABSTAINED:
@@ -1154,6 +1187,23 @@ def _source_evidence_custody_ref(admission: Mapping[str, Any]) -> dict[str, Any]
             "custody_record_count": admission.get("custody_record_count"),
             "readable_record_count": admission.get("readable_record_count"),
             "custody_is_not_semantic_support": True,
+        }
+    )
+
+
+def _run_kernel_admission_request_ref(request: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(request)
+    return _without_empty(
+        {
+            "record_kind": safe.get("record_kind"),
+            "request_status": safe.get("request_status"),
+            "request_digest": _digest_json(safe),
+            "support_proposal_ref": _safe_mapping(
+                safe.get("support_proposal_ref")
+            ),
+            "validation_result_ref": _safe_mapping(
+                safe.get("validation_result_ref")
+            ),
         }
     )
 

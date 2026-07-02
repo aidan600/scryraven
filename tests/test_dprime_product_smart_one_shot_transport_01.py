@@ -318,10 +318,16 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
     )
     assert (
         dprime_status["run_kernel_support_admission_status"]
-        == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+        == dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     )
+    assert dprime_status["run_kernel_support_admission_request_ref"][
+        "request_status"
+    ] == dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     assert dprime_status["validated_support_proposal_available"] is True
     assert dprime_status["objects_created"]["validated_support_proposal"] is True
+    assert dprime_status["objects_created"][
+        "run_kernel_support_proposal_admission_request"
+    ] is True
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False
 

@@ -152,14 +152,20 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     )
     assert (
         dprime_status["run_kernel_support_admission_status"]
-        == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+        == dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     )
+    assert dprime_status["run_kernel_support_admission_request_ref"][
+        "request_status"
+    ] == dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     assert dprime_status["model_review_status"] == "completed"
     assert (
         dprime_status["assessment_validation_status"]
         == assessment_validation.ASSESSMENT_SCHEMA_VALID
     )
     assert dprime_status["objects_created"]["validated_support_proposal"] is True
+    assert dprime_status["objects_created"][
+        "run_kernel_support_proposal_admission_request"
+    ] is True
     model_review_ref = dprime_status["model_review_ref"]
     adapter_ref = model_review_ref["one_shot_model_review_adapter_ref"]
     assert adapter_ref["status"] == "configured"

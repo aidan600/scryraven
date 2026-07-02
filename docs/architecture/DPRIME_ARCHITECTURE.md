@@ -52,7 +52,8 @@ source/evidence custody and readability
 -> EvidenceRelativeSupportAssessment
 -> SupportProposalValidationResult
 -> ValidatedSupportProposal candidate
--> RunKernel admission not made / not licensed
+-> RunKernelSupportProposalAdmissionRequest ready
+-> RunKernel decision not made
 ```
 
 The chain is surfaced through `DPrimeStatusPayload` in
@@ -62,8 +63,10 @@ The chain is surfaced through `DPrimeStatusPayload` in
 BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
 ```
 
-At that point a validator-valid proposal candidate may exist, but it is still
-pre-admission material.
+At that point a validator-valid proposal candidate and a lineage-only
+`RunKernelSupportProposalAdmissionRequest` may exist, but RunKernel has not
+admitted, rejected, or challenged it. The request is product-visible status
+material only; it is not admitted support.
 
 ## Current implemented product path
 
@@ -125,7 +128,10 @@ D-prime may produce:
 - abstention, non-support, or challenge recommendation;
 - validator-valid assessment refs;
 - `ValidatedSupportProposal` candidate refs;
-- product-visible blocker/status saying RunKernel admission is not made.
+- `RunKernelSupportProposalAdmissionRequest` refs with proposal id/digest,
+  validation status/digest, request status, and request digest;
+- product-visible blocker/status saying the request is ready and RunKernel
+  decision is not made.
 
 These outputs are review material and candidate state. They are not admitted
 support.
@@ -201,9 +207,9 @@ D-prime's non-negotiable negative controls are:
 `NegativeControlProfile` is configuration and validation posture. It is not
 evidence, not model success, not semantic support, and not product correctness.
 
-## Current status after assessment-to-proposal gate
+## Current status after admission-request gate
 
-Implemented after #392:
+Implemented after DPRIME-RUNKERNEL-ADMISSION-REQUEST-GATE-01:
 
 - evidence-frame preflight;
 - negative-control profile;
@@ -212,7 +218,10 @@ Implemented after #392:
 - invalid-output fail-closed handling;
 - validator-valid assessment path;
 - assessment-to-proposal candidate gate;
+- lineage-only `RunKernelSupportProposalAdmissionRequest` preparation;
 - ordinary product status reporting through `DPrimeStatusPayload`.
+
+The current stop point is request ready / RunKernel decision not made.
 
 Still not implemented or closed:
 

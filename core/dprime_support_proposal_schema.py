@@ -94,6 +94,7 @@ BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING = (
 BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING = (
     "BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING"
 )
+DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY = "ready for RunKernel"
 
 DPRIME_SUPPORT_PROPOSAL_REJECTED = "DPRIME_SUPPORT_PROPOSAL_REJECTED"
 DPRIME_SUPPORT_PROPOSAL_CHALLENGED = "DPRIME_SUPPORT_PROPOSAL_CHALLENGED"
@@ -446,13 +447,48 @@ def build_validated_support_proposal_from_assessment(
     )
 
 
+def build_run_kernel_support_proposal_admission_request(
+    proposal: ValidatedSupportProposal,
+) -> RunKernelSupportProposalAdmissionRequest:
+    """Build the lineage-only request gate for a validated proposal candidate."""
+
+    if proposal.proposal_status != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED:
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel admission request requires a validation-passed proposal"
+        )
+    if (
+        proposal.validation_result.validation_status
+        != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+    ):
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel admission request requires a passed validation result"
+        )
+    proposal_ref = _support_proposal_id_digest_ref(proposal.proposal_ref)
+    validation_result = proposal.validation_result.to_dict()
+    validation_result_ref = {
+        "record_kind": "SupportProposalValidationResultRef",
+        "validation_status": proposal.validation_result.validation_status,
+        "validation_result_digest": _digest_json(validation_result),
+        "support_proposal_validation_passed": True,
+    }
+    return RunKernelSupportProposalAdmissionRequest(
+        support_proposal_ref=proposal_ref,
+        validation_result_ref=validation_result_ref,
+        request_status=DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY,
+        metadata={
+            "lineage_only": True,
+            "request_prepared_by": "core.dprime_support_proposal_schema",
+        },
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RunKernelSupportProposalAdmissionRequest:
     """Request shape for a future RunKernel admission decision."""
 
     support_proposal_ref: Mapping[str, Any]
     validation_result_ref: Mapping[str, Any]
-    request_status: str = "ready for RunKernel"
+    request_status: str = DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -481,6 +517,7 @@ class RunKernelSupportProposalAdmissionRequest:
                 "support_proposal_ref": dict(self.support_proposal_ref),
                 "validation_result_ref": dict(self.validation_result_ref),
                 "run_kernel_decision": "not made",
+                "admitted_support": False,
                 "semantic_observation_created": False,
                 "component_coverage_created": False,
                 "metadata": dict(self.metadata),
@@ -561,6 +598,9 @@ class DPrimeStatusPayload:
     support_proposal_validation_ref: Mapping[str, Any] = field(default_factory=dict)
     validated_support_proposal_ref: Mapping[str, Any] = field(default_factory=dict)
     validated_support_proposal_available: bool = False
+    run_kernel_support_admission_request_ref: Mapping[str, Any] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         if self.schema_status != DPRIME_SCHEMA_STATUS_AVAILABLE:
@@ -579,6 +619,11 @@ class DPrimeStatusPayload:
             raise DPrimeSupportProposalSchemaError(
                 "DPrimeStatusPayload cannot admit support"
             )
+        _reject_forbidden_payload(
+            self.run_kernel_support_admission_request_ref,
+            context="DPrimeStatusPayload.run_kernel_support_admission_request_ref",
+            extra_forbidden_keys=_RUN_KERNEL_REQUEST_FORBIDDEN_KEYS,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -629,6 +674,9 @@ class DPrimeStatusPayload:
             "validated_support_proposal_available": (
                 self.validated_support_proposal_available
             ),
+            "run_kernel_support_admission_request_ref": dict(
+                self.run_kernel_support_admission_request_ref
+            ),
             "semantic_observation_admission_status": (
                 self.semantic_observation_admission_status
             ),
@@ -644,7 +692,9 @@ class DPrimeStatusPayload:
                 "validated_support_proposal": (
                     self.validated_support_proposal_available
                 ),
-                "run_kernel_support_proposal_admission_request": False,
+                "run_kernel_support_proposal_admission_request": bool(
+                    self.run_kernel_support_admission_request_ref
+                ),
                 "semantic_observation": False,
                 "component_coverage": False,
             },
@@ -1076,6 +1126,20 @@ def _support_proposal_ref(
     }
 
 
+def _support_proposal_id_digest_ref(value: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    proposal_id = _clean_token(safe.get("proposal_id"), limit=320)
+    proposal_digest = _clean_token(safe.get("proposal_digest"), limit=128)
+    if not proposal_id or not proposal_digest:
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel admission request requires proposal id and digest lineage"
+        )
+    return {
+        "proposal_id": proposal_id,
+        "proposal_digest": proposal_digest,
+    }
+
+
 def _ref_subset(value: Mapping[str, Any], keys: Sequence[str]) -> dict[str, Any]:
     safe = _safe_mapping(value)
     return _without_empty({key: safe.get(key) for key in keys})
@@ -1130,6 +1194,7 @@ __all__ = [
     "DPRIME_PHASE",
     "DPRIME_SCHEMA_STATUS_AVAILABLE",
     "DPRIME_SCHEMA_VERSION",
+    "DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY",
     "DPRIME_SEMANTIC_OBSERVATION_ADMITTED",
     "DPRIME_STATUS_MISSING",
     "DPRIME_STATUS_NOT_REACHED",
@@ -1149,5 +1214,6 @@ __all__ = [
     "SupportProposalValidationResult",
     "ValidatedSupportProposal",
     "build_validated_support_proposal_from_assessment",
+    "build_run_kernel_support_proposal_admission_request",
     "build_dprime_status_payload",
 ]
