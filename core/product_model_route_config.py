@@ -81,9 +81,11 @@ def initialize_product_model_route_config(
     if not skipped:
         invoked = True
         if load_dotenv_func is None:
-            from dotenv import load_dotenv as load_dotenv_func
+            from dotenv import load_dotenv
 
-        dotenv_result = bool(load_dotenv_func())
+            dotenv_result = bool(load_dotenv(encoding="utf-8-sig"))
+        else:
+            dotenv_result = bool(load_dotenv_func())
     env = os.environ if environ is None else environ
     return ProductModelRouteConfigInitialization(
         dotenv_helper_invoked=invoked,
