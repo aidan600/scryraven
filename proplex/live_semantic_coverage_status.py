@@ -420,6 +420,9 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     semantic = _safe_mapping(payload.get("semantic_observation_admission_ref"))
     coverage = _safe_mapping(payload.get("component_coverage_ref"))
     dprime = _safe_mapping(payload.get("dprime_status"))
+    dprime_request = _safe_mapping(
+        dprime.get("run_kernel_support_admission_request_ref")
+    )
     product_model_route = _safe_mapping(dprime.get("product_model_route_ref"))
     closed = payload.get("closed_downstream_surfaces") or CLOSED_DOWNSTREAM_SURFACES
     decision = str(payload.get("decision") or "")
@@ -526,6 +529,10 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "RunKernel support admission status: "
             f"{dprime.get('run_kernel_support_admission_status')}"
+        ),
+        (
+            "RunKernel support admission request status: "
+            f"{dprime_request.get('request_status', 'not reached')}"
         ),
         f"RunKernel decision: {dprime.get('run_kernel_decision', 'not made')}",
         f"admitted support: {_bool_text(dprime.get('admitted_support'))}",
@@ -837,7 +844,7 @@ def _blocked_dprime_model_review_assessment_result(
             "observation_ref": "unavailable",
             "reasons": [
                 "D-prime proposal candidate is not admitted support",
-                "RunKernel support admission is not licensed or made",
+                "RunKernel support admission request is ready; decision not made",
             ],
         },
         coverage_ref={
@@ -859,13 +866,13 @@ def _blocked_dprime_model_review_assessment_result(
         {
             "dprime_status": dprime,
             "semantic_support_source": (
-                "unavailable; RunKernel admission not licensed"
+                "unavailable; RunKernel admission decision not made"
                 if proposal_validated
                 else "unavailable; D-prime assessment-only model review is not support"
             ),
             "semantic_support_custody_distinction_preserved": True,
             "analyst_support_proposal_consumer": (
-                "D-prime proposal candidate validated; RunKernel admission not made"
+                "D-prime proposal candidate validated; RunKernel admission request ready"
                 if proposal_validated
                 else f"not reached; {model_review_result.blocker_detail}"
             ),
@@ -887,7 +894,7 @@ def _blocked_dprime_model_review_assessment_result(
 
 def _model_review_next_blocked_surface(decision: str) -> str:
     if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:
-        return "D-prime RunKernel support admission"
+        return "D-prime RunKernel support admission decision"
     return "D-prime model-review assessment"
 
 

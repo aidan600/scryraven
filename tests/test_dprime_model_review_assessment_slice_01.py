@@ -315,7 +315,11 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
     ) in result.output
     assert (
         "RunKernel support admission status: "
-        f"{dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING}"
+        f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
+    ) in result.output
+    assert (
+        "RunKernel support admission request status: "
+        f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
     ) in result.output
     assert "RunKernel decision: not made" in result.output
     assert "admitted support: false" in result.output
@@ -345,7 +349,22 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
     )
     assert (
         dprime_status["run_kernel_support_admission_status"]
-        == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+        == dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
+    )
+    request_ref = dprime_status["run_kernel_support_admission_request_ref"]
+    assert request_ref["request_status"] == (
+        dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
+    )
+    assert request_ref["support_proposal_ref"] == {
+        "proposal_id": dprime_status["validated_support_proposal_ref"][
+            "proposal_id"
+        ],
+        "proposal_digest": dprime_status["validated_support_proposal_ref"][
+            "proposal_digest"
+        ],
+    }
+    assert request_ref["validation_result_ref"]["validation_status"] == (
+        dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
     )
     assert dprime_status["run_kernel_decision"] == "not made"
     assert dprime_status["admitted_support"] is False
@@ -378,7 +397,7 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
         dprime_status["objects_created"][
             "run_kernel_support_proposal_admission_request"
         ]
-        is False
+        is True
     )
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False

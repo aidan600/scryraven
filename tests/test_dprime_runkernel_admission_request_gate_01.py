@@ -1,4 +1,4 @@
-"""PRODUCT-PATH-REGRESSION: D-prime assessment-to-proposal gate.
+"""PRODUCT-PATH-REGRESSION: D-prime RunKernel admission request gate.
 
 Harness label: PRODUCT-PATH-REGRESSION
 Ordinary product path guarded or fed: python -m proplex --live-semantic-coverage-status-dry-run
@@ -8,11 +8,11 @@ status path is used with retained fixture-sized artifacts and an injected fake
 model-review callable because live/model/provider/search/fetch/read/retrieval
 calls are closed in this phase.
 Integration deadline: current phase.
-Exit condition: keep while D-prime proposal candidates are pre-admission status
-objects before RunKernel support admission is licensed.
+Exit condition: keep while D-prime RunKernel admission requests are prepared
+before RunKernel support admission decision is licensed.
 Why this is not a shadow product path: it invokes the product status builder and
 the product-owned D-prime schema/model-review modules, not a standalone packet.
-Forbidden interpretation: proposal validation is not RunKernel admission,
+Forbidden interpretation: an admission request is not RunKernel admission,
 admitted semantic support, SemanticObservation admission, ComponentCoverage,
 citation eligibility, source-obligation satisfaction, SufficiencyReadiness,
 FinalAnswerPacket, Author/answer text, product correctness, or a live call.
@@ -39,7 +39,7 @@ from tests.test_dprime_model_review_assessment_slice_01 import (
 )
 
 
-def test_validator_valid_assessment_reaches_proposal_candidate_status(
+def test_validated_proposal_reports_request_ready_without_runkernel_decision(
     tmp_path: Path,
 ) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
@@ -47,62 +47,34 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
-    assert (
-        "D-prime assessment status: assessed" in result.output
-    )
+    assert "D-prime assessment status: assessed" in result.output
     assert (
         "D-prime proposal validation status: "
         f"{dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED}"
     ) in result.output
     assert (
-        "RunKernel support admission status: "
-        f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
-    ) in result.output
-    assert (
         "RunKernel support admission request status: "
         f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
     ) in result.output
-    assert (
-        "semantic support source: unavailable; "
-        "RunKernel admission decision not made"
-    ) in (
-        result.output
-    )
+    assert "RunKernel decision: not made" in result.output
+    assert "admitted support: false" in result.output
+    assert "SemanticObservation admission status: unavailable" in result.output
+    assert "ComponentCoverage status: unavailable" in result.output
 
     dprime_status = result.payload["dprime_status"]
+    request_ref = dprime_status["run_kernel_support_admission_request_ref"]
     proposal_ref = dprime_status["validated_support_proposal_ref"]
     validation_ref = dprime_status["support_proposal_validation_ref"]
-    request_ref = dprime_status["run_kernel_support_admission_request_ref"]
+
     assert dprime_status["validated_support_proposal_available"] is True
-    assert proposal_ref["proposal_id"].startswith("dprime-support-proposal:")
-    assert proposal_ref["assessment_ref"] == dprime_status["assessment_ref"]
-    assert proposal_ref["input_packet_ref"]["input_packet_digest"] == (
-        dprime_status["input_packet_ref"]["input_packet_digest"]
-    )
-    assert proposal_ref["model_review_ref"]["model_review_digest"] == (
-        dprime_status["model_review_ref"]["model_review_digest"]
-    )
-    assert proposal_ref["prompt_license_ref"]["license_id"] == (
-        dprime_status["prompt_license_ref"]["license_id"]
-    )
-    assert validation_ref["validation_status"] == (
+    assert dprime_status["proposal_validation_status"] == (
         dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
     )
-    assert validation_ref["run_kernel_decision"] == "not made"
-    assert request_ref["request_status"] == (
+    assert dprime_status["run_kernel_support_admission_status"] == (
         dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     )
-    assert request_ref["support_proposal_ref"] == {
-        "proposal_id": proposal_ref["proposal_id"],
-        "proposal_digest": proposal_ref["proposal_digest"],
-    }
-    assert request_ref["validation_result_ref"]["validation_status"] == (
-        dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
-    )
-    assert request_ref["validation_result_ref"]["validation_result_digest"]
-    assert request_ref["request_digest"]
-    assert dprime_status["admitted_support"] is False
     assert dprime_status["run_kernel_decision"] == "not made"
+    assert dprime_status["admitted_support"] is False
     assert dprime_status["objects_created"] == {
         "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": True,
@@ -111,16 +83,66 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         "semantic_observation": False,
         "component_coverage": False,
     }
-    assert result.payload["semantic_observation_admission_ref"] == {
-        "status": "unavailable",
-        "observation_ref": "unavailable",
-        "reasons": [
-            "D-prime proposal candidate is not admitted support",
-            "RunKernel support admission request is ready; decision not made",
-        ],
+    assert request_ref["request_status"] == (
+        dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
+    )
+    assert request_ref["support_proposal_ref"] == {
+        "proposal_id": proposal_ref["proposal_id"],
+        "proposal_digest": proposal_ref["proposal_digest"],
     }
-    assert result.payload["component_coverage_ref"]["status"] == "unavailable"
-    assert result.payload["answerability_correctness"] == "not claimed"
+    assert request_ref["validation_result_ref"]["validation_status"] == (
+        validation_ref["validation_status"]
+    )
+    assert request_ref["validation_result_ref"]["validation_result_digest"]
+    assert request_ref["request_digest"]
+
+
+def test_admission_request_ref_carries_safe_lineage_only(tmp_path: Path) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+
+    result = _run_product_status_with_assessment(repo_root, _assessment_payload())
+
+    request_ref = result.payload["dprime_status"][
+        "run_kernel_support_admission_request_ref"
+    ]
+    assert sorted(request_ref) == [
+        "record_kind",
+        "request_digest",
+        "request_status",
+        "support_proposal_ref",
+        "validation_result_ref",
+    ]
+    assert sorted(request_ref["support_proposal_ref"]) == [
+        "proposal_digest",
+        "proposal_id",
+    ]
+    assert sorted(request_ref["validation_result_ref"]) == [
+        "record_kind",
+        "support_proposal_validation_passed",
+        "validation_result_digest",
+        "validation_status",
+    ]
+    serialized = json.dumps(request_ref, sort_keys=True)
+    for forbidden in (
+        "raw_prompt",
+        "prompt",
+        "raw_model_response",
+        "model_response",
+        "provider_payload",
+        "bounded_text",
+        PASSPORT_TEXT,
+        "raw_page_text",
+        "raw_html",
+        "headers",
+        "cookies",
+        "api_key",
+        "secret",
+        "SemanticObservation",
+        "ComponentCoverage",
+        "FinalAnswerPacket",
+        "Author prose",
+    ):
+        assert forbidden not in serialized
 
 
 @pytest.mark.parametrize(
@@ -135,9 +157,13 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
             "currentness_mismatch",
             dprime.BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED,
         ),
+        (
+            "contradicts",
+            dprime.BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED,
+        ),
     ],
 )
-def test_non_support_assessments_do_not_create_proposal_or_support(
+def test_non_validated_assessments_do_not_create_admission_request(
     tmp_path: Path,
     support_relation: str,
     expected_decision: str,
@@ -151,56 +177,33 @@ def test_non_support_assessments_do_not_create_proposal_or_support(
 
     dprime_status = result.payload["dprime_status"]
     assert result.decision == expected_decision
-    assert dprime_status["proposal_validation_status"] == "not reached"
     assert dprime_status["validated_support_proposal_available"] is False
-    assert dprime_status.get("run_kernel_support_admission_request_ref") in ({}, None)
-    assert dprime_status["admitted_support"] is False
+    assert dprime_status["run_kernel_support_admission_request_ref"] == {}
     assert dprime_status["run_kernel_decision"] == "not made"
-    assert dprime_status["objects_created"]["validated_support_proposal"] is False
-    assert (
-        dprime_status["objects_created"][
-            "run_kernel_support_proposal_admission_request"
-        ]
-        is False
-    )
+    assert dprime_status["objects_created"][
+        "run_kernel_support_proposal_admission_request"
+    ] is False
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False
 
 
-def test_proposal_gate_output_hygiene_excludes_raw_private_and_closed_material(
-    tmp_path: Path,
-) -> None:
-    repo_root, _candidate = _passport_retained_repo(tmp_path)
-
-    result = _run_product_status_with_assessment(repo_root, _assessment_payload())
-    serialized_status = json.dumps(
-        result.payload["dprime_status"],
-        sort_keys=True,
+def test_architecture_doc_records_request_gate_without_opening_downstream() -> None:
+    text = Path("docs/architecture/DPRIME_ARCHITECTURE.md").read_text(
+        encoding="utf-8"
     )
-    dprime_status = result.payload["dprime_status"]
-    assert dprime_status["raw_prompt_retained"] is False
-    assert dprime_status["raw_model_response_retained"] is False
-    assert dprime_status["provider_payload_retained"] is False
 
-    for forbidden in (
-        "bounded_text",
-        PASSPORT_TEXT,
-        "raw_page_text",
-        "raw_html",
-        "headers",
-        "cookies",
-        "api_key",
-        "secret",
-        "SemanticObservation id/ref/digest: admitted",
-        "ComponentCoverage status: bound",
-        "citation eligibility claimed: true",
-        "source-obligation satisfaction claimed: true",
-        "FinalAnswerPacket",
-        "Author prose",
-        "product correctness claimed: true",
+    assert "RunKernelSupportProposalAdmissionRequest ready" in text
+    assert "RunKernel decision not made" in text
+    for closed_surface in (
+        "admitted `SemanticObservation`",
+        "`ComponentCoverage` binding",
+        "citation/source-obligation satisfaction",
+        "`SufficiencyReadiness`",
+        "`FinalAnswerPacket`",
+        "Author/answer text",
+        "product correctness",
     ):
-        assert forbidden not in result.output
-        assert forbidden not in serialized_status
+        assert closed_surface in text
 
 
 def _run_product_status_with_assessment(repo_root: Path, payload: dict[str, Any]) -> Any:
