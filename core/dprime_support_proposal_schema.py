@@ -94,7 +94,21 @@ BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING = (
 BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING = (
     "BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING"
 )
+BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED = (
+    "BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED"
+)
 DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY = "ready for RunKernel"
+DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED = "admitted"
+DPRIME_RUN_KERNEL_ADMISSION_DECISION_REJECTED = "rejected"
+DPRIME_RUN_KERNEL_ADMISSION_DECISION_CHALLENGED = "challenged"
+DPRIME_RUN_KERNEL_ADMISSION_DECISION_STATUSES = frozenset(
+    {
+        DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
+        DPRIME_RUN_KERNEL_ADMISSION_DECISION_REJECTED,
+        DPRIME_RUN_KERNEL_ADMISSION_DECISION_CHALLENGED,
+    }
+)
+DPRIME_SEMANTIC_OBSERVATION_NOT_MATERIALIZED = "not materialized"
 
 DPRIME_SUPPORT_PROPOSAL_REJECTED = "DPRIME_SUPPORT_PROPOSAL_REJECTED"
 DPRIME_SUPPORT_PROPOSAL_CHALLENGED = "DPRIME_SUPPORT_PROPOSAL_CHALLENGED"
@@ -482,6 +496,37 @@ def build_run_kernel_support_proposal_admission_request(
     )
 
 
+def build_run_kernel_support_proposal_admission_decision(
+    admission_request_ref: Mapping[str, Any],
+    *,
+    decision_status: str = DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
+    decision_reason: str | None = None,
+) -> RunKernelSupportProposalAdmissionDecision:
+    """Build a post-request RunKernel decision without materializing support."""
+
+    status = _clean_token(decision_status, limit=80)
+    _require_status(
+        status,
+        DPRIME_RUN_KERNEL_ADMISSION_DECISION_STATUSES,
+        context="RunKernelSupportProposalAdmissionDecision.decision_status",
+    )
+    safe_request_ref = _validate_run_kernel_admission_request_ref(
+        admission_request_ref
+    )
+    reason = _clean_token(decision_reason, limit=220)
+    if not reason:
+        reason = (
+            "RunKernel admitted validator-valid D-prime admission request"
+            if status == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+            else f"RunKernel {status} D-prime admission request"
+        )
+    return RunKernelSupportProposalAdmissionDecision(
+        admission_request_ref=safe_request_ref,
+        decision_status=status,
+        decision_reason=reason,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RunKernelSupportProposalAdmissionRequest:
     """Request shape for a future RunKernel admission decision."""
@@ -492,6 +537,15 @@ class RunKernelSupportProposalAdmissionRequest:
     metadata: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        _reject_run_kernel_decision_status(
+            self.request_status,
+            context="RunKernelSupportProposalAdmissionRequest.request_status",
+        )
+        _require_status(
+            self.request_status,
+            frozenset({DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}),
+            context="RunKernelSupportProposalAdmissionRequest.request_status",
+        )
         _reject_forbidden_payload(
             self.support_proposal_ref,
             context="RunKernelSupportProposalAdmissionRequest.support_proposal_ref",
@@ -520,6 +574,72 @@ class RunKernelSupportProposalAdmissionRequest:
                 "admitted_support": False,
                 "semantic_observation_created": False,
                 "component_coverage_created": False,
+                "metadata": dict(self.metadata),
+            }
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RunKernelSupportProposalAdmissionDecision:
+    """Post-request RunKernel decision; not SemanticObservation materialization."""
+
+    admission_request_ref: Mapping[str, Any]
+    decision_status: str = DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+    decision_reason: str = (
+        "RunKernel admitted validator-valid D-prime admission request"
+    )
+    admitted_support: bool = False
+    semantic_observation_created: bool = False
+    component_coverage_created: bool = False
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _require_status(
+            self.decision_status,
+            DPRIME_RUN_KERNEL_ADMISSION_DECISION_STATUSES,
+            context="RunKernelSupportProposalAdmissionDecision.decision_status",
+        )
+        _validate_run_kernel_admission_request_ref(self.admission_request_ref)
+        if self.admitted_support is not False:
+            raise DPrimeSupportProposalSchemaError(
+                "RunKernelSupportProposalAdmissionDecision cannot admit support"
+            )
+        if self.semantic_observation_created is not False:
+            raise DPrimeSupportProposalSchemaError(
+                "RunKernelSupportProposalAdmissionDecision cannot create SemanticObservation"
+            )
+        if self.component_coverage_created is not False:
+            raise DPrimeSupportProposalSchemaError(
+                "RunKernelSupportProposalAdmissionDecision cannot create ComponentCoverage"
+            )
+        _reject_forbidden_payload(
+            self.metadata,
+            context="RunKernelSupportProposalAdmissionDecision.metadata",
+            extra_forbidden_keys=_RUN_KERNEL_DECISION_FORBIDDEN_KEYS,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return _without_empty(
+            {
+                "schema_version": DPRIME_SCHEMA_VERSION,
+                "record_kind": "RunKernelSupportProposalAdmissionDecision",
+                "run_kernel_admission_decision_status": self.decision_status,
+                "decision_reason": self.decision_reason,
+                "admission_request_ref": dict(self.admission_request_ref),
+                "decision_digest": _digest_json(
+                    {
+                        "admission_request_ref": dict(self.admission_request_ref),
+                        "decision_status": self.decision_status,
+                        "decision_reason": self.decision_reason,
+                    }
+                ),
+                "admitted_support": False,
+                "semantic_observation_created": False,
+                "component_coverage_created": False,
+                "semantic_observation_admission_status": (
+                    DPRIME_SEMANTIC_OBSERVATION_NOT_MATERIALIZED
+                ),
+                "component_coverage_status": DPRIME_STATUS_UNAVAILABLE,
                 "metadata": dict(self.metadata),
             }
         )
@@ -576,6 +696,10 @@ class DPrimeStatusPayload:
     proposal_validation_status: str = DPRIME_STATUS_NOT_REACHED
     run_kernel_support_admission_status: str = DPRIME_STATUS_NOT_REACHED
     run_kernel_decision: str = "not made"
+    run_kernel_admission_decision_status: str = DPRIME_STATUS_NOT_REACHED
+    run_kernel_admission_decision_ref: Mapping[str, Any] = field(
+        default_factory=dict
+    )
     admitted_support: bool = False
     semantic_observation_admission_status: str = DPRIME_STATUS_UNAVAILABLE
     component_coverage_status: str = DPRIME_STATUS_UNAVAILABLE
@@ -619,11 +743,23 @@ class DPrimeStatusPayload:
             raise DPrimeSupportProposalSchemaError(
                 "DPrimeStatusPayload cannot admit support"
             )
+        if self.run_kernel_admission_decision_status not in (
+            DPRIME_STATUS_NOT_REACHED,
+            *DPRIME_RUN_KERNEL_ADMISSION_DECISION_STATUSES,
+        ):
+            raise DPrimeSupportProposalSchemaError(
+                "DPrimeStatusPayload has unsupported post-request RunKernel decision"
+            )
         _reject_forbidden_payload(
             self.run_kernel_support_admission_request_ref,
             context="DPrimeStatusPayload.run_kernel_support_admission_request_ref",
             extra_forbidden_keys=_RUN_KERNEL_REQUEST_FORBIDDEN_KEYS,
         )
+        if self.run_kernel_admission_decision_ref:
+            _validate_run_kernel_admission_decision_ref(
+                self.run_kernel_admission_decision_ref,
+                expected_status=self.run_kernel_admission_decision_status,
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -664,6 +800,12 @@ class DPrimeStatusPayload:
                 self.run_kernel_support_admission_status
             ),
             "run_kernel_decision": self.run_kernel_decision,
+            "run_kernel_admission_decision_status": (
+                self.run_kernel_admission_decision_status
+            ),
+            "run_kernel_admission_decision_ref": dict(
+                self.run_kernel_admission_decision_ref
+            ),
             "admitted_support": False,
             "support_proposal_validation_ref": dict(
                 self.support_proposal_validation_ref
@@ -694,6 +836,9 @@ class DPrimeStatusPayload:
                 ),
                 "run_kernel_support_proposal_admission_request": bool(
                     self.run_kernel_support_admission_request_ref
+                ),
+                "run_kernel_support_proposal_admission_decision": bool(
+                    self.run_kernel_admission_decision_ref
                 ),
                 "semantic_observation": False,
                 "component_coverage": False,
@@ -889,6 +1034,10 @@ _RUN_KERNEL_REQUEST_FORBIDDEN_KEYS = _AUTHORITY_FORBIDDEN_KEYS | {
     "semantic_observation_ref",
     "component_coverage_ref",
 }
+_RUN_KERNEL_DECISION_FORBIDDEN_KEYS = _RUN_KERNEL_REQUEST_FORBIDDEN_KEYS | {
+    "source_obligation_ref",
+    "source_obligation_refs",
+}
 _NEGATIVE_CONTROL_FORBIDDEN_KEYS = _AUTHORITY_FORBIDDEN_KEYS | {
     "model_success",
     "model_success_claimed",
@@ -995,6 +1144,108 @@ def _reject_run_kernel_decision_status(value: Any, *, context: str) -> None:
         raise DPrimeSupportProposalSchemaError(
             f"{context} cannot represent a RunKernel admission decision"
         )
+
+
+def _validate_run_kernel_admission_request_ref(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    _reject_forbidden_payload(
+        safe,
+        context="RunKernelSupportProposalAdmissionDecision.admission_request_ref",
+        extra_forbidden_keys=_RUN_KERNEL_REQUEST_FORBIDDEN_KEYS,
+    )
+    if safe.get("record_kind") != "RunKernelSupportProposalAdmissionRequest":
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires a RunKernelSupportProposalAdmissionRequest ref"
+        )
+    if safe.get("request_status") != DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY:
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires a ready admission request"
+        )
+    if not _clean_token(safe.get("request_digest"), limit=128):
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires request digest lineage"
+        )
+    proposal_ref = _safe_mapping(safe.get("support_proposal_ref"))
+    if not _clean_token(proposal_ref.get("proposal_id"), limit=320):
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires proposal id lineage"
+        )
+    if not _clean_token(proposal_ref.get("proposal_digest"), limit=128):
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires proposal digest lineage"
+        )
+    validation_ref = _safe_mapping(safe.get("validation_result_ref"))
+    if (
+        validation_ref.get("validation_status")
+        != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+    ):
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires passed validation result status"
+        )
+    if not _clean_token(
+        validation_ref.get("validation_result_digest"), limit=128
+    ):
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires validation result digest lineage"
+        )
+    if validation_ref.get("support_proposal_validation_passed") is not True:
+        raise DPrimeSupportProposalSchemaError(
+            "RunKernel decision requires validation pass lineage"
+        )
+    return {
+        "record_kind": "RunKernelSupportProposalAdmissionRequest",
+        "request_status": safe["request_status"],
+        "request_digest": safe["request_digest"],
+        "support_proposal_ref": {
+            "proposal_id": proposal_ref["proposal_id"],
+            "proposal_digest": proposal_ref["proposal_digest"],
+        },
+        "validation_result_ref": {
+            "record_kind": validation_ref.get("record_kind"),
+            "validation_status": validation_ref["validation_status"],
+            "validation_result_digest": validation_ref[
+                "validation_result_digest"
+            ],
+            "support_proposal_validation_passed": True,
+        },
+    }
+
+
+def _validate_run_kernel_admission_decision_ref(
+    value: Mapping[str, Any],
+    *,
+    expected_status: str,
+) -> None:
+    safe = _safe_mapping(value)
+    if safe.get("record_kind") != "RunKernelSupportProposalAdmissionDecision":
+        raise DPrimeSupportProposalSchemaError(
+            "DPrimeStatusPayload decision ref must be a RunKernel decision ref"
+        )
+    if safe.get("run_kernel_admission_decision_status") != expected_status:
+        raise DPrimeSupportProposalSchemaError(
+            "DPrimeStatusPayload decision ref status mismatch"
+        )
+    if not _clean_token(safe.get("decision_digest"), limit=128):
+        raise DPrimeSupportProposalSchemaError(
+            "DPrimeStatusPayload decision ref requires decision digest"
+        )
+    if safe.get("admitted_support") is not False:
+        raise DPrimeSupportProposalSchemaError(
+            "DPrimeStatusPayload decision ref cannot admit support"
+        )
+    if safe.get("semantic_observation_created") is not False:
+        raise DPrimeSupportProposalSchemaError(
+            "DPrimeStatusPayload decision ref cannot create SemanticObservation"
+        )
+    if safe.get("component_coverage_created") is not False:
+        raise DPrimeSupportProposalSchemaError(
+            "DPrimeStatusPayload decision ref cannot create ComponentCoverage"
+        )
+    _validate_run_kernel_admission_request_ref(
+        _safe_mapping(safe.get("admission_request_ref"))
+    )
 
 
 def _require_status(value: Any, allowed: frozenset[str], *, context: str) -> None:
@@ -1184,6 +1435,7 @@ __all__ = [
     "BLOCKED_DPRIME_PREFLIGHT_FAILED",
     "BLOCKED_DPRIME_PREFLIGHT_MISSING",
     "BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING",
+    "BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED",
     "BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED",
     "BLOCKED_DPRIME_SUPPORT_ASSESSMENT_ABSTAINED",
     "BLOCKED_DPRIME_SUPPORT_ASSESSMENT_MISSING",
@@ -1195,7 +1447,12 @@ __all__ = [
     "DPRIME_SCHEMA_STATUS_AVAILABLE",
     "DPRIME_SCHEMA_VERSION",
     "DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY",
+    "DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED",
+    "DPRIME_RUN_KERNEL_ADMISSION_DECISION_CHALLENGED",
+    "DPRIME_RUN_KERNEL_ADMISSION_DECISION_REJECTED",
+    "DPRIME_RUN_KERNEL_ADMISSION_DECISION_STATUSES",
     "DPRIME_SEMANTIC_OBSERVATION_ADMITTED",
+    "DPRIME_SEMANTIC_OBSERVATION_NOT_MATERIALIZED",
     "DPRIME_STATUS_MISSING",
     "DPRIME_STATUS_NOT_REACHED",
     "DPRIME_STATUS_UNAVAILABLE",
@@ -1210,10 +1467,12 @@ __all__ = [
     "LATER_PHASE_STATUSES",
     "NegativeControlProfile",
     "RunKernelSupportProposalAdmissionRequest",
+    "RunKernelSupportProposalAdmissionDecision",
     "SUPPORT_PROPOSAL_VALIDATOR_STATUSES",
     "SupportProposalValidationResult",
     "ValidatedSupportProposal",
     "build_validated_support_proposal_from_assessment",
     "build_run_kernel_support_proposal_admission_request",
+    "build_run_kernel_support_proposal_admission_decision",
     "build_dprime_status_payload",
 ]

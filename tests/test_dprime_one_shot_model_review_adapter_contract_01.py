@@ -143,7 +143,9 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert calls[0]["input_packet"]["one_shot_model_review_adapter_ref"][
         "status"
     ] == "configured"
-    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert result.decision == (
+        dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+    )
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["model_review_call_count"] == 1
     assert (
@@ -153,6 +155,9 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert (
         dprime_status["run_kernel_support_admission_status"]
         == dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
+    )
+    assert dprime_status["run_kernel_admission_decision_status"] == (
+        dprime.DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
     )
     assert dprime_status["run_kernel_support_admission_request_ref"][
         "request_status"

@@ -44,12 +44,16 @@ from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_INPUT_INVALID,
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
     BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID,
-    BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,
+    BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED,
     BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING,
     DPRIME_MODEL_REVIEW_TRANSPORT_BLOCKERS,
+    DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
+    DPRIME_SEMANTIC_OBSERVATION_NOT_MATERIALIZED,
     DPRIME_STATUS_NOT_REACHED,
+    DPRIME_STATUS_UNAVAILABLE,
     DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
     DPrimeSupportProposalSchemaError,
+    build_run_kernel_support_proposal_admission_decision,
     build_run_kernel_support_proposal_admission_request,
     build_validated_support_proposal_from_assessment,
 )
@@ -291,6 +295,12 @@ class DPrimeModelReviewAssessmentResult:
         default_factory=dict
     )
     run_kernel_decision: str = "not made"
+    run_kernel_admission_decision_status: str = DPRIME_STATUS_NOT_REACHED
+    run_kernel_admission_decision_ref: Mapping[str, Any] = field(
+        default_factory=dict
+    )
+    semantic_observation_admission_status: str = DPRIME_STATUS_UNAVAILABLE
+    component_coverage_status: str = DPRIME_STATUS_UNAVAILABLE
     admitted_support: bool = False
     call_count: int = 0
     raw_prompt_retained: bool = False
@@ -314,6 +324,9 @@ class DPrimeModelReviewAssessmentResult:
             "validated_support_proposal": self.validated_support_proposal_available,
             "run_kernel_support_proposal_admission_request": bool(
                 self.run_kernel_support_admission_request_ref
+            ),
+            "run_kernel_support_proposal_admission_decision": bool(
+                self.run_kernel_admission_decision_ref
             ),
             "semantic_observation": False,
             "component_coverage": False,
@@ -349,6 +362,16 @@ class DPrimeModelReviewAssessmentResult:
                     self.run_kernel_support_admission_request_ref
                 ),
                 "run_kernel_decision": "not made",
+                "run_kernel_admission_decision_status": (
+                    self.run_kernel_admission_decision_status
+                ),
+                "run_kernel_admission_decision_ref": dict(
+                    self.run_kernel_admission_decision_ref
+                ),
+                "semantic_observation_admission_status": (
+                    self.semantic_observation_admission_status
+                ),
+                "component_coverage_status": self.component_coverage_status,
                 "admitted_support": False,
                 "model_review_call_count": self.call_count,
                 "raw_prompt_retained": False,
@@ -769,13 +792,41 @@ def _result_from_validation(
         admission_request_ref = _run_kernel_admission_request_ref(
             admission_request.to_dict()
         )
+        try:
+            admission_decision = (
+                build_run_kernel_support_proposal_admission_decision(
+                    admission_request_ref,
+                    decision_status=DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
+                )
+            )
+        except DPrimeSupportProposalSchemaError as exc:
+            return DPrimeModelReviewAssessmentResult(
+                decision=BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING,
+                model_review_status=MODEL_REVIEW_STATUS_COMPLETED,
+                assessment_status=ASSESSMENT_STATUS_ASSESSED,
+                blocker_detail=str(exc),
+                input_packet_ref=input_packet_ref,
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                assessment_ref=assessment_ref,
+                assessment_validation_status=status,
+                support_relation=relation,
+                proposal_validation_status=(
+                    BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING
+                ),
+                run_kernel_support_admission_status=DPRIME_STATUS_NOT_REACHED,
+                call_count=call_count,
+            )
+        admission_decision_ref = _run_kernel_admission_decision_ref(
+            admission_decision.to_dict()
+        )
         return DPrimeModelReviewAssessmentResult(
-            decision=BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,
+            decision=BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED,
             model_review_status=MODEL_REVIEW_STATUS_COMPLETED,
             assessment_status=ASSESSMENT_STATUS_ASSESSED,
             blocker_detail=(
                 "D-prime support proposal validated; RunKernel admission request "
-                "is ready and RunKernel decision is not made"
+                "is admitted, but SemanticObservation materialization is not licensed"
             ),
             input_packet_ref=input_packet_ref,
             model_review_ref=model_review_ref,
@@ -789,6 +840,14 @@ def _result_from_validation(
             validated_support_proposal_available=True,
             run_kernel_support_admission_status=admission_request.request_status,
             run_kernel_support_admission_request_ref=admission_request_ref,
+            run_kernel_admission_decision_status=(
+                DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+            ),
+            run_kernel_admission_decision_ref=admission_decision_ref,
+            semantic_observation_admission_status=(
+                DPRIME_SEMANTIC_OBSERVATION_NOT_MATERIALIZED
+            ),
+            component_coverage_status=DPRIME_STATUS_UNAVAILABLE,
             call_count=call_count,
         )
     if status == assessment_validation.ASSESSMENT_ABSTAINED:
@@ -1204,6 +1263,30 @@ def _run_kernel_admission_request_ref(request: Mapping[str, Any]) -> dict[str, A
             "validation_result_ref": _safe_mapping(
                 safe.get("validation_result_ref")
             ),
+        }
+    )
+
+
+def _run_kernel_admission_decision_ref(decision: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(decision)
+    return _without_empty(
+        {
+            "record_kind": safe.get("record_kind"),
+            "run_kernel_admission_decision_status": safe.get(
+                "run_kernel_admission_decision_status"
+            ),
+            "decision_reason": safe.get("decision_reason"),
+            "decision_digest": safe.get("decision_digest"),
+            "admission_request_ref": _safe_mapping(
+                safe.get("admission_request_ref")
+            ),
+            "admitted_support": False,
+            "semantic_observation_created": False,
+            "component_coverage_created": False,
+            "semantic_observation_admission_status": safe.get(
+                "semantic_observation_admission_status"
+            ),
+            "component_coverage_status": safe.get("component_coverage_status"),
         }
     )
 

@@ -8,14 +8,15 @@ status path is used with retained fixture-sized artifacts and an injected fake
 model-review callable because live/model/provider/search/fetch/read/retrieval
 calls are closed in this phase.
 Integration deadline: current phase.
-Exit condition: keep while D-prime proposal candidates are pre-admission status
-objects before RunKernel support admission is licensed.
+Exit condition: keep while D-prime proposal candidates feed the D-prime
+RunKernel decision gate before SemanticObservation materialization is licensed.
 Why this is not a shadow product path: it invokes the product status builder and
 the product-owned D-prime schema/model-review modules, not a standalone packet.
-Forbidden interpretation: proposal validation is not RunKernel admission,
-admitted semantic support, SemanticObservation admission, ComponentCoverage,
-citation eligibility, source-obligation satisfaction, SufficiencyReadiness,
-FinalAnswerPacket, Author/answer text, product correctness, or a live call.
+Forbidden interpretation: proposal validation and the post-request RunKernel
+decision are not admitted semantic support, SemanticObservation admission,
+ComponentCoverage, citation eligibility, source-obligation satisfaction,
+SufficiencyReadiness, FinalAnswerPacket, Author/answer text, product
+correctness, or a live call.
 """
 
 from __future__ import annotations
@@ -46,7 +47,9 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert result.decision == (
+        dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+    )
     assert (
         "D-prime assessment status: assessed" in result.output
     )
@@ -63,8 +66,12 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
     ) in result.output
     assert (
+        "RunKernel admission decision status: "
+        f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED}"
+    ) in result.output
+    assert (
         "semantic support source: unavailable; "
-        "RunKernel admission decision not made"
+        "RunKernel admitted decision not materialized into SemanticObservation"
     ) in (
         result.output
     )
@@ -73,6 +80,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     proposal_ref = dprime_status["validated_support_proposal_ref"]
     validation_ref = dprime_status["support_proposal_validation_ref"]
     request_ref = dprime_status["run_kernel_support_admission_request_ref"]
+    decision_ref = dprime_status["run_kernel_admission_decision_ref"]
     assert dprime_status["validated_support_proposal_available"] is True
     assert proposal_ref["proposal_id"].startswith("dprime-support-proposal:")
     assert proposal_ref["assessment_ref"] == dprime_status["assessment_ref"]
@@ -101,6 +109,17 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     )
     assert request_ref["validation_result_ref"]["validation_result_digest"]
     assert request_ref["request_digest"]
+    assert dprime_status["run_kernel_admission_decision_status"] == (
+        dprime.DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+    )
+    assert decision_ref["record_kind"] == "RunKernelSupportProposalAdmissionDecision"
+    assert decision_ref["run_kernel_admission_decision_status"] == (
+        dprime.DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+    )
+    assert decision_ref["admission_request_ref"] == request_ref
+    assert decision_ref["admitted_support"] is False
+    assert decision_ref["semantic_observation_created"] is False
+    assert decision_ref["component_coverage_created"] is False
     assert dprime_status["admitted_support"] is False
     assert dprime_status["run_kernel_decision"] == "not made"
     assert dprime_status["objects_created"] == {
@@ -108,15 +127,17 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         "evidence_relative_support_assessment": True,
         "validated_support_proposal": True,
         "run_kernel_support_proposal_admission_request": True,
+        "run_kernel_support_proposal_admission_decision": True,
         "semantic_observation": False,
         "component_coverage": False,
     }
     assert result.payload["semantic_observation_admission_ref"] == {
-        "status": "unavailable",
+        "status": dprime.DPRIME_SEMANTIC_OBSERVATION_NOT_MATERIALIZED,
         "observation_ref": "unavailable",
         "reasons": [
-            "D-prime proposal candidate is not admitted support",
-            "RunKernel support admission request is ready; decision not made",
+            "RunKernel admitted the D-prime admission request",
+            "admitted decision is not admitted semantic support",
+            "SemanticObservation materialization is not licensed",
         ],
     }
     assert result.payload["component_coverage_ref"]["status"] == "unavailable"
@@ -156,10 +177,17 @@ def test_non_support_assessments_do_not_create_proposal_or_support(
     assert dprime_status.get("run_kernel_support_admission_request_ref") in ({}, None)
     assert dprime_status["admitted_support"] is False
     assert dprime_status["run_kernel_decision"] == "not made"
+    assert dprime_status["run_kernel_admission_decision_status"] == "not reached"
     assert dprime_status["objects_created"]["validated_support_proposal"] is False
     assert (
         dprime_status["objects_created"][
             "run_kernel_support_proposal_admission_request"
+        ]
+        is False
+    )
+    assert (
+        dprime_status["objects_created"][
+            "run_kernel_support_proposal_admission_decision"
         ]
         is False
     )

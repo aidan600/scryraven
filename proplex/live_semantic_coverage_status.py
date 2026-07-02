@@ -29,7 +29,9 @@ from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING,
     BLOCKED_DPRIME_PREFLIGHT_FAILED,
     BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING,
+    BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED,
     DPRIME_PHASE,
+    DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
     DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
     DPrimeStatusPayload,
     build_dprime_status_payload,
@@ -534,7 +536,14 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
             "RunKernel support admission request status: "
             f"{dprime_request.get('request_status', 'not reached')}"
         ),
-        f"RunKernel decision: {dprime.get('run_kernel_decision', 'not made')}",
+        (
+            "RunKernel admission decision status: "
+            f"{dprime.get('run_kernel_admission_decision_status', 'not reached')}"
+        ),
+        (
+            "RunKernel pre-decision guard status: "
+            f"{dprime.get('run_kernel_decision', 'not made')}"
+        ),
         f"admitted support: {_bool_text(dprime.get('admitted_support'))}",
         f"Analyst support proposal status: {support.get('status')}",
         f"Analyst support proposal ref/digest: {support.get('proposal_ref')}",
@@ -840,21 +849,25 @@ def _blocked_dprime_model_review_assessment_result(
         source_obligation_ref=source_obligation_ref,
         support_ref=support_ref,
         semantic_ref={
-            "status": "unavailable",
+            "status": dprime.get(
+                "semantic_observation_admission_status",
+                "unavailable",
+            ),
             "observation_ref": "unavailable",
-            "reasons": [
-                "D-prime proposal candidate is not admitted support",
-                "RunKernel support admission request is ready; decision not made",
-            ],
+            "reasons": _dprime_model_review_semantic_reasons(
+                dprime=dprime,
+                proposal_validated=proposal_validated,
+                fallback_detail=model_review_result.blocker_detail,
+            ),
         },
         coverage_ref={
-            "status": "unavailable",
+            "status": dprime.get("component_coverage_status", "unavailable"),
             "coverage_ref": "unavailable",
             "component_id": _component_id(component_ref),
-            "reasons": [
-                "ComponentCoverage requires admitted SemanticObservation",
-                "D-prime proposal validation cannot bind coverage",
-            ],
+            "reasons": _dprime_model_review_coverage_reasons(
+                dprime=dprime,
+                proposal_validated=proposal_validated,
+            ),
         },
         decision=model_review_result.decision,
         blocker_detail=model_review_result.blocker_detail,
@@ -866,13 +879,19 @@ def _blocked_dprime_model_review_assessment_result(
         {
             "dprime_status": dprime,
             "semantic_support_source": (
-                "unavailable; RunKernel admission decision not made"
+                "unavailable; RunKernel admitted decision not materialized into SemanticObservation"
+                if dprime.get("run_kernel_admission_decision_status")
+                == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+                else "unavailable; RunKernel admission decision not made"
                 if proposal_validated
                 else "unavailable; D-prime assessment-only model review is not support"
             ),
             "semantic_support_custody_distinction_preserved": True,
             "analyst_support_proposal_consumer": (
-                "D-prime proposal candidate validated; RunKernel admission request ready"
+                "D-prime proposal candidate validated; RunKernel admitted decision not materialized"
+                if dprime.get("run_kernel_admission_decision_status")
+                == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+                else "D-prime proposal candidate validated; RunKernel admission request ready"
                 if proposal_validated
                 else f"not reached; {model_review_result.blocker_detail}"
             ),
@@ -893,9 +912,55 @@ def _blocked_dprime_model_review_assessment_result(
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED:
+        return "D-prime SemanticObservation materialization"
     if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:
         return "D-prime RunKernel support admission decision"
     return "D-prime model-review assessment"
+
+
+def _dprime_model_review_semantic_reasons(
+    *,
+    dprime: Mapping[str, Any],
+    proposal_validated: bool,
+    fallback_detail: str,
+) -> list[str]:
+    if (
+        proposal_validated
+        and dprime.get("run_kernel_admission_decision_status")
+        == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+    ):
+        return [
+            "RunKernel admitted the D-prime admission request",
+            "admitted decision is not admitted semantic support",
+            "SemanticObservation materialization is not licensed",
+        ]
+    if proposal_validated:
+        return [
+            "D-prime proposal candidate is not admitted support",
+            "RunKernel support admission request is ready; decision not made",
+        ]
+    return [fallback_detail]
+
+
+def _dprime_model_review_coverage_reasons(
+    *,
+    dprime: Mapping[str, Any],
+    proposal_validated: bool,
+) -> list[str]:
+    if (
+        proposal_validated
+        and dprime.get("run_kernel_admission_decision_status")
+        == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+    ):
+        return [
+            "ComponentCoverage requires admitted SemanticObservation",
+            "D-prime admitted decision cannot bind coverage",
+        ]
+    return [
+        "ComponentCoverage requires admitted SemanticObservation",
+        "D-prime proposal validation cannot bind coverage",
+    ]
 
 
 def _dprime_not_reached_reason(dprime: Mapping[str, Any]) -> str:

@@ -53,20 +53,23 @@ source/evidence custody and readability
 -> SupportProposalValidationResult
 -> ValidatedSupportProposal candidate
 -> RunKernelSupportProposalAdmissionRequest ready
--> RunKernel decision not made
+-> RunKernelSupportProposalAdmissionDecision admitted
+-> SemanticObservation not materialized
 ```
 
 The chain is surfaced through `DPrimeStatusPayload` in
-`proplex.live_semantic_coverage_status`. The post-#392 stop condition is:
+`proplex.live_semantic_coverage_status`. The post-DPRIME-RUNKERNEL-ADMISSION-
+DECISION-GATE-01 stop condition is:
 
 ```text
-BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
 ```
 
 At that point a validator-valid proposal candidate and a lineage-only
-`RunKernelSupportProposalAdmissionRequest` may exist, but RunKernel has not
-admitted, rejected, or challenged it. The request is product-visible status
-material only; it is not admitted support.
+`RunKernelSupportProposalAdmissionRequest` may exist, and RunKernel may have
+made a narrow post-request admission decision over it. The decision is
+product-visible status material only; it is not admitted semantic support and
+does not create `SemanticObservation` or `ComponentCoverage`.
 
 ## Current implemented product path
 
@@ -130,8 +133,10 @@ D-prime may produce:
 - `ValidatedSupportProposal` candidate refs;
 - `RunKernelSupportProposalAdmissionRequest` refs with proposal id/digest,
   validation status/digest, request status, and request digest;
-- product-visible blocker/status saying the request is ready and RunKernel
-  decision is not made.
+- `RunKernelSupportProposalAdmissionDecision` status/ref showing admitted,
+  rejected, or challenged;
+- product-visible blocker/status saying a RunKernel admitted decision is not
+  materialized into `SemanticObservation`.
 
 These outputs are review material and candidate state. They are not admitted
 support.
@@ -142,7 +147,6 @@ D-prime must not produce:
 
 - canonical evidence custody;
 - admitted semantic support;
-- RunKernel admission decision;
 - `SemanticObservation`;
 - `ComponentCoverage`;
 - citation eligibility;
@@ -207,9 +211,9 @@ D-prime's non-negotiable negative controls are:
 `NegativeControlProfile` is configuration and validation posture. It is not
 evidence, not model success, not semantic support, and not product correctness.
 
-## Current status after admission-request gate
+## Current status after admission-decision gate
 
-Implemented after DPRIME-RUNKERNEL-ADMISSION-REQUEST-GATE-01:
+Implemented after DPRIME-RUNKERNEL-ADMISSION-DECISION-GATE-01:
 
 - evidence-frame preflight;
 - negative-control profile;
@@ -219,13 +223,14 @@ Implemented after DPRIME-RUNKERNEL-ADMISSION-REQUEST-GATE-01:
 - validator-valid assessment path;
 - assessment-to-proposal candidate gate;
 - lineage-only `RunKernelSupportProposalAdmissionRequest` preparation;
+- narrow post-request `RunKernelSupportProposalAdmissionDecision` reporting;
 - ordinary product status reporting through `DPrimeStatusPayload`.
 
-The current stop point is request ready / RunKernel decision not made.
+The current stop point is RunKernel decision made / SemanticObservation not
+materialized.
 
 Still not implemented or closed:
 
-- RunKernel admission/rejection/challenge decision for D-prime proposals;
 - admitted `SemanticObservation`;
 - `ComponentCoverage` binding;
 - citation/source-obligation satisfaction;
@@ -240,8 +245,7 @@ Still not implemented or closed:
 Downstream support-bearing surfaces remain closed until separately licensed:
 
 ```text
-RunKernel admission decision
--> admitted SemanticObservation
+admitted SemanticObservation
 -> ComponentCoverage binding
 -> citation/source-obligation satisfaction
 -> SufficiencyReadiness

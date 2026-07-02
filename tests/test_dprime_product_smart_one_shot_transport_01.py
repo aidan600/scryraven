@@ -286,7 +286,9 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
     )
 
     assert len(fake_client.calls) == 1
-    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert result.decision == (
+        dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+    )
     assert "phase: DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01" in result.output
     dprime_status = result.payload["dprime_status"]
     assert (
@@ -300,6 +302,9 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
         "DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01"
     )
     route_ref = dprime_status["product_model_route_ref"]
+    assert dprime_status["run_kernel_admission_decision_status"] == (
+        dprime.DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+    )
     assert route_ref["model_task"] == "dprime_model_review_assessment"
     assert route_ref["product_model_role"] == "smart"
     assert route_ref["configured_smart_provider"] == "OpenAI"

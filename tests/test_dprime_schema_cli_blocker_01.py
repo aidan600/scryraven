@@ -213,6 +213,7 @@ def test_cli_status_reports_dprime_preflight_passed_model_review_blocker(
         "evidence_relative_support_assessment": False,
         "validated_support_proposal": False,
         "run_kernel_support_proposal_admission_request": False,
+        "run_kernel_support_proposal_admission_decision": False,
         "semantic_observation": False,
         "component_coverage": False,
     }

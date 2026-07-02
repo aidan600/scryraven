@@ -301,7 +301,9 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
         "status"
     ] == "not configured"
     assert calls[0]["boundary_ref"]["status"] == "not approved"
-    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert result.decision == (
+        dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+    )
     assert result.return_code == 2
     assert "D-prime model review status: completed" in result.output
     assert "D-prime assessment status: assessed" in result.output
@@ -321,9 +323,16 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
         "RunKernel support admission request status: "
         f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
     ) in result.output
-    assert "RunKernel decision: not made" in result.output
+    assert (
+        "RunKernel admission decision status: "
+        f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED}"
+    ) in result.output
+    assert "RunKernel pre-decision guard status: not made" in result.output
     assert "admitted support: false" in result.output
-    assert "SemanticObservation admission status: unavailable" in result.output
+    assert (
+        "SemanticObservation admission status: "
+        f"{dprime.DPRIME_SEMANTIC_OBSERVATION_NOT_MATERIALIZED}"
+    ) in result.output
     assert "ComponentCoverage status: unavailable" in result.output
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["phase"] == dprime.DPRIME_PHASE
@@ -347,6 +356,12 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
         dprime_status["proposal_validation_status"]
         == dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
     )
+    assert dprime_status["run_kernel_admission_decision_status"] == (
+        dprime.DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+    )
+    assert dprime_status["run_kernel_admission_decision_ref"][
+        "admitted_support"
+    ] is False
     assert (
         dprime_status["run_kernel_support_admission_status"]
         == dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
@@ -804,7 +819,9 @@ def test_old_retained_support_consumer_not_reached_with_injected_path(
 
     result = _run_with_payload(repo_root, _assessment_payload())
 
-    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert result.decision == (
+        dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+    )
     assert (
         "D-prime proposal validation status: "
         f"{dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED}"
