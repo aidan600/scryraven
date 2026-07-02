@@ -26,6 +26,7 @@ from typing import Any
 
 import pytest
 
+import core.dprime_runkernel_admission_runtime as rk_dprime
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -46,7 +47,9 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert result.decision == (
+        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+    )
     assert (
         "D-prime assessment status: assessed" in result.output
     )
@@ -64,7 +67,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     ) in result.output
     assert (
         "semantic support source: unavailable; "
-        "RunKernel admission decision not made"
+        "RunKernel admitted decision not materialized into SemanticObservation"
     ) in (
         result.output
     )
@@ -102,12 +105,14 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     assert request_ref["validation_result_ref"]["validation_result_digest"]
     assert request_ref["request_digest"]
     assert dprime_status["admitted_support"] is False
-    assert dprime_status["run_kernel_decision"] == "not made"
+    assert dprime_status["run_kernel_decision"] == "admitted"
+    assert dprime_status["run_kernel_admission_decision_status"] == "admitted"
     assert dprime_status["objects_created"] == {
         "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": True,
         "validated_support_proposal": True,
         "run_kernel_support_proposal_admission_request": True,
+        "run_kernel_admission_decision": True,
         "semantic_observation": False,
         "component_coverage": False,
     }
@@ -116,7 +121,10 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         "observation_ref": "unavailable",
         "reasons": [
             "D-prime proposal candidate is not admitted support",
-            "RunKernel support admission request is ready; decision not made",
+            (
+                "RunKernel-owned D-prime admission decision made; "
+                "SemanticObservation not licensed or materialized"
+            ),
         ],
     }
     assert result.payload["component_coverage_ref"]["status"] == "unavailable"
