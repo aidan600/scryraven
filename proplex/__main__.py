@@ -32,38 +32,26 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG = (
-    "--ordinary-live-main-runkernel-coverage-dry-run"
-)
-LIVE_ACQUISITION_READABILITY_STATUS_FLAG = (
-    "--live-acquisition-readability-status-dry-run"
-)
-LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG = (
-    "--live-source-evidence-admission-status-dry-run"
-)
-LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG = (
-    "--live-citation-source-obligation-readiness-status-dry-run"
-)
-LIVE_SEMANTIC_COVERAGE_STATUS_FLAG = "--live-semantic-coverage-status-dry-run"
-
-if not any(
-    flag in sys.argv[1:]
-    for flag in (
-        ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
-        LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
-        LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG,
-        LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
-        LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
-    )
-):
-    load_dotenv()
-
 # Ensure the project root is on sys.path when run as "python -m proplex" from
 # outside the repo root (e.g. installed as a script).
 _HERE = Path(__file__).resolve().parent
 _ROOT = _HERE.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
+
+from core.product_model_route_config import (  # noqa: E402
+    LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
+    LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
+    LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
+    LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG,
+    ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
+    initialize_product_model_route_config,
+)
+
+PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = initialize_product_model_route_config(
+    sys.argv[1:],
+    load_dotenv_func=load_dotenv,
+)
 
 import core.pipeline_orchestrator as pipeline_orchestrator  # noqa: E402
 from core.cost_accounting import CostAccumulator  # noqa: E402

@@ -46,6 +46,10 @@ DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE = (
     ROOT / "core" / "dprime_model_review_assessment.py"
 )
 DPRIME_MODEL_REVIEW_PROMPT_MODULE = ROOT / "core" / "dprime_model_review_prompt.py"
+DPRIME_PRODUCT_SMART_TRANSPORT_MODULE = (
+    ROOT / "core" / "dprime_product_smart_one_shot_transport.py"
+)
+PRODUCT_MODEL_ROUTE_CONFIG_MODULE = ROOT / "core" / "product_model_route_config.py"
 
 
 def test_known_product_status_modules_do_not_import_ag_scripts() -> None:
@@ -88,6 +92,7 @@ def test_dprime_model_review_modules_do_not_import_ag_scripts() -> None:
     assert _ag_script_imports(DPRIME_ONE_SHOT_MODEL_REVIEW_ADAPTER_MODULE) == []
     assert _ag_script_imports(DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE) == []
     assert _ag_script_imports(DPRIME_MODEL_REVIEW_PROMPT_MODULE) == []
+    assert _ag_script_imports(DPRIME_PRODUCT_SMART_TRANSPORT_MODULE) == []
 
 
 def test_dprime_preflight_module_avoids_live_provider_imports() -> None:
@@ -175,6 +180,24 @@ def test_dprime_model_review_modules_avoid_live_provider_imports() -> None:
         forbidden_imports
     )
     assert _imports(DPRIME_MODEL_REVIEW_PROMPT_MODULE).isdisjoint(forbidden_imports)
+
+
+def test_product_config_boundary_avoids_provider_imports() -> None:
+    forbidden_imports = {
+        "core.llm",
+        "core.pipeline_orchestrator",
+        "core.search_providers",
+        "core.retrieval",
+        "openai",
+        "requests",
+        "httpx",
+        "subprocess",
+    }
+    assert _imports(PRODUCT_MODEL_ROUTE_CONFIG_MODULE).isdisjoint(forbidden_imports)
+
+
+def test_no_new_durable_proplex_dprime_module_exists() -> None:
+    assert sorted(path.name for path in (ROOT / "proplex").glob("dprime_*.py")) == []
 
 
 def _ag_script_imports(path: Path) -> list[str]:
