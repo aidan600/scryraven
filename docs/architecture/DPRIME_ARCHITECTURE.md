@@ -54,24 +54,23 @@ source/evidence custody and readability
 -> ValidatedSupportProposal candidate
 -> RunKernelSupportProposalAdmissionRequest ready
 -> RunKernel-owned admission decision made
--> SemanticObservation materialized
--> ComponentCoverage not bound
+-> SemanticObservation materialization input authority insufficient
 ```
 
 The chain is surfaced through `DPrimeStatusPayload` in
 `proplex.live_semantic_coverage_status`. The current stop condition is:
 
 ```text
-BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
 ```
 
 At that point a validator-valid proposal candidate and a lineage-only
 `RunKernelSupportProposalAdmissionRequest` may exist. When the RunKernel-owned
-decision runtime reports `admitted`, the D-prime SemanticObservation
-materialization runtime consumes that admitted decision plus bounded safe
-assessment/content lineage and admits a `SemanticObservation` through existing
-RunKernel/SemanticObservation authority. The current stop is
-`SemanticObservation` materialized, `ComponentCoverage` not bound.
+decision runtime reports `admitted`, the ordinary D-prime status chain does not
+currently expose the existing authorized accepted/current answer-contract
+surface required by the SemanticObservation admission reducer. The D-prime
+SemanticObservation materialization runtime therefore fails closed before
+admission and reports materialization input authority insufficient.
 
 ## Current implemented product path
 
@@ -93,8 +92,9 @@ Implemented and consumed by the ordinary dry-run status path:
   `core.dprime_support_proposal_schema`.
 - RunKernel-owned D-prime admission decisions in
   `core.dprime_runkernel_admission_runtime`.
-- RunKernel/SemanticObservation-owned materialization of admitted D-prime
-  decisions in `core.dprime_semantic_observation_materialization_runtime`.
+- RunKernel/SemanticObservation-owned materialization boundary for admitted
+  D-prime decisions in
+  `core.dprime_semantic_observation_materialization_runtime`.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -139,17 +139,16 @@ D-prime may produce:
 - `ValidatedSupportProposal` candidate refs;
 - `RunKernelSupportProposalAdmissionRequest` refs with proposal id/digest,
   validation status/digest, request status, and request digest;
-- product-visible admitted `SemanticObservation` status/ref/digest after a
-  RunKernel-owned admitted D-prime decision is materialized by
-  RunKernel/SemanticObservation-owned runtime;
-- product-visible blocker/status saying `ComponentCoverage` is not licensed and
-  not bound.
+- product-visible materialization-input blocker after a RunKernel-owned
+  admitted D-prime decision reaches the SemanticObservation boundary without an
+  existing authorized accepted/current answer-contract surface.
 
 The pre-admission D-prime assessment/proposal/request outputs are review
 material and candidate state. They are not admitted support. Only the
 RunKernel/SemanticObservation-owned materialization runtime may turn a
 RunKernel-owned admitted D-prime decision into admitted `SemanticObservation`
-state.
+state, and only when it consumes existing authorized accepted/current
+answer-contract authority from the ordinary RunKernel state path.
 
 ## Forbidden outputs and nonclaims
 
@@ -234,15 +233,17 @@ Implemented after DPRIME-RUNKERNEL-DECISION-AUTHORITY-SURFACE-01:
 - assessment-to-proposal candidate gate;
 - lineage-only `RunKernelSupportProposalAdmissionRequest` preparation;
 - RunKernel-owned admitted/rejected/challenged decision status surface;
-- RunKernel/SemanticObservation-owned SemanticObservation materialization for
-  admitted D-prime decisions only;
+- RunKernel/SemanticObservation-owned SemanticObservation materialization
+  boundary for admitted D-prime decisions only;
 - ordinary product status reporting through `DPrimeStatusPayload`.
 
-The current stop point is SemanticObservation materialized / ComponentCoverage
-not bound.
+The current stop point is SemanticObservation materialization input authority
+insufficient.
 
 Still not implemented or closed:
 
+- admitted D-prime `SemanticObservation` materialization without a real
+  accepted/current answer-contract authority consumer;
 - `ComponentCoverage` binding;
 - citation/source-obligation satisfaction;
 - `SufficiencyReadiness`;
@@ -257,6 +258,7 @@ Downstream support-bearing surfaces remain closed until separately licensed:
 
 ```text
 RunKernel-owned admission decision
+-> SemanticObservation materialization input authority
 -> admitted SemanticObservation
 -> ComponentCoverage binding (closed)
 -> citation/source-obligation satisfaction

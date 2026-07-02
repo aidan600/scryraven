@@ -30,6 +30,7 @@ from core.dprime_runkernel_admission_runtime import (
 )
 from core.dprime_semantic_observation_materialization_runtime import (
     BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED,
+    BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT,
     DPrimeSemanticObservationMaterializationError,
     materialize_dprime_semantic_observation_from_admitted_decision,
 )
@@ -1008,6 +1009,8 @@ def _blocked_dprime_model_review_assessment_result(
 def _model_review_next_blocked_surface(decision: str) -> str:
     if decision == BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED:
         return "D-prime ComponentCoverage binding"
+    if decision == BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT:
+        return "D-prime SemanticObservation materialization input authority"
     if decision == BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED:
         return "D-prime SemanticObservation materialization"
     if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:

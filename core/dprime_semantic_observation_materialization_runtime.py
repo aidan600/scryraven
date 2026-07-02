@@ -9,9 +9,7 @@ model calls, search, fetch/read, or retrieval.
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
 from core.dprime_runkernel_admission_runtime import (
@@ -120,6 +118,39 @@ _CLOSED_SURFACE_KEYS = frozenset(
         "sufficiency_readiness_created",
     }
 )
+_DOWNSTREAM_FORBIDDEN_KEYS = frozenset(
+    {
+        "answer_text",
+        "author_answer",
+        "author_input",
+        "citation",
+        "citation_eligibility",
+        "citation_eligible",
+        "component_coverage",
+        "component_coverage_ref",
+        "component_coverage_status",
+        "coverage",
+        "coverage_record",
+        "coverage_ref",
+        "final_answer_packet",
+        "product_correctness",
+        "semantic_observation",
+        "semantic_observation_admission",
+        "semantic_observation_ref",
+        "semantic_observation_status",
+        "source_obligation_satisfaction",
+        "sufficiency_readiness",
+    }
+)
+_ALLOWED_FALSE_POSTURE_KEYS = frozenset(
+    {
+        "citation_eligibility_claimed",
+        "component_coverage_bound",
+        "component_coverage_created",
+        "product_correctness_claimed",
+        "source_obligation_satisfied",
+    }
+)
 
 
 class DPrimeSemanticObservationMaterializationError(ValueError):
@@ -215,8 +246,9 @@ def materialize_dprime_semantic_observation_from_admitted_decision(
     source_evidence_admission_ref: Mapping[str, Any],
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
+    run_kernel: RunKernel | None = None,
 ) -> DPrimeSemanticObservationMaterializationResult:
-    """Materialize one admitted D-prime decision as SemanticObservation only."""
+    """Materialize one admitted D-prime decision using existing contract authority."""
 
     decision_ref = _decision_ref(decision)
     _require_admitted_runkernel_decision(decision_ref)
@@ -258,34 +290,32 @@ def materialize_dprime_semantic_observation_from_admitted_decision(
             component=component,
             source_obligation=source_obligation,
         )
-        run_kernel = RunKernel.start(
-            run_id=str(fetch_packet["run_id"]),
-            request_id=str(fetch_packet["request_id"]),
-        )
-        compact_contract = _compact_contract(
-            run_id=run_kernel.state.run_id,
-            request_id=run_kernel.state.request_id,
+        accepted_contract = _require_existing_answer_contract_authority(
+            run_kernel=run_kernel,
+            fetch_packet=fetch_packet,
             reference=reference,
+            component=component,
         )
-        _install_compact_contract(run_kernel, compact_contract)
         reduce_fetch_read_content_packet_into_evidence_ledger(
             run_kernel=run_kernel,
             fetch_read_content_packet=fetch_packet,
         )
+        component_binding = _accepted_component_binding(accepted_contract)
         content_ref = _content_reference(
             reference=reference,
-            compact_contract=compact_contract,
+            accepted_contract=accepted_contract,
+            component_binding=component_binding,
             assessment=assessment,
         )
         semantic_observation = _semantic_observation(
             assessment=assessment,
             reference=reference,
             content_ref=content_ref,
-            compact_contract=compact_contract,
+            accepted_contract=accepted_contract,
+            component_binding=component_binding,
             decision_ref=decision_ref,
             proposal=proposal,
         )
-        component_binding = compact_contract["accepted_answer_component_refs"][0]
         action = run_kernel.authorize_semantic_observation_admission(
             semantic_observation_id=semantic_observation.observation_id,
             semantic_observation_digest=semantic_observation.observation_digest,
@@ -474,6 +504,69 @@ def _require_reference_lineage(
         _insufficient("component current contract digest mismatch")
 
 
+def _require_existing_answer_contract_authority(
+    *,
+    run_kernel: RunKernel | None,
+    fetch_packet: Mapping[str, Any],
+    reference: Mapping[str, Any],
+    component: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    if run_kernel is None:
+        _insufficient(
+            "D-prime SemanticObservation materialization requires an existing "
+            "RunKernel with authorized accepted/current answer-contract authority"
+        )
+    if run_kernel.state.run_id != str(fetch_packet.get("run_id")):
+        _insufficient("RunKernel run_id does not match fetch/read packet")
+    if run_kernel.state.request_id != str(fetch_packet.get("request_id")):
+        _insufficient("RunKernel request_id does not match fetch/read packet")
+    accepted_contract = _safe_mapping(run_kernel.state.initial_answer_contract)
+    accepted_projection = _safe_mapping(
+        run_kernel.state.initial_answer_contract_projection
+    )
+    current_contract = _safe_mapping(run_kernel.state.current_answer_contract)
+    current_projection = _safe_mapping(
+        run_kernel.state.current_answer_contract_projection
+    )
+    if not accepted_contract or not accepted_projection:
+        _insufficient("accepted answer-contract authority is unavailable")
+    if not current_contract or not current_projection:
+        _insufficient("current answer-contract authority is unavailable")
+    contract_ref = _safe_mapping(reference.get("current_answer_contract_ref"))
+    expected_digest = _required_token(
+        contract_ref.get("contract_digest")
+        or reference.get("current_answer_contract_digest"),
+        "retained reference lacks current contract digest",
+        limit=128,
+    )
+    if accepted_contract.get("accepted_contract_digest") != expected_digest:
+        _insufficient("accepted answer-contract digest does not match reference")
+    current_digest = (
+        current_projection.get("current_contract_digest")
+        or current_projection.get("accepted_contract_digest")
+        or current_contract.get("current_contract_digest")
+        or current_contract.get("accepted_contract_digest")
+    )
+    if current_digest != expected_digest:
+        _insufficient("current answer-contract digest does not match reference")
+    component_binding = _accepted_component_binding(accepted_contract)
+    if component_binding.get("component_id") != component.get("component_id"):
+        _insufficient("accepted contract component does not match D-prime component")
+    if not _clean_text(component_binding.get("component_digest"), limit=128):
+        _insufficient("accepted contract component digest is unavailable")
+    return accepted_contract
+
+
+def _accepted_component_binding(
+    accepted_contract: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    for item in _safe_sequence(accepted_contract.get("accepted_answer_component_refs")):
+        component = _safe_mapping(item)
+        if component.get("component_id") == _SUPPORTED_COMPONENT_ID:
+            return component
+    _insufficient("accepted contract does not contain the D-prime answer component")
+
+
 def _matching_reference(
     packet: Mapping[str, Any],
     *,
@@ -492,121 +585,13 @@ def _matching_reference(
     return {}
 
 
-def _compact_contract(
-    *,
-    run_id: str,
-    request_id: str,
-    reference: Mapping[str, Any],
-) -> dict[str, Any]:
-    contract_ref = _safe_mapping(reference.get("current_answer_contract_ref"))
-    contract_version = _required_token(
-        contract_ref.get("contract_version"),
-        "retained contract ref requires contract_version",
-    )
-    contract_digest = _required_token(
-        contract_ref.get("contract_digest")
-        or reference.get("current_answer_contract_digest"),
-        "retained contract ref requires contract_digest",
-        limit=128,
-    )
-    component_digest = _digest_json(
-        {
-            "contract_digest": contract_digest,
-            "component_id": _SUPPORTED_COMPONENT_ID,
-            "source_obligation_candidate_ids": [_SUPPORTED_SOURCE_OBLIGATION_ID],
-            "reference_digest": reference.get("reference_digest"),
-        }
-    )
-    qmr_digest = _digest_json(
-        {
-            "contract_digest": contract_digest,
-            "component_digest": component_digest,
-            "request_id": request_id,
-            "retained_lane": "adult-passport-book-renewal-fee",
-        }
-    )
-    return {
-        "schema_version": "dprime_compact_initial_answer_contract_v1",
-        "owner": "RunKernel.InitialAnswerContract",
-        "canonical_state": True,
-        "trace_only": False,
-        "storage_only": False,
-        "run_id": run_id,
-        "request_id": request_id,
-        "accepted_contract_version": contract_version,
-        "accepted_contract_digest": contract_digest,
-        "parent_question_meaning_record_id": (
-            f"dprime-qmr:{request_id}:adult-passport-fee"
-        ),
-        "parent_question_meaning_record_digest": qmr_digest,
-        "parent_proposal_schema_version": "dprime_compact_contract_ref",
-        "accepted_answer_component_refs": [
-            {
-                "component_id": _SUPPORTED_COMPONENT_ID,
-                "component_revision": "dprime-passport-fee-1",
-                "component_digest": component_digest,
-                "requirement_posture": "required",
-                "materiality": "material",
-                "allowed_support_kinds": ["direct"],
-                "source_obligation_candidate_ids": [
-                    _SUPPORTED_SOURCE_OBLIGATION_ID
-                ],
-                "mandatory_caveats": [
-                    "Source-obligation satisfaction remains closed."
-                ],
-                "prohibited_upgrades": [
-                    "Do not claim ComponentCoverage, citation eligibility, "
-                    "source-obligation satisfaction, Sufficiency, FAP, Author, "
-                    "answer text, or product correctness."
-                ],
-            }
-        ],
-        "accepted_semantic_slot_refs": [],
-        "material_ambiguity_count": 0,
-        "material_ambiguity_preserved": True,
-        "material_ambiguity_resolved": False,
-        "dprime_compact_contract_reconstruction": True,
-        "retained_contract_ref": dict(contract_ref),
-    }
-
-
-def _install_compact_contract(
-    run_kernel: RunKernel,
-    compact_contract: Mapping[str, Any],
-) -> None:
-    projection = {
-        "owner": "RunKernel.InitialAnswerContract",
-        "canonical_state": True,
-        "trace_only": False,
-        "storage_only": False,
-        "run_id": compact_contract.get("run_id"),
-        "request_id": compact_contract.get("request_id"),
-        "accepted_contract_version": compact_contract.get(
-            "accepted_contract_version"
-        ),
-        "accepted_contract_digest": compact_contract.get("accepted_contract_digest"),
-        "accepted_answer_component_refs": [
-            dict(item)
-            for item in compact_contract.get("accepted_answer_component_refs") or ()
-            if isinstance(item, Mapping)
-        ],
-        "dprime_compact_contract_reconstruction": True,
-    }
-    run_kernel.state.initial_answer_contract = dict(compact_contract)
-    run_kernel.state.initial_answer_contract_projection = projection
-    run_kernel.state.initial_answer_contract_history.append(dict(projection))
-    run_kernel.state.current_answer_contract = dict(compact_contract)
-    run_kernel.state.current_answer_contract_projection = dict(projection)
-    run_kernel.state.current_answer_contract_history.append(dict(projection))
-
-
 def _content_reference(
     *,
     reference: Mapping[str, Any],
-    compact_contract: Mapping[str, Any],
+    accepted_contract: Mapping[str, Any],
+    component_binding: Mapping[str, Any],
     assessment: Mapping[str, Any],
 ) -> SanitizedContentReference:
-    component = compact_contract["accepted_answer_component_refs"][0]
     selector = _safe_mapping(assessment.get("selector_ref"))
     return SanitizedContentReference(
         content_ref_id=str(reference["reference_id"]),
@@ -624,14 +609,14 @@ def _content_reference(
         source_domain=reference.get("resolved_domain") or reference.get(
             "candidate_domain"
         ),
-        answer_component_id=str(component["component_id"]),
-        component_revision=str(component["component_revision"]),
-        component_contract_digest=str(component["component_digest"]),
+        answer_component_id=str(component_binding["component_id"]),
+        component_revision=str(component_binding["component_revision"]),
+        component_contract_digest=str(component_binding["component_digest"]),
         question_meaning_record_id=str(
-            compact_contract["parent_question_meaning_record_id"]
+            accepted_contract["parent_question_meaning_record_id"]
         ),
         question_meaning_record_digest=str(
-            compact_contract["parent_question_meaning_record_digest"]
+            accepted_contract["parent_question_meaning_record_digest"]
         ),
         content_kind=ContentKind.BOUNDED_EXCERPT,
         bounded_text=str(reference["bounded_text"]),
@@ -657,11 +642,11 @@ def _semantic_observation(
     assessment: Mapping[str, Any],
     reference: Mapping[str, Any],
     content_ref: SanitizedContentReference,
-    compact_contract: Mapping[str, Any],
+    accepted_contract: Mapping[str, Any],
+    component_binding: Mapping[str, Any],
     decision_ref: Mapping[str, Any],
     proposal: Mapping[str, Any],
 ) -> SemanticObservation:
-    component = compact_contract["accepted_answer_component_refs"][0]
     assessment_digest = _required_token(
         assessment.get("assessment_digest"),
         "assessment material requires assessment_digest",
@@ -681,16 +666,16 @@ def _semantic_observation(
         observation_id=observation_id,
         observation_kind=ObservationKind.SUPPORT,
         question_meaning_record_id=str(
-            compact_contract["parent_question_meaning_record_id"]
+            accepted_contract["parent_question_meaning_record_id"]
         ),
         question_meaning_record_digest=str(
-            compact_contract["parent_question_meaning_record_digest"]
+            accepted_contract["parent_question_meaning_record_digest"]
         ),
-        contract_version=str(compact_contract["accepted_contract_version"]),
-        contract_digest=str(compact_contract["accepted_contract_digest"]),
-        answer_component_id=str(component["component_id"]),
-        component_revision=str(component["component_revision"]),
-        component_contract_digest=str(component["component_digest"]),
+        contract_version=str(accepted_contract["accepted_contract_version"]),
+        contract_digest=str(accepted_contract["accepted_contract_digest"]),
+        answer_component_id=str(component_binding["component_id"]),
+        component_revision=str(component_binding["component_revision"]),
+        component_contract_digest=str(component_binding["component_digest"]),
         evidence_refs=(content_ref.evidence_ref_id,),
         content_refs=(content_ref.content_ref_id,),
         support_kind=SupportDirectness.DIRECT,
@@ -740,7 +725,17 @@ def _reject_raw_private_and_closed_material(value: Any, *, context: str) -> None
         normalized = _normalize_key(key)
         if normalized in _RAW_PRIVATE_KEYS:
             _insufficient(f"{context} includes raw/private material: {'.'.join(path)}")
-        if normalized in _CLOSED_SURFACE_KEYS and item is not False:
+        if normalized in _DOWNSTREAM_FORBIDDEN_KEYS:
+            _insufficient(
+                f"{context} includes downstream closed material: {'.'.join(path)}"
+            )
+        if normalized in _ALLOWED_FALSE_POSTURE_KEYS and item is not False:
+            _insufficient(f"{context} opens closed surface: {'.'.join(path)}")
+        if (
+            normalized in _CLOSED_SURFACE_KEYS
+            and normalized not in _ALLOWED_FALSE_POSTURE_KEYS
+            and item is not False
+        ):
             _insufficient(f"{context} opens closed surface: {'.'.join(path)}")
 
 
@@ -822,19 +817,6 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
 
 def _normalize_key(value: Any) -> str:
     return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
-
-
-def _digest_json(value: Any) -> str:
-    encoded = json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"))
-    return sha256(encoded.encode("utf-8")).hexdigest()
-
-
-def _json_safe(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {str(key): _json_safe(item) for key, item in value.items()}
-    if isinstance(value, list | tuple | set | frozenset):
-        return [_json_safe(item) for item in value]
-    return value
 
 
 __all__ = [

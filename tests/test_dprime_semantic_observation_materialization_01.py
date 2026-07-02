@@ -1,4 +1,4 @@
-"""PRODUCT-PATH-REGRESSION: D-prime SemanticObservation materialization.
+"""PRODUCT-PATH-REGRESSION: D-prime SemanticObservation materialization boundary.
 
 Harness label: PRODUCT-PATH-REGRESSION
 Ordinary product path guarded or fed: python -m proplex --live-semantic-coverage-status-dry-run
@@ -9,11 +9,11 @@ model-review callable because live/model/provider/search/fetch/read/retrieval
 calls are closed in this phase.
 Integration deadline: current phase.
 Exit condition: keep as the regression guard for RunKernel-owned D-prime
-decision -> SemanticObservation materialization -> ComponentCoverage not bound.
+decision -> materialization input authority insufficient.
 Why this is not a shadow product path: it invokes the product status builder and
 the RunKernel/SemanticObservation-owned materialization runtime, not a detached
 packet path.
-Forbidden interpretation: SemanticObservation materialization is not
+Forbidden interpretation: a RunKernel-owned D-prime decision is not
 ComponentCoverage binding, citation eligibility, source-obligation satisfaction,
 SufficiencyReadiness, FinalAnswerPacket, Author/answer text, product
 correctness, or a live call.
@@ -46,7 +46,7 @@ from tests.test_dprime_model_review_assessment_slice_01 import (
 )
 
 
-def test_product_status_materializes_semantic_observation_and_stops_before_coverage(
+def test_product_status_stops_at_materialization_input_authority(
     tmp_path: Path,
 ) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
@@ -54,11 +54,11 @@ def test_product_status_materializes_semantic_observation_and_stops_before_cover
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
     )
     assert "RunKernel admission decision status: admitted" in result.output
-    assert "SemanticObservation admission status: admitted" in result.output
-    assert "ComponentCoverage status: not licensed" in result.output
+    assert "SemanticObservation admission status: unavailable" in result.output
+    assert "ComponentCoverage status: unavailable" in result.output
     assert "answerability/correctness: not claimed" in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -71,27 +71,29 @@ def test_product_status_materializes_semantic_observation_and_stops_before_cover
         dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
     )
     assert dprime_status["run_kernel_admission_decision_status"] == "admitted"
-    assert dprime_status["semantic_observation_admission_status"] == "materialized"
-    assert dprime_status["semantic_observation_ref"]["observation_digest"]
+    assert dprime_status["semantic_observation_admission_status"] == "unavailable"
+    assert "semantic_observation_ref" not in dprime_status
     assert dprime_status["objects_created"] == {
         "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": True,
         "validated_support_proposal": True,
         "run_kernel_support_proposal_admission_request": True,
         "run_kernel_admission_decision": True,
-        "semantic_observation": True,
+        "semantic_observation": False,
         "component_coverage": False,
     }
     semantic = result.payload["semantic_observation_admission_ref"]
     coverage = result.payload["component_coverage_ref"]
-    assert semantic["status"] == "admitted"
-    assert semantic["observation_digest"]
-    assert coverage["status"] == "not licensed"
+    assert semantic["status"] == "unavailable"
+    assert coverage["status"] == "unavailable"
     assert coverage["coverage_ref"] == "unavailable"
     assert result.payload["semantic_support_source"] == (
-        "available from D-prime SemanticObservation; ComponentCoverage not licensed"
+        "unavailable; RunKernel admitted decision not materialized into "
+        "SemanticObservation"
     )
-    assert result.payload["next_blocked_surface"] == "D-prime ComponentCoverage binding"
+    assert result.payload["next_blocked_surface"] == (
+        "D-prime SemanticObservation materialization input authority"
+    )
 
 
 @pytest.mark.parametrize(
@@ -162,31 +164,111 @@ def test_insufficient_safe_assessment_lineage_blocks_without_invention(
     )
 
 
-def test_direct_materialization_object_is_safe_and_has_no_coverage_refs(
+def test_direct_materialization_requires_existing_contract_authority(
     tmp_path: Path,
 ) -> None:
-    result = dprime_semantic.materialize_dprime_semantic_observation_from_admitted_decision(
-        **_direct_materialization_context(tmp_path)
-    )
+    with pytest.raises(
+        dprime_semantic.DPrimeSemanticObservationMaterializationError,
+    ) as exc_info:
+        dprime_semantic.materialize_dprime_semantic_observation_from_admitted_decision(
+            **_direct_materialization_context_without_downstream_fields(tmp_path)
+        )
 
-    observation = result.semantic_observation.to_dict()
-    content_ref = result.sanitized_content_reference.to_dict()
-    projection = dict(result.admission_projection)
-    assert observation["support_status"] == "supports"
-    assert observation["coverage_decision"] is False
-    assert observation["component_satisfied"] is False
-    assert observation["final_answer_authority"] is False
-    assert content_ref["sanitized"] is True
-    assert content_ref["bounded"] is True
-    assert content_ref["raw_content_retained"] is False
-    assert projection["coverage_created"] is False
-    assert projection["component_satisfied"] is False
-    assert projection["sufficiency_decided"] is False
-    assert projection["final_answer_packet_created"] is False
-    assert projection["author_input_created"] is False
-    assert projection["live_validation_not_run"] is True
-    serialized_ref = json.dumps(result.semantic_status_ref(), sort_keys=True)
-    assert "component_coverage" not in serialized_ref
+    assert exc_info.value.blocker == (
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
+    )
+    assert "accepted/current answer-contract authority" in exc_info.value.detail
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "semantic_observation",
+        "semantic_observation_ref",
+        "semantic_observation_status",
+        "semantic_observation_admission",
+        "component_coverage",
+        "component_coverage_ref",
+        "component_coverage_status",
+        "coverage",
+        "coverage_ref",
+        "coverage_record",
+        "citation",
+        "citation_eligibility",
+        "citation_eligible",
+        "source_obligation_satisfaction",
+        "sufficiency_readiness",
+        "final_answer_packet",
+        "author_input",
+        "author_answer",
+        "answer_text",
+        "product_correctness",
+    ],
+)
+def test_materialization_inputs_reject_downstream_closed_material_even_false(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    context = _direct_materialization_context_without_downstream_fields(tmp_path)
+    context["assessment_material_ref"] = {
+        **context["assessment_material_ref"],
+        field: False,
+    }
+
+    with pytest.raises(
+        dprime_semantic.DPrimeSemanticObservationMaterializationError,
+    ) as exc_info:
+        dprime_semantic.materialize_dprime_semantic_observation_from_admitted_decision(
+            **context
+        )
+
+    assert exc_info.value.blocker == (
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
+    )
+    assert "downstream closed material" in exc_info.value.detail
+
+
+def test_materialization_inputs_allow_false_posture_flags(
+    tmp_path: Path,
+) -> None:
+    context = _direct_materialization_context_without_downstream_fields(tmp_path)
+    context["assessment_material_ref"] = {
+        **context["assessment_material_ref"],
+        "source_obligation_satisfied": False,
+        "component_coverage_bound": False,
+        "component_coverage_created": False,
+        "citation_eligibility_claimed": False,
+        "product_correctness_claimed": False,
+    }
+
+    with pytest.raises(
+        dprime_semantic.DPrimeSemanticObservationMaterializationError,
+    ) as exc_info:
+        dprime_semantic.materialize_dprime_semantic_observation_from_admitted_decision(
+            **context
+        )
+
+    assert exc_info.value.blocker == (
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
+    )
+    assert "accepted/current answer-contract authority" in exc_info.value.detail
+
+
+def test_materialization_runtime_does_not_reconstruct_contract_authority() -> None:
+    text = Path(
+        "core/dprime_semantic_observation_materialization_runtime.py"
+    ).read_text(encoding="utf-8")
+
+    assert "RunKernel.start(" not in text
+    assert "_compact_contract" not in text
+    assert "_install_compact_contract" not in text
+    for forbidden_assignment in (
+        "state.initial_answer_contract =",
+        "state.initial_answer_contract_projection =",
+        "state.current_answer_contract =",
+        "state.current_answer_contract_projection =",
+    ):
+        assert forbidden_assignment not in text
 
 
 def test_materialization_output_hygiene_excludes_raw_private_and_closed_material(
@@ -240,9 +322,11 @@ def test_architecture_doc_records_new_stop_and_closed_downstream_surfaces() -> N
         encoding="utf-8"
     )
 
-    assert "SemanticObservation materialized" in text
-    assert "ComponentCoverage not bound" in text
-    assert "BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED" in text
+    assert "SemanticObservation materialization input authority insufficient" in text
+    assert (
+        "BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT"
+        in text
+    )
     for closed_surface in (
         "`ComponentCoverage` binding",
         "citation/source-obligation satisfaction",
@@ -298,3 +382,52 @@ def _direct_materialization_context(tmp_path: Path) -> dict[str, Any]:
         "component_ref": result.payload["component_ref"],
         "source_obligation_ref": result.payload["source_obligation_ref"],
     }
+
+
+def _direct_materialization_context_without_downstream_fields(
+    tmp_path: Path,
+) -> dict[str, Any]:
+    context = _direct_materialization_context(tmp_path)
+    downstream_fields = {
+        "answer_text",
+        "author_answer",
+        "author_input",
+        "citation",
+        "citation_eligibility",
+        "citation_eligible",
+        "component_coverage",
+        "component_coverage_ref",
+        "component_coverage_status",
+        "coverage",
+        "coverage_record",
+        "coverage_ref",
+        "final_answer_packet",
+        "product_correctness",
+        "semantic_observation",
+        "semantic_observation_admission",
+        "semantic_observation_ref",
+        "semantic_observation_status",
+        "source_obligation_satisfaction",
+        "sufficiency_readiness",
+    }
+    for key in (
+        "assessment_material_ref",
+        "validated_support_proposal_ref",
+        "source_evidence_admission_ref",
+        "component_ref",
+        "source_obligation_ref",
+    ):
+        context[key] = _drop_keys(context[key], downstream_fields)
+    return context
+
+
+def _drop_keys(value: Any, keys: set[str]) -> Any:
+    if isinstance(value, dict):
+        return {
+            item_key: _drop_keys(item, keys)
+            for item_key, item in value.items()
+            if item_key not in keys
+        }
+    if isinstance(value, list):
+        return [_drop_keys(item, keys) for item in value]
+    return value
