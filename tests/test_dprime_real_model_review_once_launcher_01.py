@@ -21,8 +21,11 @@ correctness.
 from __future__ import annotations
 
 import ast
+import os
+import subprocess
+import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import scripts.run_dprime_real_model_review_once as launcher
 from core.dprime_product_smart_one_shot_transport import (
@@ -36,6 +39,58 @@ SCRIPT = ROOT / "scripts" / "run_dprime_real_model_review_once.py"
 CLI = ROOT / "proplex" / "__main__.py"
 TRANSPORT = ROOT / "core" / "dprime_product_smart_one_shot_transport.py"
 _OPENAI_ENV_NAME = "OPENAI_" + "API_" + "KEY"
+_MINIMAL_SUBPROCESS_ENV_KEYS = (
+    "APPDATA",
+    "COMSPEC",
+    "HOME",
+    "LOCALAPPDATA",
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USERPROFILE",
+    "WINDIR",
+)
+
+
+def test_direct_script_preflight_works_without_external_pythonpath() -> None:
+    env = _minimal_subprocess_env()
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "What is the adult U.S. passport book renewal fee?",
+            "--credential-preflight-only",
+            "--no-secret-values",
+        ],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "D-prime real model-review credential preflight" in output
+    assert (
+        "product config boundary: "
+        "core.product_model_route_config.initialize_product_model_route_config"
+    ) in output
+    assert "OPENAI_API_KEY present in current process: false" in output
+    assert "real model call performed: false" in output
+    assert "raw prompt retained: false" in output
+    assert "raw model response retained: false" in output
+    assert "provider payload retained: false" in output
+    assert "raw_prompt" not in output.casefold()
+    assert "raw_model_response" not in output.casefold()
+    assert "provider_payload" not in output.casefold()
+    assert "api_key:" not in output.casefold()
+    assert _OPENAI_ENV_NAME not in env
+    assert "PYTHONPATH" not in env
+    assert not _credential_or_product_env_keys(env)
 
 
 def test_launcher_and_ordinary_cli_share_product_config_boundary() -> None:
@@ -212,3 +267,21 @@ def _expression_name(node: ast.AST) -> str:
         base = _expression_name(node.value)
         return f"{base}.{node.attr}" if base else node.attr
     return ""
+
+
+def _minimal_subprocess_env() -> dict[str, str]:
+    env = {
+        key: value
+        for key in _MINIMAL_SUBPROCESS_ENV_KEYS
+        if (value := os.environ.get(key))
+    }
+    env["PYTHON_DOTENV_DISABLED"] = "1"
+    env.pop("PYTHONPATH", None)
+    for key in _credential_or_product_env_keys(env):
+        env.pop(key, None)
+    return env
+
+
+def _credential_or_product_env_keys(env: Mapping[str, str]) -> set[str]:
+    prefixes = ("OPENAI_", "SCRYRAVEN_", "PROPLEX_")
+    return {key for key in env if key.upper().startswith(prefixes)}

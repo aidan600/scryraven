@@ -28,6 +28,10 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from core.dprime_one_shot_provider_boundary import (
     DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_PHASE,
     PROVIDER_MODEL_SELECTION_APPROVAL_REF_PRESENT,
@@ -51,7 +55,6 @@ from core.product_model_route_config import (
 from proplex.env_aliases import get_env_alias
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 
-ROOT = Path(__file__).resolve().parents[1]
 PHASE = "DPRIME-PRODUCT-MODEL-ROUTE-CONFIG-REPAIR-01"
 NEXT_PHASE = "DPRIME-REAL-MODEL-REVIEW-RUN-01B"
 
