@@ -27,6 +27,7 @@ from typing import Any, Mapping
 import pytest
 
 import core.dprime_runkernel_admission_runtime as rk_dprime
+import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -85,17 +86,15 @@ def test_product_status_reports_runkernel_admitted_decision_without_materializat
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
-    )
+    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
     assert "RunKernel admission decision status: admitted" in result.output
     assert "RunKernel decision: admitted" in result.output
-    assert "admitted support: false" in result.output
-    assert "SemanticObservation admission status: unavailable" in result.output
-    assert "ComponentCoverage status: unavailable" in result.output
+    assert "admitted support: true" in result.output
+    assert "SemanticObservation admission status: admitted" in result.output
+    assert "ComponentCoverage status: not licensed" in result.output
     assert (
-        "semantic support source: unavailable; RunKernel admitted decision "
-        "not materialized into SemanticObservation"
+        "semantic support source: available from D-prime SemanticObservation; "
+        "ComponentCoverage not licensed"
     ) in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -108,22 +107,15 @@ def test_product_status_reports_runkernel_admitted_decision_without_materializat
     assert dprime_status["run_kernel_admission_decision_status"] == "admitted"
     assert dprime_status["run_kernel_admission_decision_owner"] == "RunKernel"
     assert dprime_status["run_kernel_admission_decision_ref"]["decision_digest"]
-    assert dprime_status["admitted_support"] is False
+    assert dprime_status["admitted_support"] is True
     assert dprime_status["objects_created"]["run_kernel_admission_decision"] is True
-    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["semantic_observation"] is True
     assert dprime_status["objects_created"]["component_coverage"] is False
-    assert result.payload["semantic_observation_admission_ref"] == {
-        "status": "unavailable",
-        "observation_ref": "unavailable",
-        "reasons": [
-            "D-prime proposal candidate is not admitted support",
-            (
-                "RunKernel-owned D-prime admission decision made; "
-                "SemanticObservation not licensed or materialized"
-            ),
-        ],
-    }
-    assert result.payload["component_coverage_ref"]["status"] == "unavailable"
+    assert dprime_status["semantic_observation_admission_status"] == "materialized"
+    assert dprime_status["semantic_observation_ref"]["observation_digest"]
+    assert result.payload["semantic_observation_admission_ref"]["status"] == "admitted"
+    assert result.payload["semantic_observation_admission_ref"]["observation_digest"]
+    assert result.payload["component_coverage_ref"]["status"] == "not licensed"
     assert result.payload["answerability_correctness"] == "not claimed"
 
 
@@ -378,15 +370,15 @@ def test_decision_surface_lives_outside_dprime_schema_module() -> None:
     assert "RunKernel-owned" in (rk_dprime.__doc__ or "")
 
 
-def test_architecture_doc_records_new_decision_stop() -> None:
+def test_architecture_doc_records_materialized_observation_stop() -> None:
     text = Path("docs/architecture/DPRIME_ARCHITECTURE.md").read_text(
         encoding="utf-8"
     )
 
     assert "RunKernel-owned admission decision made" in text
-    assert "SemanticObservation not materialized" in text
+    assert "SemanticObservation materialized" in text
+    assert "ComponentCoverage not bound" in text
     for closed_surface in (
-        "admitted `SemanticObservation`",
         "`ComponentCoverage` binding",
         "citation/source-obligation satisfaction",
         "`SufficiencyReadiness`",

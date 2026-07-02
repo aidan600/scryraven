@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-import core.dprime_runkernel_admission_runtime as rk_dprime
+import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -47,9 +47,7 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
-    )
+    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
     assert "D-prime assessment status: assessed" in result.output
     assert (
         "D-prime proposal validation status: "
@@ -61,9 +59,9 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
     ) in result.output
     assert "RunKernel admission decision status: admitted" in result.output
     assert "RunKernel decision: admitted" in result.output
-    assert "admitted support: false" in result.output
-    assert "SemanticObservation admission status: unavailable" in result.output
-    assert "ComponentCoverage status: unavailable" in result.output
+    assert "admitted support: true" in result.output
+    assert "SemanticObservation admission status: admitted" in result.output
+    assert "ComponentCoverage status: not licensed" in result.output
 
     dprime_status = result.payload["dprime_status"]
     request_ref = dprime_status["run_kernel_support_admission_request_ref"]
@@ -80,14 +78,14 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
     assert dprime_status["run_kernel_decision"] == "admitted"
     assert dprime_status["run_kernel_admission_decision_status"] == "admitted"
     assert dprime_status["run_kernel_admission_decision_owner"] == "RunKernel"
-    assert dprime_status["admitted_support"] is False
+    assert dprime_status["admitted_support"] is True
     assert dprime_status["objects_created"] == {
         "evidence_frame_preflight": True,
         "evidence_relative_support_assessment": True,
         "validated_support_proposal": True,
         "run_kernel_support_proposal_admission_request": True,
         "run_kernel_admission_decision": True,
-        "semantic_observation": False,
+        "semantic_observation": True,
         "component_coverage": False,
     }
     assert request_ref["request_status"] == (
@@ -201,9 +199,9 @@ def test_architecture_doc_records_request_gate_without_opening_downstream() -> N
 
     assert "RunKernelSupportProposalAdmissionRequest ready" in text
     assert "RunKernel-owned admission decision made" in text
-    assert "SemanticObservation not materialized" in text
+    assert "SemanticObservation materialized" in text
+    assert "ComponentCoverage not bound" in text
     for closed_surface in (
-        "admitted `SemanticObservation`",
         "`ComponentCoverage` binding",
         "citation/source-obligation satisfaction",
         "`SufficiencyReadiness`",
