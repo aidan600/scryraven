@@ -6,10 +6,10 @@ assessment is Analyst-like work, so it consumes the product smart role settings:
 ``RunConfig.smart_provider`` / ``RunConfig.smart_model`` and their CLI/UI
 equivalents. For this approved phase, that smart route must resolve to OpenAI
 ``gpt-5.4``. The transport avoids the broad product LLM helper because that
-path can retry and fall back; instead it uses the existing OpenAI
-SDK/environment credential lookup with SDK retries disabled so the approved
-smart route can be consumed by ``DPrimeOneShotModelReviewAdapter`` without
-provider switching or raw retention.
+path can retry and fall back; instead it assumes the product config boundary
+has initialized credential posture, then uses OpenAI SDK/environment lookup
+with SDK retries disabled so the approved smart route can be consumed by
+``DPrimeOneShotModelReviewAdapter`` without provider switching or raw retention.
 """
 
 from __future__ import annotations
@@ -50,6 +50,9 @@ PRODUCT_ROUTE_SETTINGS_SURFACE = (
     "core.run_config.RunConfig.smart_provider/smart_model; "
     "CLI --smart-provider/--smart-model; "
     "Streamlit Smart Provider/Smart Model controls"
+)
+PRODUCT_CONFIG_INITIALIZATION_BOUNDARY = (
+    "core.product_model_route_config.initialize_product_model_route_config"
 )
 DPRIME_PRODUCT_SMART_TRANSPORT_REF = (
     "product-smart-model-route:"
@@ -113,8 +116,14 @@ def product_smart_model_route_ref(
         "provider_model_approval_ref": (
             DPRIME_PRODUCT_SMART_PROVIDER_MODEL_APPROVAL_REF
         ),
+        "product_config_initialization_boundary": (
+            PRODUCT_CONFIG_INITIALIZATION_BOUNDARY
+        ),
         "execution_policy": EXECUTION_POLICY_STRICT_ONE_SHOT,
-        "credential_source": "existing OpenAI SDK/environment lookup only",
+        "credential_source": (
+            "product model-route config initialization boundary, then OpenAI "
+            "SDK/environment lookup"
+        ),
         "max_provider_attempts": 1,
         "retry_policy": "forbidden",
         "fallback_policy": "forbidden",
@@ -393,6 +402,7 @@ __all__ = [
     "DPrimeProductSmartOneShotTransport",
     "EXECUTION_POLICY_STRICT_ONE_SHOT",
     "PRODUCT_MODEL_ROLE_SMART",
+    "PRODUCT_CONFIG_INITIALIZATION_BOUNDARY",
     "PRODUCT_ROUTE_KIND_SMART_MODEL",
     "build_dprime_product_smart_model_review_adapter",
     "build_dprime_product_smart_one_shot_transport",

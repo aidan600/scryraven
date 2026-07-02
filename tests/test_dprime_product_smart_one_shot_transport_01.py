@@ -68,6 +68,12 @@ def test_product_route_metadata_names_smart_dprime_task() -> None:
         "human-approved:dprime-real-model-review-run-01:"
         "product-smart-model-route"
     )
+    assert ref["product_config_initialization_boundary"] == (
+        "core.product_model_route_config.initialize_product_model_route_config"
+    )
+    assert "product model-route config initialization boundary" in ref[
+        "credential_source"
+    ]
     assert ref["execution_policy"] == "strict_one_shot"
     assert ref["retry_policy"] == "forbidden"
     assert ref["fallback_policy"] == "forbidden"
@@ -114,6 +120,7 @@ def test_transport_invokes_approved_product_route_once_without_fallback() -> Non
     assert call["stream"] is False
     assert "provider" not in call
     assert "fallback" not in call
+    assert "api_key" not in call
 
 
 def test_transport_internal_fuse_blocks_second_direct_call() -> None:
@@ -329,6 +336,21 @@ def test_transport_module_avoids_broad_helpers_and_search_surfaces() -> None:
     assert "ask_model" not in call_names
     assert "core.llm.ask_model" not in call_names
     assert "responses.create" not in call_names
+
+
+def test_documentation_guard_exists_for_product_config_boundary() -> None:
+    doc = (
+        ROOT
+        / "docs"
+        / "architecture"
+        / "DPRIME_PRODUCT_MODEL_ROUTE_CONFIG_BOUNDARY.md"
+    ).read_text(encoding="utf-8")
+
+    assert "product's shared route/config boundary" in doc
+    assert "must not create a separate provider selector" in doc
+    assert "credential loader" in doc
+    assert "Retries and fallbacks are forbidden" in doc
+    assert "attempt ledger" in doc
 
 
 class FakeOpenAIError(Exception):
