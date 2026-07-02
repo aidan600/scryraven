@@ -14,7 +14,7 @@ from hashlib import sha256
 from typing import Any, Mapping
 
 DPRIME_MODEL_REVIEW_PROMPT_SCHEMA_VERSION = (
-    "dprime_model_review_prompt_assessment_slice_01_v2"
+    "dprime_model_review_prompt_assessment_slice_01_v3"
 )
 
 MODEL_FILLABLE_ASSESSMENT_FIELDS = [
@@ -75,6 +75,109 @@ CLOSED_SURFACE_FLAGS_REQUIRED_FALSE_KEYS = [
     "product_correctness_claimed",
 ]
 
+DPRIME_MODEL_REVIEW_CANONICAL_OUTPUT_SKELETON: dict[str, Any] = {
+    "source_proposition": "string: source-bounded proposition being assessed",
+    "answer_component_claim": {
+        "component_id": "component id from assessment_input_packet.component_ref",
+        "claim": "assessed component claim, not user-facing answer prose",
+    },
+    "support_relation": "directly_supports | partially_supports | absent | scope_mismatch | currentness_mismatch | contradicts | missing_qualifier | weak_or_overclaim_risk | abstained",
+    "required_qualifiers": [],
+    "observed_qualifiers": [],
+    "missing_qualifiers": [],
+    "scope_check": {"status": "passed | in_scope | matched | scope_mismatch | failed"},
+    "currentness_check": {
+        "status": "current | current_passed | passed | stale | wrong_effective_date | currentness_mismatch | failed"
+    },
+    "contradiction_check": {
+        "status": "absent | none | not_contradicted | contradicts | contradicted | failed"
+    },
+    "evidential_adequacy_notes": "string: assessment-only rationale",
+    "non_support_reason_when_not_direct": "string; empty only for directly_supports",
+    "producer_abstained": False,
+    "challenge_recommended": False,
+    "closed_surface_flags": {
+        key: False for key in CLOSED_SURFACE_FLAGS_REQUIRED_FALSE_KEYS
+    },
+}
+
+DPRIME_MODEL_REVIEW_FIELD_LEVEL_REQUIREMENTS: dict[str, Any] = {
+    "answer_component_claim": {
+        "required_keys": ["component_id", "claim"],
+        "component_id": (
+            "Must equal the component_id for the component being assessed from "
+            "assessment_input_packet.component_ref."
+        ),
+        "claim": (
+            "Must be the assessed component claim, not a user-facing answer, "
+            "citation text, proposal, or prose."
+        ),
+    },
+    "scope_check": {
+        "required_keys": ["status"],
+        "status_values": ["passed", "in_scope", "matched", "scope_mismatch", "failed"],
+    },
+    "currentness_check": {
+        "required_keys": ["status"],
+        "status_values": [
+            "passed",
+            "current",
+            "current_passed",
+            "stale",
+            "wrong_effective_date",
+            "currentness_mismatch",
+            "failed",
+        ],
+    },
+    "contradiction_check": {
+        "required_keys": ["status"],
+        "status_values": [
+            "absent",
+            "none",
+            "not_contradicted",
+            "contradicts",
+            "contradicted",
+            "failed",
+        ],
+    },
+}
+
+DPRIME_MODEL_REVIEW_RELATION_CHECK_STATUS_CONSISTENCY_MATRIX: dict[str, Any] = {
+    "directly_supports": {
+        "scope_check.status": ["passed", "in_scope", "matched"],
+        "currentness_check.status": ["passed", "current", "current_passed"],
+        "contradiction_check.status": ["absent", "none", "not_contradicted"],
+    },
+    "partially_supports": {
+        "scope_check.status": ["passed", "in_scope", "matched"],
+        "currentness_check.status": ["passed", "current", "current_passed"],
+        "contradiction_check.status": ["absent", "none", "not_contradicted"],
+    },
+    "scope_mismatch": {
+        "scope_check.status": ["failed", "scope_mismatch"],
+    },
+    "currentness_mismatch": {
+        "currentness_check.status": [
+            "failed",
+            "stale",
+            "wrong_effective_date",
+            "currentness_mismatch",
+        ],
+    },
+    "contradicts": {
+        "contradiction_check.status": ["contradicts", "contradicted", "failed"],
+    },
+    "weak_or_overclaim_risk": {
+        "must_not_have_contradiction_check.status": [
+            "contradicts",
+            "contradicted",
+        ],
+    },
+    "abstained": {
+        "producer_abstained": True,
+    },
+}
+
 DPRIME_MODEL_REVIEW_SYSTEM_PROMPT = (
     "You are a D-prime evidence-relative assessment reviewer. Return only strict "
     "JSON with exactly the model-fillable assessment fields. Do not include "
@@ -91,6 +194,19 @@ DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA: dict[str, Any] = {
     ),
     "model_fillable_allowed_fields": MODEL_FILLABLE_ASSESSMENT_FIELDS,
     "required_fields": MODEL_FILLABLE_ASSESSMENT_FIELDS,
+    "canonical_output_skeleton": DPRIME_MODEL_REVIEW_CANONICAL_OUTPUT_SKELETON,
+    "field_level_requirements": DPRIME_MODEL_REVIEW_FIELD_LEVEL_REQUIREMENTS,
+    "missing_fields_policy": (
+        "Missing fields are never allowed. Include every model-fillable field "
+        "exactly once, using empty arrays, empty strings, false booleans, or "
+        "nested status objects when the content is absent or not applicable."
+    ),
+    "runtime_filled_field_policy": (
+        "Do not include assessment_digest or any runtime-filled digest, id, "
+        "ref, preflight, selector, component_ref, source_obligation_ref, "
+        "model_review_ref, or prompt_license_ref field. The runtime fills "
+        "those fields after deterministic validation."
+    ),
     "runtime_filled_fields": RUNTIME_FILLED_FORBIDDEN_MODEL_OUTPUT_FIELDS,
     "forbidden_runtime_filled_fields": (
         RUNTIME_FILLED_FORBIDDEN_MODEL_OUTPUT_FIELDS
@@ -128,6 +244,9 @@ DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA: dict[str, Any] = {
         "weak_support",
         "ok",
     ],
+    "relation_check_status_consistency_matrix": (
+        DPRIME_MODEL_REVIEW_RELATION_CHECK_STATUS_CONSISTENCY_MATRIX
+    ),
 }
 
 
@@ -173,12 +292,35 @@ def build_dprime_model_review_prompt(
         "Model-fillable output contract:",
         "- The top-level JSON keys must be exactly",
         "  output_schema.model_fillable_allowed_fields.",
+        "- Use output_schema.canonical_output_skeleton as the output shape:",
+        "  every model-fillable field must appear exactly once.",
+        "- Missing fields are never allowed. If a field has no content, use the",
+        "  skeleton's safe empty array, empty string, false boolean, or nested",
+        "  status object shape rather than omitting the field.",
+        "- answer_component_claim.component_id must equal the component_id for",
+        "  the assessed component from assessment_input_packet.component_ref.",
+        "- answer_component_claim.claim must be the assessed component claim,",
+        "  not a user-facing answer, citation, proposal, or prose.",
+        "- scope_check, currentness_check, and contradiction_check must each be",
+        "  objects with a status key.",
         "- Do not include output_schema.runtime_filled_fields; runtime will fill",
         "  those fields after deterministic checks.",
+        "- Never include assessment_digest, assessment_id, any digest/id/ref,",
+        "  preflight, selector, component_ref, source_obligation_ref,",
+        "  model_review_ref, or prompt_license_ref field in model output.",
         "- Do not include output_schema.forbidden_authority_object_created_fields",
         "  as top-level keys.",
         "- closed_surface_flags is allowed only as a nested assessment field whose",
         "  required false keys stay false.",
+        "- Apply output_schema.relation_check_status_consistency_matrix:",
+        "  directly_supports and partially_supports require passed/in-scope",
+        "  scope, current/current_passed currentness, and absent/no contradiction;",
+        "  scope_mismatch requires failed/scope_mismatch scope;",
+        "  currentness_mismatch requires failed/stale/wrong_effective_date/",
+        "  currentness_mismatch currentness; contradicts requires",
+        "  contradicts/contradicted/failed contradiction status;",
+        "  weak_or_overclaim_risk must not be used for an actual contradiction;",
+        "  abstained requires producer_abstained true.",
         "- Do not add extra keys, aliases, explanatory wrappers, object-created",
         "  flags, authority-upgrade flags, raw/private fields, or downstream",
         "  product claims.",
@@ -207,6 +349,9 @@ def _json(value: Any) -> str:
 __all__ = [
     "DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA",
     "DPRIME_MODEL_REVIEW_PROMPT_SCHEMA_VERSION",
+    "DPRIME_MODEL_REVIEW_CANONICAL_OUTPUT_SKELETON",
+    "DPRIME_MODEL_REVIEW_FIELD_LEVEL_REQUIREMENTS",
+    "DPRIME_MODEL_REVIEW_RELATION_CHECK_STATUS_CONSISTENCY_MATRIX",
     "DPRIME_MODEL_REVIEW_SYSTEM_PROMPT",
     "AUTHORITY_OBJECT_FORBIDDEN_MODEL_OUTPUT_FIELDS",
     "CLOSED_SURFACE_FLAGS_REQUIRED_FALSE_KEYS",
