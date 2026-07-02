@@ -28,6 +28,7 @@ import pytest
 
 import core.dprime_assessment_validation as assessment_validation
 import core.dprime_one_shot_model_review_adapter as adapter_contract
+import core.dprime_runkernel_admission_runtime as rk_dprime
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -143,7 +144,9 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert calls[0]["input_packet"]["one_shot_model_review_adapter_ref"][
         "status"
     ] == "configured"
-    assert result.decision == dprime.BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING
+    assert result.decision == (
+        rk_dprime.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_NOT_LICENSED
+    )
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["model_review_call_count"] == 1
     assert (
