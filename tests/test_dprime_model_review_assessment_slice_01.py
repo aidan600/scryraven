@@ -36,6 +36,15 @@ from core.dprime_model_review_assessment import (
     DPrimeModelReviewLicense,
     build_dprime_model_review_input_packet,
 )
+from core.dprime_model_review_prompt import (
+    AUTHORITY_OBJECT_FORBIDDEN_MODEL_OUTPUT_FIELDS,
+    CLOSED_SURFACE_FLAGS_REQUIRED_FALSE_KEYS,
+    DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA,
+    MODEL_FILLABLE_ASSESSMENT_FIELDS,
+    RUNTIME_FILLED_FORBIDDEN_MODEL_OUTPUT_FIELDS,
+    build_dprime_model_review_prompt,
+    prompt_metadata,
+)
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
     PASSPORT_COMPONENT_ID,
@@ -72,6 +81,96 @@ def test_default_ordinary_cli_remains_blocked_without_model_review_license(
         f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
         in result.output
     )
+
+
+def test_model_review_prompt_schema_names_exact_model_fillable_allowlist() -> None:
+    schema = DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA
+
+    assert schema["model_fillable_allowed_fields"] == (
+        MODEL_FILLABLE_ASSESSMENT_FIELDS
+    )
+    assert schema["required_fields"] == MODEL_FILLABLE_ASSESSMENT_FIELDS
+    assert set(schema["model_fillable_allowed_fields"]) == {
+        "source_proposition",
+        "answer_component_claim",
+        "support_relation",
+        "required_qualifiers",
+        "observed_qualifiers",
+        "missing_qualifiers",
+        "scope_check",
+        "currentness_check",
+        "contradiction_check",
+        "evidential_adequacy_notes",
+        "non_support_reason_when_not_direct",
+        "producer_abstained",
+        "challenge_recommended",
+        "closed_surface_flags",
+    }
+    assert (
+        "top-level keys are exactly model_fillable_allowed_fields"
+        in schema["model_output_contract"]
+    )
+
+
+def test_model_review_prompt_schema_forbids_runtime_filled_model_keys() -> None:
+    forbidden = set(DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA["forbidden_runtime_filled_fields"])
+
+    assert forbidden == set(RUNTIME_FILLED_FORBIDDEN_MODEL_OUTPUT_FIELDS)
+    for field in (
+        "assessment_id",
+        "assessment_digest",
+        "preflight_ref",
+        "preflight_digest",
+        "negative_control_profile_ref",
+        "negative_control_profile_digest",
+        "selector_ref",
+        "component_ref",
+        "source_obligation_ref",
+        "model_review_ref",
+        "prompt_license_ref",
+    ):
+        assert field in forbidden
+
+
+def test_model_review_prompt_schema_forbids_authority_created_model_keys() -> None:
+    schema = DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA
+    forbidden = set(schema["forbidden_authority_object_created_fields"])
+
+    assert forbidden == set(AUTHORITY_OBJECT_FORBIDDEN_MODEL_OUTPUT_FIELDS)
+    for field in (
+        "assessment_created",
+        "validated_support_proposal_created",
+        "run_kernel_support_admission_request_created",
+        "semantic_observation_created",
+        "component_coverage_created",
+        "citation_eligibility_claimed",
+        "source_obligation_satisfaction_claimed",
+        "answer_text_created",
+        "product_correctness_claimed",
+        "analysis_gap_search_proposal",
+    ):
+        assert field in forbidden
+        assert field in schema["forbidden_top_level_fields"]
+    assert schema["closed_surface_flags_required_false_keys"] == (
+        CLOSED_SURFACE_FLAGS_REQUIRED_FALSE_KEYS
+    )
+    assert "component_coverage_bound" in (
+        schema["closed_surface_flags_required_false_keys"]
+    )
+
+
+def test_model_review_prompt_metadata_retains_no_raw_prompt() -> None:
+    prompt = build_dprime_model_review_prompt(
+        input_packet={"safe": "packet"},
+        transient_bounded_evidence_window="sanitized bounded evidence",
+    )
+    metadata = prompt_metadata(prompt)
+
+    assert "output_schema.model_fillable_allowed_fields" in prompt
+    assert "output_schema.runtime_filled_fields" in prompt
+    assert "output_schema.forbidden_authority_object_created_fields" in prompt
+    assert metadata["raw_prompt_retained"] is False
+    assert "prompt" not in metadata
 
 
 def test_injected_fake_direct_support_assessment_blocks_before_proposal(
