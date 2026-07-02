@@ -28,12 +28,12 @@ import core.product_model_route_config as product_config
 
 ROOT = Path(__file__).resolve().parents[1]
 _OPENAI_ENV_NAME = "OPENAI_" + "API_" + "KEY"
-_PLACEHOLDER_SECRET = "placeholder-value-must-not-print"
+_PLACEHOLDER_VALUE = "placeholder-value-must-not-print"
 
 
 def test_default_dotenv_loader_accepts_utf8_bom_env_file(tmp_path: Path) -> None:
     (tmp_path / ".env").write_text(
-        f"{_OPENAI_ENV_NAME}={_PLACEHOLDER_SECRET}\n",
+        f"{_OPENAI_ENV_NAME}={_PLACEHOLDER_VALUE}\n",
         encoding="utf-8-sig",
     )
     helper = (
@@ -56,8 +56,8 @@ def test_default_dotenv_loader_accepts_utf8_bom_env_file(tmp_path: Path) -> None
     )
 
     assert result.returncode == 0, result.stderr
-    assert _PLACEHOLDER_SECRET not in result.stdout
-    assert _PLACEHOLDER_SECRET not in result.stderr
+    assert _PLACEHOLDER_VALUE not in result.stdout
+    assert _PLACEHOLDER_VALUE not in result.stderr
     status = json.loads(result.stdout)
     assert status["dotenv_helper_invoked"] is True
     assert status["dotenv_skipped_for_status_dry_run"] is False
