@@ -866,9 +866,13 @@ def _blocked_dprime_model_review_assessment_result(
                             dprime.get("validated_support_proposal_ref")
                         ),
                         fetch_read_content_packet=fetch_read_content_packet,
-                        source_evidence_admission_ref=admission_ref,
-                        component_ref=component_ref,
-                        source_obligation_ref=source_obligation_ref,
+                        source_evidence_admission_ref=_materialization_ref(
+                            admission_ref
+                        ),
+                        component_ref=_materialization_ref(component_ref),
+                        source_obligation_ref=_materialization_ref(
+                            source_obligation_ref
+                        ),
                     )
                 )
                 dprime.update(semantic_materialization.to_status_overlay())
@@ -1016,6 +1020,46 @@ def _model_review_next_blocked_surface(decision: str) -> str:
     if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:
         return "D-prime RunKernel support admission decision"
     return "D-prime model-review assessment"
+
+
+def _materialization_ref(value: Mapping[str, Any]) -> dict[str, Any]:
+    """Trim product status refs to the lineage fields the materializer consumes."""
+
+    downstream_fields = {
+        "answer_text",
+        "author_answer",
+        "author_input",
+        "citation",
+        "citation_eligibility",
+        "citation_eligible",
+        "component_coverage",
+        "component_coverage_ref",
+        "component_coverage_status",
+        "coverage",
+        "coverage_record",
+        "coverage_ref",
+        "final_answer_packet",
+        "product_correctness",
+        "semantic_observation",
+        "semantic_observation_admission",
+        "semantic_observation_ref",
+        "semantic_observation_status",
+        "source_obligation_satisfaction",
+        "sufficiency_readiness",
+    }
+    return _drop_keys(value, downstream_fields)
+
+
+def _drop_keys(value: Any, keys: set[str]) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            item_key: _drop_keys(item, keys)
+            for item_key, item in value.items()
+            if item_key not in keys
+        }
+    if isinstance(value, list | tuple):
+        return [_drop_keys(item, keys) for item in value]
+    return value
 
 
 def _dprime_not_reached_reason(dprime: Mapping[str, Any]) -> str:

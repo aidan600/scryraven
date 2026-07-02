@@ -513,8 +513,9 @@ def _require_existing_answer_contract_authority(
 ) -> Mapping[str, Any]:
     if run_kernel is None:
         _insufficient(
-            "D-prime SemanticObservation materialization requires an existing "
-            "RunKernel with authorized accepted/current answer-contract authority"
+            "missing ordinary D-prime product authority surface: an in-memory "
+            "RunKernel with authorized accepted/current answer-contract authority "
+            "for the retained D-prime source/fetch/read packet"
         )
     if run_kernel.state.run_id != str(fetch_packet.get("run_id")):
         _insufficient("RunKernel run_id does not match fetch/read packet")
