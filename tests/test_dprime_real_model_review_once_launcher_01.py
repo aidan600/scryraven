@@ -39,12 +39,24 @@ SCRIPT = ROOT / "scripts" / "run_dprime_real_model_review_once.py"
 CLI = ROOT / "proplex" / "__main__.py"
 TRANSPORT = ROOT / "core" / "dprime_product_smart_one_shot_transport.py"
 _OPENAI_ENV_NAME = "OPENAI_" + "API_" + "KEY"
+_MINIMAL_SUBPROCESS_ENV_KEYS = (
+    "APPDATA",
+    "COMSPEC",
+    "HOME",
+    "LOCALAPPDATA",
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "TEMP",
+    "TMP",
+    "TMPDIR",
+    "USERPROFILE",
+    "WINDIR",
+)
 
 
 def test_direct_script_preflight_works_without_external_pythonpath() -> None:
-    env = os.environ.copy()
-    env.pop("PYTHONPATH", None)
-    secret_value = env.get(_OPENAI_ENV_NAME)
+    env = _minimal_subprocess_env()
     result = subprocess.run(
         [
             sys.executable,
@@ -67,6 +79,7 @@ def test_direct_script_preflight_works_without_external_pythonpath() -> None:
         "product config boundary: "
         "core.product_model_route_config.initialize_product_model_route_config"
     ) in output
+    assert "OPENAI_API_KEY present in current process: false" in output
     assert "real model call performed: false" in output
     assert "raw prompt retained: false" in output
     assert "raw model response retained: false" in output
@@ -75,9 +88,8 @@ def test_direct_script_preflight_works_without_external_pythonpath() -> None:
     assert "raw_model_response" not in output.casefold()
     assert "provider_payload" not in output.casefold()
     assert "api_key:" not in output.casefold()
-    if secret_value:
-        assert secret_value not in output
-        assert secret_value not in result.stderr
+    assert _OPENAI_ENV_NAME not in env
+    assert "PYTHONPATH" not in env
 
 
 def test_launcher_and_ordinary_cli_share_product_config_boundary() -> None:
@@ -254,3 +266,21 @@ def _expression_name(node: ast.AST) -> str:
         base = _expression_name(node.value)
         return f"{base}.{node.attr}" if base else node.attr
     return ""
+
+
+def _minimal_subprocess_env() -> dict[str, str]:
+    env = {
+        key: value
+        for key in _MINIMAL_SUBPROCESS_ENV_KEYS
+        if (value := os.environ.get(key))
+    }
+    env.update(
+        {
+            "PYTHON_DOTENV_DISABLED": "1",
+            "SCRYRAVEN_SMART_PROVIDER": "OpenAI",
+            "SCRYRAVEN_SMART_MODEL": "gpt-5.4",
+        }
+    )
+    env.pop("PYTHONPATH", None)
+    env.pop(_OPENAI_ENV_NAME, None)
+    return env
