@@ -72,6 +72,18 @@ surface required by the SemanticObservation admission reducer. The D-prime
 SemanticObservation materialization runtime therefore fails closed before
 admission and reports materialization input authority insufficient.
 
+Exact missing ordinary product authority surface:
+
+```text
+an in-memory ordinary D-prime RunKernel/product authority surface carrying
+authorized accepted/current answer-contract state for the retained D-prime
+source/fetch/read packet
+```
+
+The retained `current_answer_contract_ref` / digest on the candidate and
+fetch/read packets is lineage only. It is not an accepted/current
+answer-contract authority surface and must not be inflated into one.
+
 ## Current implemented product path
 
 Implemented and consumed by the ordinary dry-run status path:
@@ -235,6 +247,9 @@ Implemented after DPRIME-RUNKERNEL-DECISION-AUTHORITY-SURFACE-01:
 - RunKernel-owned admitted/rejected/challenged decision status surface;
 - RunKernel/SemanticObservation-owned SemanticObservation materialization
   boundary for admitted D-prime decisions only;
+- named fail-closed blocker when the ordinary D-prime path has retained
+  current-contract lineage but no in-memory accepted/current RunKernel authority
+  surface to consume;
 - ordinary product status reporting through `DPrimeStatusPayload`.
 
 The current stop point is SemanticObservation materialization input authority

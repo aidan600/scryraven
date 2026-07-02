@@ -94,6 +94,32 @@ def test_product_status_stops_at_materialization_input_authority(
     assert result.payload["next_blocked_surface"] == (
         "D-prime SemanticObservation materialization input authority"
     )
+    assert "missing ordinary D-prime product authority surface" in (
+        result.payload["blocker_detail"]
+    )
+    assert result.payload["component_ref"]["lineage_only"] is True
+
+
+def test_retained_contract_digest_lineage_is_not_materialization_authority(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+
+    result = _run_product_status_with_assessment(repo_root, _assessment_payload())
+
+    component_ref = result.payload["component_ref"]
+    semantic = result.payload["semantic_observation_admission_ref"]
+    dprime_status = result.payload["dprime_status"]
+    assert component_ref["lineage_only"] is True
+    assert component_ref["current_answer_contract_digest"]
+    assert result.decision == (
+        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
+    )
+    assert "in-memory RunKernel" in result.payload["blocker_detail"]
+    assert semantic["status"] == "unavailable"
+    assert "semantic_observation_ref" not in dprime_status
+    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is False
 
 
 @pytest.mark.parametrize(
