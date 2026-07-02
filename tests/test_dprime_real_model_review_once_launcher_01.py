@@ -25,7 +25,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import scripts.run_dprime_real_model_review_once as launcher
 from core.dprime_product_smart_one_shot_transport import (
@@ -90,6 +90,7 @@ def test_direct_script_preflight_works_without_external_pythonpath() -> None:
     assert "api_key:" not in output.casefold()
     assert _OPENAI_ENV_NAME not in env
     assert "PYTHONPATH" not in env
+    assert not _credential_or_product_env_keys(env)
 
 
 def test_launcher_and_ordinary_cli_share_product_config_boundary() -> None:
@@ -274,13 +275,13 @@ def _minimal_subprocess_env() -> dict[str, str]:
         for key in _MINIMAL_SUBPROCESS_ENV_KEYS
         if (value := os.environ.get(key))
     }
-    env.update(
-        {
-            "PYTHON_DOTENV_DISABLED": "1",
-            "SCRYRAVEN_SMART_PROVIDER": "OpenAI",
-            "SCRYRAVEN_SMART_MODEL": "gpt-5.4",
-        }
-    )
+    env["PYTHON_DOTENV_DISABLED"] = "1"
     env.pop("PYTHONPATH", None)
-    env.pop(_OPENAI_ENV_NAME, None)
+    for key in _credential_or_product_env_keys(env):
+        env.pop(key, None)
     return env
+
+
+def _credential_or_product_env_keys(env: Mapping[str, str]) -> set[str]:
+    prefixes = ("OPENAI_", "SCRYRAVEN_", "PROPLEX_")
+    return {key for key in env if key.upper().startswith(prefixes)}
