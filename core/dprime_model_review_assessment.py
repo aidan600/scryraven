@@ -45,10 +45,11 @@ from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_INPUT_INVALID,
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
     BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID,
+    DPRIME_MODEL_REVIEW_TRANSPORT_BLOCKERS,
 )
 
 DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE = (
-    "DPRIME-REAL-MODEL-REVIEW-ADAPTER-CONTRACT-01"
+    "DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01"
 )
 DPRIME_MODEL_REVIEW_INPUT_SCHEMA_VERSION = (
     "dprime_model_review_assessment_input_slice_01_v1"
@@ -481,8 +482,13 @@ def run_dprime_model_review_assessment(
                 call_count=call_count,
             )
         if not invocation.ok:
+            decision = (
+                invocation.error_type
+                if invocation.error_type in DPRIME_MODEL_REVIEW_TRANSPORT_BLOCKERS
+                else BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED
+            )
             return _blocked_result(
-                decision=BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
+                decision=decision,
                 model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
                 assessment_status=ASSESSMENT_STATUS_BLOCKED,
                 blocker_detail=(
