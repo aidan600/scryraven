@@ -50,7 +50,7 @@ def test_validator_availability_is_product_consumed_without_assessment(
     result = build_live_semantic_coverage_status(query=QUERY, repo_root=repo_root)
 
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
-    assert "phase: DPRIME-ONE-SHOT-PROVIDER-BOUNDARY-01" in result.output
+    assert f"phase: {dprime.DPRIME_PHASE}" in result.output
     assert "D-prime assessment validator status: available" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output

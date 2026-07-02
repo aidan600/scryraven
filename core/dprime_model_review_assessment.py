@@ -42,7 +42,7 @@ from core.dprime_support_proposal_schema import (
 )
 
 DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE = (
-    "DPRIME-MODEL-REVIEW-ASSESSMENT-SLICE-01"
+    "DPRIME-REAL-MODEL-REVIEW-PRERUN-ADAPTER-GATE-01"
 )
 DPRIME_MODEL_REVIEW_INPUT_SCHEMA_VERSION = (
     "dprime_model_review_assessment_input_slice_01_v1"

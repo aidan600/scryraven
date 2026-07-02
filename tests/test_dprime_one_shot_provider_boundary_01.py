@@ -44,7 +44,7 @@ def test_default_boundary_status_is_product_consumed_and_not_approved(
     result = build_live_semantic_coverage_status(query=QUERY, repo_root=repo_root)
 
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
-    assert "phase: DPRIME-ONE-SHOT-PROVIDER-BOUNDARY-01" in result.output
+    assert f"phase: {dprime.DPRIME_PHASE}" in result.output
     assert "D-prime one-shot provider boundary status: not approved" in result.output
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime model review call count: 0" in result.output
@@ -53,6 +53,7 @@ def test_default_boundary_status_is_product_consumed_and_not_approved(
         "retrieval/model = 0"
     ) in result.output
     dprime_status = result.payload["dprime_status"]
+    assert dprime_status["phase"] == dprime.DPRIME_PHASE
     assert dprime_status["one_shot_provider_boundary_status"] == "not approved"
     assert dprime_status["one_shot_provider_boundary_consumed"] is True
     boundary_ref = dprime_status["one_shot_provider_boundary_ref"]

@@ -32,6 +32,7 @@ import core.dprime_one_shot_provider_boundary as provider_boundary
 import core.dprime_support_proposal_schema as dprime
 import proplex.live_semantic_coverage_status as semantic_status
 from core.dprime_model_review_assessment import (
+    DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE,
     DPrimeModelReviewLicense,
     build_dprime_model_review_input_packet,
 )
@@ -57,8 +58,10 @@ def test_default_ordinary_cli_remains_blocked_without_model_review_license(
     result = build_live_semantic_coverage_status(query=QUERY, repo_root=repo_root)
 
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
-    assert "phase: DPRIME-ONE-SHOT-PROVIDER-BOUNDARY-01" in result.output
+    assert f"phase: {dprime.DPRIME_PHASE}" in result.output
+    assert "D-prime one-shot provider boundary status: not approved" in result.output
     assert "D-prime model review status: not licensed" in result.output
+    assert "D-prime model review call count: 0" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert (
         f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
@@ -108,6 +111,20 @@ def test_injected_fake_direct_support_assessment_blocks_before_proposal(
     assert "SemanticObservation admission status: unavailable" in result.output
     assert "ComponentCoverage status: unavailable" in result.output
     dprime_status = result.payload["dprime_status"]
+    assert dprime_status["phase"] == dprime.DPRIME_PHASE
+    assert dprime_status["prompt_license_ref"]["phase"] == (
+        DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE
+    )
+    assert dprime_status["input_packet_ref"]["phase"] == (
+        DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE
+    )
+    assert dprime_status["model_review_ref"]["phase"] == (
+        DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE
+    )
+    assert calls[0]["input_packet"]["phase"] == DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE
+    assert dprime_status["model_review_ref"]["input_packet_ref"]["phase"] == (
+        DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE
+    )
     assert dprime_status["prompt_license_ref"]["fake_test_callable_only"] is True
     assert dprime_status["prompt_license_ref"]["callable_kind"] == "fake_test"
     assert dprime_status["model_review_call_count"] == 1
