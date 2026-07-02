@@ -54,35 +54,32 @@ source/evidence custody and readability
 -> ValidatedSupportProposal candidate
 -> RunKernelSupportProposalAdmissionRequest ready
 -> RunKernel-owned admission decision made
--> SemanticObservation materialization input authority insufficient
+-> ordinary D-prime RunKernel/product accepted/current contract authority
+-> SemanticObservation materialized/admitted
+-> ComponentCoverage not licensed/not bound
 ```
 
 The chain is surfaced through `DPrimeStatusPayload` in
 `proplex.live_semantic_coverage_status`. The current stop condition is:
 
 ```text
-BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
+BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
 ```
 
 At that point a validator-valid proposal candidate and a lineage-only
 `RunKernelSupportProposalAdmissionRequest` may exist. When the RunKernel-owned
-decision runtime reports `admitted`, the ordinary D-prime status chain does not
-currently expose the existing authorized accepted/current answer-contract
-surface required by the SemanticObservation admission reducer. The D-prime
-SemanticObservation materialization runtime therefore fails closed before
-admission and reports materialization input authority insufficient.
-
-Exact missing ordinary product authority surface:
-
-```text
-an in-memory ordinary D-prime RunKernel/product authority surface carrying
-authorized accepted/current answer-contract state for the retained D-prime
-source/fetch/read packet
-```
+decision runtime reports `admitted`, the ordinary D-prime status chain creates
+and consumes an in-memory `RunKernel` product authority surface from
+`core.dprime_ordinary_contract_authority_runtime`. That surface establishes
+accepted/current answer-contract authority through the RunKernel-owned
+`dprime_current_answer_contract_authority` reducer, then passes the RunKernel to
+the existing SemanticObservation materialization runtime.
 
 The retained `current_answer_contract_ref` / digest on the candidate and
 fetch/read packets is lineage only. It is not an accepted/current
-answer-contract authority surface and must not be inflated into one.
+answer-contract authority surface and must not be inflated into one; the new
+surface treats retained refs/digests as lineage checks and records
+RunKernel/product authority separately.
 
 ## Current implemented product path
 
@@ -245,20 +242,18 @@ Implemented after DPRIME-RUNKERNEL-DECISION-AUTHORITY-SURFACE-01:
 - assessment-to-proposal candidate gate;
 - lineage-only `RunKernelSupportProposalAdmissionRequest` preparation;
 - RunKernel-owned admitted/rejected/challenged decision status surface;
+- ordinary D-prime RunKernel/product accepted/current contract authority in
+  `core.dprime_ordinary_contract_authority_runtime`;
 - RunKernel/SemanticObservation-owned SemanticObservation materialization
   boundary for admitted D-prime decisions only;
-- named fail-closed blocker when the ordinary D-prime path has retained
-  current-contract lineage but no in-memory accepted/current RunKernel authority
-  surface to consume;
+- named fail-closed blocker at ComponentCoverage because coverage binding is
+  not licensed in the current D-prime status path;
 - ordinary product status reporting through `DPrimeStatusPayload`.
 
-The current stop point is SemanticObservation materialization input authority
-insufficient.
+The current stop point is ComponentCoverage not licensed/not bound.
 
 Still not implemented or closed:
 
-- admitted D-prime `SemanticObservation` materialization without a real
-  accepted/current answer-contract authority consumer;
 - `ComponentCoverage` binding;
 - citation/source-obligation satisfaction;
 - `SufficiencyReadiness`;
@@ -273,7 +268,7 @@ Downstream support-bearing surfaces remain closed until separately licensed:
 
 ```text
 RunKernel-owned admission decision
--> SemanticObservation materialization input authority
+-> ordinary D-prime accepted/current answer-contract authority
 -> admitted SemanticObservation
 -> ComponentCoverage binding (closed)
 -> citation/source-obligation satisfaction

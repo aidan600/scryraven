@@ -20,6 +20,10 @@ from typing import Any, Callable, Mapping, Sequence
 
 from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_model_review_assessment import run_dprime_model_review_assessment
+from core.dprime_ordinary_contract_authority_runtime import (
+    DPrimeOrdinaryContractAuthorityError,
+    build_dprime_ordinary_contract_authority,
+)
 from core.dprime_product_smart_one_shot_transport import (
     product_smart_model_route_ref,
 )
@@ -842,6 +846,7 @@ def _blocked_dprime_model_review_assessment_result(
     decision = None
     semantic_materialization = None
     materialization_error = None
+    contract_authority = None
     if proposal_validated:
         decision = build_run_kernel_dprime_admission_decision(
             _safe_mapping(dprime.get("run_kernel_support_admission_request_ref")),
@@ -856,6 +861,16 @@ def _blocked_dprime_model_review_assessment_result(
         dprime["objects_created"] = objects_created
         if decision.decision_status == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED:
             try:
+                contract_authority = build_dprime_ordinary_contract_authority(
+                    fetch_read_content_packet=fetch_read_content_packet,
+                    source_evidence_admission_ref=_materialization_ref(
+                        admission_ref
+                    ),
+                    component_ref=_materialization_ref(component_ref),
+                    source_obligation_ref=_materialization_ref(
+                        source_obligation_ref
+                    ),
+                )
                 semantic_materialization = (
                     materialize_dprime_semantic_observation_from_admitted_decision(
                         decision=decision,
@@ -873,12 +888,21 @@ def _blocked_dprime_model_review_assessment_result(
                         source_obligation_ref=_materialization_ref(
                             source_obligation_ref
                         ),
+                        run_kernel=contract_authority.run_kernel,
                     )
                 )
                 dprime.update(semantic_materialization.to_status_overlay())
+                dprime["accepted_current_answer_contract_authority_ref"] = (
+                    dict(contract_authority.authority_ref)
+                )
                 objects_created["semantic_observation"] = True
                 objects_created["component_coverage"] = False
                 dprime["objects_created"] = objects_created
+            except DPrimeOrdinaryContractAuthorityError as exc:
+                materialization_error = DPrimeSemanticObservationMaterializationError(
+                    BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT,
+                    str(exc),
+                )
             except DPrimeSemanticObservationMaterializationError as exc:
                 materialization_error = exc
     support_ref = (

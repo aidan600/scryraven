@@ -47,9 +47,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
-    )
+    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
     assert (
         "D-prime assessment status: assessed" in result.output
     )
@@ -66,11 +64,9 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
     ) in result.output
     assert (
-        "semantic support source: unavailable; RunKernel admitted decision not "
-        "materialized into SemanticObservation"
-    ) in (
-        result.output
-    )
+        "semantic support source: available from D-prime SemanticObservation; "
+        "ComponentCoverage not licensed"
+    ) in result.output
 
     dprime_status = result.payload["dprime_status"]
     proposal_ref = dprime_status["validated_support_proposal_ref"]
@@ -104,7 +100,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     )
     assert request_ref["validation_result_ref"]["validation_result_digest"]
     assert request_ref["request_digest"]
-    assert dprime_status["admitted_support"] is False
+    assert dprime_status["admitted_support"] is True
     assert dprime_status["run_kernel_decision"] == "admitted"
     assert dprime_status["run_kernel_admission_decision_status"] == "admitted"
     assert dprime_status["objects_created"] == {
@@ -113,13 +109,11 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         "validated_support_proposal": True,
         "run_kernel_support_proposal_admission_request": True,
         "run_kernel_admission_decision": True,
-        "semantic_observation": False,
+        "semantic_observation": True,
         "component_coverage": False,
     }
-    assert result.payload["semantic_observation_admission_ref"]["status"] == (
-        "unavailable"
-    )
-    assert result.payload["component_coverage_ref"]["status"] == "unavailable"
+    assert result.payload["semantic_observation_admission_ref"]["status"] == "admitted"
+    assert result.payload["component_coverage_ref"]["status"] == "not licensed"
     assert result.payload["answerability_correctness"] == "not claimed"
 
 

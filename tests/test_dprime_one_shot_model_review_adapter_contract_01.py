@@ -144,9 +144,7 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert calls[0]["input_packet"]["one_shot_model_review_adapter_ref"][
         "status"
     ] == "configured"
-    assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT
-    )
+    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["model_review_call_count"] == 1
     assert (
