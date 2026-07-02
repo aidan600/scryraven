@@ -25,6 +25,12 @@ from core.dprime_model_review_prompt import (
     build_dprime_model_review_prompt,
     prompt_metadata,
 )
+from core.dprime_one_shot_model_review_adapter import (
+    DPrimeOneShotModelReviewAdapter,
+    DPrimeOneShotModelReviewAdapterValidation,
+    invoke_dprime_one_shot_model_review_adapter,
+    validate_dprime_one_shot_model_review_adapter,
+)
 from core.dprime_one_shot_provider_boundary import (
     DPrimeOneShotProviderBoundary,
     DPrimeOneShotProviderBoundaryValidation,
@@ -42,7 +48,7 @@ from core.dprime_support_proposal_schema import (
 )
 
 DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE = (
-    "DPRIME-REAL-MODEL-REVIEW-PRERUN-ADAPTER-GATE-01"
+    "DPRIME-REAL-MODEL-REVIEW-ADAPTER-CONTRACT-01"
 )
 DPRIME_MODEL_REVIEW_INPUT_SCHEMA_VERSION = (
     "dprime_model_review_assessment_input_slice_01_v1"
@@ -335,6 +341,9 @@ def run_dprime_model_review_assessment(
     one_shot_provider_boundary: (
         Mapping[str, Any] | DPrimeOneShotProviderBoundary | None
     ) = None,
+    one_shot_model_review_adapter: (
+        Mapping[str, Any] | DPrimeOneShotModelReviewAdapter | None
+    ) = None,
 ) -> DPrimeModelReviewAssessmentResult:
     """Run the single-call injected model-review assessment slice."""
 
@@ -343,15 +352,20 @@ def run_dprime_model_review_assessment(
         one_shot_provider_boundary
     )
     provider_boundary_status_ref = provider_boundary_validation.to_status_ref()
+    adapter_validation = validate_dprime_one_shot_model_review_adapter(
+        one_shot_model_review_adapter
+    )
+    adapter_status_ref = adapter_validation.to_status_ref()
     license_blocker = _license_blocker(
         license_obj,
         model_review_callable,
         provider_boundary_validation=provider_boundary_validation,
+        adapter_validation=adapter_validation,
     )
     if license_blocker:
         status = (
             MODEL_REVIEW_STATUS_NOT_LICENSED
-            if not license_obj.enabled or model_review_callable is None
+            if not license_obj.enabled
             else MODEL_REVIEW_STATUS_BLOCKED
         )
         decision = (
@@ -380,6 +394,7 @@ def run_dprime_model_review_assessment(
             negative_control_profile_ref=negative_control_profile_ref,
             assessment_validator_status=assessment_validator_status,
             one_shot_provider_boundary_ref=provider_boundary_status_ref,
+            one_shot_model_review_adapter_ref=adapter_status_ref,
         )
     except DPrimeModelReviewAssessmentError as exc:
         return _blocked_result(
@@ -399,44 +414,87 @@ def run_dprime_model_review_assessment(
         input_packet_ref=packet.ref(),
         prompt_meta=prompt_meta,
         provider_boundary_ref=provider_boundary_status_ref,
+        adapter_ref=adapter_status_ref,
         call_count=1,
     )
     prompt_license_ref = license_obj.to_ref()
     call_count = 0
-    try:
-        call_count = _consume_model_review_call(call_count, limit=1)
-        raw_output = model_review_callable(
-            prompt,
+    if license_obj.is_fake_test:
+        try:
+            call_count = _consume_model_review_call(call_count, limit=1)
+            if model_review_callable is None:
+                raise DPrimeModelReviewAssessmentError(
+                    "D-prime fake/test review requires an injected callable"
+                )
+            raw_output = model_review_callable(
+                prompt,
+                input_packet=packet.to_dict(),
+                system_prompt=DPRIME_MODEL_REVIEW_SYSTEM_PROMPT,
+                license_ref=prompt_license_ref,
+                one_shot_provider_boundary_ref=provider_boundary_status_ref,
+            )
+        except TimeoutError:
+            return _blocked_result(
+                decision=BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
+                model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
+                assessment_status=ASSESSMENT_STATUS_BLOCKED,
+                blocker_detail="D-prime model review timed out and failed closed",
+                input_packet_ref=packet.ref(),
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                call_count=call_count,
+            )
+        except Exception as exc:
+            return _blocked_result(
+                decision=BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
+                model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
+                assessment_status=ASSESSMENT_STATUS_BLOCKED,
+                blocker_detail=(
+                    "D-prime model review callable failed closed: "
+                    f"{type(exc).__name__}"
+                ),
+                input_packet_ref=packet.ref(),
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                call_count=call_count,
+            )
+    else:
+        invocation = invoke_dprime_one_shot_model_review_adapter(
+            one_shot_model_review_adapter,
+            prompt=prompt,
             input_packet=packet.to_dict(),
             system_prompt=DPRIME_MODEL_REVIEW_SYSTEM_PROMPT,
             license_ref=prompt_license_ref,
             one_shot_provider_boundary_ref=provider_boundary_status_ref,
+            one_shot_model_review_adapter_ref=adapter_status_ref,
         )
-    except TimeoutError:
-        return _blocked_result(
-            decision=BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
-            model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
-            assessment_status=ASSESSMENT_STATUS_BLOCKED,
-            blocker_detail="D-prime model review timed out and failed closed",
-            input_packet_ref=packet.ref(),
-            model_review_ref=model_review_ref,
-            prompt_license_ref=prompt_license_ref,
-            call_count=call_count,
-        )
-    except Exception as exc:
-        return _blocked_result(
-            decision=BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
-            model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
-            assessment_status=ASSESSMENT_STATUS_BLOCKED,
-            blocker_detail=(
-                "D-prime model review callable failed closed: "
-                f"{type(exc).__name__}"
-            ),
-            input_packet_ref=packet.ref(),
-            model_review_ref=model_review_ref,
-            prompt_license_ref=prompt_license_ref,
-            call_count=call_count,
-        )
+        call_count = invocation.call_count
+        if invocation.timed_out:
+            return _blocked_result(
+                decision=BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
+                model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
+                assessment_status=ASSESSMENT_STATUS_BLOCKED,
+                blocker_detail="D-prime model review timed out and failed closed",
+                input_packet_ref=packet.ref(),
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                call_count=call_count,
+            )
+        if not invocation.ok:
+            return _blocked_result(
+                decision=BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
+                model_review_status=MODEL_REVIEW_STATUS_BLOCKED,
+                assessment_status=ASSESSMENT_STATUS_BLOCKED,
+                blocker_detail=(
+                    "D-prime model review adapter failed closed: "
+                    f"{invocation.error_type or 'unknown'}"
+                ),
+                input_packet_ref=packet.ref(),
+                model_review_ref=model_review_ref,
+                prompt_license_ref=prompt_license_ref,
+                call_count=call_count,
+            )
+        raw_output = invocation.transient_model_review_output
 
     try:
         assessment_payload = _normalized_assessment_payload(
@@ -482,6 +540,7 @@ def build_dprime_model_review_input_packet(
     negative_control_profile_ref: Mapping[str, Any],
     assessment_validator_status: str,
     one_shot_provider_boundary_ref: Mapping[str, Any] | None = None,
+    one_shot_model_review_adapter_ref: Mapping[str, Any] | None = None,
 ) -> DPrimeModelReviewInputPacket:
     """Build safe retained input plus a transient bounded evidence window."""
 
@@ -547,6 +606,9 @@ def build_dprime_model_review_input_packet(
             },
             "one_shot_provider_boundary_ref": _one_shot_provider_boundary_ref(
                 one_shot_provider_boundary_ref
+            ),
+            "one_shot_model_review_adapter_ref": (
+                _one_shot_model_review_adapter_ref(one_shot_model_review_adapter_ref)
             ),
             "source_evidence_custody_ref": _source_evidence_custody_ref(admission),
             "content_reference_ref": _content_reference_ref(reference),
@@ -780,11 +842,10 @@ def _license_blocker(
     model_review_callable: ModelReviewCallable | None,
     *,
     provider_boundary_validation: DPrimeOneShotProviderBoundaryValidation,
+    adapter_validation: DPrimeOneShotModelReviewAdapterValidation,
 ) -> str | None:
     if not license_obj.enabled:
         return "D-prime model review is not licensed in this phase"
-    if model_review_callable is None:
-        return "D-prime model review requires an injected review callable"
     callable_kind = _normalize_key(license_obj.callable_kind)
     if callable_kind not in _MODEL_REVIEW_CALLABLE_KINDS:
         return "D-prime model review callable kind is unsupported"
@@ -797,12 +858,19 @@ def _license_blocker(
     if license_obj.timeout_policy != "fail_closed":
         return "D-prime model review timeout policy must fail closed"
     if license_obj.is_fake_test:
+        if model_review_callable is None:
+            return "D-prime fake/test review requires an injected review callable"
         if license_obj.one_shot_adapter_ref:
             return "D-prime fake/test review cannot carry a real adapter ref"
         return None
     if not license_obj.is_real_one_shot:
         return "D-prime model review license must be fake/test or real_one_shot"
 
+    if model_review_callable is not None:
+        return (
+            "D-prime real model review requires the product-owned one-shot "
+            "adapter contract, not a bare callable"
+        )
     if not license_obj.one_shot_adapter_ref:
         return "D-prime real model review requires a proven one-shot adapter ref"
     if not provider_boundary_validation.approved:
@@ -815,6 +883,23 @@ def _license_blocker(
         != license_obj.one_shot_adapter_ref
     ):
         return "D-prime real model review adapter ref does not match boundary"
+    if not adapter_validation.configured:
+        return "D-prime real model review requires configured adapter contract"
+    adapter_ref = _safe_mapping(adapter_validation.adapter_ref)
+    if _clean_text(adapter_ref.get("adapter_ref"), limit=320) != (
+        license_obj.one_shot_adapter_ref
+    ):
+        return "D-prime real model review adapter contract ref does not match license"
+    if _clean_text(adapter_ref.get("provider_boundary_ref"), limit=320) != (
+        _clean_text(boundary_ref.get("boundary_id"), limit=320)
+    ):
+        return "D-prime real model review adapter boundary ref does not match boundary"
+    if _clean_text(adapter_ref.get("provider_model_approval_ref"), limit=320) != (
+        _clean_text(boundary_ref.get("provider_model_approval_ref"), limit=320)
+    ):
+        return (
+            "D-prime real model review adapter approval ref does not match boundary"
+        )
     return None
 
 
@@ -839,6 +924,7 @@ def _model_review_ref(
     input_packet_ref: Mapping[str, Any],
     prompt_meta: Mapping[str, Any],
     provider_boundary_ref: Mapping[str, Any],
+    adapter_ref: Mapping[str, Any],
     call_count: int,
 ) -> dict[str, Any]:
     payload = {
@@ -850,6 +936,9 @@ def _model_review_ref(
         "input_packet_ref": dict(input_packet_ref),
         "one_shot_provider_boundary_ref": _one_shot_provider_boundary_ref(
             provider_boundary_ref
+        ),
+        "one_shot_model_review_adapter_ref": _one_shot_model_review_adapter_ref(
+            adapter_ref
         ),
         "prompt_schema_version": DPRIME_MODEL_REVIEW_PROMPT_SCHEMA_VERSION,
         "prompt_hash": prompt_meta.get("prompt_hash"),
@@ -1083,6 +1172,64 @@ def _one_shot_provider_boundary_ref(value: Mapping[str, Any] | None) -> dict[str
                     "one_shot_adapter_ref": boundary.get("one_shot_adapter_ref"),
                     "closed_surface_flags": _safe_mapping(
                         boundary.get("closed_surface_flags")
+                    ),
+                }
+            ),
+        }
+    )
+
+
+def _one_shot_model_review_adapter_ref(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    safe = _safe_mapping(value)
+    adapter = _safe_mapping(safe.get("adapter_ref"))
+    return _without_empty(
+        {
+            "status": safe.get("status"),
+            "blocker_count": len(_text_tuple(safe.get("blockers"), limit=260)),
+            "warning_count": len(_text_tuple(safe.get("warnings"), limit=260)),
+            "adapter_contract_valid_is_not_semantic_support": (
+                safe.get("adapter_contract_valid_is_not_semantic_support") is True
+            ),
+            "real_provider_call_performed": False,
+            "real_model_call_performed": False,
+            "adapter_ref": _without_empty(
+                {
+                    "schema_version": adapter.get("schema_version"),
+                    "adapter_ref": adapter.get("adapter_ref"),
+                    "phase": adapter.get("phase"),
+                    "adapter_kind": adapter.get("adapter_kind"),
+                    "one_shot_adapter_proven": adapter.get(
+                        "one_shot_adapter_proven"
+                    ),
+                    "provider_model_approval_ref": adapter.get(
+                        "provider_model_approval_ref"
+                    ),
+                    "provider_boundary_ref": adapter.get("provider_boundary_ref"),
+                    "max_provider_attempts": adapter.get("max_provider_attempts"),
+                    "retry_policy": adapter.get("retry_policy"),
+                    "fallback_policy": adapter.get("fallback_policy"),
+                    "provider_switching_allowed": adapter.get(
+                        "provider_switching_allowed"
+                    ),
+                    "timeout_policy": adapter.get("timeout_policy"),
+                    "call_count": adapter.get("call_count"),
+                    "raw_prompt_retained": adapter.get("raw_prompt_retained"),
+                    "raw_model_response_retained": adapter.get(
+                        "raw_model_response_retained"
+                    ),
+                    "provider_payload_retained": adapter.get(
+                        "provider_payload_retained"
+                    ),
+                    "real_provider_call_performed": False,
+                    "real_model_call_performed": False,
+                    "provider_model_selection_detail_present": adapter.get(
+                        "provider_model_selection_detail_present"
+                    ),
+                    "candidate_helper": adapter.get("candidate_helper"),
+                    "closed_surface_flags": _safe_mapping(
+                        adapter.get("closed_surface_flags")
                     ),
                 }
             ),

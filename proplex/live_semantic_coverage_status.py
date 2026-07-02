@@ -169,6 +169,7 @@ def build_live_semantic_coverage_status(
     query: str,
     repo_root: str | Path,
     dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
+    dprime_one_shot_model_review_adapter: Any | None = None,
     dprime_model_review_license: Mapping[str, Any] | None = None,
     dprime_model_review_callable: Callable[..., Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
@@ -259,12 +260,14 @@ def build_live_semantic_coverage_status(
     dprime_status = build_dprime_status_payload(
         evidence_frame_preflight=evidence_frame_preflight,
         one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+        one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
     )
     if (
         dprime_status.decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
         and (
             dprime_model_review_license is not None
             or dprime_model_review_callable is not None
+            or dprime_one_shot_model_review_adapter is not None
         )
     ):
         model_review_result = run_dprime_model_review_assessment(
@@ -279,6 +282,7 @@ def build_live_semantic_coverage_status(
             license=dprime_model_review_license,
             model_review_callable=dprime_model_review_callable,
             one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+            one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
         )
         return _blocked_dprime_model_review_assessment_result(
             query=query,
@@ -456,6 +460,10 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "D-prime one-shot provider boundary status: "
             f"{dprime.get('one_shot_provider_boundary_status')}"
+        ),
+        (
+            "D-prime one-shot model-review adapter status: "
+            f"{dprime.get('one_shot_model_review_adapter_status')}"
         ),
         f"D-prime model review status: {dprime.get('model_review_status')}",
         (

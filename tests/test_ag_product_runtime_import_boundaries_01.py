@@ -39,6 +39,9 @@ DPRIME_ASSESSMENT_VALIDATION_MODULE = (
 DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_MODULE = (
     ROOT / "core" / "dprime_one_shot_provider_boundary.py"
 )
+DPRIME_ONE_SHOT_MODEL_REVIEW_ADAPTER_MODULE = (
+    ROOT / "core" / "dprime_one_shot_model_review_adapter.py"
+)
 DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE = (
     ROOT / "core" / "dprime_model_review_assessment.py"
 )
@@ -82,6 +85,7 @@ def test_dprime_assessment_validation_module_does_not_import_ag_scripts() -> Non
 
 
 def test_dprime_model_review_modules_do_not_import_ag_scripts() -> None:
+    assert _ag_script_imports(DPRIME_ONE_SHOT_MODEL_REVIEW_ADAPTER_MODULE) == []
     assert _ag_script_imports(DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE) == []
     assert _ag_script_imports(DPRIME_MODEL_REVIEW_PROMPT_MODULE) == []
 
@@ -164,6 +168,9 @@ def test_dprime_model_review_modules_avoid_live_provider_imports() -> None:
         "dotenv",
         "subprocess",
     }
+    assert _imports(DPRIME_ONE_SHOT_MODEL_REVIEW_ADAPTER_MODULE).isdisjoint(
+        forbidden_imports
+    )
     assert _imports(DPRIME_MODEL_REVIEW_ASSESSMENT_MODULE).isdisjoint(
         forbidden_imports
     )
