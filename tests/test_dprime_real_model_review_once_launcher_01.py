@@ -21,6 +21,9 @@ correctness.
 from __future__ import annotations
 
 import ast
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -36,6 +39,45 @@ SCRIPT = ROOT / "scripts" / "run_dprime_real_model_review_once.py"
 CLI = ROOT / "proplex" / "__main__.py"
 TRANSPORT = ROOT / "core" / "dprime_product_smart_one_shot_transport.py"
 _OPENAI_ENV_NAME = "OPENAI_" + "API_" + "KEY"
+
+
+def test_direct_script_preflight_works_without_external_pythonpath() -> None:
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    secret_value = env.get(_OPENAI_ENV_NAME)
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "What is the adult U.S. passport book renewal fee?",
+            "--credential-preflight-only",
+            "--no-secret-values",
+        ],
+        cwd=ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = result.stdout
+    assert "D-prime real model-review credential preflight" in output
+    assert (
+        "product config boundary: "
+        "core.product_model_route_config.initialize_product_model_route_config"
+    ) in output
+    assert "real model call performed: false" in output
+    assert "raw prompt retained: false" in output
+    assert "raw model response retained: false" in output
+    assert "provider payload retained: false" in output
+    assert "raw_prompt" not in output.casefold()
+    assert "raw_model_response" not in output.casefold()
+    assert "provider_payload" not in output.casefold()
+    assert "api_key:" not in output.casefold()
+    if secret_value:
+        assert secret_value not in output
+        assert secret_value not in result.stderr
 
 
 def test_launcher_and_ordinary_cli_share_product_config_boundary() -> None:
