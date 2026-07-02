@@ -430,6 +430,8 @@ def _run_live_semantic_coverage_status(
         result = build_live_semantic_coverage_status(
             query=args.query,
             repo_root=_ROOT,
+            smart_provider=args.smart_provider,
+            smart_model=args.smart_model,
         )
     except Exception as exc:
         log.exception("Unexpected live semantic coverage status error")

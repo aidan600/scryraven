@@ -72,6 +72,9 @@ def test_product_status_blocks_without_current_path_support_signal(
 
     assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
     assert result.return_code == 2
+    assert "phase: DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01" in (
+        result.output
+    )
     assert "mode: BUILD" in result.output
     assert "ordinary entrypoint: python -m proplex" in result.output
     assert f"status flag: {LIVE_SEMANTIC_COVERAGE_STATUS_FLAG}" in result.output
@@ -91,6 +94,17 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert "D-prime negative-control profile status: available" in result.output
     assert "D-prime negative-control profile ref/digest:" in result.output
     assert "D-prime assessment validator status: available" in result.output
+    assert "D-prime product model role: smart" in result.output
+    assert "D-prime product smart route provider/model: OpenAI / gpt-5.4" in (
+        result.output
+    )
+    assert (
+        "D-prime product smart route approval ref: "
+        "human-approved:dprime-real-model-review-run-01:product-smart-model-route"
+    ) in result.output
+    assert "D-prime product smart route execution policy: strict_one_shot" in (
+        result.output
+    )
     assert "D-prime model review status: not licensed" in result.output
     assert "D-prime assessment status: not reached" in result.output
     assert "D-prime proposal validation status: not reached" in result.output
@@ -131,12 +145,25 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert coverage["status"] == "unavailable"
     assert coverage["coverage_ref"] == "unavailable"
     dprime_status = result.payload["dprime_status"]
+    assert (
+        dprime_status["phase"]
+        == "DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01"
+    )
     assert dprime_status["schema_status"] == "available"
     assert dprime_status["preflight_status"] == "passed"
     assert dprime_status["negative_control_profile_status"] == "available"
     assert dprime_status["negative_control_profile_ref"]["profile_digest"]
     assert dprime_status["negative_control_profile_consumed"] is True
     assert dprime_status["assessment_validator_status"] == "available"
+    product_route = dprime_status["product_model_route_ref"]
+    assert product_route["model_task"] == "dprime_model_review_assessment"
+    assert product_route["product_model_role"] == "smart"
+    assert product_route["configured_smart_provider"] == "OpenAI"
+    assert product_route["configured_smart_model"] == "gpt-5.4"
+    assert product_route["provider_model_approval_ref"] == (
+        "human-approved:dprime-real-model-review-run-01:product-smart-model-route"
+    )
+    assert product_route["execution_policy"] == "strict_one_shot"
     assert dprime_status["model_review_status"] == "not licensed"
     assert dprime_status["objects_created"]["evidence_frame_preflight"] is True
     assert dprime_status["objects_created"]["validated_support_proposal"] is False
@@ -247,10 +274,10 @@ def test_cli_flag_is_default_off_and_skips_live_key_validation(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     cli = _import_cli_with_dotenv_disabled(monkeypatch)
-    calls: list[str] = []
+    calls: list[dict[str, Any]] = []
 
-    def fake_status(**_kwargs: Any) -> Any:
-        calls.append("status")
+    def fake_status(**kwargs: Any) -> Any:
+        calls.append(kwargs)
         return SimpleNamespace(return_code=0, output="decision: PASS")
 
     def fail_key_validation(**_kwargs: Any) -> list[str]:
@@ -263,9 +290,23 @@ def test_cli_flag_is_default_off_and_skips_live_key_validation(
     monkeypatch.setattr(cli, "missing_required_api_keys", fail_key_validation)
     monkeypatch.setattr(cli, "run_pipeline", fail_pipeline)
 
-    assert cli.main([QUERY, LIVE_SEMANTIC_COVERAGE_STATUS_FLAG]) == 0
+    assert (
+        cli.main(
+            [
+                QUERY,
+                "--smart-provider",
+                "OpenAI",
+                "--smart-model",
+                "gpt-5.4",
+                LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
+            ]
+        )
+        == 0
+    )
 
-    assert calls == ["status"]
+    assert len(calls) == 1
+    assert calls[0]["smart_provider"] == "OpenAI"
+    assert calls[0]["smart_model"] == "gpt-5.4"
     assert "decision: PASS" in capsys.readouterr().out
 
 

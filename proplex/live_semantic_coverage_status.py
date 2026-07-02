@@ -20,6 +20,9 @@ from typing import Any, Callable, Mapping, Sequence
 
 from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_model_review_assessment import run_dprime_model_review_assessment
+from core.dprime_product_smart_one_shot_transport import (
+    product_smart_model_route_ref,
+)
 from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
     BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
@@ -34,6 +37,7 @@ from core.retained_custody_analyst_support_proposal import (
     RetainedCustodySemanticCoverageResult,
     build_retained_custody_semantic_coverage,
 )
+from core.run_config import RunConfig
 from proplex.live_citation_source_obligation_readiness_status import (
     PASS_DECISION,
     build_live_citation_source_obligation_readiness_status,
@@ -168,6 +172,8 @@ def build_live_semantic_coverage_status(
     *,
     query: str,
     repo_root: str | Path,
+    smart_provider: str | None = None,
+    smart_model: str | None = None,
     dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
     dprime_one_shot_model_review_adapter: Any | None = None,
     dprime_model_review_license: Mapping[str, Any] | None = None,
@@ -176,6 +182,11 @@ def build_live_semantic_coverage_status(
     """Consume retained status chain and return CLI-safe semantic coverage status."""
 
     root = _resolve_root(repo_root)
+    dprime_product_model_route_ref = _dprime_product_smart_model_route_ref(
+        query=query,
+        smart_provider=smart_provider,
+        smart_model=smart_model,
+    )
     readiness_status = build_live_citation_source_obligation_readiness_status(
         query=query,
         repo_root=root,
@@ -261,6 +272,7 @@ def build_live_semantic_coverage_status(
         evidence_frame_preflight=evidence_frame_preflight,
         one_shot_provider_boundary=dprime_one_shot_provider_boundary,
         one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+        product_model_route_ref=dprime_product_model_route_ref,
     )
     if (
         dprime_status.decision == BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED
@@ -406,6 +418,7 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     semantic = _safe_mapping(payload.get("semantic_observation_admission_ref"))
     coverage = _safe_mapping(payload.get("component_coverage_ref"))
     dprime = _safe_mapping(payload.get("dprime_status"))
+    product_model_route = _safe_mapping(dprime.get("product_model_route_ref"))
     closed = payload.get("closed_downstream_surfaces") or CLOSED_DOWNSTREAM_SURFACES
     decision = str(payload.get("decision") or "")
     lines = [
@@ -456,6 +469,23 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "D-prime assessment validator status: "
             f"{dprime.get('assessment_validator_status')}"
+        ),
+        (
+            "D-prime product model role: "
+            f"{product_model_route.get('product_model_role')}"
+        ),
+        (
+            "D-prime product smart route provider/model: "
+            f"{product_model_route.get('configured_smart_provider')} / "
+            f"{product_model_route.get('configured_smart_model')}"
+        ),
+        (
+            "D-prime product smart route approval ref: "
+            f"{product_model_route.get('provider_model_approval_ref')}"
+        ),
+        (
+            "D-prime product smart route execution policy: "
+            f"{product_model_route.get('execution_policy')}"
         ),
         (
             "D-prime one-shot provider boundary status: "
@@ -1108,6 +1138,19 @@ def _format_dprime_assessment_ref(value: Any) -> str:
     if assessment_id and assessment_digest:
         return f"{assessment_id} / {assessment_digest}"
     return assessment_id or assessment_digest or "unavailable"
+
+
+def _dprime_product_smart_model_route_ref(
+    *,
+    query: str,
+    smart_provider: str | None,
+    smart_model: str | None,
+) -> dict[str, Any]:
+    defaults = RunConfig(query=query)
+    return product_smart_model_route_ref(
+        smart_provider=smart_provider or defaults.smart_provider,
+        smart_model=smart_model or defaults.smart_model,
+    )
 
 
 def _component_id(component_ref: Mapping[str, Any]) -> str | None:

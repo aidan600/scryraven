@@ -27,7 +27,7 @@ from core.dprime_one_shot_provider_boundary import (
     validate_dprime_one_shot_provider_boundary,
 )
 
-DPRIME_PHASE = "DPRIME-REAL-MODEL-REVIEW-ADAPTER-CONTRACT-01"
+DPRIME_PHASE = "DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01"
 DPRIME_SCHEMA_VERSION = "dprime_support_proposal_schema_v1"
 
 BLOCKED_DPRIME_PREFLIGHT_MISSING = "BLOCKED_DPRIME_PREFLIGHT_MISSING"
@@ -61,6 +61,14 @@ BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED = (
 )
 BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED = (
     "BLOCKED_DPRIME_ASSESSMENT_ONLY_PROPOSAL_NOT_LICENSED"
+)
+BLOCKED_APPROVED_MODEL_UNAVAILABLE = "BLOCKED_APPROVED_MODEL_UNAVAILABLE"
+BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE = "BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE"
+BLOCKED_OPENAI_ONE_SHOT_TRANSPORT_UNSAFE = (
+    "BLOCKED_OPENAI_ONE_SHOT_TRANSPORT_UNSAFE"
+)
+BLOCKED_PRODUCT_SMART_MODEL_ROUTE_CANNOT_ENFORCE_DPRIME_ONE_SHOT = (
+    "BLOCKED_PRODUCT_SMART_MODEL_ROUTE_CANNOT_ENFORCE_DPRIME_ONE_SHOT"
 )
 BLOCKED_DPRIME_SUPPORT_ASSESSMENT_MISSING = (
     "BLOCKED_DPRIME_SUPPORT_ASSESSMENT_MISSING"
@@ -121,6 +129,14 @@ LATER_PHASE_STATUSES = frozenset(
         DPRIME_SUPPORT_PROPOSAL_CHALLENGED,
         DPRIME_SEMANTIC_OBSERVATION_ADMITTED,
         DPRIME_COMPONENT_COVERAGE_BOUND,
+    }
+)
+DPRIME_MODEL_REVIEW_TRANSPORT_BLOCKERS = frozenset(
+    {
+        BLOCKED_APPROVED_MODEL_UNAVAILABLE,
+        BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE,
+        BLOCKED_OPENAI_ONE_SHOT_TRANSPORT_UNSAFE,
+        BLOCKED_PRODUCT_SMART_MODEL_ROUTE_CANNOT_ENFORCE_DPRIME_ONE_SHOT,
     }
 )
 
@@ -478,6 +494,7 @@ class DPrimeStatusPayload:
         default_factory=dict
     )
     one_shot_model_review_adapter_consumed: bool = False
+    product_model_route_ref: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.schema_status != DPRIME_SCHEMA_STATUS_AVAILABLE:
@@ -519,6 +536,7 @@ class DPrimeStatusPayload:
             "one_shot_model_review_adapter_consumed": (
                 self.one_shot_model_review_adapter_consumed
             ),
+            "product_model_route_ref": dict(self.product_model_route_ref),
             "model_review_status": self.model_review_status,
             "model_review_call_count": self.model_review_call_count,
             "assessment_status": self.assessment_status,
@@ -559,11 +577,13 @@ def build_dprime_status_payload(
     one_shot_model_review_adapter: (
         Mapping[str, Any] | DPrimeOneShotModelReviewAdapter | None
     ) = None,
+    product_model_route_ref: Mapping[str, Any] | None = None,
 ) -> DPrimeStatusPayload:
     """Return the earliest D-prime blocker known in this phase."""
 
+    route_ref = _safe_mapping(product_model_route_ref)
     if evidence_frame_preflight is None:
-        return DPrimeStatusPayload()
+        return DPrimeStatusPayload(product_model_route_ref=route_ref)
     preflight = (
         evidence_frame_preflight
         if isinstance(evidence_frame_preflight, EvidenceFramePreflight)
@@ -581,6 +601,7 @@ def build_dprime_status_payload(
             blocker_detail=blocker_detail,
             evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
             evidence_frame_preflight_created=True,
+            product_model_route_ref=route_ref,
         )
     profile = (
         dprime_negative_controls.build_default_negative_control_profile()
@@ -609,6 +630,7 @@ def build_dprime_status_payload(
             evidence_frame_preflight_ref=_safe_mapping(preflight.frame_ref),
             evidence_frame_preflight_created=True,
             negative_control_profile_ref=profile_ref,
+            product_model_route_ref=route_ref,
         )
     if not profile_validation.passed:
         return DPrimeStatusPayload(
@@ -626,6 +648,7 @@ def build_dprime_status_payload(
             evidence_frame_preflight_created=True,
             negative_control_profile_ref=profile_ref,
             negative_control_profile_consumed=True,
+            product_model_route_ref=route_ref,
         )
     provider_boundary_validation = validate_dprime_one_shot_provider_boundary(
         one_shot_provider_boundary
@@ -653,6 +676,7 @@ def build_dprime_status_payload(
         one_shot_model_review_adapter_status=adapter_validation.status,
         one_shot_model_review_adapter_ref=adapter_validation.to_status_ref(),
         one_shot_model_review_adapter_consumed=True,
+        product_model_route_ref=route_ref,
     )
 
 
@@ -929,6 +953,10 @@ __all__ = [
     "BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_ABSTAINED",
     "BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_NON_SUPPORT",
     "BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED",
+    "BLOCKED_APPROVED_MODEL_UNAVAILABLE",
+    "BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE",
+    "BLOCKED_OPENAI_ONE_SHOT_TRANSPORT_UNSAFE",
+    "BLOCKED_PRODUCT_SMART_MODEL_ROUTE_CANNOT_ENFORCE_DPRIME_ONE_SHOT",
     "BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED",
     "BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_MISSING",
     "BLOCKED_DPRIME_PREFLIGHT_FAILED",
@@ -940,6 +968,7 @@ __all__ = [
     "BLOCKED_DPRIME_SUPPORT_PROPOSAL_PACKAGING",
     "BLOCKED_DPRIME_SUPPORT_PROPOSAL_VALIDATION_FAILED",
     "DPRIME_COMPONENT_COVERAGE_BOUND",
+    "DPRIME_MODEL_REVIEW_TRANSPORT_BLOCKERS",
     "DPRIME_PHASE",
     "DPRIME_SCHEMA_STATUS_AVAILABLE",
     "DPRIME_SCHEMA_VERSION",

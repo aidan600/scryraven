@@ -472,7 +472,7 @@ def invoke_dprime_one_shot_model_review_adapter(
         return DPrimeOneShotModelReviewAdapterInvocationResult(
             ok=False,
             call_count=call_count,
-            error_type=type(exc).__name__,
+            error_type=_safe_adapter_error_type(exc),
         )
     return DPrimeOneShotModelReviewAdapterInvocationResult(
         ok=True,
@@ -632,6 +632,16 @@ def _consume_adapter_call(call_count: int, *, limit: int) -> int:
             "D-prime model-review adapter one-call cap exceeded"
         )
     return call_count + 1
+
+
+def _safe_adapter_error_type(exc: Exception) -> str:
+    blocker = getattr(exc, "dprime_blocker", None) or getattr(exc, "blocker", None)
+    text = _clean_text(blocker, limit=120)
+    if text and text.startswith("BLOCKED_") and all(
+        char.isupper() or char.isdigit() or char == "_" for char in text
+    ):
+        return text
+    return type(exc).__name__
 
 
 def _clean_text(value: Any, *, limit: int = 500) -> str | None:
