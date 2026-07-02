@@ -39,7 +39,9 @@ from core.dprime_model_review_assessment import (
 from core.dprime_model_review_prompt import (
     AUTHORITY_OBJECT_FORBIDDEN_MODEL_OUTPUT_FIELDS,
     CLOSED_SURFACE_FLAGS_REQUIRED_FALSE_KEYS,
+    DPRIME_MODEL_REVIEW_CANONICAL_OUTPUT_SKELETON,
     DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA,
+    DPRIME_MODEL_REVIEW_RELATION_CHECK_STATUS_CONSISTENCY_MATRIX,
     MODEL_FILLABLE_ASSESSMENT_FIELDS,
     RUNTIME_FILLED_FORBIDDEN_MODEL_OUTPUT_FIELDS,
     build_dprime_model_review_prompt,
@@ -112,6 +114,92 @@ def test_model_review_prompt_schema_names_exact_model_fillable_allowlist() -> No
     )
 
 
+def test_model_review_prompt_schema_includes_canonical_output_skeleton() -> None:
+    schema = DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA
+    skeleton = schema["canonical_output_skeleton"]
+
+    assert skeleton == DPRIME_MODEL_REVIEW_CANONICAL_OUTPUT_SKELETON
+    assert list(skeleton) == MODEL_FILLABLE_ASSESSMENT_FIELDS
+    assert set(skeleton) == set(schema["model_fillable_allowed_fields"])
+    assert set(skeleton).isdisjoint(
+        schema["forbidden_runtime_filled_fields"]
+        + schema["forbidden_authority_object_created_fields"]
+    )
+    assert "assessment_digest" not in skeleton
+    assert set(skeleton["closed_surface_flags"]) == set(
+        CLOSED_SURFACE_FLAGS_REQUIRED_FALSE_KEYS
+    )
+    assert all(value is False for value in skeleton["closed_surface_flags"].values())
+
+
+def test_model_review_prompt_schema_includes_required_mapping_shapes() -> None:
+    schema = DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA
+    skeleton = schema["canonical_output_skeleton"]
+    requirements = schema["field_level_requirements"]
+
+    assert set(skeleton["answer_component_claim"]) == {"component_id", "claim"}
+    assert requirements["answer_component_claim"]["required_keys"] == [
+        "component_id",
+        "claim",
+    ]
+    assert set(skeleton["scope_check"]) == {"status"}
+    assert requirements["scope_check"]["required_keys"] == ["status"]
+    assert set(skeleton["currentness_check"]) == {"status"}
+    assert requirements["currentness_check"]["required_keys"] == ["status"]
+    assert set(skeleton["contradiction_check"]) == {"status"}
+    assert requirements["contradiction_check"]["required_keys"] == ["status"]
+    for field in (
+        "required_qualifiers",
+        "observed_qualifiers",
+        "missing_qualifiers",
+    ):
+        assert skeleton[field] == []
+    assert skeleton["producer_abstained"] is False
+    assert skeleton["challenge_recommended"] is False
+
+
+def test_model_review_prompt_schema_includes_relation_check_matrix() -> None:
+    matrix = DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA[
+        "relation_check_status_consistency_matrix"
+    ]
+
+    assert matrix == DPRIME_MODEL_REVIEW_RELATION_CHECK_STATUS_CONSISTENCY_MATRIX
+    assert matrix["directly_supports"]["scope_check.status"] == [
+        "passed",
+        "in_scope",
+        "matched",
+    ]
+    assert matrix["partially_supports"]["currentness_check.status"] == [
+        "passed",
+        "current",
+        "current_passed",
+    ]
+    assert matrix["directly_supports"]["contradiction_check.status"] == [
+        "absent",
+        "none",
+        "not_contradicted",
+    ]
+    assert matrix["scope_mismatch"]["scope_check.status"] == [
+        "failed",
+        "scope_mismatch",
+    ]
+    assert matrix["currentness_mismatch"]["currentness_check.status"] == [
+        "failed",
+        "stale",
+        "wrong_effective_date",
+        "currentness_mismatch",
+    ]
+    assert matrix["contradicts"]["contradiction_check.status"] == [
+        "contradicts",
+        "contradicted",
+        "failed",
+    ]
+    assert matrix["weak_or_overclaim_risk"][
+        "must_not_have_contradiction_check.status"
+    ] == ["contradicts", "contradicted"]
+    assert matrix["abstained"]["producer_abstained"] is True
+
+
 def test_model_review_prompt_schema_forbids_runtime_filled_model_keys() -> None:
     forbidden = set(DPRIME_MODEL_REVIEW_OUTPUT_SCHEMA["forbidden_runtime_filled_fields"])
 
@@ -167,8 +255,15 @@ def test_model_review_prompt_metadata_retains_no_raw_prompt() -> None:
     metadata = prompt_metadata(prompt)
 
     assert "output_schema.model_fillable_allowed_fields" in prompt
+    assert "output_schema.canonical_output_skeleton" in prompt
+    assert "Missing fields are never allowed" in prompt
+    assert "answer_component_claim.component_id must equal" in prompt
+    assert "scope_check, currentness_check, and contradiction_check" in prompt
+    assert "Never include assessment_digest" in prompt
     assert "output_schema.runtime_filled_fields" in prompt
     assert "output_schema.forbidden_authority_object_created_fields" in prompt
+    assert "output_schema.relation_check_status_consistency_matrix" in prompt
+    assert "weak_or_overclaim_risk must not be used for an actual contradiction" in prompt
     assert metadata["raw_prompt_retained"] is False
     assert "prompt" not in metadata
 
