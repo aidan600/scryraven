@@ -402,6 +402,189 @@ def test_pdf_content_type_is_diagnostic_only_unsupported_content_type(
     assert result.packet["source_display_entries"] == []
 
 
+def test_n400_fetch_read_prioritizes_source_of_record_candidates_under_cap(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="n400-source-of-record-priority",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                    rank=1,
+                ),
+                _provider_result(
+                    "ILRC N-400 Fee Guide PDF",
+                    "https://www.ilrc.org/sites/default/files/n-400-fee-guide.pdf",
+                    rank=2,
+                ),
+                _provider_result(
+                    "USCIS Application for Naturalization",
+                    "https://www.uscis.gov/n-400",
+                    rank=3,
+                ),
+                _provider_result(
+                    "USCIS Form N-400 Instructions PDF",
+                    "https://www.uscis.gov/sites/default/files/document/forms/n-400.pdf",
+                    rank=4,
+                ),
+                _provider_result(
+                    "New Americans Campaign N-400 Fee",
+                    "https://www.newamericanscampaign.org/n400-fee",
+                    rank=5,
+                ),
+            ],
+        ),
+        fetch_read_runner=_n400_priority_fetch_runner(fetch_urls),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+    )
+    assert result.packet["candidate_selection_policy_id"] == (
+        "generic_single_relation_live_fetch_read_acquisition_priority_v1"
+    )
+    assert result.packet["candidate_selection_is_acquisition_only"] is True
+    assert result.packet["candidate_selection_created_source_authority"] is False
+    assert result.packet["candidate_selection_satisfies_source_obligation"] is False
+    assert result.packet["candidate_selection_citation_eligible"] is False
+    assert result.packet["candidate_selection_claims_correctness"] is False
+    assert result.packet["candidate_ranking_policy_changed"] is False
+    assert result.packet["provider_results_returned"] == 5
+    assert result.packet["fetch_read_attempts"] == 3
+    assert result.packet["fetch_read_completed"] == 0
+    assert [urlparse(url).netloc.lower() for url in fetch_urls] == [
+        "www.uscis.gov",
+        "www.uscis.gov",
+        "www.uscis.gov",
+    ]
+    assert [
+        item["result_rank"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [1, 3, 4]
+    assert [
+        item["fetch_read_priority_rank"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [1, 2, 3]
+    assert result.packet["fetch_read_status_class_summary"] == {"2xx": 1, "4xx": 2}
+    assert result.packet["fetch_read_content_type_summary"] == {
+        "application/pdf": 1,
+        "text/html": 2,
+    }
+    assert result.packet["fetch_read_failure_category_summary"] == {
+        "HTTP_4XX": 2,
+        "UNSUPPORTED_CONTENT_TYPE": 1,
+    }
+
+    by_rank = {
+        item["result_rank"]: item
+        for item in result.packet["fetch_read_candidate_diagnostics"]
+    }
+    assert by_rank[1]["fetch_read_priority_rank"] == 1
+    assert by_rank[3]["fetch_read_priority_rank"] == 2
+    assert by_rank[4]["fetch_read_priority_rank"] == 3
+    assert by_rank[2]["selected_for_fetch_read"] is False
+    assert by_rank[2]["skipped_reason"] == "FETCH_READ_CAP_EXHAUSTED"
+    assert by_rank[5]["selected_for_fetch_read"] is False
+    assert by_rank[5]["skipped_reason"] == "FETCH_READ_CAP_EXHAUSTED"
+    assert by_rank[4]["content_type"] == "application/pdf"
+    assert by_rank[4]["failure_category"] == "UNSUPPORTED_CONTENT_TYPE"
+    assert by_rank[4]["readable_text_obtained"] is False
+    assert result.packet["pdf_content_type_support_opened"] is False
+    assert result.packet["pdf_parsing_opened"] is False
+    for diagnostic in result.packet["fetch_read_candidate_diagnostics"]:
+        features = diagnostic["candidate_selection_features"]
+        assert features["feature_posture"] == "discovery_metadata_only"
+        assert features["provider_rank"] == diagnostic["provider_rank"]
+        assert features["final_fetch_read_priority_rank"] == (
+            diagnostic["fetch_read_priority_rank"]
+        )
+        assert features["features_used_as_evidence"] is False
+        assert features["features_create_source_authority"] is False
+        assert features["features_satisfy_source_obligation"] is False
+        assert features["features_make_candidate_citation_eligible"] is False
+        assert features["features_claim_correctness"] is False
+        assert diagnostic["not_evidence"] is True
+        assert diagnostic["not_citation_eligible"] is True
+        assert diagnostic["not_source_obligation_satisfaction"] is True
+        assert diagnostic["candidate_selection_created_source_authority"] is False
+        assert diagnostic["candidate_selection_satisfies_source_obligation"] is False
+        assert diagnostic["candidate_selection_citation_eligible"] is False
+        assert diagnostic["candidate_selection_claims_correctness"] is False
+
+
+def test_candidate_priority_preserves_provider_rank_without_official_signal(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="no-official-signal-provider-rank-stable",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "Independent Filing Fee PDF",
+                    "https://independent-fees.org/current-fee.pdf",
+                    rank=1,
+                ),
+                _provider_result(
+                    "Immigration Fee Summary",
+                    "https://fee-summary.example/current",
+                    rank=2,
+                ),
+                _provider_result(
+                    "Naturalization Cost Page",
+                    "https://another-fee-source.invalid/current",
+                    rank=3,
+                ),
+            ],
+        ),
+        fetch_read_runner=_failing_fetch_runner(fetch_urls),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.packet["fetch_read_attempts"] == 3
+    assert fetch_urls == [
+        "https://independent-fees.org/current-fee.pdf",
+        "https://fee-summary.example/current",
+        "https://another-fee-source.invalid/current",
+    ]
+    assert [
+        item["result_rank"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [1, 2, 3]
+    assert [
+        item["fetch_read_priority_rank"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [1, 2, 3]
+    assert all(
+        item["candidate_selection_features"]["public_agency_domain_signal"] is False
+        for item in result.packet["fetch_read_candidate_diagnostics"]
+    )
+    assert all(
+        item["candidate_selection_features"]["source_of_record_domain_signal"]
+        is False
+        for item in result.packet["fetch_read_candidate_diagnostics"]
+    )
+
+
 def test_no_readable_text_attempt_records_no_readable_text_category(
     tmp_path: Path,
 ) -> None:
@@ -880,6 +1063,7 @@ def test_new_flag_is_registered_as_default_off_status_path() -> None:
 def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     imported, called = _module_static_shape(MODULE_PATH)
     test_imported, test_called = _module_static_shape(TEST_PATH)
+    module_text = MODULE_PATH.read_text(encoding="utf-8")
     forbidden_imports = {
         "core.pipeline",
         "core.pipeline_orchestrator",
@@ -905,11 +1089,18 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
         "fetch_public_url_once",
         "run_provider_proxy_helper_once",
     }
+    forbidden_policy_text = {
+        "approved_domains",
+        "authority_score",
+        "domain_allowlist",
+        "domain_blocklist",
+    }
 
     assert imported.isdisjoint(forbidden_imports)
     assert called.isdisjoint(forbidden_calls)
     assert test_imported.isdisjoint(forbidden_test_imports)
     assert test_called.isdisjoint(forbidden_test_calls)
+    assert not any(text in module_text for text in forbidden_policy_text)
 
 
 def _recording_proxy_runner(
@@ -1004,6 +1195,19 @@ def _http_status_fetch_runner(
             redirect_count=0,
             retrieved_or_observed_at="2026-07-03T00:00:00+00:00",
         )
+
+    return runner
+
+
+def _n400_priority_fetch_runner(fetch_urls: list[str]) -> Any:
+    def runner(url: str) -> GenericLiveFetchReadResult:
+        if url.endswith(".pdf"):
+            return _http_status_fetch_runner(
+                fetch_urls,
+                status_code=200,
+                content_type="application/pdf",
+            )(url)
+        return _http_status_fetch_runner(fetch_urls, status_code=404)(url)
 
     return runner
 

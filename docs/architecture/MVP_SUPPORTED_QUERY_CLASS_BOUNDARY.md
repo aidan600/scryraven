@@ -114,6 +114,16 @@ source-class adapters, social/review aggregation, FAP/Author, friend-level or
 general MVP readiness, source-obligation satisfaction by the packet alone, or
 product correctness.
 
+Within this path only, fetch/read candidate selection may use a transparent
+acquisition-priority policy over already-sanitized provider metadata so
+official/source-of-record-looking candidates can be attempted within the
+existing cap before derivative-looking candidates. This is not a global ranking
+system, source-authority policy, approved-domain list, retrieval/filtering
+layer, evidence support decision, citation-eligibility decision,
+source-obligation satisfaction, answer readiness, or correctness claim. Provider
+rank remains preserved in diagnostics, fetch/read priority rank is diagnostic,
+and PDF parsing/support remains closed.
+
 ## Roadmap Preserved
 
 The boundary does not replace these later phases:

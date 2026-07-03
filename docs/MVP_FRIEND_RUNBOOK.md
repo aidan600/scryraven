@@ -83,6 +83,15 @@ refs, source-authority posture requirement ref, and D-prime relation-intake
 posture come from the relation plan rather than from the fixed passport dogfood
 path.
 
+Fetch/read attempts use a local, packet-visible acquisition-priority policy over
+the already-sanitized provider candidates. The policy may prefer
+official/source-of-record-looking candidates under the existing fetch/read cap,
+but it is acquisition only: it does not decide source authority, satisfy source
+obligations, make candidates citation-eligible, claim correctness, or use
+provider snippets as evidence. PDF-looking candidates may be attempted, but PDF
+parsing/support remains closed and PDF content type failures remain diagnostic
+until a later PDF phase opens that surface.
+
 Without D-prime confirmation, the command may acquire bounded live
 search/fetch/read/custody status and then stops with:
 
