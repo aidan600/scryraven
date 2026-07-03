@@ -160,18 +160,25 @@ def build_dprime_evidence_support_bundle(
     run_kernel: RunKernel,
     source_obligation_ref: Mapping[str, Any],
     citation_source_obligation_readiness_ref: Mapping[str, Any],
+    additional_semantic_materializations: Sequence[
+        DPrimeSemanticObservationMaterializationResult
+    ] = (),
 ) -> DPrimeEvidenceSupportBundleResult:
     """Bind D-prime ComponentCoverage, then consume source/citation authority."""
 
     observation = semantic_materialization.semantic_observation
+    semantic_materializations = (
+        semantic_materialization,
+        *tuple(additional_semantic_materializations or ()),
+    )
     accepted_contract = _safe_mapping(run_kernel.state.initial_answer_contract)
     component = _accepted_component(accepted_contract, observation.answer_component_id)
-    _require_admitted_observation(run_kernel, observation)
+    _require_admitted_observations(run_kernel, semantic_materializations)
     coverage_record = _component_coverage_record(
         run_kernel=run_kernel,
         accepted_contract=accepted_contract,
         component=component,
-        semantic_materialization=semantic_materialization,
+        semantic_materializations=semantic_materializations,
         source_obligation_ref=source_obligation_ref,
         citation_source_obligation_readiness_ref=citation_source_obligation_readiness_ref,
     )
@@ -221,6 +228,9 @@ def build_dprime_evidence_support_bundle(
                 citation_source_obligation_readiness_ref=(
                     citation_source_obligation_readiness_ref
                 ),
+                additional_semantic_materializations=(
+                    additional_semantic_materializations
+                ),
             )
         )
     except DPrimeSourceObligationCitationAuthorityError as exc:
@@ -246,20 +256,50 @@ def _component_coverage_record(
     run_kernel: RunKernel,
     accepted_contract: Mapping[str, Any],
     component: Mapping[str, Any],
-    semantic_materialization: DPrimeSemanticObservationMaterializationResult,
+    semantic_materializations: Sequence[DPrimeSemanticObservationMaterializationResult],
     source_obligation_ref: Mapping[str, Any],
     citation_source_obligation_readiness_ref: Mapping[str, Any],
 ) -> ComponentCoverageRecord:
-    observation = semantic_materialization.semantic_observation
-    content_ref = semantic_materialization.sanitized_content_reference
-    observation_ref = SemanticObservationCoverageRef.from_observation(
-        observation.to_dict()
+    materializations = tuple(semantic_materializations)
+    if not materializations:
+        raise DPrimeEvidenceSupportBundleError(
+            BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
+            "D-prime ComponentCoverage requires at least one materialization",
+        )
+    for item in materializations:
+        if item.semantic_observation.answer_component_id != component.get(
+            "component_id"
+        ):
+            raise DPrimeEvidenceSupportBundleError(
+                BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
+                "multi-source D-prime materializations must share one component",
+            )
+    observation_refs = tuple(
+        SemanticObservationCoverageRef.from_observation(
+            item.semantic_observation.to_dict()
+        )
+        for item in materializations
     )
-    content_binding = ContentReferenceCoverageBinding.from_content_reference(
-        content_ref.to_dict()
+    content_bindings = tuple(
+        ContentReferenceCoverageBinding.from_content_reference(
+            item.sanitized_content_reference.to_dict()
+        )
+        for item in materializations
     )
-    observation_digest = observation.observation_digest
-    record_id = f"component-coverage:dprime:{observation_digest[:16]}"
+    observation_digests = tuple(
+        item.semantic_observation.observation_digest for item in materializations
+    )
+    observation_digest = observation_digests[0]
+    if len(observation_digests) == 1:
+        record_id = f"component-coverage:dprime:{observation_digest[:16]}"
+    else:
+        multi_digest = _digest_json(
+            {
+                "component_id": component.get("component_id"),
+                "observation_digests": observation_digests,
+            }
+        )
+        record_id = f"component-coverage:dprime-multi-source:{multi_digest[:16]}"
     return ComponentCoverageRecord(
         record_id=record_id,
         run_id=run_kernel.state.run_id,
@@ -288,8 +328,8 @@ def _component_coverage_record(
         content_availability_status=ContentAvailabilityStatus.AVAILABLE,
         evidence_custody_status=EvidenceCustodyStatus.CUSTODIED,
         version_validity=VersionValidity.VALID,
-        accepted_observation_refs=(observation_ref,),
-        content_reference_bindings=(content_binding,),
+        accepted_observation_refs=observation_refs,
+        content_reference_bindings=content_bindings,
         evidence_basis=(
             EvidenceBasis.SEMANTIC_OBSERVATION,
             EvidenceBasis.ANSWER_BEARING_CONTENT,
@@ -331,14 +371,20 @@ def _component_coverage_record(
             ),
             "source_obligation_authority_consumed": False,
             "citation_eligibility_authority_consumed": False,
+            "dprime_multi_source_materialization_count": len(materializations),
+            "dprime_multi_source_observation_digests": observation_digests,
             "sufficiency_readiness_created": False,
             "final_answer_packet_created": False,
             "author_answer_created": False,
             "product_correctness_claimed": False,
         },
     ).require_valid(
-        observations=(observation.to_dict(),),
-        content_references=(content_ref.to_dict(),),
+        observations=tuple(
+            item.semantic_observation.to_dict() for item in materializations
+        ),
+        content_references=tuple(
+            item.sanitized_content_reference.to_dict() for item in materializations
+        ),
     )
 
 
@@ -365,20 +411,27 @@ def _ledger_binding(
     )
 
 
-def _require_admitted_observation(
+def _require_admitted_observations(
     run_kernel: RunKernel,
-    observation: Any,
+    semantic_materializations: Sequence[DPrimeSemanticObservationMaterializationResult],
 ) -> None:
+    observations = [item.semantic_observation for item in semantic_materializations]
     for item in run_kernel.state.semantic_observation_admission_history:
         admission = _safe_mapping(item)
-        if (
-            admission.get("observation_id") == observation.observation_id
-            and admission.get("observation_digest") == observation.observation_digest
-        ):
+        observations = [
+            observation
+            for observation in observations
+            if not (
+                admission.get("observation_id") == observation.observation_id
+                and admission.get("observation_digest")
+                == observation.observation_digest
+            )
+        ]
+        if not observations:
             return
     raise DPrimeEvidenceSupportBundleError(
         BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
-        "D-prime ComponentCoverage requires an admitted SemanticObservation",
+        "D-prime ComponentCoverage requires admitted SemanticObservations",
     )
 
 

@@ -34,6 +34,14 @@ from core.dprime_evidence_support_bundle_runtime import (
     build_dprime_evidence_support_bundle,
 )
 from core.dprime_model_review_assessment import run_dprime_model_review_assessment
+from core.dprime_multi_source_analyst_scrutiny_runtime import (
+    BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+    BLOCKED_DPRIME_MULTI_SOURCE_RELATION_SET_MISSING,
+    DPrimeMultiSourceAnalystScrutinyError,
+    build_dprime_multi_source_relation_set,
+    build_dprime_multi_source_support_posture,
+    build_dprime_scrutineer_challenge_gate,
+)
 from core.dprime_ordinary_contract_authority_runtime import (
     DPrimeOrdinaryContractAuthorityError,
     build_dprime_ordinary_contract_authority,
@@ -137,17 +145,19 @@ NEXT_BLOCKED_SURFACE = (
 )
 CLOSED_DOWNSTREAM_SURFACES = (
     "product-quality correctness claim",
-    "multi-relation D-prime analyst intake",
     "multi-component support aggregation",
-    "multi-source conflict handling",
+    "full Scrutineer remediation",
+    "Economist routing",
+    "Specialist routing",
     "live/model/provider/search/fetch/read/retrieval calls",
     "old Author execution",
 )
 EXPLICIT_NON_CLAIM = (
-    "This phase consumes a narrow generic single-relation D-prime intake through "
-    "the existing single-lane answer-path status only. It does not prove "
-    "product correctness, multi-source/multi-component intake, live validation, "
-    "or final answer quality."
+    "This phase consumes generic D-prime relation intake through the existing "
+    "single-lane answer-path status, with an optional narrow multi-source "
+    "posture and Scrutineer gate for one component. It does not prove product "
+    "correctness, multi-component intake, live validation, or final answer "
+    "quality."
 )
 
 _READINESS_BLOCKER_MAP = {
@@ -216,7 +226,7 @@ def build_live_semantic_coverage_status(
     smart_model: str | None = None,
     dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
     dprime_one_shot_model_review_adapter: Any | None = None,
-    dprime_model_review_license: Mapping[str, Any] | None = None,
+    dprime_model_review_license: Any | None = None,
     dprime_model_review_callable: Callable[..., Any] | None = None,
     dprime_followup_search_reentry_enabled: bool = False,
     dprime_followup_candidate_results: (
@@ -226,6 +236,8 @@ def build_live_semantic_coverage_status(
     dprime_followup_second_pass_model_review_callable: (
         Callable[..., Any] | None
     ) = None,
+    dprime_multi_source_relation_inputs: Sequence[Mapping[str, Any]] = (),
+    dprime_multi_source_scrutineer_enabled: bool = True,
     dprime_run_kernel_admission_decision_status: str = (
         DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
     ),
@@ -425,6 +437,13 @@ def build_live_semantic_coverage_status(
             dprime_status=dprime_status,
             model_review_result=model_review_result,
             fetch_read_content_packet=fetch_read_content_packet,
+            dprime_model_review_license=dprime_model_review_license,
+            dprime_one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+            dprime_one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+            dprime_multi_source_relation_inputs=dprime_multi_source_relation_inputs,
+            dprime_multi_source_scrutineer_enabled=(
+                dprime_multi_source_scrutineer_enabled
+            ),
             run_kernel_admission_decision_status=(
                 dprime_run_kernel_admission_decision_status
             ),
@@ -550,6 +569,13 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     citation_display = _safe_mapping(answer_path.get("citation_source_display"))
     dprime = _safe_mapping(payload.get("dprime_status"))
     followup = _safe_mapping(payload.get("dprime_followup_search_reentry_ref"))
+    multi_relation_set = _safe_mapping(
+        payload.get("dprime_multi_source_relation_set_ref")
+    )
+    multi_posture = _safe_mapping(
+        payload.get("dprime_multi_source_support_posture_ref")
+    )
+    scrutineer = _safe_mapping(payload.get("dprime_scrutineer_challenge_ref"))
     dprime_request = _safe_mapping(
         dprime.get("run_kernel_support_admission_request_ref")
     )
@@ -744,6 +770,38 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "D-prime second-pass follow-up status: "
             f"{followup.get('second_dprime_pass_status', 'not reached')}"
+        ),
+        (
+            "D-prime multi-source relation set status: "
+            f"{multi_relation_set.get('status', 'not reached')}"
+        ),
+        (
+            "D-prime multi-source relation count: "
+            f"{multi_relation_set.get('relation_count', 0)}"
+        ),
+        (
+            "D-prime multi-source source count: "
+            f"{multi_posture.get('source_count', 0)}"
+        ),
+        (
+            "D-prime multi-source conflict posture: "
+            f"{multi_posture.get('conflict_posture', 'not reached')}"
+        ),
+        (
+            "D-prime multi-source currentness posture: "
+            f"{multi_posture.get('currentness_posture', 'not reached')}"
+        ),
+        (
+            "D-prime multi-source answer path allowed: "
+            f"{_bool_text(multi_posture.get('answer_path_allowed'))}"
+        ),
+        (
+            "D-prime Scrutineer gate status: "
+            f"{scrutineer.get('status', 'not reached')}"
+        ),
+        (
+            "D-prime Scrutineer challenge kind: "
+            f"{scrutineer.get('challenge_kind', 'not reached')}"
         ),
         f"Analyst support proposal status: {support.get('status')}",
         f"Analyst support proposal ref/digest: {support.get('proposal_ref')}",
@@ -1053,6 +1111,11 @@ def _blocked_dprime_model_review_assessment_result(
     dprime_status: DPrimeStatusPayload,
     model_review_result: Any,
     fetch_read_content_packet: Mapping[str, Any],
+    dprime_model_review_license: Any | None,
+    dprime_one_shot_provider_boundary: Mapping[str, Any] | None,
+    dprime_one_shot_model_review_adapter: Any | None,
+    dprime_multi_source_relation_inputs: Sequence[Mapping[str, Any]],
+    dprime_multi_source_scrutineer_enabled: bool,
     run_kernel_admission_decision_status: str,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
@@ -1061,6 +1124,33 @@ def _blocked_dprime_model_review_assessment_result(
     objects_created = dict(dprime.get("objects_created") or {})
     objects_created.update(model_review_result.objects_created)
     dprime["objects_created"] = objects_created
+    try:
+        additional_relation_results = _additional_dprime_relation_results(
+            query=query,
+            relation_inputs=dprime_multi_source_relation_inputs,
+            dprime_model_review_license=dprime_model_review_license,
+            dprime_one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+            dprime_one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+        )
+    except DPrimeMultiSourceAnalystScrutinyError as exc:
+        additional_relation_results = []
+        dprime["multi_source_relation_set_ref"] = {
+            "status": "blocked",
+            "blocker": exc.blocker,
+            "blocker_detail": exc.detail,
+        }
+        dprime["objects_created"] = objects_created
+        return _blocked_result(query=query, blocker=exc.blocker, detail=exc.detail)
+
+    multi_source_enabled = bool(additional_relation_results)
+    if multi_source_enabled:
+        dprime["multi_source_relation_review_refs"] = [
+            item["status_ref"] for item in additional_relation_results
+        ]
+        objects_created["multi_source_relation_set"] = False
+        objects_created["multi_source_support_posture"] = False
+        objects_created["multi_source_scrutineer_gate"] = False
+        dprime["objects_created"] = objects_created
     proposal_validated = (
         dprime.get("proposal_validation_status")
         == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
@@ -1073,6 +1163,12 @@ def _blocked_dprime_model_review_assessment_result(
     support_bundle_error = None
     materialization_error = None
     contract_authority = None
+    additional_semantic_materializations: list[Any] = []
+    multi_source_relation_set_ref: dict[str, Any] = {}
+    multi_source_support_posture_ref: dict[str, Any] = {}
+    multi_source_scrutineer_ref: dict[str, Any] = {}
+    multi_source_blocker: str | None = None
+    multi_source_detail: str | None = None
     if proposal_validated:
         decision = build_run_kernel_dprime_admission_decision(
             _safe_mapping(dprime.get("run_kernel_support_admission_request_ref")),
@@ -1122,7 +1218,103 @@ def _blocked_dprime_model_review_assessment_result(
                     dict(contract_authority.authority_ref)
                 )
                 objects_created["semantic_observation"] = True
+                if multi_source_enabled:
+                    try:
+                        relation_set = build_dprime_multi_source_relation_set(
+                            relation_intake_refs=[
+                                relation_ref,
+                                *[
+                                    item["relation_ref"]
+                                    for item in additional_relation_results
+                                ],
+                            ],
+                            assessment_material_refs=[
+                                _safe_mapping(dprime.get("assessment_material_ref")),
+                                *[
+                                    item["assessment_material_ref"]
+                                    for item in additional_relation_results
+                                ],
+                            ],
+                        )
+                        support_posture = build_dprime_multi_source_support_posture(
+                            relation_set=relation_set,
+                            assessment_material_refs=[
+                                _safe_mapping(dprime.get("assessment_material_ref")),
+                                *[
+                                    item["assessment_material_ref"]
+                                    for item in additional_relation_results
+                                ],
+                            ],
+                        )
+                        scrutineer_gate = build_dprime_scrutineer_challenge_gate(
+                            support_posture=support_posture,
+                            scrutineer_enabled=dprime_multi_source_scrutineer_enabled,
+                        )
+                        multi_source_relation_set_ref = (
+                            relation_set.to_status_ref()
+                        )
+                        multi_source_support_posture_ref = (
+                            support_posture.to_status_ref()
+                        )
+                        multi_source_scrutineer_ref = (
+                            scrutineer_gate.to_status_ref()
+                        )
+                        objects_created["multi_source_relation_set"] = True
+                        objects_created["multi_source_support_posture"] = True
+                        objects_created["multi_source_scrutineer_gate"] = (
+                            dprime_multi_source_scrutineer_enabled
+                        )
+                        if scrutineer_gate.answer_path_allowed:
+                            additional_semantic_materializations = (
+                                _additional_semantic_materializations(
+                                    relation_results=additional_relation_results,
+                                    run_kernel=contract_authority.run_kernel,
+                                    run_kernel_admission_decision_status=(
+                                        run_kernel_admission_decision_status
+                                    ),
+                                )
+                            )
+                            objects_created[
+                                "multi_source_additional_semantic_observations"
+                            ] = bool(additional_semantic_materializations)
+                        else:
+                            multi_source_blocker = (
+                                scrutineer_gate.blocker
+                                or BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED
+                            )
+                            multi_source_detail = (
+                                scrutineer_gate.blocker_detail
+                                or "multi-source Scrutineer gate blocked answer path"
+                            )
+                    except (
+                        DPrimeMultiSourceAnalystScrutinyError,
+                        DPrimeSemanticObservationMaterializationError,
+                        DPrimeOrdinaryContractAuthorityError,
+                    ) as exc:
+                        multi_source_blocker = getattr(
+                            exc,
+                            "blocker",
+                            BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                        )
+                        multi_source_detail = getattr(exc, "detail", str(exc))
+                    dprime["multi_source_relation_set_ref"] = dict(
+                        multi_source_relation_set_ref
+                    )
+                    dprime["multi_source_support_posture_ref"] = dict(
+                        multi_source_support_posture_ref
+                    )
+                    dprime["multi_source_scrutineer_challenge_ref"] = dict(
+                        multi_source_scrutineer_ref
+                    )
+                    dprime["multi_source_enabled"] = True
+                    dprime["objects_created"] = objects_created
                 try:
+                    if multi_source_blocker is not None:
+                        raise DPrimeEvidenceSupportBundleError(
+                            multi_source_blocker,
+                            multi_source_detail
+                            or "multi-source Scrutineer gate blocked answer path",
+                        )
                     support_bundle = build_dprime_evidence_support_bundle(
                         semantic_materialization=semantic_materialization,
                         run_kernel=contract_authority.run_kernel,
@@ -1131,6 +1323,9 @@ def _blocked_dprime_model_review_assessment_result(
                         ),
                         citation_source_obligation_readiness_ref=(
                             _materialization_ref(readiness_ref)
+                        ),
+                        additional_semantic_materializations=(
+                            additional_semantic_materializations
                         ),
                     )
                     dprime.update(support_bundle.to_status_overlay())
@@ -1213,18 +1408,30 @@ def _blocked_dprime_model_review_assessment_result(
                 payload_detail = support_bundle.blocker_detail
                 next_surface = "SufficiencyReadiness"
         elif support_bundle_error is not None:
-            coverage_ref = {
-                "status": "blocked",
-                "coverage_ref": "unavailable",
-                "component_id": _component_id(component_ref),
-                "reasons": [
-                    "ComponentCoverage binding failed before source/citation authority",
+            if multi_source_blocker is not None:
+                coverage_ref = semantic_materialization.coverage_status_ref(
+                    component_id=_component_id(component_ref)
+                )
+                coverage_ref["status"] = "blocked_by_multi_source_scrutineer"
+                coverage_ref["blocker"] = support_bundle_error.blocker
+                coverage_ref["reasons"] = [
+                    "multi-source posture reached Scrutineer gate",
                     support_bundle_error.detail,
-                ],
-            }
+                ]
+                next_surface = "D-prime multi-source Scrutineer gate"
+            else:
+                coverage_ref = {
+                    "status": "blocked",
+                    "coverage_ref": "unavailable",
+                    "component_id": _component_id(component_ref),
+                    "reasons": [
+                        "ComponentCoverage binding failed before source/citation authority",
+                        support_bundle_error.detail,
+                    ],
+                }
+                next_surface = "D-prime ComponentCoverage binding"
             payload_decision = support_bundle_error.blocker
             payload_detail = support_bundle_error.detail
-            next_surface = "D-prime ComponentCoverage binding"
         else:
             coverage_ref = semantic_materialization.coverage_status_ref(
                 component_id=_component_id(component_ref)
@@ -1354,6 +1561,35 @@ def _blocked_dprime_model_review_assessment_result(
             ),
         }
     )
+    if multi_source_enabled:
+        payload.update(
+            {
+                "dprime_multi_source_relation_set_ref": dict(
+                    multi_source_relation_set_ref
+                ),
+                "dprime_multi_source_support_posture_ref": dict(
+                    multi_source_support_posture_ref
+                ),
+                "dprime_scrutineer_challenge_ref": dict(
+                    multi_source_scrutineer_ref
+                ),
+                "dprime_multi_source_relation_count": _bounded_int(
+                    multi_source_relation_set_ref.get("relation_count")
+                ),
+                "dprime_multi_source_source_count": _bounded_int(
+                    multi_source_support_posture_ref.get("source_count")
+                ),
+                "dprime_multi_source_posture_consumed_by_product_status": bool(
+                    multi_source_support_posture_ref
+                ),
+                "dprime_multi_source_scrutineer_consumed_by_product_status": bool(
+                    multi_source_scrutineer_ref
+                ),
+                "dprime_multi_source_answer_path_allowed": (
+                    multi_source_scrutineer_ref.get("answer_path_allowed") is True
+                ),
+            }
+        )
     output = format_live_semantic_coverage_status(payload)
     if not output_hygiene_passes(output):
         return _blocked_result(
@@ -1460,6 +1696,190 @@ def _model_review_next_blocked_surface(decision: str) -> str:
     if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:
         return "D-prime RunKernel support admission decision"
     return "D-prime model-review assessment"
+
+
+def _additional_dprime_relation_results(
+    *,
+    query: str,
+    relation_inputs: Sequence[Mapping[str, Any]],
+    dprime_model_review_license: Any,
+    dprime_one_shot_provider_boundary: Mapping[str, Any] | None,
+    dprime_one_shot_model_review_adapter: Any | None,
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for index, relation_input in enumerate(relation_inputs or (), start=2):
+        item = _safe_mapping(relation_input)
+        fetch_packet = _safe_mapping(item.get("fetch_read_content_packet"))
+        admission_ref = _safe_mapping(item.get("source_evidence_admission_ref"))
+        readiness_ref = _safe_mapping(
+            item.get("citation_source_obligation_readiness_ref")
+        )
+        component_ref = _safe_mapping(item.get("component_ref"))
+        source_obligation_ref = _safe_mapping(item.get("source_obligation_ref"))
+        model_review_callable = item.get("model_review_callable")
+        if not fetch_packet:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                "additional multi-source relation lacks fetch/read packet",
+            )
+        if not admission_ref or not readiness_ref or not component_ref:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                "additional multi-source relation lacks product lineage refs",
+            )
+        if not source_obligation_ref or model_review_callable is None:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                "additional multi-source relation lacks source obligation or review callable",
+            )
+        try:
+            relation_intake = build_dprime_analyst_relation_intake(
+                query=query,
+                fetch_read_content_packet=fetch_packet,
+                source_evidence_admission_ref=admission_ref,
+                citation_source_obligation_readiness_ref=readiness_ref,
+                component_ref=component_ref,
+                source_obligation_ref=source_obligation_ref,
+            )
+        except DPrimeAnalystRelationIntakeError as exc:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_RELATION_SET_MISSING,
+                str(exc),
+            ) from exc
+        relation_ref = relation_intake_ref(relation_intake)
+        relation_component_ref = component_ref_from_relation_intake(relation_intake)
+        relation_source_obligation_ref = source_obligation_ref_from_relation_intake(
+            relation_intake
+        )
+        evidence_frame_preflight = build_evidence_frame_preflight(
+            fetch_read_content_packet=fetch_packet,
+            source_evidence_admission_ref=admission_ref,
+            citation_source_obligation_readiness_ref=readiness_ref,
+            component_ref=relation_component_ref,
+            source_obligation_ref=relation_source_obligation_ref,
+            relation_intake_ref=relation_ref,
+        )
+        dprime_status = build_dprime_status_payload(
+            evidence_frame_preflight=evidence_frame_preflight,
+            one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+            one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+        )
+        model_review_result = run_dprime_model_review_assessment(
+            evidence_frame_preflight=evidence_frame_preflight.to_dict(),
+            fetch_read_content_packet=fetch_packet,
+            source_evidence_admission_ref=admission_ref,
+            citation_source_obligation_readiness_ref=readiness_ref,
+            component_ref=relation_component_ref,
+            source_obligation_ref=relation_source_obligation_ref,
+            negative_control_profile_ref=dprime_status.negative_control_profile_ref,
+            assessment_validator_status=dprime_status.assessment_validator_status,
+            license=item.get("dprime_model_review_license")
+            or dprime_model_review_license,
+            model_review_callable=model_review_callable,
+            one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+            one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+        )
+        assessment_material_ref = _safe_mapping(
+            model_review_result.assessment_material_ref
+        )
+        results.append(
+            {
+                "ordinal": index,
+                "fetch_read_content_packet": fetch_packet,
+                "source_evidence_admission_ref": admission_ref,
+                "citation_source_obligation_readiness_ref": readiness_ref,
+                "component_ref": relation_component_ref,
+                "source_obligation_ref": relation_source_obligation_ref,
+                "relation_ref": relation_ref,
+                "assessment_material_ref": assessment_material_ref,
+                "model_review_result": model_review_result,
+                "status_ref": _additional_relation_status_ref(
+                    ordinal=index,
+                    relation_ref=relation_ref,
+                    model_review_result=model_review_result,
+                ),
+            }
+        )
+    return results
+
+
+def _additional_semantic_materializations(
+    *,
+    relation_results: Sequence[Mapping[str, Any]],
+    run_kernel: Any,
+    run_kernel_admission_decision_status: str,
+) -> list[Any]:
+    materializations: list[Any] = []
+    for item in relation_results:
+        result = item["model_review_result"]
+        if (
+            result.proposal_validation_status
+            != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+        ):
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                "support-bearing multi-source relation was not proposal-validated",
+            )
+        decision = build_run_kernel_dprime_admission_decision(
+            _safe_mapping(result.run_kernel_support_admission_request_ref),
+            decision_status=run_kernel_admission_decision_status,
+            rationale=(
+                "product status consumed additional multi-source D-prime "
+                "admission request through RunKernel-owned decision runtime"
+            ),
+        )
+        materializations.append(
+            materialize_dprime_semantic_observation_from_admitted_decision(
+                decision=decision,
+                assessment_material_ref=_safe_mapping(result.assessment_material_ref),
+                validated_support_proposal_ref=_safe_mapping(
+                    result.validated_support_proposal_ref
+                ),
+                fetch_read_content_packet=_safe_mapping(
+                    item.get("fetch_read_content_packet")
+                ),
+                source_evidence_admission_ref=_materialization_ref(
+                    _safe_mapping(item.get("source_evidence_admission_ref"))
+                ),
+                component_ref=_materialization_ref(
+                    _safe_mapping(item.get("component_ref"))
+                ),
+                source_obligation_ref=_materialization_ref(
+                    _safe_mapping(item.get("source_obligation_ref"))
+                ),
+                run_kernel=run_kernel,
+            )
+        )
+    return materializations
+
+
+def _additional_relation_status_ref(
+    *,
+    ordinal: int,
+    relation_ref: Mapping[str, Any],
+    model_review_result: Any,
+) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "ordinal": ordinal,
+            "relation_ref": dict(relation_ref),
+            "model_review_status": model_review_result.model_review_status,
+            "assessment_status": model_review_result.assessment_status,
+            "assessment_ref": dict(model_review_result.assessment_ref),
+            "assessment_material_ref": dict(
+                model_review_result.assessment_material_ref
+            ),
+            "support_relation": model_review_result.support_relation,
+            "proposal_validation_status": (
+                model_review_result.proposal_validation_status
+            ),
+            "run_kernel_support_admission_status": (
+                model_review_result.run_kernel_support_admission_status
+            ),
+            "product_correctness_claimed": False,
+            "live_calls_run": False,
+        }
+    )
 
 
 def _answer_path_status_ref(
