@@ -67,6 +67,41 @@ unsupported query text. This is not generic answering, generic live supported
 query execution, source-authority adjudication, FAP/Author output,
 friend-level/general MVP readiness, or product correctness.
 
+## Generic Single-Relation Live Dogfood
+
+The generic live dogfood path is default-off and requires a supported query plus
+explicit live confirmation:
+
+```powershell
+py -m proplex --mvp-single-relation-live-dogfood-run --query "What is the current USCIS Form N-400 paper filing fee?" --confirm-live-dogfood
+```
+
+The command first consumes the generic relation plan. If the planner rejects the
+query, it blocks before live calls and does not retain unsupported query text.
+For a planned query, the live search seed, component refs, source-obligation
+refs, source-authority posture requirement ref, and D-prime relation-intake
+posture come from the relation plan rather than from the fixed passport dogfood
+path.
+
+Without D-prime confirmation, the command may acquire bounded live
+search/fetch/read/custody status and then stops with:
+
+```text
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+```
+
+To license one product-route D-prime review for the same run, pass:
+
+```powershell
+py -m proplex --mvp-single-relation-live-dogfood-run --query "What is the current USCIS Form N-400 paper filing fee?" --confirm-live-dogfood --confirm-live-dprime-review
+```
+
+This generic dogfood path is still single-relation only. It is not arbitrary
+answering, not general supported-query live answering, not multi-component
+planning, not RunKernel DAG scheduling, not FAP/Author, not friend-level/general
+MVP readiness, and not product correctness. Fake-provider test PASS is not live
+validation PASS.
+
 ## How To Read It
 
 `Decision: PASS` means the offline demo reached the current MVP answer-output

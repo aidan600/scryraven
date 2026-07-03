@@ -78,10 +78,15 @@ This phase does not add live/provider/model/fetch/read calls.
 
 The current supported-query boundary and no-live query-plan dry run may point at
 this contract by phase id so planning can reference Analyst-owned
-source-authority posture requirements without inventing policy. That pointer is
-metadata/requirement only; the fixed-query boundary and planning dry run still
-do not consume source-authority posture packets, create source-authority posture
-over evidence, or claim source-authority support.
+source-authority posture requirements without inventing policy. The generic
+single-relation live dogfood path may carry the relation plan's
+source-authority posture requirement ref into live acquisition/custody/D-prime
+status, but the requirement ref is still not authority posture over evidence.
+Its review packet keeps `actual_source_authority_posture_created` false unless
+an existing Analyst/D-prime output actually produces a source-authority posture
+packet. The fixed-query boundary and planning dry run still do not consume
+source-authority posture packets, create source-authority posture over evidence,
+or claim source-authority support.
 
 Future FAP/Author rendering must preserve Analyst-owned source-authority posture
 rather than reinterpret it. See
