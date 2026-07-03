@@ -56,14 +56,15 @@ source/evidence custody and readability
 -> RunKernel-owned admission decision made
 -> ordinary D-prime RunKernel/product accepted/current contract authority
 -> SemanticObservation materialized/admitted
--> ComponentCoverage not licensed/not bound
+-> ComponentCoverage bound through existing RunKernel coverage authority
+-> source-obligation authority missing
 ```
 
 The chain is surfaced through `DPrimeStatusPayload` in
 `proplex.live_semantic_coverage_status`. The current stop condition is:
 
 ```text
-BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
 ```
 
 At that point a validator-valid proposal candidate and a lineage-only
@@ -80,6 +81,14 @@ fetch/read packets is lineage only. It is not an accepted/current
 answer-contract authority surface and must not be inflated into one; the new
 surface treats retained refs/digests as lineage checks and records
 RunKernel/product authority separately.
+
+After DPRIME-EVIDENCE-SUPPORT-BUNDLE-01, the ordinary product status path also
+consumes the admitted D-prime `SemanticObservation` through existing
+RunKernel-owned `ComponentCoverage` reduction. The coverage state is
+`supported_with_caveats`, not `satisfied`: retained source-obligation ids remain
+lineage only, no source-obligation satisfaction authority is consumed, and no
+citation eligibility or citation-source handoff authority is created. This is
+Outcome B product progress with a named blocker, not a completed support bundle.
 
 ## Current implemented product path
 
@@ -104,6 +113,10 @@ Implemented and consumed by the ordinary dry-run status path:
 - RunKernel/SemanticObservation-owned materialization boundary for admitted
   D-prime decisions in
   `core.dprime_semantic_observation_materialization_runtime`.
+- RunKernel/ComponentCoverage-owned support-bundle attempt in
+  `core.dprime_evidence_support_bundle_runtime`, consumed by ordinary product
+  status, which binds ComponentCoverage and stops at missing source-obligation
+  authority.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -151,6 +164,10 @@ D-prime may produce:
 - product-visible materialization-input blocker after a RunKernel-owned
   admitted D-prime decision reaches the SemanticObservation boundary without an
   existing authorized accepted/current answer-contract surface.
+- RunKernel-owned `ComponentCoverage` refs/status/digest from the licensed
+  D-prime support-bundle runtime after admitted `SemanticObservation`.
+- product-visible missing source-obligation authority blocker after
+  ComponentCoverage binding.
 
 The pre-admission D-prime assessment/proposal/request outputs are review
 material and candidate state. They are not admitted support. Only the
@@ -161,7 +178,8 @@ answer-contract authority from the ordinary RunKernel state path.
 
 ## Forbidden outputs and nonclaims
 
-D-prime must not produce:
+D-prime model review, proposal validation, and request preparation must not
+produce:
 
 - canonical evidence custody;
 - admitted semantic support;
@@ -174,6 +192,11 @@ D-prime must not produce:
 - Author-safe claims;
 - answer text;
 - product correctness.
+
+The licensed D-prime support-bundle runtime may bind `ComponentCoverage` only by
+consuming an admitted D-prime `SemanticObservation` through existing RunKernel
+coverage authority. It must not treat that coverage as source-obligation
+satisfaction, citation eligibility, answer readiness, or product correctness.
 
 Anti-laundering rules:
 
@@ -246,16 +269,17 @@ Implemented after DPRIME-RUNKERNEL-DECISION-AUTHORITY-SURFACE-01:
   `core.dprime_ordinary_contract_authority_runtime`;
 - RunKernel/SemanticObservation-owned SemanticObservation materialization
   boundary for admitted D-prime decisions only;
-- named fail-closed blocker at ComponentCoverage because coverage binding is
-  not licensed in the current D-prime status path;
+- named fail-closed blocker after ComponentCoverage because source-obligation
+  authority is not available before closed Sufficiency/FAP surfaces;
 - ordinary product status reporting through `DPrimeStatusPayload`.
 
-The current stop point is ComponentCoverage not licensed/not bound.
+The current stop point is source-obligation authority missing after
+ComponentCoverage binding.
 
 Still not implemented or closed:
 
-- `ComponentCoverage` binding;
-- citation/source-obligation satisfaction;
+- source-obligation satisfaction authority;
+- citation eligibility / citation-source handoff authority;
 - `SufficiencyReadiness`;
 - `FinalAnswerPacket`;
 - Author/answer text;
@@ -270,8 +294,9 @@ Downstream support-bearing surfaces remain closed until separately licensed:
 RunKernel-owned admission decision
 -> ordinary D-prime accepted/current answer-contract authority
 -> admitted SemanticObservation
--> ComponentCoverage binding (closed)
--> citation/source-obligation satisfaction
+-> ComponentCoverage binding
+-> source-obligation authority missing
+-> citation eligibility / citation-source handoff unavailable
 -> SufficiencyReadiness
 -> FinalAnswerPacket
 -> Author/answer text

@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
+import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -47,7 +47,9 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+    assert result.decision == (
+        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+    )
     assert "D-prime assessment status: assessed" in result.output
     assert (
         "D-prime proposal validation status: "
@@ -61,7 +63,8 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
     assert "RunKernel decision: admitted" in result.output
     assert "admitted support: true" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
-    assert "ComponentCoverage status: not licensed" in result.output
+    assert "ComponentCoverage status: bound" in result.output
+    assert "source-obligation authority status: missing" in result.output
 
     dprime_status = result.payload["dprime_status"]
     request_ref = dprime_status["run_kernel_support_admission_request_ref"]
@@ -86,7 +89,10 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
         "run_kernel_support_proposal_admission_request": True,
         "run_kernel_admission_decision": True,
         "semantic_observation": True,
-        "component_coverage": False,
+        "component_coverage": True,
+        "sufficiency_readiness": False,
+        "final_answer_packet": False,
+        "author_answer": False,
     }
     assert request_ref["request_status"] == (
         dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
@@ -200,10 +206,11 @@ def test_architecture_doc_records_request_gate_without_opening_downstream() -> N
     assert "RunKernelSupportProposalAdmissionRequest ready" in text
     assert "RunKernel-owned admission decision made" in text
     assert "ordinary D-prime RunKernel/product accepted/current contract authority" in text
-    assert "ComponentCoverage not licensed/not bound" in text
+    assert "ComponentCoverage bound through existing RunKernel coverage authority" in text
+    assert "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING" in text
     for closed_surface in (
-        "`ComponentCoverage` binding",
-        "citation/source-obligation satisfaction",
+        "source-obligation satisfaction authority",
+        "citation eligibility / citation-source handoff authority",
         "`SufficiencyReadiness`",
         "`FinalAnswerPacket`",
         "Author/answer text",

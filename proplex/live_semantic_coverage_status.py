@@ -19,6 +19,12 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
+from core.dprime_evidence_support_bundle_runtime import (
+    BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
+    BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING,
+    DPrimeEvidenceSupportBundleError,
+    build_dprime_evidence_support_bundle,
+)
 from core.dprime_model_review_assessment import run_dprime_model_review_assessment
 from core.dprime_ordinary_contract_authority_runtime import (
     DPrimeOrdinaryContractAuthorityError,
@@ -441,6 +447,10 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     support = _safe_mapping(payload.get("analyst_support_proposal_ref"))
     semantic = _safe_mapping(payload.get("semantic_observation_admission_ref"))
     coverage = _safe_mapping(payload.get("component_coverage_ref"))
+    source_authority = _safe_mapping(payload.get("source_obligation_authority_ref"))
+    citation_authority = _safe_mapping(
+        payload.get("citation_eligibility_authority_ref")
+    )
     dprime = _safe_mapping(payload.get("dprime_status"))
     dprime_request = _safe_mapping(
         dprime.get("run_kernel_support_admission_request_ref")
@@ -595,6 +605,22 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "component coverage reasons or blocker: "
             f"{'; '.join(coverage.get('reasons') or [])}"
+        ),
+        (
+            "source-obligation authority status: "
+            f"{source_authority.get('status')}"
+        ),
+        (
+            "source-obligation authority blocker: "
+            f"{source_authority.get('blocker')}"
+        ),
+        (
+            "citation eligibility/handoff authority status: "
+            f"{citation_authority.get('status')}"
+        ),
+        (
+            "citation eligibility/handoff authority blocker: "
+            f"{citation_authority.get('blocker')}"
         ),
         (
             "ad hoc semantic matcher/heuristic avoided: "
@@ -845,6 +871,8 @@ def _blocked_dprime_model_review_assessment_result(
     )
     decision = None
     semantic_materialization = None
+    support_bundle = None
+    support_bundle_error = None
     materialization_error = None
     contract_authority = None
     if proposal_validated:
@@ -896,7 +924,25 @@ def _blocked_dprime_model_review_assessment_result(
                     dict(contract_authority.authority_ref)
                 )
                 objects_created["semantic_observation"] = True
-                objects_created["component_coverage"] = False
+                try:
+                    support_bundle = build_dprime_evidence_support_bundle(
+                        semantic_materialization=semantic_materialization,
+                        run_kernel=contract_authority.run_kernel,
+                        source_obligation_ref=_materialization_ref(
+                            source_obligation_ref
+                        ),
+                        citation_source_obligation_readiness_ref=(
+                            _materialization_ref(readiness_ref)
+                        ),
+                    )
+                    dprime.update(support_bundle.to_status_overlay())
+                    objects_created["component_coverage"] = True
+                    objects_created["sufficiency_readiness"] = False
+                    objects_created["final_answer_packet"] = False
+                    objects_created["author_answer"] = False
+                except DPrimeEvidenceSupportBundleError as exc:
+                    support_bundle_error = exc
+                    objects_created["component_coverage"] = False
                 dprime["objects_created"] = objects_created
             except DPrimeOrdinaryContractAuthorityError as exc:
                 materialization_error = DPrimeSemanticObservationMaterializationError(
@@ -930,15 +976,34 @@ def _blocked_dprime_model_review_assessment_result(
     )
     if semantic_materialization is not None:
         semantic_ref = semantic_materialization.semantic_status_ref()
-        coverage_ref = semantic_materialization.coverage_status_ref(
-            component_id=_component_id(component_ref)
-        )
-        payload_decision = BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
-        payload_detail = (
-            "D-prime SemanticObservation materialized through RunKernel-owned "
-            "admission; ComponentCoverage binding is not licensed"
-        )
-        next_surface = "D-prime ComponentCoverage binding"
+        if support_bundle is not None:
+            coverage_ref = support_bundle.component_coverage_ref
+            payload_decision = support_bundle.decision
+            payload_detail = support_bundle.blocker_detail
+            next_surface = "D-prime source-obligation authority"
+        elif support_bundle_error is not None:
+            coverage_ref = {
+                "status": "blocked",
+                "coverage_ref": "unavailable",
+                "component_id": _component_id(component_ref),
+                "reasons": [
+                    "ComponentCoverage binding failed before source/citation authority",
+                    support_bundle_error.detail,
+                ],
+            }
+            payload_decision = support_bundle_error.blocker
+            payload_detail = support_bundle_error.detail
+            next_surface = "D-prime ComponentCoverage binding"
+        else:
+            coverage_ref = semantic_materialization.coverage_status_ref(
+                component_id=_component_id(component_ref)
+            )
+            payload_decision = BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+            payload_detail = (
+                "D-prime SemanticObservation materialized through RunKernel-owned "
+                "admission; ComponentCoverage binding is not licensed"
+            )
+            next_surface = "D-prime ComponentCoverage binding"
     else:
         semantic_ref = {
             "status": "unavailable",
@@ -1003,12 +1068,35 @@ def _blocked_dprime_model_review_assessment_result(
         {
             "dprime_status": dprime,
             "semantic_support_source": (
-                semantic_materialization.to_status_overlay()["semantic_support_source"]
+                (
+                    "available from D-prime SemanticObservation and bound "
+                    "ComponentCoverage; source-obligation authority missing"
+                )
+                if support_bundle is not None
+                else semantic_materialization.to_status_overlay()["semantic_support_source"]
                 if semantic_materialization is not None
                 else decision.semantic_support_source
                 if proposal_validated and decision is not None
                 else "unavailable; D-prime assessment-only model review is not support"
             ),
+            "source_obligation_authority_ref": (
+                dict(support_bundle.source_obligation_authority_ref)
+                if support_bundle is not None
+                else {
+                    "status": "not reached",
+                    "authority_consumed": False,
+                }
+            ),
+            "citation_eligibility_authority_ref": (
+                dict(support_bundle.citation_eligibility_authority_ref)
+                if support_bundle is not None
+                else {
+                    "status": "not reached",
+                    "authority_consumed": False,
+                }
+            ),
+            "component_coverage_only_treated_as_pass": False,
+            "detached_posture_status_packet_treated_as_authority": False,
             "semantic_support_custody_distinction_preserved": True,
             "analyst_support_proposal_consumer": (
                 (
@@ -1035,6 +1123,10 @@ def _blocked_dprime_model_review_assessment_result(
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING:
+        return "D-prime source-obligation authority"
+    if decision == BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING:
+        return "D-prime ComponentCoverage binding"
     if decision == BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED:
         return "D-prime ComponentCoverage binding"
     if decision == BLOCKED_DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_INPUT_INSUFFICIENT:
