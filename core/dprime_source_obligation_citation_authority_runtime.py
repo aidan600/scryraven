@@ -75,21 +75,33 @@ def consume_dprime_source_obligation_and_citation_authority(
     component_coverage_projection: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
     citation_source_obligation_readiness_ref: Mapping[str, Any],
+    additional_semantic_materializations: Sequence[
+        DPrimeSemanticObservationMaterializationResult
+    ] = (),
 ) -> DPrimeSourceObligationCitationAuthorityResult:
     """Consume D-prime source obligation, then citation-source handoff authority."""
 
     coverage = _safe_mapping(component_coverage_projection)
     source_ref = _safe_mapping(source_obligation_ref)
     readiness_ref = _safe_mapping(citation_source_obligation_readiness_ref)
-    content_ref = semantic_materialization.sanitized_content_reference.to_dict(
-        include_validation=False
+    semantic_materializations = (
+        semantic_materialization,
+        *tuple(additional_semantic_materializations or ()),
     )
-    observation_ref = semantic_materialization.semantic_observation_ref
+    content_refs = [
+        item.sanitized_content_reference.to_dict(include_validation=False)
+        for item in semantic_materializations
+    ]
+    observation_refs = [
+        dict(item.semantic_observation_ref) for item in semantic_materializations
+    ]
+    content_ref = content_refs[0]
+    observation_ref = observation_refs[0]
     source_ids = _text_tuple(source_ref.get("source_obligation_candidate_ids"))
     _require_bound_coverage(
         coverage=coverage,
-        observation_ref=observation_ref,
-        content_ref=content_ref,
+        observation_refs=observation_refs,
+        content_refs=content_refs,
         source_ids=source_ids,
     )
 
@@ -98,6 +110,7 @@ def consume_dprime_source_obligation_and_citation_authority(
         coverage=coverage,
         observation_ref=observation_ref,
         content_ref=content_ref,
+        content_refs=content_refs,
         source_ids=source_ids,
         source_ref=source_ref,
         readiness_ref=readiness_ref,
@@ -150,7 +163,7 @@ def consume_dprime_source_obligation_and_citation_authority(
         run_kernel=run_kernel,
         coverage=coverage,
         source_projection=source_projection,
-        content_ref=content_ref,
+        content_refs=content_refs,
         source_ids=source_ids,
     )
     try:
@@ -212,8 +225,8 @@ def consume_dprime_source_obligation_and_citation_authority(
 def _require_bound_coverage(
     *,
     coverage: Mapping[str, Any],
-    observation_ref: Mapping[str, Any],
-    content_ref: Mapping[str, Any],
+    observation_refs: Sequence[Mapping[str, Any]],
+    content_refs: Sequence[Mapping[str, Any]],
     source_ids: Sequence[str],
 ) -> None:
     if coverage.get("canonical_state") is not True:
@@ -233,15 +246,17 @@ def _require_bound_coverage(
         for item in coverage.get("accepted_observation_refs") or ()
         if isinstance(item, Mapping)
     }
-    if observation_ref.get("observation_id") not in observation_ids:
-        _blocked("ComponentCoverage does not bind the admitted D-prime observation")
+    for observation_ref in observation_refs:
+        if observation_ref.get("observation_id") not in observation_ids:
+            _blocked("ComponentCoverage does not bind an admitted D-prime observation")
     content_ids = {
         _safe_mapping(item).get("content_ref_id")
         for item in coverage.get("content_reference_bindings") or ()
         if isinstance(item, Mapping)
     }
-    if content_ref.get("content_ref_id") not in content_ids:
-        _blocked("ComponentCoverage does not bind the D-prime content reference")
+    for content_ref in content_refs:
+        if content_ref.get("content_ref_id") not in content_ids:
+            _blocked("ComponentCoverage does not bind a D-prime content reference")
 
 
 def _source_obligation_authority_state(
@@ -250,6 +265,7 @@ def _source_obligation_authority_state(
     coverage: Mapping[str, Any],
     observation_ref: Mapping[str, Any],
     content_ref: Mapping[str, Any],
+    content_refs: Sequence[Mapping[str, Any]],
     source_ids: Sequence[str],
     source_ref: Mapping[str, Any],
     readiness_ref: Mapping[str, Any],
@@ -300,6 +316,7 @@ def _source_obligation_authority_state(
             "observation_digest": observation_ref.get("observation_digest"),
         },
         "content_ref": _source_safe_content_ref(content_ref),
+        "content_refs": [_source_safe_content_ref(item) for item in content_refs],
         "lineage": {
             "created_by": DPRIME_SOURCE_OBLIGATION_AUTHORITY_OWNER,
             "created_from": [
@@ -326,24 +343,27 @@ def _citation_source_handoff_authority_state(
     run_kernel: RunKernel,
     coverage: Mapping[str, Any],
     source_projection: Mapping[str, Any],
-    content_ref: Mapping[str, Any],
+    content_refs: Sequence[Mapping[str, Any]],
     source_ids: Sequence[str],
 ) -> dict[str, Any]:
     handoff_id = (
         "dprime-citation-source-handoff:"
         f"{str(source_projection['source_obligation_authority_digest'])[:16]}"
     )
-    source_record = _citation_source_record(
-        content_ref=content_ref,
-        source_obligation_id=source_ids[0],
-    )
+    source_records = [
+        _citation_source_record(
+            content_ref=content_ref,
+            source_obligation_id=source_ids[0],
+        )
+        for content_ref in content_refs
+    ]
     digest_payload = {
         "handoff_id": handoff_id,
         "source_obligation_authority_digest": source_projection.get(
             "source_obligation_authority_digest"
         ),
         "coverage_record_digest": coverage.get("coverage_record_digest"),
-        "citation_source_records": [source_record],
+        "citation_source_records": source_records,
     }
     handoff_digest = _digest_json(digest_payload)
     return {
@@ -380,8 +400,10 @@ def _citation_source_handoff_authority_state(
             "coverage_record_digest": coverage.get("coverage_record_digest"),
             "coverage_reduction_digest": coverage.get("coverage_reduction_digest"),
         },
-        "citation_eligible_source_ids": [source_record["source_id"]],
-        "citation_source_records": [source_record],
+        "citation_eligible_source_ids": [
+            record["source_id"] for record in source_records
+        ],
+        "citation_source_records": source_records,
         "citation_rendering_created": False,
         "citations_rendered": False,
         "citation_formatter_invoked": False,
