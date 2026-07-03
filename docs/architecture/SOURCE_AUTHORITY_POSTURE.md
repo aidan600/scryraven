@@ -81,3 +81,12 @@ future query-to-relation planning phase can reference Analyst-owned
 source-authority posture without inventing policy. That pointer is metadata only;
 the fixed-query boundary still does not consume source-authority posture packets
 or claim source-authority support.
+
+Future FAP/Author rendering must preserve Analyst-owned source-authority posture
+rather than reinterpret it. See
+[`FAP_AUTHOR_BOUNDARY.md`](FAP_AUTHOR_BOUNDARY.md).
+
+Future multi-component work should carry source-authority posture requirements
+per component under RunKernel-owned component scheduling rather than treating a
+multi-component question as a single multi-source component. See
+[`RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md`](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md).

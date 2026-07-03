@@ -48,6 +48,12 @@ the Analyst-owned source-authority posture contract in
 [`SOURCE_AUTHORITY_POSTURE.md`](SOURCE_AUTHORITY_POSTURE.md). Query-to-relation
 planning remains future work.
 
+Future FAP/Author rendering and multi-component lift constraints are documented
+in [`FAP_AUTHOR_BOUNDARY.md`](FAP_AUTHOR_BOUNDARY.md) and
+[`RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md`](RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md).
+Those docs are doctrine only and do not open planner, FAP, Author, concurrency,
+budget-lease, or model-routing implementation.
+
 ## Explicitly Out Of Class
 
 - broad research synthesis;
@@ -84,7 +90,9 @@ The boundary does not replace these later phases:
 
 - `ANALYST-SOURCE-AUTHORITY-POSTURE-PACKET-01`
 - `COMPONENT-MODEL-ROLE-ROUTING-MATRIX-01`
+- `FAP-AUTHOR-BOUNDARY-INSPECTION-01`
 - `FAP-OUTPUT-INSPECTION-AND-RENDERING-CONTRACT-01`
+- `RUN-KERNEL-COMPONENT-DAG-AND-CONCURRENCY-BUDGET-01`
 
 Social/review evidence handling, broad product comparison/reliability questions,
 source-authority modules, Scrutineer expansion, and Author/FAP rendering work are
