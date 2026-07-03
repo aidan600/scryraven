@@ -178,6 +178,11 @@ def test_relation_plan_emits_dprime_and_future_component_node_candidates() -> No
             "social_review_aggregation",
         ),
         (
+            "What is the current cost per passenger mile for a Boeing 777?",
+            BLOCKED_GENERIC_QUERY_PLANNING_HARD_EXCLUSION,
+            "calculation_or_normalization",
+        ),
+        (
             "What is the current fee and deadline for Example County small claims?",
             BLOCKED_GENERIC_QUERY_PLANNING_MULTI_COMPONENT,
             "multi_component",
