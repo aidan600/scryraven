@@ -66,6 +66,9 @@ from core.retained_custody_analyst_support_proposal import (
     build_retained_custody_semantic_coverage,
 )
 from core.run_config import RunConfig
+from core.runkernel_followup_search_reentry_ordinary_search_runtime import (
+    run_dprime_followup_search_reentry_using_ordinary_search,
+)
 from proplex.live_citation_source_obligation_readiness_status import (
     PASS_DECISION,
     build_live_citation_source_obligation_readiness_status,
@@ -204,6 +207,14 @@ def build_live_semantic_coverage_status(
     dprime_one_shot_model_review_adapter: Any | None = None,
     dprime_model_review_license: Mapping[str, Any] | None = None,
     dprime_model_review_callable: Callable[..., Any] | None = None,
+    dprime_followup_search_reentry_enabled: bool = False,
+    dprime_followup_candidate_results: (
+        Sequence[Mapping[str, Any]] | Mapping[str, Any] | None
+    ) = None,
+    dprime_followup_fetch_read_materials: Sequence[Mapping[str, Any]] = (),
+    dprime_followup_second_pass_model_review_callable: (
+        Callable[..., Any] | None
+    ) = None,
     dprime_run_kernel_admission_decision_status: str = (
         DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
     ),
@@ -325,6 +336,50 @@ def build_live_semantic_coverage_status(
             one_shot_provider_boundary=dprime_one_shot_provider_boundary,
             one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
         )
+        if (
+            dprime_followup_search_reentry_enabled
+            and model_review_result.proposal_validation_status
+            != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+        ):
+            followup_result = (
+                run_dprime_followup_search_reentry_using_ordinary_search(
+                    query=query,
+                    readiness_payload=readiness_payload,
+                    original_fetch_read_content_packet=fetch_read_content_packet,
+                    original_source_evidence_admission_ref=admission_ref,
+                    citation_source_obligation_readiness_ref=readiness_ref,
+                    component_ref=component_ref,
+                    source_obligation_ref=source_obligation_ref,
+                    first_model_review_result=model_review_result,
+                    followup_candidate_results=dprime_followup_candidate_results,
+                    followup_fetch_read_materials=(
+                        dprime_followup_fetch_read_materials
+                    ),
+                    dprime_model_review_license=dprime_model_review_license,
+                    second_pass_model_review_callable=(
+                        dprime_followup_second_pass_model_review_callable
+                        or dprime_model_review_callable
+                    ),
+                    dprime_one_shot_provider_boundary=(
+                        dprime_one_shot_provider_boundary
+                    ),
+                    dprime_one_shot_model_review_adapter=(
+                        dprime_one_shot_model_review_adapter
+                    ),
+                    run_kernel_admission_decision_status=(
+                        dprime_run_kernel_admission_decision_status
+                    ),
+                )
+            )
+            return _followup_search_reentry_result(
+                query=query,
+                readiness_payload=readiness_payload,
+                admission_ref=admission_ref,
+                readiness_ref=readiness_ref,
+                component_ref=component_ref,
+                source_obligation_ref=source_obligation_ref,
+                followup_result=followup_result,
+            )
         return _blocked_dprime_model_review_assessment_result(
             query=query,
             readiness_payload=readiness_payload,
@@ -457,6 +512,7 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     answer_path = _safe_mapping(payload.get("dprime_answer_path_ref"))
     citation_display = _safe_mapping(answer_path.get("citation_source_display"))
     dprime = _safe_mapping(payload.get("dprime_status"))
+    followup = _safe_mapping(payload.get("dprime_followup_search_reentry_ref"))
     dprime_request = _safe_mapping(
         dprime.get("run_kernel_support_admission_request_ref")
     )
@@ -584,6 +640,54 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         ),
         f"RunKernel decision: {dprime.get('run_kernel_decision', 'not made')}",
         f"admitted support: {_bool_text(dprime.get('admitted_support'))}",
+        (
+            "D-prime follow-up search re-entry status: "
+            f"{followup.get('status', 'not reached')}"
+        ),
+        (
+            "D-prime follow-up owner: "
+            f"{followup.get('dprime_followup_need_owner', 'not reached')}"
+        ),
+        (
+            "follow-up loop owner: "
+            f"{followup.get('followup_loop_owner', 'not reached')}"
+        ),
+        (
+            "D-prime dispatch owner: "
+            f"{_bool_text(followup.get('dprime_dispatch_owner'))}"
+        ),
+        (
+            "follow-up authorization status: "
+            f"{followup.get('followup_search_authorization_status', 'not reached')}"
+        ),
+        (
+            "ordinary follow-up SearchPlanner status: "
+            f"{followup.get('ordinary_search_planner_status', 'not reached')}"
+        ),
+        (
+            "ordinary follow-up SearchExecutorHandoff status: "
+            f"{followup.get('ordinary_search_executor_handoff_status', 'not reached')}"
+        ),
+        (
+            "ordinary follow-up live-search-validation status: "
+            f"{followup.get('ordinary_live_search_validation_status', 'not reached')}"
+        ),
+        (
+            "follow-up candidate packet status: "
+            f"{followup.get('search_result_candidate_packet_status', 'not reached')}"
+        ),
+        (
+            "follow-up fetch/read packet status: "
+            f"{followup.get('fetch_read_content_packet_status', 'not reached')}"
+        ),
+        (
+            "follow-up evidence re-entry status: "
+            f"{followup.get('evidence_reentry_status', 'not reached')}"
+        ),
+        (
+            "D-prime second-pass follow-up status: "
+            f"{followup.get('second_dprime_pass_status', 'not reached')}"
+        ),
         f"Analyst support proposal status: {support.get('status')}",
         f"Analyst support proposal ref/digest: {support.get('proposal_ref')}",
         f"SemanticObservation admission status: {semantic.get('status')}",
@@ -1196,6 +1300,78 @@ def _blocked_dprime_model_review_assessment_result(
         )
     return LiveSemanticCoverageStatusResult(
         decision=payload_decision,
+        output=output,
+        payload=payload,
+    )
+
+
+def _followup_search_reentry_result(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    followup_result: Any,
+) -> LiveSemanticCoverageStatusResult:
+    payload = _base_semantic_payload(
+        query=query,
+        readiness_payload=readiness_payload,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        support_ref=followup_result.support_ref,
+        semantic_ref=followup_result.semantic_ref,
+        coverage_ref=followup_result.coverage_ref,
+        decision=followup_result.decision,
+        blocker_detail=followup_result.blocker_detail,
+        next_blocked_surface=followup_result.next_blocked_surface,
+    )
+    payload.update(
+        {
+            "dprime_status": dict(followup_result.dprime_status),
+            "dprime_followup_search_reentry_ref": dict(
+                followup_result.projection
+            ),
+            "semantic_support_source": followup_result.semantic_support_source,
+            "source_obligation_authority_ref": dict(
+                followup_result.source_obligation_authority_ref
+            ),
+            "citation_eligibility_authority_ref": dict(
+                followup_result.citation_eligibility_authority_ref
+            ),
+            "dprime_answer_path_ref": dict(followup_result.answer_path_ref),
+            "accepted_current_answer_contract_authority_ref": dict(
+                followup_result.contract_authority_ref
+            ),
+            "component_coverage_only_treated_as_pass": False,
+            "detached_posture_status_packet_treated_as_authority": False,
+            "semantic_support_custody_distinction_preserved": True,
+            "analyst_support_proposal_consumer": (
+                (
+                    "D-prime follow-up need consumed by RunKernel-owned "
+                    "follow-up authorization, ordinary search re-entry, and "
+                    "second-pass D-prime support admission"
+                )
+                if followup_result.passed
+                else (
+                    "D-prime follow-up need reached RunKernel-owned ordinary "
+                    "search re-entry but did not produce admitted support"
+                )
+            ),
+        }
+    )
+    output = format_live_semantic_coverage_status(payload)
+    if not output_hygiene_passes(output):
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_OUTPUT_HYGIENE,
+            detail="status output contained forbidden material",
+        )
+    return LiveSemanticCoverageStatusResult(
+        decision=followup_result.decision,
         output=output,
         payload=payload,
     )

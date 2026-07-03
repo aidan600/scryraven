@@ -70,6 +70,10 @@ Current summary:
 - Historical SearchPlannerRevision exact posture: PR #329 / AG-SEARCH-PLANNER-REVISION-01; planner revision consumes Scout report; planner revision emits passive amendment candidates; Scout hints remain non-evidence, non-citation, and non-source-obligation satisfaction; current_answer_contract changes only through existing admission/application path; SearchExecutor, fetch/read/retrieval remain closed; post-merge next gate was AG-SEARCH-EXECUTOR-HANDOFF-01.
 - Historical Scout exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; RunKernel-authorized; report-only; Serper-shaped; fake injected adapters only; No live Serper/search/provider/model/fetch/read/retrieval calls were run; Scout hints are not evidence; not citations; not source-obligation satisfaction; Scout does not mutate contracts; Scout does not revise planner output; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
 - Historical SearchPlannerModel exact posture: PR #327 / AG-SEARCH-PLANNER-MODEL-01; AG-SEARCH-PLANNER-RUNTIME-01; AG-SEARCH-PLANNER-MODEL-01 adds an explicit injected fail-closed model adapter; No live model calls or live validation were run; AG-SCOUT-DISAMBIGUATION-RUNTIME-01; Scout hints are not evidence; post-merge next gate is AG-SEARCH-PLANNER-REVISION-01.
+- SearchPlanner runtime exact posture: AG-SEARCH-PLANNER-RUNTIME-01 completes
+  the merge-stable planner runtime posture; AG-SEARCH-PLANNER-MODEL-01 remains
+  an explicit injected fail-closed model-adapter boundary; no live model/search/
+  provider/fetch/read/retrieval calls are implied by that completion.
 - `AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduced a RunKernel-owned
   search-only validation seam that consumes `current_answer_contract` plus
   `SearchExecutorHandoff` directly and emits sanitized `SearchResultCandidate`
