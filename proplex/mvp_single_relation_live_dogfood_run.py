@@ -1337,6 +1337,14 @@ def format_generic_single_relation_live_dogfood_output(
             f"{packet.get('provider_calls_completed')}",
             f"- Fetch/read: {packet.get('fetch_read_attempts')}/"
             f"{packet.get('fetch_read_completed')}",
+            "- Fetch/read status classes: "
+            f"{_summary_text(packet.get('fetch_read_status_class_summary'))}",
+            "- Fetch/read content types: "
+            f"{_summary_text(packet.get('fetch_read_content_type_summary'))}",
+            "- Fetch/read failure categories: "
+            f"{_summary_text(packet.get('fetch_read_failure_category_summary'))}",
+            "- Official HTTP source-survival blocker active: "
+            f"{_bool_text(packet.get('official_http_source_survival_blocker_active'))}",
             f"- EvidenceLedger admissions: {packet.get('evidence_ledger_admissions')}",
             f"- D-prime relation intake: {relation_status}",
             f"- D-prime/model calls: {packet.get('dprime_model_review_calls_attempted')}/"
@@ -3844,6 +3852,13 @@ def _failure_category_summary(value: Any) -> dict[str, int]:
 
 def _bool_text(value: Any) -> str:
     return "true" if value is True else "false" if value is False else "unknown"
+
+
+def _summary_text(value: Any) -> str:
+    summary = _safe_mapping(value)
+    if not summary:
+        return "none"
+    return ", ".join(f"{key}={summary[key]}" for key in sorted(summary))
 
 
 def _normalize_key(key: Any) -> str:

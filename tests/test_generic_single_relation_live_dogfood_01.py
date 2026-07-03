@@ -68,6 +68,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     GenericProviderProxyRunResult,
     GenericSingleRelationLiveDogfoodRunError,
     build_generic_single_relation_live_dogfood_run_output,
+    format_generic_single_relation_live_dogfood_output,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -470,6 +471,14 @@ def test_official_http_4xx_returns_sharp_source_survival_blocker(
     assert result.packet["provider_query_generation_changed"] is False
     assert result.packet["fetch_read_cap_preserved"] is True
     assert result.packet["fetch_read_cap_value"] == 3
+    formatted = format_generic_single_relation_live_dogfood_output(
+        result.packet,
+        packet_path=tmp_path / "packet.json",
+    )
+    assert "- Fetch/read status classes: 4xx=3" in formatted
+    assert "- Fetch/read content types: text/html=3" in formatted
+    assert "- Fetch/read failure categories: HTTP_4XX=3" in formatted
+    assert "- Official HTTP source-survival blocker active: true" in formatted
     assert len(fetch_urls) == 3
 
 
