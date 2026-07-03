@@ -24,6 +24,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from core import runkernel_followup_search_reentry_ordinary_search_runtime as followup_runtime
 from core.dprime_support_proposal_schema import (
     DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
 )
@@ -67,7 +68,7 @@ def test_dprime_followup_need_reenters_ordinary_search_then_answer_path(
         ),
     )
 
-    assert result.decision == "PASS"
+    assert result.decision == "PASS", result.payload.get("blocker_detail")
     followup = result.payload["dprime_followup_search_reentry_ref"]
     assert followup["followup_loop_owner"] == "RunKernel/product"
     assert followup["dprime_followup_need_owner"] == "D-prime"
@@ -83,6 +84,24 @@ def test_dprime_followup_need_reenters_ordinary_search_then_answer_path(
     assert followup["evidence_reentry_status"] == "consumed"
     assert followup["second_dprime_pass_status"] == "consumed"
     assert followup["second_pass_answer_path_status"] == "consumed"
+    admission_ref = followup["followup_source_evidence_admission_ref"]
+    packet_ref = followup["fetch_read_content_packet_ref"]
+    assert admission_ref["status"] == "custody_created"
+    assert admission_ref["owner"] == "RunKernel.EvidenceLedger"
+    assert admission_ref["reducer_backed"] is True
+    assert admission_ref["fetch_read_content_packet_id"] == packet_ref["packet_id"]
+    assert (
+        admission_ref["fetch_read_content_packet_digest"]
+        == packet_ref["packet_digest"]
+    )
+    assert admission_ref["observation_id"] == (
+        admission_ref["evidence_ledger_reducer_observation_id"]
+    )
+    assert "dprime_followup_reentry" in (
+        admission_ref["evidence_ledger_reducer_observation_id"]
+    )
+    assert len(admission_ref["evidence_ledger_projection_digest"]) == 64
+    assert len(admission_ref["fetch_read_candidate_custody_projection_digest"]) == 64
     assert followup["provider_called"] is False
     assert followup["live_provider_called"] is False
     assert followup["live_search_called"] is False
@@ -136,6 +155,193 @@ def test_second_pass_non_support_is_named_blocker_after_search_reentry(
     )
 
 
+def test_followup_fetch_packet_is_reduced_through_existing_evidence_ledger_reducer(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    original_reduce = (
+        followup_runtime.reduce_fetch_read_content_packet_into_evidence_ledger
+    )
+    calls: list[dict[str, Any]] = []
+
+    def spy_reduce(**kwargs: Any) -> dict[str, Any]:
+        projection = original_reduce(**kwargs)
+        packet = kwargs["fetch_read_content_packet"]
+        calls.append(
+            {
+                "packet_id": packet.get("packet_id"),
+                "packet_digest": packet.get("packet_digest"),
+                "observation_id": kwargs.get("observation_id"),
+            }
+        )
+        return projection
+
+    monkeypatch.setattr(
+        followup_runtime,
+        "reduce_fetch_read_content_packet_into_evidence_ledger",
+        spy_reduce,
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("currentness_mismatch"),
+        dprime_followup_search_reentry_enabled=True,
+        dprime_followup_candidate_results=_followup_candidates(),
+        dprime_followup_fetch_read_materials=_followup_materials(),
+        dprime_followup_second_pass_model_review_callable=_fake_review(
+            "directly_supports"
+        ),
+    )
+
+    assert result.decision == "PASS"
+    followup = result.payload["dprime_followup_search_reentry_ref"]
+    packet_ref = followup["fetch_read_content_packet_ref"]
+    admission_ref = followup["followup_source_evidence_admission_ref"]
+    matching_followup_calls = [
+        call
+        for call in calls
+        if call["packet_id"] == packet_ref["packet_id"]
+        and call["packet_digest"] == packet_ref["packet_digest"]
+    ]
+    assert len(calls) >= 2
+    assert matching_followup_calls
+    assert _ledger_observation_token(matching_followup_calls[0]["observation_id"]) == (
+        admission_ref["evidence_ledger_reducer_observation_id"]
+    )
+    assert "dprime_followup_reentry" in matching_followup_calls[0]["observation_id"]
+    assert any(call["packet_id"] != packet_ref["packet_id"] for call in calls)
+
+
+def test_followup_reentry_fails_closed_without_reducer_backed_followup_custody(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    original_reduce = (
+        followup_runtime.reduce_fetch_read_content_packet_into_evidence_ledger
+    )
+    preflight_calls = 0
+
+    def fake_reduce(**kwargs: Any) -> dict[str, Any]:
+        observation_id = kwargs.get("observation_id")
+        if observation_id and "dprime_followup_reentry" in observation_id:
+            return {
+                "owner": "RunKernel.EvidenceLedger",
+                "observation_refs": [
+                    {
+                        "observation_id": observation_id,
+                        "source": "fetch_read_content_packet_candidate_custody",
+                    }
+                ],
+                "fetch_read_candidate_custody": {
+                    "owner": "RunKernel.EvidenceLedger",
+                    "fetch_read_candidate_custody_records": [],
+                    "candidate_content_custody_visible": False,
+                    "custody_record_count": 0,
+                    "readable_record_count": 0,
+                },
+            }
+        return original_reduce(**kwargs)
+
+    def fail_if_preflight_reached(**_kwargs: Any) -> Any:
+        nonlocal preflight_calls
+        preflight_calls += 1
+        raise AssertionError("second-pass D-prime preflight should not be reached")
+
+    monkeypatch.setattr(
+        followup_runtime,
+        "reduce_fetch_read_content_packet_into_evidence_ledger",
+        fake_reduce,
+    )
+    monkeypatch.setattr(
+        followup_runtime,
+        "build_evidence_frame_preflight",
+        fail_if_preflight_reached,
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("currentness_mismatch"),
+        dprime_followup_search_reentry_enabled=True,
+        dprime_followup_candidate_results=_followup_candidates(),
+        dprime_followup_fetch_read_materials=_followup_materials(),
+        dprime_followup_second_pass_model_review_callable=_fake_review(
+            "directly_supports"
+        ),
+    )
+
+    assert result.decision == (
+        followup_runtime.BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING
+    )
+    followup = result.payload["dprime_followup_search_reentry_ref"]
+    assert followup["status"] == "failed_closed"
+    assert followup["first_failed_seam"] == "followup_fetch_read_ledger_reentry_missing"
+    assert "evidence_reentry_status" not in followup
+    assert "second_dprime_pass_status" not in followup
+    assert preflight_calls == 0
+
+
+def test_followup_reentry_fails_closed_when_followup_reducer_raises(
+    monkeypatch: Any,
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    original_reduce = (
+        followup_runtime.reduce_fetch_read_content_packet_into_evidence_ledger
+    )
+    preflight_calls = 0
+
+    def fake_reduce(**kwargs: Any) -> dict[str, Any]:
+        observation_id = kwargs.get("observation_id")
+        if observation_id and "dprime_followup_reentry" in observation_id:
+            raise ValueError("follow-up reducer unavailable")
+        return original_reduce(**kwargs)
+
+    def fail_if_preflight_reached(**_kwargs: Any) -> Any:
+        nonlocal preflight_calls
+        preflight_calls += 1
+        raise AssertionError("second-pass D-prime preflight should not be reached")
+
+    monkeypatch.setattr(
+        followup_runtime,
+        "reduce_fetch_read_content_packet_into_evidence_ledger",
+        fake_reduce,
+    )
+    monkeypatch.setattr(
+        followup_runtime,
+        "build_evidence_frame_preflight",
+        fail_if_preflight_reached,
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("currentness_mismatch"),
+        dprime_followup_search_reentry_enabled=True,
+        dprime_followup_candidate_results=_followup_candidates(),
+        dprime_followup_fetch_read_materials=_followup_materials(),
+        dprime_followup_second_pass_model_review_callable=_fake_review(
+            "directly_supports"
+        ),
+    )
+
+    assert result.decision == (
+        followup_runtime.BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING
+    )
+    followup = result.payload["dprime_followup_search_reentry_ref"]
+    assert followup["status"] == "failed_closed"
+    assert followup["first_failed_seam"] == "followup_fetch_read_ledger_reentry_failed"
+    assert "evidence_reentry_status" not in followup
+    assert "second_dprime_pass_status" not in followup
+    assert preflight_calls == 0
+
+
 def test_followup_reentry_output_hygiene_excludes_reentered_bounded_text(
     tmp_path: Path,
 ) -> None:
@@ -185,6 +391,9 @@ def test_followup_reentry_is_status_consumed_not_new_search_subsystem() -> None:
         runtime_calls
     )
     assert "build_fetch_read_content_packet_from_candidate_packet" in runtime_calls
+    assert "reduce_fetch_read_content_packet_into_evidence_ledger" in runtime_calls
+    assert "_source_evidence_admission_ref_from_reducer" in runtime_calls
+    assert "_source_evidence_admission_ref" not in runtime_calls
     assert "run_dprime_model_review_assessment" in runtime_calls
     assert "build_dprime_single_lane_answer_path" in runtime_calls
     for forbidden_call in (
@@ -247,3 +456,8 @@ def _imports_and_calls(path: Path) -> tuple[set[str], set[str]]:
             elif isinstance(func, ast.Attribute):
                 called.add(func.attr)
     return imported, called
+
+
+def _ledger_observation_token(value: Any) -> str:
+    text = " ".join(str(value or "").strip().split())
+    return text.casefold().replace("-", "_").replace(" ", "_")[:160]

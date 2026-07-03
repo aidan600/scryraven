@@ -117,6 +117,9 @@ BLOCKED_FOLLOWUP_SEARCH_REENTRY_INPUT_MISSING = (
 BLOCKED_FOLLOWUP_SEARCH_REENTRY_ORDINARY_SEARCH = (
     "BLOCKED_FOLLOWUP_SEARCH_REENTRY_ORDINARY_SEARCH"
 )
+BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING = (
+    "BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING"
+)
 BLOCKED_DPRIME_SECOND_PASS_REEVALUATION = "BLOCKED_DPRIME_SECOND_PASS_REEVALUATION"
 BLOCKED_DPRIME_FOLLOWUP_ANSWER_PATH = "BLOCKED_DPRIME_FOLLOWUP_ANSWER_PATH"
 
@@ -469,7 +472,30 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
                 ),
             )
         )
-        followup_admission_ref = _source_evidence_admission_ref(followup_fetch_packet)
+        followup_reducer_observation_id = (
+            f"{run_kernel.state.run_id}:evidence-ledger:dprime_followup_reentry:"
+            f"{followup_fetch_packet.get('packet_digest', '')[:16]}"
+        )
+        try:
+            followup_ledger_projection = (
+                reduce_fetch_read_content_packet_into_evidence_ledger(
+                    run_kernel=run_kernel,
+                    fetch_read_content_packet=followup_fetch_packet,
+                    observation_id=followup_reducer_observation_id,
+                )
+            )
+        except (RunKernelTransitionError, TypeError, ValueError, KeyError) as exc:
+            raise RunKernelFollowupSearchReentryError(
+                BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING,
+                f"follow-up fetch/read EvidenceLedger re-entry failed: {exc}",
+                first_failed_seam="followup_fetch_read_ledger_reentry_failed",
+                next_surface="follow-up fetch/read EvidenceLedger re-entry",
+            ) from exc
+        followup_admission_ref = _source_evidence_admission_ref_from_reducer(
+            followup_fetch_packet=followup_fetch_packet,
+            ledger_projection=followup_ledger_projection,
+            reducer_observation_id=followup_reducer_observation_id,
+        )
         followup_preflight = build_evidence_frame_preflight(
             fetch_read_content_packet=followup_fetch_packet,
             source_evidence_admission_ref=followup_admission_ref,
@@ -1192,27 +1218,80 @@ def _bind_fetch_read_materials(
     return tuple(out)
 
 
-def _source_evidence_admission_ref(fetch_packet: Mapping[str, Any]) -> dict[str, Any]:
-    references = [
+def _source_evidence_admission_ref_from_reducer(
+    *,
+    followup_fetch_packet: Mapping[str, Any],
+    ledger_projection: Mapping[str, Any],
+    reducer_observation_id: str,
+) -> dict[str, Any]:
+    ledger = _safe_mapping(ledger_projection)
+    custody = _safe_mapping(ledger.get("fetch_read_candidate_custody"))
+    observation_ref = _ledger_observation_ref(
+        ledger_projection=ledger,
+        reducer_observation_id=reducer_observation_id,
+    )
+    records = [
         _safe_mapping(item)
-        for item in fetch_packet.get("reference_records", [])
+        for item in custody.get("fetch_read_candidate_custody_records", [])
         if isinstance(item, Mapping)
     ]
-    readable = [item for item in references if item.get("fetch_read_status") == "readable"]
-    first = readable[0] if readable else references[0] if references else {}
+    matching_records = [
+        record
+        for record in records
+        if record.get("fetch_read_content_packet_id")
+        == followup_fetch_packet.get("packet_id")
+        and record.get("fetch_read_content_packet_digest")
+        == followup_fetch_packet.get("packet_digest")
+    ]
+    readable = [
+        item for item in matching_records if item.get("fetch_read_status") == "readable"
+    ]
+    first = readable[0] if readable else matching_records[0] if matching_records else {}
+    if (
+        not first
+        or not observation_ref
+        or ledger.get("owner") != "RunKernel.EvidenceLedger"
+        or custody.get("owner") != "RunKernel.EvidenceLedger"
+    ):
+        observed_packet_refs = _observed_fetch_read_packet_refs(records)
+        raise RunKernelFollowupSearchReentryError(
+            BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING,
+            (
+                "follow-up fetch/read packet was not visible in reducer-backed "
+                "EvidenceLedger custody before second-pass D-prime preflight; "
+                f"observed_record_count={len(records)}; "
+                f"matching_record_count={len(matching_records)}; "
+                f"observation_ref_present={bool(observation_ref)}; "
+                f"observed_packet_refs={observed_packet_refs}"
+            ),
+            first_failed_seam="followup_fetch_read_ledger_reentry_missing",
+            next_surface="follow-up fetch/read EvidenceLedger re-entry",
+        )
+    _require_followup_custody_false_flags(custody)
+    projection_digest = _digest_json(ledger)
+    custody_projection_digest = _digest_json(custody)
+    canonical_observation_id = (
+        observation_ref.get("observation_id") or reducer_observation_id
+    )
     ref = _without_empty(
         {
             "status": "custody_created" if first else "not_admitted",
             "owner": "RunKernel.EvidenceLedger",
             "schema_version": "source_evidence_admission_ref_followup_reentry_v1",
             "trace_key": "source_evidence_admission",
-            "observation_id": (
-                f"source-evidence-admission:{fetch_packet.get('packet_digest', '')[:16]}"
+            "observation_id": canonical_observation_id,
+            "observation_source": observation_ref.get("source"),
+            "evidence_ledger_reducer_observation_id": canonical_observation_id,
+            "evidence_ledger_projection_digest": projection_digest,
+            "fetch_read_candidate_custody_projection_digest": (
+                custody_projection_digest
             ),
-            "observation_source": "fetch_read_candidate_custody",
-            "fetch_read_content_packet_id": fetch_packet.get("packet_id"),
-            "fetch_read_content_packet_digest": fetch_packet.get("packet_digest"),
-            "custody_record_count": len(references),
+            "reducer_backed": True,
+            "fetch_read_content_packet_id": followup_fetch_packet.get("packet_id"),
+            "fetch_read_content_packet_digest": followup_fetch_packet.get(
+                "packet_digest"
+            ),
+            "custody_record_count": len(matching_records),
             "readable_record_count": len(readable),
             "candidate_content_custody_visible": bool(first),
             "candidate_id": first.get("candidate_id"),
@@ -1246,10 +1325,112 @@ def _source_evidence_admission_ref(fetch_packet: Mapping[str, Any]) -> dict[str,
     return ref
 
 
+def _ledger_observation_ref(
+    *,
+    ledger_projection: Mapping[str, Any],
+    reducer_observation_id: str,
+) -> dict[str, Any]:
+    reducer_observation_token = _ledger_observation_token(reducer_observation_id)
+    for item in ledger_projection.get("observation_refs", []) or []:
+        observation = _safe_mapping(item)
+        if observation.get("observation_id") in {
+            reducer_observation_id,
+            reducer_observation_token,
+        }:
+            return observation
+    return {}
+
+
+def _ledger_observation_token(value: Any) -> str:
+    text = _clean_text(value, limit=160)
+    if not text:
+        return ""
+    return text.casefold().replace("-", "_").replace(" ", "_")[:160]
+
+
+def _observed_fetch_read_packet_refs(
+    records: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    seen: set[tuple[str | None, str | None]] = set()
+    for record in records:
+        packet_id = _clean_text(record.get("fetch_read_content_packet_id"), limit=320)
+        packet_digest = _clean_text(
+            record.get("fetch_read_content_packet_digest"),
+            limit=128,
+        )
+        key = (packet_id, packet_digest)
+        if key in seen:
+            continue
+        seen.add(key)
+        refs.append(
+            _without_empty(
+                {
+                    "packet_id": packet_id,
+                    "packet_digest": packet_digest,
+                }
+            )
+        )
+        if len(refs) >= 3:
+            break
+    return refs
+
+
+def _require_followup_custody_false_flags(custody: Mapping[str, Any]) -> None:
+    required = (
+        "candidate_content_custody_is_semantic_support",
+        "citation_eligible",
+        "source_obligation_satisfied",
+        "source_obligation_candidate_ids_satisfy_requirements",
+        "component_coverage_created",
+        "sufficiency_decided",
+        "final_answer_packet_created",
+        "author_input_created",
+        "partial_answer_ready",
+        "product_correctness_claimed",
+    )
+    for key in required:
+        if custody.get(key) is not False:
+            raise RunKernelFollowupSearchReentryError(
+                BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING,
+                (
+                    "follow-up EvidenceLedger custody projection did not preserve "
+                    f"closed downstream surface flag: {key}"
+                ),
+                first_failed_seam="followup_fetch_read_ledger_reentry_closed_flag",
+                next_surface="follow-up fetch/read EvidenceLedger re-entry",
+            )
+    flags = _safe_mapping(custody.get("behavior_boundary_flags"))
+    for key, value in flags.items():
+        if key in required and value is not False:
+            raise RunKernelFollowupSearchReentryError(
+                BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING,
+                (
+                    "follow-up EvidenceLedger custody behavior flags did not "
+                    f"preserve closed downstream surface flag: {key}"
+                ),
+                first_failed_seam="followup_fetch_read_ledger_reentry_closed_flag",
+                next_surface="follow-up fetch/read EvidenceLedger re-entry",
+            )
+
+
 def _admission_public_ref(admission_ref: Mapping[str, Any]) -> dict[str, Any]:
     return _without_empty(
         {
             "status": admission_ref.get("status"),
+            "owner": admission_ref.get("owner"),
+            "observation_id": admission_ref.get("observation_id"),
+            "observation_source": admission_ref.get("observation_source"),
+            "evidence_ledger_reducer_observation_id": admission_ref.get(
+                "evidence_ledger_reducer_observation_id"
+            ),
+            "evidence_ledger_projection_digest": admission_ref.get(
+                "evidence_ledger_projection_digest"
+            ),
+            "fetch_read_candidate_custody_projection_digest": admission_ref.get(
+                "fetch_read_candidate_custody_projection_digest"
+            ),
+            "reducer_backed": admission_ref.get("reducer_backed") is True,
             "fetch_read_content_packet_id": admission_ref.get(
                 "fetch_read_content_packet_id"
             ),
@@ -1516,6 +1697,7 @@ def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
 __all__ = [
     "BLOCKED_DPRIME_FOLLOWUP_ANSWER_PATH",
     "BLOCKED_DPRIME_SECOND_PASS_REEVALUATION",
+    "BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING",
     "BLOCKED_FOLLOWUP_SEARCH_REENTRY_INPUT_MISSING",
     "BLOCKED_FOLLOWUP_SEARCH_REENTRY_ORDINARY_SEARCH",
     "RUNKERNEL_FOLLOWUP_SEARCH_REENTRY_MODE",
