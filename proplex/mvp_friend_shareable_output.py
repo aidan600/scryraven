@@ -240,8 +240,10 @@ def _unsupported_mvp_demo_query_blocker_detail() -> str:
     return (
         "The offline MVP demo is a fixed deterministic fixture. It currently "
         f'only supports: "{DEFAULT_MVP_QUERY}". Arbitrary query answering '
-        "requires the live/ordinary product path, which remains blocked by: "
-        f"{BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING}."
+        "is not supported yet; the next product milestone is the "
+        "supported-query-class boundary and query-to-relation planning. "
+        "The fixed live dogfood slice is not friend-level or general MVP, "
+        "and product correctness remains unclaimed."
     )
 
 
