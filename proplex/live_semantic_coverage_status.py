@@ -22,6 +22,7 @@ from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_evidence_support_bundle_runtime import (
     BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
     BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING,
+    BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED,
     DPrimeEvidenceSupportBundleError,
     build_dprime_evidence_support_bundle,
 )
@@ -118,8 +119,7 @@ NEXT_BLOCKED_SURFACE = (
     "D-prime EvidenceFramePreflight"
 )
 CLOSED_DOWNSTREAM_SURFACES = (
-    "citation eligibility/rendering",
-    "source-obligation satisfaction",
+    "citation rendering",
     "SufficiencyReadiness",
     "final answer packet",
     "Author/AuthorProse",
@@ -127,10 +127,9 @@ CLOSED_DOWNSTREAM_SURFACES = (
     "product-quality correctness claim",
 )
 EXPLICIT_NON_CLAIM = (
-    "This phase does not prove source-obligation satisfaction, citation "
-    "eligibility, citation rendering, answerability, SufficiencyReadiness, "
-    "final answer packet readiness, Author correctness, final answer quality, "
-    "or product-quality correctness."
+    "This phase does not prove citation rendering, answerability, "
+    "SufficiencyReadiness, final answer packet readiness, Author correctness, "
+    "final answer quality, or product-quality correctness."
 )
 
 _READINESS_BLOCKER_MAP = {
@@ -980,7 +979,7 @@ def _blocked_dprime_model_review_assessment_result(
             coverage_ref = support_bundle.component_coverage_ref
             payload_decision = support_bundle.decision
             payload_detail = support_bundle.blocker_detail
-            next_surface = "D-prime source-obligation authority"
+            next_surface = "SufficiencyReadiness"
         elif support_bundle_error is not None:
             coverage_ref = {
                 "status": "blocked",
@@ -1070,7 +1069,8 @@ def _blocked_dprime_model_review_assessment_result(
             "semantic_support_source": (
                 (
                     "available from D-prime SemanticObservation and bound "
-                    "ComponentCoverage; source-obligation authority missing"
+                    "ComponentCoverage; source-obligation and citation-source "
+                    "handoff authority consumed"
                 )
                 if support_bundle is not None
                 else semantic_materialization.to_status_overlay()["semantic_support_source"]
@@ -1123,6 +1123,8 @@ def _blocked_dprime_model_review_assessment_result(
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED:
+        return "SufficiencyReadiness"
     if decision == BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING:
         return "D-prime source-obligation authority"
     if decision == BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING:

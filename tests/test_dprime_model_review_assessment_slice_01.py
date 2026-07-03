@@ -303,7 +303,7 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
     ] == "not configured"
     assert calls[0]["boundary_ref"]["status"] == "not approved"
     assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     )
     assert result.return_code == 2
     assert "D-prime model review status: completed" in result.output
@@ -329,7 +329,7 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
     assert "admitted support: true" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
     assert "ComponentCoverage status: bound" in result.output
-    assert "source-obligation authority status: missing" in result.output
+    assert "source-obligation authority status: consumed" in result.output
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["phase"] == dprime.DPRIME_PHASE
     assert dprime_status["prompt_license_ref"]["phase"] == (
@@ -816,7 +816,7 @@ def test_old_retained_support_consumer_not_reached_with_injected_path(
     result = _run_with_payload(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     )
     assert (
         "D-prime proposal validation status: "

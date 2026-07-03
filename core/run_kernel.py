@@ -576,6 +576,16 @@ DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY_STAGE = (
 DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY_REASON = (
     "dprime_current_answer_contract_authority_from_ordinary_product_status"
 )
+DPRIME_SOURCE_OBLIGATION_AUTHORITY_STAGE = "dprime_source_obligation_authority"
+DPRIME_SOURCE_OBLIGATION_AUTHORITY_REASON = (
+    "dprime_source_obligation_authority_from_bound_component_coverage"
+)
+DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_STAGE = (
+    "dprime_citation_source_handoff_authority"
+)
+DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_REASON = (
+    "dprime_citation_source_handoff_authority_from_source_obligation_authority"
+)
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 ANSWER_CONTRACT_AUTHORITY_MAP_STAGE = "answer_contract_authority_map"
 OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE = "offline_search_executor_bridge"
@@ -699,6 +709,10 @@ class ActionType(str, Enum):
     DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY = (
         "dprime_current_answer_contract_authority"
     )
+    DPRIME_SOURCE_OBLIGATION_AUTHORITY = "dprime_source_obligation_authority"
+    DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY = (
+        "dprime_citation_source_handoff_authority"
+    )
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -783,6 +797,12 @@ class ObservationType(str, Enum):
     CONTRACT_AMENDMENT_APPLIED = "contract_amendment_applied"
     DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORIZED = (
         "dprime_current_answer_contract_authorized"
+    )
+    DPRIME_SOURCE_OBLIGATION_AUTHORITY_CONSUMED = (
+        "dprime_source_obligation_authority_consumed"
+    )
+    DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_CONSUMED = (
+        "dprime_citation_source_handoff_authority_consumed"
     )
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
@@ -1199,6 +1219,24 @@ class RunState:
     component_coverage_state: dict[str, Any] = field(default_factory=dict)
     component_coverage_projection: dict[str, Any] = field(default_factory=dict)
     component_coverage_history: list[dict[str, Any]] = field(default_factory=list)
+    dprime_source_obligation_authority_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    dprime_source_obligation_authority_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    dprime_source_obligation_authority_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
+    dprime_citation_source_handoff_state: dict[str, Any] = field(
+        default_factory=dict
+    )
+    dprime_citation_source_handoff_projection: dict[str, Any] = field(
+        default_factory=dict
+    )
+    dprime_citation_source_handoff_history: list[dict[str, Any]] = field(
+        default_factory=list
+    )
     scrutineer_review_state: dict[str, Any] = field(default_factory=dict)
     scrutineer_review_projection: dict[str, Any] = field(default_factory=dict)
     scrutineer_review_history: list[dict[str, Any]] = field(default_factory=list)
@@ -1566,6 +1604,24 @@ class RunState:
             component_coverage_state=deepcopy(self.component_coverage_state),
             component_coverage_projection=deepcopy(self.component_coverage_projection),
             component_coverage_history=deepcopy(self.component_coverage_history),
+            dprime_source_obligation_authority_state=deepcopy(
+                self.dprime_source_obligation_authority_state
+            ),
+            dprime_source_obligation_authority_projection=deepcopy(
+                self.dprime_source_obligation_authority_projection
+            ),
+            dprime_source_obligation_authority_history=deepcopy(
+                self.dprime_source_obligation_authority_history
+            ),
+            dprime_citation_source_handoff_state=deepcopy(
+                self.dprime_citation_source_handoff_state
+            ),
+            dprime_citation_source_handoff_projection=deepcopy(
+                self.dprime_citation_source_handoff_projection
+            ),
+            dprime_citation_source_handoff_history=deepcopy(
+                self.dprime_citation_source_handoff_history
+            ),
             scrutineer_review_state=deepcopy(self.scrutineer_review_state),
             scrutineer_review_projection=deepcopy(self.scrutineer_review_projection),
             scrutineer_review_history=deepcopy(self.scrutineer_review_history),
@@ -1909,6 +1965,12 @@ class KernelTraceProjection:
     component_coverage_state: Mapping[str, Any]
     component_coverage_projection: Mapping[str, Any]
     component_coverage_history: Sequence[Mapping[str, Any]]
+    dprime_source_obligation_authority_state: Mapping[str, Any]
+    dprime_source_obligation_authority_projection: Mapping[str, Any]
+    dprime_source_obligation_authority_history: Sequence[Mapping[str, Any]]
+    dprime_citation_source_handoff_state: Mapping[str, Any]
+    dprime_citation_source_handoff_projection: Mapping[str, Any]
+    dprime_citation_source_handoff_history: Sequence[Mapping[str, Any]]
     scrutineer_review_state: Mapping[str, Any]
     scrutineer_review_projection: Mapping[str, Any]
     scrutineer_review_history: Sequence[Mapping[str, Any]]
@@ -2115,6 +2177,26 @@ class KernelTraceProjection:
             ),
             "component_coverage_history": [
                 _safe_mapping(item) for item in self.component_coverage_history
+            ],
+            "dprime_source_obligation_authority_state": _safe_mapping(
+                self.dprime_source_obligation_authority_state
+            ),
+            "dprime_source_obligation_authority_projection": _safe_mapping(
+                self.dprime_source_obligation_authority_projection
+            ),
+            "dprime_source_obligation_authority_history": [
+                _safe_mapping(item)
+                for item in self.dprime_source_obligation_authority_history
+            ],
+            "dprime_citation_source_handoff_state": _safe_mapping(
+                self.dprime_citation_source_handoff_state
+            ),
+            "dprime_citation_source_handoff_projection": _safe_mapping(
+                self.dprime_citation_source_handoff_projection
+            ),
+            "dprime_citation_source_handoff_history": [
+                _safe_mapping(item)
+                for item in self.dprime_citation_source_handoff_history
             ],
             "scrutineer_review_state": _safe_mapping(self.scrutineer_review_state),
             "scrutineer_review_projection": _safe_mapping(
@@ -3427,6 +3509,226 @@ class RunKernel:
             reason=reason,
             inputs=merged_inputs,
             expected_observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
+        )
+
+    def authorize_dprime_source_obligation_authority(
+        self,
+        *,
+        source_obligation_authority_id: str,
+        source_obligation_authority_digest: str,
+        coverage_record_id: str,
+        coverage_record_digest: str,
+        coverage_reduction_digest: str,
+        answer_component_id: str,
+        source_obligation_candidate_ids: Sequence[str],
+        semantic_observation_id: str,
+        semantic_observation_digest: str,
+        content_ref_id: str,
+        evidence_ref_id: str,
+        request_id: str | None = None,
+        reason: str = DPRIME_SOURCE_OBLIGATION_AUTHORITY_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        """Authorize D-prime source-obligation authority after coverage binds."""
+
+        if not self.state.component_coverage_projection:
+            raise RunKernelTransitionError(
+                "D-prime source-obligation authority requires bound ComponentCoverage"
+            )
+        if self.state.dprime_source_obligation_authority_projection:
+            raise RunKernelTransitionError(
+                "D-prime source-obligation authority is already consumed"
+            )
+        _require_dprime_downstream_closed(
+            state=self.state,
+            context="D-prime source-obligation authority",
+        )
+        clean_source_ids = _preserve_text_list(source_obligation_candidate_ids)
+        if not clean_source_ids:
+            raise RunKernelTransitionError(
+                "D-prime source-obligation authority requires source ids"
+            )
+        coverage = self.state.component_coverage_projection
+        expected_pairs = (
+            ("coverage_record_id", coverage_record_id, coverage.get("coverage_record_id")),
+            (
+                "coverage_record_digest",
+                coverage_record_digest,
+                coverage.get("coverage_record_digest"),
+            ),
+            (
+                "coverage_reduction_digest",
+                coverage_reduction_digest,
+                coverage.get("coverage_reduction_digest"),
+            ),
+            (
+                "answer_component_id",
+                answer_component_id,
+                coverage.get("answer_component_id"),
+            ),
+        )
+        for label, value, expected in expected_pairs:
+            if not _clean_text(value, limit=260):
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority requires "
+                    f"{label} binding"
+                )
+            if expected and value != expected:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority "
+                    f"{label} does not match bound ComponentCoverage"
+                )
+        for label, value in (
+            ("source_obligation_authority_id", source_obligation_authority_id),
+            (
+                "source_obligation_authority_digest",
+                source_obligation_authority_digest,
+            ),
+            ("semantic_observation_id", semantic_observation_id),
+            ("semantic_observation_digest", semantic_observation_digest),
+            ("content_ref_id", content_ref_id),
+            ("evidence_ref_id", evidence_ref_id),
+        ):
+            if not _clean_text(value, limit=260):
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority requires "
+                    f"{label} binding"
+                )
+        merged_inputs = {
+            "source_obligation_authority_id": source_obligation_authority_id,
+            "source_obligation_authority_digest": source_obligation_authority_digest,
+            "coverage_record_id": coverage_record_id,
+            "coverage_record_digest": coverage_record_digest,
+            "coverage_reduction_digest": coverage_reduction_digest,
+            "answer_component_id": answer_component_id,
+            "source_obligation_candidate_ids": clean_source_ids,
+            "semantic_observation_id": semantic_observation_id,
+            "semantic_observation_digest": semantic_observation_digest,
+            "content_ref_id": content_ref_id,
+            "evidence_ref_id": evidence_ref_id,
+            "request_id": request_id or self.state.request_id,
+            "component_coverage_consumed": True,
+            "component_coverage_only_treated_as_pass": False,
+            "retained_ids_alone_are_authority": False,
+            "citation_eligibility_authority_consumed": False,
+            "citation_rendering_created": False,
+            "sufficiency_readiness_created": False,
+            "final_answer_packet_created": False,
+            "author_answer_created": False,
+            "product_correctness_claimed": False,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=DPRIME_SOURCE_OBLIGATION_AUTHORITY_STAGE,
+            action_type=ActionType.DPRIME_SOURCE_OBLIGATION_AUTHORITY,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.DPRIME_SOURCE_OBLIGATION_AUTHORITY_CONSUMED
+            ),
+        )
+
+    def authorize_dprime_citation_source_handoff_authority(
+        self,
+        *,
+        citation_source_handoff_id: str,
+        citation_source_handoff_digest: str,
+        source_obligation_authority_id: str,
+        source_obligation_authority_digest: str,
+        coverage_record_id: str,
+        coverage_record_digest: str,
+        citation_eligible_source_ids: Sequence[str],
+        request_id: str | None = None,
+        reason: str = DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        """Authorize D-prime citation-source handoff after source authority."""
+
+        if not self.state.dprime_source_obligation_authority_projection:
+            raise RunKernelTransitionError(
+                "D-prime citation-source handoff requires source-obligation authority"
+            )
+        if self.state.dprime_citation_source_handoff_projection:
+            raise RunKernelTransitionError(
+                "D-prime citation-source handoff authority is already consumed"
+            )
+        _require_dprime_downstream_closed(
+            state=self.state,
+            context="D-prime citation-source handoff authority",
+        )
+        source_authority = self.state.dprime_source_obligation_authority_projection
+        coverage = self.state.component_coverage_projection
+        clean_source_ids = _preserve_text_list(citation_eligible_source_ids)
+        if not clean_source_ids:
+            raise RunKernelTransitionError(
+                "D-prime citation-source handoff requires source identities"
+            )
+        expected_pairs = (
+            (
+                "source_obligation_authority_id",
+                source_obligation_authority_id,
+                source_authority.get("source_obligation_authority_id"),
+            ),
+            (
+                "source_obligation_authority_digest",
+                source_obligation_authority_digest,
+                source_authority.get("source_obligation_authority_digest"),
+            ),
+            ("coverage_record_id", coverage_record_id, coverage.get("coverage_record_id")),
+            (
+                "coverage_record_digest",
+                coverage_record_digest,
+                coverage.get("coverage_record_digest"),
+            ),
+        )
+        for label, value, expected in expected_pairs:
+            if not _clean_text(value, limit=260):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff requires "
+                    f"{label} binding"
+                )
+            if expected and value != expected:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff "
+                    f"{label} does not match prior authority"
+                )
+        for label, value in (
+            ("citation_source_handoff_id", citation_source_handoff_id),
+            ("citation_source_handoff_digest", citation_source_handoff_digest),
+        ):
+            if not _clean_text(value, limit=260):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff requires "
+                    f"{label} binding"
+                )
+        merged_inputs = {
+            "citation_source_handoff_id": citation_source_handoff_id,
+            "citation_source_handoff_digest": citation_source_handoff_digest,
+            "source_obligation_authority_id": source_obligation_authority_id,
+            "source_obligation_authority_digest": source_obligation_authority_digest,
+            "coverage_record_id": coverage_record_id,
+            "coverage_record_digest": coverage_record_digest,
+            "citation_eligible_source_ids": clean_source_ids,
+            "request_id": request_id or self.state.request_id,
+            "source_obligation_authority_consumed": True,
+            "citation_eligibility_authority_consumed": True,
+            "citation_source_handoff_consumed": True,
+            "citation_rendering_created": False,
+            "citations_rendered": False,
+            "sufficiency_readiness_created": False,
+            "final_answer_packet_created": False,
+            "author_answer_created": False,
+            "product_correctness_claimed": False,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_STAGE,
+            action_type=ActionType.DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_CONSUMED
+            ),
         )
 
     def authorize_semantic_producer_bundle_commit(
@@ -11607,6 +11909,244 @@ class RunKernel:
             self.state.component_coverage_projection = coverage_projection
             self.state.component_coverage_history.append(deepcopy(coverage_projection))
             self.state.projections[action.stage] = deepcopy(coverage_projection)
+        elif action.action_type is ActionType.DPRIME_SOURCE_OBLIGATION_AUTHORITY:
+            if self.state.dprime_source_obligation_authority_projection:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority is already consumed"
+                )
+            _require_dprime_downstream_closed(
+                state=self.state,
+                context="D-prime source-obligation authority",
+            )
+            source_state = _safe_mapping(
+                observation.payload.get("dprime_source_obligation_authority")
+            )
+            if not source_state:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority observation requires "
+                    "authority payload"
+                )
+            if source_state.get("owner") != "RunKernel.DPrimeSourceObligationAuthority":
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority requires RunKernel owner"
+                )
+            if source_state.get("canonical_state") is not True:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority requires canonical state"
+                )
+            if source_state.get("trace_only") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority must not be trace-only"
+                )
+            if source_state.get("storage_only") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority must not be storage-only"
+                )
+            if source_state.get("run_id") != self.state.run_id:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority run_id mismatch"
+                )
+            if source_state.get("request_id") != self.state.request_id:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority request_id mismatch"
+                )
+            if source_state.get("source_obligation_authority_id") != action.inputs.get(
+                "source_obligation_authority_id"
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority id mismatch"
+                )
+            if source_state.get(
+                "source_obligation_authority_digest"
+            ) != action.inputs.get("source_obligation_authority_digest"):
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority digest mismatch"
+                )
+            if source_state.get("authority_consumed") is not True:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority must be consumed"
+                )
+            if source_state.get("source_obligation_status") != "satisfied":
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority requires satisfied status"
+                )
+            if source_state.get("component_coverage_only_treated_as_pass") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority cannot treat "
+                    "ComponentCoverage alone as PASS"
+                )
+            if source_state.get("retained_ids_alone_are_authority") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority cannot treat retained "
+                    "ids alone as authority"
+                )
+            _require_false_fields(
+                source_state,
+                (
+                    "citation_eligibility_authority_consumed",
+                    "citation_rendering_created",
+                    "sufficiency_readiness_created",
+                    "final_answer_packet_created",
+                    "author_answer_created",
+                    "product_correctness_claimed",
+                ),
+                context="D-prime source-obligation authority",
+            )
+            coverage_ref = _safe_mapping(source_state.get("component_coverage_ref"))
+            coverage = self.state.component_coverage_projection
+            for label in (
+                "coverage_record_id",
+                "coverage_record_digest",
+                "coverage_reduction_digest",
+            ):
+                if coverage_ref.get(label) != coverage.get(label):
+                    raise RunKernelTransitionError(
+                        "D-prime source-obligation authority ComponentCoverage "
+                        f"{label} mismatch"
+                    )
+            action_source_ids = _preserve_text_list(
+                action.inputs.get("source_obligation_candidate_ids") or []
+            )
+            state_source_ids = _preserve_text_list(
+                source_state.get("source_obligation_candidate_ids") or []
+            )
+            if not action_source_ids or action_source_ids != state_source_ids:
+                raise RunKernelTransitionError(
+                    "D-prime source-obligation authority source ids mismatch"
+                )
+            source_projection = _dprime_source_obligation_authority_projection(
+                source_state
+            )
+            self.state.dprime_source_obligation_authority_state = source_state
+            self.state.dprime_source_obligation_authority_projection = (
+                source_projection
+            )
+            self.state.dprime_source_obligation_authority_history.append(
+                deepcopy(source_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(source_projection)
+        elif action.action_type is ActionType.DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY:
+            if self.state.dprime_citation_source_handoff_projection:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff authority is already consumed"
+                )
+            _require_dprime_downstream_closed(
+                state=self.state,
+                context="D-prime citation-source handoff authority",
+            )
+            handoff_state = _safe_mapping(
+                observation.payload.get("dprime_citation_source_handoff_authority")
+            )
+            if not handoff_state:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff observation requires "
+                    "handoff payload"
+                )
+            if handoff_state.get("owner") != (
+                "RunKernel.DPrimeCitationSourceHandoffAuthority"
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff requires RunKernel owner"
+                )
+            if handoff_state.get("canonical_state") is not True:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff requires canonical state"
+                )
+            if handoff_state.get("trace_only") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff must not be trace-only"
+                )
+            if handoff_state.get("storage_only") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff must not be storage-only"
+                )
+            if handoff_state.get("run_id") != self.state.run_id:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff run_id mismatch"
+                )
+            if handoff_state.get("request_id") != self.state.request_id:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff request_id mismatch"
+                )
+            if handoff_state.get("citation_source_handoff_id") != action.inputs.get(
+                "citation_source_handoff_id"
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff id mismatch"
+                )
+            if handoff_state.get("citation_source_handoff_digest") != action.inputs.get(
+                "citation_source_handoff_digest"
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff digest mismatch"
+                )
+            for required_flag in (
+                "authority_consumed",
+                "source_obligation_authority_consumed",
+                "citation_eligibility_authority_consumed",
+                "citation_source_handoff_consumed",
+            ):
+                if handoff_state.get(required_flag) is not True:
+                    raise RunKernelTransitionError(
+                        "D-prime citation-source handoff must set "
+                        f"{required_flag}=True"
+                    )
+            _require_false_fields(
+                handoff_state,
+                (
+                    "citation_rendering_created",
+                    "citations_rendered",
+                    "citation_formatter_invoked",
+                    "ordered_product_source_output_created",
+                    "sufficiency_readiness_created",
+                    "final_answer_packet_created",
+                    "author_answer_created",
+                    "author_input_created",
+                    "product_correctness_claimed",
+                ),
+                context="D-prime citation-source handoff authority",
+            )
+            source_ref = _safe_mapping(
+                handoff_state.get("source_obligation_authority_ref")
+            )
+            source_projection = self.state.dprime_source_obligation_authority_projection
+            if source_ref.get("source_obligation_authority_id") != (
+                source_projection.get("source_obligation_authority_id")
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff source authority id mismatch"
+                )
+            if source_ref.get("source_obligation_authority_digest") != (
+                source_projection.get("source_obligation_authority_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff source authority digest mismatch"
+                )
+            if not handoff_state.get("citation_source_records"):
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff requires source records"
+                )
+            action_source_ids = _preserve_text_list(
+                action.inputs.get("citation_eligible_source_ids") or []
+            )
+            state_source_ids = _preserve_text_list(
+                handoff_state.get("citation_eligible_source_ids") or []
+            )
+            if not action_source_ids or action_source_ids != state_source_ids:
+                raise RunKernelTransitionError(
+                    "D-prime citation-source handoff source ids mismatch"
+                )
+            handoff_projection = _dprime_citation_source_handoff_projection(
+                handoff_state
+            )
+            self.state.dprime_citation_source_handoff_state = handoff_state
+            self.state.dprime_citation_source_handoff_projection = (
+                handoff_projection
+            )
+            self.state.dprime_citation_source_handoff_history.append(
+                deepcopy(handoff_projection)
+            )
+            self.state.projections[action.stage] = deepcopy(handoff_projection)
         elif action.action_type is ActionType.CONTRACT_AMENDMENT_ADMIT:
             if not self.state.initial_answer_contract_projection:
                 raise RunKernelTransitionError(
@@ -14549,6 +15089,156 @@ def _followup_provider_job_closed_surface_claimed(value: Any) -> bool:
     return False
 
 
+def _require_dprime_downstream_closed(*, state: RunState, context: str) -> None:
+    if (
+        state.sufficiency_readiness_state
+        or state.sufficiency_readiness_projection
+        or state.sufficiency_readiness_history
+    ):
+        raise RunKernelTransitionError(f"{context} must not follow SufficiencyReadiness")
+    if state.final_answer_packet or state.final_answer_packet_history:
+        raise RunKernelTransitionError(f"{context} must not create or consume FAP")
+    if (
+        state.author_observation
+        or state.final_answer_outcome
+        or state.author_prose_state
+        or state.author_prose_projection
+        or state.author_prose_history
+    ):
+        raise RunKernelTransitionError(f"{context} must keep Author/answer closed")
+    if state.final_answer_authority_projection:
+        raise RunKernelTransitionError(
+            f"{context} must not follow final answer authority"
+        )
+
+
+def _require_false_fields(
+    value: Mapping[str, Any],
+    fields: Sequence[str],
+    *,
+    context: str,
+) -> None:
+    for field_name in fields:
+        if value.get(field_name) is not False:
+            raise RunKernelTransitionError(f"{context} must keep {field_name}=False")
+
+
+def _dprime_source_obligation_authority_projection(
+    source_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "owner": source_state.get("owner"),
+        "schema_version": source_state.get("schema_version"),
+        "runtime_surface": source_state.get("runtime_surface"),
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "run_id": source_state.get("run_id"),
+        "request_id": source_state.get("request_id"),
+        "source_obligation_authority_id": source_state.get(
+            "source_obligation_authority_id"
+        ),
+        "source_obligation_authority_digest": source_state.get(
+            "source_obligation_authority_digest"
+        ),
+        "source_obligation_authority_status": source_state.get(
+            "source_obligation_authority_status"
+        ),
+        "source_obligation_status": source_state.get("source_obligation_status"),
+        "status": source_state.get("status"),
+        "blocker": None,
+        "authority_consumed": True,
+        "satisfaction_claimed": bool(source_state.get("satisfaction_claimed")),
+        "satisfaction_authority_backed_by": source_state.get(
+            "satisfaction_authority_backed_by"
+        ),
+        "retained_ids_consumed_as_lineage": bool(
+            source_state.get("retained_ids_consumed_as_lineage")
+        ),
+        "retained_ids_alone_are_authority": False,
+        "component_coverage_only_treated_as_pass": False,
+        "source_obligation_candidate_ids": list(
+            source_state.get("source_obligation_candidate_ids") or []
+        ),
+        "satisfied_source_obligation_ids": list(
+            source_state.get("satisfied_source_obligation_ids") or []
+        ),
+        "component_coverage_ref": _safe_mapping(
+            source_state.get("component_coverage_ref")
+        ),
+        "semantic_observation_ref": _safe_mapping(
+            source_state.get("semantic_observation_ref")
+        ),
+        "content_ref": _safe_mapping(source_state.get("content_ref")),
+        "lineage": _safe_mapping(source_state.get("lineage")),
+        "citation_eligibility_authority_consumed": False,
+        "citation_rendering_created": False,
+        "sufficiency_readiness_created": False,
+        "final_answer_packet_created": False,
+        "author_answer_created": False,
+        "product_correctness_claimed": False,
+        "live_validation_not_run": True,
+    }
+
+
+def _dprime_citation_source_handoff_projection(
+    handoff_state: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "owner": handoff_state.get("owner"),
+        "schema_version": handoff_state.get("schema_version"),
+        "runtime_surface": handoff_state.get("runtime_surface"),
+        "canonical_state": True,
+        "trace_only": False,
+        "storage_only": False,
+        "run_id": handoff_state.get("run_id"),
+        "request_id": handoff_state.get("request_id"),
+        "citation_source_handoff_id": handoff_state.get(
+            "citation_source_handoff_id"
+        ),
+        "citation_source_handoff_digest": handoff_state.get(
+            "citation_source_handoff_digest"
+        ),
+        "citation_eligibility_authority_status": handoff_state.get(
+            "citation_eligibility_authority_status"
+        ),
+        "citation_source_handoff_status": handoff_state.get(
+            "citation_source_handoff_status"
+        ),
+        "status": handoff_state.get("status"),
+        "blocker": None,
+        "authority_consumed": True,
+        "citation_eligibility_authority_consumed": True,
+        "citation_source_handoff_consumed": True,
+        "source_obligation_authority_consumed": True,
+        "source_obligation_authority_ref": _safe_mapping(
+            handoff_state.get("source_obligation_authority_ref")
+        ),
+        "component_coverage_ref": _safe_mapping(
+            handoff_state.get("component_coverage_ref")
+        ),
+        "citation_eligible_source_ids": list(
+            handoff_state.get("citation_eligible_source_ids") or []
+        ),
+        "citation_source_records": [
+            _safe_mapping(record)
+            for record in handoff_state.get("citation_source_records") or []
+            if isinstance(record, Mapping)
+        ],
+        "citation_rendering_created": False,
+        "citations_rendered": False,
+        "citation_formatter_invoked": False,
+        "ordered_product_source_output_created": False,
+        "sufficiency_readiness_created": False,
+        "final_answer_packet_created": False,
+        "author_answer_created": False,
+        "author_input_created": False,
+        "product_correctness_claimed": False,
+        "live_validation_not_run": True,
+        "reasons": list(handoff_state.get("reasons") or []),
+    }
+
+
 def _canonical_sufficiency_judgment_projection(
     *,
     judgment_projection: Mapping[str, Any],
@@ -14682,6 +15372,8 @@ __all__ = [
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
     "SEARCH_WORK_PLAN_CONSTRUCTION_STAGE",
+    "DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_STAGE",
+    "DPRIME_SOURCE_OBLIGATION_AUTHORITY_STAGE",
     "SUFFICIENCY_JUDGMENT_STAGE",
     "RUN_CONTRACT_STAGE",
     "QUERY_PRODUCTION_STAGE",

@@ -27,8 +27,8 @@ from typing import Any, Callable
 import pytest
 
 import core.dprime_assessment_validation as assessment_validation
+import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_one_shot_model_review_adapter as adapter_contract
-import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -144,7 +144,9 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert calls[0]["input_packet"]["one_shot_model_review_adapter_ref"][
         "status"
     ] == "configured"
-    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+    assert result.decision == (
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
+    )
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["model_review_call_count"] == 1
     assert (
@@ -167,6 +169,13 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert dprime_status["objects_created"][
         "run_kernel_support_proposal_admission_request"
     ] is True
+    assert dprime_status["objects_created"]["semantic_observation"] is True
+    assert dprime_status["objects_created"]["component_coverage"] is True
+    assert dprime_status["source_obligation_authority_consumed"] is True
+    assert (
+        dprime_status["citation_eligibility_or_source_handoff_authority_consumed"]
+        is True
+    )
     model_review_ref = dprime_status["model_review_ref"]
     adapter_ref = model_review_ref["one_shot_model_review_adapter_ref"]
     assert adapter_ref["status"] == "configured"

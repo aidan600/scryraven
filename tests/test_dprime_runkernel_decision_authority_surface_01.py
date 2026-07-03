@@ -87,17 +87,18 @@ def test_product_status_reports_runkernel_admitted_decision_with_materialization
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     )
     assert "RunKernel admission decision status: admitted" in result.output
     assert "RunKernel decision: admitted" in result.output
     assert "admitted support: true" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
     assert "ComponentCoverage status: bound" in result.output
-    assert "source-obligation authority status: missing" in result.output
+    assert "source-obligation authority status: consumed" in result.output
     assert (
         "semantic support source: available from D-prime SemanticObservation and "
-        "bound ComponentCoverage; source-obligation authority missing"
+        "bound ComponentCoverage; source-obligation and citation-source "
+        "handoff authority consumed"
     ) in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -120,7 +121,13 @@ def test_product_status_reports_runkernel_admitted_decision_with_materialization
     )
     assert result.payload["semantic_observation_admission_ref"]["status"] == "admitted"
     assert result.payload["component_coverage_ref"]["status"] == "bound"
-    assert result.payload["source_obligation_authority_ref"]["status"] == "missing"
+    assert result.payload["source_obligation_authority_ref"]["status"] == "consumed"
+    assert (
+        result.payload["citation_eligibility_authority_ref"][
+            "citation_source_handoff_consumed"
+        ]
+        is True
+    )
     assert result.payload["answerability_correctness"] == "not claimed"
 
 
@@ -383,14 +390,13 @@ def test_architecture_doc_records_component_coverage_stop() -> None:
     assert "RunKernel-owned admission decision made" in text
     assert "SemanticObservation materialized/admitted" in text
     assert "ComponentCoverage bound through existing RunKernel coverage authority" in text
-    assert "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING" in text
+    assert "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED" in text
     for closed_surface in (
-        "source-obligation satisfaction authority",
-        "citation eligibility / citation-source handoff authority",
         "`SufficiencyReadiness`",
         "`FinalAnswerPacket`",
         "Author/answer text",
         "product correctness",
+        "citation rendering",
     ):
         assert closed_surface in text
 

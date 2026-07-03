@@ -48,7 +48,7 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     )
     assert "D-prime assessment status: assessed" in result.output
     assert (
@@ -64,7 +64,7 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
     assert "admitted support: true" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
     assert "ComponentCoverage status: bound" in result.output
-    assert "source-obligation authority status: missing" in result.output
+    assert "source-obligation authority status: consumed" in result.output
 
     dprime_status = result.payload["dprime_status"]
     request_ref = dprime_status["run_kernel_support_admission_request_ref"]
@@ -207,14 +207,13 @@ def test_architecture_doc_records_request_gate_without_opening_downstream() -> N
     assert "RunKernel-owned admission decision made" in text
     assert "ordinary D-prime RunKernel/product accepted/current contract authority" in text
     assert "ComponentCoverage bound through existing RunKernel coverage authority" in text
-    assert "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING" in text
+    assert "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED" in text
     for closed_surface in (
-        "source-obligation satisfaction authority",
-        "citation eligibility / citation-source handoff authority",
         "`SufficiencyReadiness`",
         "`FinalAnswerPacket`",
         "Author/answer text",
         "product correctness",
+        "citation rendering",
     ):
         assert closed_surface in text
 

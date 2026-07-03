@@ -48,7 +48,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     )
     assert (
         "D-prime assessment status: assessed" in result.output
@@ -67,7 +67,8 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     ) in result.output
     assert (
         "semantic support source: available from D-prime SemanticObservation and "
-        "bound ComponentCoverage; source-obligation authority missing"
+        "bound ComponentCoverage; source-obligation and citation-source "
+        "handoff authority consumed"
     ) in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -119,7 +120,13 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     }
     assert result.payload["semantic_observation_admission_ref"]["status"] == "admitted"
     assert result.payload["component_coverage_ref"]["status"] == "bound"
-    assert result.payload["source_obligation_authority_ref"]["status"] == "missing"
+    assert result.payload["source_obligation_authority_ref"]["status"] == "consumed"
+    assert (
+        result.payload["citation_eligibility_authority_ref"][
+            "citation_source_handoff_consumed"
+        ]
+        is True
+    )
     assert result.payload["answerability_correctness"] == "not claimed"
 
 

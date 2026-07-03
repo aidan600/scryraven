@@ -1,9 +1,10 @@
 # D-prime architecture
 
-Status: DPRIME-ARCHITECTURE-OVERVIEW-DOC-01. Mode: REPAIR. This is a
-documentation-only architecture overview; it does not license product behavior,
-live/model/provider/search/fetch/read/retrieval calls, or downstream support
-admission.
+Status: Updated through DPRIME-SUPPORT-BUNDLE-COMPLETION-01. Mode: BUILD.
+This overview documents implemented product-consumed D-prime authority. It does
+not license live/model/provider/search/fetch/read/retrieval calls,
+SufficiencyReadiness, FAP, Author/answer text, citation rendering, or product
+correctness.
 
 ## Purpose
 
@@ -57,14 +58,16 @@ source/evidence custody and readability
 -> ordinary D-prime RunKernel/product accepted/current contract authority
 -> SemanticObservation materialized/admitted
 -> ComponentCoverage bound through existing RunKernel coverage authority
--> source-obligation authority missing
+-> source-obligation authority consumed
+-> citation eligibility / citation-source handoff authority consumed
+-> SufficiencyReadiness not licensed
 ```
 
 The chain is surfaced through `DPrimeStatusPayload` in
 `proplex.live_semantic_coverage_status`. The current stop condition is:
 
 ```text
-BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
 ```
 
 At that point a validator-valid proposal candidate and a lineage-only
@@ -85,10 +88,17 @@ RunKernel/product authority separately.
 After DPRIME-EVIDENCE-SUPPORT-BUNDLE-01, the ordinary product status path also
 consumes the admitted D-prime `SemanticObservation` through existing
 RunKernel-owned `ComponentCoverage` reduction. The coverage state is
-`supported_with_caveats`, not `satisfied`: retained source-obligation ids remain
-lineage only, no source-obligation satisfaction authority is consumed, and no
-citation eligibility or citation-source handoff authority is created. This is
-Outcome B product progress with a named blocker, not a completed support bundle.
+`supported_with_caveats`, not source-obligation authority by itself: retained
+source-obligation ids remain lineage until consumed by the narrow RunKernel-owned
+source-obligation authority surface in
+`core.dprime_source_obligation_citation_authority_runtime`.
+
+After DPRIME-SUPPORT-BUNDLE-COMPLETION-01, the same ordinary product status path
+then consumes RunKernel-owned D-prime source-obligation authority and
+citation-source handoff authority. This completes the D-prime evidence-support
+bundle for the source/component relation, but it stops before
+`SufficiencyReadiness`; it does not create readiness, FAP, Author/answer text,
+citation rendering, live calls, or product correctness.
 
 ## Current implemented product path
 
@@ -115,8 +125,11 @@ Implemented and consumed by the ordinary dry-run status path:
   `core.dprime_semantic_observation_materialization_runtime`.
 - RunKernel/ComponentCoverage-owned support-bundle attempt in
   `core.dprime_evidence_support_bundle_runtime`, consumed by ordinary product
-  status, which binds ComponentCoverage and stops at missing source-obligation
-  authority.
+  status, which binds ComponentCoverage, consumes source-obligation authority,
+  consumes citation-source handoff authority, and stops at
+  `BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED`.
+- RunKernel-owned D-prime source-obligation and citation-source handoff
+  authority in `core.dprime_source_obligation_citation_authority_runtime`.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -164,10 +177,14 @@ D-prime may produce:
 - product-visible materialization-input blocker after a RunKernel-owned
   admitted D-prime decision reaches the SemanticObservation boundary without an
   existing authorized accepted/current answer-contract surface.
-- RunKernel-owned `ComponentCoverage` refs/status/digest from the licensed
-  D-prime support-bundle runtime after admitted `SemanticObservation`.
-- product-visible missing source-obligation authority blocker after
-  ComponentCoverage binding.
+- RunKernel-owned `ComponentCoverage` refs/status/digest from the D-prime
+  support-bundle runtime after admitted `SemanticObservation`;
+- RunKernel-owned D-prime source-obligation authority refs/status/digest after
+  bound `ComponentCoverage`;
+- RunKernel-owned citation eligibility / citation-source handoff authority
+  refs/status/digest after source-obligation authority;
+- product-visible SufficiencyReadiness-not-licensed blocker after the completed
+  evidence-support bundle.
 
 The pre-admission D-prime assessment/proposal/request outputs are review
 material and candidate state. They are not admitted support. Only the
@@ -195,8 +212,11 @@ produce:
 
 The licensed D-prime support-bundle runtime may bind `ComponentCoverage` only by
 consuming an admitted D-prime `SemanticObservation` through existing RunKernel
-coverage authority. It must not treat that coverage as source-obligation
-satisfaction, citation eligibility, answer readiness, or product correctness.
+coverage authority. It may consume source-obligation authority and
+citation-source handoff authority only through the narrow D-prime RunKernel
+authority surfaces. It must not treat ComponentCoverage alone, retained lineage
+ids, or readiness posture as source-obligation satisfaction, citation
+eligibility/handoff, answer readiness, or product correctness.
 
 Anti-laundering rules:
 
@@ -207,8 +227,10 @@ Anti-laundering rules:
 - Proposal validation is not RunKernel admission.
 - `directly_supports` is not RunKernel admission.
 - Proposal candidate is not admitted support.
+- `ComponentCoverage` is not source-obligation satisfaction.
 - `ComponentCoverage` is not citation eligibility.
-- Citation eligibility is not answer correctness.
+- Citation eligibility / citation-source handoff is not citation rendering.
+- Citation eligibility / citation-source handoff is not answer correctness.
 
 ## Semantic support vs evidential adequacy
 
@@ -269,21 +291,26 @@ Implemented after DPRIME-RUNKERNEL-DECISION-AUTHORITY-SURFACE-01:
   `core.dprime_ordinary_contract_authority_runtime`;
 - RunKernel/SemanticObservation-owned SemanticObservation materialization
   boundary for admitted D-prime decisions only;
-- named fail-closed blocker after ComponentCoverage because source-obligation
-  authority is not available before closed Sufficiency/FAP surfaces;
+- RunKernel-owned ComponentCoverage binding through the D-prime support-bundle
+  runtime;
+- RunKernel-owned D-prime source-obligation authority consumed after bound
+  ComponentCoverage;
+- RunKernel-owned citation eligibility / citation-source handoff authority
+  consumed after source-obligation authority;
+- named fail-closed blocker at SufficiencyReadiness because readiness/FAP/Author
+  surfaces remain closed;
 - ordinary product status reporting through `DPrimeStatusPayload`.
 
-The current stop point is source-obligation authority missing after
-ComponentCoverage binding.
+The current stop point is SufficiencyReadiness not licensed after the completed
+D-prime evidence-support bundle.
 
 Still not implemented or closed:
 
-- source-obligation satisfaction authority;
-- citation eligibility / citation-source handoff authority;
 - `SufficiencyReadiness`;
 - `FinalAnswerPacket`;
 - Author/answer text;
 - product correctness;
+- citation rendering;
 - optional narrow deterministic semantic extractors.
 
 ## Open downstream surfaces
@@ -295,15 +322,17 @@ RunKernel-owned admission decision
 -> ordinary D-prime accepted/current answer-contract authority
 -> admitted SemanticObservation
 -> ComponentCoverage binding
--> source-obligation authority missing
--> citation eligibility / citation-source handoff unavailable
--> SufficiencyReadiness
+-> source-obligation authority consumed
+-> citation eligibility / citation-source handoff authority consumed
+-> SufficiencyReadiness not licensed
 -> FinalAnswerPacket
 -> Author/answer text
 -> product correctness
 ```
 
-D-prime can make the blocker visible. It cannot skip the blocker.
+D-prime completes this support bundle only up to the SufficiencyReadiness
+boundary. It cannot skip readiness, FAP, Author, citation rendering, answer text,
+or product correctness.
 
 ## Mode posture
 
