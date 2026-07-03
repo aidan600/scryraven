@@ -30,6 +30,7 @@ LIVE_SEMANTIC_COVERAGE_STATUS_FLAG = "--live-semantic-coverage-status-dry-run"
 MVP_DEMO_FLAG = "--mvp-demo"
 MVP_LIVE_DOGFOOD_RUN_FLAG = "--mvp-live-dogfood-run"
 MVP_LIVE_DOGFOOD_STATUS_FLAG = "--mvp-live-dogfood-status"
+MVP_QUERY_PLAN_STATUS_FLAG = "--mvp-query-plan-status"
 CONFIRM_LIVE_DPRIME_REVIEW_FLAG = "--confirm-live-dprime-review"
 
 PRODUCT_STATUS_DRY_RUN_FLAGS = (
@@ -41,6 +42,7 @@ PRODUCT_STATUS_DRY_RUN_FLAGS = (
     MVP_DEMO_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_LIVE_DOGFOOD_STATUS_FLAG,
+    MVP_QUERY_PLAN_STATUS_FLAG,
 )
 
 
@@ -116,6 +118,7 @@ __all__ = [
     "MVP_DEMO_FLAG",
     "MVP_LIVE_DOGFOOD_RUN_FLAG",
     "MVP_LIVE_DOGFOOD_STATUS_FLAG",
+    "MVP_QUERY_PLAN_STATUS_FLAG",
     "ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG",
     "PRODUCT_STATUS_DRY_RUN_FLAGS",
     "ProductModelRouteConfigInitialization",

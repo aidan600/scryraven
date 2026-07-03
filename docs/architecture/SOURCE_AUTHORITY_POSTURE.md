@@ -76,11 +76,12 @@ This phase does not add live/provider/model/fetch/read calls.
 
 ## Current Consumer Posture
 
-The current supported-query boundary may point at this contract by phase id so a
-future query-to-relation planning phase can reference Analyst-owned
-source-authority posture without inventing policy. That pointer is metadata only;
-the fixed-query boundary still does not consume source-authority posture packets
-or claim source-authority support.
+The current supported-query boundary and no-live query-plan dry run may point at
+this contract by phase id so planning can reference Analyst-owned
+source-authority posture requirements without inventing policy. That pointer is
+metadata/requirement only; the fixed-query boundary and planning dry run still
+do not consume source-authority posture packets, create source-authority posture
+over evidence, or claim source-authority support.
 
 Future FAP/Author rendering must preserve Analyst-owned source-authority posture
 rather than reinterpret it. See

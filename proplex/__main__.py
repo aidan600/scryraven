@@ -48,6 +48,7 @@ from core.product_model_route_config import (  # noqa: E402
     MVP_DEMO_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_LIVE_DOGFOOD_STATUS_FLAG,
+    MVP_QUERY_PLAN_STATUS_FLAG,
     ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
     initialize_product_model_route_config,
 )
@@ -59,6 +60,10 @@ PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION = initialize_product_model_route_confi
 
 import core.pipeline_orchestrator as pipeline_orchestrator  # noqa: E402
 from core.cost_accounting import CostAccumulator  # noqa: E402
+from core.generic_query_to_relation_planning import (  # noqa: E402
+    MVP_QUERY_PLANNING_OUTPUT_DIR,
+    build_generic_query_plan_status_output,
+)
 from core.llm import ask_model, compute_similarities, embed_texts  # noqa: E402
 from core.official_canonical_recovery_visibility_export import (  # noqa: E402
     append_official_canonical_recovery_diagnostics_section,
@@ -151,7 +156,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             "Research query / topic. For --mvp-demo, only the fixed MVP "
-            "fixture query is supported."
+            "fixture query is supported. For --mvp-query-plan-status, a "
+            "supported-class user query is required."
         ),
     )
     p.add_argument(
@@ -329,12 +335,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        MVP_QUERY_PLAN_STATUS_FLAG,
+        action="store_true",
+        dest="mvp_query_plan_status",
+        help=(
+            "Run a default-off no-live deterministic supported-query relation "
+            "planning dry run and write a sanitized packet."
+        ),
+    )
+    p.add_argument(
         "--mvp-output-dir",
         default=None,
         metavar="DIR",
         help=(
             "Write MVP review packets under DIR. Defaults to output/mvp_demo_01 "
-            "or output/mvp_live_dogfood_01."
+            "or output/mvp_live_dogfood_01; query planning defaults to "
+            "output/mvp_query_plan_01."
         ),
     )
     p.add_argument(
@@ -640,6 +656,31 @@ def _run_mvp_live_dogfood_status(
     return result.return_code
 
 
+def _run_mvp_query_plan_status(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    del log
+    output_dir = args.mvp_output_dir or MVP_QUERY_PLANNING_OUTPUT_DIR
+    try:
+        result = build_generic_query_plan_status_output(
+            query=args.query,
+            repo_root=_ROOT,
+            output_dir=output_dir,
+        )
+    except Exception as exc:
+        print(f"ERROR: Unexpected MVP query plan status error - {exc}", file=sys.stderr)
+        return 1
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(result.output, encoding="utf-8")
+        print(f"MVP query plan status written to {out_path}", file=sys.stderr)
+    else:
+        print(result.output)
+    return result.return_code
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else list(argv))
     log = _build_logger(args.verbose)
@@ -652,6 +693,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mvp_live_dogfood_status:
         return _run_mvp_live_dogfood_status(args=args, log=log)
+
+    if args.mvp_query_plan_status:
+        return _run_mvp_query_plan_status(args=args, log=log)
 
     if args.ordinary_live_main_runkernel_coverage_dry_run:
         return _run_ordinary_live_entrypoint_dry_run(args=args, log=log)
