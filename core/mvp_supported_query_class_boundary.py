@@ -14,6 +14,9 @@ MVP_SUPPORTED_QUERY_CLASS_ID = "mvp-current-source-of-record-single-fact-v1"
 MVP_SUPPORTED_QUERY_CLASS_VERSION = "1"
 MVP_SUPPORTED_QUERY_CLASS_LABEL = "current source-of-record single-fact lookup"
 MVP_SUPPORTED_QUERY_CLASS_NEXT_MILESTONE = "GENERIC-QUERY-TO-RELATION-PLANNING-01"
+MVP_SUPPORTED_QUERY_CLASS_SOURCE_AUTHORITY_POSTURE_CONTRACT_REF = (
+    "ANALYST-SOURCE-AUTHORITY-POSTURE-PACKET-01"
+)
 
 MVP_SUPPORTED_QUERY_CLASS_HARD_EXCLUSIONS = (
     "broad research synthesis",
@@ -84,6 +87,13 @@ MVP_SUPPORTED_QUERY_CLASS_PROFILE = {
         MVP_SUPPORTED_QUERY_CLASS_NEXT_MILESTONE,
         *MVP_SUPPORTED_QUERY_CLASS_FUTURE_ROADMAP,
     ],
+    "source_authority_posture_contract_ref": (
+        MVP_SUPPORTED_QUERY_CLASS_SOURCE_AUTHORITY_POSTURE_CONTRACT_REF
+    ),
+    "source_authority_posture_contract_role": (
+        "Analyst-owned posture contract for future query-to-relation planning; "
+        "not consumed by the current fixed-query boundary."
+    ),
     "explicit_nonclaims": list(MVP_SUPPORTED_QUERY_CLASS_EXPLICIT_NONCLAIMS),
     "conceptual_examples": [
         "current adult U.S. passport book renewal fee by mail",
@@ -153,6 +163,13 @@ def validate_mvp_supported_query_class_boundary_profile(
         raise ValueError("MVP supported-query-class profile label mismatch.")
     if safe.get("next_implementation_phase") != MVP_SUPPORTED_QUERY_CLASS_NEXT_MILESTONE:
         raise ValueError("MVP supported-query-class next phase mismatch.")
+    if (
+        safe.get("source_authority_posture_contract_ref")
+        != MVP_SUPPORTED_QUERY_CLASS_SOURCE_AUTHORITY_POSTURE_CONTRACT_REF
+    ):
+        raise ValueError(
+            "MVP supported-query-class source-authority contract ref mismatch."
+        )
     hard_exclusions = _string_list(safe.get("hard_exclusions"))
     _validate_required_hard_exclusions(hard_exclusions)
     canonical = _mapping(safe.get("canonical_fixed_dogfood_example"))
@@ -202,6 +219,9 @@ def build_mvp_supported_query_class_boundary_status(
         "general_supported_query_mvp_claimed": False,
         "product_correctness_claimed": False,
         "source_authority_posture_supported": False,
+        "source_authority_posture_contract_ref": (
+            MVP_SUPPORTED_QUERY_CLASS_SOURCE_AUTHORITY_POSTURE_CONTRACT_REF
+        ),
         "social_review_authority_supported": False,
         "broad_product_comparison_supported": False,
         "next_milestone": MVP_SUPPORTED_QUERY_CLASS_NEXT_MILESTONE,
@@ -233,6 +253,13 @@ def validate_mvp_supported_query_class_boundary_status(
             raise ValueError(f"MVP supported-query-class status must keep {key}=false.")
     if safe.get("next_milestone") != MVP_SUPPORTED_QUERY_CLASS_NEXT_MILESTONE:
         raise ValueError("MVP supported-query-class status next milestone mismatch.")
+    if (
+        safe.get("source_authority_posture_contract_ref")
+        != MVP_SUPPORTED_QUERY_CLASS_SOURCE_AUTHORITY_POSTURE_CONTRACT_REF
+    ):
+        raise ValueError(
+            "MVP supported-query-class source-authority contract ref mismatch."
+        )
     hard_exclusions = _string_list(safe.get("hard_exclusions"))
     _validate_required_hard_exclusions(hard_exclusions)
     canonical = _mapping(safe.get("canonical_fixed_dogfood_example"))
@@ -277,6 +304,7 @@ __all__ = [
     "MVP_SUPPORTED_QUERY_CLASS_LABEL",
     "MVP_SUPPORTED_QUERY_CLASS_NEXT_MILESTONE",
     "MVP_SUPPORTED_QUERY_CLASS_PROFILE",
+    "MVP_SUPPORTED_QUERY_CLASS_SOURCE_AUTHORITY_POSTURE_CONTRACT_REF",
     "MVP_SUPPORTED_QUERY_CLASS_VERSION",
     "build_mvp_supported_query_class_boundary_profile",
     "build_mvp_supported_query_class_boundary_status",
