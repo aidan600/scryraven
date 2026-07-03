@@ -92,6 +92,13 @@ provider snippets as evidence. PDF-looking candidates may be attempted, but PDF
 parsing/support remains closed and PDF content type failures remain diagnostic
 until a later PDF phase opens that surface.
 
+If all selected official/source-of-record-looking public-web candidates return
+HTTP 4xx under the existing fetch/read cap, the run reports
+`BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX`. That
+is an HTTP source-survival blocker, not source authority, evidence support,
+citation eligibility, source-obligation satisfaction, PDF support, FAP/Author,
+or product correctness.
+
 Without D-prime confirmation, the command may acquire bounded live
 search/fetch/read/custody status and then stops with:
 
