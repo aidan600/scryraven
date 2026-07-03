@@ -40,7 +40,6 @@ from core.product_model_route_config import (
 )
 from proplex.mvp_friend_shareable_output import (
     BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED,
-    BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING,
     DEFAULT_MVP_QUERY,
     MVP_DEMO_BOUNDED_TEXT,
     build_mvp_demo_output,
@@ -186,10 +185,13 @@ def test_mvp_demo_rejects_unsupported_query_with_named_blocker(
     assert packet["source_display_entries"] == []
     assert "fixed deterministic fixture" in packet["answer_or_blocker_text"]
     assert DEFAULT_MVP_QUERY in packet["answer_or_blocker_text"]
-    assert (
-        BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING
-        in packet["answer_or_blocker_text"]
-    )
+    assert "Arbitrary query answering is not supported yet" in packet[
+        "answer_or_blocker_text"
+    ]
+    assert "supported-query-class boundary" in packet["answer_or_blocker_text"]
+    assert "query-to-relation planning" in packet["answer_or_blocker_text"]
+    assert "not friend-level or general MVP" in packet["answer_or_blocker_text"]
+    assert "product correctness remains unclaimed" in packet["answer_or_blocker_text"]
     assert "fixed deterministic fixture" in result.output
     assert BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED in result.output
     assert "What arbitrary question" not in result.output
@@ -218,7 +220,11 @@ def test_mvp_demo_cli_rejects_unsupported_query() -> None:
     assert BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED in proc.stdout
     assert "fixed deterministic fixture" in proc.stdout
     assert DEFAULT_MVP_QUERY in proc.stdout
-    assert BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING in proc.stdout
+    assert "Arbitrary query answering is not supported yet" in proc.stdout
+    assert "supported-query-class boundary" in proc.stdout
+    assert "query-to-relation planning" in proc.stdout
+    assert "not friend-level or general MVP" in proc.stdout
+    assert "product correctness remains unclaimed" in proc.stdout
 
 
 def test_mvp_live_status_is_default_off_and_records_blocker(tmp_path: Path) -> None:

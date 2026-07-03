@@ -27,9 +27,10 @@ The only supported demo question is:
 
 If another query is supplied, the command returns
 `BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED`. That blocker means the offline MVP demo
-is a fixed deterministic fixture. Arbitrary query answering requires the
-live/ordinary product path, which remains blocked by
-`BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING`.
+is a fixed deterministic fixture. Arbitrary query answering is not supported
+yet; the next product milestone is the supported-query-class boundary and
+query-to-relation planning. The fixed live dogfood slice is not friend-level or
+general MVP, and product correctness remains unclaimed.
 
 The command requires no secrets. It writes a sanitized review packet under
 `output/mvp_demo_01/` and prints a compact human view with:
