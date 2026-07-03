@@ -28,8 +28,8 @@ from typing import Any, Callable
 import pytest
 
 import core.dprime_assessment_validation as assessment_validation
+import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_one_shot_provider_boundary as provider_boundary
-import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 import proplex.live_semantic_coverage_status as semantic_status
 from core.dprime_model_review_assessment import (
@@ -302,7 +302,9 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
         "status"
     ] == "not configured"
     assert calls[0]["boundary_ref"]["status"] == "not approved"
-    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+    assert result.decision == (
+        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+    )
     assert result.return_code == 2
     assert "D-prime model review status: completed" in result.output
     assert "D-prime assessment status: assessed" in result.output
@@ -326,7 +328,8 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
     assert "RunKernel decision: admitted" in result.output
     assert "admitted support: true" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
-    assert "ComponentCoverage status: not licensed" in result.output
+    assert "ComponentCoverage status: bound" in result.output
+    assert "source-obligation authority status: missing" in result.output
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["phase"] == dprime.DPRIME_PHASE
     assert dprime_status["prompt_license_ref"]["phase"] == (
@@ -405,7 +408,10 @@ def test_injected_fake_direct_support_assessment_validates_proposal_then_blocks_
     )
     assert dprime_status["objects_created"]["run_kernel_admission_decision"] is True
     assert dprime_status["objects_created"]["semantic_observation"] is True
-    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is True
+    assert dprime_status["objects_created"]["sufficiency_readiness"] is False
+    assert dprime_status["objects_created"]["final_answer_packet"] is False
+    assert dprime_status["objects_created"]["author_answer"] is False
     assert result.decision != "PASS"
 
 
@@ -809,7 +815,9 @@ def test_old_retained_support_consumer_not_reached_with_injected_path(
 
     result = _run_with_payload(repo_root, _assessment_payload())
 
-    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+    assert result.decision == (
+        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+    )
     assert (
         "D-prime proposal validation status: "
         f"{dprime.DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED}"

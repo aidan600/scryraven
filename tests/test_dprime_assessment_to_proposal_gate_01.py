@@ -26,7 +26,7 @@ from typing import Any
 
 import pytest
 
-import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
+import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -47,7 +47,9 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+    assert result.decision == (
+        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+    )
     assert (
         "D-prime assessment status: assessed" in result.output
     )
@@ -64,8 +66,8 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         f"{dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY}"
     ) in result.output
     assert (
-        "semantic support source: available from D-prime SemanticObservation; "
-        "ComponentCoverage not licensed"
+        "semantic support source: available from D-prime SemanticObservation and "
+        "bound ComponentCoverage; source-obligation authority missing"
     ) in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -110,10 +112,14 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         "run_kernel_support_proposal_admission_request": True,
         "run_kernel_admission_decision": True,
         "semantic_observation": True,
-        "component_coverage": False,
+        "component_coverage": True,
+        "sufficiency_readiness": False,
+        "final_answer_packet": False,
+        "author_answer": False,
     }
     assert result.payload["semantic_observation_admission_ref"]["status"] == "admitted"
-    assert result.payload["component_coverage_ref"]["status"] == "not licensed"
+    assert result.payload["component_coverage_ref"]["status"] == "bound"
+    assert result.payload["source_obligation_authority_ref"]["status"] == "missing"
     assert result.payload["answerability_correctness"] == "not claimed"
 
 
@@ -186,7 +192,6 @@ def test_proposal_gate_output_hygiene_excludes_raw_private_and_closed_material(
         "api_key",
         "secret",
         "SemanticObservation id/ref/digest: admitted",
-        "ComponentCoverage status: bound",
         "citation eligibility claimed: true",
         "source-obligation satisfaction claimed: true",
         "FinalAnswerPacket",

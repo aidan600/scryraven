@@ -28,6 +28,7 @@ from typing import Any
 
 import pytest
 
+import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_runkernel_admission_runtime as rk_dprime
 import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
@@ -55,11 +56,12 @@ def test_product_status_consumes_contract_authority_and_materializes_semantic_ob
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
     )
     assert "RunKernel admission decision status: admitted" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
-    assert "ComponentCoverage status: not licensed" in result.output
+    assert "ComponentCoverage status: bound" in result.output
+    assert "source-obligation authority status: missing" in result.output
     assert "answerability/correctness: not claimed" in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -91,20 +93,39 @@ def test_product_status_consumes_contract_authority_and_materializes_semantic_ob
         "run_kernel_support_proposal_admission_request": True,
         "run_kernel_admission_decision": True,
         "semantic_observation": True,
-        "component_coverage": False,
+        "component_coverage": True,
+        "sufficiency_readiness": False,
+        "final_answer_packet": False,
+        "author_answer": False,
     }
     semantic = result.payload["semantic_observation_admission_ref"]
     coverage = result.payload["component_coverage_ref"]
     assert semantic["status"] == "admitted"
     assert semantic["observation_id"]
-    assert coverage["status"] == "not licensed"
-    assert coverage["coverage_ref"] == "unavailable"
+    assert coverage["status"] == "bound"
+    assert coverage["coverage_ref"] != "unavailable"
+    assert coverage["coverage_state"] == "supported_with_caveats"
+    assert coverage["source_obligation_status"] == "unknown"
+    source_authority = result.payload["source_obligation_authority_ref"]
+    citation_authority = result.payload["citation_eligibility_authority_ref"]
+    assert source_authority["status"] == "missing"
+    assert source_authority["authority_consumed"] is False
+    assert source_authority["retained_ids_are_lineage_only"] is True
+    assert source_authority["satisfaction_claimed"] is False
+    assert citation_authority["status"] == "unavailable"
+    assert citation_authority["authority_consumed"] is False
     assert result.payload["semantic_support_source"] == (
-        "available from D-prime SemanticObservation; ComponentCoverage "
-        "not licensed"
+        "available from D-prime SemanticObservation and bound ComponentCoverage; "
+        "source-obligation authority missing"
     )
-    assert result.payload["next_blocked_surface"] == "D-prime ComponentCoverage binding"
-    assert "ComponentCoverage binding is not licensed" in result.payload["blocker_detail"]
+    assert result.payload["next_blocked_surface"] == (
+        "D-prime source-obligation authority"
+    )
+    assert "source-obligation satisfaction/posture authority is not available" in (
+        result.payload["blocker_detail"]
+    )
+    assert result.payload["component_coverage_only_treated_as_pass"] is False
+    assert result.payload["detached_posture_status_packet_treated_as_authority"] is False
     assert result.payload["component_ref"]["lineage_only"] is True
 
 
@@ -121,7 +142,7 @@ def test_retained_contract_digest_lineage_is_checked_not_counted_as_authority(
     assert component_ref["lineage_only"] is True
     assert component_ref["current_answer_contract_digest"]
     assert result.decision == (
-        dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
     )
     assert semantic["status"] == "admitted"
     authority = dprime_status["accepted_current_answer_contract_authority_ref"]
@@ -130,7 +151,8 @@ def test_retained_contract_digest_lineage_is_checked_not_counted_as_authority(
         "current_answer_contract_digest"
     ]
     assert dprime_status["objects_created"]["semantic_observation"] is True
-    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is True
+    assert result.payload["component_coverage_only_treated_as_pass"] is False
 
 
 @pytest.mark.parametrize(
@@ -331,8 +353,9 @@ def test_product_status_consumes_runkernel_contract_authority_surface(
     assert semantic["runtime_surface"] == (
         dprime_semantic.DPRIME_SEMANTIC_OBSERVATION_MATERIALIZATION_SURFACE
     )
-    assert dprime_status["objects_created"]["component_coverage"] is False
-    assert result.payload["component_coverage_ref"]["status"] == "not licensed"
+    assert dprime_status["objects_created"]["component_coverage"] is True
+    assert result.payload["component_coverage_ref"]["status"] == "bound"
+    assert result.payload["source_obligation_authority_ref"]["status"] == "missing"
 
 
 def test_dprime_product_status_does_not_directly_mutate_answer_contract_state() -> None:
@@ -405,10 +428,11 @@ def test_architecture_doc_records_new_stop_and_closed_downstream_surfaces() -> N
     )
 
     assert "ordinary D-prime accepted/current answer-contract authority" in text
-    assert "BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED" in text
+    assert "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING" in text
+    assert "ComponentCoverage binding" in text
     for closed_surface in (
-        "`ComponentCoverage` binding",
-        "citation/source-obligation satisfaction",
+        "source-obligation satisfaction authority",
+        "citation eligibility / citation-source handoff authority",
         "`SufficiencyReadiness`",
         "`FinalAnswerPacket`",
         "Author/answer text",

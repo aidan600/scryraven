@@ -26,8 +26,8 @@ from typing import Any, Mapping
 
 import pytest
 
+import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_runkernel_admission_runtime as rk_dprime
-import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -86,15 +86,18 @@ def test_product_status_reports_runkernel_admitted_decision_with_materialization
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == dprime_semantic.BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+    assert result.decision == (
+        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+    )
     assert "RunKernel admission decision status: admitted" in result.output
     assert "RunKernel decision: admitted" in result.output
     assert "admitted support: true" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
-    assert "ComponentCoverage status: not licensed" in result.output
+    assert "ComponentCoverage status: bound" in result.output
+    assert "source-obligation authority status: missing" in result.output
     assert (
-        "semantic support source: available from D-prime SemanticObservation; "
-        "ComponentCoverage not licensed"
+        "semantic support source: available from D-prime SemanticObservation and "
+        "bound ComponentCoverage; source-obligation authority missing"
     ) in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -110,13 +113,14 @@ def test_product_status_reports_runkernel_admitted_decision_with_materialization
     assert dprime_status["admitted_support"] is True
     assert dprime_status["objects_created"]["run_kernel_admission_decision"] is True
     assert dprime_status["objects_created"]["semantic_observation"] is True
-    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is True
     assert dprime_status["semantic_observation_admission_status"] == "materialized"
     assert dprime_status["semantic_observation_ref"]["owner"] == (
         "RunKernel.SemanticObservationAdmission"
     )
     assert result.payload["semantic_observation_admission_ref"]["status"] == "admitted"
-    assert result.payload["component_coverage_ref"]["status"] == "not licensed"
+    assert result.payload["component_coverage_ref"]["status"] == "bound"
+    assert result.payload["source_obligation_authority_ref"]["status"] == "missing"
     assert result.payload["answerability_correctness"] == "not claimed"
 
 
@@ -378,10 +382,11 @@ def test_architecture_doc_records_component_coverage_stop() -> None:
 
     assert "RunKernel-owned admission decision made" in text
     assert "SemanticObservation materialized/admitted" in text
-    assert "ComponentCoverage not licensed/not bound" in text
+    assert "ComponentCoverage bound through existing RunKernel coverage authority" in text
+    assert "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING" in text
     for closed_surface in (
-        "`ComponentCoverage` binding",
-        "citation/source-obligation satisfaction",
+        "source-obligation satisfaction authority",
+        "citation eligibility / citation-source handoff authority",
         "`SufficiencyReadiness`",
         "`FinalAnswerPacket`",
         "Author/answer text",
