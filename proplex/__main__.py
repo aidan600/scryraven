@@ -45,6 +45,7 @@ from core.product_model_route_config import (  # noqa: E402
     LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
     LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG,
     MVP_DEMO_FLAG,
+    MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_LIVE_DOGFOOD_STATUS_FLAG,
     ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
     initialize_product_model_route_config,
@@ -102,6 +103,12 @@ from proplex.mvp_friend_shareable_output import (  # noqa: E402
     build_mvp_demo_output,
     build_mvp_live_dogfood_status_output,
 )
+from proplex.mvp_live_dogfood_run import (  # noqa: E402
+    CONFIRM_LIVE_DOGFOOD_FLAG,
+    DEFAULT_BROKER_URL,
+    DEFAULT_PRIVATE_BROKER_PATH,
+    build_mvp_live_dogfood_run_output,
+)
 from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
     OrdinaryLiveEntrypointDryRunDeps,
     build_ordinary_live_entrypoint_dry_run_config,
@@ -114,13 +121,15 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 def _build_logger(verbose: bool) -> logging.Logger:
     level = logging.DEBUG if verbose else logging.WARNING
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
+    try:
+        handlers.append(logging.FileHandler(OUTPUT_DIR / "app.log"))
+    except OSError:
+        pass
     logging.basicConfig(
         level=level,
         format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stderr),
-            logging.FileHandler(OUTPUT_DIR / "app.log"),
-        ],
+        handlers=handlers,
     )
     return logging.getLogger("proplex.cli")
 
@@ -289,6 +298,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        MVP_LIVE_DOGFOOD_RUN_FLAG,
+        action="store_true",
+        dest="mvp_live_dogfood_run",
+        help=(
+            "Run one explicitly confirmed live MVP dogfood attempt through the "
+            "private broker boundary and retained-artifact status consumer."
+        ),
+    )
+    p.add_argument(
+        CONFIRM_LIVE_DOGFOOD_FLAG,
+        action="store_true",
+        dest="confirm_live_dogfood",
+        help="Confirm the single live MVP dogfood attempt.",
+    )
+    p.add_argument(
         MVP_LIVE_DOGFOOD_STATUS_FLAG,
         action="store_true",
         dest="mvp_live_dogfood_status",
@@ -304,6 +328,28 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Write MVP review packets under DIR. Defaults to output/mvp_demo_01 "
             "or output/mvp_live_dogfood_01."
+        ),
+    )
+    p.add_argument(
+        "--mvp-live-broker-url",
+        default=DEFAULT_BROKER_URL,
+        metavar="URL",
+        help="Loopback provider-proxy broker URL for --mvp-live-dogfood-run.",
+    )
+    p.add_argument(
+        "--mvp-live-private-broker-path",
+        default=str(DEFAULT_PRIVATE_BROKER_PATH),
+        metavar="PATH",
+        help="Private broker helper path for --mvp-live-dogfood-run.",
+    )
+    p.add_argument(
+        "--mvp-live-env-file",
+        action="append",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Env file path passed to the private broker helper for "
+            "--mvp-live-dogfood-run. May be provided more than once."
         ),
     )
     p.add_argument(
@@ -325,7 +371,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         p.error("query positional argument and --query must match when both are provided")
     if args.query_option:
         args.query = args.query_option
-    if not args.query and (args.mvp_demo or args.mvp_live_dogfood_status):
+    if not args.query and (
+        args.mvp_demo
+        or args.mvp_live_dogfood_run
+        or args.mvp_live_dogfood_status
+    ):
         args.query = DEFAULT_MVP_QUERY
     if not args.query:
         p.error("the following arguments are required: query")
@@ -525,6 +575,35 @@ def _run_mvp_demo(
     return result.return_code
 
 
+def _run_mvp_live_dogfood_run(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    del log
+    output_dir = args.mvp_output_dir or DEFAULT_MVP_LIVE_OUTPUT_DIR
+    try:
+        result = build_mvp_live_dogfood_run_output(
+            query=args.query,
+            repo_root=_ROOT,
+            output_dir=output_dir,
+            confirm_live_dogfood=args.confirm_live_dogfood,
+            broker_url=args.mvp_live_broker_url,
+            private_broker_path=args.mvp_live_private_broker_path,
+            env_file_paths=args.mvp_live_env_file,
+        )
+    except Exception as exc:
+        print(f"ERROR: Unexpected MVP live dogfood run error - {exc}", file=sys.stderr)
+        return 1
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(result.output, encoding="utf-8")
+        print(f"MVP live dogfood run written to {out_path}", file=sys.stderr)
+    else:
+        print(result.output)
+    return result.return_code
+
+
 def _run_mvp_live_dogfood_status(
     *,
     args: argparse.Namespace,
@@ -557,6 +636,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mvp_demo:
         return _run_mvp_demo(args=args, log=log)
+
+    if args.mvp_live_dogfood_run:
+        return _run_mvp_live_dogfood_run(args=args, log=log)
 
     if args.mvp_live_dogfood_status:
         return _run_mvp_live_dogfood_status(args=args, log=log)

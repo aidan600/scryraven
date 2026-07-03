@@ -25,6 +25,7 @@ from core.contract_amendment_record import (
     WeakeningPosture,
 )
 from core.live_search_validation_runtime import (
+    LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE,
     LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
     LIVE_SEARCH_VALIDATION_EXPLICIT_RESULTS_PER_TASK_CAP,
     build_live_search_validation_observation_payload,
@@ -194,6 +195,14 @@ def execute_ordinary_live_candidate_handoff(
     source_obligation_id: str | None = None,
     search_requirement_id: str | None = None,
     planner_purpose: str = "candidate_handoff",
+    live_search_validation_execution_mode: str = (
+        LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE
+    ),
+    broker_invoked: bool = False,
+    live_provider_called: bool = False,
+    provider_calls_attempted_count: int | None = None,
+    provider_calls_completed_count: int | None = None,
+    candidate_authority_source: str = "structured_offline_candidate_inputs",
 ) -> OrdinaryLiveCandidateHandoffResult:
     """Reduce structured offline candidate inputs through the ordinary RunKernel."""
 
@@ -266,9 +275,11 @@ def execute_ordinary_live_candidate_handoff(
             search_executor_handoff_state=handoff_state,
             provider_used=provider,
             provider_results_by_task={selected_task_ids[0]: normalized_results},
-            execution_mode=LIVE_SEARCH_VALIDATION_EXECUTION_MODE_OFFLINE_FAKE,
-            broker_invoked=False,
-            live_provider_called=False,
+            provider_calls_attempted_count=provider_calls_attempted_count,
+            provider_calls_completed_count=provider_calls_completed_count,
+            execution_mode=live_search_validation_execution_mode,
+            broker_invoked=broker_invoked,
+            live_provider_called=live_provider_called,
         )
         run_kernel.reduce(
             Observation.from_action(
@@ -282,6 +293,24 @@ def execute_ordinary_live_candidate_handoff(
             build_search_result_candidate_packet_from_live_validation_state(
                 run_kernel.state.live_search_validation_state
             )
+        )
+        provider_calls_attempted = _bounded_int(
+            run_kernel.state.live_search_validation_state.get(
+                "provider_calls_attempted"
+            )
+        )
+        provider_calls_completed = _bounded_int(
+            run_kernel.state.live_search_validation_state.get(
+                "provider_calls_completed"
+            )
+        )
+        broker_calls = 1 if broker_invoked else 0
+        live_provider_search_calls = (
+            provider_calls_attempted
+            if live_provider_called
+            or live_search_validation_execution_mode
+            == LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE
+            else 0
         )
         projection = {
             **base,
@@ -323,11 +352,26 @@ def execute_ordinary_live_candidate_handoff(
             ),
             "structured_candidate_input_count": len(normalized_results),
             "retrieval_diagnostics_used_as_candidate_authority": False,
-            "candidate_authority_source": "structured_offline_candidate_inputs",
-            **_zero_call_counts(),
-            "live_search_validation_provider_calls_attempted": (
+            "candidate_authority_source": (
+                _clean_text(candidate_authority_source, limit=160)
+                or "structured_offline_candidate_inputs"
+            ),
+            "provider_search_calls": live_provider_search_calls,
+            "broker_calls": broker_calls,
+            "fetch_read_calls": 0,
+            "model_calls": 0,
+            "retrieval_calls": 0,
+            "live_search_validation_provider_calls_attempted": provider_calls_attempted,
+            "live_search_validation_provider_calls_completed": provider_calls_completed,
+            "live_search_validation_execution_mode": (
+                run_kernel.state.live_search_validation_state.get("execution_mode")
+            ),
+            "live_search_validation_broker_invoked": (
+                run_kernel.state.live_search_validation_state.get("broker_invoked")
+            ),
+            "live_search_validation_live_provider_called": (
                 run_kernel.state.live_search_validation_state.get(
-                    "provider_calls_attempted"
+                    "live_provider_called"
                 )
             ),
             "explicit_non_proofs": list(_NON_PROOFS),
