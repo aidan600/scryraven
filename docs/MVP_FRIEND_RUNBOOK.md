@@ -1,7 +1,7 @@
 # ScryRaven MVP Friend Runbook
 
-Status: short friend-shareable MVP/demo runbook for
-MVP-LIVE-DPRIME-REVIEW-ENTRYPOINT-01.
+Status: short friend-shareable MVP/demo runbook for the fixed MVP demo and
+live dogfood slices.
 
 ## What It Does Today
 
@@ -12,6 +12,13 @@ answer-path consumption, Author answer text, and source display. The MVP demo is
 offline and deterministic; it is for reviewing the shape of the product output,
 not for proving the real-world answer is correct or for answering arbitrary
 queries.
+
+Current MVP packets also carry the first supported-query-class boundary:
+`mvp-current-source-of-record-single-fact-v1`. That boundary is documented in
+[`docs/architecture/MVP_SUPPORTED_QUERY_CLASS_BOUNDARY.md`](architecture/MVP_SUPPORTED_QUERY_CLASS_BOUNDARY.md).
+It defines the current source-of-record single-fact lookup concept and keeps
+arbitrary query planning, friend-level/general MVP readiness, and product
+correctness unclaimed.
 
 ## Offline MVP Demo
 
@@ -28,9 +35,9 @@ The only supported demo question is:
 If another query is supplied, the command returns
 `BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED`. That blocker means the offline MVP demo
 is a fixed deterministic fixture. Arbitrary query answering is not supported
-yet; the next product milestone is the supported-query-class boundary and
-query-to-relation planning. The fixed live dogfood slice is not friend-level or
-general MVP, and product correctness remains unclaimed.
+yet; the next product milestone is query-to-relation planning for the documented
+supported-query-class boundary. The fixed live dogfood slice is not friend-level
+or general MVP, and product correctness remains unclaimed.
 
 The command requires no secrets. It writes a sanitized review packet under
 `output/mvp_demo_01/` and prints a compact human view with:
@@ -85,7 +92,9 @@ no Author/model calls. It does not support arbitrary queries, does not claim
 friend-level MVP readiness, does not claim general supported-query MVP
 readiness, does not claim product correctness, and does not open
 Economist/Specialist routing, Scrutineer remediation, AuthorProse, or broad
-model-provider routing.
+model-provider routing. Its packet identifies the fixed query as a canonical
+dogfood example of the first supported-query-class concept, not as arbitrary
+query support.
 
 Do not paste or commit `.env` contents, API keys, broker tokens, raw provider
 payloads, raw prompts, raw model responses, private logs, DB/cache rows, or full

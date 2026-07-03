@@ -50,6 +50,10 @@ from core.live_ordinary_candidate_handoff_runtime import (
 from core.live_search_validation_runtime import (
     LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE,
 )
+from core.mvp_supported_query_class_boundary import (
+    build_mvp_supported_query_class_boundary_status,
+    validate_mvp_supported_query_class_boundary_status,
+)
 from core.product_model_route_config import (
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
@@ -679,6 +683,15 @@ def validate_mvp_live_dogfood_packet(packet: Mapping[str, Any]) -> dict[str, Any
             BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
             "live dogfood packet must not claim product correctness.",
         )
+    try:
+        validate_mvp_supported_query_class_boundary_status(
+            _safe_mapping(safe.get("supported_query_class_boundary"))
+        )
+    except ValueError as exc:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
+            "live dogfood packet must carry supported-query-class boundary status.",
+        ) from exc
     if safe.get("model_review_licensed") not in {True, False}:
         raise MvpLiveDogfoodRunError(
             BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
@@ -1191,6 +1204,22 @@ def _blocked_packet(
         "decision": blocker,
         "status_decision": blocker,
         "explicit_non_proofs": _explicit_non_proofs(),
+        "supported_query_class_boundary": (
+            build_mvp_supported_query_class_boundary_status(
+                status=(
+                    "fixed_dogfood_example_only"
+                    if query == DEFAULT_MVP_QUERY
+                    else "unsupported_query_blocked_before_boundary_entry"
+                ),
+                fixed_query_example=query == DEFAULT_MVP_QUERY,
+                product_path_slice=(
+                    "fixed_live_dogfood_slice"
+                    if query == DEFAULT_MVP_QUERY
+                    else "fixed_live_dogfood_query_gate"
+                ),
+                product_path_consumed=False,
+            )
+        ),
         "retained_artifact_root": _display_path(retained_root) if retained_root else None,
         "blocker_detail": detail,
     }
