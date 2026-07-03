@@ -62,8 +62,6 @@ BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED = (
     "BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED"
 )
 
-_SUPPORTED_COMPONENT_ID = "component:adult-us-passport-book-renewal-fee"
-_SUPPORTED_SOURCE_OBLIGATION_ID = "obligation:official-current-passport-fee-source"
 _RAW_PRIVATE_KEYS = frozenset(
     {
         "api_key",
@@ -300,7 +298,14 @@ def materialize_dprime_semantic_observation_from_admitted_decision(
             run_kernel=run_kernel,
             fetch_read_content_packet=fetch_packet,
         )
-        component_binding = _accepted_component_binding(accepted_contract)
+        component_binding = _accepted_component_binding(
+            accepted_contract,
+            _required_token(
+                component.get("component_id"),
+                "component ref lacks D-prime relation component",
+                limit=260,
+            ),
+        )
         content_ref = _content_reference(
             reference=reference,
             accepted_contract=accepted_contract,
@@ -426,8 +431,13 @@ def _require_lineage(
     claim = _safe_mapping(assessment.get("answer_component_claim"))
     if not _clean_text(claim.get("claim"), limit=1000):
         _insufficient("assessment material lacks answer component claim")
-    if claim.get("component_id") != _SUPPORTED_COMPONENT_ID:
-        _insufficient("assessment answer component does not match D-prime lane")
+    component_id = _required_token(
+        component.get("component_id"),
+        "component ref lacks D-prime relation component",
+        limit=260,
+    )
+    if claim.get("component_id") != component_id:
+        _insufficient("assessment answer component does not match D-prime relation")
     if assessment.get("support_relation") not in {
         "directly_supports",
         "partially_supports",
@@ -435,13 +445,13 @@ def _require_lineage(
         _insufficient("assessment support relation is not support-bearing")
     if admission.get("status") != "custody_created":
         _insufficient("source/evidence custody is not created")
-    if component.get("component_id") != _SUPPORTED_COMPONENT_ID:
-        _insufficient("component ref does not match D-prime lane")
+    if component.get("component_id") != component_id:
+        _insufficient("component ref does not match D-prime relation")
     if component.get("component_coverage_bound") is not False:
         _insufficient("component coverage is already bound")
     ids = _text_tuple(source_obligation.get("source_obligation_candidate_ids"))
-    if _SUPPORTED_SOURCE_OBLIGATION_ID not in ids:
-        _insufficient("source-obligation lineage does not match D-prime lane")
+    if not ids:
+        _insufficient("source-obligation lineage is unavailable")
     if source_obligation.get("satisfaction_claimed") is not False:
         _insufficient("source-obligation satisfaction is already claimed")
     flags = _safe_mapping(assessment.get("closed_surface_flags"))
@@ -550,7 +560,12 @@ def _require_existing_answer_contract_authority(
     )
     if current_digest != expected_digest:
         _insufficient("current answer-contract digest does not match reference")
-    component_binding = _accepted_component_binding(accepted_contract)
+    component_id = _required_token(
+        component.get("component_id"),
+        "component ref lacks D-prime relation component",
+        limit=260,
+    )
+    component_binding = _accepted_component_binding(accepted_contract, component_id)
     if component_binding.get("component_id") != component.get("component_id"):
         _insufficient("accepted contract component does not match D-prime component")
     if not _clean_text(component_binding.get("component_digest"), limit=128):
@@ -560,10 +575,11 @@ def _require_existing_answer_contract_authority(
 
 def _accepted_component_binding(
     accepted_contract: Mapping[str, Any],
+    component_id: str,
 ) -> Mapping[str, Any]:
     for item in _safe_sequence(accepted_contract.get("accepted_answer_component_refs")):
         component = _safe_mapping(item)
-        if component.get("component_id") == _SUPPORTED_COMPONENT_ID:
+        if component.get("component_id") == component_id:
             return component
     _insufficient("accepted contract does not contain the D-prime answer component")
 

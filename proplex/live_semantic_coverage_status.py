@@ -18,6 +18,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from core.dprime_analyst_relation_intake_runtime import (
+    DPrimeAnalystRelationIntakeError,
+    build_dprime_analyst_relation_intake,
+    component_ref_from_relation_intake,
+    relation_intake_ref,
+    source_obligation_ref_from_relation_intake,
+)
 from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_evidence_support_bundle_runtime import (
     BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
@@ -113,6 +120,9 @@ BLOCKED_COMPONENT_COVERAGE_BINDING = "BLOCKED_COMPONENT_COVERAGE_BINDING"
 BLOCKED_OUTPUT_HYGIENE = "BLOCKED_OUTPUT_HYGIENE"
 BLOCKED_CLOSED_SURFACE_VIOLATION = "BLOCKED_CLOSED_SURFACE_VIOLATION"
 BLOCKED_PRODUCT_IMPORT_BOUNDARY = "BLOCKED_PRODUCT_IMPORT_BOUNDARY"
+BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING = (
+    "BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING"
+)
 
 SEMANTIC_COVERAGE_MACHINERY_FOUND = (
     "core.evidence_relative_analysis_packet.EvidenceRelativeAnalysisPacket / AnalystReport",
@@ -127,16 +137,17 @@ NEXT_BLOCKED_SURFACE = (
 )
 CLOSED_DOWNSTREAM_SURFACES = (
     "product-quality correctness claim",
-    "generic D-prime analyst intake",
+    "multi-relation D-prime analyst intake",
     "multi-component support aggregation",
     "multi-source conflict handling",
     "live/model/provider/search/fetch/read/retrieval calls",
     "old Author execution",
 )
 EXPLICIT_NON_CLAIM = (
-    "This phase creates a narrow single-lane D-prime answer-path status only. "
-    "It does not prove product correctness, generic analyst intake, live "
-    "validation, or final answer quality."
+    "This phase consumes a narrow generic single-relation D-prime intake through "
+    "the existing single-lane answer-path status only. It does not prove "
+    "product correctness, multi-source/multi-component intake, live validation, "
+    "or final answer quality."
 )
 
 _READINESS_BLOCKER_MAP = {
@@ -301,12 +312,34 @@ def build_live_semantic_coverage_status(
             detail=f"could not read fetch/read artifact: {exc}",
         )
 
+    try:
+        relation_intake = build_dprime_analyst_relation_intake(
+            query=query,
+            fetch_read_content_packet=fetch_read_content_packet,
+            source_evidence_admission_ref=admission_ref,
+            citation_source_obligation_readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+        )
+    except DPrimeAnalystRelationIntakeError as exc:
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING,
+            detail=str(exc),
+        )
+    generic_relation_ref = relation_intake_ref(relation_intake)
+    component_ref = component_ref_from_relation_intake(relation_intake)
+    source_obligation_ref = source_obligation_ref_from_relation_intake(
+        relation_intake
+    )
+
     evidence_frame_preflight = build_evidence_frame_preflight(
         fetch_read_content_packet=fetch_read_content_packet,
         source_evidence_admission_ref=admission_ref,
         citation_source_obligation_readiness_ref=readiness_ref,
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
+        relation_intake_ref=generic_relation_ref,
     )
     dprime_status = build_dprime_status_payload(
         evidence_frame_preflight=evidence_frame_preflight,
@@ -378,6 +411,7 @@ def build_live_semantic_coverage_status(
                 readiness_ref=readiness_ref,
                 component_ref=component_ref,
                 source_obligation_ref=source_obligation_ref,
+                relation_ref=generic_relation_ref,
                 followup_result=followup_result,
             )
         return _blocked_dprime_model_review_assessment_result(
@@ -387,6 +421,7 @@ def build_live_semantic_coverage_status(
             readiness_ref=readiness_ref,
             component_ref=component_ref,
             source_obligation_ref=source_obligation_ref,
+            relation_ref=generic_relation_ref,
             dprime_status=dprime_status,
             model_review_result=model_review_result,
             fetch_read_content_packet=fetch_read_content_packet,
@@ -402,6 +437,7 @@ def build_live_semantic_coverage_status(
             readiness_ref=readiness_ref,
             component_ref=component_ref,
             source_obligation_ref=source_obligation_ref,
+            relation_ref=generic_relation_ref,
             dprime_status=dprime_status,
         )
 
@@ -500,6 +536,7 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     """Format concise CLI status without raw/private or product-correctness claims."""
 
     selected = _safe_mapping(payload.get("selected_candidate"))
+    relation = _safe_mapping(payload.get("dprime_relation_intake_ref"))
     admission = _safe_mapping(payload.get("source_evidence_admission_ref"))
     readiness = _safe_mapping(payload.get("citation_source_obligation_readiness_ref"))
     support = _safe_mapping(payload.get("analyst_support_proposal_ref"))
@@ -570,6 +607,26 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "D-prime assessment validator status: "
             f"{dprime.get('assessment_validator_status')}"
+        ),
+        (
+            "D-prime generic relation intake status: "
+            f"{relation.get('status', 'not reached')}"
+        ),
+        (
+            "D-prime generic relation intake ref/digest: "
+            f"{_format_relation_intake_ref(relation)}"
+        ),
+        (
+            "D-prime generic relation component: "
+            f"{relation.get('component_id')} / {relation.get('component_label')}"
+        ),
+        (
+            "D-prime generic relation source obligations: "
+            f"{', '.join(_source_obligation_ids(relation)) or 'unavailable'}"
+        ),
+        (
+            "D-prime generic relation single-lane only: "
+            f"{_bool_text(relation.get('single_lane_only'))}"
         ),
         (
             "D-prime product model role: "
@@ -924,9 +981,11 @@ def _blocked_dprime_status_result(
     readiness_ref: Mapping[str, Any],
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
+    relation_ref: Mapping[str, Any],
     dprime_status: DPrimeStatusPayload,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
+    dprime["generic_relation_intake_ref"] = dict(relation_ref)
     not_reached_reason = _dprime_not_reached_reason(dprime)
     payload = _base_semantic_payload(
         query=query,
@@ -935,6 +994,7 @@ def _blocked_dprime_status_result(
         readiness_ref=readiness_ref,
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
+        relation_intake_ref=relation_ref,
         support_ref={
             "status": dprime["assessment_status"],
             "proposal_ref": "unavailable",
@@ -989,12 +1049,14 @@ def _blocked_dprime_model_review_assessment_result(
     readiness_ref: Mapping[str, Any],
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
+    relation_ref: Mapping[str, Any],
     dprime_status: DPrimeStatusPayload,
     model_review_result: Any,
     fetch_read_content_packet: Mapping[str, Any],
     run_kernel_admission_decision_status: str,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
+    dprime["generic_relation_intake_ref"] = dict(relation_ref)
     dprime.update(model_review_result.to_status_overlay())
     objects_created = dict(dprime.get("objects_created") or {})
     objects_created.update(model_review_result.objects_created)
@@ -1231,6 +1293,7 @@ def _blocked_dprime_model_review_assessment_result(
         readiness_ref=readiness_ref,
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
+        relation_intake_ref=relation_ref,
         support_ref=support_ref,
         semantic_ref=semantic_ref,
         coverage_ref=coverage_ref,
@@ -1313,8 +1376,11 @@ def _followup_search_reentry_result(
     readiness_ref: Mapping[str, Any],
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
+    relation_ref: Mapping[str, Any],
     followup_result: Any,
 ) -> LiveSemanticCoverageStatusResult:
+    dprime_status = dict(followup_result.dprime_status)
+    dprime_status["generic_relation_intake_ref"] = dict(relation_ref)
     payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
@@ -1322,6 +1388,7 @@ def _followup_search_reentry_result(
         readiness_ref=readiness_ref,
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
+        relation_intake_ref=relation_ref,
         support_ref=followup_result.support_ref,
         semantic_ref=followup_result.semantic_ref,
         coverage_ref=followup_result.coverage_ref,
@@ -1331,7 +1398,7 @@ def _followup_search_reentry_result(
     )
     payload.update(
         {
-            "dprime_status": dict(followup_result.dprime_status),
+            "dprime_status": dprime_status,
             "dprime_followup_search_reentry_ref": dict(
                 followup_result.projection
             ),
@@ -1552,6 +1619,7 @@ def _base_semantic_payload(
     decision: str,
     blocker_detail: str | None,
     next_blocked_surface: str | None,
+    relation_intake_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     selected = _safe_mapping(readiness_payload.get("selected_candidate"))
     payload = {
@@ -1586,6 +1654,10 @@ def _base_semantic_payload(
         "component_coverage_ref": dict(coverage_ref),
         "component_ref": dict(component_ref),
         "source_obligation_ref": dict(source_obligation_ref),
+        "dprime_relation_intake_ref": dict(relation_intake_ref or {}),
+        "generic_relation_intake_consumed_by_product_status": bool(
+            relation_intake_ref
+        ),
         "semantic_support_source": "retained bounded sanitized content",
         "semantic_support_custody_distinction_preserved": (
             decision == PASS_DECISION
@@ -1765,6 +1837,15 @@ def _format_source_obligation_ref(value: Any) -> str:
     if not ids:
         return "unavailable"
     return ", ".join(ids) + " (lineage present; satisfaction not claimed)"
+
+
+def _format_relation_intake_ref(value: Any) -> str:
+    ref = _safe_mapping(value)
+    intake_id = _clean_text(ref.get("relation_intake_id"), limit=320)
+    intake_digest = _clean_text(ref.get("relation_intake_digest"), limit=128)
+    if intake_id and intake_digest:
+        return f"{intake_id} / {intake_digest}"
+    return intake_id or intake_digest or "unavailable"
 
 
 def _format_dprime_negative_control_profile_ref(value: Any) -> str:

@@ -21,7 +21,7 @@ DPRIME_NEGATIVE_CONTROL_PROFILE_ID = (
 )
 DPRIME_NEGATIVE_CONTROL_PROFILE_QUERY_CLASS = "official_current_fact_lookup"
 DPRIME_NEGATIVE_CONTROL_PROFILE_RETAINED_LANE = (
-    "retained-official-current-passport-fee-lane"
+    "retained-official-current-single-relation-lane"
 )
 DPRIME_NEGATIVE_CONTROL_PROFILE_INTEGRATION_DEADLINE = (
     "before D-prime model-reviewed assessment work"

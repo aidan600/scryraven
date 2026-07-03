@@ -1,11 +1,11 @@
 # D-prime architecture
 
-Status: Updated through RUN-KERNEL-FOLLOWUP-SEARCH-REENTRY-USING-ORDINARY-SEARCH-01.
+Status: Updated through DPRIME-GENERIC-ANALYST-INTAKE-AND-RELATIONS-01.
 Mode: BUILD.
 This overview documents implemented product-consumed D-prime authority. It does
-not license live/model/provider/search/fetch/read/retrieval calls, generic
-D-prime analyst intake, multi-component support aggregation, multi-source
-conflict handling, or product correctness.
+not license live/model/provider/search/fetch/read/retrieval calls,
+multi-component support aggregation, multi-source conflict handling,
+Scrutineer/Economist/Specialist expansion, or product correctness.
 
 ## Purpose
 
@@ -47,7 +47,9 @@ the only owner of support-bearing admission, rejection, or challenge.
 Current implemented product-consumed D-prime status flow:
 
 ```text
-source/evidence custody and readability
+generic single-relation Analyst intake
+-> relation-derived component/source/evidence refs
+-> source/evidence custody and readability
 -> EvidenceFramePreflight
 -> NegativeControlProfile
 -> DPrimeOneShotProviderBoundary / DPrimeOneShotModelReviewAdapter
@@ -75,6 +77,15 @@ The chain is surfaced through `DPrimeStatusPayload` in
 `proplex.live_semantic_coverage_status`. The current single-lane admitted path
 targets a `PASS` status only when each authority surface above is consumed by
 the ordinary status path.
+
+After DPRIME-GENERIC-ANALYST-INTAKE-AND-RELATIONS-01, the ordinary product
+status path builds and consumes a generic single-relation D-prime Analyst intake
+from the user query, one answer component, one source-obligation lane, and one
+retained bounded content/source relation. The intake is lineage only. Product
+status derives the component and source-obligation refs from it before D-prime
+preflight/model review and before the support bundle, answer path, and optional
+follow-up loop consume the relation. This does not add multi-component or
+multi-source handling.
 
 At that point a validator-valid proposal candidate and a lineage-only
 `RunKernelSupportProposalAdmissionRequest` may exist. When the RunKernel-owned
@@ -170,6 +181,9 @@ Implemented and consumed by the ordinary dry-run status path:
   consumes D-prime follow-up needs through RunKernel-owned authorization and the
   ordinary SearchPlanner/SearchExecutorHandoff/live-search-validation candidate
   path before second-pass D-prime support.
+- Product-status consumed generic single-relation Analyst intake in
+  `core.dprime_analyst_relation_intake_runtime`, which preserves query,
+  component, source-obligation, source identity, and evidence lineage only.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -205,7 +219,11 @@ RunKernel follow-up re-entry:
   owns loop authorization, budget, ordinary search reuse, and evidence re-entry
   when a D-prime need requires additional bounded evidence
 
-Product correctness / generic analyst intake:
+Generic single-relation Analyst intake:
+  is lineage-only and current product-consumed input to existing D-prime
+  authority surfaces
+
+Product correctness / multi-source / multi-component / Scrutineer / Economist:
   remain downstream and closed until separately licensed
 ```
 
@@ -213,6 +231,8 @@ Product correctness / generic analyst intake:
 
 D-prime may produce:
 
+- generic single-relation Analyst intake refs/digests with query, component,
+  source-obligation, source identity, and evidence lineage only;
 - bounded review input references;
 - assessment result/status;
 - support relation classification;
@@ -278,8 +298,8 @@ The licensed single-lane answer-path bridge may consume the completed
 support-bundle output into `SufficiencyReadiness`, a hardened final answer
 packet, Author/answer output, and citation/source display only through existing
 RunKernel/product authority. It must not run live/model/provider/search/fetch/
-read/retrieval calls, open a generic analyst intake surface, or claim product
-correctness.
+read/retrieval calls, open multi-source or multi-component intake, or claim
+product correctness.
 
 Anti-laundering rules:
 
@@ -344,9 +364,9 @@ D-prime's non-negotiable negative controls are:
 `NegativeControlProfile` is configuration and validation posture. It is not
 evidence, not model success, not semantic support, and not product correctness.
 
-## Current status after single-lane answer path
+## Current status after generic single-relation intake
 
-Implemented after DPRIME-SINGLE-LANE-ANSWER-PATH-01:
+Implemented after DPRIME-GENERIC-ANALYST-INTAKE-AND-RELATIONS-01:
 
 - evidence-frame preflight;
 - negative-control profile;
@@ -371,19 +391,25 @@ Implemented after DPRIME-SINGLE-LANE-ANSWER-PATH-01:
 - hardened final answer packet consumed after readiness;
 - Author/answer output consumed after the hardened packet;
 - citation/source display consumed after Author output;
-- ordinary product status reporting through `DPrimeStatusPayload`.
+- ordinary product status reporting through `DPrimeStatusPayload`;
+- generic single-relation D-prime Analyst intake consumed by ordinary product
+  status, D-prime preflight/model-review lineage, support bundle, single-lane
+  answer path, and RunKernel-owned follow-up ordinary-search re-entry.
 
 The current product-visible single-lane path reaches `PASS` only for an
 admitted D-prime decision that completes the support bundle, readiness, hardened
 final answer packet, Author/answer output, and citation/source display. Product
-correctness remains unclaimed.
+correctness remains unclaimed. Runtime does not require the historical passport
+fixture component/source ids to reach `PASS`; tests include a non-passport
+single-relation fixture.
 
 Still not implemented or closed:
 
 - product correctness;
-- generic D-prime analyst intake;
+- multi-relation or multi-component analyst intake;
 - multi-component support aggregation;
 - multi-source conflict handling;
+- Scrutineer/Economist/Specialist expansion;
 - live/model/provider/search/fetch/read/retrieval execution inside this status
   path;
 - optional narrow deterministic semantic extractors.
@@ -393,7 +419,9 @@ Still not implemented or closed:
 The current single-lane path is:
 
 ```text
-RunKernel-owned admission decision
+generic single-relation Analyst intake
+-> relation-derived component/source/evidence refs
+-> RunKernel-owned admission decision
 -> ordinary D-prime accepted/current answer-contract authority
 -> admitted SemanticObservation
 -> ComponentCoverage binding
