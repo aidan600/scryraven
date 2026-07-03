@@ -23,6 +23,13 @@ from core.dprime_one_shot_model_review_adapter import (
 from core.dprime_one_shot_model_review_adapter import (
     default_closed_surface_flags as default_adapter_closed_surface_flags,
 )
+from core.dprime_one_shot_provider_boundary import (
+    DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_PHASE,
+    PROVIDER_MODEL_SELECTION_APPROVAL_REF_PRESENT,
+)
+from core.dprime_one_shot_provider_boundary import (
+    default_closed_surface_flags as default_provider_closed_surface_flags,
+)
 from core.dprime_support_proposal_schema import (
     BLOCKED_APPROVED_MODEL_UNAVAILABLE,
     BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE,
@@ -303,6 +310,50 @@ def build_dprime_product_smart_model_review_adapter(
     )
 
 
+def build_dprime_product_smart_model_review_provider_boundary() -> dict[str, Any]:
+    """Return the approved one-shot boundary for the product smart route."""
+
+    return {
+        "boundary_id": "dprime-one-shot-provider-boundary:product-smart-route:v1",
+        "phase": DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_PHASE,
+        "enabled": True,
+        "default_disabled": False,
+        "test_only": False,
+        "provider_model_selection_status": (
+            PROVIDER_MODEL_SELECTION_APPROVAL_REF_PRESENT
+        ),
+        "provider_model_approval_ref": DPRIME_PRODUCT_SMART_PROVIDER_MODEL_APPROVAL_REF,
+        "max_provider_attempts": 1,
+        "retry_policy": "forbidden",
+        "fallback_policy": "forbidden",
+        "timeout_policy": "fail_closed",
+        "raw_prompt_retention": False,
+        "raw_model_response_retention": False,
+        "provider_payload_retention": False,
+        "real_call_authorized": True,
+        "call_count": 0,
+        "provider_switching_allowed": False,
+        "one_shot_adapter_proven": True,
+        "one_shot_adapter_ref": DPRIME_PRODUCT_SMART_ADAPTER_REF,
+        "closed_surface_flags": default_provider_closed_surface_flags(),
+    }
+
+
+def build_dprime_product_smart_model_review_license() -> dict[str, Any]:
+    """Return the one-call D-prime license for the product smart route."""
+
+    return {
+        "license_id": DPRIME_PRODUCT_SMART_PROVIDER_MODEL_APPROVAL_REF,
+        "enabled": True,
+        "test_only": False,
+        "callable_kind": "real_one_shot",
+        "max_model_review_calls": 1,
+        "retry_policy": "forbidden",
+        "timeout_policy": "fail_closed",
+        "one_shot_adapter_ref": DPRIME_PRODUCT_SMART_ADAPTER_REF,
+    }
+
+
 def _classify_client_construction_error(
     exc: Exception,
 ) -> DPrimeProductSmartOneShotError:
@@ -405,6 +456,8 @@ __all__ = [
     "PRODUCT_CONFIG_INITIALIZATION_BOUNDARY",
     "PRODUCT_ROUTE_KIND_SMART_MODEL",
     "build_dprime_product_smart_model_review_adapter",
+    "build_dprime_product_smart_model_review_license",
+    "build_dprime_product_smart_model_review_provider_boundary",
     "build_dprime_product_smart_one_shot_transport",
     "build_openai_sdk_env_client",
     "product_smart_model_route_ref",

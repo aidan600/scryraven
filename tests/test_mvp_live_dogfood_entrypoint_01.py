@@ -138,6 +138,9 @@ def test_fake_broker_and_fetch_feed_existing_status_consumer(tmp_path: Path) -> 
     assert result.packet["fetch_read_completed"] == 1
     assert result.packet["evidence_ledger_admissions"] == 1
     assert result.packet["dprime_model_review_call_count"] == 0
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
+    assert result.packet["dprime_model_review_calls_completed"] == 0
+    assert result.packet["model_review_licensed"] is False
     assert result.packet["followup_loop_count"] == 0
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["raw_provider_payload_retained"] is False
@@ -264,6 +267,7 @@ def test_live_flag_uses_default_query_and_skips_model_key_validation(
     assert rc == 2
     assert captured["query"] == DEFAULT_MVP_QUERY
     assert captured["confirm_live_dogfood"] is True
+    assert captured["confirm_live_dprime_review"] is False
     assert "fake live dogfood blocker" in capsys.readouterr().out
 
 

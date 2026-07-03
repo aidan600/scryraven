@@ -30,6 +30,7 @@ LIVE_SEMANTIC_COVERAGE_STATUS_FLAG = "--live-semantic-coverage-status-dry-run"
 MVP_DEMO_FLAG = "--mvp-demo"
 MVP_LIVE_DOGFOOD_RUN_FLAG = "--mvp-live-dogfood-run"
 MVP_LIVE_DOGFOOD_STATUS_FLAG = "--mvp-live-dogfood-status"
+CONFIRM_LIVE_DPRIME_REVIEW_FLAG = "--confirm-live-dprime-review"
 
 PRODUCT_STATUS_DRY_RUN_FLAGS = (
     ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
@@ -69,6 +70,11 @@ def argv_requests_product_status_dry_run(argv: Sequence[str] | None = None) -> b
     """Return true when argv selects a no-live status dry-run entrypoint."""
 
     raw = sys.argv[1:] if argv is None else list(argv)
+    if (
+        MVP_LIVE_DOGFOOD_RUN_FLAG in raw
+        and CONFIRM_LIVE_DPRIME_REVIEW_FLAG in raw
+    ):
+        return False
     return any(flag in raw for flag in PRODUCT_STATUS_DRY_RUN_FLAGS)
 
 
@@ -102,6 +108,7 @@ def initialize_product_model_route_config(
 
 
 __all__ = [
+    "CONFIRM_LIVE_DPRIME_REVIEW_FLAG",
     "LIVE_ACQUISITION_READABILITY_STATUS_FLAG",
     "LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG",
     "LIVE_SEMANTIC_COVERAGE_STATUS_FLAG",

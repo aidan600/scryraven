@@ -296,6 +296,47 @@ def build_mvp_live_dogfood_status_output(
     )
 
 
+def build_mvp_live_dogfood_status_output_from_semantic_status(
+    *,
+    semantic_status: LiveSemanticCoverageStatusResult,
+    repo_root: str | Path,
+    retained_artifact_root: str | Path,
+    output_dir: str | Path | None = None,
+    run_id: str | None = None,
+    command_harness_used: str,
+    provider_broker_posture: str,
+) -> MvpFriendOutputResult:
+    """Wrap an already-produced semantic status without running live calls here."""
+
+    root = Path(repo_root).resolve()
+    run_id = _run_id(run_id, prefix="mvp-live")
+    run_dir = _run_output_dir(root, output_dir or DEFAULT_MVP_LIVE_OUTPUT_DIR, run_id)
+    status_root = Path(retained_artifact_root).resolve()
+    packet = _mvp_packet(
+        status=semantic_status,
+        run_id=run_id,
+        command_harness_used=command_harness_used,
+        provider_broker_posture=provider_broker_posture,
+        retained_artifact_root=status_root,
+        live_execution=True,
+    )
+    packet_path = run_dir / "live_dogfood_packet.json"
+    _write_json(packet_path, packet)
+    output = format_mvp_friend_output(
+        packet,
+        packet_path=packet_path,
+        output_title="ScryRaven MVP live dogfood status",
+        output_kind="live dogfood status",
+    )
+    return MvpFriendOutputResult(
+        decision=str(packet["decision"]),
+        output=output,
+        packet=packet,
+        packet_path=packet_path,
+        retained_artifact_root=status_root,
+    )
+
+
 def format_mvp_friend_output(
     packet: Mapping[str, Any],
     *,
@@ -978,5 +1019,6 @@ __all__ = [
     "MvpFriendOutputResult",
     "build_mvp_demo_output",
     "build_mvp_live_dogfood_status_output",
+    "build_mvp_live_dogfood_status_output_from_semantic_status",
     "format_mvp_friend_output",
 ]
