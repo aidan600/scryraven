@@ -101,6 +101,15 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING = (
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING"
 )
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT"
+)
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX"
+)
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED"
 )
@@ -153,6 +162,33 @@ MAX_AUTHOR_CALLS = 0
 MAX_INDEPENDENT_SOURCE_CHECKS = 0
 MAX_FETCHED_BYTES = 1_048_576
 MAX_REDIRECTS = 2
+
+FETCH_READ_FAILURE_MISSING_URL = "MISSING_URL"
+FETCH_READ_FAILURE_INVALID_URL = "INVALID_URL"
+FETCH_READ_FAILURE_HTTP_4XX = "HTTP_4XX"
+FETCH_READ_FAILURE_HTTP_5XX = "HTTP_5XX"
+FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE = "UNSUPPORTED_CONTENT_TYPE"
+FETCH_READ_FAILURE_NO_READABLE_TEXT = "NO_READABLE_TEXT"
+FETCH_READ_FAILURE_EXCEPTION = "FETCH_READ_EXCEPTION"
+FETCH_READ_FAILURE_UNKNOWN = "UNKNOWN"
+FETCH_READ_FAILURE_CATEGORIES = frozenset(
+    {
+        FETCH_READ_FAILURE_MISSING_URL,
+        FETCH_READ_FAILURE_INVALID_URL,
+        FETCH_READ_FAILURE_HTTP_4XX,
+        FETCH_READ_FAILURE_HTTP_5XX,
+        FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE,
+        FETCH_READ_FAILURE_NO_READABLE_TEXT,
+        FETCH_READ_FAILURE_EXCEPTION,
+        FETCH_READ_FAILURE_UNKNOWN,
+    }
+)
+FETCH_READ_READABLE_CONTENT_TYPES = frozenset(
+    {"text/html", "text/plain", "application/xhtml+xml"}
+)
+FETCH_READ_UNKNOWN = "unknown"
+FETCH_READ_CAP_EXHAUSTED = "FETCH_READ_CAP_EXHAUSTED"
+FETCH_READ_STOPPED_AFTER_SUCCESS = "READABLE_CONTENT_OBTAINED"
 
 RAW_FALSE_FLAGS = {
     "raw_provider_payload_retained": False,
@@ -307,11 +343,21 @@ class GenericSingleRelationLiveDogfoodRunError(ValueError):
         detail: str,
         *,
         caps_exhausted: bool = False,
+        fetch_status_class: str | None = None,
+        fetch_content_type: str | None = None,
+        fetch_readable_content_type: bool | str | None = None,
+        fetch_readable_text_obtained: bool | None = None,
+        fetch_failure_category: str | None = None,
     ) -> None:
         super().__init__(detail)
         self.blocker = blocker
         self.detail = detail
         self.caps_exhausted = caps_exhausted
+        self.fetch_status_class = fetch_status_class
+        self.fetch_content_type = fetch_content_type
+        self.fetch_readable_content_type = fetch_readable_content_type
+        self.fetch_readable_text_obtained = fetch_readable_text_obtained
+        self.fetch_failure_category = fetch_failure_category
 
 
 @dataclass(frozen=True, slots=True)
@@ -461,6 +507,7 @@ def build_generic_single_relation_live_dogfood_run_output(
         fetch_packet, fetch_counts = _write_fetch_read_artifacts(
             retained_root=retained_root,
             relation_plan=relation_plan,
+            provider_results=results,
             fetch_read_runner=fetch_read_runner or fetch_public_url_once,
         )
         counts.update(fetch_counts)
@@ -619,6 +666,11 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             "fetch/read requires an http(s) URL.",
+            fetch_status_class=FETCH_READ_UNKNOWN,
+            fetch_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_INVALID_URL,
         )
     redirect_handler = _RedirectLimiter()
     opener = build_opener(redirect_handler)
@@ -639,14 +691,31 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
             status_code = getattr(response, "status", None)
             content_type_header = response.headers.get("content-type", "")
     except HTTPError as exc:
+        status_class = _status_class(exc.code)
+        content_type_header = exc.headers.get("content-type", "") if exc.headers else ""
+        content_type = (
+            _content_type_or_unknown(content_type_header)
+            if content_type_header
+            else FETCH_READ_UNKNOWN
+        )
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
-            f"fetch/read HTTP error status class {_status_class(exc.code)}.",
+            f"fetch/read HTTP error status class {status_class}.",
+            fetch_status_class=status_class,
+            fetch_content_type=content_type,
+            fetch_readable_content_type=_readable_content_type_value(content_type),
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=_failure_category_for_status_class(status_class),
         ) from None
     except URLError as exc:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             f"fetch/read URL error: {_clean_text(exc.reason, limit=120) or 'unavailable'}.",
+            fetch_status_class=FETCH_READ_UNKNOWN,
+            fetch_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_content_type=FETCH_READ_UNKNOWN,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_EXCEPTION,
         ) from None
     if len(body) > MAX_FETCHED_BYTES:
         raise GenericSingleRelationLiveDogfoodRunError(
@@ -655,10 +724,15 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
             caps_exhausted=True,
         )
     content_type, charset = _content_type_and_charset(content_type_header)
-    if content_type not in {"text/html", "text/plain", "application/xhtml+xml"}:
+    if content_type not in FETCH_READ_READABLE_CONTENT_TYPES:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             "fetch/read did not receive a readable text/html or text/plain response.",
+            fetch_status_class=_status_class(status_code),
+            fetch_content_type=content_type,
+            fetch_readable_content_type=False,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE,
         )
     readable_text, content_title = _extract_readable_text(
         body,
@@ -669,6 +743,11 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             "fetch/read produced no sanitized readable text.",
+            fetch_status_class=_status_class(status_code),
+            fetch_content_type=content_type,
+            fetch_readable_content_type=True,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_NO_READABLE_TEXT,
         )
     final_domain = urlparse(final_url).netloc.lower()
     return GenericLiveFetchReadResult(
@@ -766,8 +845,137 @@ def validate_generic_single_relation_live_dogfood_packet(
                 _blocked_output_hygiene("unsupported query made live/model calls.")
     if safe.get("answer_text_present") is True and safe.get("decision") != PASS_DECISION:
         _blocked_output_hygiene("blocked packet must not expose answer text.")
+    _validate_fetch_read_observability(safe)
     _reject_forbidden_material(safe, context="generic live dogfood packet")
     return safe
+
+
+def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
+    for key in (
+        "candidate_diagnostics_observability_only",
+        "provider_snippets_used_as_evidence",
+        "candidate_diagnostics_satisfy_source_obligations",
+        "fetch_read_failure_metadata_citation_eligible",
+        "fetch_read_failure_metadata_satisfies_source_obligations",
+        "pdf_content_type_support_opened",
+        "pdf_parsing_opened",
+        "candidate_ranking_policy_changed",
+    ):
+        expected = key == "candidate_diagnostics_observability_only"
+        if packet.get(key) is not expected:
+            _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    candidate_diagnostics = [
+        _safe_mapping(item)
+        for item in _safe_sequence(packet.get("fetch_read_candidate_diagnostics"))
+    ]
+    attempt_diagnostics = [
+        _safe_mapping(item)
+        for item in _safe_sequence(packet.get("fetch_read_attempt_diagnostics"))
+    ]
+    if len(attempt_diagnostics) != _bounded_int(packet.get("fetch_read_attempts")):
+        _blocked_output_hygiene("fetch/read attempt diagnostics count mismatch.")
+    if (
+        attempt_diagnostics
+        and _bounded_int(packet.get("fetch_read_completed")) == 0
+        and packet.get("decision")
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING
+    ):
+        _blocked_output_hygiene(
+            "attempted fetch/read failures must not collapse to entrypoint missing."
+        )
+    for diagnostic in candidate_diagnostics:
+        _validate_candidate_diagnostic(diagnostic)
+    seen_attempts: set[tuple[str, int]] = set()
+    for diagnostic in attempt_diagnostics:
+        candidate_id = _clean_text(diagnostic.get("candidate_id"), limit=320)
+        attempt_index = _bounded_int(diagnostic.get("attempt_index"))
+        if not candidate_id or attempt_index <= 0:
+            _blocked_output_hygiene("fetch/read attempt diagnostic identity missing.")
+        key = (candidate_id, attempt_index)
+        if key in seen_attempts:
+            _blocked_output_hygiene("duplicate fetch/read attempt diagnostic.")
+        seen_attempts.add(key)
+        _validate_attempt_diagnostic(diagnostic)
+
+
+def _validate_candidate_diagnostic(diagnostic: Mapping[str, Any]) -> None:
+    if not _clean_text(diagnostic.get("candidate_id"), limit=320):
+        _blocked_output_hygiene("candidate diagnostic requires candidate_id.")
+    if diagnostic.get("diagnostic_posture") != "observability_only":
+        _blocked_output_hygiene("candidate diagnostic posture invalid.")
+    for key in (
+        "not_evidence",
+        "not_citation_eligible",
+        "not_source_obligation_satisfaction",
+    ):
+        if diagnostic.get(key) is not True:
+            _blocked_output_hygiene(f"candidate diagnostic requires {key}=true.")
+    for key in (
+        "provider_snippet_used_as_evidence",
+        "candidate_diagnostic_satisfies_source_obligation",
+        "fetch_read_failure_metadata_citation_eligible",
+    ):
+        if diagnostic.get(key) is not False:
+            _blocked_output_hygiene(f"candidate diagnostic requires {key}=false.")
+    if diagnostic.get("attempted") not in {True, False}:
+        _blocked_output_hygiene("candidate diagnostic attempted flag invalid.")
+    if diagnostic.get("selected_for_fetch_read") not in {True, False}:
+        _blocked_output_hygiene(
+            "candidate diagnostic selected_for_fetch_read flag invalid."
+        )
+    url_source = _clean_text(diagnostic.get("url_source"), limit=20)
+    if url_source not in {"url", "link", "missing"}:
+        _blocked_output_hygiene("candidate diagnostic url_source invalid.")
+    if diagnostic.get("url_valid") not in {True, False}:
+        _blocked_output_hygiene("candidate diagnostic url_valid flag invalid.")
+    if diagnostic.get("url_valid") is True and not _is_valid_http_url(
+        diagnostic.get("url")
+    ):
+        _blocked_output_hygiene("candidate diagnostic url_valid mismatch.")
+    failure_category = diagnostic.get("failure_category")
+    if (
+        failure_category is not None
+        and _clean_text(failure_category, limit=80)
+        not in FETCH_READ_FAILURE_CATEGORIES
+    ):
+        _blocked_output_hygiene("candidate diagnostic failure category invalid.")
+    if _safe_mapping(diagnostic.get("raw_private_retention_flags")) != RAW_FALSE_FLAGS:
+        _blocked_output_hygiene("candidate diagnostic raw/private retention invalid.")
+
+
+def _validate_attempt_diagnostic(diagnostic: Mapping[str, Any]) -> None:
+    if diagnostic.get("diagnostic_posture") != "observability_only":
+        _blocked_output_hygiene("fetch/read attempt diagnostic posture invalid.")
+    for key in (
+        "not_evidence",
+        "not_citation_eligible",
+        "not_source_obligation_satisfaction",
+    ):
+        if diagnostic.get(key) is not True:
+            _blocked_output_hygiene(f"fetch/read diagnostic requires {key}=true.")
+    for key in (
+        "candidate_diagnostics_satisfy_source_obligations",
+        "fetch_read_failure_metadata_citation_eligible",
+    ):
+        if diagnostic.get(key) is not False:
+            _blocked_output_hygiene(f"fetch/read diagnostic requires {key}=false.")
+    if not _normalized_status_class(diagnostic.get("http_status_class")):
+        _blocked_output_hygiene("fetch/read diagnostic status class invalid.")
+    _content_type_or_unknown(diagnostic.get("content_type"))
+    if diagnostic.get("readable_content_type") not in {True, False, FETCH_READ_UNKNOWN}:
+        _blocked_output_hygiene("fetch/read diagnostic readable content flag invalid.")
+    if diagnostic.get("readable_text_obtained") not in {True, False}:
+        _blocked_output_hygiene("fetch/read diagnostic readable text flag invalid.")
+    failure_category = diagnostic.get("failure_category")
+    if diagnostic.get("readable_text_obtained") is True:
+        if failure_category is not None:
+            _blocked_output_hygiene(
+                "successful fetch/read diagnostic must not carry failure category."
+            )
+    elif _clean_text(failure_category, limit=80) not in FETCH_READ_FAILURE_CATEGORIES:
+        _blocked_output_hygiene("fetch/read diagnostic failure category invalid.")
+    if _safe_mapping(diagnostic.get("raw_private_retention_flags")) != RAW_FALSE_FLAGS:
+        _blocked_output_hygiene("fetch/read diagnostic raw/private retention invalid.")
 
 
 def format_generic_single_relation_live_dogfood_output(
@@ -1037,6 +1245,29 @@ def _base_packet(
             counts.get("fetch_read_blocker_detail"),
             limit=900,
         ),
+        "fetch_read_status_class_summary": _status_class_summary(
+            counts.get("fetch_read_status_classes")
+        ),
+        "fetch_read_content_type_summary": _content_type_summary(
+            counts.get("fetch_read_content_types")
+        ),
+        "fetch_read_failure_category_summary": _failure_category_summary(
+            counts.get("fetch_read_failure_categories")
+        ),
+        "fetch_read_candidate_diagnostics": list(
+            _safe_sequence(counts.get("fetch_read_candidate_diagnostics"))
+        ),
+        "fetch_read_attempt_diagnostics": list(
+            _safe_sequence(counts.get("fetch_read_attempt_diagnostics"))
+        ),
+        "candidate_diagnostics_observability_only": True,
+        "candidate_diagnostics_satisfy_source_obligations": False,
+        "provider_snippets_used_as_evidence": False,
+        "fetch_read_failure_metadata_citation_eligible": False,
+        "fetch_read_failure_metadata_satisfies_source_obligations": False,
+        "pdf_content_type_support_opened": False,
+        "pdf_parsing_opened": False,
+        "candidate_ranking_policy_changed": False,
         "fetch_read_packet_created": counts.get("fetch_read_packet_created", 0),
         "evidence_ledger_admissions": counts.get("evidence_ledger_admissions", 0),
         "dprime_review_licensed": bool(confirm_live_dprime_review),
@@ -1129,17 +1360,15 @@ def _candidate_packet_from_provider_results(
     }
     records = []
     for result in results:
+        if not result.get("url_valid"):
+            continue
+        url = _required_url(result.get("url"))
+        domain = _clean_domain(result.get("domain")) or urlparse(url).netloc.lower()
         rank = _positive_int(result.get("result_rank"), "provider result rank")
-        candidate_digest = _digest_json(
-            {
-                "phase": PHASE_NAME,
-                "run_id": run_id,
-                "relation_plan_id": relation_plan.get("plan_id"),
-                "url": result.get("url"),
-                "rank": rank,
-                "component_id": relation_plan.get("component_id"),
-                "source_obligation_id": relation_plan.get("source_obligation_id"),
-            }
+        candidate_id, candidate_digest = _provider_result_candidate_identity(
+            result,
+            relation_plan=relation_plan,
+            run_id=run_id,
         )
         records.append(
             SearchResultCandidateRecord(
@@ -1156,12 +1385,9 @@ def _candidate_packet_from_provider_results(
                 ),
                 result_rank=rank,
                 title=str(result["title"]),
-                url=str(result["url"]),
-                domain=str(result["domain"]),
-                candidate_id=(
-                    "search-result-candidate:"
-                    f"{_clean_run_id(run_id)}:{candidate_digest[:20]}"
-                ),
+                url=url,
+                domain=domain,
+                candidate_id=candidate_id,
                 candidate_digest=candidate_digest,
                 validation_id=str(validation_ref["validation_id"]),
                 parent_live_search_validation_ref=validation_ref,
@@ -1199,21 +1425,69 @@ def _write_search_artifacts(
 ) -> None:
     search_dir = retained_root / SEARCH_ARTIFACT_DIR
     search_dir.mkdir(parents=True, exist_ok=True)
-    _write_json(search_dir / SANITIZED_PROVIDER_RESULTS_NAME, provider_payload)
+    _write_json(
+        search_dir / SANITIZED_PROVIDER_RESULTS_NAME,
+        _retained_provider_payload_for_candidate_packet(provider_payload, candidate_packet),
+    )
     _write_json(search_dir / SEARCH_CANDIDATE_PACKET_NAME, candidate_packet)
     _write_json(search_dir / SEARCH_RESULT_CANDIDATE_PACKET_NAME, candidate_packet)
+
+
+def _retained_provider_payload_for_candidate_packet(
+    provider_payload: Mapping[str, Any],
+    candidate_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    candidate_urls = {
+        _clean_text(record.get("url"), limit=700)
+        for record in _safe_sequence(candidate_packet.get("candidate_records"))
+        if isinstance(record, Mapping)
+    }
+    results = []
+    for result in _safe_sequence(provider_payload.get("results")):
+        safe = _safe_mapping(result)
+        url = _clean_text(safe.get("url"), limit=700)
+        if not url or url not in candidate_urls:
+            continue
+        results.append(
+            {
+                "title": safe.get("title"),
+                "url": url,
+                "domain": safe.get("domain"),
+                "snippet": safe.get("snippet"),
+                "published_or_observed_date": safe.get("published_or_observed_date"),
+                "result_rank": safe.get("result_rank"),
+                "provider_call_index": safe.get("provider_call_index"),
+                "raw_provider_payload_retained": False,
+                "raw_search_response_retained": False,
+            }
+        )
+    return {
+        "request_kind": provider_payload.get("request_kind"),
+        "provider": provider_payload.get("provider") or DEFAULT_PROVIDER,
+        "operation": provider_payload.get("operation") or DEFAULT_OPERATION,
+        "result_count": len(results),
+        "results": results,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
 
 
 def _write_fetch_read_artifacts(
     *,
     retained_root: Path,
     relation_plan: Mapping[str, Any],
+    provider_results: Sequence[Mapping[str, Any]],
     fetch_read_runner: FetchReadRunner,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     search_dir = retained_root / SEARCH_ARTIFACT_DIR
     fetch_dir = retained_root / FETCH_READ_ARTIFACT_DIR
     candidate_packet = validate_search_result_candidate_packet(
         _read_json(search_dir / SEARCH_RESULT_CANDIDATE_PACKET_NAME)
+    )
+    candidate_diagnostics = _candidate_diagnostics_from_provider_results(
+        provider_results,
+        relation_plan=relation_plan,
+        run_id=str(candidate_packet["run_id"]),
     )
     candidates = _fetch_candidate_records(candidate_packet)
     if not candidates:
@@ -1227,17 +1501,27 @@ def _write_fetch_read_artifacts(
                 "no provider result candidate exposed a usable http(s) URL "
                 "for bounded fetch/read."
             ),
+            "fetch_read_status_classes": (),
+            "fetch_read_content_types": (),
+            "fetch_read_failure_categories": tuple(
+                _candidate_failure_categories(candidate_diagnostics)
+            ),
+            "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
+            "fetch_read_attempt_diagnostics": (),
         }
     fetch_attempts = 0
     last_error: GenericSingleRelationLiveDogfoodRunError | None = None
+    attempt_diagnostics: list[dict[str, Any]] = []
     for candidate in candidates:
         if fetch_attempts >= MAX_FETCH_READ_ATTEMPTS:
-            raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED,
-                "fetch/read attempt cap exhausted.",
-                caps_exhausted=True,
+            _mark_candidate_skipped(
+                candidate_diagnostics,
+                candidate_id=str(candidate["candidate_id"]),
+                skipped_reason=FETCH_READ_CAP_EXHAUSTED,
             )
+            continue
         fetch_attempts += 1
+        fetch_result: GenericLiveFetchReadResult | None = None
         try:
             fetch_result = fetch_read_runner(str(candidate["url"]))
             _validate_fetch_result(fetch_result, candidate=candidate)
@@ -1264,23 +1548,66 @@ def _write_fetch_read_artifacts(
                 fetch_dir / LIVE_SOURCE_SURVIVAL_SUMMARY_NAME,
                 _fetch_summary(fetch_packet),
             )
+            attempt_diagnostic = _fetch_read_attempt_diagnostic(
+                candidate,
+                attempt_index=fetch_attempts,
+                fetch_result=fetch_result,
+                error=None,
+            )
+            attempt_diagnostics.append(attempt_diagnostic)
+            _apply_attempt_diagnostic(candidate_diagnostics, attempt_diagnostic)
+            _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
             return fetch_packet, {
                 "fetch_read_attempts": fetch_attempts,
                 "fetch_read_completed": 1,
+                "fetch_read_status_classes": tuple(
+                    _attempt_status_classes(attempt_diagnostics)
+                ),
+                "fetch_read_content_types": tuple(
+                    _attempt_content_types(attempt_diagnostics)
+                ),
+                "fetch_read_failure_categories": tuple(
+                    _candidate_failure_categories(candidate_diagnostics)
+                    + _attempt_failure_categories(attempt_diagnostics)
+                ),
+                "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
+                "fetch_read_attempt_diagnostics": tuple(attempt_diagnostics),
             }
         except GenericSingleRelationLiveDogfoodRunError as exc:
             last_error = exc
+            attempt_diagnostic = _fetch_read_attempt_diagnostic(
+                candidate,
+                attempt_index=fetch_attempts,
+                fetch_result=fetch_result,
+                error=exc,
+            )
+            attempt_diagnostics.append(attempt_diagnostic)
+            _apply_attempt_diagnostic(candidate_diagnostics, attempt_diagnostic)
             continue
     if last_error is None:
         last_error = GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             "no provider candidate was available for bounded fetch/read.",
         )
+    blocker, detail = _fetch_read_blocker_from_attempt_diagnostics(
+        attempt_diagnostics,
+        last_error=last_error,
+    )
     return None, {
         "fetch_read_attempts": fetch_attempts,
         "fetch_read_completed": 0,
-        "fetch_read_blocker": last_error.blocker,
-        "fetch_read_blocker_detail": last_error.detail,
+        "fetch_read_blocker": blocker,
+        "fetch_read_blocker_detail": detail,
+        "fetch_read_status_classes": tuple(
+            _attempt_status_classes(attempt_diagnostics)
+        ),
+        "fetch_read_content_types": tuple(_attempt_content_types(attempt_diagnostics)),
+        "fetch_read_failure_categories": tuple(
+            _candidate_failure_categories(candidate_diagnostics)
+            + _attempt_failure_categories(attempt_diagnostics)
+        ),
+        "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
+        "fetch_read_attempt_diagnostics": tuple(attempt_diagnostics),
     }
 
 
@@ -1293,7 +1620,339 @@ def _fetch_candidate_records(candidate_packet: Mapping[str, Any]) -> list[dict[s
     return sorted(
         records,
         key=lambda item: _bounded_int(item.get("result_rank"), default=999),
-    )[:MAX_FETCH_READ_ATTEMPTS]
+    )
+
+
+def _candidate_diagnostics_from_provider_results(
+    provider_results: Sequence[Mapping[str, Any]],
+    *,
+    relation_plan: Mapping[str, Any],
+    run_id: str,
+) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    valid_seen = 0
+    for result in sorted(
+        (_safe_mapping(item) for item in provider_results if isinstance(item, Mapping)),
+        key=lambda item: _bounded_int(item.get("result_rank"), default=999),
+    ):
+        candidate_id, _candidate_digest = _provider_result_candidate_identity(
+            result,
+            relation_plan=relation_plan,
+            run_id=run_id,
+        )
+        url = _clean_text(result.get("url"), limit=700)
+        url_source = _clean_text(result.get("url_source"), limit=20) or "missing"
+        url_valid = _is_valid_http_url(url)
+        selected_for_fetch_read = False
+        skipped_reason = None
+        failure_category = None
+        if url_valid:
+            valid_seen += 1
+            selected_for_fetch_read = valid_seen <= MAX_FETCH_READ_ATTEMPTS
+            if not selected_for_fetch_read:
+                skipped_reason = FETCH_READ_CAP_EXHAUSTED
+        else:
+            skipped_reason = (
+                FETCH_READ_FAILURE_MISSING_URL
+                if url_source == "missing" or not url
+                else FETCH_READ_FAILURE_INVALID_URL
+            )
+            failure_category = skipped_reason
+        diagnostics.append(
+            {
+                "candidate_id": candidate_id,
+                "provider_call_index": _bounded_int(
+                    result.get("provider_call_index"),
+                    default=1,
+                ),
+                "provider_rank": _bounded_int(result.get("result_rank"), default=0),
+                "result_rank": _bounded_int(result.get("result_rank"), default=0),
+                "selected_for_fetch_read": selected_for_fetch_read,
+                "attempted": False,
+                "skipped_reason": skipped_reason,
+                "title": _clean_text(result.get("title"), limit=220),
+                "domain": _clean_domain(result.get("domain"))
+                or (urlparse(url).netloc.lower() if url else None),
+                "url": url,
+                "url_source": url_source,
+                "url_valid": url_valid,
+                "http_status_class": FETCH_READ_UNKNOWN,
+                "content_type": FETCH_READ_UNKNOWN,
+                "readable_content_type": FETCH_READ_UNKNOWN,
+                "readable_text_obtained": False,
+                "failure_category": failure_category,
+                "diagnostic_posture": "observability_only",
+                "not_evidence": True,
+                "not_citation_eligible": True,
+                "not_source_obligation_satisfaction": True,
+                "provider_snippet_used_as_evidence": False,
+                "candidate_diagnostic_satisfies_source_obligation": False,
+                "fetch_read_failure_metadata_citation_eligible": False,
+                "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+            }
+        )
+    return diagnostics
+
+
+def _provider_result_candidate_identity(
+    result: Mapping[str, Any],
+    *,
+    relation_plan: Mapping[str, Any],
+    run_id: str,
+) -> tuple[str, str]:
+    rank = _positive_int(result.get("result_rank"), "provider result rank")
+    candidate_digest = _digest_json(
+        {
+            "phase": PHASE_NAME,
+            "run_id": run_id,
+            "relation_plan_id": relation_plan.get("plan_id"),
+            "url": _clean_text(result.get("url"), limit=700),
+            "rank": rank,
+            "component_id": relation_plan.get("component_id"),
+            "source_obligation_id": relation_plan.get("source_obligation_id"),
+        }
+    )
+    return (
+        "search-result-candidate:" f"{_clean_run_id(run_id)}:{candidate_digest[:20]}",
+        candidate_digest,
+    )
+
+
+def _fetch_read_attempt_diagnostic(
+    candidate: Mapping[str, Any],
+    *,
+    attempt_index: int,
+    fetch_result: GenericLiveFetchReadResult | None,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> dict[str, Any]:
+    attempted_url = _clean_text(
+        fetch_result.attempted_url if fetch_result else candidate.get("url"),
+        limit=700,
+    )
+    status_class = _attempt_status_class(fetch_result=fetch_result, error=error)
+    content_type = _attempt_content_type(fetch_result=fetch_result, error=error)
+    readable_content_type = _attempt_readable_content_type(
+        content_type=content_type,
+        error=error,
+    )
+    readable_text_obtained = bool(
+        fetch_result is not None and fetch_result.sanitized_text and error is None
+    )
+    failure_category = (
+        None
+        if readable_text_obtained
+        else _attempt_failure_category(
+            status_class=status_class,
+            readable_content_type=readable_content_type,
+            error=error,
+        )
+    )
+    return {
+        "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
+        "attempt_index": attempt_index,
+        "attempted_url": attempted_url,
+        "attempted_domain": _clean_domain(candidate.get("domain"))
+        or (urlparse(attempted_url).netloc.lower() if attempted_url else None),
+        "http_status_class": status_class,
+        "content_type": content_type,
+        "readable_content_type": readable_content_type,
+        "readable_text_obtained": readable_text_obtained,
+        "failure_category": failure_category,
+        "diagnostic_posture": "observability_only",
+        "not_evidence": True,
+        "not_citation_eligible": True,
+        "not_source_obligation_satisfaction": True,
+        "candidate_diagnostics_satisfy_source_obligations": False,
+        "fetch_read_failure_metadata_citation_eligible": False,
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+    }
+
+
+def _apply_attempt_diagnostic(
+    candidate_diagnostics: list[dict[str, Any]],
+    attempt_diagnostic: Mapping[str, Any],
+) -> None:
+    candidate_id = _clean_text(attempt_diagnostic.get("candidate_id"), limit=320)
+    for diagnostic in candidate_diagnostics:
+        if diagnostic.get("candidate_id") != candidate_id:
+            continue
+        diagnostic["selected_for_fetch_read"] = True
+        diagnostic["attempted"] = True
+        diagnostic["skipped_reason"] = None
+        diagnostic["http_status_class"] = attempt_diagnostic.get("http_status_class")
+        diagnostic["content_type"] = attempt_diagnostic.get("content_type")
+        diagnostic["readable_content_type"] = attempt_diagnostic.get(
+            "readable_content_type"
+        )
+        diagnostic["readable_text_obtained"] = attempt_diagnostic.get(
+            "readable_text_obtained"
+        )
+        diagnostic["failure_category"] = attempt_diagnostic.get("failure_category")
+        return
+
+
+def _mark_candidate_skipped(
+    candidate_diagnostics: list[dict[str, Any]],
+    *,
+    candidate_id: str,
+    skipped_reason: str,
+) -> None:
+    for diagnostic in candidate_diagnostics:
+        if diagnostic.get("candidate_id") == candidate_id and not diagnostic.get(
+            "attempted"
+        ):
+            diagnostic["selected_for_fetch_read"] = False
+            diagnostic["skipped_reason"] = skipped_reason
+            return
+
+
+def _mark_unattempted_candidates_skipped_after_success(
+    candidate_diagnostics: list[dict[str, Any]],
+) -> None:
+    for diagnostic in candidate_diagnostics:
+        if diagnostic.get("selected_for_fetch_read") and not diagnostic.get(
+            "attempted"
+        ):
+            diagnostic["skipped_reason"] = FETCH_READ_STOPPED_AFTER_SUCCESS
+
+
+def _fetch_read_blocker_from_attempt_diagnostics(
+    attempt_diagnostics: Sequence[Mapping[str, Any]],
+    *,
+    last_error: GenericSingleRelationLiveDogfoodRunError,
+) -> tuple[str, str]:
+    attempts = [_safe_mapping(item) for item in attempt_diagnostics]
+    if attempts and all(
+        item.get("failure_category") == FETCH_READ_FAILURE_HTTP_4XX
+        for item in attempts
+    ):
+        return (
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX,
+            "all bounded fetch/read candidate attempts failed with HTTP 4xx status class.",
+        )
+    if attempts and all(
+        item.get("failure_category") == FETCH_READ_FAILURE_UNKNOWN
+        and item.get("http_status_class") == FETCH_READ_UNKNOWN
+        and item.get("content_type") == FETCH_READ_UNKNOWN
+        for item in attempts
+    ):
+        return (
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
+            (
+                "bounded fetch/read attempts failed without sanitized status, "
+                "content-type, or failure-category observability."
+            ),
+        )
+    if attempts:
+        return (
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES,
+            (
+                "bounded fetch/read attempted candidates but no readable text "
+                "was retained; see sanitized fetch_read_attempt_diagnostics."
+            ),
+        )
+    return last_error.blocker, last_error.detail
+
+
+def _attempt_status_class(
+    *,
+    fetch_result: GenericLiveFetchReadResult | None,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> str:
+    if error is not None:
+        return (
+            _normalized_status_class(error.fetch_status_class)
+            or FETCH_READ_UNKNOWN
+        )
+    if fetch_result is None:
+        return FETCH_READ_UNKNOWN
+    return (
+        _normalized_status_class(fetch_result.status_class)
+        or _status_class(fetch_result.status_code)
+        or FETCH_READ_UNKNOWN
+    )
+
+
+def _attempt_content_type(
+    *,
+    fetch_result: GenericLiveFetchReadResult | None,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> str:
+    if error is not None:
+        return _content_type_or_unknown(error.fetch_content_type)
+    if fetch_result is None:
+        return FETCH_READ_UNKNOWN
+    return _content_type_or_unknown(fetch_result.content_type)
+
+
+def _attempt_readable_content_type(
+    *,
+    content_type: str,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> bool | str:
+    if error is not None and error.fetch_readable_content_type is not None:
+        value = error.fetch_readable_content_type
+        return value if value in {True, False, FETCH_READ_UNKNOWN} else FETCH_READ_UNKNOWN
+    return _readable_content_type_value(content_type)
+
+
+def _attempt_failure_category(
+    *,
+    status_class: str,
+    readable_content_type: bool | str,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> str:
+    if error is not None and error.fetch_failure_category:
+        return _fetch_read_failure_category(error.fetch_failure_category)
+    status_failure = _failure_category_for_status_class(status_class)
+    if status_failure != FETCH_READ_FAILURE_UNKNOWN:
+        return status_failure
+    if readable_content_type is False:
+        return FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE
+    if error is not None:
+        return FETCH_READ_FAILURE_EXCEPTION
+    return FETCH_READ_FAILURE_NO_READABLE_TEXT
+
+
+def _attempt_status_classes(
+    attempt_diagnostics: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    return [
+        _normalized_status_class(_safe_mapping(item).get("http_status_class"))
+        or FETCH_READ_UNKNOWN
+        for item in attempt_diagnostics
+    ]
+
+
+def _attempt_content_types(
+    attempt_diagnostics: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    return [
+        _content_type_or_unknown(_safe_mapping(item).get("content_type"))
+        for item in attempt_diagnostics
+    ]
+
+
+def _attempt_failure_categories(
+    attempt_diagnostics: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    categories: list[str] = []
+    for item in attempt_diagnostics:
+        category = _safe_mapping(item).get("failure_category")
+        if category:
+            categories.append(_fetch_read_failure_category(category))
+    return categories
+
+
+def _candidate_failure_categories(
+    candidate_diagnostics: Sequence[Mapping[str, Any]],
+) -> list[str]:
+    categories: list[str] = []
+    for item in candidate_diagnostics:
+        category = _safe_mapping(item).get("failure_category")
+        if category in {FETCH_READ_FAILURE_MISSING_URL, FETCH_READ_FAILURE_INVALID_URL}:
+            categories.append(_fetch_read_failure_category(category))
+    return categories
 
 
 def _fetch_read_material(
@@ -1409,15 +2068,43 @@ def _validate_fetch_result(
             "fetch/read byte cap exhausted.",
             caps_exhausted=True,
         )
-    if fetch_result.status_class and not str(fetch_result.status_class).startswith("2"):
+    status_class = _normalized_status_class(fetch_result.status_class) or _status_class(
+        fetch_result.status_code
+    )
+    if status_class and not status_class.startswith("2"):
+        failure_category = _failure_category_for_status_class(status_class)
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
-            "fetch/read did not produce a successful status class.",
+            f"fetch/read HTTP status class {status_class} did not produce readable content.",
+            fetch_status_class=status_class,
+            fetch_content_type=_content_type_or_unknown(fetch_result.content_type),
+            fetch_readable_content_type=_readable_content_type_value(
+                fetch_result.content_type
+            ),
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=failure_category,
+        )
+    content_type = _content_type_or_unknown(fetch_result.content_type)
+    readable_content_type = _readable_content_type_value(content_type)
+    if readable_content_type is False:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "fetch/read did not receive a readable text/html or text/plain response.",
+            fetch_status_class=status_class or FETCH_READ_UNKNOWN,
+            fetch_content_type=content_type,
+            fetch_readable_content_type=False,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE,
         )
     if not fetch_result.sanitized_text:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             "fetch/read did not produce sanitized readable text.",
+            fetch_status_class=status_class or FETCH_READ_UNKNOWN,
+            fetch_content_type=content_type,
+            fetch_readable_content_type=readable_content_type,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=FETCH_READ_FAILURE_NO_READABLE_TEXT,
         )
 
 
@@ -1710,11 +2397,16 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
             "sanitized provider result retained raw search response.",
         )
-    url = _required_url(raw.get("url") or raw.get("link"))
-    domain = _clean_domain(raw.get("domain")) or urlparse(url).netloc.lower()
+    url, url_source = _provider_url_and_source(raw)
+    url_valid = _is_valid_http_url(url)
+    domain = _clean_domain(raw.get("domain")) or (
+        urlparse(url).netloc.lower() if url and urlparse(url).netloc else None
+    )
     return {
         "title": _required_text(raw.get("title"), "provider result requires title", 220),
         "url": url,
+        "url_source": url_source,
+        "url_valid": url_valid,
         "domain": domain,
         "snippet": _clean_text(raw.get("snippet"), limit=500),
         "published_or_observed_date": _clean_text(
@@ -1959,6 +2651,11 @@ def _empty_counts() -> dict[str, Any]:
         "fetch_read_completed": 0,
         "fetch_read_blocker": None,
         "fetch_read_blocker_detail": None,
+        "fetch_read_status_classes": (),
+        "fetch_read_content_types": (),
+        "fetch_read_failure_categories": (),
+        "fetch_read_candidate_diagnostics": (),
+        "fetch_read_attempt_diagnostics": (),
         "fetch_read_packet_created": 0,
         "evidence_ledger_admissions": 0,
         "dprime_model_review_calls_attempted": 0,
@@ -2075,6 +2772,24 @@ def _required_url(value: Any) -> str:
             "provider result requires http(s) url.",
         )
     return url
+
+
+def _provider_url_and_source(raw: Mapping[str, Any]) -> tuple[str | None, str]:
+    url = _clean_text(raw.get("url"), limit=700)
+    if url:
+        return url, "url"
+    link = _clean_text(raw.get("link"), limit=700)
+    if link:
+        return link, "link"
+    return None, "missing"
+
+
+def _is_valid_http_url(value: Any) -> bool:
+    url = _clean_text(value, limit=700)
+    if not url:
+        return False
+    parsed = urlparse(url)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
 def _required_text(value: Any, message: str, limit: int) -> str:
@@ -2209,6 +2924,30 @@ def _content_type_and_charset(header: str) -> tuple[str, str]:
     return content_type, charset
 
 
+def _content_type_or_unknown(value: Any) -> str:
+    return _sanitized_content_type(value) or FETCH_READ_UNKNOWN
+
+
+def _sanitized_content_type(value: Any) -> str | None:
+    text = _clean_text(value, limit=120)
+    if not text:
+        return None
+    content_type = text.split(";", 1)[0].strip().casefold()
+    allowed = set("abcdefghijklmnopqrstuvwxyz0123456789!#$&^_.+-/")
+    if not content_type or any(ch not in allowed for ch in content_type):
+        return FETCH_READ_UNKNOWN
+    if "/" not in content_type:
+        return FETCH_READ_UNKNOWN
+    return content_type
+
+
+def _readable_content_type_value(value: Any) -> bool | str:
+    content_type = _content_type_or_unknown(value)
+    if content_type == FETCH_READ_UNKNOWN:
+        return FETCH_READ_UNKNOWN
+    return content_type in FETCH_READ_READABLE_CONTENT_TYPES
+
+
 def _extract_readable_text(
     body: bytes,
     *,
@@ -2296,6 +3035,76 @@ def _status_class(status_code: int | None) -> str | None:
     return f"{status // 100}xx"
 
 
+def _normalized_status_class(value: Any) -> str | None:
+    text = _clean_text(value, limit=16)
+    if not text:
+        return None
+    lowered = text.casefold()
+    if lowered == FETCH_READ_UNKNOWN:
+        return FETCH_READ_UNKNOWN
+    if len(lowered) == 3 and lowered[0].isdigit() and lowered[1:] == "xx":
+        return lowered
+    return None
+
+
+def _failure_category_for_status_class(status_class: Any) -> str:
+    normalized = _normalized_status_class(status_class)
+    if normalized == "4xx":
+        return FETCH_READ_FAILURE_HTTP_4XX
+    if normalized == "5xx":
+        return FETCH_READ_FAILURE_HTTP_5XX
+    return FETCH_READ_FAILURE_UNKNOWN
+
+
+def _fetch_read_failure_category(value: Any) -> str:
+    text = _clean_text(value, limit=80)
+    if text in FETCH_READ_FAILURE_CATEGORIES:
+        return text
+    return FETCH_READ_FAILURE_UNKNOWN
+
+
+def _status_class_summary(value: Any) -> dict[str, int]:
+    classes = [
+        status_class
+        for status_class in (
+            _normalized_status_class(item) for item in _safe_sequence(value)
+        )
+        if status_class
+    ]
+    return {
+        status_class: classes.count(status_class)
+        for status_class in sorted(set(classes))
+    }
+
+
+def _content_type_summary(value: Any) -> dict[str, int]:
+    content_types = [
+        content_type
+        for content_type in (
+            _content_type_or_unknown(item) for item in _safe_sequence(value)
+        )
+        if content_type
+    ]
+    return {
+        content_type: content_types.count(content_type)
+        for content_type in sorted(set(content_types))
+    }
+
+
+def _failure_category_summary(value: Any) -> dict[str, int]:
+    categories = [
+        category
+        for category in (
+            _fetch_read_failure_category(item) for item in _safe_sequence(value)
+        )
+        if category
+    ]
+    return {
+        category: categories.count(category)
+        for category in sorted(set(categories))
+    }
+
+
 def _bool_text(value: Any) -> str:
     return "true" if value is True else "false" if value is False else "unknown"
 
@@ -2336,8 +3145,11 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_OUTPUT_INVALID",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE",
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING",
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES",
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE",

@@ -55,8 +55,11 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
-    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
     DEFAULT_OUTPUT_DIR,
     GenericLiveFetchReadResult,
     GenericProviderProxyRunRequest,
@@ -215,6 +218,18 @@ def test_provider_link_field_feeds_generic_fetch_read_adapter_and_custody(
     assert result.packet["raw_search_response_retained"] is False
     assert result.packet["raw_prompt_retained"] is False
     assert result.packet["raw_model_response_retained"] is False
+    candidate = result.packet["fetch_read_candidate_diagnostics"][0]
+    assert candidate["candidate_id"]
+    assert candidate["title"] == "Example County Fee Schedule"
+    assert candidate["domain"] == "example-county.invalid"
+    assert candidate["url"] == link
+    assert candidate["url_source"] == "link"
+    assert candidate["selected_for_fetch_read"] is True
+    assert candidate["attempted"] is True
+    assert "snippet" not in candidate
+    assert candidate["provider_snippet_used_as_evidence"] is False
+    assert candidate["candidate_diagnostic_satisfies_source_obligation"] is False
+    assert result.packet["provider_snippets_used_as_evidence"] is False
 
 
 def test_all_failed_fetch_read_returns_named_blocker_with_counts(
@@ -249,20 +264,262 @@ def test_all_failed_fetch_read_returns_named_blocker_with_counts(
     )
 
     assert result.return_code == 2
-    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+    )
     assert result.packet["provider_calls_attempted"] == 1
     assert result.packet["provider_calls_completed"] == 1
     assert result.packet["provider_results_returned"] == 2
     assert result.packet["fetch_read_attempts"] == 2
     assert result.packet["fetch_read_completed"] == 0
     assert result.packet["fetch_read_blocker"] == (
-        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
     )
-    assert "offline fake fetch failed safely" in result.packet["fetch_read_blocker_detail"]
+    assert "fetch_read_attempt_diagnostics" in result.packet["fetch_read_blocker_detail"]
+    assert result.packet["fetch_read_status_class_summary"] == {"unknown": 2}
+    assert result.packet["fetch_read_content_type_summary"] == {"unknown": 2}
+    assert result.packet["fetch_read_failure_category_summary"] == {
+        "FETCH_READ_EXCEPTION": 2
+    }
+    assert [
+        item["failure_category"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == ["FETCH_READ_EXCEPTION", "FETCH_READ_EXCEPTION"]
     assert result.packet["evidence_ledger_admissions"] == 0
     assert result.packet["dprime_model_review_calls_attempted"] == 0
     assert result.packet["raw_provider_payload_retained"] is False
     assert result.packet["raw_search_response_retained"] is False
+    assert len(fetch_urls) == 2
+
+
+def test_all_fetch_read_4xx_returns_precise_blocker_and_status_summary(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="all-fetch-read-4xx",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    f"Example County Fee Schedule {index}",
+                    f"https://example-county.invalid/fees/{index}",
+                    rank=index,
+                )
+                for index in range(1, 4)
+            ],
+        ),
+        fetch_read_runner=_http_status_fetch_runner(fetch_urls, status_code=404),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == (
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX
+    )
+    assert result.packet["provider_calls_attempted"] == 1
+    assert result.packet["provider_calls_completed"] == 1
+    assert result.packet["provider_results_returned"] == 3
+    assert result.packet["fetch_read_attempts"] == 3
+    assert result.packet["fetch_read_completed"] == 0
+    assert result.packet["fetch_read_blocker"] == (
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX
+    )
+    assert result.packet["fetch_read_status_class_summary"] == {"4xx": 3}
+    assert result.packet["fetch_read_content_type_summary"] == {"text/html": 3}
+    assert result.packet["fetch_read_failure_category_summary"] == {"HTTP_4XX": 3}
+    assert [
+        item["failure_category"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == ["HTTP_4XX", "HTTP_4XX", "HTTP_4XX"]
+    assert all(
+        item["raw_private_retention_flags"]["raw_source_content_retained"] is False
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    )
+    assert result.packet["evidence_ledger_admissions"] == 0
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
+    assert result.packet["raw_provider_payload_retained"] is False
+    assert result.packet["raw_search_response_retained"] is False
+    assert result.packet["raw_prompt_retained"] is False
+    assert result.packet["raw_model_response_retained"] is False
+    assert len(fetch_urls) == 3
+
+
+def test_pdf_content_type_is_diagnostic_only_unsupported_content_type(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="pdf-content-type-diagnostic",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "Example County Fee Schedule PDF",
+                    "https://example-county.invalid/fees.pdf",
+                )
+            ],
+        ),
+        fetch_read_runner=_http_status_fetch_runner(
+            fetch_urls,
+            status_code=200,
+            content_type="application/pdf",
+        ),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+    )
+    assert result.packet["fetch_read_attempts"] == 1
+    assert result.packet["fetch_read_completed"] == 0
+    assert result.packet["fetch_read_status_class_summary"] == {"2xx": 1}
+    assert result.packet["fetch_read_content_type_summary"] == {"application/pdf": 1}
+    assert result.packet["fetch_read_failure_category_summary"] == {
+        "UNSUPPORTED_CONTENT_TYPE": 1
+    }
+    attempt = result.packet["fetch_read_attempt_diagnostics"][0]
+    assert attempt["content_type"] == "application/pdf"
+    assert attempt["failure_category"] == "UNSUPPORTED_CONTENT_TYPE"
+    assert attempt["readable_content_type"] is False
+    assert attempt["readable_text_obtained"] is False
+    assert result.packet["pdf_content_type_support_opened"] is False
+    assert result.packet["pdf_parsing_opened"] is False
+    assert result.packet["evidence_ledger_admissions"] == 0
+    assert result.packet["source_display_entries"] == []
+
+
+def test_no_readable_text_attempt_records_no_readable_text_category(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="no-readable-text-diagnostic",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [_provider_result("Example County Empty Page", _small_claims_url())],
+        ),
+        fetch_read_runner=_http_status_fetch_runner(fetch_urls, status_code=200),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+    )
+    assert result.packet["fetch_read_status_class_summary"] == {"2xx": 1}
+    assert result.packet["fetch_read_content_type_summary"] == {"text/html": 1}
+    assert result.packet["fetch_read_failure_category_summary"] == {
+        "NO_READABLE_TEXT": 1
+    }
+    attempt = result.packet["fetch_read_attempt_diagnostics"][0]
+    assert attempt["failure_category"] == "NO_READABLE_TEXT"
+    assert attempt["readable_content_type"] is True
+    assert attempt["readable_text_obtained"] is False
+
+
+def test_observability_insufficient_blocker_is_available_when_metadata_hidden(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="observability-insufficient",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [_provider_result("Example County Fee Schedule", _small_claims_url())],
+        ),
+        fetch_read_runner=_unknown_fetch_failure_runner(fetch_urls),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT
+    )
+    assert result.packet["fetch_read_status_class_summary"] == {"unknown": 1}
+    assert result.packet["fetch_read_content_type_summary"] == {"unknown": 1}
+    assert result.packet["fetch_read_failure_category_summary"] == {"UNKNOWN": 1}
+    assert result.packet["fetch_read_attempt_diagnostics"][0]["failure_category"] == (
+        "UNKNOWN"
+    )
+
+
+def test_partial_fetch_read_4xx_then_success_reaches_custody_admission(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="partial-fetch-read-survival",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "Example County Archived Fee Schedule",
+                    "https://example-county.invalid/archived-fees",
+                    rank=1,
+                ),
+                _provider_result(
+                    "Example County Current Fee Schedule",
+                    "https://example-county.invalid/current-fees",
+                    rank=2,
+                ),
+            ],
+        ),
+        fetch_read_runner=_first_4xx_then_success_fetch_runner(
+            fetch_urls,
+            "Example County official fee schedule lists the current small claims "
+            "filing fee as $42 for the example case type.",
+        ),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    assert result.packet["provider_results_returned"] == 2
+    assert result.packet["fetch_read_attempts"] == 2
+    assert result.packet["fetch_read_completed"] == 1
+    assert result.packet["fetch_read_status_class_summary"] == {"2xx": 1, "4xx": 1}
+    assert result.packet["fetch_read_content_type_summary"] == {"text/html": 2}
+    assert result.packet["fetch_read_failure_category_summary"] == {"HTTP_4XX": 1}
+    assert [
+        item["failure_category"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == ["HTTP_4XX", None]
+    assert result.packet["evidence_ledger_admissions"] == 1
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
+    assert result.packet["source_display_entries"] == []
+    assert result.packet["product_correctness_claimed"] is False
+    assert result.packet["fap_author_opened"] is False
     assert len(fetch_urls) == 2
 
 
@@ -294,15 +551,29 @@ def test_fetch_read_attempt_cap_limits_failed_candidates_to_three(
     )
 
     assert result.return_code == 2
-    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+    )
     assert result.packet["provider_results_returned"] == 5
     assert result.packet["fetch_read_attempts"] == 3
     assert result.packet["fetch_read_completed"] == 0
+    assert result.packet["fetch_read_blocker"] == (
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+    )
+    assert len(result.packet["fetch_read_candidate_diagnostics"]) == 5
+    skipped = result.packet["fetch_read_candidate_diagnostics"][3:]
+    assert [item["attempted"] for item in skipped] == [False, False]
+    assert [item["skipped_reason"] for item in skipped] == [
+        "FETCH_READ_CAP_EXHAUSTED",
+        "FETCH_READ_CAP_EXHAUSTED",
+    ]
+    assert len(result.packet["fetch_read_attempt_diagnostics"]) == 3
     assert result.packet["evidence_ledger_admissions"] == 0
     assert len(fetch_urls) == 3
 
 
-def test_provider_result_without_url_or_link_blocks_without_raw_retention(
+def test_provider_result_without_url_or_link_records_missing_url_diagnostic(
     tmp_path: Path,
 ) -> None:
     result = build_generic_single_relation_live_dogfood_run_output(
@@ -321,15 +592,54 @@ def test_provider_result_without_url_or_link_blocks_without_raw_retention(
 
     assert result.return_code == 2
     assert result.decision == (
-        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING
     )
     assert result.packet["provider_calls_attempted"] == 1
     assert result.packet["provider_calls_completed"] == 1
     assert result.packet["fetch_read_attempts"] == 0
     assert result.packet["fetch_read_completed"] == 0
+    assert result.packet["fetch_read_failure_category_summary"] == {"MISSING_URL": 1}
+    candidate = result.packet["fetch_read_candidate_diagnostics"][0]
+    assert candidate["url_source"] == "missing"
+    assert candidate["url_valid"] is False
+    assert candidate["attempted"] is False
+    assert candidate["skipped_reason"] == "MISSING_URL"
+    assert candidate["failure_category"] == "MISSING_URL"
     assert result.packet["evidence_ledger_admissions"] == 0
     assert result.packet["raw_provider_payload_retained"] is False
     assert result.packet["raw_search_response_retained"] is False
+
+
+def test_provider_result_with_invalid_url_records_invalid_url_diagnostic(
+    tmp_path: Path,
+) -> None:
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="invalid-provider-url",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [_provider_invalid_url_result("Example County Fee Schedule")],
+        ),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == (
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING
+    )
+    assert result.packet["fetch_read_attempts"] == 0
+    assert result.packet["fetch_read_failure_category_summary"] == {"INVALID_URL": 1}
+    candidate = result.packet["fetch_read_candidate_diagnostics"][0]
+    assert candidate["url_source"] == "url"
+    assert candidate["url"] == "not-a-valid-url"
+    assert candidate["url_valid"] is False
+    assert candidate["skipped_reason"] == "INVALID_URL"
+    assert candidate["failure_category"] == "INVALID_URL"
+    assert candidate["raw_private_retention_flags"]["raw_provider_payload_retained"] is False
 
 
 @pytest.mark.parametrize(
@@ -671,6 +981,62 @@ def _failing_fetch_runner(fetch_urls: list[str]) -> Any:
     return runner
 
 
+def _http_status_fetch_runner(
+    fetch_urls: list[str],
+    *,
+    status_code: int,
+    content_type: str = "text/html",
+    sanitized_text: str = "",
+) -> Any:
+    def runner(url: str) -> GenericLiveFetchReadResult:
+        fetch_urls.append(url)
+        parsed = urlparse(url)
+        return GenericLiveFetchReadResult(
+            attempted_url=url,
+            final_url=url,
+            final_domain=parsed.netloc.lower(),
+            status_code=status_code,
+            status_class=f"{status_code // 100}xx",
+            content_type=content_type,
+            fetched_byte_count=0,
+            sanitized_text=sanitized_text,
+            content_title="Fetch failed",
+            redirect_count=0,
+            retrieved_or_observed_at="2026-07-03T00:00:00+00:00",
+        )
+
+    return runner
+
+
+def _unknown_fetch_failure_runner(fetch_urls: list[str]) -> Any:
+    def runner(url: str) -> GenericLiveFetchReadResult:
+        fetch_urls.append(url)
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+            "offline fake fetch failed without diagnostic metadata",
+            fetch_status_class="unknown",
+            fetch_content_type="unknown",
+            fetch_readable_content_type="unknown",
+            fetch_readable_text_obtained=False,
+            fetch_failure_category="UNKNOWN",
+        )
+
+    return runner
+
+
+def _first_4xx_then_success_fetch_runner(fetch_urls: list[str], text: str) -> Any:
+    calls = 0
+
+    def runner(url: str) -> GenericLiveFetchReadResult:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return _http_status_fetch_runner(fetch_urls, status_code=404)(url)
+        return _recording_fake_fetch_runner(fetch_urls, text)(url)
+
+    return runner
+
+
 def _provider_result(title: str, url: str, *, rank: int = 1) -> dict[str, Any]:
     return {
         "title": title,
@@ -702,6 +1068,12 @@ def _provider_result_without_url(title: str, *, rank: int = 1) -> dict[str, Any]
         "raw_provider_payload_retained": False,
         "raw_search_response_retained": False,
     }
+
+
+def _provider_invalid_url_result(title: str, *, rank: int = 1) -> dict[str, Any]:
+    result = _provider_result(title, "https://example-county.invalid/fees", rank=rank)
+    result["url"] = "not-a-valid-url"
+    return result
 
 
 def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str, Any]:
