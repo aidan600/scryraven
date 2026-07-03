@@ -119,6 +119,32 @@ SOURCE_AUTHORITY_AUTHORITY_REQUIRED_SUPPORTING_FIELDS = (
     "analyst_rationale",
 )
 
+SOURCE_AUTHORITY_RECOMMENDED_USE_SUPPORTING_FIELD_VALUES = (
+    "source_ref",
+    "source_candidate_ref",
+    "evidence_content_ref",
+    "source_class",
+    "issuer_or_source_owner",
+    "document_type",
+    "primary_derivative_posture",
+    "officialness_canonicality_posture",
+    "directness_to_answer_component",
+    "recency_currentness",
+    "publication_date",
+    "revision_date",
+    "observed_date",
+    "scope_match",
+    "claim_specificity",
+    "source_contains_exact_claim",
+    "conflict_qualification_posture",
+    "recommended_source_use_rationale",
+    "limitations",
+    "required_caveats",
+    "source_class_adapter_used",
+    "analyst_rationale",
+    "nonclaims",
+)
+
 SOURCE_AUTHORITY_SOCIAL_REVIEW_SOURCE_CLASSES = (
     SOURCE_AUTHORITY_SOURCE_CLASS_SOCIAL_OR_FORUM_DISCUSSION,
     SOURCE_AUTHORITY_SOURCE_CLASS_USER_REVIEW,
@@ -307,6 +333,9 @@ def build_source_authority_posture_profile() -> dict[str, Any]:
         "authority_required_supporting_fields": list(
             SOURCE_AUTHORITY_AUTHORITY_REQUIRED_SUPPORTING_FIELDS
         ),
+        "recommended_source_use_supporting_field_values": list(
+            SOURCE_AUTHORITY_RECOMMENDED_USE_SUPPORTING_FIELD_VALUES
+        ),
         "social_review_source_classes": list(
             SOURCE_AUTHORITY_SOCIAL_REVIEW_SOURCE_CLASSES
         ),
@@ -367,6 +396,11 @@ def validate_source_authority_posture_profile(
         _string_tuple(safe.get("authority_required_supporting_fields")),
         SOURCE_AUTHORITY_AUTHORITY_REQUIRED_SUPPORTING_FIELDS,
         label="authority supporting fields",
+    )
+    _require_contains_all(
+        _string_tuple(safe.get("recommended_source_use_supporting_field_values")),
+        SOURCE_AUTHORITY_AUTHORITY_REQUIRED_SUPPORTING_FIELDS,
+        label="recommended source-use supporting field values",
     )
     _require_contains_all(
         _string_tuple(safe.get("nonclaims")),
@@ -575,6 +609,7 @@ def validate_source_authority_posture_packet(
     )
     if not supporting_fields:
         _blocked("recommended_source_use requires supporting posture fields")
+    _validate_supporting_field_names(supporting_fields)
     non_source_supporting_fields = {
         field for field in supporting_fields if field != "source_class"
     }
@@ -772,6 +807,17 @@ def _validate_social_or_review_packet(packet: Mapping[str, Any]) -> None:
         _blocked("social/forum/review anti-laundering flags must remain false")
 
 
+def _validate_supporting_field_names(supporting_fields: Sequence[str]) -> None:
+    allowed = set(SOURCE_AUTHORITY_RECOMMENDED_USE_SUPPORTING_FIELD_VALUES)
+    unknown = sorted({field for field in supporting_fields if field not in allowed})
+    if unknown:
+        _blocked(
+            "recommended_source_use_supporting_fields includes unsupported "
+            "posture fields: "
+            + ", ".join(unknown)
+        )
+
+
 def _digest_packet(packet: Mapping[str, Any]) -> str:
     payload = {
         key: value
@@ -903,6 +949,7 @@ __all__ = [
     "SOURCE_AUTHORITY_POSTURE_PHASE",
     "SOURCE_AUTHORITY_POSTURE_SCHEMA_VERSION",
     "SOURCE_AUTHORITY_RAW_PRIVATE_RETENTION_FLAGS",
+    "SOURCE_AUTHORITY_RECOMMENDED_USE_SUPPORTING_FIELD_VALUES",
     "SOURCE_AUTHORITY_RECOMMENDED_USE_AUTHORITY",
     "SOURCE_AUTHORITY_RECOMMENDED_USE_CORROBORATION",
     "SOURCE_AUTHORITY_RECOMMENDED_USE_CONTEXT",

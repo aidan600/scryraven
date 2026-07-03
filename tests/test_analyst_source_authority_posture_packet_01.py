@@ -131,6 +131,26 @@ def test_authority_requires_full_posture_not_source_class_alone() -> None:
         sap.validate_source_authority_posture_packet(missing_owner)
 
 
+def test_recommended_source_use_supporting_fields_rejects_unknown_names() -> None:
+    packet = sap.build_official_source_of_record_example_posture_packet()
+
+    assert "source_class" in sap.SOURCE_AUTHORITY_RECOMMENDED_USE_SUPPORTING_FIELD_VALUES
+    assert "source_ref" in sap.SOURCE_AUTHORITY_RECOMMENDED_USE_SUPPORTING_FIELD_VALUES
+    assert (
+        "evidence_content_ref"
+        in sap.SOURCE_AUTHORITY_RECOMMENDED_USE_SUPPORTING_FIELD_VALUES
+    )
+
+    packet["recommended_source_use_supporting_fields"] = [
+        "source_class",
+        "fake_field",
+        "made_up_field",
+    ]
+    packet.pop("source_authority_posture_digest")
+    with pytest.raises(sap.SourceAuthorityPosturePacketError):
+        sap.validate_source_authority_posture_packet(packet)
+
+
 def test_social_forum_review_validates_as_directionality_or_ignore_not_authority() -> None:
     packet = sap.validate_source_authority_posture_packet(
         sap.build_social_review_directionality_example_posture_packet()
