@@ -56,12 +56,12 @@ def test_product_status_consumes_contract_authority_and_materializes_semantic_ob
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
     assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     )
     assert "RunKernel admission decision status: admitted" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
     assert "ComponentCoverage status: bound" in result.output
-    assert "source-obligation authority status: missing" in result.output
+    assert "source-obligation authority status: consumed" in result.output
     assert "answerability/correctness: not claimed" in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -108,20 +108,19 @@ def test_product_status_consumes_contract_authority_and_materializes_semantic_ob
     assert coverage["source_obligation_status"] == "unknown"
     source_authority = result.payload["source_obligation_authority_ref"]
     citation_authority = result.payload["citation_eligibility_authority_ref"]
-    assert source_authority["status"] == "missing"
-    assert source_authority["authority_consumed"] is False
-    assert source_authority["retained_ids_are_lineage_only"] is True
-    assert source_authority["satisfaction_claimed"] is False
-    assert citation_authority["status"] == "unavailable"
-    assert citation_authority["authority_consumed"] is False
+    assert source_authority["status"] == "consumed"
+    assert source_authority["authority_consumed"] is True
+    assert source_authority["retained_ids_alone_are_authority"] is False
+    assert source_authority["satisfaction_claimed"] is True
+    assert citation_authority["status"] == "consumed"
+    assert citation_authority["authority_consumed"] is True
+    assert citation_authority["citation_source_handoff_consumed"] is True
     assert result.payload["semantic_support_source"] == (
         "available from D-prime SemanticObservation and bound ComponentCoverage; "
-        "source-obligation authority missing"
+        "source-obligation and citation-source handoff authority consumed"
     )
-    assert result.payload["next_blocked_surface"] == (
-        "D-prime source-obligation authority"
-    )
-    assert "source-obligation satisfaction/posture authority is not available" in (
+    assert result.payload["next_blocked_surface"] == "SufficiencyReadiness"
+    assert "SufficiencyReadiness is not licensed" in (
         result.payload["blocker_detail"]
     )
     assert result.payload["component_coverage_only_treated_as_pass"] is False
@@ -142,7 +141,7 @@ def test_retained_contract_digest_lineage_is_checked_not_counted_as_authority(
     assert component_ref["lineage_only"] is True
     assert component_ref["current_answer_contract_digest"]
     assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING
+        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     )
     assert semantic["status"] == "admitted"
     authority = dprime_status["accepted_current_answer_contract_authority_ref"]
@@ -355,7 +354,13 @@ def test_product_status_consumes_runkernel_contract_authority_surface(
     )
     assert dprime_status["objects_created"]["component_coverage"] is True
     assert result.payload["component_coverage_ref"]["status"] == "bound"
-    assert result.payload["source_obligation_authority_ref"]["status"] == "missing"
+    assert result.payload["source_obligation_authority_ref"]["status"] == "consumed"
+    assert (
+        result.payload["citation_eligibility_authority_ref"][
+            "citation_source_handoff_consumed"
+        ]
+        is True
+    )
 
 
 def test_dprime_product_status_does_not_directly_mutate_answer_contract_state() -> None:
@@ -428,15 +433,14 @@ def test_architecture_doc_records_new_stop_and_closed_downstream_surfaces() -> N
     )
 
     assert "ordinary D-prime accepted/current answer-contract authority" in text
-    assert "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING" in text
+    assert "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED" in text
     assert "ComponentCoverage binding" in text
     for closed_surface in (
-        "source-obligation satisfaction authority",
-        "citation eligibility / citation-source handoff authority",
         "`SufficiencyReadiness`",
         "`FinalAnswerPacket`",
         "Author/answer text",
         "product correctness",
+        "citation rendering",
     ):
         assert closed_surface in text
 

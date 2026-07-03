@@ -1,13 +1,13 @@
 """D-prime evidence support-bundle runtime.
 
 This runtime consumes admitted D-prime SemanticObservation and existing D-prime
-authority lineage. It binds ComponentCoverage and evaluates source/citation
-posture only. It is consumed by ordinary product status in the same phase.
+authority lineage. It binds ComponentCoverage, then consumes source-obligation
+authority and citation-source handoff authority through RunKernel-owned product
+surfaces in the same phase.
 
-It does not invent source-obligation satisfaction authority. It does not invent
-citation eligibility authority. It does not create SufficiencyReadiness,
-FinalAnswerPacket, Author output, answer text, product correctness, live calls,
-provider/model calls, search, fetch/read, or retrieval.
+It does not create SufficiencyReadiness, FinalAnswerPacket, Author output,
+answer text, product correctness, live calls, provider/model calls, search,
+fetch/read, or retrieval.
 """
 
 from __future__ import annotations
@@ -43,6 +43,11 @@ from core.component_coverage_reduction_runtime import (
 )
 from core.dprime_semantic_observation_materialization_runtime import (
     DPrimeSemanticObservationMaterializationResult,
+)
+from core.dprime_source_obligation_citation_authority_runtime import (
+    BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED,
+    DPrimeSourceObligationCitationAuthorityError,
+    consume_dprime_source_obligation_and_citation_authority,
 )
 from core.evidence_ledger import EVIDENCE_LEDGER_SCHEMA_VERSION
 from core.run_kernel import Observation, ObservationType, RunKernel, RunKernelTransitionError, RunStageStatus
@@ -80,7 +85,7 @@ class DPrimeEvidenceSupportBundleError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class DPrimeEvidenceSupportBundleResult:
-    """Outcome B support-bundle attempt with ComponentCoverage bound."""
+    """Outcome A support-bundle completion before SufficiencyReadiness."""
 
     component_coverage_state: Mapping[str, Any]
     component_coverage_projection: Mapping[str, Any]
@@ -109,7 +114,7 @@ class DPrimeEvidenceSupportBundleResult:
             "reasons": [
                 "bound through existing RunKernel ComponentCoverage authority",
                 "coverage is supported_with_caveats, not SufficiencyReadiness",
-                "source-obligation authority remains missing",
+                "coverage alone is not source-obligation or citation authority",
             ],
         }
 
@@ -129,6 +134,15 @@ class DPrimeEvidenceSupportBundleResult:
             "citation_eligibility_authority_status": (
                 self.citation_eligibility_authority_ref.get("status")
             ),
+            "source_obligation_authority_consumed": (
+                self.source_obligation_authority_ref.get("authority_consumed")
+                is True
+            ),
+            "citation_eligibility_or_source_handoff_authority_consumed": (
+                self.citation_eligibility_authority_ref.get("authority_consumed")
+                is True
+            ),
+            "support_bundle_completed": True,
             "component_coverage_only_treated_as_pass": False,
             "detached_posture_status_packet_treated_as_authority": False,
             "sufficiency_readiness_created": False,
@@ -147,7 +161,7 @@ def build_dprime_evidence_support_bundle(
     source_obligation_ref: Mapping[str, Any],
     citation_source_obligation_readiness_ref: Mapping[str, Any],
 ) -> DPrimeEvidenceSupportBundleResult:
-    """Bind D-prime ComponentCoverage, then stop at missing source authority."""
+    """Bind D-prime ComponentCoverage, then consume source/citation authority."""
 
     observation = semantic_materialization.semantic_observation
     accepted_contract = _safe_mapping(run_kernel.state.initial_answer_contract)
@@ -195,24 +209,35 @@ def build_dprime_evidence_support_bundle(
             str(exc),
         ) from exc
 
-    source_authority = _missing_source_obligation_authority_ref(
-        source_obligation_ref
-    )
-    citation_authority = _missing_citation_eligibility_authority_ref()
+    try:
+        source_citation_authority = (
+            consume_dprime_source_obligation_and_citation_authority(
+                semantic_materialization=semantic_materialization,
+                run_kernel=run_kernel,
+                component_coverage_projection=(
+                    run_kernel.state.component_coverage_projection
+                ),
+                source_obligation_ref=source_obligation_ref,
+                citation_source_obligation_readiness_ref=(
+                    citation_source_obligation_readiness_ref
+                ),
+            )
+        )
+    except DPrimeSourceObligationCitationAuthorityError as exc:
+        raise DPrimeEvidenceSupportBundleError(exc.blocker, exc.detail) from exc
     return DPrimeEvidenceSupportBundleResult(
         component_coverage_state=dict(run_kernel.state.component_coverage_state),
         component_coverage_projection=dict(
             run_kernel.state.component_coverage_projection
         ),
-        source_obligation_authority_ref=source_authority,
-        citation_eligibility_authority_ref=citation_authority,
-        decision=BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING,
-        blocker_detail=(
-            "D-prime ComponentCoverage was bound through existing RunKernel "
-            "authority, but source-obligation satisfaction/posture authority is "
-            "not available before SufficiencyReadiness/FAP and retained "
-            "source-obligation ids are lineage only"
+        source_obligation_authority_ref=(
+            source_citation_authority.source_obligation_authority_ref
         ),
+        citation_eligibility_authority_ref=(
+            source_citation_authority.citation_eligibility_authority_ref
+        ),
+        decision=source_citation_authority.decision,
+        blocker_detail=source_citation_authority.blocker_detail,
     )
 
 
@@ -456,6 +481,7 @@ __all__ = [
     "BLOCKED_DPRIME_CITATION_SOURCE_HANDOFF_MISSING",
     "BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING",
     "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING",
+    "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED",
     "DPRIME_EVIDENCE_SUPPORT_BUNDLE_OWNER",
     "DPRIME_EVIDENCE_SUPPORT_BUNDLE_SCHEMA_VERSION",
     "DPRIME_EVIDENCE_SUPPORT_BUNDLE_SURFACE",
