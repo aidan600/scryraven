@@ -305,8 +305,8 @@ def _component_coverage_record(
         ),
         required_caveats=(
             "ComponentCoverage is bound from admitted D-prime SemanticObservation only.",
-            "Source-obligation satisfaction is not claimed.",
-            "Citation eligibility is not claimed.",
+            "ComponentCoverage alone is not source-obligation authority.",
+            "ComponentCoverage alone is not citation-source handoff authority.",
         ),
         prohibited_upgrades=(
             "Do not treat ComponentCoverage as SufficiencyReadiness.",

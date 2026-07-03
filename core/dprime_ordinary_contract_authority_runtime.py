@@ -207,12 +207,12 @@ def _contract_authority_payload(
                 "allowed_support_kinds": ["direct"],
                 "source_obligation_candidate_ids": list(source_ids),
                 "mandatory_caveats": [
-                    "D-prime SemanticObservation does not bind ComponentCoverage.",
+                    "D-prime contract authority alone does not bind ComponentCoverage.",
                 ],
                 "prohibited_upgrades": [
-                    "Do not claim citation eligibility, source-obligation "
-                    "satisfaction, SufficiencyReadiness, FAP, Author output, "
-                    "answer text, or product correctness.",
+                    "Do not claim downstream readiness, packet, source display, "
+                    "Author output, answer text, or product correctness until "
+                    "the named product/RunKernel surface consumes this lane.",
                 ],
             }
         ],

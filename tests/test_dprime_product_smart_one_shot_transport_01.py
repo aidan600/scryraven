@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Any
 
 import core.dprime_assessment_validation as assessment_validation
-import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_one_shot_provider_boundary as provider_boundary
 import core.dprime_product_smart_one_shot_transport as route_transport
 import core.dprime_support_proposal_schema as dprime
@@ -287,9 +286,7 @@ def test_product_path_consumes_product_route_transport_via_dprime_adapter(
     )
 
     assert len(fake_client.calls) == 1
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
+    assert result.decision == "PASS"
     assert "phase: DPRIME-APPROVED-PROVIDER-ONE-SHOT-TRANSPORT-01" in result.output
     dprime_status = result.payload["dprime_status"]
     assert (

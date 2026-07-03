@@ -12,10 +12,11 @@ Exit condition: keep while D-prime RunKernel admission requests are prepared
 before RunKernel support admission decision is licensed.
 Why this is not a shadow product path: it invokes the product status builder and
 the product-owned D-prime schema/model-review modules, not a standalone packet.
-Forbidden interpretation: an admission request is not RunKernel admission,
-admitted semantic support, SemanticObservation admission, ComponentCoverage,
-citation eligibility, source-obligation satisfaction, SufficiencyReadiness,
-FinalAnswerPacket, Author/answer text, product correctness, or a live call.
+Forbidden interpretation: an admission request by itself is not RunKernel
+admission, admitted semantic support, SemanticObservation admission,
+ComponentCoverage, citation eligibility, source-obligation satisfaction,
+SufficiencyReadiness, FinalAnswerPacket, Author/answer text, product
+correctness, or a live call.
 """
 
 from __future__ import annotations
@@ -26,7 +27,6 @@ from typing import Any
 
 import pytest
 
-import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -47,9 +47,7 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
+    assert result.decision == "PASS"
     assert "D-prime assessment status: assessed" in result.output
     assert (
         "D-prime proposal validation status: "
@@ -90,9 +88,10 @@ def test_validated_proposal_reports_request_ready_without_runkernel_decision(
         "run_kernel_admission_decision": True,
         "semantic_observation": True,
         "component_coverage": True,
-        "sufficiency_readiness": False,
-        "final_answer_packet": False,
-        "author_answer": False,
+        "sufficiency_readiness": True,
+        "final_answer_packet": True,
+        "author_answer": True,
+        "citation_source_display": True,
     }
     assert request_ref["request_status"] == (
         dprime.DPRIME_RUN_KERNEL_ADMISSION_REQUEST_READY
@@ -150,8 +149,6 @@ def test_admission_request_ref_carries_safe_lineage_only(tmp_path: Path) -> None
         "secret",
         "SemanticObservation",
         "ComponentCoverage",
-        "FinalAnswerPacket",
-        "Author prose",
     ):
         assert forbidden not in serialized
 
@@ -198,7 +195,7 @@ def test_non_validated_assessments_do_not_create_admission_request(
     assert dprime_status["objects_created"]["component_coverage"] is False
 
 
-def test_architecture_doc_records_request_gate_without_opening_downstream() -> None:
+def test_architecture_doc_records_request_gate_and_answer_path() -> None:
     text = Path("docs/architecture/DPRIME_ARCHITECTURE.md").read_text(
         encoding="utf-8"
     )
@@ -207,15 +204,14 @@ def test_architecture_doc_records_request_gate_without_opening_downstream() -> N
     assert "RunKernel-owned admission decision made" in text
     assert "ordinary D-prime RunKernel/product accepted/current contract authority" in text
     assert "ComponentCoverage bound through existing RunKernel coverage authority" in text
-    assert "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED" in text
-    for closed_surface in (
+    for consumed_surface in (
         "`SufficiencyReadiness`",
-        "`FinalAnswerPacket`",
-        "Author/answer text",
-        "product correctness",
-        "citation rendering",
+        "hardened final answer packet",
+        "Author/answer output",
+        "citation/source display",
     ):
-        assert closed_surface in text
+        assert consumed_surface in text
+    assert "product correctness remains unclaimed" in text
 
 
 def _run_product_status_with_assessment(repo_root: Path, payload: dict[str, Any]) -> Any:

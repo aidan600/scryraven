@@ -1,17 +1,18 @@
 # D-prime architecture
 
-Status: Updated through DPRIME-SUPPORT-BUNDLE-COMPLETION-01. Mode: BUILD.
+Status: Updated through DPRIME-SINGLE-LANE-ANSWER-PATH-01. Mode: BUILD.
 This overview documents implemented product-consumed D-prime authority. It does
-not license live/model/provider/search/fetch/read/retrieval calls,
-SufficiencyReadiness, FAP, Author/answer text, citation rendering, or product
-correctness.
+not license live/model/provider/search/fetch/read/retrieval calls, generic
+D-prime analyst intake, multi-component support aggregation, multi-source
+conflict handling, or product correctness.
 
 ## Purpose
 
 D-prime is ScryRaven's bounded evidence-relative model-review lane. It lets the
 product smart model review custody-bound bounded source material against a
-specific answer component and source obligation, but it does not itself create
-admitted support, citations, readiness, answer prose, or correctness.
+specific answer component and source obligation. Model review itself does not
+create admitted support, citations, readiness, answer prose, or correctness; the
+ordinary RunKernel/product path must consume each later authority surface.
 
 D-prime exists to make evidence-relative semantic review inspectable without
 letting custody, bounded content, model agreement, or validation ceremony become
@@ -60,15 +61,17 @@ source/evidence custody and readability
 -> ComponentCoverage bound through existing RunKernel coverage authority
 -> source-obligation authority consumed
 -> citation eligibility / citation-source handoff authority consumed
--> SufficiencyReadiness not licensed
+-> SufficiencyReadiness consumed
+-> hardened final answer packet consumed
+-> Author/answer output consumed
+-> citation/source display consumed
+-> product correctness remains unclaimed
 ```
 
 The chain is surfaced through `DPrimeStatusPayload` in
-`proplex.live_semantic_coverage_status`. The current stop condition is:
-
-```text
-BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-```
+`proplex.live_semantic_coverage_status`. The current single-lane admitted path
+targets a `PASS` status only when each authority surface above is consumed by
+the ordinary status path.
 
 At that point a validator-valid proposal candidate and a lineage-only
 `RunKernelSupportProposalAdmissionRequest` may exist. When the RunKernel-owned
@@ -96,9 +99,16 @@ source-obligation authority surface in
 After DPRIME-SUPPORT-BUNDLE-COMPLETION-01, the same ordinary product status path
 then consumes RunKernel-owned D-prime source-obligation authority and
 citation-source handoff authority. This completes the D-prime evidence-support
-bundle for the source/component relation, but it stops before
-`SufficiencyReadiness`; it does not create readiness, FAP, Author/answer text,
-citation rendering, live calls, or product correctness.
+bundle for the source/component relation. Direct use of that support bundle by
+itself still does not create readiness, FAP, Author/answer text, citation
+rendering, live calls, or product correctness.
+
+After DPRIME-SINGLE-LANE-ANSWER-PATH-01, the ordinary product status path
+consumes that completed support bundle through
+`core.dprime_single_lane_answer_path_runtime`. The bridge consumes
+`SufficiencyReadiness`, a hardened final answer packet, Author/answer output,
+and a RunKernel-owned citation/source display for the current single D-prime
+lane. Product correctness remains unclaimed.
 
 ## Current implemented product path
 
@@ -126,10 +136,14 @@ Implemented and consumed by the ordinary dry-run status path:
 - RunKernel/ComponentCoverage-owned support-bundle attempt in
   `core.dprime_evidence_support_bundle_runtime`, consumed by ordinary product
   status, which binds ComponentCoverage, consumes source-obligation authority,
-  consumes citation-source handoff authority, and stops at
-  `BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED`.
+  and consumes citation-source handoff authority.
 - RunKernel-owned D-prime source-obligation and citation-source handoff
   authority in `core.dprime_source_obligation_citation_authority_runtime`.
+- Product-status consumed single-lane answer path in
+  `core.dprime_single_lane_answer_path_runtime`, which consumes the completed
+  D-prime support bundle into `SufficiencyReadiness`, a hardened final answer
+  packet, Author/answer output, and citation/source display without live calls
+  or product correctness claims.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -156,7 +170,12 @@ SemanticObservation:
 ComponentCoverage:
   records admitted component support/binding only after admission
 
-SufficiencyReadiness / FinalAnswerPacket / Author:
+Single-lane answer-path bridge:
+  consumes ComponentCoverage/source-obligation/citation-source handoff into
+  SufficiencyReadiness, hardened final answer packet, Author/answer output, and
+  citation/source display for the current single D-prime lane
+
+Product correctness / generic analyst intake:
   remain downstream and closed until separately licensed
 ```
 
@@ -183,8 +202,11 @@ D-prime may produce:
   bound `ComponentCoverage`;
 - RunKernel-owned citation eligibility / citation-source handoff authority
   refs/status/digest after source-obligation authority;
-- product-visible SufficiencyReadiness-not-licensed blocker after the completed
-  evidence-support bundle.
+- single-lane `SufficiencyReadiness` refs/status/digest after the completed
+  evidence-support bundle;
+- hardened final answer packet refs/status/digest after readiness;
+- Author/answer output text and refs/status/digest after the hardened packet;
+- citation/source display refs/status/digest after Author output.
 
 The pre-admission D-prime assessment/proposal/request outputs are review
 material and candidate state. They are not admitted support. Only the
@@ -218,6 +240,13 @@ authority surfaces. It must not treat ComponentCoverage alone, retained lineage
 ids, or readiness posture as source-obligation satisfaction, citation
 eligibility/handoff, answer readiness, or product correctness.
 
+The licensed single-lane answer-path bridge may consume the completed
+support-bundle output into `SufficiencyReadiness`, a hardened final answer
+packet, Author/answer output, and citation/source display only through existing
+RunKernel/product authority. It must not run live/model/provider/search/fetch/
+read/retrieval calls, open a generic analyst intake surface, or claim product
+correctness.
+
 Anti-laundering rules:
 
 - Preflight pass is not semantic support.
@@ -231,6 +260,8 @@ Anti-laundering rules:
 - `ComponentCoverage` is not citation eligibility.
 - Citation eligibility / citation-source handoff is not citation rendering.
 - Citation eligibility / citation-source handoff is not answer correctness.
+- Citation/source display is not product correctness.
+- Author/answer output is not product correctness.
 
 ## Semantic support vs evidential adequacy
 
@@ -274,9 +305,9 @@ D-prime's non-negotiable negative controls are:
 `NegativeControlProfile` is configuration and validation posture. It is not
 evidence, not model success, not semantic support, and not product correctness.
 
-## Current status after admission-request gate
+## Current status after single-lane answer path
 
-Implemented after DPRIME-RUNKERNEL-DECISION-AUTHORITY-SURFACE-01:
+Implemented after DPRIME-SINGLE-LANE-ANSWER-PATH-01:
 
 - evidence-frame preflight;
 - negative-control profile;
@@ -297,25 +328,30 @@ Implemented after DPRIME-RUNKERNEL-DECISION-AUTHORITY-SURFACE-01:
   ComponentCoverage;
 - RunKernel-owned citation eligibility / citation-source handoff authority
   consumed after source-obligation authority;
-- named fail-closed blocker at SufficiencyReadiness because readiness/FAP/Author
-  surfaces remain closed;
+- `SufficiencyReadiness` consumed after the completed D-prime support bundle;
+- hardened final answer packet consumed after readiness;
+- Author/answer output consumed after the hardened packet;
+- citation/source display consumed after Author output;
 - ordinary product status reporting through `DPrimeStatusPayload`.
 
-The current stop point is SufficiencyReadiness not licensed after the completed
-D-prime evidence-support bundle.
+The current product-visible single-lane path reaches `PASS` only for an
+admitted D-prime decision that completes the support bundle, readiness, hardened
+final answer packet, Author/answer output, and citation/source display. Product
+correctness remains unclaimed.
 
 Still not implemented or closed:
 
-- `SufficiencyReadiness`;
-- `FinalAnswerPacket`;
-- Author/answer text;
 - product correctness;
-- citation rendering;
+- generic D-prime analyst intake;
+- multi-component support aggregation;
+- multi-source conflict handling;
+- live/model/provider/search/fetch/read/retrieval execution inside this status
+  path;
 - optional narrow deterministic semantic extractors.
 
 ## Open downstream surfaces
 
-Downstream support-bearing surfaces remain closed until separately licensed:
+The current single-lane path is:
 
 ```text
 RunKernel-owned admission decision
@@ -324,15 +360,16 @@ RunKernel-owned admission decision
 -> ComponentCoverage binding
 -> source-obligation authority consumed
 -> citation eligibility / citation-source handoff authority consumed
--> SufficiencyReadiness not licensed
--> FinalAnswerPacket
--> Author/answer text
--> product correctness
+-> SufficiencyReadiness
+-> hardened final answer packet
+-> Author/answer output
+-> citation/source display
+-> product correctness remains unclaimed
 ```
 
-D-prime completes this support bundle only up to the SufficiencyReadiness
-boundary. It cannot skip readiness, FAP, Author, citation rendering, answer text,
-or product correctness.
+D-prime now completes this current single lane through citation/source display.
+It cannot generalize beyond the current lane, skip authority surfaces, run live
+calls in this status path, or claim product correctness.
 
 ## Mode posture
 

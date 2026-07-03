@@ -1,4 +1,4 @@
-"""PRODUCT-PATH-REGRESSION: completed D-prime support bundle.
+"""PRODUCT-PATH-REGRESSION: completed D-prime support bundle feeds answer path.
 
 Harness label: PRODUCT-PATH-REGRESSION
 Ordinary product path guarded or fed: python -m proplex --live-semantic-coverage-status-dry-run
@@ -10,11 +10,10 @@ calls are closed in this phase.
 Integration deadline: current phase.
 Exit condition: keep as the regression guard for D-prime SemanticObservation ->
 ComponentCoverage -> source-obligation authority -> citation-source handoff
-authority -> SufficiencyReadiness not licensed.
+authority -> SufficiencyReadiness -> FAP -> Author answer.
 Why this is not a shadow product path: it invokes the product status builder and
 RunKernel-owned reducers, not a detached packet path.
-Forbidden interpretation: this does not create SufficiencyReadiness, FAP,
-Author/answer text, citation rendering, product correctness, or a live call.
+Forbidden interpretation: this does not claim product correctness or a live call.
 """
 
 from __future__ import annotations
@@ -23,7 +22,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
     PASSPORT_TEXT,
@@ -36,17 +34,15 @@ from tests.test_dprime_model_review_assessment_slice_01 import (
 )
 
 
-def test_product_status_completes_support_bundle_then_blocks_readiness(
+def test_product_status_completes_support_bundle_then_consumes_answer_path(
     tmp_path: Path,
 ) -> None:
     repo_root, _candidate = _passport_retained_repo(tmp_path)
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
-    assert result.payload["next_blocked_surface"] == "SufficiencyReadiness"
+    assert result.decision == "PASS"
+    assert result.payload["next_blocked_surface"] is None
     assert result.payload["component_coverage_ref"]["status"] == "bound"
     source_authority = result.payload["source_obligation_authority_ref"]
     citation_authority = result.payload["citation_eligibility_authority_ref"]
@@ -69,9 +65,19 @@ def test_product_status_completes_support_bundle_then_blocks_readiness(
         dprime_status["citation_eligibility_or_source_handoff_authority_consumed"]
         is True
     )
-    assert dprime_status["objects_created"]["sufficiency_readiness"] is False
-    assert dprime_status["objects_created"]["final_answer_packet"] is False
-    assert dprime_status["objects_created"]["author_answer"] is False
+    assert dprime_status["objects_created"]["sufficiency_readiness"] is True
+    assert dprime_status["objects_created"]["final_answer_packet"] is True
+    assert dprime_status["objects_created"]["author_answer"] is True
+    assert dprime_status["objects_created"]["citation_source_display"] is True
+    answer_path = result.payload["dprime_answer_path_ref"]
+    assert answer_path["status"] == "consumed"
+    assert answer_path["sufficiency_readiness_status"] == "full_answer_ready"
+    assert answer_path["final_answer_packet_status"] == "full_answer_packet_ready"
+    assert answer_path["author_answer_status"] == "full_answer_prose_created"
+    assert answer_path["citation_source_display_status"] == "created"
+    assert answer_path["answer_text"]
+    assert answer_path["citation_source_display"]["citation_source_entries"]
+    assert answer_path["product_correctness_claimed"] is False
     assert result.payload["detached_posture_status_packet_treated_as_authority"] is False
 
 
@@ -89,9 +95,6 @@ def test_support_bundle_completion_output_hygiene_excludes_closed_material(
         "raw prompt",
         "raw model response",
         "provider payload",
-        "finalanswerpacket",
-        "author prose",
-        "answer text:",
         "product correctness claimed: true",
     ):
         assert forbidden not in result.output.casefold()

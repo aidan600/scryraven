@@ -8,13 +8,13 @@ status path is used with retained fixture-sized artifacts and an injected fake
 model-review callable because live/model/provider/search/fetch/read/retrieval
 calls are closed in this phase.
 Integration deadline: current phase.
-Exit condition: keep as the regression guard for the RunKernel-owned D-prime
-decision stop before SemanticObservation materialization is licensed.
+Exit condition: keep as the regression guard that a RunKernel-owned D-prime
+decision alone does not bypass later product authority surfaces.
 Why this is not a shadow product path: it invokes the product status builder and
 the RunKernel-owned D-prime decision runtime, not a standalone packet path.
-Forbidden interpretation: a RunKernel-owned D-prime admitted decision is not
-admitted semantic support, SemanticObservation, ComponentCoverage, citation
-eligibility, source-obligation satisfaction, SufficiencyReadiness,
+Forbidden interpretation: a RunKernel-owned D-prime admitted decision by itself
+is not admitted semantic support, SemanticObservation, ComponentCoverage,
+citation eligibility, source-obligation satisfaction, SufficiencyReadiness,
 FinalAnswerPacket, Author/answer text, product correctness, or a live call.
 """
 
@@ -26,7 +26,6 @@ from typing import Any, Mapping
 
 import pytest
 
-import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_runkernel_admission_runtime as rk_dprime
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
@@ -86,9 +85,7 @@ def test_product_status_reports_runkernel_admitted_decision_with_materialization
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
+    assert result.decision == "PASS"
     assert "RunKernel admission decision status: admitted" in result.output
     assert "RunKernel decision: admitted" in result.output
     assert "admitted support: true" in result.output
@@ -98,7 +95,7 @@ def test_product_status_reports_runkernel_admitted_decision_with_materialization
     assert (
         "semantic support source: available from D-prime SemanticObservation and "
         "bound ComponentCoverage; source-obligation and citation-source "
-        "handoff authority consumed"
+        "handoff authority consumed; single-lane answer path consumed"
     ) in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -115,6 +112,10 @@ def test_product_status_reports_runkernel_admitted_decision_with_materialization
     assert dprime_status["objects_created"]["run_kernel_admission_decision"] is True
     assert dprime_status["objects_created"]["semantic_observation"] is True
     assert dprime_status["objects_created"]["component_coverage"] is True
+    assert dprime_status["objects_created"]["sufficiency_readiness"] is True
+    assert dprime_status["objects_created"]["final_answer_packet"] is True
+    assert dprime_status["objects_created"]["author_answer"] is True
+    assert dprime_status["objects_created"]["citation_source_display"] is True
     assert dprime_status["semantic_observation_admission_status"] == "materialized"
     assert dprime_status["semantic_observation_ref"]["owner"] == (
         "RunKernel.SemanticObservationAdmission"
@@ -355,9 +356,6 @@ def test_decision_output_hygiene_excludes_raw_private_and_closed_material(
         "raw_page_text",
         "secret",
         "citation eligibility claimed: true",
-        "source-obligation satisfaction claimed: true",
-        "FinalAnswerPacket",
-        "Author prose",
         "product correctness claimed: true",
     ):
         assert forbidden not in result.output
@@ -367,9 +365,6 @@ def test_decision_output_hygiene_excludes_raw_private_and_closed_material(
         "raw page text",
         "provider payload",
         "citation eligibility claimed: true",
-        "source-obligation satisfaction claimed: true",
-        "FinalAnswerPacket",
-        "Author prose",
         "product correctness claimed: true",
     ):
         assert forbidden not in serialized
@@ -382,7 +377,7 @@ def test_decision_surface_lives_outside_dprime_schema_module() -> None:
     assert "RunKernel-owned" in (rk_dprime.__doc__ or "")
 
 
-def test_architecture_doc_records_component_coverage_stop() -> None:
+def test_architecture_doc_records_answer_path_after_decision() -> None:
     text = Path("docs/architecture/DPRIME_ARCHITECTURE.md").read_text(
         encoding="utf-8"
     )
@@ -390,15 +385,14 @@ def test_architecture_doc_records_component_coverage_stop() -> None:
     assert "RunKernel-owned admission decision made" in text
     assert "SemanticObservation materialized/admitted" in text
     assert "ComponentCoverage bound through existing RunKernel coverage authority" in text
-    assert "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED" in text
-    for closed_surface in (
+    for consumed_surface in (
         "`SufficiencyReadiness`",
-        "`FinalAnswerPacket`",
-        "Author/answer text",
-        "product correctness",
-        "citation rendering",
+        "hardened final answer packet",
+        "Author/answer output",
+        "citation/source display",
     ):
-        assert closed_surface in text
+        assert consumed_surface in text
+    assert "product correctness remains unclaimed" in text
 
 
 def _run_product_status_with_assessment(
