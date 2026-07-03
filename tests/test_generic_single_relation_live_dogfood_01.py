@@ -451,6 +451,49 @@ def test_official_http_4xx_returns_sharp_source_survival_blocker(
     assert result.packet["evidence_ledger_admissions"] == 0
     assert result.packet["dprime_model_review_calls_attempted"] == 0
     assert result.packet["source_display_entries"] == []
+    assert result.packet["provider_calls_attempted"] == 2
+    assert result.packet["provider_calls_completed"] == 2
+    assert result.packet["provider_calls_total"] == 2
+    assert [
+        (item["provider_call_index"], item["call_role"], item["result_count"])
+        for item in result.packet["provider_results_by_call"]
+    ] == [(1, "initial", 3), (2, "governed_recovery", 3)]
+    assert result.packet["provider_results_by_call"][0]["query_text_sanitized"] == (
+        N400_QUERY
+    )
+    assert "site:www.uscis.gov" in result.packet["provider_results_by_call"][1][
+        "query_text_sanitized"
+    ]
+    assert result.packet["official_source_gateway_available"] is True
+    assert result.packet["official_source_gateway_active"] is True
+    assert result.packet["official_source_gateway_candidate_count"] == 3
+    assert result.packet["official_source_gateway_attempted_domains"] == [
+        "www.uscis.gov"
+    ]
+    assert result.packet["official_source_gateway_access_denied_count"] == 3
+    assert result.packet["official_source_gateway_readable_custody_obtained"] is False
+    assert result.packet["official_source_gateway_evidence_admitted"] is False
+    assert result.packet["official_source_gateway_answer_claimed"] is False
+    assert result.packet["official_source_gateway_source_authority_created"] is False
+    assert result.packet["official_source_gateway_source_obligation_satisfied"] is False
+    assert result.packet["official_source_gateway_citation_eligible"] is False
+    assert result.packet["governed_recovery_available"] is True
+    assert result.packet["governed_recovery_attempted"] is True
+    assert result.packet["governed_recovery_discovery_only"] is True
+    assert result.packet["governed_recovery_fetch_read_attempted"] is False
+    assert result.packet["governed_recovery_content_fetched"] is False
+    assert result.packet["governed_recovery_is_acquisition_only"] is True
+    assert result.packet["governed_recovery_created_source_authority"] is False
+    assert result.packet["governed_recovery_satisfies_source_obligation"] is False
+    assert result.packet["governed_recovery_citation_eligible"] is False
+    assert result.packet["governed_recovery_claims_correctness"] is False
+    assert result.packet["recovery_provider_calls_attempted"] == 1
+    assert result.packet["recovery_provider_calls_completed"] == 1
+    assert result.packet["recovery_provider_results_returned"] == 3
+    assert result.packet["governed_recovery_recovered_candidate_count"] == 0
+    assert result.packet["governed_recovery_next_blocker"] == (
+        "broader_source_discovery"
+    )
     assert result.packet["raw_provider_payload_retained"] is False
     assert result.packet["raw_search_response_retained"] is False
     assert result.packet["raw_source_content_retained"] is False
@@ -479,7 +522,243 @@ def test_official_http_4xx_returns_sharp_source_survival_blocker(
     assert "- Fetch/read content types: text/html=3" in formatted
     assert "- Fetch/read failure categories: HTTP_4XX=3" in formatted
     assert "- Official HTTP source-survival blocker active: true" in formatted
+    assert "- Official source gateway active: true" in formatted
+    assert "- Governed recovery attempted: true" in formatted
+    assert "- Governed recovery fetch/read attempted: false" in formatted
     assert len(fetch_urls) == 3
+
+
+def test_governed_recovery_does_not_fetch_after_cap_exhaustion(
+    tmp_path: Path,
+) -> None:
+    provider_calls: list[GenericProviderProxyRunRequest] = []
+    fetch_urls: list[str] = []
+    recovered_url = "https://www.uscis.gov/forms/current-fee-schedule"
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="governed-recovery-discovery-only-after-cap",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_sequence_proxy_runner(
+            provider_calls,
+            [
+                [
+                    _provider_result(
+                        "USCIS Form N-400 Filing Fee",
+                        "https://www.uscis.gov/forms/filing-fees",
+                        rank=1,
+                    ),
+                    _provider_result(
+                        "USCIS Application for Naturalization",
+                        "https://www.uscis.gov/n-400",
+                        rank=2,
+                    ),
+                    _provider_result(
+                        "USCIS Form N-400 Fee Calculator",
+                        "https://www.uscis.gov/feecalculator",
+                        rank=3,
+                    ),
+                ],
+                [
+                    _provider_result(
+                        "USCIS Current Fee Schedule",
+                        recovered_url,
+                        rank=1,
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_http_status_fetch_runner(fetch_urls, status_code=403),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX
+    )
+    assert provider_calls[0].query == N400_QUERY
+    assert "site:www.uscis.gov" in provider_calls[1].query
+    assert "current USCIS Form N-400 paper filing fee" in provider_calls[1].query
+    assert result.packet["fetch_read_cap_value"] == 3
+    assert result.packet["fetch_read_attempts"] == 3
+    assert result.packet["governed_recovery_attempted"] is True
+    assert result.packet["governed_recovery_fetch_read_attempted"] is False
+    assert result.packet["governed_recovery_found_candidates_but_no_fetch_read_slot_remaining"] is True
+    assert result.packet["governed_recovery_next_blocker"] == (
+        "recovery_fetch_read_budget"
+    )
+    assert result.packet["governed_recovery_recovered_candidate_count"] == 1
+    assert result.packet["governed_recovery_recovered_official_candidate_count"] == 1
+    assert result.packet["provider_calls_total"] == 2
+    assert result.packet["recovery_provider_results_returned"] == 1
+    assert result.packet["merged_candidate_count"] == 4
+    assert recovered_url not in fetch_urls
+    assert len(fetch_urls) == 3
+
+
+def test_governed_recovery_fetches_recovered_official_candidate_with_remaining_slot(
+    tmp_path: Path,
+) -> None:
+    provider_calls: list[GenericProviderProxyRunRequest] = []
+    fetch_urls: list[str] = []
+    recovered_url = "https://www.uscis.gov/forms/current-fee-schedule"
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="governed-recovery-fetches-with-slot",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_sequence_proxy_runner(
+            provider_calls,
+            [
+                [
+                    _provider_result(
+                        "USCIS Form N-400 Filing Fee",
+                        "https://www.uscis.gov/forms/filing-fees",
+                        rank=1,
+                    ),
+                    _provider_result(
+                        "USCIS Application for Naturalization",
+                        "https://www.uscis.gov/n-400",
+                        rank=2,
+                    ),
+                ],
+                [
+                    _provider_result(
+                        "USCIS Current Fee Schedule",
+                        recovered_url,
+                        rank=1,
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_first_urls_4xx_then_url_success_fetch_runner(
+            fetch_urls,
+            success_url=recovered_url,
+            text="USCIS lists the current Form N-400 paper filing fee as $760.",
+        ),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    assert result.packet["official_source_gateway_active"] is True
+    assert result.packet["official_source_gateway_access_denied_count"] == 2
+    assert result.packet["official_source_gateway_readable_custody_obtained"] is True
+    assert result.packet["official_source_gateway_evidence_admitted"] is True
+    assert result.packet["fetch_read_cap_value"] == 3
+    assert result.packet["fetch_read_attempts"] == 3
+    assert result.packet["fetch_read_completed"] == 1
+    assert result.packet["governed_recovery_attempted"] is True
+    assert result.packet["governed_recovery_discovery_only"] is False
+    assert result.packet["governed_recovery_fetch_read_attempted"] is True
+    assert result.packet["governed_recovery_content_fetched"] is True
+    assert result.packet["governed_recovery_fetch_read_slot_used"] == 3
+    assert result.packet["governed_recovery_found_candidates_but_no_fetch_read_slot_remaining"] is False
+    assert result.packet["governed_recovery_next_blocker"] is None
+    assert result.packet["provider_calls_total"] == 2
+    assert result.packet["recovery_provider_calls_attempted"] == 1
+    assert result.packet["recovery_provider_calls_completed"] == 1
+    assert result.packet["merged_candidate_count"] == 3
+    assert [
+        item["provider_call_index"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [1, 1, 2]
+    assert [
+        item["failure_category"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == ["HTTP_4XX", "HTTP_4XX", None]
+    assert fetch_urls == [
+        "https://www.uscis.gov/forms/filing-fees",
+        "https://www.uscis.gov/n-400",
+        recovered_url,
+    ]
+    assert result.packet["governed_recovery_created_source_authority"] is False
+    assert result.packet["governed_recovery_satisfies_source_obligation"] is False
+    assert result.packet["governed_recovery_citation_eligible"] is False
+    assert result.packet["governed_recovery_claims_correctness"] is False
+
+
+def test_governed_recovery_pdf_candidate_keeps_pdf_support_closed(
+    tmp_path: Path,
+) -> None:
+    provider_calls: list[GenericProviderProxyRunRequest] = []
+    fetch_urls: list[str] = []
+    recovered_pdf_url = "https://www.uscis.gov/sites/default/files/forms/n-400.pdf"
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="governed-recovery-pdf-blocker",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_sequence_proxy_runner(
+            provider_calls,
+            [
+                [
+                    _provider_result(
+                        "USCIS Form N-400 Filing Fee",
+                        "https://www.uscis.gov/forms/filing-fees",
+                        rank=1,
+                    ),
+                    _provider_result(
+                        "USCIS Application for Naturalization",
+                        "https://www.uscis.gov/n-400",
+                        rank=2,
+                    ),
+                ],
+                [
+                    _provider_result(
+                        "USCIS Form N-400 Instructions PDF",
+                        recovered_pdf_url,
+                        rank=1,
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_recovery_pdf_fetch_runner(
+            fetch_urls,
+            pdf_url=recovered_pdf_url,
+        ),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+    )
+    assert result.packet["official_source_gateway_active"] is True
+    assert result.packet["governed_recovery_attempted"] is True
+    assert result.packet["governed_recovery_fetch_read_attempted"] is True
+    assert result.packet["governed_recovery_content_fetched"] is False
+    assert result.packet["governed_recovery_next_blocker"] == "pdf_support"
+    assert result.packet["fetch_read_attempts"] == 3
+    assert result.packet["fetch_read_completed"] == 0
+    assert result.packet["fetch_read_content_type_summary"] == {
+        "application/pdf": 1,
+        "text/html": 2,
+    }
+    assert result.packet["fetch_read_failure_category_summary"] == {
+        "HTTP_4XX": 2,
+        "UNSUPPORTED_CONTENT_TYPE": 1,
+    }
+    recovery_attempt = result.packet["fetch_read_attempt_diagnostics"][-1]
+    assert recovery_attempt["provider_call_index"] == 2
+    assert recovery_attempt["content_type"] == "application/pdf"
+    assert recovery_attempt["failure_category"] == "UNSUPPORTED_CONTENT_TYPE"
+    assert result.packet["pdf_content_type_support_opened"] is False
+    assert result.packet["pdf_parsing_opened"] is False
+    assert result.packet["evidence_ledger_admissions"] == 0
+    assert fetch_urls == [
+        "https://www.uscis.gov/forms/filing-fees",
+        "https://www.uscis.gov/n-400",
+        recovered_pdf_url,
+    ]
 
 
 def test_pdf_content_type_is_diagnostic_only_unsupported_content_type(
@@ -1331,6 +1610,38 @@ def _recording_proxy_runner(
     return runner
 
 
+def _sequence_proxy_runner(
+    calls: list[GenericProviderProxyRunRequest],
+    result_batches: list[list[dict[str, Any]]],
+) -> Any:
+    def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
+        calls.append(request)
+        index = min(len(calls), len(result_batches)) - 1
+        results = result_batches[index] if index >= 0 else []
+        payload = {
+            "request_kind": "provider_proxy_search",
+            "provider": "serper",
+            "operation": "search",
+            "result_count": len(results),
+            "results": results,
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+        }
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        request.output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return GenericProviderProxyRunResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+        )
+
+    return runner
+
+
 def _fake_fetch_runner(text: str) -> Any:
     def runner(url: str) -> GenericLiveFetchReadResult:
         parsed = urlparse(url)
@@ -1406,6 +1717,37 @@ def _n400_priority_fetch_runner(fetch_urls: list[str]) -> Any:
                 content_type="application/pdf",
             )(url)
         return _http_status_fetch_runner(fetch_urls, status_code=404)(url)
+
+    return runner
+
+
+def _first_urls_4xx_then_url_success_fetch_runner(
+    fetch_urls: list[str],
+    *,
+    success_url: str,
+    text: str,
+) -> Any:
+    def runner(url: str) -> GenericLiveFetchReadResult:
+        if url == success_url:
+            return _recording_fake_fetch_runner(fetch_urls, text)(url)
+        return _http_status_fetch_runner(fetch_urls, status_code=403)(url)
+
+    return runner
+
+
+def _recovery_pdf_fetch_runner(
+    fetch_urls: list[str],
+    *,
+    pdf_url: str,
+) -> Any:
+    def runner(url: str) -> GenericLiveFetchReadResult:
+        if url == pdf_url:
+            return _http_status_fetch_runner(
+                fetch_urls,
+                status_code=200,
+                content_type="application/pdf",
+            )(url)
+        return _http_status_fetch_runner(fetch_urls, status_code=403)(url)
 
     return runner
 

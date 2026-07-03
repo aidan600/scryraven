@@ -155,7 +155,11 @@ LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
 
 MAX_LIVE_RUNS = 1
 MAX_QUERY_PLANS_CONSUMED = 1
-MAX_PROVIDER_SEARCH_CALLS = 1
+MAX_INITIAL_PROVIDER_SEARCH_CALLS = 1
+MAX_GOVERNED_RECOVERY_PROVIDER_SEARCH_CALLS = 1
+MAX_PROVIDER_SEARCH_CALLS = (
+    MAX_INITIAL_PROVIDER_SEARCH_CALLS + MAX_GOVERNED_RECOVERY_PROVIDER_SEARCH_CALLS
+)
 MAX_PROVIDER_RESULTS = 5
 MAX_FETCH_READ_ATTEMPTS = 3
 MAX_EVIDENCE_LEDGER_ADMISSIONS = 3
@@ -202,11 +206,17 @@ FETCH_READ_READABLE_CONTENT_TYPES = frozenset(
 )
 FETCH_READ_UNKNOWN = "unknown"
 FETCH_READ_CAP_EXHAUSTED = "FETCH_READ_CAP_EXHAUSTED"
+FETCH_READ_RECOVERY_SLOT_NOT_AVAILABLE = "RECOVERY_FETCH_READ_SLOT_NOT_AVAILABLE"
 FETCH_READ_STOPPED_AFTER_SUCCESS = "READABLE_CONTENT_OBTAINED"
 FETCH_READ_CANDIDATE_SELECTION_POLICY_ID = (
     "generic_single_relation_live_fetch_read_acquisition_priority_v1"
 )
 FETCH_READ_CANDIDATE_SELECTION_SCOPE = "local_fetch_read_acquisition_only"
+GOVERNED_RECOVERY_QUERY_KIND = "official_source_gateway_recovery_query_v1"
+GOVERNED_RECOVERY_PROVIDER_CALL_INDEX = 2
+GOVERNED_RECOVERY_SANITIZED_PROVIDER_PROXY_RESPONSE_NAME = (
+    "governed-recovery-sanitized-provider-proxy-response.json"
+)
 
 _CANDIDATE_PRIORITY_STOPWORDS = frozenset(
     {
@@ -565,6 +575,12 @@ def build_generic_single_relation_live_dogfood_run_output(
                 env_file_paths=_env_file_paths(env_file_paths),
             )
         )
+        counts["initial_provider_calls_attempted"] = (
+            proxy_result.provider_calls_attempted
+        )
+        counts["initial_provider_calls_completed"] = (
+            proxy_result.provider_calls_completed
+        )
         counts["provider_calls_attempted"] = proxy_result.provider_calls_attempted
         counts["provider_calls_completed"] = proxy_result.provider_calls_completed
         _enforce_caps(counts)
@@ -576,7 +592,17 @@ def build_generic_single_relation_live_dogfood_run_output(
 
         provider_payload = _load_sanitized_provider_output(proxy_result.output_path)
         results = _provider_results(provider_payload)
+        counts["initial_provider_results_returned"] = len(results)
         counts["provider_results_returned"] = len(results)
+        counts["merged_candidate_count"] = len(results)
+        counts["provider_results_by_call"] = (
+            _provider_call_result_summary(
+                call_index=1,
+                call_role="initial",
+                query_text=search_query_seed,
+                result_count=len(results),
+            ),
+        )
         _enforce_caps(counts)
         candidate_packet = _candidate_packet_from_provider_results(
             relation_plan=relation_plan,
@@ -601,13 +627,34 @@ def build_generic_single_relation_live_dogfood_run_output(
             fetch_read_runner=fetch_read_runner or fetch_public_url_once,
         )
         counts.update(fetch_counts)
+        if fetch_packet is None and _official_source_gateway_active_from_counts(
+            fetch_counts
+        ):
+            recovery_fetch_packet, recovery_counts = _attempt_governed_recovery(
+                root=root,
+                run_dir=run_dir,
+                retained_root=retained_root,
+                relation_plan=relation_plan,
+                run_id=run_id,
+                initial_provider_payload=provider_payload,
+                initial_results=results,
+                initial_search_query=search_query_seed,
+                initial_fetch_counts=fetch_counts,
+                proxy_runner=proxy_runner,
+                broker_url=broker_url,
+                private_broker_path=Path(private_broker_path),
+                env_file_paths=_env_file_paths(env_file_paths),
+                fetch_read_runner=fetch_read_runner or fetch_public_url_once,
+            )
+            counts.update(recovery_counts)
+            fetch_packet = recovery_fetch_packet
         if fetch_packet is None:
             fetch_blocker = (
-                _clean_text(fetch_counts.get("fetch_read_blocker"), limit=220)
+                _clean_text(counts.get("fetch_read_blocker"), limit=220)
                 or BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING
             )
             fetch_detail = _clean_text(
-                fetch_counts.get("fetch_read_blocker_detail"),
+                counts.get("fetch_read_blocker_detail"),
                 limit=900,
             ) or "bounded fetch/read did not produce a retained readable handoff."
             raise GenericSingleRelationLiveDogfoodRunError(
@@ -910,8 +957,9 @@ def validate_generic_single_relation_live_dogfood_packet(
         _blocked_cap("query plan consumption cap exceeded.")
     if _bounded_int(safe.get("provider_calls_attempted")) > MAX_PROVIDER_SEARCH_CALLS:
         _blocked_cap("provider/search call cap exceeded.")
-    if _bounded_int(safe.get("provider_results_returned")) > MAX_PROVIDER_RESULTS:
-        _blocked_cap("provider result cap exceeded.")
+    for item in _safe_sequence(safe.get("provider_results_by_call")):
+        if _bounded_int(_safe_mapping(item).get("result_count")) > MAX_PROVIDER_RESULTS:
+            _blocked_cap("provider results per-call cap exceeded.")
     if _bounded_int(safe.get("fetch_read_attempts")) > MAX_FETCH_READ_ATTEMPTS:
         _blocked_cap("fetch/read attempt cap exceeded.")
     if _bounded_int(safe.get("evidence_ledger_admissions")) > (
@@ -996,12 +1044,23 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         "http_source_survival_canonical_url_transformation_opened",
         "provider_routing_changed",
         "provider_query_generation_changed",
+        "official_source_gateway_answer_claimed",
+        "official_source_gateway_source_authority_created",
+        "official_source_gateway_source_obligation_satisfied",
+        "official_source_gateway_citation_eligible",
+        "governed_recovery_created_source_authority",
+        "governed_recovery_satisfies_source_obligation",
+        "governed_recovery_citation_eligible",
+        "governed_recovery_claims_correctness",
     ):
         expected = key == "candidate_diagnostics_observability_only"
         if packet.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
     for key in (
         "official_http_source_survival_blocker_available",
+        "official_source_gateway_available",
+        "governed_recovery_available",
+        "governed_recovery_is_acquisition_only",
         "http_source_survival_request_hygiene_added",
         "fetch_read_cap_preserved",
     ):
@@ -1026,6 +1085,28 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         False,
     }:
         _blocked_output_hygiene("official HTTP source survival blocker flag invalid.")
+    if packet.get("official_source_gateway_active") not in {True, False}:
+        _blocked_output_hygiene("official source gateway flag invalid.")
+    if packet.get("official_source_gateway_active") is False and packet.get(
+        "governed_recovery_attempted"
+    ) is True:
+        _blocked_output_hygiene("recovery attempted without source gateway.")
+    if packet.get("governed_recovery_attempted") not in {True, False}:
+        _blocked_output_hygiene("governed recovery attempted flag invalid.")
+    if packet.get("governed_recovery_fetch_read_attempted") not in {True, False}:
+        _blocked_output_hygiene("governed recovery fetch/read flag invalid.")
+    if (
+        packet.get("governed_recovery_found_candidates_but_no_fetch_read_slot_remaining")
+        is True
+    ):
+        if _bounded_int(packet.get("fetch_read_attempts")) != MAX_FETCH_READ_ATTEMPTS:
+            _blocked_output_hygiene("recovery no-slot flag without exhausted cap.")
+        if packet.get("governed_recovery_fetch_read_attempted") is not False:
+            _blocked_output_hygiene("recovery no-slot state fetched content.")
+    if packet.get("governed_recovery_fetch_read_attempted") is True:
+        slot = _bounded_int(packet.get("governed_recovery_fetch_read_slot_used"))
+        if not 1 <= slot <= MAX_FETCH_READ_ATTEMPTS:
+            _blocked_output_hygiene("recovery fetch/read slot invalid.")
     if (
         packet.get("official_http_source_survival_blocker_active") is True
         and packet.get("fetch_read_blocker")
@@ -1335,6 +1416,8 @@ def format_generic_single_relation_live_dogfood_output(
             "Status",
             f"- Provider calls: {packet.get('provider_calls_attempted')}/"
             f"{packet.get('provider_calls_completed')}",
+            f"- Recovery provider calls: {packet.get('recovery_provider_calls_attempted')}/"
+            f"{packet.get('recovery_provider_calls_completed')}",
             f"- Fetch/read: {packet.get('fetch_read_attempts')}/"
             f"{packet.get('fetch_read_completed')}",
             "- Fetch/read status classes: "
@@ -1345,6 +1428,18 @@ def format_generic_single_relation_live_dogfood_output(
             f"{_summary_text(packet.get('fetch_read_failure_category_summary'))}",
             "- Official HTTP source-survival blocker active: "
             f"{_bool_text(packet.get('official_http_source_survival_blocker_active'))}",
+            "- Official source gateway active: "
+            f"{_bool_text(packet.get('official_source_gateway_active'))}",
+            "- Official source gateway attempted domains: "
+            f"{_display_list(packet.get('official_source_gateway_attempted_domains'))}",
+            "- Governed recovery attempted: "
+            f"{_bool_text(packet.get('governed_recovery_attempted'))}",
+            "- Governed recovery fetch/read attempted: "
+            f"{_bool_text(packet.get('governed_recovery_fetch_read_attempted'))}",
+            "- Governed recovery query: "
+            f"{packet.get('governed_recovery_query_text_sanitized') or 'not used'}",
+            "- Governed recovery next blocker: "
+            f"{packet.get('governed_recovery_next_blocker') or 'none'}",
             f"- EvidenceLedger admissions: {packet.get('evidence_ledger_admissions')}",
             f"- D-prime relation intake: {relation_status}",
             f"- D-prime/model calls: {packet.get('dprime_model_review_calls_attempted')}/"
@@ -1487,6 +1582,8 @@ def _base_packet(
         if query_retained and plan
         else "unsupported query (not retained)"
     )
+    source_gateway = _official_source_gateway_packet_fields(counts)
+    recovery = _governed_recovery_packet_fields(counts, source_gateway=source_gateway)
     return {
         "schema_version": SCHEMA_VERSION,
         "phase_name": PHASE_NAME,
@@ -1556,11 +1653,40 @@ def _base_packet(
         ),
         "live_runs_attempted": 1 if counts.get("provider_calls_attempted", 0) else 0,
         "query_plans_consumed": counts.get("query_plans_consumed", 0),
+        "initial_provider_calls_attempted": counts.get(
+            "initial_provider_calls_attempted",
+            0,
+        ),
+        "initial_provider_calls_completed": counts.get(
+            "initial_provider_calls_completed",
+            0,
+        ),
+        "recovery_provider_calls_attempted": counts.get(
+            "recovery_provider_calls_attempted",
+            0,
+        ),
+        "recovery_provider_calls_completed": counts.get(
+            "recovery_provider_calls_completed",
+            0,
+        ),
         "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
         "provider_calls_completed": counts.get("provider_calls_completed", 0),
+        "provider_calls_total": counts.get("provider_calls_attempted", 0),
         "search_tasks_attempted": counts.get("search_tasks_attempted", 0),
         "search_tasks_completed": counts.get("search_tasks_completed", 0),
+        "initial_provider_results_returned": counts.get(
+            "initial_provider_results_returned",
+            0,
+        ),
+        "recovery_provider_results_returned": counts.get(
+            "recovery_provider_results_returned",
+            0,
+        ),
         "provider_results_returned": counts.get("provider_results_returned", 0),
+        "provider_results_by_call": list(
+            _safe_sequence(counts.get("provider_results_by_call"))
+        ),
+        "merged_candidate_count": counts.get("merged_candidate_count", 0),
         "fetch_read_attempts": counts.get("fetch_read_attempts", 0),
         "fetch_read_completed": counts.get("fetch_read_completed", 0),
         "fetch_read_blocker": _clean_text(
@@ -1597,6 +1723,7 @@ def _base_packet(
             counts.get("fetch_read_blocker")
             == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX
         ),
+        **source_gateway,
         "http_source_survival_scope": "ordinary_public_web_fetch_read_hygiene",
         "http_source_survival_request_hygiene_added": True,
         "http_source_survival_access_control_bypass_opened": False,
@@ -1612,6 +1739,7 @@ def _base_packet(
         "provider_query_generation_changed": False,
         "fetch_read_cap_preserved": True,
         "fetch_read_cap_value": MAX_FETCH_READ_ATTEMPTS,
+        **recovery,
         "candidate_diagnostics_observability_only": True,
         "candidate_diagnostics_satisfy_source_obligations": False,
         "provider_snippets_used_as_evidence": False,
@@ -1837,12 +1965,364 @@ def _retained_provider_payload_for_candidate_packet(
     }
 
 
+def _attempt_governed_recovery(
+    *,
+    root: Path,
+    run_dir: Path,
+    retained_root: Path,
+    relation_plan: Mapping[str, Any],
+    run_id: str,
+    initial_provider_payload: Mapping[str, Any],
+    initial_results: Sequence[Mapping[str, Any]],
+    initial_search_query: str,
+    initial_fetch_counts: Mapping[str, Any],
+    proxy_runner: ProviderProxyRunner,
+    broker_url: str,
+    private_broker_path: Path,
+    env_file_paths: tuple[Path, ...],
+    fetch_read_runner: FetchReadRunner,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    recovery_query = _governed_recovery_query(
+        relation_plan=relation_plan,
+        initial_fetch_counts=initial_fetch_counts,
+    )
+    recovery_output_path = (
+        run_dir / GOVERNED_RECOVERY_SANITIZED_PROVIDER_PROXY_RESPONSE_NAME
+    )
+    recovery_counts: dict[str, Any] = {
+        **_recovery_counts_base(recovery_query),
+        "governed_recovery_attempted": True,
+        "governed_recovery_reason": (
+            "official-source gateway active; one acquisition-only recovery "
+            "discovery search was attempted."
+        ),
+        "governed_recovery_discovery_only": True,
+        "fetch_read_blocker": initial_fetch_counts.get("fetch_read_blocker"),
+        "fetch_read_blocker_detail": initial_fetch_counts.get(
+            "fetch_read_blocker_detail"
+        ),
+        "fetch_read_attempts": initial_fetch_counts.get("fetch_read_attempts", 0),
+        "fetch_read_completed": initial_fetch_counts.get("fetch_read_completed", 0),
+        "fetch_read_status_classes": tuple(
+            _safe_sequence(initial_fetch_counts.get("fetch_read_status_classes"))
+        ),
+        "fetch_read_content_types": tuple(
+            _safe_sequence(initial_fetch_counts.get("fetch_read_content_types"))
+        ),
+        "fetch_read_failure_categories": tuple(
+            _safe_sequence(initial_fetch_counts.get("fetch_read_failure_categories"))
+        ),
+        "fetch_read_candidate_diagnostics": tuple(
+            _safe_sequence(initial_fetch_counts.get("fetch_read_candidate_diagnostics"))
+        ),
+        "fetch_read_attempt_diagnostics": tuple(
+            _safe_sequence(initial_fetch_counts.get("fetch_read_attempt_diagnostics"))
+        ),
+    }
+    proxy_result = proxy_runner(
+        GenericProviderProxyRunRequest(
+            repo_root=root,
+            output_path=recovery_output_path,
+            query=recovery_query["query_text"],
+            broker_url=broker_url,
+            private_broker_path=private_broker_path,
+            env_file_paths=env_file_paths,
+        )
+    )
+    recovery_counts["recovery_provider_calls_attempted"] = (
+        proxy_result.provider_calls_attempted
+    )
+    recovery_counts["recovery_provider_calls_completed"] = (
+        proxy_result.provider_calls_completed
+    )
+    recovery_counts["provider_calls_attempted"] = (
+        MAX_INITIAL_PROVIDER_SEARCH_CALLS + proxy_result.provider_calls_attempted
+    )
+    recovery_counts["provider_calls_completed"] = (
+        MAX_INITIAL_PROVIDER_SEARCH_CALLS + proxy_result.provider_calls_completed
+    )
+    if proxy_result.return_code != 0:
+        recovery_counts["governed_recovery_next_blocker"] = (
+            "recovery_provider_discovery"
+        )
+        recovery_counts["fetch_read_blocker_detail"] = (
+            f"{initial_fetch_counts.get('fetch_read_blocker_detail')} Governed "
+            "recovery discovery provider call did not complete; no recovered "
+            "content was fetched."
+        )
+        return None, recovery_counts
+
+    recovery_payload = _load_sanitized_provider_output(proxy_result.output_path)
+    recovery_results = _provider_results(
+        recovery_payload,
+        provider_call_index=GOVERNED_RECOVERY_PROVIDER_CALL_INDEX,
+    )
+    merged = _merge_initial_and_recovery_results(
+        initial_results=initial_results,
+        recovery_results=recovery_results,
+    )
+    merged_results = merged["merged_results"]
+    new_recovery_results = merged["new_recovery_results"]
+    recovery_counts.update(
+        {
+            "recovery_provider_results_returned": len(recovery_results),
+            "provider_results_returned": len(merged_results),
+            "merged_candidate_count": len(merged_results),
+            "governed_recovery_recovered_candidate_count": len(
+                new_recovery_results
+            ),
+            "recovery_dedupe_diagnostics": tuple(merged["dedupe_diagnostics"]),
+            "provider_results_by_call": (
+                _provider_call_result_summary(
+                    call_index=1,
+                    call_role="initial",
+                    query_text=initial_search_query,
+                    result_count=len(initial_results),
+                ),
+                _provider_call_result_summary(
+                    call_index=GOVERNED_RECOVERY_PROVIDER_CALL_INDEX,
+                    call_role="governed_recovery",
+                    query_text=recovery_query["query_text"],
+                    result_count=len(recovery_results),
+                ),
+            ),
+        }
+    )
+    candidate_packet = _candidate_packet_from_provider_results(
+        relation_plan=relation_plan,
+        run_id=run_id,
+        results=merged_results,
+        provider_calls_attempted=recovery_counts["provider_calls_attempted"],
+        provider_calls_completed=recovery_counts["provider_calls_completed"],
+        search_query_seed=initial_search_query,
+    )
+    _write_search_artifacts(
+        retained_root=retained_root,
+        provider_payload=_merged_provider_payload(
+            initial_provider_payload=initial_provider_payload,
+            recovery_payload=recovery_payload,
+            merged_results=merged_results,
+        ),
+        candidate_packet=candidate_packet,
+    )
+    recovered_candidate_ids = _recovered_official_candidate_ids(
+        new_recovery_results,
+        relation_plan=relation_plan,
+        run_id=run_id,
+    )
+    recovery_counts["governed_recovery_recovered_official_candidate_count"] = len(
+        recovered_candidate_ids
+    )
+    remaining_fetch_slots = MAX_FETCH_READ_ATTEMPTS - _bounded_int(
+        initial_fetch_counts.get("fetch_read_attempts")
+    )
+    if not recovered_candidate_ids:
+        recovery_counts["governed_recovery_next_blocker"] = (
+            "broader_source_discovery"
+        )
+        recovery_counts["fetch_read_blocker_detail"] = (
+            f"{initial_fetch_counts.get('fetch_read_blocker_detail')} Governed "
+            "recovery discovery found no new official/source-of-record-looking "
+            "public-web candidate; no recovered content was fetched."
+        )
+        return None, recovery_counts
+    if remaining_fetch_slots <= 0:
+        recovery_counts.update(
+            {
+                "governed_recovery_found_candidates_but_no_fetch_read_slot_remaining": (
+                    True
+                ),
+                "governed_recovery_next_blocker": "recovery_fetch_read_budget",
+                "fetch_read_blocker_detail": (
+                    f"{initial_fetch_counts.get('fetch_read_blocker_detail')} "
+                    "Governed recovery discovery found recovered "
+                    "official/source-of-record-looking candidate(s), but the "
+                    f"shared fetch/read cap of {MAX_FETCH_READ_ATTEMPTS} was "
+                    "already exhausted; recovered content was not fetched."
+                ),
+            }
+        )
+        return None, recovery_counts
+
+    recovery_fetch_packet, recovery_fetch_counts = _write_fetch_read_artifacts(
+        retained_root=retained_root,
+        relation_plan=relation_plan,
+        provider_results=merged_results,
+        fetch_read_runner=fetch_read_runner,
+        initial_fetch_counts=initial_fetch_counts,
+        candidate_provider_call_index=GOVERNED_RECOVERY_PROVIDER_CALL_INDEX,
+        candidate_ids_to_attempt=recovered_candidate_ids,
+    )
+    recovery_counts.update(recovery_fetch_counts)
+    recovery_counts["governed_recovery_fetch_read_attempted"] = (
+        _bounded_int(recovery_fetch_counts.get("fetch_read_attempts"))
+        > _bounded_int(initial_fetch_counts.get("fetch_read_attempts"))
+    )
+    recovery_counts["governed_recovery_discovery_only"] = not recovery_counts[
+        "governed_recovery_fetch_read_attempted"
+    ]
+    recovery_counts["governed_recovery_fetch_read_slot_used"] = (
+        _bounded_int(recovery_fetch_counts.get("fetch_read_attempts"))
+        if recovery_counts["governed_recovery_fetch_read_attempted"]
+        else None
+    )
+    recovery_counts["governed_recovery_next_blocker"] = (
+        _next_blocker_after_recovery_fetch(recovery_fetch_counts)
+    )
+    return recovery_fetch_packet, recovery_counts
+
+
+def _recovery_counts_base(query: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "governed_recovery_available": True,
+        "governed_recovery_attempted": False,
+        "governed_recovery_reason": (
+            "not attempted because the official-source gateway did not activate."
+        ),
+        "governed_recovery_query_id": query.get("query_id"),
+        "governed_recovery_query_text_sanitized": query.get("query_text"),
+        "governed_recovery_query_kind": GOVERNED_RECOVERY_QUERY_KIND,
+        "governed_recovery_is_acquisition_only": True,
+        "governed_recovery_created_source_authority": False,
+        "governed_recovery_satisfies_source_obligation": False,
+        "governed_recovery_citation_eligible": False,
+        "governed_recovery_claims_correctness": False,
+        "governed_recovery_discovery_only": False,
+        "governed_recovery_fetch_read_attempted": False,
+        "governed_recovery_fetch_read_slot_used": None,
+        "governed_recovery_found_candidates_but_no_fetch_read_slot_remaining": False,
+        "governed_recovery_next_blocker": None,
+        "recovery_provider_calls_attempted": 0,
+        "recovery_provider_calls_completed": 0,
+        "recovery_provider_results_returned": 0,
+        "governed_recovery_recovered_candidate_count": 0,
+        "governed_recovery_recovered_official_candidate_count": 0,
+        "recovery_dedupe_diagnostics": (),
+    }
+
+
+def _governed_recovery_query(
+    *,
+    relation_plan: Mapping[str, Any],
+    initial_fetch_counts: Mapping[str, Any],
+) -> dict[str, str]:
+    domains = _official_source_gateway_attempted_domains(initial_fetch_counts)
+    domain_scope = " OR ".join(f"site:{domain}" for domain in domains[:3])
+    parts = [
+        _clean_text(relation_plan.get("source_obligation_text"), limit=180),
+        domain_scope,
+        _clean_text(relation_plan.get("component_text"), limit=160),
+    ]
+    query_text = _clean_text(
+        " ".join(part for part in parts if part),
+        limit=220,
+    ) or _search_query_seed(relation_plan)
+    query_id = f"governed-recovery-query:{_digest_json({'query': query_text})[:20]}"
+    return {"query_id": query_id, "query_text": query_text}
+
+
+def _merge_initial_and_recovery_results(
+    *,
+    initial_results: Sequence[Mapping[str, Any]],
+    recovery_results: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    merged = [dict(_safe_mapping(item)) for item in initial_results]
+    seen_urls = {
+        (_clean_text(item.get("url"), limit=700) or "").casefold()
+        for item in merged
+        if _clean_text(item.get("url"), limit=700)
+    }
+    new_recovery_results: list[dict[str, Any]] = []
+    dedupe_diagnostics: list[dict[str, Any]] = []
+    for result in recovery_results:
+        safe = dict(_safe_mapping(result))
+        url = (_clean_text(safe.get("url"), limit=700) or "").casefold()
+        if url and url in seen_urls:
+            dedupe_diagnostics.append(
+                {
+                    "provider_call_index": GOVERNED_RECOVERY_PROVIDER_CALL_INDEX,
+                    "result_rank": _bounded_int(safe.get("result_rank")),
+                    "url": _clean_text(safe.get("url"), limit=700),
+                    "dedupe_reason": "duplicate_initial_url",
+                    "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+                }
+            )
+            continue
+        if url:
+            seen_urls.add(url)
+        new_recovery_results.append(safe)
+        merged.append(safe)
+    return {
+        "merged_results": merged,
+        "new_recovery_results": new_recovery_results,
+        "dedupe_diagnostics": dedupe_diagnostics,
+    }
+
+
+def _merged_provider_payload(
+    *,
+    initial_provider_payload: Mapping[str, Any],
+    recovery_payload: Mapping[str, Any],
+    merged_results: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "request_kind": "provider_proxy_search_merged_governed_recovery",
+        "provider": initial_provider_payload.get("provider") or DEFAULT_PROVIDER,
+        "operation": recovery_payload.get("operation") or DEFAULT_OPERATION,
+        "result_count": len(merged_results),
+        "results": [dict(_safe_mapping(item)) for item in merged_results],
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+
+
+def _recovered_official_candidate_ids(
+    recovery_results: Sequence[Mapping[str, Any]],
+    *,
+    relation_plan: Mapping[str, Any],
+    run_id: str,
+) -> set[str]:
+    diagnostics = _candidate_diagnostics_from_provider_results(
+        recovery_results,
+        relation_plan=relation_plan,
+        run_id=run_id,
+    )
+    return {
+        str(diagnostic["candidate_id"])
+        for diagnostic in diagnostics
+        if diagnostic.get("url_valid") is True
+        and diagnostic.get("official_or_source_record_looking_http_candidate") is True
+    }
+
+
+def _provider_call_result_summary(
+    *,
+    call_index: int,
+    call_role: str,
+    query_text: str,
+    result_count: int,
+) -> dict[str, Any]:
+    return {
+        "provider_call_index": call_index,
+        "call_role": call_role,
+        "provider": DEFAULT_PROVIDER,
+        "operation": DEFAULT_OPERATION,
+        "result_count": result_count,
+        "query_text_sanitized": _clean_text(query_text, limit=220),
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+
+
 def _write_fetch_read_artifacts(
     *,
     retained_root: Path,
     relation_plan: Mapping[str, Any],
     provider_results: Sequence[Mapping[str, Any]],
     fetch_read_runner: FetchReadRunner,
+    initial_fetch_counts: Mapping[str, Any] | None = None,
+    candidate_provider_call_index: int | None = None,
+    candidate_ids_to_attempt: set[str] | None = None,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     search_dir = retained_root / SEARCH_ARTIFACT_DIR
     fetch_dir = retained_root / FETCH_READ_ARTIFACT_DIR
@@ -1854,10 +2334,39 @@ def _write_fetch_read_artifacts(
         relation_plan=relation_plan,
         run_id=str(candidate_packet["run_id"]),
     )
+    if initial_fetch_counts:
+        _seed_existing_candidate_diagnostics(
+            candidate_diagnostics,
+            _safe_sequence(initial_fetch_counts.get("fetch_read_candidate_diagnostics")),
+        )
     candidates = _fetch_candidate_records(candidate_packet, relation_plan=relation_plan)
+    if candidate_provider_call_index is not None:
+        candidates = [
+            candidate
+            for candidate in candidates
+            if _bounded_int(candidate.get("provider_call_index"))
+            == candidate_provider_call_index
+        ]
+    if candidate_ids_to_attempt is not None:
+        candidates = [
+            candidate
+            for candidate in candidates
+            if _clean_text(candidate.get("candidate_id"), limit=320)
+            in candidate_ids_to_attempt
+        ]
     if not candidates:
+        existing_attempts = _bounded_int(
+            _safe_mapping(initial_fetch_counts).get("fetch_read_attempts")
+        )
+        existing_attempt_diagnostics = tuple(
+            _safe_sequence(
+                _safe_mapping(initial_fetch_counts).get(
+                    "fetch_read_attempt_diagnostics"
+                )
+            )
+        )
         return None, {
-            "fetch_read_attempts": 0,
+            "fetch_read_attempts": existing_attempts,
             "fetch_read_completed": 0,
             "fetch_read_blocker": (
                 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING
@@ -1866,24 +2375,46 @@ def _write_fetch_read_artifacts(
                 "no provider result candidate exposed a usable http(s) URL "
                 "for bounded fetch/read."
             ),
-            "fetch_read_status_classes": (),
-            "fetch_read_content_types": (),
+            "fetch_read_status_classes": tuple(
+                _attempt_status_classes(existing_attempt_diagnostics)
+            ),
+            "fetch_read_content_types": tuple(
+                _attempt_content_types(existing_attempt_diagnostics)
+            ),
             "fetch_read_failure_categories": tuple(
                 _candidate_failure_categories(candidate_diagnostics)
+                + _attempt_failure_categories(existing_attempt_diagnostics)
             ),
             "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
-            "fetch_read_attempt_diagnostics": (),
+            "fetch_read_attempt_diagnostics": existing_attempt_diagnostics,
         }
-    fetch_attempts = 0
+    fetch_attempts = _bounded_int(
+        _safe_mapping(initial_fetch_counts).get("fetch_read_attempts")
+    )
     last_error: GenericSingleRelationLiveDogfoodRunError | None = None
-    attempt_diagnostics: list[dict[str, Any]] = []
+    attempt_diagnostics: list[dict[str, Any]] = [
+        _safe_mapping(item)
+        for item in _safe_sequence(
+            _safe_mapping(initial_fetch_counts).get("fetch_read_attempt_diagnostics")
+        )
+    ]
     for candidate in candidates:
         if fetch_attempts >= MAX_FETCH_READ_ATTEMPTS:
             _mark_candidate_skipped(
                 candidate_diagnostics,
                 candidate_id=str(candidate["candidate_id"]),
-                skipped_reason=FETCH_READ_CAP_EXHAUSTED,
+                skipped_reason=(
+                    FETCH_READ_RECOVERY_SLOT_NOT_AVAILABLE
+                    if candidate_provider_call_index
+                    == GOVERNED_RECOVERY_PROVIDER_CALL_INDEX
+                    else FETCH_READ_CAP_EXHAUSTED
+                ),
             )
+            continue
+        if _candidate_already_attempted(
+            candidate_diagnostics,
+            candidate_id=str(candidate["candidate_id"]),
+        ):
             continue
         fetch_attempts += 1
         fetch_result: GenericLiveFetchReadResult | None = None
@@ -2368,6 +2899,10 @@ def _fetch_read_attempt_diagnostic(
             fetch_result=fetch_result,
             error=error,
         ),
+        "provider_call_index": _bounded_int(
+            candidate.get("provider_call_index"),
+            default=1,
+        ),
         "provider_rank": _bounded_int(candidate.get("result_rank"), default=0),
         "result_rank": _bounded_int(candidate.get("result_rank"), default=0),
         "fetch_read_priority_rank": _bounded_int(
@@ -2438,6 +2973,50 @@ def _apply_attempt_diagnostic(
         )
         diagnostic["failure_category"] = attempt_diagnostic.get("failure_category")
         return
+
+
+def _seed_existing_candidate_diagnostics(
+    candidate_diagnostics: list[dict[str, Any]],
+    existing_diagnostics: Sequence[Any],
+) -> None:
+    by_id = {
+        _clean_text(_safe_mapping(item).get("candidate_id"), limit=320): _safe_mapping(
+            item
+        )
+        for item in existing_diagnostics
+        if isinstance(item, Mapping)
+    }
+    for diagnostic in candidate_diagnostics:
+        existing = by_id.get(_clean_text(diagnostic.get("candidate_id"), limit=320))
+        if not existing:
+            continue
+        for key in (
+            "selected_for_fetch_read",
+            "attempted",
+            "skipped_reason",
+            "http_status_class",
+            "content_type",
+            "readable_content_type",
+            "readable_text_obtained",
+            "final_url",
+            "final_domain",
+            "http_status_code",
+            "redirect_count",
+            "redirect_chain_digest",
+            "failure_category",
+        ):
+            diagnostic[key] = existing.get(key)
+
+
+def _candidate_already_attempted(
+    candidate_diagnostics: Sequence[Mapping[str, Any]],
+    *,
+    candidate_id: str,
+) -> bool:
+    for diagnostic in candidate_diagnostics:
+        if diagnostic.get("candidate_id") == candidate_id:
+            return diagnostic.get("attempted") is True
+    return False
 
 
 def _mark_candidate_skipped(
@@ -2683,6 +3262,186 @@ def _attempt_failure_categories(
         if category:
             categories.append(_fetch_read_failure_category(category))
     return categories
+
+
+def _official_source_gateway_active_from_counts(counts: Mapping[str, Any]) -> bool:
+    attempts = [
+        _safe_mapping(item)
+        for item in _safe_sequence(counts.get("fetch_read_attempt_diagnostics"))
+        if _bounded_int(_safe_mapping(item).get("provider_call_index"))
+        != GOVERNED_RECOVERY_PROVIDER_CALL_INDEX
+    ]
+    return bool(attempts) and all(
+        item.get("failure_category") == FETCH_READ_FAILURE_HTTP_4XX
+        and _official_source_survival_attempt(item)
+        for item in attempts
+    )
+
+
+def _official_source_gateway_packet_fields(
+    counts: Mapping[str, Any],
+) -> dict[str, Any]:
+    attempts = [
+        _safe_mapping(item)
+        for item in _safe_sequence(counts.get("fetch_read_attempt_diagnostics"))
+        if _bounded_int(_safe_mapping(item).get("provider_call_index"))
+        != GOVERNED_RECOVERY_PROVIDER_CALL_INDEX
+    ]
+    candidates = [
+        _safe_mapping(item)
+        for item in _safe_sequence(counts.get("fetch_read_candidate_diagnostics"))
+    ]
+    active = _official_source_gateway_active_from_counts(counts)
+    attempted_domains = _official_source_gateway_attempted_domains(counts)
+    access_denied_count = sum(
+        1
+        for item in attempts
+        if item.get("failure_category") == FETCH_READ_FAILURE_HTTP_4XX
+        and _official_source_survival_attempt(item)
+    )
+    candidate_count = sum(
+        1
+        for item in candidates
+        if item.get("official_or_source_record_looking_http_candidate") is True
+    )
+    return {
+        "official_source_gateway_available": True,
+        "official_source_gateway_active": active,
+        "official_source_gateway_reason": (
+            "selected official/source-of-record-looking public-web candidates "
+            "were access-denied before readable source custody."
+            if active
+            else "official/source-of-record access-denied gateway not active."
+        ),
+        "official_source_gateway_candidate_count": candidate_count,
+        "official_source_gateway_attempted_domains": attempted_domains,
+        "official_source_gateway_access_denied_count": access_denied_count,
+        "official_source_gateway_readable_custody_obtained": (
+            _bounded_int(counts.get("fetch_read_completed")) > 0
+        ),
+        "official_source_gateway_evidence_admitted": (
+            _bounded_int(counts.get("evidence_ledger_admissions")) > 0
+        ),
+        "official_source_gateway_answer_claimed": False,
+        "official_source_gateway_source_authority_created": False,
+        "official_source_gateway_source_obligation_satisfied": False,
+        "official_source_gateway_citation_eligible": False,
+        "official_source_gateway_next_blocker": counts.get(
+            "governed_recovery_next_blocker"
+        )
+        or ("governed_recovery_discovery" if active else None),
+    }
+
+
+def _governed_recovery_packet_fields(
+    counts: Mapping[str, Any],
+    *,
+    source_gateway: Mapping[str, Any],
+) -> dict[str, Any]:
+    attempted = counts.get("governed_recovery_attempted") is True
+    recovery_fetch_attempted = (
+        counts.get("governed_recovery_fetch_read_attempted") is True
+    )
+    return {
+        "governed_recovery_available": True,
+        "governed_recovery_attempted": attempted,
+        "governed_recovery_reason": _clean_text(
+            counts.get("governed_recovery_reason"),
+            limit=500,
+        )
+        or (
+            "not attempted because the official-source gateway did not activate."
+        ),
+        "governed_recovery_query_id": _clean_text(
+            counts.get("governed_recovery_query_id"),
+            limit=180,
+        ),
+        "governed_recovery_query_text_sanitized": _clean_text(
+            counts.get("governed_recovery_query_text_sanitized"),
+            limit=220,
+        ),
+        "governed_recovery_query_kind": (
+            counts.get("governed_recovery_query_kind")
+            or GOVERNED_RECOVERY_QUERY_KIND
+        ),
+        "governed_recovery_is_acquisition_only": True,
+        "governed_recovery_created_source_authority": False,
+        "governed_recovery_satisfies_source_obligation": False,
+        "governed_recovery_citation_eligible": False,
+        "governed_recovery_claims_correctness": False,
+        "governed_recovery_discovery_only": (
+            attempted and not recovery_fetch_attempted
+        ),
+        "governed_recovery_fetch_read_attempted": recovery_fetch_attempted,
+        "governed_recovery_content_fetched": (
+            recovery_fetch_attempted
+            and _bounded_int(counts.get("fetch_read_completed")) > 0
+        ),
+        "governed_recovery_fetch_read_slot_used": counts.get(
+            "governed_recovery_fetch_read_slot_used"
+        ),
+        "governed_recovery_found_candidates_but_no_fetch_read_slot_remaining": (
+            counts.get(
+                "governed_recovery_found_candidates_but_no_fetch_read_slot_remaining"
+            )
+            is True
+        ),
+        "governed_recovery_next_blocker": counts.get("governed_recovery_next_blocker")
+        or (
+            "governed_recovery_not_attempted"
+            if source_gateway.get("official_source_gateway_active") is True
+            and not attempted
+            else None
+        ),
+        "governed_recovery_recovered_candidate_count": _bounded_int(
+            counts.get("governed_recovery_recovered_candidate_count")
+        ),
+        "governed_recovery_recovered_official_candidate_count": _bounded_int(
+            counts.get("governed_recovery_recovered_official_candidate_count")
+        ),
+        "recovery_dedupe_diagnostics": list(
+            _safe_sequence(counts.get("recovery_dedupe_diagnostics"))
+        ),
+    }
+
+
+def _official_source_gateway_attempted_domains(
+    counts: Mapping[str, Any],
+) -> list[str]:
+    domains: list[str] = []
+    seen: set[str] = set()
+    for item in _safe_sequence(counts.get("fetch_read_attempt_diagnostics")):
+        attempt = _safe_mapping(item)
+        if (
+            _bounded_int(attempt.get("provider_call_index"))
+            == GOVERNED_RECOVERY_PROVIDER_CALL_INDEX
+        ):
+            continue
+        if not _official_source_survival_attempt(attempt):
+            continue
+        domain = _clean_domain(attempt.get("attempted_domain")) or _clean_domain(
+            attempt.get("final_domain")
+        )
+        if domain and domain not in seen:
+            seen.add(domain)
+            domains.append(domain)
+    return domains
+
+
+def _next_blocker_after_recovery_fetch(counts: Mapping[str, Any]) -> str | None:
+    if _bounded_int(counts.get("fetch_read_completed")) > 0:
+        return None
+    recovery_attempts = [
+        _safe_mapping(item)
+        for item in _safe_sequence(counts.get("fetch_read_attempt_diagnostics"))
+        if _bounded_int(_safe_mapping(item).get("provider_call_index"))
+        == GOVERNED_RECOVERY_PROVIDER_CALL_INDEX
+    ]
+    if any(item.get("content_type") == "application/pdf" for item in recovery_attempts):
+        return "pdf_support"
+    if recovery_attempts:
+        return "broader_source_discovery"
+    return "recovery_fetch_read_budget"
 
 
 def _candidate_failure_categories(
@@ -3115,9 +3874,21 @@ def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _provider_results(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _provider_results(
+    payload: Mapping[str, Any],
+    *,
+    provider_call_index: int | None = None,
+) -> list[dict[str, Any]]:
     return [
-        {**dict(item), "provider": payload.get("provider") or DEFAULT_PROVIDER}
+        {
+            **dict(item),
+            "provider": payload.get("provider") or DEFAULT_PROVIDER,
+            "provider_call_index": (
+                provider_call_index
+                if provider_call_index is not None
+                else _bounded_int(item.get("provider_call_index"), default=1)
+            ),
+        }
         for item in payload.get("results", [])
         if isinstance(item, Mapping)
     ]
@@ -3293,7 +4064,6 @@ def _enforce_caps(counts: Mapping[str, int]) -> None:
     checks = (
         ("query_plans_consumed", MAX_QUERY_PLANS_CONSUMED, "query plan"),
         ("provider_calls_attempted", MAX_PROVIDER_SEARCH_CALLS, "provider/search"),
-        ("provider_results_returned", MAX_PROVIDER_RESULTS, "provider results"),
         ("fetch_read_attempts", MAX_FETCH_READ_ATTEMPTS, "fetch/read"),
         (
             "evidence_ledger_admissions",
@@ -3319,14 +4089,26 @@ def _enforce_caps(counts: Mapping[str, int]) -> None:
                 f"{label} cap exceeded.",
                 caps_exhausted=True,
             )
+    for item in _safe_sequence(counts.get("provider_results_by_call")):
+        summary = _safe_mapping(item)
+        if _bounded_int(summary.get("result_count")) > MAX_PROVIDER_RESULTS:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED,
+                "provider results per-call cap exceeded.",
+                caps_exhausted=True,
+            )
 
 
 def _caps_ref() -> dict[str, int]:
     return {
         "max_live_runs": MAX_LIVE_RUNS,
         "max_query_plans_consumed": MAX_QUERY_PLANS_CONSUMED,
+        "max_initial_provider_search_calls": MAX_INITIAL_PROVIDER_SEARCH_CALLS,
+        "max_governed_recovery_provider_search_calls": (
+            MAX_GOVERNED_RECOVERY_PROVIDER_SEARCH_CALLS
+        ),
         "max_provider_search_calls": MAX_PROVIDER_SEARCH_CALLS,
-        "max_provider_results": MAX_PROVIDER_RESULTS,
+        "max_provider_results_per_call": MAX_PROVIDER_RESULTS,
         "max_fetch_read_attempts": MAX_FETCH_READ_ATTEMPTS,
         "max_evidence_ledger_admissions": MAX_EVIDENCE_LEDGER_ADMISSIONS,
         "max_dprime_model_review_calls": MAX_DPRIME_MODEL_REVIEW_CALLS,
@@ -3387,11 +4169,19 @@ def _pytest_or_ci_guard(environ: Mapping[str, str] | None) -> bool:
 def _empty_counts() -> dict[str, Any]:
     return {
         "query_plans_consumed": 0,
+        "initial_provider_calls_attempted": 0,
+        "initial_provider_calls_completed": 0,
         "provider_calls_attempted": 0,
         "provider_calls_completed": 0,
+        "recovery_provider_calls_attempted": 0,
+        "recovery_provider_calls_completed": 0,
         "search_tasks_attempted": 0,
         "search_tasks_completed": 0,
+        "initial_provider_results_returned": 0,
+        "recovery_provider_results_returned": 0,
         "provider_results_returned": 0,
+        "provider_results_by_call": (),
+        "merged_candidate_count": 0,
         "fetch_read_attempts": 0,
         "fetch_read_completed": 0,
         "fetch_read_blocker": None,
@@ -3406,6 +4196,27 @@ def _empty_counts() -> dict[str, Any]:
         "dprime_model_review_calls_attempted": 0,
         "dprime_model_review_calls_completed": 0,
         "followup_loop_count": 0,
+        "governed_recovery_available": True,
+        "governed_recovery_attempted": False,
+        "governed_recovery_reason": (
+            "not attempted because the official-source gateway did not activate."
+        ),
+        "governed_recovery_query_id": None,
+        "governed_recovery_query_text_sanitized": None,
+        "governed_recovery_query_kind": GOVERNED_RECOVERY_QUERY_KIND,
+        "governed_recovery_is_acquisition_only": True,
+        "governed_recovery_created_source_authority": False,
+        "governed_recovery_satisfies_source_obligation": False,
+        "governed_recovery_citation_eligible": False,
+        "governed_recovery_claims_correctness": False,
+        "governed_recovery_discovery_only": False,
+        "governed_recovery_fetch_read_attempted": False,
+        "governed_recovery_fetch_read_slot_used": None,
+        "governed_recovery_found_candidates_but_no_fetch_read_slot_remaining": False,
+        "governed_recovery_next_blocker": None,
+        "governed_recovery_recovered_candidate_count": 0,
+        "governed_recovery_recovered_official_candidate_count": 0,
+        "recovery_dedupe_diagnostics": (),
     }
 
 
@@ -3859,6 +4670,15 @@ def _summary_text(value: Any) -> str:
     if not summary:
         return "none"
     return ", ".join(f"{key}={summary[key]}" for key in sorted(summary))
+
+
+def _display_list(value: Any) -> str:
+    items = [
+        _clean_text(item, limit=260)
+        for item in _safe_sequence(value)
+        if _clean_text(item, limit=260)
+    ]
+    return ", ".join(str(item) for item in items) if items else "none"
 
 
 def _normalize_key(key: Any) -> str:
