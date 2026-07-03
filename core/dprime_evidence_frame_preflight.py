@@ -21,10 +21,6 @@ from core.fetch_read_content_reference import (
 )
 
 DPRIME_PREFLIGHT_PHASE = "DPRIME-PREFLIGHT-01"
-SUPPORTED_RETAINED_COMPONENT_ID = "component:adult-us-passport-book-renewal-fee"
-SUPPORTED_RETAINED_SOURCE_OBLIGATION_ID = (
-    "obligation:official-current-passport-fee-source"
-)
 
 _PACKET_REFERENCE_FALSE_FLAGS = frozenset(
     {
@@ -89,6 +85,7 @@ def build_evidence_frame_preflight(
     citation_source_obligation_readiness_ref: Mapping[str, Any],
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
+    relation_intake_ref: Mapping[str, Any] | None = None,
 ) -> EvidenceFramePreflight:
     """Return deterministic D-prime preflight status for one retained lane."""
 
@@ -100,6 +97,7 @@ def build_evidence_frame_preflight(
     readiness = _safe_mapping(citation_source_obligation_readiness_ref)
     component = _safe_mapping(component_ref)
     source_obligation = _safe_mapping(source_obligation_ref)
+    relation_intake = _safe_mapping(relation_intake_ref)
 
     reference = _matching_readable_reference(
         packet,
@@ -116,6 +114,7 @@ def build_evidence_frame_preflight(
         readiness=readiness,
         component=component,
         source_obligation=source_obligation,
+        relation_intake=relation_intake,
     )
     if structural_blocker:
         return _failed(structural_blocker)
@@ -149,6 +148,7 @@ def build_evidence_frame_preflight(
             "source_obligation_lane_ref": _source_obligation_lane_ref(
                 source_obligation
             ),
+            "relation_intake_ref": _relation_intake_status_ref(relation_intake),
             "selector_ref": _selector_ref(validated_reference),
             "model_browse_allowed": False,
             "downstream_surfaces_closed": True,
@@ -186,6 +186,7 @@ def _first_structural_blocker(
     readiness: Mapping[str, Any],
     component: Mapping[str, Any],
     source_obligation: Mapping[str, Any],
+    relation_intake: Mapping[str, Any],
 ) -> str | None:
     for context, value, flags in (
         ("fetch/read packet", packet, _PACKET_REFERENCE_FALSE_FLAGS),
@@ -220,8 +221,8 @@ def _first_structural_blocker(
         ):
             return f"content reference {key} does not match custody/admission ref"
 
-    if reference.get("component_id") != SUPPORTED_RETAINED_COMPONENT_ID:
-        return "retained content component does not match the passport-fee lane"
+    if not _clean_text(reference.get("component_id"), limit=260):
+        return "retained content component is missing"
     if component.get("component_id") != reference.get("component_id"):
         return "component ref does not match retained content component"
     if component.get("component_coverage_bound") is not False:
@@ -235,13 +236,20 @@ def _first_structural_blocker(
         source_obligation.get("source_obligation_candidate_ids"),
         limit=260,
     )
-    expected_source_ids = (SUPPORTED_RETAINED_SOURCE_OBLIGATION_ID,)
-    if reference_source_ids != expected_source_ids:
-        return "retained content source-obligation lane does not match"
+    if not reference_source_ids:
+        return "retained content source-obligation lane is missing"
     if readiness_source_ids != reference_source_ids:
         return "source-obligation ref does not match retained content lane"
     if source_obligation.get("satisfaction_claimed") is not False:
         return "closed downstream surface flag not false: satisfaction_claimed"
+    relation_blocker = _relation_intake_blocker(
+        relation_intake=relation_intake,
+        component=component,
+        source_obligation=source_obligation,
+        reference=reference,
+    )
+    if relation_blocker:
+        return relation_blocker
 
     if readiness.get("posture") != "not_yet_semantically_supported":
         return "source-obligation readiness posture is not pre-support"
@@ -397,6 +405,68 @@ def _source_obligation_lane_ref(source_obligation: Mapping[str, Any]) -> dict[st
         ),
         "lineage_only": True,
     }
+
+
+def _relation_intake_blocker(
+    *,
+    relation_intake: Mapping[str, Any],
+    component: Mapping[str, Any],
+    source_obligation: Mapping[str, Any],
+    reference: Mapping[str, Any],
+) -> str | None:
+    if not relation_intake:
+        return None
+    if relation_intake.get("single_lane_only") is not True:
+        return "generic D-prime relation intake is not single-lane"
+    component_id = _clean_text(relation_intake.get("component_id"), limit=260)
+    if component_id and component_id != component.get("component_id"):
+        return "generic D-prime relation intake component mismatch"
+    if component_id and component_id != reference.get("component_id"):
+        return "generic D-prime relation intake retained reference mismatch"
+    relation_source_ids = _text_tuple(
+        relation_intake.get("source_obligation_candidate_ids"),
+        limit=260,
+    )
+    source_ids = _text_tuple(
+        source_obligation.get("source_obligation_candidate_ids"),
+        limit=260,
+    )
+    if relation_source_ids and relation_source_ids != source_ids:
+        return "generic D-prime relation intake source-obligation mismatch"
+    for key in (
+        "support_claimed",
+        "answer_created",
+        "source_obligation_authority_claimed",
+        "citation_authority_claimed",
+        "product_correctness_claimed",
+        "live_calls_run",
+    ):
+        if relation_intake.get(key) is not False:
+            return f"generic D-prime relation intake opened closed surface: {key}"
+    return None
+
+
+def _relation_intake_status_ref(relation_intake: Mapping[str, Any]) -> dict[str, Any]:
+    if not relation_intake:
+        return {}
+    return _without_empty(
+        {
+            "relation_intake_id": relation_intake.get("relation_intake_id")
+            or relation_intake.get("relation_id"),
+            "relation_intake_digest": relation_intake.get("relation_intake_digest")
+            or relation_intake.get("relation_digest"),
+            "relation_kind": relation_intake.get("relation_kind"),
+            "single_lane_only": relation_intake.get("single_lane_only") is True,
+            "component_id": relation_intake.get("component_id"),
+            "source_obligation_candidate_ids": list(
+                _text_tuple(
+                    relation_intake.get("source_obligation_candidate_ids"),
+                    limit=260,
+                )
+            ),
+            "lineage_only": True,
+        }
+    )
 
 
 def _selector_ref(reference: Mapping[str, Any]) -> dict[str, Any]:
@@ -570,7 +640,5 @@ def _digest_json(value: Any) -> str:
 
 __all__ = [
     "DPRIME_PREFLIGHT_PHASE",
-    "SUPPORTED_RETAINED_COMPONENT_ID",
-    "SUPPORTED_RETAINED_SOURCE_OBLIGATION_ID",
     "build_evidence_frame_preflight",
 ]

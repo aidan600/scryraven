@@ -41,10 +41,6 @@ DPRIME_ORDINARY_CONTRACT_AUTHORITY_OWNER = (
     "RunKernel.DPrimeAnswerContractAuthority"
 )
 
-_SUPPORTED_COMPONENT_ID = "component:adult-us-passport-book-renewal-fee"
-_SUPPORTED_SOURCE_OBLIGATION_ID = "obligation:official-current-passport-fee-source"
-
-
 class DPrimeOrdinaryContractAuthorityError(ValueError):
     """Raised when the ordinary D-prime contract authority surface is unavailable."""
 
@@ -94,6 +90,10 @@ def build_dprime_ordinary_contract_authority(
         source_obligation=source_obligation,
         contract_digest=contract_digest,
     )
+    component_id = _required_text(
+        component.get("component_id"),
+        "D-prime component authority lacks component_id",
+    )
     run_kernel = RunKernel.start(
         run_id=str(fetch_packet["run_id"]),
         request_id=str(fetch_packet["request_id"]),
@@ -108,6 +108,7 @@ def build_dprime_ordinary_contract_authority(
         request_id=run_kernel.state.request_id,
         contract_version=contract_version,
         contract_digest=contract_digest,
+        component_id=component_id,
         component=component,
         source_ids=source_ids,
         fetch_packet=fetch_packet,
@@ -116,7 +117,7 @@ def build_dprime_ordinary_contract_authority(
     action = run_kernel.authorize_dprime_current_answer_contract_authority(
         expected_contract_version=contract_version,
         expected_contract_digest=contract_digest,
-        answer_component_id=_SUPPORTED_COMPONENT_ID,
+        answer_component_id=component_id,
         source_obligation_candidate_ids=source_ids,
         fetch_read_content_packet_id=str(fetch_packet["packet_id"]),
         fetch_read_content_packet_digest=str(fetch_packet["packet_digest"]),
@@ -150,6 +151,7 @@ def _contract_authority_payload(
     request_id: str,
     contract_version: str,
     contract_digest: str,
+    component_id: str,
     component: Mapping[str, Any],
     source_ids: Sequence[str],
     fetch_packet: Mapping[str, Any],
@@ -160,7 +162,7 @@ def _contract_authority_payload(
         or component.get("component_contract_digest")
         or _digest_json(
             {
-                "component_id": _SUPPORTED_COMPONENT_ID,
+                "component_id": component_id,
                 "contract_digest": contract_digest,
                 "source_obligation_candidate_ids": list(source_ids),
             }
@@ -173,7 +175,7 @@ def _contract_authority_payload(
             "run_id": run_id,
             "request_id": request_id,
             "contract_digest": contract_digest,
-            "component_id": _SUPPORTED_COMPONENT_ID,
+            "component_id": component_id,
             "reference_id": reference.get("reference_id"),
         }
     )
@@ -197,7 +199,7 @@ def _contract_authority_payload(
         ),
         "accepted_answer_component_refs": [
             {
-                "component_id": _SUPPORTED_COMPONENT_ID,
+                "component_id": component_id,
                 "component_revision": str(
                     component.get("component_revision") or "dprime-retained-1"
                 ),
@@ -285,7 +287,12 @@ def _require_lineage(
         raise DPrimeOrdinaryContractAuthorityError(
             "fetch/read packet digest does not match source/evidence custody"
         )
-    if component.get("component_id") != _SUPPORTED_COMPONENT_ID:
+    component_id = _clean_text(component.get("component_id"), limit=260)
+    if not component_id:
+        raise DPrimeOrdinaryContractAuthorityError(
+            "D-prime component lineage is unavailable"
+        )
+    if component_id != reference.get("component_id"):
         raise DPrimeOrdinaryContractAuthorityError(
             "D-prime component lineage does not match retained packet"
         )
@@ -295,7 +302,7 @@ def _require_lineage(
         )
     source_ids = set(_text_tuple(source_obligation.get("source_obligation_candidate_ids")))
     reference_ids = set(_text_tuple(reference.get("source_obligation_candidate_ids")))
-    if _SUPPORTED_SOURCE_OBLIGATION_ID not in source_ids:
+    if not source_ids:
         raise DPrimeOrdinaryContractAuthorityError(
             "D-prime source-obligation lineage is unavailable"
         )

@@ -125,11 +125,11 @@ def test_product_status_blocks_without_current_path_support_signal(
     assert "semantic support/custody distinction preserved: true" in result.output
     assert "ad hoc semantic matcher/heuristic avoided: true" in result.output
     assert "raw/private retention: false" in result.output
-    assert "citation eligibility/rendering" in result.output
-    assert "source-obligation satisfaction" in result.output
+    assert "multi-relation D-prime analyst intake" in result.output
+    assert "multi-source conflict handling" in result.output
     assert "SufficiencyReadiness" in result.output
     assert "final answer packet" in result.output
-    assert "Author/AuthorProse" in result.output
+    assert "old Author execution" in result.output
     assert (
         f"decision: {dprime.BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED}"
         in result.output
@@ -352,6 +352,15 @@ def _passport_retained_repo(
     tmp_path: Path,
     *,
     bounded_text: str = PASSPORT_TEXT,
+    component_id: str = PASSPORT_COMPONENT_ID,
+    source_obligation_id: str = PASSPORT_OBLIGATION_ID,
+    title: str = "Passport Fees",
+    url: str = PASSPORT_URL,
+    domain: str = "travel.state.gov",
+    candidate_id: str = "search-result-candidate:adult-passport-fee",
+    candidate_digest: str = "candidate-digest-adult-passport-fee",
+    snippet: str = "Official current passport fee information.",
+    published_or_observed_date: str = "2026-06-30",
 ) -> tuple[Path, dict[str, Any]]:
     repo_root = tmp_path / "repo"
     search_dir = repo_root / "output" / "ag_live_ordinary_search_candidate_01b"
@@ -368,18 +377,18 @@ def _passport_retained_repo(
         provider_used=base["provider_used"],
         provider_call_index=base["provider_call_index"],
         result_rank=1,
-        title="Passport Fees",
-        url=PASSPORT_URL,
-        domain="travel.state.gov",
-        candidate_id="search-result-candidate:adult-passport-fee",
-        candidate_digest="candidate-digest-adult-passport-fee",
+        title=title,
+        url=url,
+        domain=domain,
+        candidate_id=candidate_id,
+        candidate_digest=candidate_digest,
         validation_id=base.get("validation_id"),
         parent_live_search_validation_ref=base.get("parent_live_search_validation_ref"),
         query_intent_id=base.get("query_intent_id"),
-        component_id=PASSPORT_COMPONENT_ID,
-        source_obligation_candidate_ids=(PASSPORT_OBLIGATION_ID,),
-        snippet="Official current passport fee information.",
-        published_or_observed_date="2026-06-30",
+        component_id=component_id,
+        source_obligation_candidate_ids=(source_obligation_id,),
+        snippet=snippet,
+        published_or_observed_date=published_or_observed_date,
     ).to_dict()
     candidate_packet = SearchResultCandidatePacket(
         run_id=base_packet["run_id"],
@@ -443,7 +452,7 @@ def _passport_readable_material(
         "content_type": "text/html",
         "http_status": 200,
         "retrieved_or_observed_at": "2026-06-30T00:00:00Z",
-        "content_title": "Passport Fees",
+        "content_title": candidate["title"],
         "bounded_text": bounded_text,
         "bounded_text_sanitized": True,
         "bounded_text_bounded": True,

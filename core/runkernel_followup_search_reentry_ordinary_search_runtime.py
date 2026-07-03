@@ -126,10 +126,6 @@ BLOCKED_DPRIME_FOLLOWUP_ANSWER_PATH = "BLOCKED_DPRIME_FOLLOWUP_ANSWER_PATH"
 DEFAULT_PROVIDER_AUTHORIZED = "fixture_followup_search"
 _MAX_RESULTS_PER_TASK = 5
 
-_COMPONENT_ID = "component:adult-us-passport-book-renewal-fee"
-_SOURCE_OBLIGATION_ID = "obligation:official-current-passport-fee-source"
-_SEARCH_REQUIREMENT_ID = "searchreq:dprime-followup-reentry-current-source"
-
 _FALSE_SURFACES = {
     "dprime_dispatched_search": False,
     "new_search_subsystem_created": False,
@@ -197,6 +193,7 @@ class _FollowupPlannerAdapter:
 
     query_text: str
     component_id: str
+    component_label: str
     source_obligation_id: str
     search_requirement_id: str
     followup_authorization_ref: Mapping[str, Any]
@@ -225,7 +222,7 @@ class _FollowupPlannerAdapter:
                 {
                     "component_id": self.component_id,
                     "component_revision": "dprime-followup-1",
-                    "user_facing_label": "Adult U.S. passport book renewal fee",
+                    "user_facing_label": self.component_label,
                     "user_facing_question": self.query_text,
                     "requirement_posture": "required",
                     "acceptance_criteria": [
@@ -415,6 +412,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
             run_kernel=run_kernel,
             query_text=query_text,
             component_id=_component_id(component_ref),
+            component_label=_component_label(component_ref),
             source_obligation_id=_source_obligation_id(source_obligation_ref),
             followup_authorization_ref=_authorization_ref(authorization_action.inputs),
         )
@@ -836,6 +834,7 @@ def _reduce_followup_search_planner(
     run_kernel: Any,
     query_text: str,
     component_id: str,
+    component_label: str,
     source_obligation_id: str,
     followup_authorization_ref: Mapping[str, Any],
 ) -> None:
@@ -876,8 +875,12 @@ def _reduce_followup_search_planner(
         adapter=_FollowupPlannerAdapter(
             query_text=query_text,
             component_id=component_id,
+            component_label=component_label,
             source_obligation_id=source_obligation_id,
-            search_requirement_id=_SEARCH_REQUIREMENT_ID,
+            search_requirement_id=_search_requirement_id(
+                component_id=component_id,
+                source_obligation_id=source_obligation_id,
+            ),
             followup_authorization_ref=followup_authorization_ref,
         ),
     )
@@ -965,7 +968,7 @@ def _dprime_gap_proposal(
     relation = _first_pass_support_relation(first_model_review_result)
     gap_kind = _gap_kind_from_relation(relation)
     query_hint = _clean_text(query, limit=300) or (
-        "official current passport fee source"
+        "official current source for D-prime follow-up"
     )
     reason = _first_pass_blocker_detail(first_model_review_result) or (
         f"D-prime first pass identified follow-up need: {relation or 'non_support'}"
@@ -1100,7 +1103,7 @@ def _unavailable_coverage_ref(component_ref: Mapping[str, Any]) -> dict[str, Any
     return {
         "status": "unavailable",
         "coverage_ref": "unavailable",
-        "component_id": _component_id(component_ref),
+        "component_id": _clean_text(component_ref.get("component_id"), limit=260),
         "reasons": ["ComponentCoverage requires admitted SemanticObservation"],
     }
 
@@ -1595,15 +1598,45 @@ def _source_class_hint(gap_kind: str) -> str:
 
 
 def _component_id(component_ref: Mapping[str, Any]) -> str:
+    component_id = _clean_text(component_ref.get("component_id"), limit=260)
+    if not component_id:
+        raise RunKernelFollowupSearchReentryError(
+            BLOCKED_FOLLOWUP_SEARCH_REENTRY_INPUT_MISSING,
+            "follow-up re-entry requires a generic relation component id",
+            first_failed_seam="followup_relation_component_missing",
+        )
+    return component_id
+
+
+def _component_label(component_ref: Mapping[str, Any]) -> str:
+    component_id = _component_id(component_ref)
     return (
-        _clean_text(component_ref.get("component_id"), limit=260)
-        or _COMPONENT_ID
+        _clean_text(component_ref.get("component_label"), limit=260)
+        or _clean_text(component_ref.get("user_facing_label"), limit=260)
+        or component_id.removeprefix("component:").replace("-", " ").replace("_", " ")
     )
 
 
 def _source_obligation_id(source_obligation_ref: Mapping[str, Any]) -> str:
     ids = _source_obligation_ids(source_obligation_ref)
-    return ids[0] if ids else _SOURCE_OBLIGATION_ID
+    if not ids:
+        raise RunKernelFollowupSearchReentryError(
+            BLOCKED_FOLLOWUP_SEARCH_REENTRY_INPUT_MISSING,
+            "follow-up re-entry requires generic relation source-obligation ids",
+            first_failed_seam="followup_relation_source_obligation_missing",
+        )
+    return ids[0]
+
+
+def _search_requirement_id(*, component_id: str, source_obligation_id: str) -> str:
+    digest = _digest_json(
+        {
+            "component_id": component_id,
+            "source_obligation_id": source_obligation_id,
+            "purpose": "dprime_followup_reentry_current_source",
+        }
+    )
+    return f"searchreq:dprime-followup-reentry:{digest[:16]}"
 
 
 def _source_obligation_ids(source_obligation_ref: Mapping[str, Any]) -> list[str]:
