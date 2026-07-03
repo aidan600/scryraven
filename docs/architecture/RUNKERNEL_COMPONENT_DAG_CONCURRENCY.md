@@ -131,12 +131,14 @@ Keep `COMPONENT-MODEL-ROLE-ROUTING-MATRIX-01` pinned as future work.
 
 ## Near-Term Planning Constraint
 
-`GENERIC-QUERY-TO-RELATION-PLANNING-01` should not implement multi-component
-planning yet.
+`GENERIC-QUERY-TO-RELATION-PLANNING-01` adds a no-live single-relation planning
+dry run, but it does not implement multi-component planning.
 
-Its single-relation plan packets should still be shaped so they can later lift
-into `ComponentWorkNode` / `ComponentWorkGraph` concepts. Do not hardcode the
-assumption that ScryRaven will remain single-component forever.
+Its single-relation plan packets carry metadata candidates shaped so they can
+later lift into `ComponentWorkNode` / `ComponentWorkGraph` concepts. Those
+candidates are not implemented nodes, scheduling authorization, or budget
+leases. Do not hardcode the assumption that ScryRaven will remain
+single-component forever.
 
 ## Future Roadmap Pointer
 

@@ -6,9 +6,10 @@ class metadata.
 ## Current Product Status
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP. The
-current product-visible path is an offline fixed-fixture demo plus a
-default-off fixed-query live dogfood slice. Product correctness remains
-unclaimed.
+current product-visible path is an offline fixed-fixture demo, a default-off
+fixed-query live dogfood slice, and a default-off no-live single-relation
+planning dry run for conservative supported-class queries. Product correctness
+remains unclaimed.
 
 The fixed passport-fee query is a canonical dogfood vector for the first class
 concept. It is not the architecture, not arbitrary query answering, and not a
@@ -37,16 +38,19 @@ Supported query shape:
 - does not require broad synthesis, social sentiment, advice, personal data, or
   multi-hop interpretation.
 
-Current packet consumers record this boundary as metadata only. The metadata
-states that arbitrary query planning, natural-language query classification,
-query-to-relation planning, friend-level/general MVP readiness, source-authority
-posture, broad product-comparison support, social/review authority, and product
-correctness are all false/unclaimed.
+The fixed demo/live packet consumers record this boundary as metadata only. The
+no-live planning dry run consumes the boundary to reduce a conservative
+supported-class query into one relation-plan packet. Arbitrary query answering,
+natural-language query classification, generic live query planning,
+friend-level/general MVP readiness, source-authority posture over evidence,
+broad product-comparison support, social/review authority, and product
+correctness remain false/unclaimed.
 
-The boundary's source-of-record expectation is represented for future work by
-the Analyst-owned source-authority posture contract in
-[`SOURCE_AUTHORITY_POSTURE.md`](SOURCE_AUTHORITY_POSTURE.md). Query-to-relation
-planning remains future work.
+The boundary's source-of-record expectation is represented for planning by
+reference to the Analyst-owned source-authority posture contract in
+[`SOURCE_AUTHORITY_POSTURE.md`](SOURCE_AUTHORITY_POSTURE.md). The planner may
+carry the requirement by reference, but it does not create source-authority
+posture over evidence.
 
 Future FAP/Author rendering and multi-component lift constraints are documented
 in [`FAP_AUTHOR_BOUNDARY.md`](FAP_AUTHOR_BOUNDARY.md) and
@@ -70,19 +74,20 @@ budget-lease, or model-routing implementation.
 - questions requiring Scrutineer expansion;
 - questions requiring Author/FAP redesign.
 
-## Future Entry Gate
+## Current Entry-Planning Gate
 
-Arbitrary query answering is not supported yet. Before a user query can enter
-the live answer path as part of this class, a future query-to-relation planning
-phase must prove that the query can be reduced to one answer component, preserve
-the source-of-record expectation, emit explicit caveats/nonclaims, keep hard
-exclusions closed, and fail closed without retaining unsupported query text.
-
-The next implementation phase is:
+Arbitrary query answering is not supported yet. The current no-live planning dry
+run lets a user-style query enter through:
 
 ```text
-GENERIC-QUERY-TO-RELATION-PLANNING-01
+python -m proplex --mvp-query-plan-status --query "<query>"
 ```
+
+For supported-class queries, it emits a generic single-relation plan and
+D-prime relation-intake-shaped candidate packet. For unsupported queries, it
+blocks before relation planning and does not retain the unsupported query text.
+It makes no live calls, model calls, source-authority adjudication, FAP/Author
+changes, generic live answering, or product correctness claim.
 
 ## Roadmap Preserved
 

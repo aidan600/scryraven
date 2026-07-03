@@ -35,9 +35,9 @@ The only supported demo question is:
 If another query is supplied, the command returns
 `BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED`. That blocker means the offline MVP demo
 is a fixed deterministic fixture. Arbitrary query answering is not supported
-yet; the next product milestone is query-to-relation planning for the documented
-supported-query-class boundary. The fixed live dogfood slice is not friend-level
-or general MVP, and product correctness remains unclaimed.
+yet; use the no-live query plan dry run below for conservative supported-class
+entry planning. The fixed live dogfood slice is not friend-level or general MVP,
+and product correctness remains unclaimed.
 
 The command requires no secrets. It writes a sanitized review packet under
 `output/mvp_demo_01/` and prints a compact human view with:
@@ -46,6 +46,26 @@ The command requires no secrets. It writes a sanitized review packet under
 - source display when the answer path is consumed;
 - Scrutineer, multi-source, and follow-up state in compact form;
 - explicit caveats and non-claims.
+
+## No-Live Query Plan Dry Run
+
+Run:
+
+```powershell
+py -m proplex --mvp-query-plan-status --query "What is the current filing fee for small claims in Example County?"
+```
+
+The command requires no secrets and makes no live/model calls. For conservative
+supported-class queries, it writes a sanitized single-relation planning packet
+under `output/mvp_query_plan_01/` and prints the packet path. The packet carries
+the supported-query-class boundary, a generic relation plan, a
+D-prime relation-intake-shaped candidate, and future ComponentWorkNode-liftable
+metadata.
+
+Unsupported queries block before relation planning and do not retain the
+unsupported query text. This is not generic answering, generic live supported
+query execution, source-authority adjudication, FAP/Author output,
+friend-level/general MVP readiness, or product correctness.
 
 ## How To Read It
 
