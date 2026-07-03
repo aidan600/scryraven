@@ -63,6 +63,12 @@ The current packet encodes this as both a required nonclaim and a validation
 rule. Social/forum/review source classes validate only as `directionality` or
 `ignore`.
 
+Generic single-relation live dogfood fetch/read candidate priority is local
+acquisition ordering only. Its packet-visible signals may decide which
+already-sanitized provider candidates are attempted first under the existing cap,
+but they do not create source-authority posture, satisfy source obligations,
+make candidates citation eligible, claim correctness, or open PDF support.
+
 ## Boundaries
 
 Product correctness remains unclaimed.

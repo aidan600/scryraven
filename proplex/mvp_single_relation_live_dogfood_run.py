@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -189,6 +190,74 @@ FETCH_READ_READABLE_CONTENT_TYPES = frozenset(
 FETCH_READ_UNKNOWN = "unknown"
 FETCH_READ_CAP_EXHAUSTED = "FETCH_READ_CAP_EXHAUSTED"
 FETCH_READ_STOPPED_AFTER_SUCCESS = "READABLE_CONTENT_OBTAINED"
+FETCH_READ_CANDIDATE_SELECTION_POLICY_ID = (
+    "generic_single_relation_live_fetch_read_acquisition_priority_v1"
+)
+FETCH_READ_CANDIDATE_SELECTION_SCOPE = "local_fetch_read_acquisition_only"
+
+_CANDIDATE_PRIORITY_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "by",
+        "charge",
+        "com",
+        "cost",
+        "current",
+        "currently",
+        "determine",
+        "fee",
+        "fees",
+        "filing",
+        "find",
+        "form",
+        "for",
+        "from",
+        "gov",
+        "html",
+        "http",
+        "https",
+        "in",
+        "is",
+        "latest",
+        "material",
+        "net",
+        "of",
+        "official",
+        "or",
+        "org",
+        "paper",
+        "record",
+        "requirement",
+        "requirements",
+        "source",
+        "states",
+        "that",
+        "the",
+        "to",
+        "www",
+    }
+)
+_CANDIDATE_DERIVATIVE_MARKERS = frozenset(
+    {
+        "advocacy",
+        "blog",
+        "campaign",
+        "center",
+        "clinic",
+        "explainer",
+        "foundation",
+        "guide",
+        "institute",
+        "legal",
+        "news",
+        "project",
+        "wiki",
+    }
+)
 
 RAW_FALSE_FLAGS = {
     "raw_provider_payload_retained": False,
@@ -860,10 +929,33 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         "pdf_content_type_support_opened",
         "pdf_parsing_opened",
         "candidate_ranking_policy_changed",
+        "candidate_selection_uses_provider_snippet",
+        "candidate_selection_created_source_authority",
+        "candidate_selection_satisfies_source_obligation",
+        "candidate_selection_citation_eligible",
+        "candidate_selection_claims_correctness",
+        "candidate_selection_global_ranking_policy_created",
+        "candidate_selection_source_authority_policy_created",
+        "candidate_selection_approved_domain_list_created",
+        "candidate_selection_retrieval_filtering_layer_created",
     ):
         expected = key == "candidate_diagnostics_observability_only"
         if packet.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    if packet.get("candidate_selection_policy_id") != (
+        FETCH_READ_CANDIDATE_SELECTION_POLICY_ID
+    ):
+        _blocked_output_hygiene("candidate selection policy id missing.")
+    if packet.get("candidate_selection_policy_scope") != (
+        FETCH_READ_CANDIDATE_SELECTION_SCOPE
+    ):
+        _blocked_output_hygiene("candidate selection policy scope invalid.")
+    if packet.get("candidate_selection_policy_uses_sanitized_metadata_only") is not True:
+        _blocked_output_hygiene(
+            "candidate selection must use sanitized metadata only."
+        )
+    if packet.get("candidate_selection_is_acquisition_only") is not True:
+        _blocked_output_hygiene("candidate selection acquisition-only flag missing.")
     candidate_diagnostics = [
         _safe_mapping(item)
         for item in _safe_sequence(packet.get("fetch_read_candidate_diagnostics"))
@@ -923,6 +1015,26 @@ def _validate_candidate_diagnostic(diagnostic: Mapping[str, Any]) -> None:
         _blocked_output_hygiene(
             "candidate diagnostic selected_for_fetch_read flag invalid."
         )
+    if diagnostic.get("candidate_selection_policy_id") != (
+        FETCH_READ_CANDIDATE_SELECTION_POLICY_ID
+    ):
+        _blocked_output_hygiene("candidate diagnostic policy id invalid.")
+    if diagnostic.get("candidate_selection_is_acquisition_only") is not True:
+        _blocked_output_hygiene("candidate diagnostic acquisition flag invalid.")
+    for key in (
+        "candidate_selection_created_source_authority",
+        "candidate_selection_satisfies_source_obligation",
+        "candidate_selection_citation_eligible",
+        "candidate_selection_claims_correctness",
+    ):
+        if diagnostic.get(key) is not False:
+            _blocked_output_hygiene(f"candidate diagnostic requires {key}=false.")
+    if _bounded_int(diagnostic.get("fetch_read_priority_rank")) <= 0:
+        _blocked_output_hygiene("candidate diagnostic priority rank invalid.")
+    _validate_candidate_selection_features(
+        _safe_mapping(diagnostic.get("candidate_selection_features")),
+        expected_priority_rank=_bounded_int(diagnostic.get("fetch_read_priority_rank")),
+    )
     url_source = _clean_text(diagnostic.get("url_source"), limit=20)
     if url_source not in {"url", "link", "missing"}:
         _blocked_output_hygiene("candidate diagnostic url_source invalid.")
@@ -943,6 +1055,42 @@ def _validate_candidate_diagnostic(diagnostic: Mapping[str, Any]) -> None:
         _blocked_output_hygiene("candidate diagnostic raw/private retention invalid.")
 
 
+def _validate_candidate_selection_features(
+    features: Mapping[str, Any],
+    *,
+    expected_priority_rank: int,
+) -> None:
+    if features.get("feature_posture") != "discovery_metadata_only":
+        _blocked_output_hygiene("candidate selection feature posture invalid.")
+    for key in (
+        "official_domain_signal",
+        "source_of_record_domain_signal",
+        "query_entity_domain_overlap",
+        "title_or_path_token_overlap",
+        "public_agency_domain_signal",
+        "derivative_domain_signal",
+        "pdf_url_or_title_signal",
+    ):
+        if features.get(key) not in {True, False}:
+            _blocked_output_hygiene(f"candidate selection feature {key} invalid.")
+    for key in (
+        "features_used_as_evidence",
+        "features_create_source_authority",
+        "features_satisfy_source_obligation",
+        "features_make_candidate_citation_eligible",
+        "features_claim_correctness",
+    ):
+        if features.get(key) is not False:
+            _blocked_output_hygiene(f"candidate selection feature requires {key}=false.")
+    if _bounded_int(features.get("provider_rank")) <= 0:
+        _blocked_output_hygiene("candidate selection feature provider rank invalid.")
+    if (
+        _bounded_int(features.get("final_fetch_read_priority_rank"))
+        != expected_priority_rank
+    ):
+        _blocked_output_hygiene("candidate selection feature priority rank mismatch.")
+
+
 def _validate_attempt_diagnostic(diagnostic: Mapping[str, Any]) -> None:
     if diagnostic.get("diagnostic_posture") != "observability_only":
         _blocked_output_hygiene("fetch/read attempt diagnostic posture invalid.")
@@ -961,6 +1109,26 @@ def _validate_attempt_diagnostic(diagnostic: Mapping[str, Any]) -> None:
             _blocked_output_hygiene(f"fetch/read diagnostic requires {key}=false.")
     if not _normalized_status_class(diagnostic.get("http_status_class")):
         _blocked_output_hygiene("fetch/read diagnostic status class invalid.")
+    if diagnostic.get("candidate_selection_policy_id") != (
+        FETCH_READ_CANDIDATE_SELECTION_POLICY_ID
+    ):
+        _blocked_output_hygiene("fetch/read diagnostic policy id invalid.")
+    if diagnostic.get("candidate_selection_is_acquisition_only") is not True:
+        _blocked_output_hygiene("fetch/read diagnostic acquisition flag invalid.")
+    for key in (
+        "candidate_selection_created_source_authority",
+        "candidate_selection_satisfies_source_obligation",
+        "candidate_selection_citation_eligible",
+        "candidate_selection_claims_correctness",
+    ):
+        if diagnostic.get(key) is not False:
+            _blocked_output_hygiene(f"fetch/read diagnostic requires {key}=false.")
+    if _bounded_int(diagnostic.get("fetch_read_priority_rank")) <= 0:
+        _blocked_output_hygiene("fetch/read diagnostic priority rank invalid.")
+    _validate_candidate_selection_features(
+        _safe_mapping(diagnostic.get("candidate_selection_features")),
+        expected_priority_rank=_bounded_int(diagnostic.get("fetch_read_priority_rank")),
+    )
     _content_type_or_unknown(diagnostic.get("content_type"))
     if diagnostic.get("readable_content_type") not in {True, False, FETCH_READ_UNKNOWN}:
         _blocked_output_hygiene("fetch/read diagnostic readable content flag invalid.")
@@ -1268,6 +1436,19 @@ def _base_packet(
         "pdf_content_type_support_opened": False,
         "pdf_parsing_opened": False,
         "candidate_ranking_policy_changed": False,
+        "candidate_selection_policy_id": FETCH_READ_CANDIDATE_SELECTION_POLICY_ID,
+        "candidate_selection_policy_scope": FETCH_READ_CANDIDATE_SELECTION_SCOPE,
+        "candidate_selection_policy_uses_sanitized_metadata_only": True,
+        "candidate_selection_uses_provider_snippet": False,
+        "candidate_selection_is_acquisition_only": True,
+        "candidate_selection_created_source_authority": False,
+        "candidate_selection_satisfies_source_obligation": False,
+        "candidate_selection_citation_eligible": False,
+        "candidate_selection_claims_correctness": False,
+        "candidate_selection_global_ranking_policy_created": False,
+        "candidate_selection_source_authority_policy_created": False,
+        "candidate_selection_approved_domain_list_created": False,
+        "candidate_selection_retrieval_filtering_layer_created": False,
         "fetch_read_packet_created": counts.get("fetch_read_packet_created", 0),
         "evidence_ledger_admissions": counts.get("evidence_ledger_admissions", 0),
         "dprime_review_licensed": bool(confirm_live_dprime_review),
@@ -1489,7 +1670,7 @@ def _write_fetch_read_artifacts(
         relation_plan=relation_plan,
         run_id=str(candidate_packet["run_id"]),
     )
-    candidates = _fetch_candidate_records(candidate_packet)
+    candidates = _fetch_candidate_records(candidate_packet, relation_plan=relation_plan)
     if not candidates:
         return None, {
             "fetch_read_attempts": 0,
@@ -1611,16 +1792,200 @@ def _write_fetch_read_artifacts(
     }
 
 
-def _fetch_candidate_records(candidate_packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _fetch_candidate_records(
+    candidate_packet: Mapping[str, Any],
+    *,
+    relation_plan: Mapping[str, Any],
+) -> list[dict[str, Any]]:
     records = [
         _safe_mapping(item)
         for item in candidate_packet.get("candidate_records", [])
         if isinstance(item, Mapping)
     ]
+    priorities = _fetch_read_candidate_priorities(records, relation_plan=relation_plan)
+    enriched = []
+    for record in records:
+        candidate_id = _clean_text(record.get("candidate_id"), limit=320)
+        priority = priorities.get(candidate_id or "")
+        item = dict(record)
+        if priority:
+            item["fetch_read_priority_rank"] = priority["fetch_read_priority_rank"]
+            item["candidate_selection_features"] = priority[
+                "candidate_selection_features"
+            ]
+        enriched.append(item)
     return sorted(
-        records,
-        key=lambda item: _bounded_int(item.get("result_rank"), default=999),
+        enriched,
+        key=lambda item: (
+            _bounded_int(item.get("fetch_read_priority_rank"), default=999),
+            _bounded_int(item.get("result_rank"), default=999),
+        ),
     )
+
+
+def _fetch_read_candidate_priorities(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    relation_plan: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    ranked: list[tuple[int, int, int, str, dict[str, Any]]] = []
+    for index, candidate in enumerate(candidates):
+        safe = _safe_mapping(candidate)
+        candidate_id = _clean_text(safe.get("candidate_id"), limit=320)
+        if not candidate_id:
+            continue
+        features = _candidate_selection_features(safe, relation_plan=relation_plan)
+        ranked.append(
+            (
+                _candidate_priority_bucket(safe, features),
+                _bounded_int(safe.get("result_rank"), default=999),
+                index,
+                candidate_id,
+                features,
+            )
+        )
+    priorities: dict[str, dict[str, Any]] = {}
+    for priority_rank, (_bucket, _provider_rank, _index, candidate_id, features) in (
+        enumerate(sorted(ranked), 1)
+    ):
+        final_features = {
+            **features,
+            "final_fetch_read_priority_rank": priority_rank,
+        }
+        priorities[candidate_id] = {
+            "fetch_read_priority_rank": priority_rank,
+            "candidate_selection_features": final_features,
+        }
+    return priorities
+
+
+def _candidate_priority_bucket(
+    candidate: Mapping[str, Any],
+    features: Mapping[str, Any],
+) -> int:
+    if not _is_valid_http_url(candidate.get("url")):
+        return 6
+    agency_or_record_match = (
+        features.get("source_of_record_domain_signal") is True
+        or (
+            features.get("query_entity_domain_overlap") is True
+            and features.get("derivative_domain_signal") is False
+        )
+    )
+    if agency_or_record_match:
+        return 2 if features.get("pdf_url_or_title_signal") is True else 1
+    if (
+        features.get("official_domain_signal") is True
+        or features.get("public_agency_domain_signal") is True
+    ):
+        return 3
+    return 4
+
+
+def _candidate_selection_features(
+    candidate: Mapping[str, Any],
+    *,
+    relation_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    title = _clean_text(candidate.get("title"), limit=220) or ""
+    url = _clean_text(candidate.get("url"), limit=700) or ""
+    domain = _clean_domain(candidate.get("domain")) or (
+        urlparse(url).netloc.lower() if url else ""
+    )
+    relation_tokens = _relation_plan_priority_tokens(relation_plan)
+    domain_tokens = _priority_tokens(domain)
+    title_path_tokens = _priority_tokens(
+        " ".join((title, urlparse(url).path if url else ""))
+    )
+    query_entity_domain_overlap = bool(relation_tokens & domain_tokens)
+    title_or_path_token_overlap = bool(relation_tokens & title_path_tokens)
+    public_agency_domain_signal = _public_agency_domain_signal(domain)
+    official_domain_signal = public_agency_domain_signal or "official" in domain_tokens
+    source_of_record_domain_signal = (
+        query_entity_domain_overlap
+        and (official_domain_signal or public_agency_domain_signal)
+    )
+    derivative_domain_signal = _derivative_domain_signal(
+        domain=domain,
+        domain_tokens=domain_tokens,
+        title_path_tokens=title_path_tokens,
+        official_domain_signal=official_domain_signal,
+        query_entity_domain_overlap=query_entity_domain_overlap,
+    )
+    return {
+        "feature_posture": "discovery_metadata_only",
+        "official_domain_signal": official_domain_signal,
+        "source_of_record_domain_signal": source_of_record_domain_signal,
+        "query_entity_domain_overlap": query_entity_domain_overlap,
+        "title_or_path_token_overlap": title_or_path_token_overlap,
+        "public_agency_domain_signal": public_agency_domain_signal,
+        "derivative_domain_signal": derivative_domain_signal,
+        "pdf_url_or_title_signal": _pdf_url_or_title_signal(title=title, url=url),
+        "provider_rank": _bounded_int(candidate.get("result_rank"), default=0),
+        "final_fetch_read_priority_rank": 0,
+        "features_used_as_evidence": False,
+        "features_create_source_authority": False,
+        "features_satisfy_source_obligation": False,
+        "features_make_candidate_citation_eligible": False,
+        "features_claim_correctness": False,
+    }
+
+
+def _relation_plan_priority_tokens(relation_plan: Mapping[str, Any]) -> set[str]:
+    parts: list[str] = []
+    for key in (
+        "component_text",
+        "source_obligation_text",
+        "search_requirement_text",
+        "claim_under_test",
+    ):
+        text = _clean_text(relation_plan.get(key), limit=500)
+        if text:
+            parts.append(text)
+    parts.extend(
+        str(item)
+        for item in _safe_sequence(relation_plan.get("search_query_seeds"))
+        if _clean_text(item, limit=220)
+    )
+    return _priority_tokens(" ".join(parts))
+
+
+def _priority_tokens(value: str) -> set[str]:
+    text = str(value or "").casefold()
+    compact = re.sub(r"(?<=[a-z0-9])[-_/](?=[a-z0-9])", "", text)
+    tokens = set(re.findall(r"[a-z0-9]+", text))
+    tokens.update(re.findall(r"[a-z0-9]+", compact))
+    return {
+        token
+        for token in tokens
+        if len(token) >= 3 and token not in _CANDIDATE_PRIORITY_STOPWORDS
+    }
+
+
+def _public_agency_domain_signal(domain: str | None) -> bool:
+    clean = (domain or "").casefold().strip(".")
+    return clean.endswith(".gov") or ".gov." in clean or clean.endswith(".mil")
+
+
+def _derivative_domain_signal(
+    *,
+    domain: str,
+    domain_tokens: set[str],
+    title_path_tokens: set[str],
+    official_domain_signal: bool,
+    query_entity_domain_overlap: bool,
+) -> bool:
+    if official_domain_signal:
+        return False
+    if domain.casefold().endswith(".org") and not query_entity_domain_overlap:
+        return True
+    tokens = domain_tokens | title_path_tokens
+    return bool(tokens & _CANDIDATE_DERIVATIVE_MARKERS)
+
+
+def _pdf_url_or_title_signal(*, title: str, url: str) -> bool:
+    lowered = f"{title} {urlparse(url).path if url else ''}".casefold()
+    return lowered.endswith(".pdf") or ".pdf" in lowered or " pdf" in lowered
 
 
 def _candidate_diagnostics_from_provider_results(
@@ -1630,28 +1995,42 @@ def _candidate_diagnostics_from_provider_results(
     run_id: str,
 ) -> list[dict[str, Any]]:
     diagnostics: list[dict[str, Any]] = []
-    valid_seen = 0
-    for result in sorted(
+    sorted_results = sorted(
         (_safe_mapping(item) for item in provider_results if isinstance(item, Mapping)),
         key=lambda item: _bounded_int(item.get("result_rank"), default=999),
-    ):
+    )
+    priority_inputs: list[dict[str, Any]] = []
+    for result in sorted_results:
         candidate_id, _candidate_digest = _provider_result_candidate_identity(
             result,
             relation_plan=relation_plan,
             run_id=run_id,
         )
+        priority_inputs.append({**result, "candidate_id": candidate_id})
+    priorities = _fetch_read_candidate_priorities(
+        priority_inputs,
+        relation_plan=relation_plan,
+    )
+    for result in sorted_results:
+        candidate_id, _candidate_digest = _provider_result_candidate_identity(
+            result,
+            relation_plan=relation_plan,
+            run_id=run_id,
+        )
+        priority = priorities.get(candidate_id, {})
+        priority_rank = _bounded_int(priority.get("fetch_read_priority_rank"))
+        selection_features = _safe_mapping(priority.get("candidate_selection_features"))
         url = _clean_text(result.get("url"), limit=700)
         url_source = _clean_text(result.get("url_source"), limit=20) or "missing"
         url_valid = _is_valid_http_url(url)
-        selected_for_fetch_read = False
+        selected_for_fetch_read = (
+            url_valid and 0 < priority_rank <= MAX_FETCH_READ_ATTEMPTS
+        )
         skipped_reason = None
         failure_category = None
-        if url_valid:
-            valid_seen += 1
-            selected_for_fetch_read = valid_seen <= MAX_FETCH_READ_ATTEMPTS
-            if not selected_for_fetch_read:
-                skipped_reason = FETCH_READ_CAP_EXHAUSTED
-        else:
+        if url_valid and not selected_for_fetch_read:
+            skipped_reason = FETCH_READ_CAP_EXHAUSTED
+        if not url_valid:
             skipped_reason = (
                 FETCH_READ_FAILURE_MISSING_URL
                 if url_source == "missing" or not url
@@ -1667,6 +2046,19 @@ def _candidate_diagnostics_from_provider_results(
                 ),
                 "provider_rank": _bounded_int(result.get("result_rank"), default=0),
                 "result_rank": _bounded_int(result.get("result_rank"), default=0),
+                "fetch_read_priority_rank": priority_rank,
+                "candidate_selection_policy_id": (
+                    FETCH_READ_CANDIDATE_SELECTION_POLICY_ID
+                ),
+                "candidate_selection_policy_scope": (
+                    FETCH_READ_CANDIDATE_SELECTION_SCOPE
+                ),
+                "candidate_selection_is_acquisition_only": True,
+                "candidate_selection_created_source_authority": False,
+                "candidate_selection_satisfies_source_obligation": False,
+                "candidate_selection_citation_eligible": False,
+                "candidate_selection_claims_correctness": False,
+                "candidate_selection_features": selection_features,
                 "selected_for_fetch_read": selected_for_fetch_read,
                 "attempted": False,
                 "skipped_reason": skipped_reason,
@@ -1753,6 +2145,22 @@ def _fetch_read_attempt_diagnostic(
         "attempted_url": attempted_url,
         "attempted_domain": _clean_domain(candidate.get("domain"))
         or (urlparse(attempted_url).netloc.lower() if attempted_url else None),
+        "provider_rank": _bounded_int(candidate.get("result_rank"), default=0),
+        "result_rank": _bounded_int(candidate.get("result_rank"), default=0),
+        "fetch_read_priority_rank": _bounded_int(
+            candidate.get("fetch_read_priority_rank"),
+            default=0,
+        ),
+        "candidate_selection_policy_id": FETCH_READ_CANDIDATE_SELECTION_POLICY_ID,
+        "candidate_selection_policy_scope": FETCH_READ_CANDIDATE_SELECTION_SCOPE,
+        "candidate_selection_is_acquisition_only": True,
+        "candidate_selection_created_source_authority": False,
+        "candidate_selection_satisfies_source_obligation": False,
+        "candidate_selection_citation_eligible": False,
+        "candidate_selection_claims_correctness": False,
+        "candidate_selection_features": _safe_mapping(
+            candidate.get("candidate_selection_features")
+        ),
         "http_status_class": status_class,
         "content_type": content_type,
         "readable_content_type": readable_content_type,
