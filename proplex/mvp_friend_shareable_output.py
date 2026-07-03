@@ -45,6 +45,10 @@ PHASE_NAME = "LICENSED-LIVE-DOGFOOD-AND-MVP-POLISH-01"
 MODE = "BUILD"
 PASS_DECISION = "PASS"
 DEFAULT_MVP_QUERY = "What is the current adult U.S. passport book renewal fee by mail?"
+BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED = "BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED"
+BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING = (
+    "BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING"
+)
 DEFAULT_MVP_OUTPUT_DIR = Path("output") / "mvp_demo_01"
 DEFAULT_MVP_LIVE_OUTPUT_DIR = Path("output") / "mvp_live_dogfood_01"
 MVP_PACKET_NAME = "mvp_output_packet.json"
@@ -101,8 +105,15 @@ def build_mvp_demo_output(
     """Build a no-secrets offline MVP demo through the product status path."""
 
     root = Path(repo_root).resolve()
+    query = _normalize_query(query)
     run_id = _run_id(run_id, prefix="mvp-demo")
     run_dir = _run_output_dir(root, output_dir or DEFAULT_MVP_OUTPUT_DIR, run_id)
+    if query != DEFAULT_MVP_QUERY:
+        return _unsupported_mvp_demo_query_result(
+            query=query,
+            run_dir=run_dir,
+            run_id=run_id,
+        )
     retained_root = run_dir / "retained_status_repo"
     _write_demo_retained_artifacts(retained_root=retained_root, query=query, run_id=run_id)
 
@@ -148,6 +159,89 @@ def build_mvp_demo_output(
         packet=packet,
         packet_path=packet_path,
         retained_artifact_root=retained_root,
+    )
+
+
+def _unsupported_mvp_demo_query_result(
+    *,
+    query: str,
+    run_dir: Path,
+    run_id: str,
+) -> MvpFriendOutputResult:
+    del query
+    safe_query_label = "unsupported MVP demo query (not retained)"
+    blocker_detail = _unsupported_mvp_demo_query_blocker_detail()
+    packet = {
+        "phase_name": PHASE_NAME,
+        "mode": MODE,
+        "query": safe_query_label,
+        "unsupported_query_retained": False,
+        "supported_demo_query": DEFAULT_MVP_QUERY,
+        "run_id": run_id,
+        "packet_id": f"mvp-output-packet:{run_id}",
+        "ordinary_entrypoint": "python -m proplex",
+        "status_flag": MVP_DEMO_FLAG,
+        "command_harness_used": f"python -m proplex {MVP_DEMO_FLAG}",
+        "runtime_consumer": "fixed_mvp_demo_query_gate",
+        "ordinary_product_path_consumed": False,
+        "provider_broker_posture": "offline_demo_query_gate_no_provider_or_broker",
+        "provider_calls_attempted": 0,
+        "provider_calls_completed": 0,
+        "search_tasks_attempted": 0,
+        "search_tasks_completed": 0,
+        "fetch_read_attempts": 0,
+        "fetch_read_completed": 0,
+        "evidence_ledger_admissions": 0,
+        "dprime_model_review_call_count": 0,
+        "followup_loop_count": 0,
+        "answer_or_blocker_text": (
+            f"Blocked before answer: {BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED}. "
+            f"{blocker_detail}"
+        ),
+        "product_answer_text": "",
+        "answer_text_present": False,
+        "source_display_entries": [],
+        "scrutineer_status": "not invoked; unsupported demo query",
+        "multi_source_status": "not reached; unsupported demo query",
+        "followup_status": "not reached; unsupported demo query",
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "private_logs_retained": False,
+        "product_correctness_claimed": False,
+        "caps_exhausted": False,
+        "decision_made_by_the_run": "mvp_demo_query_not_supported_blocker_recorded",
+        "decision": BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED,
+        "status_decision": BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED,
+        "explicit_non_proofs": list(EXPLICIT_NON_PROOFS),
+        "retained_artifact_root": None,
+        "status_payload": {},
+        "blocker_detail": blocker_detail,
+    }
+    _reject_packet_forbidden_material(packet)
+    packet_path = run_dir / MVP_PACKET_NAME
+    _write_json(packet_path, packet)
+    output = format_mvp_friend_output(
+        packet,
+        packet_path=packet_path,
+        output_title="ScryRaven MVP demo blocked",
+        output_kind="offline fixed fixture demo",
+    )
+    return MvpFriendOutputResult(
+        decision=BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED,
+        output=output,
+        packet=packet,
+        packet_path=packet_path,
+    )
+
+
+def _unsupported_mvp_demo_query_blocker_detail() -> str:
+    return (
+        "The offline MVP demo is a fixed deterministic fixture. It currently "
+        f'only supports: "{DEFAULT_MVP_QUERY}". Arbitrary query answering '
+        "requires the live/ordinary product path, which remains blocked by: "
+        f"{BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING}."
     )
 
 
@@ -588,7 +682,7 @@ def _mvp_blocker_detail(
     status_decision: str,
     original_detail: str | None,
 ) -> str | None:
-    if decision == "BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING":
+    if decision == BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING:
         return (
             "No ordinary live product/private-broker entrypoint produced retained "
             "sanitized live artifacts for the MVP status consumer within this run; "
@@ -815,6 +909,10 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
     return text[:limit] if text else None
 
 
+def _normalize_query(value: Any) -> str:
+    return " ".join(str(value or "").split())
+
+
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -872,6 +970,8 @@ def _path_under(path: Path, root: Path) -> bool:
 
 
 __all__ = [
+    "BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED",
+    "BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING",
     "DEFAULT_MVP_LIVE_OUTPUT_DIR",
     "DEFAULT_MVP_OUTPUT_DIR",
     "DEFAULT_MVP_QUERY",

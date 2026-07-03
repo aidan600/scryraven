@@ -139,7 +139,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--query",
         dest="query_option",
         default=None,
-        help="Research query / topic, useful with default-off MVP flags.",
+        help=(
+            "Research query / topic. For --mvp-demo, only the fixed MVP "
+            "fixture query is supported."
+        ),
     )
     p.add_argument(
         "--mode",
@@ -281,8 +284,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         dest="mvp_demo",
         help=(
-            "Run a no-secrets offline MVP demo through the existing D-prime "
-            "semantic coverage and answer-output status path."
+            "Run the no-secrets offline fixed-fixture MVP demo through the "
+            "existing D-prime semantic coverage and answer-output status path."
         ),
     )
     p.add_argument(

@@ -38,6 +38,8 @@ from core.product_model_route_config import (
     PRODUCT_STATUS_DRY_RUN_FLAGS,
 )
 from proplex.mvp_friend_shareable_output import (
+    BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED,
+    BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING,
     DEFAULT_MVP_QUERY,
     MVP_DEMO_BOUNDED_TEXT,
     build_mvp_demo_output,
@@ -151,6 +153,71 @@ def test_mvp_demo_cli_runs_without_api_keys_and_uses_default_query() -> None:
     assert "ScryRaven MVP demo" in proc.stdout
     assert "Sources" in proc.stdout
     assert "OPENAI_API_KEY is required" not in proc.stderr
+
+
+def test_mvp_demo_rejects_unsupported_query_with_named_blocker(
+    tmp_path: Path,
+) -> None:
+    result = build_mvp_demo_output(
+        query="What arbitrary question can this demo answer?",
+        repo_root=tmp_path,
+        output_dir=tmp_path / "output" / "mvp_demo_01",
+        run_id="test-mvp-unsupported-query",
+    )
+
+    assert result.decision == BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED
+    assert result.return_code == 2
+    assert result.retained_artifact_root is None
+    assert result.packet_path.exists()
+    packet = json.loads(result.packet_path.read_text(encoding="utf-8"))
+
+    assert packet["decision"] == BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED
+    assert packet["status_decision"] == BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED
+    assert packet["query"] == "unsupported MVP demo query (not retained)"
+    assert packet["unsupported_query_retained"] is False
+    assert packet["supported_demo_query"] == DEFAULT_MVP_QUERY
+    assert packet["ordinary_product_path_consumed"] is False
+    assert packet["provider_calls_attempted"] == 0
+    assert packet["search_tasks_attempted"] == 0
+    assert packet["fetch_read_attempts"] == 0
+    assert packet["evidence_ledger_admissions"] == 0
+    assert packet["dprime_model_review_call_count"] == 0
+    assert packet["source_display_entries"] == []
+    assert "fixed deterministic fixture" in packet["answer_or_blocker_text"]
+    assert DEFAULT_MVP_QUERY in packet["answer_or_blocker_text"]
+    assert (
+        BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING
+        in packet["answer_or_blocker_text"]
+    )
+    assert "fixed deterministic fixture" in result.output
+    assert BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED in result.output
+    assert "What arbitrary question" not in result.output
+    assert not (result.packet_path.parent / "retained_status_repo").exists()
+
+
+def test_mvp_demo_cli_rejects_unsupported_query() -> None:
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "proplex",
+            MVP_DEMO_FLAG,
+            "--query",
+            "What arbitrary question can this demo answer?",
+            "--mvp-output-dir",
+            "output/test_mvp_friend_shareable_output_01",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=45,
+    )
+
+    assert proc.returncode == 2, proc.stdout + proc.stderr
+    assert BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED in proc.stdout
+    assert "fixed deterministic fixture" in proc.stdout
+    assert DEFAULT_MVP_QUERY in proc.stdout
+    assert BLOCKED_MVP_LIVE_DOGFOOD_ENTRYPOINT_MISSING in proc.stdout
 
 
 def test_mvp_live_status_is_default_off_and_records_blocker(tmp_path: Path) -> None:
