@@ -40,6 +40,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from core.product_model_route_config import (  # noqa: E402
+    CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
     LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
     LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
@@ -311,6 +312,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         dest="confirm_live_dogfood",
         help="Confirm the single live MVP dogfood attempt.",
+    )
+    p.add_argument(
+        CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+        action="store_true",
+        dest="confirm_live_dprime_review",
+        help="Confirm one D-prime product-route model-review attempt for live dogfood.",
     )
     p.add_argument(
         MVP_LIVE_DOGFOOD_STATUS_FLAG,
@@ -588,9 +595,12 @@ def _run_mvp_live_dogfood_run(
             repo_root=_ROOT,
             output_dir=output_dir,
             confirm_live_dogfood=args.confirm_live_dogfood,
+            confirm_live_dprime_review=args.confirm_live_dprime_review,
             broker_url=args.mvp_live_broker_url,
             private_broker_path=args.mvp_live_private_broker_path,
             env_file_paths=args.mvp_live_env_file,
+            smart_provider=args.smart_provider,
+            smart_model=args.smart_model,
         )
     except Exception as exc:
         print(f"ERROR: Unexpected MVP live dogfood run error - {exc}", file=sys.stderr)

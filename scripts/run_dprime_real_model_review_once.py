@@ -32,20 +32,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from core.dprime_one_shot_provider_boundary import (
-    DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_PHASE,
-    PROVIDER_MODEL_SELECTION_APPROVAL_REF_PRESENT,
-)
-from core.dprime_one_shot_provider_boundary import (
-    default_closed_surface_flags as default_provider_closed_surface_flags,
-)
 from core.dprime_product_smart_one_shot_transport import (
     APPROVED_MODEL,
     APPROVED_PROVIDER,
-    DPRIME_PRODUCT_SMART_ADAPTER_REF,
-    DPRIME_PRODUCT_SMART_PROVIDER_MODEL_APPROVAL_REF,
     PRODUCT_CONFIG_INITIALIZATION_BOUNDARY,
     build_dprime_product_smart_model_review_adapter,
+    build_dprime_product_smart_model_review_license,
+    build_dprime_product_smart_model_review_provider_boundary,
     product_smart_model_route_ref,
 )
 from core.product_model_route_config import (
@@ -247,43 +240,11 @@ def format_credential_preflight_status(payload: Mapping[str, Any]) -> str:
 
 
 def build_dprime_real_run_provider_boundary() -> dict[str, Any]:
-    return {
-        "boundary_id": "dprime-one-shot-provider-boundary:product-smart-route:v1",
-        "phase": DPRIME_ONE_SHOT_PROVIDER_BOUNDARY_PHASE,
-        "enabled": True,
-        "default_disabled": False,
-        "test_only": False,
-        "provider_model_selection_status": (
-            PROVIDER_MODEL_SELECTION_APPROVAL_REF_PRESENT
-        ),
-        "provider_model_approval_ref": DPRIME_PRODUCT_SMART_PROVIDER_MODEL_APPROVAL_REF,
-        "max_provider_attempts": 1,
-        "retry_policy": "forbidden",
-        "fallback_policy": "forbidden",
-        "timeout_policy": "fail_closed",
-        "raw_prompt_retention": False,
-        "raw_model_response_retention": False,
-        "provider_payload_retention": False,
-        "real_call_authorized": True,
-        "call_count": 0,
-        "provider_switching_allowed": False,
-        "one_shot_adapter_proven": True,
-        "one_shot_adapter_ref": DPRIME_PRODUCT_SMART_ADAPTER_REF,
-        "closed_surface_flags": default_provider_closed_surface_flags(),
-    }
+    return build_dprime_product_smart_model_review_provider_boundary()
 
 
 def build_dprime_real_run_license() -> dict[str, Any]:
-    return {
-        "license_id": DPRIME_PRODUCT_SMART_PROVIDER_MODEL_APPROVAL_REF,
-        "enabled": True,
-        "test_only": False,
-        "callable_kind": "real_one_shot",
-        "max_model_review_calls": 1,
-        "retry_policy": "forbidden",
-        "timeout_policy": "fail_closed",
-        "one_shot_adapter_ref": DPRIME_PRODUCT_SMART_ADAPTER_REF,
-    }
+    return build_dprime_product_smart_model_review_license()
 
 
 def _bool_text(value: Any) -> str:

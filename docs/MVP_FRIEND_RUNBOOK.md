@@ -1,7 +1,7 @@
 # ScryRaven MVP Friend Runbook
 
 Status: short friend-shareable MVP/demo runbook for
-LICENSED-LIVE-DOGFOOD-AND-MVP-POLISH-01.
+MVP-LIVE-DPRIME-REVIEW-ENTRYPOINT-01.
 
 ## What It Does Today
 
@@ -55,8 +55,8 @@ is a single-source lane.
 ## Live Dogfood
 
 Live dogfood is not the default demo. It requires an explicitly licensed run,
-one explicit confirmation flag, and the private local broker/operator boundary
-for provider credentials.
+explicit confirmation flags, and the private local broker/operator boundary for
+provider credentials.
 
 Run the narrow live dogfood entrypoint only for the fixed MVP question:
 
@@ -64,12 +64,26 @@ Run the narrow live dogfood entrypoint only for the fixed MVP question:
 py -m proplex --mvp-live-dogfood-run --confirm-live-dogfood
 ```
 
-That command is capped to the current live dogfood slice. It uses at most the
-licensed provider/search and fetch/read attempts for the fixed query, writes
-sanitized retained artifacts under `output/mvp_live_dogfood_01/<run-id>/`, and
-then consumes those artifacts through the existing MVP live status path. It does
-not support arbitrary queries, does not claim product correctness, and does not
-open Economist/Specialist routing, Scrutineer remediation, AuthorProse, or new
+That command is capped to the current live dogfood slice. It uses at most one
+licensed provider/search call, up to five provider results, and up to three
+fetch/read attempts for the fixed query. It writes sanitized retained artifacts
+under `output/mvp_live_dogfood_01/<run-id>/` and then consumes those artifacts
+through the existing MVP live status path. Without the separate D-prime review
+confirmation below, it is expected to stop at
+`BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING`.
+
+To license the one-shot product-route D-prime review in the same fixed-query
+dogfood run, pass the separate review confirmation:
+
+```powershell
+py -m proplex --mvp-live-dogfood-run --confirm-live-dogfood --confirm-live-dprime-review
+```
+
+That route allows at most one D-prime/model-review call, no follow-up loops, and
+no Author/model calls. It does not support arbitrary queries, does not claim
+friend-level MVP readiness, does not claim general supported-query MVP
+readiness, does not claim product correctness, and does not open
+Economist/Specialist routing, Scrutineer remediation, AuthorProse, or broad
 model-provider routing.
 
 Do not paste or commit `.env` contents, API keys, broker tokens, raw provider

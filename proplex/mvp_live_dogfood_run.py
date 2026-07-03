@@ -24,6 +24,19 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from core.dprime_product_smart_one_shot_transport import (
+    build_dprime_product_smart_model_review_adapter,
+    build_dprime_product_smart_model_review_license,
+    build_dprime_product_smart_model_review_provider_boundary,
+)
+from core.dprime_support_proposal_schema import (
+    BLOCKED_APPROVED_MODEL_UNAVAILABLE,
+    BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
+    BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID,
+    BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE,
+    BLOCKED_OPENAI_ONE_SHOT_TRANSPORT_UNSAFE,
+    BLOCKED_PRODUCT_SMART_MODEL_ROUTE_CANNOT_ENFORCE_DPRIME_ONE_SHOT,
+)
 from core.fetch_read_content_reference import (
     FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
     BoundedTextSelection,
@@ -37,7 +50,10 @@ from core.live_ordinary_candidate_handoff_runtime import (
 from core.live_search_validation_runtime import (
     LIVE_SEARCH_VALIDATION_EXECUTION_MODE_BROKER_LIVE,
 )
-from core.product_model_route_config import MVP_LIVE_DOGFOOD_RUN_FLAG
+from core.product_model_route_config import (
+    CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+    MVP_LIVE_DOGFOOD_RUN_FLAG,
+)
 from core.run_kernel import RunKernel
 from core.search_result_candidate_packet import validate_search_result_candidate_packet
 from proplex.live_acquisition_readability_status import (
@@ -49,6 +65,7 @@ from proplex.live_acquisition_readability_status import (
     SEARCH_CANDIDATE_PACKET_NAME,
     SEARCH_RESULT_CANDIDATE_PACKET_NAME,
 )
+from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from proplex.mvp_friend_shareable_output import (
     DEFAULT_MVP_LIVE_OUTPUT_DIR,
     DEFAULT_MVP_QUERY,
@@ -56,13 +73,14 @@ from proplex.mvp_friend_shareable_output import (
     MVP_SOURCE_OBLIGATION_ID,
     MvpFriendOutputResult,
     build_mvp_live_dogfood_status_output,
+    build_mvp_live_dogfood_status_output_from_semantic_status,
     format_mvp_friend_output,
 )
 from proplex.mvp_friend_shareable_output import (
     EXPLICIT_NON_PROOFS as MVP_STATUS_NON_PROOFS,
 )
 
-PHASE_NAME = "MVP-LIVE-DOGFOOD-ENTRYPOINT-01"
+PHASE_NAME = "MVP-LIVE-DPRIME-REVIEW-ENTRYPOINT-01"
 MODE = "REPAIR"
 PASS_DECISION = "PASS"
 CONFIRM_LIVE_DOGFOOD_FLAG = "--confirm-live-dogfood"
@@ -87,6 +105,21 @@ BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING = (
 BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING = (
     "BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING"
 )
+BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE = (
+    "BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE"
+)
+BLOCKED_MVP_LIVE_DPRIME_REVIEW_CAP_EXHAUSTED = (
+    "BLOCKED_MVP_LIVE_DPRIME_REVIEW_CAP_EXHAUSTED"
+)
+BLOCKED_MVP_LIVE_DPRIME_REVIEW_OUTPUT_INVALID = (
+    "BLOCKED_MVP_LIVE_DPRIME_REVIEW_OUTPUT_INVALID"
+)
+BLOCKED_MVP_LIVE_MODEL_ROUTE_SECRET_BOUNDARY = (
+    "BLOCKED_MVP_LIVE_MODEL_ROUTE_SECRET_BOUNDARY"
+)
+BLOCKED_MVP_LIVE_PRODUCT_PATH_NOT_CONSUMED = (
+    "BLOCKED_MVP_LIVE_PRODUCT_PATH_NOT_CONSUMED"
+)
 BLOCKED_MVP_LIVE_OUTPUT_HYGIENE = "BLOCKED_MVP_LIVE_OUTPUT_HYGIENE"
 BLOCKED_MVP_LIVE_CAP_EXHAUSTED = "BLOCKED_MVP_LIVE_CAP_EXHAUSTED"
 
@@ -101,12 +134,12 @@ SANITIZED_PROVIDER_PROXY_RESPONSE_NAME = "sanitized-provider-proxy-response.json
 LIVE_DOGFOOD_PACKET_NAME = "live_dogfood_packet.json"
 
 MAX_SEARCH_TASKS = 2
-MAX_PROVIDER_SEARCH_CALLS = 2
+MAX_PROVIDER_SEARCH_CALLS = 1
 MAX_PROVIDER_RESULTS = 5
 MAX_FETCH_READ_ATTEMPTS = 3
 MAX_EVIDENCE_LEDGER_ADMISSIONS = 3
-MAX_DPRIME_MODEL_REVIEW_CALLS = 2
-MAX_FOLLOWUP_LOOPS = 1
+MAX_DPRIME_MODEL_REVIEW_CALLS = 1
+MAX_FOLLOWUP_LOOPS = 0
 MAX_FETCHED_BYTES = 1_048_576
 MAX_REDIRECTS = 2
 
@@ -231,6 +264,7 @@ _ALLOWED_RAW_FALSE_KEYS = frozenset(
         "raw_prompt_retained",
         "raw_provider_payload_retained",
         "raw_search_response_retained",
+        "raw_source_text_retained",
     }
 )
 _PRIVATE_VALUE_MARKERS = frozenset(
@@ -313,11 +347,18 @@ def build_mvp_live_dogfood_run_output(
     output_dir: str | Path | None = None,
     run_id: str | None = None,
     confirm_live_dogfood: bool = False,
+    confirm_live_dprime_review: bool = False,
     broker_url: str = DEFAULT_BROKER_URL,
     private_broker_path: str | Path = DEFAULT_PRIVATE_BROKER_PATH,
     env_file_paths: Sequence[str | Path] | None = None,
     provider_proxy_runner: ProviderProxyRunner | None = None,
     fetch_read_runner: FetchReadRunner | None = None,
+    smart_provider: str | None = None,
+    smart_model: str | None = None,
+    dprime_model_review_license: Mapping[str, Any] | None = None,
+    dprime_model_review_callable: Callable[..., Any] | None = None,
+    dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
+    dprime_one_shot_model_review_adapter: Any | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> MvpFriendOutputResult:
     """Run the fixed live dogfood flow and consume the existing status path."""
@@ -346,6 +387,12 @@ def build_mvp_live_dogfood_run_output(
                 BLOCKED_MVP_LIVE_DOGFOOD_QUERY_NOT_SUPPORTED,
                 "Only the fixed licensed live dogfood query is supported.",
             )
+        _guard_dprime_review_route(
+            confirm_live_dprime_review=confirm_live_dprime_review,
+            dprime_model_review_callable=dprime_model_review_callable,
+            dprime_one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+            environ=environ,
+        )
         if provider_proxy_runner is None and _pytest_or_ci_guard(environ):
             raise MvpLiveDogfoodRunError(
                 BLOCKED_MVP_LIVE_TEST_OR_CI_GUARD,
@@ -396,13 +443,44 @@ def build_mvp_live_dogfood_run_output(
         if fetch_packet is not None:
             counts["fetch_read_packet_created"] = 1
 
-        status_result = build_mvp_live_dogfood_status_output(
-            query=normalized_query,
-            repo_root=root,
-            retained_artifact_root=retained_root,
-            output_dir=output_dir or DEFAULT_MVP_LIVE_OUTPUT_DIR,
-            run_id=run_id,
-        )
+        if confirm_live_dprime_review:
+            dprime_kwargs = _dprime_review_kwargs(
+                smart_provider=smart_provider,
+                smart_model=smart_model,
+                dprime_model_review_license=dprime_model_review_license,
+                dprime_model_review_callable=dprime_model_review_callable,
+                dprime_one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+                dprime_one_shot_model_review_adapter=(
+                    dprime_one_shot_model_review_adapter
+                ),
+            )
+            semantic_status = build_live_semantic_coverage_status(
+                query=normalized_query,
+                repo_root=retained_root,
+                smart_provider=smart_provider,
+                smart_model=smart_model,
+                **dprime_kwargs,
+            )
+            status_result = build_mvp_live_dogfood_status_output_from_semantic_status(
+                semantic_status=semantic_status,
+                repo_root=root,
+                retained_artifact_root=retained_root,
+                output_dir=output_dir or DEFAULT_MVP_LIVE_OUTPUT_DIR,
+                run_id=run_id,
+                command_harness_used=_command_harness(confirm_live_dprime_review),
+                provider_broker_posture=(
+                    "private_broker_sanitized_provider_proxy_to_retained_artifacts_"
+                    "with_explicit_dprime_review"
+                ),
+            )
+        else:
+            status_result = build_mvp_live_dogfood_status_output(
+                query=normalized_query,
+                repo_root=root,
+                retained_artifact_root=retained_root,
+                output_dir=output_dir or DEFAULT_MVP_LIVE_OUTPUT_DIR,
+                run_id=run_id,
+            )
         packet = _packet_from_status(
             status_result=status_result,
             query=normalized_query,
@@ -411,8 +489,12 @@ def build_mvp_live_dogfood_run_output(
             counts=counts,
             provider_broker_posture=(
                 "private_broker_sanitized_provider_proxy_to_retained_artifacts"
+                "_with_explicit_dprime_review"
+                if confirm_live_dprime_review
+                else "private_broker_sanitized_provider_proxy_to_retained_artifacts"
             ),
             consumed_status=True,
+            model_review_licensed=confirm_live_dprime_review,
         )
     except MvpLiveDogfoodRunError as exc:
         packet = _blocked_packet(
@@ -424,6 +506,8 @@ def build_mvp_live_dogfood_run_output(
             counts=counts,
             consumed_status=False,
             caps_exhausted=exc.caps_exhausted,
+            confirm_live_dprime_review=confirm_live_dprime_review,
+            model_review_licensed=False,
         )
 
     validate_mvp_live_dogfood_packet(packet)
@@ -595,8 +679,122 @@ def validate_mvp_live_dogfood_packet(packet: Mapping[str, Any]) -> dict[str, Any
             BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
             "live dogfood packet must not claim product correctness.",
         )
+    if safe.get("model_review_licensed") not in {True, False}:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_OUTPUT_HYGIENE,
+            "live dogfood packet must record model_review_licensed boolean.",
+        )
+    if _bounded_int(safe.get("dprime_model_review_calls_attempted")) > (
+        MAX_DPRIME_MODEL_REVIEW_CALLS
+    ):
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_DPRIME_REVIEW_CAP_EXHAUSTED,
+            "live dogfood packet exceeded the D-prime model-review call cap.",
+            caps_exhausted=True,
+        )
     _reject_forbidden_material(safe, context="live dogfood packet")
     return safe
+
+
+def _guard_dprime_review_route(
+    *,
+    confirm_live_dprime_review: bool,
+    dprime_model_review_callable: Callable[..., Any] | None,
+    dprime_one_shot_model_review_adapter: Any | None,
+    environ: Mapping[str, str] | None,
+) -> None:
+    if not confirm_live_dprime_review:
+        return
+    if not _pytest_or_ci_guard(environ):
+        return
+    if dprime_model_review_callable is not None:
+        return
+    if dprime_one_shot_model_review_adapter is not None:
+        return
+    raise MvpLiveDogfoodRunError(
+        BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE,
+        (
+            "Default live D-prime product model route is disabled under "
+            "pytest/CI unless a fake review callable or transport is injected."
+        ),
+    )
+
+
+def _dprime_review_kwargs(
+    *,
+    smart_provider: str | None,
+    smart_model: str | None,
+    dprime_model_review_license: Mapping[str, Any] | None,
+    dprime_model_review_callable: Callable[..., Any] | None,
+    dprime_one_shot_provider_boundary: Mapping[str, Any] | None,
+    dprime_one_shot_model_review_adapter: Any | None,
+) -> dict[str, Any]:
+    if dprime_model_review_callable is not None:
+        return {
+            "dprime_model_review_license": (
+                dprime_model_review_license or _fake_dprime_review_license()
+            ),
+            "dprime_model_review_callable": dprime_model_review_callable,
+            "dprime_one_shot_provider_boundary": dprime_one_shot_provider_boundary,
+            "dprime_one_shot_model_review_adapter": (
+                dprime_one_shot_model_review_adapter
+            ),
+        }
+    boundary = (
+        dict(dprime_one_shot_provider_boundary)
+        if dprime_one_shot_provider_boundary is not None
+        else build_dprime_product_smart_model_review_provider_boundary()
+    )
+    boundary_id = _clean_text(boundary.get("boundary_id"), limit=320)
+    if not boundary_id:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE,
+            "D-prime product route provider boundary did not expose boundary_id.",
+        )
+    adapter = dprime_one_shot_model_review_adapter
+    if adapter is None:
+        adapter = build_dprime_product_smart_model_review_adapter(
+            provider_boundary_ref=boundary_id,
+            smart_provider=smart_provider or "OpenAI",
+            smart_model=smart_model or "gpt-5.4",
+        )
+    return {
+        "dprime_model_review_license": (
+            dprime_model_review_license
+            or build_dprime_product_smart_model_review_license()
+        ),
+        "dprime_one_shot_provider_boundary": boundary,
+        "dprime_one_shot_model_review_adapter": adapter,
+    }
+
+
+def _fake_dprime_review_license() -> dict[str, Any]:
+    return {
+        "license_id": "mvp-live-dprime-review-entrypoint-01:fake-test",
+        "enabled": True,
+        "test_only": True,
+        "callable_kind": "fake_test",
+        "max_model_review_calls": 1,
+        "retry_policy": "forbidden",
+        "timeout_policy": "fail_closed",
+    }
+
+
+def _dprime_model_review_calls_completed(packet: Mapping[str, Any]) -> int:
+    dprime = _safe_mapping(_safe_mapping(packet.get("status_payload")).get("dprime_status"))
+    if not dprime:
+        dprime = _safe_mapping(packet.get("dprime_status"))
+    return 1 if dprime.get("model_review_status") == "completed" else 0
+
+
+def _command_harness(confirm_live_dprime_review: bool) -> str:
+    command = (
+        f"python -m proplex {MVP_LIVE_DOGFOOD_RUN_FLAG} "
+        f"{CONFIRM_LIVE_DOGFOOD_FLAG}"
+    )
+    if confirm_live_dprime_review:
+        command = f"{command} {CONFIRM_LIVE_DPRIME_REVIEW_FLAG}"
+    return command
 
 
 def _candidate_packet_from_provider_results(
@@ -840,15 +1038,36 @@ def _packet_from_status(
     counts: Mapping[str, int],
     provider_broker_posture: str,
     consumed_status: bool,
+    model_review_licensed: bool,
 ) -> dict[str, Any]:
     packet = dict(status_result.packet)
     status_decision = str(packet.get("status_decision") or packet.get("decision"))
-    decision = _mapped_live_decision(status_decision)
+    decision = _mapped_live_decision(
+        status_decision,
+        model_review_licensed=model_review_licensed,
+    )
     blocker_detail = _mapped_blocker_detail(
         decision=decision,
         status_decision=status_decision,
         original_detail=str(packet.get("blocker_detail") or ""),
+        model_review_licensed=model_review_licensed,
     )
+    dprime_model_review_call_count = _bounded_int(
+        packet.get("dprime_model_review_call_count")
+    )
+    if dprime_model_review_call_count > MAX_DPRIME_MODEL_REVIEW_CALLS:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_DPRIME_REVIEW_CAP_EXHAUSTED,
+            "D-prime model-review call cap exceeded.",
+            caps_exhausted=True,
+        )
+    followup_loop_count = _bounded_int(packet.get("followup_loop_count"))
+    if followup_loop_count > MAX_FOLLOWUP_LOOPS:
+        raise MvpLiveDogfoodRunError(
+            BLOCKED_MVP_LIVE_CAP_EXHAUSTED,
+            "follow-up loop cap exhausted for this phase.",
+            caps_exhausted=True,
+        )
     packet.update(
         {
             "phase_name": PHASE_NAME,
@@ -857,10 +1076,7 @@ def _packet_from_status(
             "run_id": run_id,
             "packet_id": f"mvp-live-dogfood-packet:{run_id}",
             "status_flag": MVP_LIVE_DOGFOOD_RUN_FLAG,
-            "command_harness_used": (
-                f"python -m proplex {MVP_LIVE_DOGFOOD_RUN_FLAG} "
-                f"{CONFIRM_LIVE_DOGFOOD_FLAG}"
-            ),
+            "command_harness_used": _command_harness(model_review_licensed),
             "provider_broker_posture": provider_broker_posture,
             "mvp_live_status_consumed_retained_artifacts": consumed_status,
             "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
@@ -874,14 +1090,13 @@ def _packet_from_status(
                 _bounded_int(packet.get("evidence_ledger_admissions")),
                 MAX_EVIDENCE_LEDGER_ADMISSIONS,
             ),
-            "dprime_model_review_call_count": min(
-                _bounded_int(packet.get("dprime_model_review_call_count")),
-                MAX_DPRIME_MODEL_REVIEW_CALLS,
+            "dprime_model_review_call_count": dprime_model_review_call_count,
+            "dprime_model_review_calls_attempted": dprime_model_review_call_count,
+            "dprime_model_review_calls_completed": (
+                _dprime_model_review_calls_completed(packet)
             ),
-            "followup_loop_count": min(
-                _bounded_int(packet.get("followup_loop_count")),
-                MAX_FOLLOWUP_LOOPS,
-            ),
+            "model_review_licensed": model_review_licensed,
+            "followup_loop_count": followup_loop_count,
             "raw_provider_payload_retained": False,
             "raw_search_response_retained": False,
             "raw_prompt_retained": False,
@@ -890,7 +1105,9 @@ def _packet_from_status(
             "product_correctness_claimed": False,
             "caps_exhausted": False,
             "decision_made_by_the_run": (
-                "mvp_live_dogfood_entrypoint_repaired_status_consumed"
+                "mvp_live_dprime_review_entrypoint_consumed_product_path"
+                if model_review_licensed
+                else "mvp_live_dogfood_entrypoint_repaired_status_consumed"
             ),
             "decision": decision,
             "status_decision": status_decision,
@@ -917,6 +1134,8 @@ def _blocked_packet(
     counts: Mapping[str, int],
     consumed_status: bool,
     caps_exhausted: bool,
+    confirm_live_dprime_review: bool,
+    model_review_licensed: bool,
 ) -> dict[str, Any]:
     safe_query = query if query == DEFAULT_MVP_QUERY else "unsupported live dogfood query (not retained)"
     packet = {
@@ -928,10 +1147,7 @@ def _blocked_packet(
         "packet_id": f"mvp-live-dogfood-packet:{run_id}",
         "ordinary_entrypoint": "python -m proplex",
         "status_flag": MVP_LIVE_DOGFOOD_RUN_FLAG,
-        "command_harness_used": (
-            f"python -m proplex {MVP_LIVE_DOGFOOD_RUN_FLAG} "
-            f"{CONFIRM_LIVE_DOGFOOD_FLAG}"
-        ),
+        "command_harness_used": _command_harness(confirm_live_dprime_review),
         "runtime_consumer": (
             "proplex.mvp_live_dogfood_run.build_mvp_live_dogfood_run_output"
         ),
@@ -947,6 +1163,15 @@ def _blocked_packet(
         "fetch_read_completed": counts.get("fetch_read_completed", 0),
         "evidence_ledger_admissions": 0,
         "dprime_model_review_call_count": 0,
+        "dprime_model_review_calls_attempted": counts.get(
+            "dprime_model_review_calls_attempted",
+            0,
+        ),
+        "dprime_model_review_calls_completed": counts.get(
+            "dprime_model_review_calls_completed",
+            0,
+        ),
+        "model_review_licensed": model_review_licensed,
         "followup_loop_count": 0,
         "answer_or_blocker_text": f"Blocked before answer: {blocker}. {detail}",
         "product_answer_text": "",
@@ -979,11 +1204,27 @@ def _blocked_packet(
     return packet
 
 
-def _mapped_live_decision(status_decision: str) -> str:
+def _mapped_live_decision(
+    status_decision: str,
+    *,
+    model_review_licensed: bool,
+) -> str:
     if status_decision == PASS_DECISION:
         return PASS_DECISION
     if status_decision == "BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED":
+        if model_review_licensed:
+            return BLOCKED_MVP_LIVE_PRODUCT_PATH_NOT_CONSUMED
         return BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING
+    if status_decision == BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID:
+        return BLOCKED_MVP_LIVE_DPRIME_REVIEW_OUTPUT_INVALID
+    if status_decision in {
+        BLOCKED_APPROVED_MODEL_UNAVAILABLE,
+        BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
+        BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE,
+        BLOCKED_OPENAI_ONE_SHOT_TRANSPORT_UNSAFE,
+        BLOCKED_PRODUCT_SMART_MODEL_ROUTE_CANNOT_ENFORCE_DPRIME_ONE_SHOT,
+    }:
+        return BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE
     if status_decision in {
         "BLOCKED_FETCH_READ_ARTIFACT_MISSING",
         "BLOCKED_FETCH_READ_ARTIFACT_UNREADABLE",
@@ -1001,19 +1242,42 @@ def _mapped_blocker_detail(
     decision: str,
     status_decision: str,
     original_detail: str,
+    model_review_licensed: bool,
 ) -> str:
     if decision == BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING:
         return (
             "Retained live search and fetch/read artifacts reached the MVP live "
             "status consumer, but the live D-prime model-review route is not "
-            f"licensed/wired for this command; underlying status decision: {status_decision}."
+            "licensed/wired for this command. Pass "
+            f"{CONFIRM_LIVE_DPRIME_REVIEW_FLAG} to license one product-route "
+            f"D-prime review attempt; underlying status decision: {status_decision}."
         )
+    if decision == BLOCKED_MVP_LIVE_PRODUCT_PATH_NOT_CONSUMED:
+        return (
+            "The D-prime review confirmation was present, but the product status "
+            "path still reported the model-review-not-licensed stop; underlying "
+            f"status decision: {status_decision}."
+        )
+    if decision == BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE:
+        return (
+            "The explicit D-prime review route failed closed before producing a "
+            f"validated support proposal; underlying status decision: {status_decision}. "
+            f"{original_detail}"
+        ).strip()
+    if decision == BLOCKED_MVP_LIVE_DPRIME_REVIEW_OUTPUT_INVALID:
+        return (
+            "The explicit D-prime review route made one attempt, but the model "
+            f"review output was invalid; underlying status decision: {status_decision}. "
+            f"{original_detail}"
+        ).strip()
     if decision == BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING:
         return (
             "Retained live search artifacts reached the MVP status consumer, "
             "but bounded live fetch/read did not produce a readable retained "
             f"handoff; underlying status decision: {status_decision}."
         )
+    if model_review_licensed and original_detail:
+        return original_detail
     return original_detail or f"underlying status decision: {status_decision}."
 
 
@@ -1300,6 +1564,8 @@ def _empty_counts() -> dict[str, int]:
         "fetch_read_attempts": 0,
         "fetch_read_completed": 0,
         "fetch_read_packet_created": 0,
+        "dprime_model_review_calls_attempted": 0,
+        "dprime_model_review_calls_completed": 0,
     }
 
 
@@ -1530,9 +1796,15 @@ __all__ = [
     "BLOCKED_MVP_LIVE_CONFIRMATION_REQUIRED",
     "BLOCKED_MVP_LIVE_DOGFOOD_QUERY_NOT_SUPPORTED",
     "BLOCKED_MVP_LIVE_DPRIME_REVIEW_ENTRYPOINT_MISSING",
+    "BLOCKED_MVP_LIVE_DPRIME_REVIEW_CAP_EXHAUSTED",
+    "BLOCKED_MVP_LIVE_DPRIME_REVIEW_OUTPUT_INVALID",
+    "BLOCKED_MVP_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE",
     "BLOCKED_MVP_LIVE_FETCH_READ_ENTRYPOINT_MISSING",
+    "BLOCKED_MVP_LIVE_MODEL_ROUTE_SECRET_BOUNDARY",
     "BLOCKED_MVP_LIVE_PRIVATE_BROKER_UNAVAILABLE",
+    "BLOCKED_MVP_LIVE_PRODUCT_PATH_NOT_CONSUMED",
     "BLOCKED_MVP_LIVE_TEST_OR_CI_GUARD",
+    "CONFIRM_LIVE_DPRIME_REVIEW_FLAG",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
     "MVP_LIVE_DOGFOOD_RUN_FLAG",
     "LiveDogfoodFetchReadResult",
