@@ -140,6 +140,12 @@ candidates are not implemented nodes, scheduling authorization, or budget
 leases. Do not hardcode the assumption that ScryRaven will remain
 single-component forever.
 
+`GENERIC-SINGLE-RELATION-LIVE-DOGFOOD-01` may consume those same plan-derived
+metadata candidates while running one default-off live dogfood relation under
+explicit confirmation and caps. That consumption does not implement
+`ComponentWorkNode`, `ComponentWorkGraph`, RunKernel DAG scheduling, concurrency,
+or budget leases, and it must remain single-relation only.
+
 ## Future Roadmap Pointer
 
 These are future doctrine items, not active implementation in this phase:

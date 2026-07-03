@@ -7,9 +7,10 @@ class metadata.
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP. The
 current product-visible path is an offline fixed-fixture demo, a default-off
-fixed-query live dogfood slice, and a default-off no-live single-relation
-planning dry run for conservative supported-class queries. Product correctness
-remains unclaimed.
+fixed-query live dogfood slice, a default-off no-live single-relation planning
+dry run for conservative supported-class queries, and a default-off generic
+single-relation live dogfood slice that must consume the relation plan before
+live acquisition. Product correctness remains unclaimed.
 
 The fixed passport-fee query is a canonical dogfood vector for the first class
 concept. It is not the architecture, not arbitrary query answering, and not a
@@ -40,11 +41,14 @@ Supported query shape:
 
 The fixed demo/live packet consumers record this boundary as metadata only. The
 no-live planning dry run consumes the boundary to reduce a conservative
-supported-class query into one relation-plan packet. Arbitrary query answering,
-natural-language query classification, generic live query planning,
-friend-level/general MVP readiness, source-authority posture over evidence,
-broad product-comparison support, social/review authority, and product
-correctness remain false/unclaimed.
+supported-class query into one relation-plan packet. The generic single-relation
+live dogfood path may consume that relation plan under explicit live
+confirmation and caps, but only for one planned relation. Arbitrary query
+answering, natural-language query classification, generic live supported-query
+answering beyond the single-relation dogfood slice, friend-level/general MVP
+readiness, source-authority posture over evidence, broad product-comparison
+support, social/review authority, and product correctness remain
+false/unclaimed.
 
 The boundary's source-of-record expectation is represented for planning by
 reference to the Analyst-owned source-authority posture contract in
@@ -88,6 +92,27 @@ D-prime relation-intake-shaped candidate packet. For unsupported queries, it
 blocks before relation planning and does not retain the unsupported query text.
 It makes no live calls, model calls, source-authority adjudication, FAP/Author
 changes, generic live answering, or product correctness claim.
+
+## Generic Single-Relation Live Dogfood
+
+The default-off generic live dogfood entrypoint is:
+
+```text
+python -m proplex --mvp-single-relation-live-dogfood-run --query "<supported query>" --confirm-live-dogfood [--confirm-live-dprime-review]
+```
+
+It must consume the relation plan from
+`core/generic_query_to_relation_planning.py` before live acquisition. The live
+search query seed, component id/text, source-obligation id/text, search
+requirement id/text, source-authority posture requirement ref, and D-prime
+relation-intake posture come from that plan, not from the fixed passport
+dogfood constants.
+
+This path is generic single-relation dogfood only. It does not open arbitrary
+answering, multi-component planning, RunKernel DAG scheduling or budget leases,
+source-class adapters, social/review aggregation, FAP/Author, friend-level or
+general MVP readiness, source-obligation satisfaction by the packet alone, or
+product correctness.
 
 ## Roadmap Preserved
 

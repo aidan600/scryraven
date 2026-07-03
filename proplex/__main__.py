@@ -49,6 +49,7 @@ from core.product_model_route_config import (  # noqa: E402
     MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_LIVE_DOGFOOD_STATUS_FLAG,
     MVP_QUERY_PLAN_STATUS_FLAG,
+    MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
     ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
     initialize_product_model_route_config,
 )
@@ -115,6 +116,12 @@ from proplex.mvp_live_dogfood_run import (  # noqa: E402
     DEFAULT_PRIVATE_BROKER_PATH,
     build_mvp_live_dogfood_run_output,
 )
+from proplex.mvp_single_relation_live_dogfood_run import (  # noqa: E402
+    DEFAULT_OUTPUT_DIR as DEFAULT_MVP_SINGLE_RELATION_LIVE_OUTPUT_DIR,
+)
+from proplex.mvp_single_relation_live_dogfood_run import (
+    build_generic_single_relation_live_dogfood_run_output,
+)
 from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
     OrdinaryLiveEntrypointDryRunDeps,
     build_ordinary_live_entrypoint_dry_run_config,
@@ -157,7 +164,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Research query / topic. For --mvp-demo, only the fixed MVP "
             "fixture query is supported. For --mvp-query-plan-status, a "
-            "supported-class user query is required."
+            "supported-class user query is required. For "
+            "--mvp-single-relation-live-dogfood-run, the query is required."
         ),
     )
     p.add_argument(
@@ -314,6 +322,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+        action="store_true",
+        dest="mvp_single_relation_live_dogfood_run",
+        help=(
+            "Run one explicitly confirmed generic single-relation live dogfood "
+            "attempt from the relation planner into retained-artifact status."
+        ),
+    )
+    p.add_argument(
         CONFIRM_LIVE_DOGFOOD_FLAG,
         action="store_true",
         dest="confirm_live_dogfood",
@@ -350,7 +367,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Write MVP review packets under DIR. Defaults to output/mvp_demo_01 "
             "or output/mvp_live_dogfood_01; query planning defaults to "
-            "output/mvp_query_plan_01."
+            "output/mvp_query_plan_01; generic single-relation live dogfood "
+            "defaults to output/mvp_single_relation_live_dogfood_01."
         ),
     )
     p.add_argument(
@@ -630,6 +648,45 @@ def _run_mvp_live_dogfood_run(
     return result.return_code
 
 
+def _run_mvp_single_relation_live_dogfood_run(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    del log
+    output_dir = args.mvp_output_dir or DEFAULT_MVP_SINGLE_RELATION_LIVE_OUTPUT_DIR
+    try:
+        result = build_generic_single_relation_live_dogfood_run_output(
+            query=args.query,
+            repo_root=_ROOT,
+            output_dir=output_dir,
+            confirm_live_dogfood=args.confirm_live_dogfood,
+            confirm_live_dprime_review=args.confirm_live_dprime_review,
+            broker_url=args.mvp_live_broker_url,
+            private_broker_path=args.mvp_live_private_broker_path,
+            env_file_paths=args.mvp_live_env_file,
+            smart_provider=args.smart_provider,
+            smart_model=args.smart_model,
+        )
+    except Exception as exc:
+        print(
+            "ERROR: Unexpected generic single-relation live dogfood run error "
+            f"- {exc}",
+            file=sys.stderr,
+        )
+        return 1
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(result.output, encoding="utf-8")
+        print(
+            f"Generic single-relation live dogfood run written to {out_path}",
+            file=sys.stderr,
+        )
+    else:
+        print(result.output)
+    return result.return_code
+
+
 def _run_mvp_live_dogfood_status(
     *,
     args: argparse.Namespace,
@@ -690,6 +747,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.mvp_live_dogfood_run:
         return _run_mvp_live_dogfood_run(args=args, log=log)
+
+    if args.mvp_single_relation_live_dogfood_run:
+        return _run_mvp_single_relation_live_dogfood_run(args=args, log=log)
 
     if args.mvp_live_dogfood_status:
         return _run_mvp_live_dogfood_status(args=args, log=log)
