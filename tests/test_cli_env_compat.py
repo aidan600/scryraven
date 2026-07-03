@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+os.environ.setdefault("PYTHON_DOTENV_DISABLED", "1")
 
 from proplex.__main__ import _parse_args
 from proplex.env_aliases import pop_env_alias

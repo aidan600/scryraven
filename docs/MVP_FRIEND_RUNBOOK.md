@@ -54,13 +54,30 @@ is a single-source lane.
 
 ## Live Dogfood
 
-Live dogfood is not the default demo. It requires an explicitly licensed run and
-the private local broker/operator boundary for provider credentials. Do not
-paste or commit `.env` contents, API keys, broker tokens, raw provider payloads,
-raw prompts, raw model responses, private logs, DB/cache rows, or full traces.
+Live dogfood is not the default demo. It requires an explicitly licensed run,
+one explicit confirmation flag, and the private local broker/operator boundary
+for provider credentials.
 
-After separately retained sanitized live artifacts exist, this status command
-can consume them without making live calls:
+Run the narrow live dogfood entrypoint only for the fixed MVP question:
+
+```powershell
+py -m proplex --mvp-live-dogfood-run --confirm-live-dogfood
+```
+
+That command is capped to the current live dogfood slice. It uses at most the
+licensed provider/search and fetch/read attempts for the fixed query, writes
+sanitized retained artifacts under `output/mvp_live_dogfood_01/<run-id>/`, and
+then consumes those artifacts through the existing MVP live status path. It does
+not support arbitrary queries, does not claim product correctness, and does not
+open Economist/Specialist routing, Scrutineer remediation, AuthorProse, or new
+model-provider routing.
+
+Do not paste or commit `.env` contents, API keys, broker tokens, raw provider
+payloads, raw prompts, raw model responses, private logs, DB/cache rows, or full
+traces.
+
+After separately retained sanitized live artifacts exist, this no-live status
+command can consume them without making live calls:
 
 ```powershell
 py -m proplex --mvp-live-dogfood-status --query "What is the current adult U.S. passport book renewal fee by mail?"

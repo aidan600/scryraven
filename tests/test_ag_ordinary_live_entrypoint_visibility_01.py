@@ -15,7 +15,10 @@ import pytest
 from core.ordinary_live_main_runkernel_coverage_runtime import (
     ORDINARY_LIVE_MAIN_RUNKERNEL_COVERAGE_TRACE_KEY,
 )
-from core.product_model_route_config import LIVE_SEMANTIC_COVERAGE_STATUS_FLAG
+from core.product_model_route_config import (
+    LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
+    MVP_LIVE_DOGFOOD_RUN_FLAG,
+)
 from proplex.ordinary_live_entrypoint_dry_run import (
     ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
     format_ordinary_live_entrypoint_dry_run_status,
@@ -74,6 +77,16 @@ def test_semantic_coverage_status_dry_run_startup_skips_dotenv(
     result = _run_search_provider_startup_probe(
         tmp_path,
         argv_after_query=[LIVE_SEMANTIC_COVERAGE_STATUS_FLAG],
+    )
+
+    assert result["search_providers_imported_by_cli_core_imports"] is True
+    assert result["brave_search_timeout_sec"] == 8.0
+
+
+def test_mvp_live_dogfood_run_startup_skips_dotenv(tmp_path: Path) -> None:
+    result = _run_search_provider_startup_probe(
+        tmp_path,
+        argv_after_query=[MVP_LIVE_DOGFOOD_RUN_FLAG],
     )
 
     assert result["search_providers_imported_by_cli_core_imports"] is True

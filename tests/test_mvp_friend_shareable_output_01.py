@@ -34,6 +34,7 @@ import pytest
 
 from core.product_model_route_config import (
     MVP_DEMO_FLAG,
+    MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_LIVE_DOGFOOD_STATUS_FLAG,
     PRODUCT_STATUS_DRY_RUN_FLAGS,
 )
@@ -260,6 +261,7 @@ def test_default_cli_does_not_run_mvp_paths(
         )
 
     monkeypatch.setattr(cli, "build_mvp_demo_output", fail_mvp)
+    monkeypatch.setattr(cli, "build_mvp_live_dogfood_run_output", fail_mvp)
     monkeypatch.setattr(cli, "build_mvp_live_dogfood_status_output", fail_mvp)
     monkeypatch.setattr(cli, "load_dotenv", lambda: None)
     monkeypatch.setattr(cli, "missing_required_api_keys", lambda **_kwargs: [])
@@ -276,6 +278,7 @@ def test_default_cli_does_not_run_mvp_paths(
 
 def test_mvp_flags_are_no_secret_status_dry_run_flags() -> None:
     assert MVP_DEMO_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
+    assert MVP_LIVE_DOGFOOD_RUN_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
     assert MVP_LIVE_DOGFOOD_STATUS_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
 
 
