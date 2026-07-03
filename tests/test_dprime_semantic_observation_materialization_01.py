@@ -15,9 +15,8 @@ Why this is not a shadow product path: it invokes the product status builder and
 the RunKernel/SemanticObservation-owned materialization runtime, not a detached
 packet path.
 Forbidden interpretation: a RunKernel-owned D-prime decision is not
-ComponentCoverage binding, citation eligibility, source-obligation satisfaction,
-SufficiencyReadiness, FinalAnswerPacket, Author/answer text, product
-correctness, or a live call.
+ComponentCoverage binding by itself and does not claim product correctness or a
+live call.
 """
 
 from __future__ import annotations
@@ -28,7 +27,6 @@ from typing import Any
 
 import pytest
 
-import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_runkernel_admission_runtime as rk_dprime
 import core.dprime_semantic_observation_materialization_runtime as dprime_semantic
 import core.dprime_support_proposal_schema as dprime
@@ -55,9 +53,7 @@ def test_product_status_consumes_contract_authority_and_materializes_semantic_ob
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
+    assert result.decision == "PASS"
     assert "RunKernel admission decision status: admitted" in result.output
     assert "SemanticObservation admission status: admitted" in result.output
     assert "ComponentCoverage status: bound" in result.output
@@ -94,9 +90,10 @@ def test_product_status_consumes_contract_authority_and_materializes_semantic_ob
         "run_kernel_admission_decision": True,
         "semantic_observation": True,
         "component_coverage": True,
-        "sufficiency_readiness": False,
-        "final_answer_packet": False,
-        "author_answer": False,
+        "sufficiency_readiness": True,
+        "final_answer_packet": True,
+        "author_answer": True,
+        "citation_source_display": True,
     }
     semantic = result.payload["semantic_observation_admission_ref"]
     coverage = result.payload["component_coverage_ref"]
@@ -117,12 +114,12 @@ def test_product_status_consumes_contract_authority_and_materializes_semantic_ob
     assert citation_authority["citation_source_handoff_consumed"] is True
     assert result.payload["semantic_support_source"] == (
         "available from D-prime SemanticObservation and bound ComponentCoverage; "
-        "source-obligation and citation-source handoff authority consumed"
+        "source-obligation and citation-source handoff authority consumed; "
+        "single-lane answer path consumed"
     )
-    assert result.payload["next_blocked_surface"] == "SufficiencyReadiness"
-    assert "SufficiencyReadiness is not licensed" in (
-        result.payload["blocker_detail"]
-    )
+    assert result.payload["next_blocked_surface"] is None
+    assert "blocker_detail" not in result.payload
+    assert result.payload["dprime_answer_path_ref"]["status"] == "consumed"
     assert result.payload["component_coverage_only_treated_as_pass"] is False
     assert result.payload["detached_posture_status_packet_treated_as_authority"] is False
     assert result.payload["component_ref"]["lineage_only"] is True
@@ -140,9 +137,7 @@ def test_retained_contract_digest_lineage_is_checked_not_counted_as_authority(
     dprime_status = result.payload["dprime_status"]
     assert component_ref["lineage_only"] is True
     assert component_ref["current_answer_contract_digest"]
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
+    assert result.decision == "PASS"
     assert semantic["status"] == "admitted"
     authority = dprime_status["accepted_current_answer_contract_authority_ref"]
     assert authority["retained_refs_are_lineage_only"] is True
@@ -151,6 +146,9 @@ def test_retained_contract_digest_lineage_is_checked_not_counted_as_authority(
     ]
     assert dprime_status["objects_created"]["semantic_observation"] is True
     assert dprime_status["objects_created"]["component_coverage"] is True
+    assert dprime_status["objects_created"]["sufficiency_readiness"] is True
+    assert dprime_status["objects_created"]["final_answer_packet"] is True
+    assert dprime_status["objects_created"]["author_answer"] is True
     assert result.payload["component_coverage_only_treated_as_pass"] is False
 
 
@@ -396,9 +394,6 @@ def test_materialization_output_hygiene_excludes_raw_private_and_closed_material
         "raw page text",
         "provider payload",
         "citation eligibility claimed: true",
-        "source-obligation satisfaction claimed: true",
-        "FinalAnswerPacket",
-        "Author prose",
         "product correctness claimed: true",
     ):
         assert forbidden not in result.output
@@ -427,22 +422,21 @@ def test_dprime_schema_objects_still_cannot_smuggle_materialization() -> None:
     )
 
 
-def test_architecture_doc_records_new_stop_and_closed_downstream_surfaces() -> None:
+def test_architecture_doc_records_single_lane_answer_path() -> None:
     text = Path("docs/architecture/DPRIME_ARCHITECTURE.md").read_text(
         encoding="utf-8"
     )
 
     assert "ordinary D-prime accepted/current answer-contract authority" in text
-    assert "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED" in text
     assert "ComponentCoverage binding" in text
-    for closed_surface in (
+    for opened_surface in (
         "`SufficiencyReadiness`",
-        "`FinalAnswerPacket`",
-        "Author/answer text",
-        "product correctness",
-        "citation rendering",
+        "hardened final answer packet",
+        "Author/answer output",
+        "citation/source display",
     ):
-        assert closed_surface in text
+        assert opened_surface in text
+    assert "product correctness remains unclaimed" in text
 
 
 def _run_product_status_with_assessment(

@@ -45,6 +45,10 @@ from core.dprime_semantic_observation_materialization_runtime import (
     DPrimeSemanticObservationMaterializationError,
     materialize_dprime_semantic_observation_from_admitted_decision,
 )
+from core.dprime_single_lane_answer_path_runtime import (
+    DPrimeSingleLaneAnswerPathError,
+    build_dprime_single_lane_answer_path,
+)
 from core.dprime_support_proposal_schema import (
     BLOCKED_DPRIME_MODEL_REVIEW_NOT_LICENSED,
     BLOCKED_DPRIME_NEGATIVE_CONTROL_PROFILE_FAILED,
@@ -119,17 +123,17 @@ NEXT_BLOCKED_SURFACE = (
     "D-prime EvidenceFramePreflight"
 )
 CLOSED_DOWNSTREAM_SURFACES = (
-    "citation rendering",
-    "SufficiencyReadiness",
-    "final answer packet",
-    "Author/AuthorProse",
-    "answer text",
     "product-quality correctness claim",
+    "generic D-prime analyst intake",
+    "multi-component support aggregation",
+    "multi-source conflict handling",
+    "live/model/provider/search/fetch/read/retrieval calls",
+    "old Author execution",
 )
 EXPLICIT_NON_CLAIM = (
-    "This phase does not prove citation rendering, answerability, "
-    "SufficiencyReadiness, final answer packet readiness, Author correctness, "
-    "final answer quality, or product-quality correctness."
+    "This phase creates a narrow single-lane D-prime answer-path status only. "
+    "It does not prove product correctness, generic analyst intake, live "
+    "validation, or final answer quality."
 )
 
 _READINESS_BLOCKER_MAP = {
@@ -438,7 +442,7 @@ def build_live_semantic_coverage_status(
 
 
 def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
-    """Format concise CLI status without bounded text, answer prose, or citations."""
+    """Format concise CLI status without raw/private or product-correctness claims."""
 
     selected = _safe_mapping(payload.get("selected_candidate"))
     admission = _safe_mapping(payload.get("source_evidence_admission_ref"))
@@ -450,6 +454,8 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
     citation_authority = _safe_mapping(
         payload.get("citation_eligibility_authority_ref")
     )
+    answer_path = _safe_mapping(payload.get("dprime_answer_path_ref"))
+    citation_display = _safe_mapping(answer_path.get("citation_source_display"))
     dprime = _safe_mapping(payload.get("dprime_status"))
     dprime_request = _safe_mapping(
         dprime.get("run_kernel_support_admission_request_ref")
@@ -622,6 +628,23 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
             f"{citation_authority.get('blocker')}"
         ),
         (
+            "SufficiencyReadiness status: "
+            f"{answer_path.get('sufficiency_readiness_status')}"
+        ),
+        (
+            "final answer packet status: "
+            f"{answer_path.get('final_answer_packet_status')}"
+        ),
+        f"Author answer status: {answer_path.get('author_answer_status')}",
+        (
+            "citation/source display status: "
+            f"{answer_path.get('citation_source_display_status')}"
+        ),
+        (
+            "D-prime single-lane answer path status: "
+            f"{answer_path.get('status')}"
+        ),
+        (
             "ad hoc semantic matcher/heuristic avoided: "
             f"{_bool_text(payload.get('ad_hoc_semantic_matcher_avoided'))}"
         ),
@@ -635,6 +658,14 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         ),
         str(payload.get("non_claim")),
     ]
+    answer_text = _clean_text(answer_path.get("answer_text"), limit=2_000)
+    if answer_text:
+        lines.append(f"Author answer text: {answer_text}")
+    for entry in citation_display.get("citation_source_entries") or []:
+        source = _safe_mapping(entry)
+        display_text = _clean_text(source.get("display_text"), limit=700)
+        if display_text:
+            lines.append(f"citation/source display: {display_text}")
     if decision != PASS_DECISION:
         lines.extend(
             [
@@ -871,6 +902,8 @@ def _blocked_dprime_model_review_assessment_result(
     decision = None
     semantic_materialization = None
     support_bundle = None
+    answer_path = None
+    answer_path_error = None
     support_bundle_error = None
     materialization_error = None
     contract_authority = None
@@ -936,9 +969,33 @@ def _blocked_dprime_model_review_assessment_result(
                     )
                     dprime.update(support_bundle.to_status_overlay())
                     objects_created["component_coverage"] = True
-                    objects_created["sufficiency_readiness"] = False
-                    objects_created["final_answer_packet"] = False
-                    objects_created["author_answer"] = False
+                    try:
+                        answer_path = build_dprime_single_lane_answer_path(
+                            support_bundle=support_bundle,
+                            run_kernel=contract_authority.run_kernel,
+                        )
+                        dprime.update(answer_path.to_status_overlay())
+                        objects_created["sufficiency_readiness"] = True
+                        objects_created["final_answer_packet"] = True
+                        objects_created["author_answer"] = True
+                        objects_created["citation_source_display"] = True
+                    except DPrimeSingleLaneAnswerPathError as exc:
+                        answer_path_error = exc
+                        kernel = contract_authority.run_kernel
+                        objects_created["sufficiency_readiness"] = bool(
+                            kernel.state.sufficiency_readiness_projection
+                        )
+                        objects_created["final_answer_packet"] = bool(
+                            kernel.state.final_answer_authority_projection
+                        )
+                        objects_created["author_answer"] = bool(
+                            kernel.state.author_prose_projection
+                        )
+                        objects_created["citation_source_display"] = bool(
+                            kernel.state.projections.get(
+                                "dprime_citation_source_display"
+                            )
+                        )
                 except DPrimeEvidenceSupportBundleError as exc:
                     support_bundle_error = exc
                     objects_created["component_coverage"] = False
@@ -977,9 +1034,18 @@ def _blocked_dprime_model_review_assessment_result(
         semantic_ref = semantic_materialization.semantic_status_ref()
         if support_bundle is not None:
             coverage_ref = support_bundle.component_coverage_ref
-            payload_decision = support_bundle.decision
-            payload_detail = support_bundle.blocker_detail
-            next_surface = "SufficiencyReadiness"
+            if answer_path is not None:
+                payload_decision = PASS_DECISION
+                payload_detail = None
+                next_surface = None
+            elif answer_path_error is not None:
+                payload_decision = answer_path_error.blocker
+                payload_detail = answer_path_error.detail
+                next_surface = answer_path_error.next_surface
+            else:
+                payload_decision = support_bundle.decision
+                payload_detail = support_bundle.blocker_detail
+                next_surface = "SufficiencyReadiness"
         elif support_bundle_error is not None:
             coverage_ref = {
                 "status": "blocked",
@@ -1049,6 +1115,11 @@ def _blocked_dprime_model_review_assessment_result(
         )
         next_surface = _model_review_next_blocked_surface(payload_decision)
 
+    answer_path_ref = _answer_path_status_ref(
+        answer_path=answer_path,
+        answer_path_error=answer_path_error,
+        run_kernel=contract_authority.run_kernel if contract_authority else None,
+    )
     payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
@@ -1068,6 +1139,13 @@ def _blocked_dprime_model_review_assessment_result(
             "dprime_status": dprime,
             "semantic_support_source": (
                 (
+                    "available from D-prime SemanticObservation and bound "
+                    "ComponentCoverage; source-obligation and citation-source "
+                    "handoff authority consumed; single-lane answer path "
+                    "consumed"
+                )
+                if answer_path is not None
+                else (
                     "available from D-prime SemanticObservation and bound "
                     "ComponentCoverage; source-obligation and citation-source "
                     "handoff authority consumed"
@@ -1095,6 +1173,7 @@ def _blocked_dprime_model_review_assessment_result(
                     "authority_consumed": False,
                 }
             ),
+            "dprime_answer_path_ref": answer_path_ref,
             "component_coverage_only_treated_as_pass": False,
             "detached_posture_status_packet_treated_as_authority": False,
             "semantic_support_custody_distinction_preserved": True,
@@ -1138,6 +1217,81 @@ def _model_review_next_blocked_surface(decision: str) -> str:
     if decision == BLOCKED_DPRIME_RUN_KERNEL_ADMISSION_MISSING:
         return "D-prime RunKernel support admission decision"
     return "D-prime model-review assessment"
+
+
+def _answer_path_status_ref(
+    *,
+    answer_path: Any,
+    answer_path_error: DPrimeSingleLaneAnswerPathError | None,
+    run_kernel: Any,
+) -> dict[str, Any]:
+    if answer_path is not None:
+        ref = dict(answer_path.to_status_overlay())
+        ref["status"] = "consumed"
+        return ref
+    kernel = run_kernel
+    readiness = (
+        _safe_mapping(kernel.state.sufficiency_readiness_projection)
+        if kernel is not None
+        else {}
+    )
+    fap = (
+        _safe_mapping(kernel.state.final_answer_authority_projection)
+        if kernel is not None
+        else {}
+    )
+    author = (
+        _safe_mapping(kernel.state.author_prose_projection)
+        if kernel is not None
+        else {}
+    )
+    display = (
+        _safe_mapping(kernel.state.projections.get("dprime_citation_source_display"))
+        if kernel is not None
+        else {}
+    )
+    ref = {
+        "status": "blocked" if answer_path_error is not None else "not reached",
+        "sufficiency_readiness_status": readiness.get("final_readiness_status"),
+        "final_answer_packet_status": fap.get("fap_status"),
+        "author_answer_status": author.get("author_prose_status"),
+        "citation_source_display_status": display.get("status"),
+        "sufficiency_readiness_ref": {
+            "readiness_id": readiness.get("readiness_id"),
+            "readiness_digest": readiness.get("readiness_digest"),
+            "final_readiness_status": readiness.get("final_readiness_status"),
+        }
+        if readiness
+        else {},
+        "final_answer_packet_ref": {
+            "packet_id": fap.get("packet_id"),
+            "packet_digest": fap.get("packet_digest") or fap.get("no_packet_digest"),
+            "fap_status": fap.get("fap_status"),
+            "packet_created": fap.get("packet_created"),
+        }
+        if fap
+        else {},
+        "author_answer_ref": {
+            "author_prose_id": author.get("author_prose_id"),
+            "author_prose_digest": author.get("author_prose_digest"),
+            "author_prose_status": author.get("author_prose_status"),
+        }
+        if author
+        else {},
+        "citation_source_display_ref": {
+            "display_id": display.get("display_id"),
+            "display_digest": display.get("display_digest"),
+            "status": display.get("status"),
+            "rendered_source_count": display.get("rendered_source_count"),
+        }
+        if display
+        else {},
+    }
+    if answer_path_error is not None:
+        ref["blocker"] = answer_path_error.blocker
+        ref["blocker_detail"] = answer_path_error.detail
+        ref["next_blocked_surface"] = answer_path_error.next_surface
+    return ref
 
 
 def _materialization_ref(value: Mapping[str, Any]) -> dict[str, Any]:

@@ -395,7 +395,7 @@ def _citation_source_handoff_authority_state(
         "reasons": [
             "citation-source handoff is backed by D-prime source-obligation authority",
             "source identity is safe handoff metadata, not rendered citation prose",
-            "SufficiencyReadiness/FAP/Author remain closed",
+            "downstream answer output must consume this handoff through the answer path",
         ],
     }
 

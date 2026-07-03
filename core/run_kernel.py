@@ -586,6 +586,10 @@ DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_STAGE = (
 DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_REASON = (
     "dprime_citation_source_handoff_authority_from_source_obligation_authority"
 )
+DPRIME_CITATION_SOURCE_DISPLAY_STAGE = "dprime_citation_source_display"
+DPRIME_CITATION_SOURCE_DISPLAY_REASON = (
+    "dprime_citation_source_display_from_single_lane_author_answer"
+)
 SEARCH_WORK_PLAN_CONSTRUCTION_STAGE = "search_work_plan_construction"
 ANSWER_CONTRACT_AUTHORITY_MAP_STAGE = "answer_contract_authority_map"
 OFFLINE_SEARCH_EXECUTOR_BRIDGE_STAGE = "offline_search_executor_bridge"
@@ -713,6 +717,7 @@ class ActionType(str, Enum):
     DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY = (
         "dprime_citation_source_handoff_authority"
     )
+    DPRIME_CITATION_SOURCE_DISPLAY = "dprime_citation_source_display"
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -804,6 +809,7 @@ class ObservationType(str, Enum):
     DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_CONSUMED = (
         "dprime_citation_source_handoff_authority_consumed"
     )
+    DPRIME_CITATION_SOURCE_DISPLAY_CREATED = "dprime_citation_source_display_created"
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -3728,6 +3734,111 @@ class RunKernel:
             inputs=merged_inputs,
             expected_observation_type=(
                 ObservationType.DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_CONSUMED
+            ),
+        )
+
+    def authorize_dprime_citation_source_display(
+        self,
+        *,
+        display_id: str,
+        display_digest: str,
+        citation_source_handoff_id: str,
+        citation_source_handoff_digest: str,
+        author_prose_id: str,
+        author_prose_digest: str,
+        final_answer_packet_digest: str,
+        request_id: str | None = None,
+        reason: str = DPRIME_CITATION_SOURCE_DISPLAY_REASON,
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        """Authorize D-prime source display after FAP and AuthorProse consume."""
+
+        if not self.state.dprime_citation_source_handoff_projection:
+            raise RunKernelTransitionError(
+                "D-prime source display requires citation-source handoff authority"
+            )
+        if not self.state.final_answer_authority_projection:
+            raise RunKernelTransitionError(
+                "D-prime source display requires hardened FinalAnswerPacket"
+            )
+        if not self.state.author_prose_projection:
+            raise RunKernelTransitionError(
+                "D-prime source display requires AuthorProse output"
+            )
+        handoff = self.state.dprime_citation_source_handoff_projection
+        author = self.state.author_prose_projection
+        fap = self.state.final_answer_authority_projection
+        expected_pairs = (
+            (
+                "citation_source_handoff_id",
+                citation_source_handoff_id,
+                handoff.get("citation_source_handoff_id"),
+            ),
+            (
+                "citation_source_handoff_digest",
+                citation_source_handoff_digest,
+                handoff.get("citation_source_handoff_digest"),
+            ),
+            ("author_prose_id", author_prose_id, author.get("author_prose_id")),
+            (
+                "author_prose_digest",
+                author_prose_digest,
+                author.get("author_prose_digest"),
+            ),
+        )
+        for label, value, expected in expected_pairs:
+            if not _clean_text(value, limit=260):
+                raise RunKernelTransitionError(
+                    "D-prime source display requires " f"{label} binding"
+                )
+            if expected and value != expected:
+                raise RunKernelTransitionError(
+                    "D-prime source display "
+                    f"{label} does not match prior authority"
+                )
+        packet_digest = (
+            fap.get("packet_digest")
+            or fap.get("no_packet_digest")
+            or fap.get("fap_digest")
+        )
+        if not _clean_text(final_answer_packet_digest, limit=260):
+            raise RunKernelTransitionError(
+                "D-prime source display requires final_answer_packet_digest binding"
+            )
+        if packet_digest and final_answer_packet_digest != packet_digest:
+            raise RunKernelTransitionError(
+                "D-prime source display final_answer_packet_digest mismatch"
+            )
+        for label, value in (
+            ("display_id", display_id),
+            ("display_digest", display_digest),
+        ):
+            if not _clean_text(value, limit=260):
+                raise RunKernelTransitionError(
+                    "D-prime source display requires " f"{label} binding"
+                )
+        merged_inputs = {
+            "display_id": display_id,
+            "display_digest": display_digest,
+            "citation_source_handoff_id": citation_source_handoff_id,
+            "citation_source_handoff_digest": citation_source_handoff_digest,
+            "author_prose_id": author_prose_id,
+            "author_prose_digest": author_prose_digest,
+            "final_answer_packet_digest": final_answer_packet_digest,
+            "request_id": request_id or self.state.request_id,
+            "citation_source_handoff_consumed": True,
+            "final_answer_packet_consumed": True,
+            "author_answer_consumed": True,
+            "product_correctness_claimed": False,
+            **dict(inputs or {}),
+        }
+        return self.authorize(
+            stage=DPRIME_CITATION_SOURCE_DISPLAY_STAGE,
+            action_type=ActionType.DPRIME_CITATION_SOURCE_DISPLAY,
+            reason=reason,
+            inputs=merged_inputs,
+            expected_observation_type=(
+                ObservationType.DPRIME_CITATION_SOURCE_DISPLAY_CREATED
             ),
         )
 
@@ -12508,6 +12619,122 @@ class RunKernel:
             self.state.projections[AUTHOR_PROSE_FINALIZATION_STAGE] = deepcopy(
                 author_prose_projection
             )
+        elif action.action_type is ActionType.DPRIME_CITATION_SOURCE_DISPLAY:
+            display = _safe_mapping(
+                observation.payload.get("dprime_citation_source_display")
+            )
+            if not display:
+                raise RunKernelTransitionError(
+                    "D-prime source display observation requires display payload"
+                )
+            if display.get("owner") != "RunKernel.DPrimeCitationSourceDisplay":
+                raise RunKernelTransitionError(
+                    "D-prime source display requires RunKernel owner"
+                )
+            if display.get("canonical_state") is not True:
+                raise RunKernelTransitionError(
+                    "D-prime source display requires canonical state"
+                )
+            if display.get("trace_only") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime source display must not be trace-only"
+                )
+            if display.get("storage_only") is not False:
+                raise RunKernelTransitionError(
+                    "D-prime source display must not be storage-only"
+                )
+            if display.get("run_id") != self.state.run_id:
+                raise RunKernelTransitionError(
+                    "D-prime source display run_id mismatch"
+                )
+            if display.get("request_id") != self.state.request_id:
+                raise RunKernelTransitionError(
+                    "D-prime source display request_id mismatch"
+                )
+            for label in (
+                "display_id",
+                "display_digest",
+                "citation_source_handoff_id",
+                "citation_source_handoff_digest",
+                "author_prose_id",
+                "author_prose_digest",
+                "final_answer_packet_digest",
+            ):
+                if display.get(label) != action.inputs.get(label):
+                    raise RunKernelTransitionError(
+                        "D-prime source display "
+                        f"{label} does not match authorized action"
+                    )
+            handoff = self.state.dprime_citation_source_handoff_projection
+            if display.get("citation_source_handoff_id") != handoff.get(
+                "citation_source_handoff_id"
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime source display handoff id mismatch"
+                )
+            if display.get("citation_source_handoff_digest") != handoff.get(
+                "citation_source_handoff_digest"
+            ):
+                raise RunKernelTransitionError(
+                    "D-prime source display handoff digest mismatch"
+                )
+            author = self.state.author_prose_projection
+            if display.get("author_prose_id") != author.get("author_prose_id"):
+                raise RunKernelTransitionError(
+                    "D-prime source display AuthorProse id mismatch"
+                )
+            if display.get("author_prose_digest") != author.get("author_prose_digest"):
+                raise RunKernelTransitionError(
+                    "D-prime source display AuthorProse digest mismatch"
+                )
+            fap = self.state.final_answer_authority_projection
+            expected_packet_digest = (
+                fap.get("packet_digest")
+                or fap.get("no_packet_digest")
+                or fap.get("fap_digest")
+            )
+            if display.get("final_answer_packet_digest") != expected_packet_digest:
+                raise RunKernelTransitionError(
+                    "D-prime source display FinalAnswerPacket digest mismatch"
+                )
+            for required_flag in (
+                "citation_source_handoff_consumed",
+                "final_answer_packet_consumed",
+                "author_answer_consumed",
+                "citation_source_display_created",
+            ):
+                if display.get(required_flag) is not True:
+                    raise RunKernelTransitionError(
+                        "D-prime source display must set "
+                        f"{required_flag}=True"
+                    )
+            if not display.get("citation_source_entries"):
+                raise RunKernelTransitionError(
+                    "D-prime source display requires source entries"
+                )
+            _require_false_fields(
+                display,
+                (
+                    "product_correctness_claimed",
+                    "author_answer_is_product_correctness",
+                    "model_called",
+                    "provider_called",
+                    "live_provider_called",
+                    "search_executed",
+                    "fetch_read_executed",
+                    "retrieval_executed",
+                    "raw_prompt_retained",
+                    "raw_model_response_retained",
+                    "raw_provider_payload_retained",
+                    "raw_source_text_retained",
+                    "bounded_source_text_retained",
+                    "db_rows_retained",
+                    "cache_rows_retained",
+                    "private_logs_retained",
+                ),
+                context="D-prime source display",
+            )
+            self.state.projections[action.stage] = deepcopy(display)
         elif action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE:
             packet_projection = _safe_mapping(
                 observation.payload.get("packet_projection")
@@ -15372,6 +15599,7 @@ __all__ = [
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
     "SEARCH_WORK_PLAN_CONSTRUCTION_STAGE",
+    "DPRIME_CITATION_SOURCE_DISPLAY_STAGE",
     "DPRIME_CITATION_SOURCE_HANDOFF_AUTHORITY_STAGE",
     "DPRIME_SOURCE_OBLIGATION_AUTHORITY_STAGE",
     "SUFFICIENCY_JUDGMENT_STAGE",

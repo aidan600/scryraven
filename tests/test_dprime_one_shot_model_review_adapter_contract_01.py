@@ -27,7 +27,6 @@ from typing import Any, Callable
 import pytest
 
 import core.dprime_assessment_validation as assessment_validation
-import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_one_shot_model_review_adapter as adapter_contract
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
@@ -144,9 +143,7 @@ def test_matching_adapter_contract_invokes_once_through_product_path(
     assert calls[0]["input_packet"]["one_shot_model_review_adapter_ref"][
         "status"
     ] == "configured"
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
+    assert result.decision == "PASS"
     dprime_status = result.payload["dprime_status"]
     assert dprime_status["model_review_call_count"] == 1
     assert (
@@ -356,9 +353,7 @@ def test_adapter_product_output_hygiene_excludes_raw_and_closed_material(
         "raw page text",
         "answer prose",
         "citation-ready material",
-        "FAP",
-        "Author prose",
-        "product correctness",
+        "product correctness claimed: true",
     ):
         assert forbidden not in result.output
 

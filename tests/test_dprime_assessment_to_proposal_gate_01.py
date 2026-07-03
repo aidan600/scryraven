@@ -12,10 +12,11 @@ Exit condition: keep while D-prime proposal candidates are pre-admission status
 objects before RunKernel support admission is licensed.
 Why this is not a shadow product path: it invokes the product status builder and
 the product-owned D-prime schema/model-review modules, not a standalone packet.
-Forbidden interpretation: proposal validation is not RunKernel admission,
-admitted semantic support, SemanticObservation admission, ComponentCoverage,
-citation eligibility, source-obligation satisfaction, SufficiencyReadiness,
-FinalAnswerPacket, Author/answer text, product correctness, or a live call.
+Forbidden interpretation: proposal validation by itself is not RunKernel
+admission, admitted semantic support, SemanticObservation admission,
+ComponentCoverage, citation eligibility, source-obligation satisfaction,
+SufficiencyReadiness, FinalAnswerPacket, Author/answer text, product
+correctness, or a live call.
 """
 
 from __future__ import annotations
@@ -26,7 +27,6 @@ from typing import Any
 
 import pytest
 
-import core.dprime_evidence_support_bundle_runtime as dprime_bundle
 import core.dprime_support_proposal_schema as dprime
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -47,9 +47,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
 
     result = _run_product_status_with_assessment(repo_root, _assessment_payload())
 
-    assert result.decision == (
-        dprime_bundle.BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
-    )
+    assert result.decision == "PASS"
     assert (
         "D-prime assessment status: assessed" in result.output
     )
@@ -68,7 +66,7 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
     assert (
         "semantic support source: available from D-prime SemanticObservation and "
         "bound ComponentCoverage; source-obligation and citation-source "
-        "handoff authority consumed"
+        "handoff authority consumed; single-lane answer path consumed"
     ) in result.output
 
     dprime_status = result.payload["dprime_status"]
@@ -114,9 +112,10 @@ def test_validator_valid_assessment_reaches_proposal_candidate_status(
         "run_kernel_admission_decision": True,
         "semantic_observation": True,
         "component_coverage": True,
-        "sufficiency_readiness": False,
-        "final_answer_packet": False,
-        "author_answer": False,
+        "sufficiency_readiness": True,
+        "final_answer_packet": True,
+        "author_answer": True,
+        "citation_source_display": True,
     }
     assert result.payload["semantic_observation_admission_ref"]["status"] == "admitted"
     assert result.payload["component_coverage_ref"]["status"] == "bound"
@@ -201,8 +200,6 @@ def test_proposal_gate_output_hygiene_excludes_raw_private_and_closed_material(
         "SemanticObservation id/ref/digest: admitted",
         "citation eligibility claimed: true",
         "source-obligation satisfaction claimed: true",
-        "FinalAnswerPacket",
-        "Author prose",
         "product correctness claimed: true",
     ):
         assert forbidden not in result.output
