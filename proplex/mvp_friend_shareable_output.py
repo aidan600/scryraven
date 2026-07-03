@@ -20,6 +20,10 @@ from core.dprime_model_review_assessment import DPrimeModelReviewLicense
 from core.fetch_read_content_reference import (
     build_fetch_read_content_packet_from_candidate_packet,
 )
+from core.mvp_supported_query_class_boundary import (
+    MVP_SUPPORTED_QUERY_CLASS_ID,
+    build_mvp_supported_query_class_boundary_status,
+)
 from core.product_model_route_config import MVP_DEMO_FLAG, MVP_LIVE_DOGFOOD_STATUS_FLAG
 from core.search_result_candidate_packet import (
     SearchResultCandidatePacket,
@@ -215,6 +219,14 @@ def _unsupported_mvp_demo_query_result(
         "decision": BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED,
         "status_decision": BLOCKED_MVP_DEMO_QUERY_NOT_SUPPORTED,
         "explicit_non_proofs": list(EXPLICIT_NON_PROOFS),
+        "supported_query_class_boundary": (
+            build_mvp_supported_query_class_boundary_status(
+                status="unsupported_query_blocked_before_boundary_entry",
+                fixed_query_example=False,
+                product_path_slice="offline_fixed_fixture_demo_query_gate",
+                product_path_consumed=False,
+            )
+        ),
         "retained_artifact_root": None,
         "status_payload": {},
         "blocker_detail": blocker_detail,
@@ -240,8 +252,9 @@ def _unsupported_mvp_demo_query_blocker_detail() -> str:
     return (
         "The offline MVP demo is a fixed deterministic fixture. It currently "
         f'only supports: "{DEFAULT_MVP_QUERY}". Arbitrary query answering '
-        "is not supported yet; the next product milestone is the "
-        "supported-query-class boundary and query-to-relation planning. "
+        "is not supported yet; the documented supported-query-class boundary "
+        f"is {MVP_SUPPORTED_QUERY_CLASS_ID}, and the next product milestone is "
+        "query-to-relation planning. "
         "The fixed live dogfood slice is not friend-level or general MVP, "
         "and product correctness remains unclaimed."
     )
@@ -353,6 +366,7 @@ def format_mvp_friend_output(
     scrutineer = _clean_text(packet.get("scrutineer_status"), limit=220) or "not invoked"
     followup = _clean_text(packet.get("followup_status"), limit=220) or "not requested"
     relation = _clean_text(packet.get("multi_source_status"), limit=220) or "single source lane"
+    boundary = _supported_query_class_boundary_line(packet)
     lines = [
         output_title,
         f"Question: {_clean_text(packet.get('query'), limit=500)}",
@@ -377,6 +391,7 @@ def format_mvp_friend_output(
             "",
             "Caveats",
             "- Product correctness claimed: false.",
+            f"- Supported-query class: {boundary}.",
             f"- Output kind: {output_kind}.",
             f"- Provider/broker posture: {packet.get('provider_broker_posture')}.",
             "- Raw/private retained: false.",
@@ -694,6 +709,18 @@ def _mvp_packet(
         "decision": decision,
         "status_decision": status_decision,
         "explicit_non_proofs": list(EXPLICIT_NON_PROOFS),
+        "supported_query_class_boundary": (
+            build_mvp_supported_query_class_boundary_status(
+                status="fixed_dogfood_example_only",
+                fixed_query_example=True,
+                product_path_slice=(
+                    "fixed_live_dogfood_status_slice"
+                    if live_execution
+                    else "offline_fixed_fixture_demo"
+                ),
+                product_path_consumed=True,
+            )
+        ),
         "retained_artifact_root": _display_path(retained_artifact_root),
         "status_payload": _packet_safe_payload(payload),
     }
@@ -796,6 +823,18 @@ def _source_display_entries(packet: Mapping[str, Any]) -> list[str]:
         for entry in packet.get("source_display_entries") or []
         if isinstance(entry, Mapping) and entry.get("display_text")
     ]
+
+
+def _supported_query_class_boundary_line(packet: Mapping[str, Any]) -> str:
+    boundary = _safe_mapping(packet.get("supported_query_class_boundary"))
+    label = (
+        _clean_text(boundary.get("profile_label"), limit=160)
+        or "not recorded"
+    )
+    status = _clean_text(boundary.get("status"), limit=120) or "unknown"
+    planning = boundary.get("arbitrary_query_planning_supported")
+    planning_text = "false" if planning is False else "unknown"
+    return f"{label}; status={status}; arbitrary query planning={planning_text}"
 
 
 def _scrutineer_status(scrutineer: Mapping[str, Any]) -> str:
