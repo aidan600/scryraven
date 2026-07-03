@@ -44,6 +44,8 @@ from core.product_model_route_config import (  # noqa: E402
     LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
     LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
     LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG,
+    MVP_DEMO_FLAG,
+    MVP_LIVE_DOGFOOD_STATUS_FLAG,
     ORDINARY_LIVE_ENTRYPOINT_DRY_RUN_FLAG,
     initialize_product_model_route_config,
 )
@@ -93,6 +95,13 @@ from proplex.live_semantic_coverage_status import (  # noqa: E402
 from proplex.live_source_evidence_admission_status import (  # noqa: E402
     build_live_source_evidence_admission_status,
 )
+from proplex.mvp_friend_shareable_output import (  # noqa: E402
+    DEFAULT_MVP_LIVE_OUTPUT_DIR,
+    DEFAULT_MVP_OUTPUT_DIR,
+    DEFAULT_MVP_QUERY,
+    build_mvp_demo_output,
+    build_mvp_live_dogfood_status_output,
+)
 from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
     OrdinaryLiveEntrypointDryRunDeps,
     build_ordinary_live_entrypoint_dry_run_config,
@@ -125,7 +134,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
         epilog="Compatibility: python -m proplex remains supported for existing scripts.",
     )
-    p.add_argument("query", help="Research query / topic")
+    p.add_argument("query", nargs="?", help="Research query / topic")
+    p.add_argument(
+        "--query",
+        dest="query_option",
+        default=None,
+        help=(
+            "Research query / topic. For --mvp-demo, only the fixed MVP "
+            "fixture query is supported."
+        ),
+    )
     p.add_argument(
         "--mode",
         choices=["Fast", "Balanced", "Deep"],
@@ -262,11 +280,56 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        MVP_DEMO_FLAG,
+        action="store_true",
+        dest="mvp_demo",
+        help=(
+            "Run the no-secrets offline fixed-fixture MVP demo through the "
+            "existing D-prime semantic coverage and answer-output status path."
+        ),
+    )
+    p.add_argument(
+        MVP_LIVE_DOGFOOD_STATUS_FLAG,
+        action="store_true",
+        dest="mvp_live_dogfood_status",
+        help=(
+            "Consume already-retained sanitized live dogfood artifacts through "
+            "the MVP product status view without making live calls."
+        ),
+    )
+    p.add_argument(
+        "--mvp-output-dir",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Write MVP review packets under DIR. Defaults to output/mvp_demo_01 "
+            "or output/mvp_live_dogfood_01."
+        ),
+    )
+    p.add_argument(
+        "--mvp-retained-artifact-root",
+        default=None,
+        metavar="DIR",
+        help=(
+            "For --mvp-live-dogfood-status, consume retained status artifacts "
+            "from DIR instead of the repository root."
+        ),
+    )
+    p.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="Print DEBUG log to stderr",
     )
-    return p.parse_args(argv)
+    args = p.parse_args(argv)
+    if args.query and args.query_option and args.query != args.query_option:
+        p.error("query positional argument and --query must match when both are provided")
+    if args.query_option:
+        args.query = args.query_option
+    if not args.query and (args.mvp_demo or args.mvp_live_dogfood_status):
+        args.query = DEFAULT_MVP_QUERY
+    if not args.query:
+        p.error("the following arguments are required: query")
+    return args
 
 
 def _parse_domains(raw: str) -> list[str]:
@@ -437,9 +500,66 @@ def _run_live_semantic_coverage_status(
     return result.return_code
 
 
+def _run_mvp_demo(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    del log
+    output_dir = args.mvp_output_dir or DEFAULT_MVP_OUTPUT_DIR
+    try:
+        result = build_mvp_demo_output(
+            query=args.query,
+            repo_root=_ROOT,
+            output_dir=output_dir,
+        )
+    except Exception as exc:
+        print(f"ERROR: Unexpected MVP demo error - {exc}", file=sys.stderr)
+        return 1
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(result.output, encoding="utf-8")
+        print(f"MVP demo output written to {out_path}", file=sys.stderr)
+    else:
+        print(result.output)
+    return result.return_code
+
+
+def _run_mvp_live_dogfood_status(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    del log
+    output_dir = args.mvp_output_dir or DEFAULT_MVP_LIVE_OUTPUT_DIR
+    try:
+        result = build_mvp_live_dogfood_status_output(
+            query=args.query,
+            repo_root=_ROOT,
+            retained_artifact_root=args.mvp_retained_artifact_root,
+            output_dir=output_dir,
+        )
+    except Exception as exc:
+        print(f"ERROR: Unexpected MVP live dogfood status error - {exc}", file=sys.stderr)
+        return 1
+    if args.output:
+        out_path = Path(args.output)
+        out_path.write_text(result.output, encoding="utf-8")
+        print(f"MVP live dogfood status written to {out_path}", file=sys.stderr)
+    else:
+        print(result.output)
+    return result.return_code
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else list(argv))
     log = _build_logger(args.verbose)
+
+    if args.mvp_demo:
+        return _run_mvp_demo(args=args, log=log)
+
+    if args.mvp_live_dogfood_status:
+        return _run_mvp_live_dogfood_status(args=args, log=log)
 
     if args.ordinary_live_main_runkernel_coverage_dry_run:
         return _run_ordinary_live_entrypoint_dry_run(args=args, log=log)
