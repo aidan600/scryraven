@@ -108,6 +108,9 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT = (
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX"
 )
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES"
 )
@@ -163,6 +166,16 @@ MAX_AUTHOR_CALLS = 0
 MAX_INDEPENDENT_SOURCE_CHECKS = 0
 MAX_FETCHED_BYTES = 1_048_576
 MAX_REDIRECTS = 2
+FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID = (
+    "generic_public_web_fetch_read_request_hygiene_v1"
+)
+FETCH_READ_PUBLIC_WEB_REQUEST_POSTURE = (
+    "stable_product_user_agent_accept_accept_language"
+)
+FETCH_READ_PUBLIC_WEB_USER_AGENT = (
+    "ScryRaven/1.0 "
+    "(+https://github.com/aidan600/scryraven; generic-public-web-readability-check)"
+)
 
 FETCH_READ_FAILURE_MISSING_URL = "MISSING_URL"
 FETCH_READ_FAILURE_INVALID_URL = "INVALID_URL"
@@ -417,6 +430,10 @@ class GenericSingleRelationLiveDogfoodRunError(ValueError):
         fetch_readable_content_type: bool | str | None = None,
         fetch_readable_text_obtained: bool | None = None,
         fetch_failure_category: str | None = None,
+        fetch_final_url: str | None = None,
+        fetch_status_code: int | None = None,
+        fetch_redirect_count: int | None = None,
+        fetch_redirect_chain_digest: str | None = None,
     ) -> None:
         super().__init__(detail)
         self.blocker = blocker
@@ -427,6 +444,10 @@ class GenericSingleRelationLiveDogfoodRunError(ValueError):
         self.fetch_readable_content_type = fetch_readable_content_type
         self.fetch_readable_text_obtained = fetch_readable_text_obtained
         self.fetch_failure_category = fetch_failure_category
+        self.fetch_final_url = fetch_final_url
+        self.fetch_status_code = fetch_status_code
+        self.fetch_redirect_count = fetch_redirect_count
+        self.fetch_redirect_chain_digest = fetch_redirect_chain_digest
 
 
 @dataclass(frozen=True, slots=True)
@@ -743,16 +764,7 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
         )
     redirect_handler = _RedirectLimiter()
     opener = build_opener(redirect_handler)
-    request = Request(
-        url,
-        headers={
-            "User-Agent": (
-                "ScryRaven generic single-relation live dogfood "
-                "(sanitized bounded readability check)"
-            ),
-        },
-        method="GET",
-    )
+    request = _public_web_fetch_read_request(url)
     try:
         with opener.open(request, timeout=20) as response:
             body = response.read(MAX_FETCHED_BYTES + 1)
@@ -767,6 +779,12 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
             if content_type_header
             else FETCH_READ_UNKNOWN
         )
+        final_url = _http_error_final_url(exc) or url
+        redirect_chain_digest = (
+            _digest_json(redirect_handler.redirects)
+            if redirect_handler.redirects
+            else None
+        )
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             f"fetch/read HTTP error status class {status_class}.",
@@ -775,6 +793,10 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
             fetch_readable_content_type=_readable_content_type_value(content_type),
             fetch_readable_text_obtained=False,
             fetch_failure_category=_failure_category_for_status_class(status_class),
+            fetch_final_url=final_url,
+            fetch_status_code=exc.code,
+            fetch_redirect_count=len(redirect_handler.redirects),
+            fetch_redirect_chain_digest=redirect_chain_digest,
         ) from None
     except URLError as exc:
         raise GenericSingleRelationLiveDogfoodRunError(
@@ -837,6 +859,31 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
         ),
         retrieved_or_observed_at=datetime.now(UTC).replace(microsecond=0).isoformat(),
     )
+
+
+def _public_web_fetch_read_request(url: str) -> Request:
+    return Request(
+        url,
+        headers=_public_web_fetch_read_request_headers(),
+        method="GET",
+    )
+
+
+def _public_web_fetch_read_request_headers() -> dict[str, str]:
+    return {
+        "User-Agent": FETCH_READ_PUBLIC_WEB_USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",
+    }
+
+
+def _http_error_final_url(exc: HTTPError) -> str | None:
+    try:
+        value = exc.geturl()
+    except (AttributeError, ValueError):
+        value = getattr(exc, "url", None)
+    return _clean_text(value, limit=700)
 
 
 def validate_generic_single_relation_live_dogfood_packet(
@@ -938,10 +985,55 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         "candidate_selection_source_authority_policy_created",
         "candidate_selection_approved_domain_list_created",
         "candidate_selection_retrieval_filtering_layer_created",
+        "http_source_survival_access_control_bypass_opened",
+        "http_source_survival_login_session_handling_opened",
+        "http_source_survival_captcha_handling_opened",
+        "http_source_survival_javascript_browser_automation_opened",
+        "http_source_survival_proxy_rotation_opened",
+        "http_source_survival_referer_spoofing_opened",
+        "http_source_survival_domain_specific_header_hacks_opened",
+        "http_source_survival_domain_specific_url_fallback_opened",
+        "http_source_survival_canonical_url_transformation_opened",
+        "provider_routing_changed",
+        "provider_query_generation_changed",
     ):
         expected = key == "candidate_diagnostics_observability_only"
         if packet.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    for key in (
+        "official_http_source_survival_blocker_available",
+        "http_source_survival_request_hygiene_added",
+        "fetch_read_cap_preserved",
+    ):
+        if packet.get(key) is not True:
+            _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    if packet.get("fetch_read_cap_value") != MAX_FETCH_READ_ATTEMPTS:
+        _blocked_output_hygiene("fetch/read cap value invalid.")
+    if packet.get("fetch_read_public_web_request_profile_id") != (
+        FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID
+    ):
+        _blocked_output_hygiene("fetch/read public web request profile invalid.")
+    if packet.get("fetch_read_public_web_request_posture") != (
+        FETCH_READ_PUBLIC_WEB_REQUEST_POSTURE
+    ):
+        _blocked_output_hygiene("fetch/read public web request posture invalid.")
+    if packet.get("http_source_survival_scope") != (
+        "ordinary_public_web_fetch_read_hygiene"
+    ):
+        _blocked_output_hygiene("HTTP source survival scope invalid.")
+    if packet.get("official_http_source_survival_blocker_active") not in {
+        True,
+        False,
+    }:
+        _blocked_output_hygiene("official HTTP source survival blocker flag invalid.")
+    if (
+        packet.get("official_http_source_survival_blocker_active") is True
+        and packet.get("fetch_read_blocker")
+        != BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX
+    ):
+        _blocked_output_hygiene(
+            "official HTTP source survival blocker flag mismatched."
+        )
     if packet.get("candidate_selection_policy_id") != (
         FETCH_READ_CANDIDATE_SELECTION_POLICY_ID
     ):
@@ -1026,9 +1118,29 @@ def _validate_candidate_diagnostic(diagnostic: Mapping[str, Any]) -> None:
         "candidate_selection_satisfies_source_obligation",
         "candidate_selection_citation_eligible",
         "candidate_selection_claims_correctness",
+        "source_survival_diagnostic_creates_source_authority",
+        "source_survival_diagnostic_satisfies_source_obligation",
+        "source_survival_diagnostic_citation_eligible",
     ):
         if diagnostic.get(key) is not False:
             _blocked_output_hygiene(f"candidate diagnostic requires {key}=false.")
+    if diagnostic.get("source_survival_diagnostic_only") is not True:
+        _blocked_output_hygiene("candidate source survival diagnostic posture invalid.")
+    if diagnostic.get("source_survival_scope") != (
+        "ordinary_public_web_fetch_read_hygiene"
+    ):
+        _blocked_output_hygiene("candidate source survival scope invalid.")
+    if diagnostic.get("source_survival_candidate_signal") not in {
+        "source_of_record_looking",
+        "official_looking",
+        "ordinary_public_web",
+    }:
+        _blocked_output_hygiene("candidate source survival signal invalid.")
+    if diagnostic.get("official_or_source_record_looking_http_candidate") not in {
+        True,
+        False,
+    }:
+        _blocked_output_hygiene("candidate source survival official flag invalid.")
     if _bounded_int(diagnostic.get("fetch_read_priority_rank")) <= 0:
         _blocked_output_hygiene("candidate diagnostic priority rank invalid.")
     _validate_candidate_selection_features(
@@ -1120,9 +1232,47 @@ def _validate_attempt_diagnostic(diagnostic: Mapping[str, Any]) -> None:
         "candidate_selection_satisfies_source_obligation",
         "candidate_selection_citation_eligible",
         "candidate_selection_claims_correctness",
+        "source_survival_diagnostic_creates_source_authority",
+        "source_survival_diagnostic_satisfies_source_obligation",
+        "source_survival_diagnostic_citation_eligible",
     ):
         if diagnostic.get(key) is not False:
             _blocked_output_hygiene(f"fetch/read diagnostic requires {key}=false.")
+    if diagnostic.get("source_survival_diagnostic_only") is not True:
+        _blocked_output_hygiene("fetch/read source survival diagnostic posture invalid.")
+    if diagnostic.get("source_survival_scope") != (
+        "ordinary_public_web_fetch_read_hygiene"
+    ):
+        _blocked_output_hygiene("fetch/read source survival scope invalid.")
+    if diagnostic.get("source_survival_candidate_signal") not in {
+        "source_of_record_looking",
+        "official_looking",
+        "ordinary_public_web",
+    }:
+        _blocked_output_hygiene("fetch/read source survival signal invalid.")
+    if diagnostic.get("official_or_source_record_looking_http_candidate") not in {
+        True,
+        False,
+    }:
+        _blocked_output_hygiene("fetch/read source survival official flag invalid.")
+    if diagnostic.get("fetch_read_request_profile_id") != (
+        FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID
+    ):
+        _blocked_output_hygiene("fetch/read request profile invalid.")
+    if diagnostic.get("fetch_read_request_posture") != (
+        FETCH_READ_PUBLIC_WEB_REQUEST_POSTURE
+    ):
+        _blocked_output_hygiene("fetch/read request posture invalid.")
+    final_url = _clean_text(diagnostic.get("final_url"), limit=700)
+    if final_url and not _is_valid_http_url(final_url):
+        _blocked_output_hygiene("fetch/read final URL invalid.")
+    status_code = diagnostic.get("http_status_code")
+    if status_code is not None:
+        parsed_status = _bounded_int(status_code)
+        if not 100 <= parsed_status <= 599:
+            _blocked_output_hygiene("fetch/read HTTP status code invalid.")
+    if _bounded_int(diagnostic.get("redirect_count")) > MAX_REDIRECTS:
+        _blocked_output_hygiene("fetch/read redirect count invalid.")
     if _bounded_int(diagnostic.get("fetch_read_priority_rank")) <= 0:
         _blocked_output_hygiene("fetch/read diagnostic priority rank invalid.")
     _validate_candidate_selection_features(
@@ -1428,6 +1578,32 @@ def _base_packet(
         "fetch_read_attempt_diagnostics": list(
             _safe_sequence(counts.get("fetch_read_attempt_diagnostics"))
         ),
+        "fetch_read_public_web_request_profile_id": (
+            FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID
+        ),
+        "fetch_read_public_web_request_posture": (
+            FETCH_READ_PUBLIC_WEB_REQUEST_POSTURE
+        ),
+        "official_http_source_survival_blocker_available": True,
+        "official_http_source_survival_blocker_active": (
+            counts.get("fetch_read_blocker")
+            == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX
+        ),
+        "http_source_survival_scope": "ordinary_public_web_fetch_read_hygiene",
+        "http_source_survival_request_hygiene_added": True,
+        "http_source_survival_access_control_bypass_opened": False,
+        "http_source_survival_login_session_handling_opened": False,
+        "http_source_survival_captcha_handling_opened": False,
+        "http_source_survival_javascript_browser_automation_opened": False,
+        "http_source_survival_proxy_rotation_opened": False,
+        "http_source_survival_referer_spoofing_opened": False,
+        "http_source_survival_domain_specific_header_hacks_opened": False,
+        "http_source_survival_domain_specific_url_fallback_opened": False,
+        "http_source_survival_canonical_url_transformation_opened": False,
+        "provider_routing_changed": False,
+        "provider_query_generation_changed": False,
+        "fetch_read_cap_preserved": True,
+        "fetch_read_cap_value": MAX_FETCH_READ_ATTEMPTS,
         "candidate_diagnostics_observability_only": True,
         "candidate_diagnostics_satisfy_source_obligations": False,
         "provider_snippets_used_as_evidence": False,
@@ -2020,6 +2196,9 @@ def _candidate_diagnostics_from_provider_results(
         priority = priorities.get(candidate_id, {})
         priority_rank = _bounded_int(priority.get("fetch_read_priority_rank"))
         selection_features = _safe_mapping(priority.get("candidate_selection_features"))
+        official_or_source_survival_signal = _official_source_survival_features(
+            selection_features
+        )
         url = _clean_text(result.get("url"), limit=700)
         url_source = _clean_text(result.get("url_source"), limit=20) or "missing"
         url_valid = _is_valid_http_url(url)
@@ -2059,6 +2238,17 @@ def _candidate_diagnostics_from_provider_results(
                 "candidate_selection_citation_eligible": False,
                 "candidate_selection_claims_correctness": False,
                 "candidate_selection_features": selection_features,
+                "source_survival_scope": "ordinary_public_web_fetch_read_hygiene",
+                "source_survival_candidate_signal": (
+                    _source_survival_candidate_signal(selection_features)
+                ),
+                "official_or_source_record_looking_http_candidate": (
+                    official_or_source_survival_signal
+                ),
+                "source_survival_diagnostic_only": True,
+                "source_survival_diagnostic_creates_source_authority": False,
+                "source_survival_diagnostic_satisfies_source_obligation": False,
+                "source_survival_diagnostic_citation_eligible": False,
                 "selected_for_fetch_read": selected_for_fetch_read,
                 "attempted": False,
                 "skipped_reason": skipped_reason,
@@ -2072,6 +2262,11 @@ def _candidate_diagnostics_from_provider_results(
                 "content_type": FETCH_READ_UNKNOWN,
                 "readable_content_type": FETCH_READ_UNKNOWN,
                 "readable_text_obtained": False,
+                "final_url": None,
+                "final_domain": None,
+                "http_status_code": None,
+                "redirect_count": 0,
+                "redirect_chain_digest": None,
                 "failure_category": failure_category,
                 "diagnostic_posture": "observability_only",
                 "not_evidence": True,
@@ -2139,18 +2334,40 @@ def _fetch_read_attempt_diagnostic(
             error=error,
         )
     )
+    final_url = _attempt_final_url(
+        attempted_url=attempted_url,
+        fetch_result=fetch_result,
+        error=error,
+    )
+    selection_features = _safe_mapping(candidate.get("candidate_selection_features"))
     return {
         "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
         "attempt_index": attempt_index,
         "attempted_url": attempted_url,
         "attempted_domain": _clean_domain(candidate.get("domain"))
         or (urlparse(attempted_url).netloc.lower() if attempted_url else None),
+        "final_url": final_url,
+        "final_domain": urlparse(final_url or "").netloc.lower() if final_url else None,
+        "http_status_code": _attempt_status_code(
+            fetch_result=fetch_result,
+            error=error,
+        ),
+        "redirect_count": _attempt_redirect_count(
+            fetch_result=fetch_result,
+            error=error,
+        ),
+        "redirect_chain_digest": _attempt_redirect_chain_digest(
+            fetch_result=fetch_result,
+            error=error,
+        ),
         "provider_rank": _bounded_int(candidate.get("result_rank"), default=0),
         "result_rank": _bounded_int(candidate.get("result_rank"), default=0),
         "fetch_read_priority_rank": _bounded_int(
             candidate.get("fetch_read_priority_rank"),
             default=0,
         ),
+        "fetch_read_request_profile_id": FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID,
+        "fetch_read_request_posture": FETCH_READ_PUBLIC_WEB_REQUEST_POSTURE,
         "candidate_selection_policy_id": FETCH_READ_CANDIDATE_SELECTION_POLICY_ID,
         "candidate_selection_policy_scope": FETCH_READ_CANDIDATE_SELECTION_SCOPE,
         "candidate_selection_is_acquisition_only": True,
@@ -2158,9 +2375,18 @@ def _fetch_read_attempt_diagnostic(
         "candidate_selection_satisfies_source_obligation": False,
         "candidate_selection_citation_eligible": False,
         "candidate_selection_claims_correctness": False,
-        "candidate_selection_features": _safe_mapping(
-            candidate.get("candidate_selection_features")
+        "candidate_selection_features": selection_features,
+        "source_survival_scope": "ordinary_public_web_fetch_read_hygiene",
+        "source_survival_candidate_signal": (
+            _source_survival_candidate_signal(selection_features)
         ),
+        "official_or_source_record_looking_http_candidate": (
+            _official_source_survival_features(selection_features)
+        ),
+        "source_survival_diagnostic_only": True,
+        "source_survival_diagnostic_creates_source_authority": False,
+        "source_survival_diagnostic_satisfies_source_obligation": False,
+        "source_survival_diagnostic_citation_eligible": False,
         "http_status_class": status_class,
         "content_type": content_type,
         "readable_content_type": readable_content_type,
@@ -2194,6 +2420,13 @@ def _apply_attempt_diagnostic(
         )
         diagnostic["readable_text_obtained"] = attempt_diagnostic.get(
             "readable_text_obtained"
+        )
+        diagnostic["final_url"] = attempt_diagnostic.get("final_url")
+        diagnostic["final_domain"] = attempt_diagnostic.get("final_domain")
+        diagnostic["http_status_code"] = attempt_diagnostic.get("http_status_code")
+        diagnostic["redirect_count"] = attempt_diagnostic.get("redirect_count")
+        diagnostic["redirect_chain_digest"] = attempt_diagnostic.get(
+            "redirect_chain_digest"
         )
         diagnostic["failure_category"] = attempt_diagnostic.get("failure_category")
         return
@@ -2234,6 +2467,17 @@ def _fetch_read_blocker_from_attempt_diagnostics(
         item.get("failure_category") == FETCH_READ_FAILURE_HTTP_4XX
         for item in attempts
     ):
+        if all(_official_source_survival_attempt(item) for item in attempts):
+            return (
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX,
+                (
+                    "all selected official/source-of-record-looking public-web "
+                    "fetch/read attempts returned HTTP 4xx; no readable source "
+                    "survived under the existing fetch/read cap. See sanitized "
+                    "fetch_read_attempt_diagnostics for provider rank, "
+                    "fetch/read priority, final URL, status class, and content type."
+                ),
+            )
         return (
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX,
             "all bounded fetch/read candidate attempts failed with HTTP 4xx status class.",
@@ -2281,6 +2525,57 @@ def _attempt_status_class(
     )
 
 
+def _attempt_status_code(
+    *,
+    fetch_result: GenericLiveFetchReadResult | None,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> int | None:
+    if error is not None:
+        status = _bounded_int(error.fetch_status_code)
+        return status if 100 <= status <= 599 else None
+    if fetch_result is None:
+        return None
+    status = _bounded_int(fetch_result.status_code)
+    return status if 100 <= status <= 599 else None
+
+
+def _attempt_final_url(
+    *,
+    attempted_url: str | None,
+    fetch_result: GenericLiveFetchReadResult | None,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> str | None:
+    if fetch_result is not None:
+        return _clean_text(fetch_result.final_url, limit=700)
+    if error is not None:
+        return _clean_text(error.fetch_final_url, limit=700) or attempted_url
+    return attempted_url
+
+
+def _attempt_redirect_count(
+    *,
+    fetch_result: GenericLiveFetchReadResult | None,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> int:
+    if error is not None:
+        return _bounded_int(error.fetch_redirect_count)
+    if fetch_result is None:
+        return 0
+    return _bounded_int(fetch_result.redirect_count)
+
+
+def _attempt_redirect_chain_digest(
+    *,
+    fetch_result: GenericLiveFetchReadResult | None,
+    error: GenericSingleRelationLiveDogfoodRunError | None,
+) -> str | None:
+    if error is not None:
+        return _clean_text(error.fetch_redirect_chain_digest, limit=120)
+    if fetch_result is None:
+        return None
+    return _clean_text(fetch_result.redirect_chain_digest, limit=120)
+
+
 def _attempt_content_type(
     *,
     fetch_result: GenericLiveFetchReadResult | None,
@@ -2320,6 +2615,36 @@ def _attempt_failure_category(
     if error is not None:
         return FETCH_READ_FAILURE_EXCEPTION
     return FETCH_READ_FAILURE_NO_READABLE_TEXT
+
+
+def _official_source_survival_features(features: Mapping[str, Any]) -> bool:
+    return any(
+        features.get(key) is True
+        for key in (
+            "source_of_record_domain_signal",
+            "official_domain_signal",
+            "public_agency_domain_signal",
+        )
+    )
+
+
+def _source_survival_candidate_signal(features: Mapping[str, Any]) -> str:
+    if features.get("source_of_record_domain_signal") is True:
+        return "source_of_record_looking"
+    if (
+        features.get("official_domain_signal") is True
+        or features.get("public_agency_domain_signal") is True
+    ):
+        return "official_looking"
+    return "ordinary_public_web"
+
+
+def _official_source_survival_attempt(attempt: Mapping[str, Any]) -> bool:
+    if attempt.get("official_or_source_record_looking_http_candidate") is True:
+        return True
+    return _official_source_survival_features(
+        _safe_mapping(attempt.get("candidate_selection_features"))
+    )
 
 
 def _attempt_status_classes(
@@ -2491,6 +2816,10 @@ def _validate_fetch_result(
             ),
             fetch_readable_text_obtained=False,
             fetch_failure_category=failure_category,
+            fetch_final_url=fetch_result.final_url,
+            fetch_status_code=fetch_result.status_code,
+            fetch_redirect_count=fetch_result.redirect_count,
+            fetch_redirect_chain_digest=fetch_result.redirect_chain_digest,
         )
     content_type = _content_type_or_unknown(fetch_result.content_type)
     readable_content_type = _readable_content_type_value(content_type)
@@ -3558,6 +3887,7 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT",
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE",

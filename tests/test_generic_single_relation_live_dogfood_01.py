@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+import proplex.mvp_single_relation_live_dogfood_run as dogfood
 from core.generic_query_to_relation_planning import (
     MVP_QUERY_PLAN_PACKET_NAME,
     build_generic_query_plan_status_output,
@@ -60,6 +61,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX,
     DEFAULT_OUTPUT_DIR,
     GenericLiveFetchReadResult,
     GenericProviderProxyRunRequest,
@@ -232,6 +234,21 @@ def test_provider_link_field_feeds_generic_fetch_read_adapter_and_custody(
     assert result.packet["provider_snippets_used_as_evidence"] is False
 
 
+def test_public_web_fetch_request_uses_generic_non_secret_headers() -> None:
+    request_headers = dogfood._public_web_fetch_read_request_headers()
+
+    assert request_headers == {
+        "User-Agent": dogfood.FETCH_READ_PUBLIC_WEB_USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",
+    }
+    assert "ScryRaven/1.0" in request_headers["User-Agent"]
+    assert "Cookie" not in request_headers
+    assert "Referer" not in request_headers
+    assert "Authorization" not in request_headers
+
+
 def test_all_failed_fetch_read_returns_named_blocker_with_counts(
     tmp_path: Path,
 ) -> None:
@@ -348,6 +365,111 @@ def test_all_fetch_read_4xx_returns_precise_blocker_and_status_summary(
     assert result.packet["raw_search_response_retained"] is False
     assert result.packet["raw_prompt_retained"] is False
     assert result.packet["raw_model_response_retained"] is False
+    assert result.packet["official_http_source_survival_blocker_active"] is False
+    assert len(fetch_urls) == 3
+
+
+def test_official_http_4xx_returns_sharp_source_survival_blocker(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="official-http-source-survival-4xx",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                    rank=1,
+                ),
+                _provider_result(
+                    "USCIS Application for Naturalization",
+                    "https://www.uscis.gov/n-400",
+                    rank=2,
+                ),
+                _provider_result(
+                    "USCIS Form N-400 Fee Calculator",
+                    "https://www.uscis.gov/feecalculator",
+                    rank=3,
+                ),
+            ],
+        ),
+        fetch_read_runner=_http_status_fetch_runner(fetch_urls, status_code=403),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX
+    )
+    assert result.packet["fetch_read_blocker"] == (
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX
+    )
+    assert result.packet["official_http_source_survival_blocker_available"] is True
+    assert result.packet["official_http_source_survival_blocker_active"] is True
+    assert result.packet["http_source_survival_scope"] == (
+        "ordinary_public_web_fetch_read_hygiene"
+    )
+    assert result.packet["fetch_read_status_class_summary"] == {"4xx": 3}
+    assert result.packet["fetch_read_content_type_summary"] == {"text/html": 3}
+    assert result.packet["fetch_read_failure_category_summary"] == {"HTTP_4XX": 3}
+    assert [
+        item["result_rank"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [1, 2, 3]
+    assert [
+        item["fetch_read_priority_rank"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [1, 2, 3]
+    assert all(
+        item["official_or_source_record_looking_http_candidate"] is True
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    )
+    assert all(
+        item["source_survival_candidate_signal"] == "source_of_record_looking"
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    )
+    assert all(
+        item["fetch_read_request_profile_id"]
+        == dogfood.FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    )
+    assert all(
+        item["final_url"] == item["attempted_url"]
+        and item["http_status_code"] == 403
+        and item["content_type"] == "text/html"
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    )
+    assert result.packet["evidence_ledger_admissions"] == 0
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
+    assert result.packet["source_display_entries"] == []
+    assert result.packet["raw_provider_payload_retained"] is False
+    assert result.packet["raw_search_response_retained"] is False
+    assert result.packet["raw_source_content_retained"] is False
+    assert result.packet["http_source_survival_access_control_bypass_opened"] is False
+    assert result.packet["http_source_survival_login_session_handling_opened"] is False
+    assert result.packet["http_source_survival_captcha_handling_opened"] is False
+    assert (
+        result.packet["http_source_survival_javascript_browser_automation_opened"]
+        is False
+    )
+    assert result.packet["http_source_survival_proxy_rotation_opened"] is False
+    assert result.packet["http_source_survival_referer_spoofing_opened"] is False
+    assert (
+        result.packet["http_source_survival_domain_specific_url_fallback_opened"]
+        is False
+    )
+    assert result.packet["provider_routing_changed"] is False
+    assert result.packet["provider_query_generation_changed"] is False
+    assert result.packet["fetch_read_cap_preserved"] is True
+    assert result.packet["fetch_read_cap_value"] == 3
     assert len(fetch_urls) == 3
 
 
@@ -461,6 +583,7 @@ def test_n400_fetch_read_prioritizes_source_of_record_candidates_under_cap(
     assert result.packet["candidate_selection_citation_eligible"] is False
     assert result.packet["candidate_selection_claims_correctness"] is False
     assert result.packet["candidate_ranking_policy_changed"] is False
+    assert result.packet["official_http_source_survival_blocker_active"] is False
     assert result.packet["provider_results_returned"] == 5
     assert result.packet["fetch_read_attempts"] == 3
     assert result.packet["fetch_read_completed"] == 0
@@ -703,6 +826,72 @@ def test_partial_fetch_read_4xx_then_success_reaches_custody_admission(
     assert result.packet["source_display_entries"] == []
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["fap_author_opened"] is False
+    assert len(fetch_urls) == 2
+
+
+def test_official_http_source_survival_continues_when_later_html_survives(
+    tmp_path: Path,
+) -> None:
+    fetch_urls: list[str] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="official-http-survival-after-4xx",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "USCIS Archived Form N-400 Filing Fee",
+                    "https://www.uscis.gov/archive/n-400-fees",
+                    rank=1,
+                ),
+                _provider_result(
+                    "USCIS Current Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                    rank=2,
+                ),
+            ],
+        ),
+        fetch_read_runner=_first_4xx_then_success_fetch_runner(
+            fetch_urls,
+            "USCIS lists the current Form N-400 paper filing fee as $760.",
+        ),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    assert result.packet["official_http_source_survival_blocker_active"] is False
+    assert result.packet["fetch_read_attempts"] == 2
+    assert result.packet["fetch_read_completed"] == 1
+    assert result.packet["evidence_ledger_admissions"] == 1
+    assert result.packet["fetch_read_status_class_summary"] == {"2xx": 1, "4xx": 1}
+    assert result.packet["fetch_read_content_type_summary"] == {"text/html": 2}
+    assert result.packet["fetch_read_failure_category_summary"] == {"HTTP_4XX": 1}
+    assert [
+        item["failure_category"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == ["HTTP_4XX", None]
+    assert all(
+        item["official_or_source_record_looking_http_candidate"] is True
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    )
+    assert [
+        item["readable_text_obtained"]
+        for item in result.packet["fetch_read_attempt_diagnostics"]
+    ] == [False, True]
+    assert result.packet["raw_source_content_retained"] is False
+    assert result.packet["actual_source_authority_posture_created"] is False
+    assert result.packet["provider_snippets_used_as_evidence"] is False
+    assert result.packet["candidate_diagnostics_satisfy_source_obligations"] is False
+    assert result.packet["fetch_read_failure_metadata_citation_eligible"] is False
+    assert result.packet["fetch_read_failure_metadata_satisfies_source_obligations"] is False
+    assert result.packet["pdf_parsing_opened"] is False
+    assert result.packet["fap_author_opened"] is False
+    assert result.packet["product_correctness_claimed"] is False
     assert len(fetch_urls) == 2
 
 
