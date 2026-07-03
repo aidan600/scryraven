@@ -1,6 +1,7 @@
 # D-prime architecture
 
-Status: Updated through DPRIME-SINGLE-LANE-ANSWER-PATH-01. Mode: BUILD.
+Status: Updated through RUN-KERNEL-FOLLOWUP-SEARCH-REENTRY-USING-ORDINARY-SEARCH-01.
+Mode: BUILD.
 This overview documents implemented product-consumed D-prime authority. It does
 not license live/model/provider/search/fetch/read/retrieval calls, generic
 D-prime analyst intake, multi-component support aggregation, multi-source
@@ -65,6 +66,8 @@ source/evidence custody and readability
 -> hardened final answer packet consumed
 -> Author/answer output consumed
 -> citation/source display consumed
+-> optional RunKernel-owned D-prime follow-up search re-entry can loop back
+   through ordinary search before second-pass D-prime support
 -> product correctness remains unclaimed
 ```
 
@@ -110,6 +113,24 @@ consumes that completed support bundle through
 and a RunKernel-owned citation/source display for the current single D-prime
 lane. Product correctness remains unclaimed.
 
+After RUN-KERNEL-FOLLOWUP-SEARCH-REENTRY-USING-ORDINARY-SEARCH-01, the
+ordinary product status path can optionally consume a D-prime non-support or
+challenge judgment as a follow-up need. D-prime emits the need only; it does not
+own loop authorization, budget, state, provider dispatch, or search execution.
+`core.runkernel_followup_search_reentry_ordinary_search_runtime` converts that
+need into the existing `FollowupSearchIntentPacket`, reduces RunKernel-owned
+follow-up search authorization, then reuses ordinary `SearchPlanner`,
+`SearchExecutorHandoff`, live-search-validation, `SearchResultCandidatePacket`,
+and fetch/read packet seams. The resulting bounded sanitized evidence is fed
+back into a second D-prime review and then into the existing support-bundle and
+single-lane answer path only if the second pass validates support and RunKernel
+admits it.
+
+This follow-up re-entry path is default-off and offline/fixture-backed in the
+current phase. It performs no live/provider/search/fetch/read/retrieval calls,
+does not create a new search subsystem, and does not make a product correctness
+claim.
+
 ## Current implemented product path
 
 Implemented and consumed by the ordinary dry-run status path:
@@ -144,6 +165,11 @@ Implemented and consumed by the ordinary dry-run status path:
   D-prime support bundle into `SufficiencyReadiness`, a hardened final answer
   packet, Author/answer output, and citation/source display without live calls
   or product correctness claims.
+- Product-status consumed D-prime follow-up search re-entry in
+  `core.runkernel_followup_search_reentry_ordinary_search_runtime`, which
+  consumes D-prime follow-up needs through RunKernel-owned authorization and the
+  ordinary SearchPlanner/SearchExecutorHandoff/live-search-validation candidate
+  path before second-pass D-prime support.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -156,7 +182,7 @@ EvidenceLedger / retained custody surfaces:
   own source/evidence custody and source posture
 
 D-prime model review:
-  proposes evidence-relative meaning only
+  proposes evidence-relative meaning or follow-up need only
 
 D-prime proposal validation:
   creates a pre-admission proposal candidate only
@@ -174,6 +200,10 @@ Single-lane answer-path bridge:
   consumes ComponentCoverage/source-obligation/citation-source handoff into
   SufficiencyReadiness, hardened final answer packet, Author/answer output, and
   citation/source display for the current single D-prime lane
+
+RunKernel follow-up re-entry:
+  owns loop authorization, budget, ordinary search reuse, and evidence re-entry
+  when a D-prime need requires additional bounded evidence
 
 Product correctness / generic analyst intake:
   remain downstream and closed until separately licensed
@@ -207,6 +237,10 @@ D-prime may produce:
 - hardened final answer packet refs/status/digest after readiness;
 - Author/answer output text and refs/status/digest after the hardened packet;
 - citation/source display refs/status/digest after Author output.
+- follow-up need/status refs that show RunKernel-owned authorization, ordinary
+  SearchPlanner/SearchExecutorHandoff/live-validation reuse, candidate packet
+  creation, fetch/read packet creation, evidence re-entry, and second-pass
+  D-prime review status.
 
 The pre-admission D-prime assessment/proposal/request outputs are review
 material and candidate state. They are not admitted support. Only the
@@ -256,6 +290,11 @@ Anti-laundering rules:
 - Proposal validation is not RunKernel admission.
 - `directly_supports` is not RunKernel admission.
 - Proposal candidate is not admitted support.
+- Follow-up need is not search authorization.
+- Follow-up authorization is not live/provider dispatch.
+- SearchResultCandidatePacket is not evidence.
+- FetchReadContentPacket custody is not semantic support until second-pass
+  D-prime support is validated and RunKernel admits/materializes it.
 - `ComponentCoverage` is not source-obligation satisfaction.
 - `ComponentCoverage` is not citation eligibility.
 - Citation eligibility / citation-source handoff is not citation rendering.
