@@ -24,6 +24,8 @@ For current authority doctrine and Codex routing, read:
 - `docs/architecture/AG_SUFFICIENCY_PARTIAL_ANSWER_READINESS_01.md`
 - `docs/architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md`
 - `docs/architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md`
+- `docs/architecture/FAP_AUTHOR_BOUNDARY.md`
+- `docs/architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md`
 - `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
 - `docs/architecture/AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md`
