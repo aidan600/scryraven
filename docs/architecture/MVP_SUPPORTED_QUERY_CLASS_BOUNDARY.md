@@ -43,6 +43,11 @@ query-to-relation planning, friend-level/general MVP readiness, source-authority
 posture, broad product-comparison support, social/review authority, and product
 correctness are all false/unclaimed.
 
+The boundary's source-of-record expectation is represented for future work by
+the Analyst-owned source-authority posture contract in
+[`SOURCE_AUTHORITY_POSTURE.md`](SOURCE_AUTHORITY_POSTURE.md). Query-to-relation
+planning remains future work.
+
 ## Explicitly Out Of Class
 
 - broad research synthesis;
