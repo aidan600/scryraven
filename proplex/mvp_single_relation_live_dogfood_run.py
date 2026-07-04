@@ -1617,12 +1617,6 @@ def _base_packet(
             if counts.get("provider_calls_attempted", 0)
             else "blocked_before_provider_search"
         ),
-        "provider_broker_posture": (
-            "injected_provider_runner_sanitized_results_to_plan_"
-            "derived_retained_artifacts"
-            if counts.get("provider_calls_attempted", 0)
-            else "blocked_before_provider_search"
-        ),
         "run_kernel_local_accounting_authorized_planner": bool(acquisition),
         "run_kernel_local_accounting_authorized_disambiguation": bool(
             disambiguation

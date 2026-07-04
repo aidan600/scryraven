@@ -167,7 +167,6 @@ def test_confirmed_product_path_without_provider_route_fails_closed(
     assert result.packet["provider_acquisition_route_posture"] == (
         "blocked_before_provider_search"
     )
-    assert result.packet["provider_broker_posture"] == "blocked_before_provider_search"
     assert result.packet["serper_scout_calls_attempted"] == 0
     assert result.packet["fetch_read_attempts"] == 0
     assert result.packet["dprime_model_review_calls_attempted"] == 0
@@ -561,11 +560,6 @@ def test_clear_query_uses_extraction_provider_before_direct_fetch(
         "injected_provider_runner_sanitized_results_to_plan_"
         "derived_retained_artifacts"
     )
-    assert result.packet["provider_broker_posture"] == (
-        "injected_provider_runner_sanitized_results_to_plan_"
-        "derived_retained_artifacts"
-    )
-    assert "broker" not in result.packet["provider_broker_posture"]
     assert result.packet["provider_extracted_content_obtained"] is True
     assert result.packet["provider_extracted_original_url_bindings_preserved"] is True
     assert result.packet["source_acquisition_mode"] == (
@@ -1472,6 +1466,7 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
         "ScryRavenLiveBroker",
         "broker_url",
         "private_broker_path",
+        "provider_broker_posture",
         "run_provider_proxy_helper_once",
     }
 
