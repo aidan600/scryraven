@@ -710,6 +710,10 @@ def _run_mvp_single_relation_live_dogfood_run(
             ),
             smart_provider=args.smart_provider,
             smart_model=args.smart_model,
+            fast_provider=args.fast_provider,
+            fast_model=args.fast_model,
+            fast_model_local_url=args.local_url,
+            require_model_assisted_planning=True,
         )
     except Exception as exc:
         print(

@@ -58,6 +58,14 @@ from core.generic_query_to_relation_planning import (
     GenericQueryRelationPlanningError,
     build_generic_query_relation_plan,
 )
+from core.model_assisted_single_relation_planning import (
+    BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE,
+    MODEL_ASSISTED_PLANNING_MODEL_TASK,
+    MODEL_ASSISTED_PLANNING_PRODUCT_MODEL_ROLE,
+    PLANNING_CONTEXT_INITIAL_SINGLE_RELATION,
+    PLANNING_CONTEXT_SOURCE_OF_RECORD_RECOVERY,
+    build_model_assisted_single_relation_planning_packet,
+)
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.product_model_route_config import (
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
@@ -187,6 +195,12 @@ LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
 
 MAX_LIVE_RUNS = 1
 MAX_QUERY_PLANS_CONSUMED = 1
+MAX_INITIAL_FAST_MODEL_PLANNING_CALLS = 1
+MAX_RECOVERY_FAST_MODEL_PLANNING_CALLS = 1
+MAX_FAST_MODEL_PLANNING_CALLS = (
+    MAX_INITIAL_FAST_MODEL_PLANNING_CALLS
+    + MAX_RECOVERY_FAST_MODEL_PLANNING_CALLS
+)
 MAX_PROVIDER_SEARCH_CALLS = 1
 MAX_SOURCE_CHALLENGE_RECOVERY_PROVIDER_CALLS = 1
 MAX_SERPER_SCOUT_CALLS = 1
@@ -658,6 +672,13 @@ def build_generic_single_relation_live_dogfood_run_output(
     fetch_read_runner: FetchReadRunner | None = None,
     smart_provider: str | None = None,
     smart_model: str | None = None,
+    fast_provider: str | None = None,
+    fast_model: str | None = None,
+    fast_model_local_url: str | None = None,
+    fast_model_planner_callable: Callable[..., Any] | None = None,
+    fast_model_planner_clean_json_response: Callable[[str], str] | None = None,
+    fast_model_planner_strict_route_ref: Mapping[str, Any] | None = None,
+    require_model_assisted_planning: bool = False,
     dprime_model_review_license: Mapping[str, Any] | None = None,
     dprime_model_review_callable: Callable[..., Any] | None = None,
     dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
@@ -684,12 +705,72 @@ def build_generic_single_relation_live_dogfood_run_output(
     )
     source_obligation_authorization: dict[str, Any] | None = None
     source_challenge_recovery: dict[str, Any] | None = None
+    initial_model_planning_packet: dict[str, Any] | None = None
+    recovery_model_planning_packet: dict[str, Any] | None = None
+    planning_strict_route_ref = _model_assisted_planning_route_ref(
+        strict_model_route_ref=fast_model_planner_strict_route_ref,
+        fast_provider=fast_provider,
+        fast_model=fast_model,
+        fast_model_local_url=fast_model_local_url,
+        require_model_assisted_planning=require_model_assisted_planning,
+        planner_callable=fast_model_planner_callable,
+    )
 
     try:
         relation_plan = build_generic_query_relation_plan(query)
         counts["query_plans_consumed"] = 1
         _guard_plan_for_live_acquisition(relation_plan)
-        acquisition_plan = _build_fast_acquisition_plan(relation_plan)
+        initial_model_planning_packet = _build_model_assisted_planning_packet(
+            planning_context_kind=PLANNING_CONTEXT_INITIAL_SINGLE_RELATION,
+            context_state=_initial_model_planning_context(relation_plan),
+            planner_callable=fast_model_planner_callable,
+            strict_model_route_ref=planning_strict_route_ref,
+            clean_json_response=fast_model_planner_clean_json_response,
+            require_model_assisted_planning=require_model_assisted_planning,
+        )
+        _record_model_assisted_planning_counts(
+            counts,
+            initial_model_planning_packet,
+            prefix="initial",
+        )
+        _enforce_caps(counts)
+        if _model_assisted_planning_strict_route_blocked(
+            initial_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
+        ):
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE,
+                (
+                    "Strict reusable FastModel planning route is unavailable; "
+                    "live model-assisted planning cannot be exercised under the "
+                    "phase one-call budget."
+                ),
+            )
+        if _model_assisted_planning_required_blocked(
+            initial_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
+        ):
+            initial_blocker = _safe_mapping(initial_model_planning_packet)
+            raise GenericSingleRelationLiveDogfoodRunError(
+                _clean_text(initial_blocker.get("blocker"), limit=220)
+                or BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM,
+                _clean_text(initial_blocker.get("blocker_detail"), limit=900)
+                or "Model-assisted planning failed closed before acquisition.",
+            )
+        if _model_assisted_planning_multi_component_closed(
+            initial_model_planning_packet
+        ):
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM,
+                (
+                    "FastModel planning safely identified likely multi-component "
+                    "structure, and multi-component execution remains closed."
+                ),
+            )
+        acquisition_plan = _build_fast_acquisition_plan(
+            relation_plan,
+            model_planning_packet=initial_model_planning_packet,
+        )
         counts["fast_planner_calls_attempted"] = 1
         if not confirm_live_dogfood:
             raise GenericSingleRelationLiveDogfoodRunError(
@@ -921,8 +1002,42 @@ def build_generic_single_relation_live_dogfood_run_output(
                 source_obligation_authorization
             ),
             source_challenge_recovery=None,
+            initial_model_planning_packet=initial_model_planning_packet,
+            recovery_model_planning_packet=recovery_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
         )
         if source_obligation_authorization.get("recovery_required") is True:
+            recovery_model_planning_packet = _build_model_assisted_planning_packet(
+                planning_context_kind=PLANNING_CONTEXT_SOURCE_OF_RECORD_RECOVERY,
+                context_state=_recovery_model_planning_context(
+                    relation_plan=relation_plan,
+                    acquisition_plan=acquisition_plan,
+                    counts=counts,
+                    semantic_payload=semantic_payload,
+                    source_obligation_authorization=source_obligation_authorization,
+                ),
+                planner_callable=fast_model_planner_callable,
+                strict_model_route_ref=planning_strict_route_ref,
+                clean_json_response=fast_model_planner_clean_json_response,
+                require_model_assisted_planning=require_model_assisted_planning,
+            )
+            _record_model_assisted_planning_counts(
+                counts,
+                recovery_model_planning_packet,
+                prefix="recovery",
+            )
+            _enforce_caps(counts)
+            if _model_assisted_planning_required_blocked(
+                recovery_model_planning_packet,
+                require_model_assisted_planning=require_model_assisted_planning,
+            ):
+                recovery_blocker = _safe_mapping(recovery_model_planning_packet)
+                raise GenericSingleRelationLiveDogfoodRunError(
+                    _clean_text(recovery_blocker.get("blocker"), limit=220)
+                    or BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM,
+                    _clean_text(recovery_blocker.get("blocker_detail"), limit=900)
+                    or "Recovery model-assisted planning failed closed.",
+                )
             source_challenge_recovery = _run_source_challenge_recovery(
                 root=root,
                 run_dir=run_dir,
@@ -935,6 +1050,7 @@ def build_generic_single_relation_live_dogfood_run_output(
                 source_obligation_recovery_authorization=(
                     source_obligation_authorization
                 ),
+                recovery_model_planning_packet=recovery_model_planning_packet,
                 provider_runner=provider_runner,
                 fetch_read_runner=fetch_read_runner or fetch_public_url_once,
                 confirm_live_source_challenge_recovery=(
@@ -978,6 +1094,9 @@ def build_generic_single_relation_live_dogfood_run_output(
                     source_obligation_authorization
                 ),
                 source_challenge_recovery=source_challenge_recovery,
+                initial_model_planning_packet=initial_model_planning_packet,
+                recovery_model_planning_packet=recovery_model_planning_packet,
+                require_model_assisted_planning=require_model_assisted_planning,
             )
     except GenericQueryRelationPlanningError as exc:
         packet = _blocked_packet(
@@ -1001,6 +1120,9 @@ def build_generic_single_relation_live_dogfood_run_output(
             source_challenge_recovery=source_challenge_recovery,
             semantic_payload={},
             hard_exclusion_category=exc.hard_exclusion_category,
+            initial_model_planning_packet=initial_model_planning_packet,
+            recovery_model_planning_packet=recovery_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
         )
     except GenericSingleRelationLiveDogfoodRunError as exc:
         packet = _blocked_packet(
@@ -1024,6 +1146,9 @@ def build_generic_single_relation_live_dogfood_run_output(
             source_challenge_recovery=source_challenge_recovery,
             semantic_payload=semantic_payload,
             hard_exclusion_category=None,
+            initial_model_planning_packet=initial_model_planning_packet,
+            recovery_model_planning_packet=recovery_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
         )
 
     validate_generic_single_relation_live_dogfood_packet(packet)
@@ -1197,10 +1322,30 @@ def validate_generic_single_relation_live_dogfood_packet(
     for key, expected in CLOSED_FALSE_FLAGS.items():
         if safe.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet must keep {key}=false.")
+    if safe.get("model_assisted_planning_raw_private_retention_false") is not True:
+        _blocked_output_hygiene(
+            "model-assisted planning raw/private retention guard failed."
+        )
+    if safe.get("model_assisted_planning_closed_surfaces_preserved") is not True:
+        _blocked_output_hygiene(
+            "model-assisted planning closed-surface guard failed."
+        )
     if _bounded_int(safe.get("live_runs_attempted")) > MAX_LIVE_RUNS:
         _blocked_cap("live run cap exceeded.")
     if _bounded_int(safe.get("query_plans_consumed")) > MAX_QUERY_PLANS_CONSUMED:
         _blocked_cap("query plan consumption cap exceeded.")
+    if _bounded_int(safe.get("initial_model_assisted_planning_calls_attempted")) > (
+        MAX_INITIAL_FAST_MODEL_PLANNING_CALLS
+    ):
+        _blocked_cap("initial FastModel planning call cap exceeded.")
+    if _bounded_int(safe.get("recovery_model_assisted_planning_calls_attempted")) > (
+        MAX_RECOVERY_FAST_MODEL_PLANNING_CALLS
+    ):
+        _blocked_cap("recovery FastModel planning call cap exceeded.")
+    if _bounded_int(safe.get("fast_planner_model_calls_attempted")) > (
+        MAX_FAST_MODEL_PLANNING_CALLS
+    ):
+        _blocked_cap("FastModel planning call cap exceeded.")
     if _bounded_int(safe.get("provider_calls_attempted")) > MAX_PROVIDER_SEARCH_CALLS:
         _blocked_cap("provider/search call cap exceeded.")
     if _bounded_int(safe.get("extraction_provider_calls_attempted")) > (
@@ -1259,6 +1404,12 @@ def validate_generic_single_relation_live_dogfood_packet(
             "extraction_provider_calls_completed",
             "serper_scout_calls_attempted",
             "serper_scout_calls_completed",
+            "fast_planner_model_calls_attempted",
+            "fast_planner_model_calls_completed",
+            "initial_model_assisted_planning_calls_attempted",
+            "initial_model_assisted_planning_calls_completed",
+            "recovery_model_assisted_planning_calls_attempted",
+            "recovery_model_assisted_planning_calls_completed",
             "fetch_read_attempts",
             "fetch_read_completed",
             "dprime_model_review_calls_attempted",
@@ -1647,6 +1798,11 @@ def format_generic_single_relation_live_dogfood_output(
             "",
             "Status",
             f"- Fast planner: {packet.get('fast_planner_kind') or 'not used'}",
+            "- Model-assisted planning status: "
+            f"{packet.get('model_assisted_planning_reduced_status') or 'not used'}",
+            "- FastModel planning calls: "
+            f"{packet.get('fast_planner_model_calls_attempted')}/"
+            f"{packet.get('fast_planner_model_calls_completed')}",
             f"- Planner marked ambiguity: {_bool_text(packet.get('planner_marked_ambiguity'))}",
             f"- Serper scout calls: {packet.get('serper_scout_calls_attempted')}/"
             f"{packet.get('serper_scout_calls_completed')}",
@@ -1701,6 +1857,9 @@ def _packet_from_semantic_status(
     confirm_live_source_challenge_recovery: bool,
     source_obligation_recovery_authorization: Mapping[str, Any] | None,
     source_challenge_recovery: Mapping[str, Any] | None,
+    initial_model_planning_packet: Mapping[str, Any] | None,
+    recovery_model_planning_packet: Mapping[str, Any] | None,
+    require_model_assisted_planning: bool,
 ) -> dict[str, Any]:
     decision = _mapped_live_decision(
         status_decision,
@@ -1732,6 +1891,9 @@ def _packet_from_semantic_status(
             source_obligation_recovery_authorization
         ),
         source_challenge_recovery=source_challenge_recovery,
+        initial_model_planning_packet=initial_model_planning_packet,
+        recovery_model_planning_packet=recovery_model_planning_packet,
+        require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=False,
         semantic_payload=semantic_payload,
     )
@@ -1762,6 +1924,7 @@ def _packet_from_semantic_status(
             ),
         }
     )
+    packet["failure_attribution_bucket"] = _failure_attribution_bucket(packet)
     return packet
 
 
@@ -1783,6 +1946,9 @@ def _blocked_packet(
     source_challenge_recovery: Mapping[str, Any] | None,
     semantic_payload: Mapping[str, Any],
     hard_exclusion_category: str | None,
+    initial_model_planning_packet: Mapping[str, Any] | None,
+    recovery_model_planning_packet: Mapping[str, Any] | None,
+    require_model_assisted_planning: bool,
 ) -> dict[str, Any]:
     packet = _base_packet(
         relation_plan=relation_plan,
@@ -1798,6 +1964,9 @@ def _blocked_packet(
             source_obligation_recovery_authorization
         ),
         source_challenge_recovery=source_challenge_recovery,
+        initial_model_planning_packet=initial_model_planning_packet,
+        recovery_model_planning_packet=recovery_model_planning_packet,
+        require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=caps_exhausted,
         semantic_payload=semantic_payload,
     )
@@ -1817,6 +1986,7 @@ def _blocked_packet(
             ),
         }
     )
+    packet["failure_attribution_bucket"] = _failure_attribution_bucket(packet)
     return packet
 
 
@@ -1836,6 +2006,54 @@ def _provider_acquisition_route_posture(counts: Mapping[str, Any]) -> str:
             "derived_retained_artifacts"
         )
     return "blocked_before_provider_search"
+
+
+def _failure_attribution_bucket(packet: Mapping[str, Any]) -> str:
+    decision = _clean_text(packet.get("decision"), limit=220) or ""
+    if decision == PASS_DECISION:
+        return "not_blocked"
+    if decision == BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE:
+        return "fast_model_planner_strict_route_unavailable"
+    if decision in {
+        BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE,
+        "blocked_model_output_invalid",
+    } or _safe_mapping(packet.get("model_assisted_planning_packet")).get("blocker"):
+        return "fast_model_planner_invalid_or_closed"
+    if decision in {
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+    }:
+        return "provider_acquisition"
+    if (
+        _bounded_int(packet.get("provider_calls_attempted")) > 0
+        and _bounded_int(packet.get("provider_results_returned")) == 0
+    ):
+        return "provider_acquisition"
+    if decision in {
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX,
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL,
+    }:
+        return "selector_or_window"
+    if decision in {
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_CONTRACT_MISSING,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_CAP_EXHAUSTED,
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_OUTPUT_INVALID,
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED,
+    }:
+        return "dprime"
+    if packet.get("source_obligation_recovery_required") is True:
+        return "runkernel_source_obligation_gate"
+    if _bounded_int(packet.get("evidence_ledger_admissions")) > 0:
+        return "runkernel_or_downstream_gate"
+    return "blocked_before_acquisition"
 
 
 def _build_source_obligation_recovery_authorization(
@@ -1936,6 +2154,7 @@ def _run_source_challenge_recovery(
     first_stage_counts: Mapping[str, Any],
     first_stage_semantic_payload: Mapping[str, Any],
     source_obligation_recovery_authorization: Mapping[str, Any],
+    recovery_model_planning_packet: Mapping[str, Any] | None,
     provider_runner: ProviderProxyRunner,
     fetch_read_runner: FetchReadRunner,
     confirm_live_source_challenge_recovery: bool,
@@ -1944,7 +2163,10 @@ def _run_source_challenge_recovery(
     authorization = _source_obligation_authorization_dict(
         source_obligation_recovery_authorization
     )
-    plan = _safe_mapping(authorization.get("source_challenge_recovery_plan"))
+    plan = _recovery_plan_with_model_assisted_hints(
+        _safe_mapping(authorization.get("source_challenge_recovery_plan")),
+        recovery_model_planning_packet=recovery_model_planning_packet,
+    )
     if not plan:
         return {
             "trigger_eligible": False,
@@ -2341,6 +2563,9 @@ def _base_packet(
     confirm_live_source_challenge_recovery: bool,
     source_obligation_recovery_authorization: Mapping[str, Any] | None,
     source_challenge_recovery: Mapping[str, Any] | None,
+    initial_model_planning_packet: Mapping[str, Any] | None,
+    recovery_model_planning_packet: Mapping[str, Any] | None,
+    require_model_assisted_planning: bool,
     caps_exhausted: bool,
     semantic_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -2357,6 +2582,12 @@ def _base_packet(
         _source_obligation_authorization_dict(
             source_obligation_recovery_authorization
         )
+    )
+    initial_model_planning = _safe_mapping(initial_model_planning_packet)
+    recovery_model_planning = _safe_mapping(recovery_model_planning_packet)
+    model_route_ref = _model_assisted_planning_route_diagnostic_ref(
+        initial_model_planning,
+        recovery_model_planning,
     )
     recovery = _safe_mapping(source_challenge_recovery)
     recovery_plan = _safe_mapping(recovery.get("source_challenge_recovery_plan"))
@@ -2428,9 +2659,94 @@ def _base_packet(
             "fast_planner_model_calls_attempted",
             0,
         ),
+        "fast_planner_model_calls_completed": counts.get(
+            "fast_planner_model_calls_completed",
+            0,
+        ),
         "fast_planner_calls_attempted": counts.get(
             "fast_planner_calls_attempted",
             0,
+        ),
+        "model_assisted_planning_packet": initial_model_planning,
+        "initial_model_assisted_planning_packet": initial_model_planning,
+        "recovery_model_assisted_planning_packet": recovery_model_planning,
+        "model_assisted_planning_required": bool(require_model_assisted_planning),
+        "model_assisted_planning_strict_model_route_valid": (
+            initial_model_planning.get("strict_model_route_valid") is True
+            or recovery_model_planning.get("strict_model_route_valid") is True
+        ),
+        "model_assisted_planning_strict_model_route_blockers": list(
+            _safe_sequence(
+                initial_model_planning.get("strict_model_route_blockers")
+                or recovery_model_planning.get("strict_model_route_blockers")
+            )
+        ),
+        "model_assisted_planning_configured_fast_provider": model_route_ref.get(
+            "configured_fast_provider"
+        ),
+        "model_assisted_planning_configured_fast_model": model_route_ref.get(
+            "configured_fast_model"
+        ),
+        "model_assisted_planning_configured_local_url_present": (
+            model_route_ref.get("configured_local_url_present") is True
+        ),
+        "model_assisted_planning_configured_local_url_posture": (
+            model_route_ref.get("configured_local_url_posture")
+        ),
+        "model_assisted_planning_context_kinds_exercised": list(
+            _safe_sequence(counts.get("model_assisted_planning_context_kinds"))
+        ),
+        "initial_model_assisted_planning_calls_attempted": counts.get(
+            "initial_fast_model_planning_calls_attempted",
+            0,
+        ),
+        "initial_model_assisted_planning_calls_completed": counts.get(
+            "initial_fast_model_planning_calls_completed",
+            0,
+        ),
+        "recovery_model_assisted_planning_calls_attempted": counts.get(
+            "recovery_fast_model_planning_calls_attempted",
+            0,
+        ),
+        "recovery_model_assisted_planning_calls_completed": counts.get(
+            "recovery_fast_model_planning_calls_completed",
+            0,
+        ),
+        "model_assisted_planning_raw_private_retention_false": (
+            _model_assisted_planning_raw_private_retention_false(
+                initial_model_planning,
+                recovery_model_planning,
+            )
+        ),
+        "model_assisted_planning_closed_surfaces_preserved": (
+            _model_assisted_planning_closed_surfaces_preserved(
+                initial_model_planning,
+                recovery_model_planning,
+            )
+        ),
+        "model_assisted_planning_component_count_hypothesis": (
+            initial_model_planning.get("component_count_hypothesis")
+        ),
+        "model_assisted_planning_reduced_status": initial_model_planning.get(
+            "reduced_status"
+        ),
+        "model_assisted_planning_consumed_by_acquisition": bool(
+            acquisition.get("model_assisted_planning_consumed")
+        ),
+        "model_assisted_planning_consumed_by_disambiguation": bool(
+            acquisition.get("model_assisted_disambiguation_consumed")
+        ),
+        "model_assisted_planning_consumed_by_recovery": bool(
+            recovery_plan.get("model_assisted_recovery_planning_consumed")
+        ),
+        "acquisition_query_before_model_assisted_planning": (
+            acquisition.get("deterministic_acquisition_query")
+        ),
+        "acquisition_query_after_model_assisted_planning": acquisition.get(
+            "acquisition_query"
+        ),
+        "official_artifact_hypotheses": list(
+            _safe_sequence(acquisition.get("official_artifact_hypotheses"))
         ),
         "planner_marked_ambiguity": acquisition.get("disambiguation_required")
         is True,
@@ -2659,6 +2975,15 @@ def _base_packet(
         ),
         "source_challenge_recovery_plan_created": bool(recovery_plan),
         "source_challenge_recovery_plan": recovery_plan,
+        "source_challenge_recovery_query_before_model_assisted_planning": (
+            recovery_plan.get("recovery_query_before_model_assisted_planning")
+        ),
+        "source_challenge_recovery_query_after_model_assisted_planning": (
+            recovery_plan.get("recovery_query")
+        ),
+        "source_challenge_recovery_official_artifact_hypotheses": list(
+            _safe_sequence(recovery_plan.get("official_artifact_hypotheses"))
+        ),
         "source_challenge_recovery_status": recovery.get("status")
         or "not_triggered",
         "source_challenge_recovery_blocker": recovery.get("blocker"),
@@ -2854,11 +3179,420 @@ def _guard_plan_for_live_acquisition(plan: Mapping[str, Any]) -> None:
         )
 
 
-def _build_fast_acquisition_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
+def _initial_model_planning_context(plan: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "planning_context_kind": PLANNING_CONTEXT_INITIAL_SINGLE_RELATION,
+        "normalized_user_question": plan.get("sanitized_query"),
+        "relation_plan_id": plan.get("plan_id"),
+        "component_id": plan.get("component_id"),
+        "component_text": plan.get("component_text"),
+        "fact_kind": plan.get("fact_kind"),
+        "source_obligation_id": plan.get("source_obligation_id"),
+        "source_obligation_text": plan.get("source_obligation_text"),
+        "search_requirement_id": plan.get("search_requirement_id"),
+        "search_requirement_text": plan.get("search_requirement_text"),
+        "search_query_seeds": list(_safe_sequence(plan.get("search_query_seeds"))),
+        "supported_query_class_id": plan.get("supported_query_class_id"),
+        "deterministic_supported_query_gate_already_passed": True,
+        "multi_component_execution_opened": False,
+        "evidence_created": False,
+        "source_authority_decided": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+        "answer_text_created": False,
+    }
+
+
+def _recovery_model_planning_context(
+    *,
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any],
+    counts: Mapping[str, Any],
+    semantic_payload: Mapping[str, Any],
+    source_obligation_authorization: Mapping[str, Any],
+) -> dict[str, Any]:
+    selected = _selected_source_challenge_candidate_diagnostic(counts)
+    return {
+        "planning_context_kind": PLANNING_CONTEXT_SOURCE_OF_RECORD_RECOVERY,
+        "normalized_user_question": relation_plan.get("sanitized_query"),
+        "relation_plan_id": relation_plan.get("plan_id"),
+        "component_id": relation_plan.get("component_id"),
+        "component_text": relation_plan.get("component_text"),
+        "fact_kind": relation_plan.get("fact_kind"),
+        "source_obligation_id": relation_plan.get("source_obligation_id"),
+        "source_obligation_text": relation_plan.get("source_obligation_text"),
+        "acquisition_plan": _safe_mapping(acquisition_plan),
+        "selected_candidate_diagnostic": _safe_mapping(selected),
+        "candidate_diagnostics": [
+            _safe_mapping(item)
+            for item in _safe_sequence(counts.get("fetch_read_candidate_diagnostics"))
+        ],
+        "provider_acquisition_attempt_counts": {
+            "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
+            "provider_calls_completed": counts.get("provider_calls_completed", 0),
+            "provider_results_returned": counts.get("provider_results_returned", 0),
+        },
+        "dprime_status": _safe_mapping(semantic_payload.get("dprime_status")),
+        "source_obligation_recovery_authorization": _safe_mapping(
+            source_obligation_authorization
+        ),
+        "run_kernel_authorized_recovery": (
+            source_obligation_authorization.get("recovery_required") is True
+        ),
+        "evidence_created_by_planner": False,
+        "source_authority_decided_by_planner": False,
+        "source_obligation_satisfied_by_planner": False,
+        "citation_eligible_by_planner": False,
+        "answer_text_created_by_planner": False,
+    }
+
+
+def _model_assisted_planning_route_ref(
+    *,
+    strict_model_route_ref: Mapping[str, Any] | None,
+    fast_provider: str | None,
+    fast_model: str | None,
+    fast_model_local_url: str | None,
+    require_model_assisted_planning: bool,
+    planner_callable: Callable[..., Any] | None,
+) -> dict[str, Any] | None:
+    if strict_model_route_ref is None:
+        if not require_model_assisted_planning and planner_callable is None:
+            return None
+        return _strict_route_unavailable_candidate_ref(
+            fast_provider=fast_provider,
+            fast_model=fast_model,
+            fast_model_local_url=fast_model_local_url,
+        )
+    route = dict(strict_model_route_ref)
+    route.update(
+        _configured_fast_model_route_posture(
+            fast_provider=fast_provider,
+            fast_model=fast_model,
+            fast_model_local_url=fast_model_local_url,
+            include_absent=False,
+        )
+    )
+    return _json_safe(route)
+
+
+def _strict_route_unavailable_candidate_ref(
+    *,
+    fast_provider: str | None,
+    fast_model: str | None,
+    fast_model_local_url: str | None,
+) -> dict[str, Any]:
+    route = {
+        "model_task": MODEL_ASSISTED_PLANNING_MODEL_TASK,
+        "product_model_role": MODEL_ASSISTED_PLANNING_PRODUCT_MODEL_ROLE,
+        "product_route_kind": "strict_one_shot_model_route_unavailable_candidate",
+        "max_model_calls": 0,
+        "retry_policy": "unavailable",
+        "fallback_policy": "unavailable",
+        "timeout_policy": "unavailable",
+        "provider_switching_allowed": False,
+        "strict_one_shot": False,
+        "call_count": 0,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "provider_payload_retained": False,
+    }
+    route.update(
+        _configured_fast_model_route_posture(
+            fast_provider=fast_provider,
+            fast_model=fast_model,
+            fast_model_local_url=fast_model_local_url,
+        )
+    )
+    return _json_safe(route)
+
+
+def _configured_fast_model_route_posture(
+    *,
+    fast_provider: str | None,
+    fast_model: str | None,
+    fast_model_local_url: str | None,
+    include_absent: bool = True,
+) -> dict[str, Any]:
+    posture: dict[str, Any] = {}
+    cleaned_provider = _clean_text(fast_provider, limit=80)
+    cleaned_model = _clean_text(fast_model, limit=120)
+    local_url = _clean_text(fast_model_local_url, limit=500)
+    if cleaned_provider or include_absent:
+        posture["configured_fast_provider"] = cleaned_provider
+    if cleaned_model or include_absent:
+        posture["configured_fast_model"] = cleaned_model
+    if local_url or include_absent:
+        posture["configured_local_url_present"] = bool(local_url)
+        posture["configured_local_url_posture"] = _local_url_posture(local_url)
+    return posture
+
+
+def _local_url_posture(local_url: str | None) -> str:
+    if not local_url:
+        return "not_configured"
+    parsed = urlparse(local_url)
+    host = (parsed.hostname or "").casefold()
+    if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost"):
+        return "local_configured_not_retained"
+    if parsed.scheme in {"http", "https"} and host:
+        return "remote_configured_not_retained"
+    return "configured_unvalidated_not_retained"
+
+
+def _model_assisted_planning_route_diagnostic_ref(
+    *packets: Mapping[str, Any],
+) -> dict[str, Any]:
+    for packet in packets:
+        route_ref = _safe_mapping(_safe_mapping(packet).get("strict_model_route_ref"))
+        if route_ref:
+            return route_ref
+    return {}
+
+
+def _build_model_assisted_planning_packet(
+    *,
+    planning_context_kind: str,
+    context_state: Mapping[str, Any],
+    planner_callable: Callable[..., Any] | None,
+    strict_model_route_ref: Mapping[str, Any] | None,
+    clean_json_response: Callable[[str], str] | None,
+    require_model_assisted_planning: bool,
+) -> dict[str, Any] | None:
+    if not require_model_assisted_planning and planner_callable is None:
+        return None
+    packet = build_model_assisted_single_relation_planning_packet(
+        planning_context_kind=planning_context_kind,
+        context_state=context_state,
+        planner_callable=planner_callable,
+        strict_model_route_ref=strict_model_route_ref,
+        clean_json_response=clean_json_response,
+    )
+    _reject_forbidden_material(packet, context="model-assisted planning packet")
+    return packet
+
+
+def _record_model_assisted_planning_counts(
+    counts: dict[str, Any],
+    packet: Mapping[str, Any] | None,
+    *,
+    prefix: str,
+) -> None:
+    safe = _safe_mapping(packet)
+    if not safe:
+        return
+    context_kind = _clean_text(safe.get("planning_context_kind"), limit=120)
+    attempted = _bounded_int(safe.get("model_calls_attempted"))
+    completed = _bounded_int(safe.get("model_calls_completed"))
+    counts["fast_planner_model_calls_attempted"] = (
+        _bounded_int(counts.get("fast_planner_model_calls_attempted")) + attempted
+    )
+    counts["fast_planner_model_calls_completed"] = (
+        _bounded_int(counts.get("fast_planner_model_calls_completed")) + completed
+    )
+    counts[f"{prefix}_fast_model_planning_calls_attempted"] = attempted
+    counts[f"{prefix}_fast_model_planning_calls_completed"] = completed
+    if context_kind:
+        counts["model_assisted_planning_context_kinds"] = (
+            _merge_model_assisted_planning_contexts(
+                counts.get("model_assisted_planning_context_kinds"),
+                (context_kind,),
+            )
+        )
+
+
+def _merge_model_assisted_planning_contexts(
+    existing: Any,
+    new: Any,
+) -> tuple[str, ...]:
+    return tuple(_unique_clean_terms([*_safe_sequence(existing), *_safe_sequence(new)], limit=4))
+
+
+def _model_assisted_planning_strict_route_blocked(
+    packet: Mapping[str, Any] | None,
+    *,
+    require_model_assisted_planning: bool,
+) -> bool:
+    safe = _safe_mapping(packet)
+    return bool(
+        require_model_assisted_planning
+        and (
+            not safe
+            or safe.get("blocker")
+            == BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE
+        )
+    )
+
+
+def _model_assisted_planning_required_blocked(
+    packet: Mapping[str, Any] | None,
+    *,
+    require_model_assisted_planning: bool,
+) -> bool:
+    safe = _safe_mapping(packet)
+    return bool(require_model_assisted_planning and safe.get("blocker"))
+
+
+def _model_assisted_planning_multi_component_closed(
+    packet: Mapping[str, Any] | None,
+) -> bool:
+    safe = _safe_mapping(packet)
+    return (
+        safe.get("reduced_status")
+        == "likely_multi_component_currently_closed"
+        or safe.get("component_count_hypothesis") == "likely_multi_component"
+    )
+
+
+def _model_assisted_planning_raw_private_retention_false(
+    *packets: Mapping[str, Any],
+) -> bool:
+    for packet in packets:
+        safe = _safe_mapping(packet)
+        if not safe:
+            continue
+        flags = _safe_mapping(safe.get("raw_private_retention_flags"))
+        if any(value is not False for value in flags.values()):
+            return False
+        for key in (
+            "raw_prompt_retained",
+            "raw_model_response_retained",
+            "raw_provider_payload_retained",
+            "raw_search_response_retained",
+        ):
+            if safe.get(key) is not False:
+                return False
+    return True
+
+
+def _model_assisted_planning_closed_surfaces_preserved(
+    *packets: Mapping[str, Any],
+) -> bool:
+    for packet in packets:
+        safe = _safe_mapping(packet)
+        if not safe:
+            continue
+        flags = _safe_mapping(safe.get("closed_surface_flags"))
+        if any(value is not False for value in flags.values()):
+            return False
+        for key in (
+            "planner_output_is_evidence",
+            "planner_output_citation_eligible",
+            "planner_output_satisfies_source_obligation",
+            "planner_output_decides_source_authority",
+            "planner_output_creates_answer_text",
+            "planner_output_claims_correctness",
+        ):
+            if safe.get(key) is not False:
+                return False
+    return True
+
+
+def _model_planning_text_list(
+    packet: Mapping[str, Any],
+    key: str,
+    *,
+    limit: int,
+    max_items: int,
+) -> list[str]:
+    return [
+        item
+        for item in (
+            _clean_text(raw, limit=limit)
+            for raw in _safe_sequence(packet.get(key))
+        )
+        if item
+    ][:max_items]
+
+
+def _model_assisted_acquisition_query(
+    *,
+    deterministic_query: str,
+    model_planning_packet: Mapping[str, Any],
+    official_artifact_hypotheses: Sequence[str],
+) -> str:
+    preferred = _clean_text(
+        model_planning_packet.get("preferred_acquisition_query"),
+        limit=220,
+    )
+    if preferred:
+        return preferred
+    variants = _model_planning_text_list(
+        model_planning_packet,
+        "acquisition_query_variants",
+        limit=220,
+        max_items=3,
+    )
+    if variants:
+        return variants[0]
+    if official_artifact_hypotheses:
+        query = " ".join(
+            _unique_clean_terms(
+                [deterministic_query, *official_artifact_hypotheses],
+                limit=10,
+            )
+        )
+        return _clean_text(query, limit=220) or deterministic_query
+    return deterministic_query
+
+
+def _recovery_plan_with_model_assisted_hints(
+    plan: Mapping[str, Any],
+    *,
+    recovery_model_planning_packet: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    safe_plan = _safe_mapping(plan)
+    model_planning = _safe_mapping(recovery_model_planning_packet)
+    if not safe_plan or not model_planning:
+        return safe_plan
+    revised = dict(safe_plan)
+    original_query = _clean_text(safe_plan.get("recovery_query"), limit=260)
+    preferred = _clean_text(
+        model_planning.get("preferred_recovery_query"),
+        limit=240,
+    )
+    variants = _model_planning_text_list(
+        model_planning,
+        "recovery_query_variants",
+        limit=240,
+        max_items=3,
+    )
+    revised["recovery_query_before_model_assisted_planning"] = original_query
+    if preferred:
+        revised["recovery_query"] = preferred
+    elif variants:
+        revised["recovery_query"] = variants[0]
+    revised["model_assisted_recovery_planning_consumed"] = True
+    revised["model_assisted_recovery_planning_packet"] = model_planning
+    revised["official_artifact_hypotheses"] = _model_planning_text_list(
+        model_planning,
+        "official_or_source_of_record_artifact_hypotheses",
+        limit=180,
+        max_items=6,
+    )
+    revised["recovery_query_variants"] = variants
+    revised["planner_output_is_evidence"] = False
+    revised["planner_output_citation_eligible"] = False
+    revised["planner_output_satisfies_source_obligation"] = False
+    revised["planner_output_decides_source_authority"] = False
+    revised["planner_output_creates_answer_text"] = False
+    revised["planner_output_claims_correctness"] = False
+    _reject_forbidden_material(revised, context="model-assisted recovery plan")
+    return _json_safe(revised)
+
+
+def _build_fast_acquisition_plan(
+    plan: Mapping[str, Any],
+    *,
+    model_planning_packet: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     relation_seed = _search_query_seed(plan)
     component_text = _clean_text(plan.get("component_text"), limit=260) or relation_seed
     query_text = _clean_text(plan.get("sanitized_query"), limit=500) or relation_seed
     fact_kind = _clean_text(plan.get("fact_kind"), limit=80) or "current_value"
+    model_planning = _safe_mapping(model_planning_packet)
     subject_anchors = _subject_entity_anchors(query_text, component_text)
     form_anchors = _form_document_code_anchors(query_text, component_text)
     fact_anchor = _fact_kind_anchor(component_text, fact_kind)
@@ -2877,7 +3611,7 @@ def _build_fast_acquisition_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         fact_kind=fact_kind,
     )
     value_token_kinds = _expected_value_token_kinds(fact_kind, component_text)
-    acquisition_query = _artifact_oriented_acquisition_query(
+    deterministic_acquisition_query = _artifact_oriented_acquisition_query(
         subject_anchors=subject_anchors,
         form_anchors=form_anchors,
         fact_anchor=fact_anchor,
@@ -2886,16 +3620,84 @@ def _build_fast_acquisition_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         timeframe_posture=timeframe_posture,
         fallback=relation_seed,
     )
+    official_artifact_hypotheses = _model_planning_text_list(
+        model_planning,
+        "official_or_source_of_record_artifact_hypotheses",
+        limit=180,
+        max_items=6,
+    )
+    likely_official_domains = _model_planning_text_list(
+        model_planning,
+        "likely_official_domains",
+        limit=160,
+        max_items=6,
+    )
+    model_anchor_terms = _model_planning_text_list(
+        model_planning,
+        "answer_bearing_anchor_terms",
+        limit=120,
+        max_items=10,
+    )
+    model_value_token_kinds = _model_planning_text_list(
+        model_planning,
+        "expected_value_token_kinds",
+        limit=40,
+        max_items=6,
+    )
+    answer_bearing_anchors = _unique_clean_terms(
+        [*answer_bearing_anchors, *model_anchor_terms],
+        limit=10,
+    )
+    if model_value_token_kinds:
+        value_token_kinds = _unique_clean_terms(
+            [*value_token_kinds, *model_value_token_kinds],
+            limit=6,
+        )
+    acquisition_query = _model_assisted_acquisition_query(
+        deterministic_query=deterministic_acquisition_query,
+        model_planning_packet=model_planning,
+        official_artifact_hypotheses=official_artifact_hypotheses,
+    )
     ambiguity_required, ambiguity_reason = _planner_ambiguity_posture(plan)
+    model_disambiguation_required = (
+        model_planning.get("disambiguation_status")
+        == "ambiguous_needs_disambiguation"
+    )
+    if model_disambiguation_required:
+        ambiguity_required = True
+        ambiguity_reason = (
+            _clean_text(model_planning.get("disambiguation_reason"), limit=220)
+            or "model_assisted_planning_marked_ambiguity"
+        )
     payload = {
         "schema_version": ACQUISITION_PLANNER_SCHEMA_VERSION,
         "planner_kind": ACQUISITION_PLANNER_KIND,
-        "planner_route": "existing_deterministic_relation_plan_adapter",
-        "planner_type": "deterministic",
-        "fast_model_route_used": False,
-        "fast_model_planner_used": False,
-        "fast_model_route_reason": "no broad model-routing layer introduced",
-        "model_calls_attempted": 0,
+        "planner_route": (
+            "model_assisted_relation_plan_adapter"
+            if model_planning
+            else "existing_deterministic_relation_plan_adapter"
+        ),
+        "planner_type": "model_assisted_reduced" if model_planning else "deterministic",
+        "fast_model_route_used": bool(model_planning.get("model_calls_attempted")),
+        "fast_model_planner_used": bool(model_planning),
+        "fast_model_route_reason": (
+            "strict_injected_model_assisted_planning_packet_reduced"
+            if model_planning
+            else "no strict FastModel planning packet configured"
+        ),
+        "model_calls_attempted": _bounded_int(
+            model_planning.get("model_calls_attempted"),
+            default=0,
+        ),
+        "model_calls_completed": _bounded_int(
+            model_planning.get("model_calls_completed"),
+            default=0,
+        ),
+        "model_assisted_planning_packet": model_planning,
+        "model_assisted_planning_consumed": bool(model_planning),
+        "model_assisted_disambiguation_consumed": bool(
+            model_planning and model_disambiguation_required
+        ),
         "relation_plan_id": plan.get("plan_id"),
         "component_id": plan.get("component_id"),
         "search_requirement_id": plan.get("search_requirement_id"),
@@ -2911,10 +3713,15 @@ def _build_fast_acquisition_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
         "answer_bearing_anchor_terms": answer_bearing_anchors,
         "expected_value_token_kinds": value_token_kinds,
         "artifact_source_terms": artifact_terms,
+        "official_artifact_hypotheses": official_artifact_hypotheses,
+        "likely_official_domains": likely_official_domains,
         "acquisition_query": acquisition_query,
         "original_acquisition_query": acquisition_query,
+        "deterministic_acquisition_query": deterministic_acquisition_query,
         "query_shaping_reason": (
-            "artifact_oriented_source_discovery_from_relation_plan_anchors"
+            "model_assisted_official_artifact_hypotheses_reduced"
+            if model_planning
+            else "artifact_oriented_source_discovery_from_relation_plan_anchors"
         ),
         "disambiguation_required": ambiguity_required,
         "ambiguity_required": ambiguity_required,
@@ -5674,6 +6481,21 @@ def _enforce_caps(counts: Mapping[str, int]) -> None:
     checks = (
         ("query_plans_consumed", MAX_QUERY_PLANS_CONSUMED, "query plan"),
         (
+            "initial_fast_model_planning_calls_attempted",
+            MAX_INITIAL_FAST_MODEL_PLANNING_CALLS,
+            "initial FastModel planning",
+        ),
+        (
+            "recovery_fast_model_planning_calls_attempted",
+            MAX_RECOVERY_FAST_MODEL_PLANNING_CALLS,
+            "recovery FastModel planning",
+        ),
+        (
+            "fast_planner_model_calls_attempted",
+            MAX_FAST_MODEL_PLANNING_CALLS,
+            "FastModel planning",
+        ),
+        (
             "extraction_provider_calls_attempted",
             MAX_PROVIDER_SEARCH_CALLS,
             "extraction provider/search",
@@ -5716,6 +6538,13 @@ def _caps_ref() -> dict[str, int]:
     return {
         "max_live_runs": MAX_LIVE_RUNS,
         "max_query_plans_consumed": MAX_QUERY_PLANS_CONSUMED,
+        "max_initial_fast_model_planning_calls": (
+            MAX_INITIAL_FAST_MODEL_PLANNING_CALLS
+        ),
+        "max_recovery_fast_model_planning_calls": (
+            MAX_RECOVERY_FAST_MODEL_PLANNING_CALLS
+        ),
+        "max_fast_model_planning_calls": MAX_FAST_MODEL_PLANNING_CALLS,
         "max_provider_search_calls": MAX_PROVIDER_SEARCH_CALLS,
         "max_extraction_provider_calls": MAX_PROVIDER_SEARCH_CALLS,
         "max_source_challenge_recovery_provider_calls": (
@@ -5785,6 +6614,12 @@ def _empty_counts() -> dict[str, Any]:
         "query_plans_consumed": 0,
         "fast_planner_calls_attempted": 0,
         "fast_planner_model_calls_attempted": 0,
+        "fast_planner_model_calls_completed": 0,
+        "initial_fast_model_planning_calls_attempted": 0,
+        "initial_fast_model_planning_calls_completed": 0,
+        "recovery_fast_model_planning_calls_attempted": 0,
+        "recovery_fast_model_planning_calls_completed": 0,
+        "model_assisted_planning_context_kinds": (),
         "product_provider_acquisition_adapter_used": 0,
         "serper_scout_calls_attempted": 0,
         "serper_scout_calls_completed": 0,
@@ -6356,6 +7191,7 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING",
+    "BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL",
