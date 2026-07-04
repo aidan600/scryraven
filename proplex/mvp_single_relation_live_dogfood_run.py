@@ -230,6 +230,18 @@ SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED = "provider_extracted_source_content"
 SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK = "direct_public_web_fetch_fallback"
 SOURCE_ACQUISITION_MODE_NONE = "none"
 PROVIDER_EXTRACTED_CONTENT_TYPE = "text/html"
+ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED = (
+    "answer_bearing_candidate_window_not_established"
+)
+ANSWER_BEARING_CANDIDATE_WINDOW_BEST_EFFORT = (
+    "answer_bearing_candidate_window_best_effort"
+)
+ANSWER_BEARING_CANDIDATE_WINDOW_ESTABLISHED = (
+    "answer_bearing_candidate_window_established"
+)
+ANSWER_BEARING_CANDIDATE_WINDOW_NOT_SELECTED = (
+    "ANSWER_BEARING_CANDIDATE_WINDOW_NOT_SELECTED"
+)
 
 _CANDIDATE_PRIORITY_STOPWORDS = frozenset(
     {
@@ -520,6 +532,15 @@ class GenericLiveFetchReadResult:
     redirect_count: int = 0
     redirect_chain_digest: str | None = None
     retrieved_or_observed_at: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateWindowEvaluation:
+    candidate: Mapping[str, Any]
+    provider_result: Mapping[str, Any]
+    selection: BoundedTextSelection
+    score: tuple[int, ...]
+    diagnostic: dict[str, Any]
 
 
 ProviderProxyRunner = Callable[
@@ -1967,6 +1988,19 @@ def _base_packet(
         "fetch_read_attempt_diagnostics": list(
             _safe_sequence(counts.get("fetch_read_attempt_diagnostics"))
         ),
+        "answer_bearing_candidate_window_status": _clean_text(
+            counts.get("answer_bearing_candidate_window_status"),
+            limit=120,
+        ),
+        "answer_bearing_candidate_window_best_effort": bool(
+            counts.get("answer_bearing_candidate_window_best_effort")
+        ),
+        "answer_bearing_candidate_window_not_established": bool(
+            counts.get("answer_bearing_candidate_window_not_established")
+        ),
+        "answer_bearing_candidate_window_diagnostics": list(
+            _safe_sequence(counts.get("answer_bearing_candidate_window_diagnostics"))
+        ),
         "fetch_read_public_web_request_profile_id": (
             FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID
         ),
@@ -2710,14 +2744,19 @@ def _write_fetch_read_artifacts(
         )
     ]
     if provider_extracted_candidates:
-        candidate = provider_extracted_candidates[0]
-        provider_result = provider_results_by_candidate_id[str(candidate["candidate_id"])]
         try:
-            selection = _bounded_plan_text_selection(
-                _provider_extracted_text(provider_result) or "",
+            evaluations = _provider_extracted_candidate_window_evaluations(
+                provider_extracted_candidates,
+                provider_results_by_candidate_id=provider_results_by_candidate_id,
                 relation_plan=relation_plan,
                 acquisition_plan=acquisition_plan,
             )
+            selected_evaluation = _select_provider_extracted_candidate_window(
+                evaluations
+            )
+            candidate = selected_evaluation.candidate
+            provider_result = selected_evaluation.provider_result
+            selection = selected_evaluation.selection
             material = _provider_extracted_fetch_read_material(
                 candidate=candidate,
                 candidate_packet=candidate_packet,
@@ -2769,6 +2808,11 @@ def _write_fetch_read_artifacts(
             candidate,
             provider_result=provider_result,
         )
+        _apply_candidate_window_diagnostics(
+            candidate_diagnostics,
+            evaluations=evaluations,
+            selected_candidate_id=str(candidate["candidate_id"]),
+        )
         _apply_attempt_diagnostic(candidate_diagnostics, provider_diagnostic)
         _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
         return fetch_packet, {
@@ -2787,6 +2831,23 @@ def _write_fetch_read_artifacts(
             ),
             "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
             "fetch_read_attempt_diagnostics": (),
+            "answer_bearing_candidate_window_status": (
+                _candidate_window_status(selection)
+            ),
+            "answer_bearing_candidate_window_best_effort": (
+                _candidate_window_status(selection)
+                == ANSWER_BEARING_CANDIDATE_WINDOW_BEST_EFFORT
+            ),
+            "answer_bearing_candidate_window_not_established": (
+                _candidate_window_status(selection)
+                == ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED
+            ),
+            "answer_bearing_candidate_window_diagnostics": (
+                _candidate_window_diagnostics(
+                    evaluations,
+                    selected_candidate_id=str(candidate["candidate_id"]),
+                )
+            ),
             **_selected_window_guidance_counts(
                 acquisition_plan=acquisition_plan,
                 selection=selection,
@@ -3686,6 +3747,276 @@ def _provider_extracted_text(provider_result: Mapping[str, Any]) -> str | None:
         limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
     )
     return text or None
+
+
+def _provider_extracted_candidate_window_evaluations(
+    provider_extracted_candidates: Sequence[Mapping[str, Any]],
+    *,
+    provider_results_by_candidate_id: Mapping[str, Mapping[str, Any]],
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+) -> list[_CandidateWindowEvaluation]:
+    evaluations: list[_CandidateWindowEvaluation] = []
+    for candidate in provider_extracted_candidates:
+        candidate_id = str(candidate["candidate_id"])
+        provider_result = provider_results_by_candidate_id[candidate_id]
+        selection = _bounded_plan_text_selection(
+            _provider_extracted_text(provider_result) or "",
+            relation_plan=relation_plan,
+            acquisition_plan=acquisition_plan,
+        )
+        score = _candidate_window_score(candidate, selection)
+        evaluations.append(
+            _CandidateWindowEvaluation(
+                candidate=candidate,
+                provider_result=provider_result,
+                selection=selection,
+                score=score,
+                diagnostic=_candidate_window_diagnostic(
+                    candidate,
+                    provider_result=provider_result,
+                    selection=selection,
+                    score=score,
+                    selected=False,
+                ),
+            )
+        )
+    return evaluations
+
+
+def _select_provider_extracted_candidate_window(
+    evaluations: Sequence[_CandidateWindowEvaluation],
+) -> _CandidateWindowEvaluation:
+    if not evaluations:
+        raise FetchReadContentReferenceError(
+            "provider-extracted candidate/window selection had no candidates."
+        )
+    return max(evaluations, key=lambda item: item.score)
+
+
+def _candidate_window_score(
+    candidate: Mapping[str, Any],
+    selection: BoundedTextSelection,
+) -> tuple[int, ...]:
+    features = _safe_mapping(candidate.get("candidate_selection_features"))
+    result_rank = _bounded_int(candidate.get("result_rank"), default=999)
+    priority_rank = _bounded_int(candidate.get("fetch_read_priority_rank"), default=999)
+    expected_count = len(selection.expected_value_token_kinds)
+    matched_value_count = selection.matched_value_token_kind_count
+    expected_values_all_matched = int(
+        bool(expected_count) and matched_value_count == expected_count
+    )
+    source_record_tie_breaker = int(
+        features.get("source_of_record_domain_signal") is True
+    )
+    official_tie_breaker = int(
+        features.get("official_domain_signal") is True
+        or features.get("public_agency_domain_signal") is True
+    )
+    return (
+        expected_values_all_matched,
+        matched_value_count,
+        selection.matched_anchor_count,
+        _anchor_match_status_rank(selection),
+        -len(selection.missing_anchors),
+        source_record_tie_breaker,
+        official_tie_breaker,
+        -priority_rank,
+        -result_rank,
+    )
+
+
+def _anchor_match_status_rank(selection: BoundedTextSelection) -> int:
+    if selection.required_anchor_count <= 0:
+        return 0
+    if selection.matched_anchor_count == selection.required_anchor_count:
+        return 3
+    if selection.matched_anchor_count > 0:
+        return 2
+    return 1
+
+
+def _anchor_match_status(selection: BoundedTextSelection) -> str:
+    if selection.required_anchor_count <= 0:
+        return "no_anchor_requirements"
+    if selection.matched_anchor_count == selection.required_anchor_count:
+        return "all_required_anchors_matched"
+    if selection.matched_anchor_count == 0:
+        return "no_required_anchors_matched"
+    return "partial_required_anchor_match"
+
+
+def _candidate_window_status(selection: BoundedTextSelection) -> str:
+    if selection.matched_value_token_kind_count > 0 and selection.matched_anchor_count > 0:
+        return ANSWER_BEARING_CANDIDATE_WINDOW_ESTABLISHED
+    weak_anchor_coverage = (
+        selection.required_anchor_count > 0
+        and selection.matched_anchor_count < max(1, selection.required_anchor_count // 2)
+    )
+    if selection.matched_value_token_kind_count == 0 and weak_anchor_coverage:
+        return ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED
+    return ANSWER_BEARING_CANDIDATE_WINDOW_BEST_EFFORT
+
+
+def _candidate_window_diagnostic(
+    candidate: Mapping[str, Any],
+    *,
+    provider_result: Mapping[str, Any],
+    selection: BoundedTextSelection,
+    score: Sequence[int],
+    selected: bool,
+) -> dict[str, Any]:
+    provider_text = _provider_extracted_text(provider_result) or ""
+    features = _safe_mapping(candidate.get("candidate_selection_features"))
+    result_rank = _bounded_int(candidate.get("result_rank"), default=0)
+    priority_rank = _bounded_int(candidate.get("fetch_read_priority_rank"), default=0)
+    source_record_tie_breaker = (
+        features.get("source_of_record_domain_signal") is True
+    )
+    official_tie_breaker = (
+        features.get("official_domain_signal") is True
+        or features.get("public_agency_domain_signal") is True
+    )
+    return {
+        "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
+        "result_rank": result_rank,
+        "provider_rank": result_rank,
+        "fetch_read_priority_rank": priority_rank,
+        "title": _clean_text(candidate.get("title"), limit=220),
+        "domain": _clean_domain(candidate.get("domain")),
+        "url": _clean_text(candidate.get("url"), limit=700),
+        "bounded_content_digest": _digest_json(
+            {"provider_extracted_text": provider_text}
+        ),
+        "bounded_content_char_count": len(provider_text),
+        "selected_window_digest": selection.bounded_text_digest,
+        "selected_window_char_count": selection.bounded_text_char_count,
+        "required_anchor_count": selection.required_anchor_count,
+        "matched_anchor_count": selection.matched_anchor_count,
+        "missing_anchor_count": len(selection.missing_anchors),
+        "anchor_match_status": _anchor_match_status(selection),
+        "expected_value_token_kinds": list(selection.expected_value_token_kinds),
+        "matched_value_token_kinds": list(selection.matched_value_token_kinds),
+        "matched_value_token_kind_count": selection.matched_value_token_kind_count,
+        "missing_value_token_kinds": list(selection.missing_value_token_kinds),
+        "value_token_guidance_consumed": selection.value_token_guidance_consumed,
+        "score": list(score),
+        "score_components": {
+            "expected_value_token_kind_all_matched": bool(
+                selection.expected_value_token_kinds
+                and selection.matched_value_token_kind_count
+                == len(selection.expected_value_token_kinds)
+            ),
+            "expected_value_token_kind_match_count": (
+                selection.matched_value_token_kind_count
+            ),
+            "matched_anchor_count": selection.matched_anchor_count,
+            "anchor_match_status_rank": _anchor_match_status_rank(selection),
+            "missing_anchor_count": len(selection.missing_anchors),
+            "source_of_record_looking_tie_breaker": source_record_tie_breaker,
+            "official_or_public_agency_tie_breaker": official_tie_breaker,
+            "fetch_read_priority_rank_tie_breaker": priority_rank,
+            "result_rank_tie_breaker": result_rank,
+        },
+        "selected": selected,
+        "candidate_window_selected": selected,
+        "answer_bearing_candidate_window_status": _candidate_window_status(selection),
+        "diagnostic_posture": "observability_only",
+        "not_evidence": True,
+        "not_semantic_support": True,
+        "not_source_authority": True,
+        "not_citation_eligible": True,
+        "not_source_obligation_satisfaction": True,
+        "not_product_correctness": True,
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+    }
+
+
+def _apply_candidate_window_diagnostics(
+    candidate_diagnostics: list[dict[str, Any]],
+    *,
+    evaluations: Sequence[_CandidateWindowEvaluation],
+    selected_candidate_id: str,
+) -> None:
+    by_candidate_id = {
+        str(evaluation.candidate["candidate_id"]): evaluation
+        for evaluation in evaluations
+    }
+    for diagnostic in candidate_diagnostics:
+        candidate_id = _clean_text(diagnostic.get("candidate_id"), limit=320)
+        evaluation = by_candidate_id.get(candidate_id or "")
+        if evaluation is None:
+            continue
+        selected = candidate_id == selected_candidate_id
+        window_diagnostic = {
+            **evaluation.diagnostic,
+            "selected": selected,
+            "candidate_window_selected": selected,
+        }
+        diagnostic["answer_bearing_candidate_window_considered"] = True
+        diagnostic["answer_bearing_candidate_window_selected"] = selected
+        diagnostic["answer_bearing_candidate_window_status"] = (
+            window_diagnostic["answer_bearing_candidate_window_status"]
+        )
+        diagnostic["candidate_window_score"] = window_diagnostic["score"]
+        diagnostic["candidate_window_score_components"] = window_diagnostic[
+            "score_components"
+        ]
+        diagnostic["selected_window_digest"] = window_diagnostic[
+            "selected_window_digest"
+        ]
+        diagnostic["selected_window_char_count"] = window_diagnostic[
+            "selected_window_char_count"
+        ]
+        diagnostic["bounded_content_digest"] = window_diagnostic[
+            "bounded_content_digest"
+        ]
+        diagnostic["bounded_content_char_count"] = window_diagnostic[
+            "bounded_content_char_count"
+        ]
+        diagnostic["required_anchor_count"] = window_diagnostic[
+            "required_anchor_count"
+        ]
+        diagnostic["matched_anchor_count"] = window_diagnostic[
+            "matched_anchor_count"
+        ]
+        diagnostic["missing_anchor_count"] = window_diagnostic[
+            "missing_anchor_count"
+        ]
+        diagnostic["anchor_match_status"] = window_diagnostic["anchor_match_status"]
+        diagnostic["expected_value_token_kinds"] = window_diagnostic[
+            "expected_value_token_kinds"
+        ]
+        diagnostic["matched_value_token_kinds"] = window_diagnostic[
+            "matched_value_token_kinds"
+        ]
+        diagnostic["missing_value_token_kinds"] = window_diagnostic[
+            "missing_value_token_kinds"
+        ]
+        diagnostic["value_token_guidance_consumed"] = window_diagnostic[
+            "value_token_guidance_consumed"
+        ]
+        if not selected:
+            diagnostic["skipped_reason"] = ANSWER_BEARING_CANDIDATE_WINDOW_NOT_SELECTED
+
+
+def _candidate_window_diagnostics(
+    evaluations: Sequence[_CandidateWindowEvaluation],
+    *,
+    selected_candidate_id: str,
+) -> tuple[dict[str, Any], ...]:
+    diagnostics: list[dict[str, Any]] = []
+    for evaluation in evaluations:
+        candidate_id = str(evaluation.candidate["candidate_id"])
+        selected = candidate_id == selected_candidate_id
+        diagnostics.append(
+            {
+                **evaluation.diagnostic,
+                "selected": selected,
+                "candidate_window_selected": selected,
+            }
+        )
+    return tuple(diagnostics)
 
 
 def _provider_extracted_fetch_read_material(
