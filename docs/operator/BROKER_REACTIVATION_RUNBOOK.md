@@ -107,17 +107,34 @@ snippet
 date or published_or_observed_date
 rank or result_rank
 call_index or provider_call_index
+provider_extracted_text
+provider_extracted_text_sanitized
+provider_extracted_text_bounded
+provider_extracted_text_char_count
+provider_extracted_text_digest
+provider_extracted_content_type
 raw_provider_payload_retained: false
 raw_search_response_retained: false
 ```
+
+Broker output is not source custody, evidence, citation eligible, or
+source-obligation satisfaction. Bounded `provider_extracted_text`, when present,
+is sanitized provider record material only. Only a downstream product path, under
+its own licensed custody, readability, and candidate-fit gates, may convert that
+material into source-bound custody.
+
+For Tavily, provider-extracted page material may cross the private
+broker-to-client boundary only as bounded provider record material and must be
+written by the tracked client as `provider_extracted_text`, not `raw_content`.
 
 ## Preferred One-Run Helper
 
 For a separately licensed trusted-local provider call, prefer the reusable
 helper. It starts the private broker on `127.0.0.1:8765`, generates a temporary
-broker token, loads `SERPER_API_KEY` from the current process or explicit local
-operator env files without printing it, delegates to the generic client, writes
-sanitized output under `output/`, and stops the broker subprocess afterward.
+broker token, loads the selected provider key, currently `SERPER_API_KEY` or
+`TAVILY_API_KEY`, from the current process or explicit local operator env files
+without printing it, delegates to the generic client, writes sanitized output
+under `output/`, and stops the broker subprocess afterward.
 
 ```powershell
 py scripts\run_provider_proxy_broker_once.py `
@@ -232,9 +249,9 @@ Fail closed and do not retry when any of these are true:
 - The output path is outside `output/`.
 - The broker returns token error, missing config, max-runs exhausted,
   unsupported provider/operation, or any provider error.
-- The broker returns or implies raw provider payload retention, raw search
-  response retention, raw/private fields, secrets, logs, DB/cache rows, prompts,
-  full traces, or headers.
+- The tracked sanitized output returns or implies raw provider payload
+  retention, raw search response retention, raw/private fields, secrets, logs,
+  DB/cache rows, prompts, full traces, or headers.
 - The requested action would require direct provider API calls from Codex.
 - The requested action would require reading `.env`, secrets, provider keys,
   private logs, DB/cache rows, raw prompts, raw provider payloads, raw model

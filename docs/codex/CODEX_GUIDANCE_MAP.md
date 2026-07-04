@@ -25,6 +25,10 @@ are repo files; use repo-visible files and the current phase prompt.
   The reusable helper is `scripts/run_provider_proxy_broker_once.py`; it starts
   the private broker locally, generates a temporary token, delegates to the
   generic client, writes sanitized output under `output/`, and stops the broker.
+  Sanitized broker output is not source custody, evidence, citation eligible,
+  or source-obligation satisfaction; bounded `provider_extracted_text` remains
+  provider record material until a downstream product path admits it under its
+  own custody/readability/candidate-fit gates.
 - **Proof class and actual app delta questions:** read
   [PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md](PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md).
 - **Current path registry and quarantine classifications:** read

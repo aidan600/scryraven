@@ -251,11 +251,24 @@ def test_helper_passes_generic_provider_request_shape_to_client(
     ]
 
 
-def test_helper_loads_only_needed_key_from_explicit_env_file(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("provider", "selected_env_var", "other_env_var"),
+    [
+        ("serper", helper.SERPER_KEY_ENV_VAR, helper.TAVILY_KEY_ENV_VAR),
+        ("tavily", helper.TAVILY_KEY_ENV_VAR, helper.SERPER_KEY_ENV_VAR),
+    ],
+)
+def test_helper_loads_only_selected_provider_key_from_explicit_env_file(
+    provider: str,
+    selected_env_var: str,
+    other_env_var: str,
+    tmp_path: Path,
+) -> None:
     env_file = tmp_path / "operator.env"
     env_file.write_text(
         "\ufeff# local only\n"
-        f"{helper.SERPER_KEY_ENV_VAR}=example-provider-value\n"
+        f"{helper.SERPER_KEY_ENV_VAR}=serper-provider-value\n"
+        f"{helper.TAVILY_KEY_ENV_VAR}=tavily-provider-value\n"
         f"{client.TOKEN_ENV_VAR}=ignored-token\n"
         "UNRELATED=value\n",
         encoding="utf-8",
@@ -263,15 +276,17 @@ def test_helper_loads_only_needed_key_from_explicit_env_file(tmp_path: Path) -> 
 
     values = helper.load_env_file_values(env_file)
     env = helper.broker_environment(
-        provider="serper",
+        provider=provider,
         token="temporary-token",
         env_file_paths=[str(env_file)],
         process_env={},
     )
 
-    assert values == {helper.SERPER_KEY_ENV_VAR: "example-provider-value"}
+    assert values[helper.SERPER_KEY_ENV_VAR] == "serper-provider-value"
+    assert values[helper.TAVILY_KEY_ENV_VAR] == "tavily-provider-value"
     assert env[client.TOKEN_ENV_VAR] == "temporary-token"
-    assert env[helper.SERPER_KEY_ENV_VAR] == "example-provider-value"
+    assert env[selected_env_var] == f"{provider}-provider-value"
+    assert other_env_var not in env
     assert "UNRELATED" not in env
 
 
