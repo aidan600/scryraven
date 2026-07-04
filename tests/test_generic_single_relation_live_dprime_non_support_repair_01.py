@@ -181,6 +181,95 @@ def test_non_support_assessment_remains_blocked_with_safe_window_diagnostic(
     assert result.packet["raw_model_response_retained"] is False
 
 
+def test_challenge_relation_with_false_flag_routes_to_challenge_blocker(
+    tmp_path: Path,
+) -> None:
+    calls: list[Any] = []
+    extracted_text = (
+        "N-400 Naturalization Fee in 2026: Costs and Fee Waivers. The page says "
+        "the current Form N-400 paper filing fee is $760, but it is a "
+        "non-official explainer rather than source-of-record confirmation."
+    )
+
+    def fake_review(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+        payload = _assessment_payload(
+            kwargs["input_packet"],
+            support_relation="weak_or_overclaim_risk",
+            claim="USCIS Form N-400 paper filing fee is $760.",
+        )
+        payload["challenge_recommended"] = False
+        payload["non_support_reason_when_not_direct"] = (
+            "The answer-bearing material is not source-of-record confirmation."
+        )
+        payload["evidential_adequacy_notes"] = (
+            "The model explicitly identified weak_or_overclaim_risk."
+        )
+        return payload
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="dprime-challenge-relation-derived-flag",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "N-400 Naturalization Fee in 2026: Costs and Fee Waivers",
+                    "https://example-law.invalid/n-400-fee-guide",
+                    extracted_text,
+                )
+            ],
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    dprime_status = result.packet["semantic_status_payload"]["dprime_status"]
+    normalization_ref = dprime_status["assessment_material_ref"][
+        "challenge_relation_normalization_ref"
+    ]
+    assert (
+        result.decision
+        == dprime.BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED
+    )
+    assert dprime_status["assessment_status"] == "challenge-recommended"
+    assert dprime_status["support_relation"] == "weak_or_overclaim_risk"
+    assert dprime_status["validated_support_proposal_available"] is False
+    assert dprime_status["run_kernel_support_admission_request_ref"] == {}
+    assert dprime_status["objects_created"]["validated_support_proposal"] is False
+    assert (
+        dprime_status["objects_created"][
+            "run_kernel_support_proposal_admission_request"
+        ]
+        is False
+    )
+    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert normalization_ref == {
+        "challenge_recommended_model_provided": False,
+        "challenge_recommended_derived_from_support_relation": True,
+        "challenge_relation": "weak_or_overclaim_risk",
+        "normalization_is_conservative": True,
+        "support_not_created": True,
+    }
+    assert result.packet["answer_text_present"] is False
+    assert result.packet["source_display_entries"] == []
+    assert result.packet["actual_source_authority_posture_created"] is False
+    assert result.packet["candidate_selection_created_source_authority"] is False
+    assert result.packet["candidate_selection_citation_eligible"] is False
+    assert result.packet["candidate_selection_satisfies_source_obligation"] is False
+    assert result.packet["fap_author_opened"] is False
+    assert result.packet["product_correctness_claimed"] is False
+    assert result.packet["raw_provider_payload_retained"] is False
+    assert result.packet["raw_search_response_retained"] is False
+    assert result.packet["raw_prompt_retained"] is False
+    assert result.packet["raw_model_response_retained"] is False
+    assert "bounded_text" not in json.dumps(result.packet, sort_keys=True)
+
+
 def test_missing_or_mismatched_content_reference_fails_before_model_review(
     tmp_path: Path,
 ) -> None:

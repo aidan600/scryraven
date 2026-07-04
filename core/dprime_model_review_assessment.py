@@ -895,6 +895,7 @@ def _normalized_assessment_payload(
     input_packet = packet.to_dict()
     payload = dict(parsed)
     support_relation = _clean_text(payload.get("support_relation"), limit=160)
+    challenge_normalization_ref = _challenge_relation_normalization_ref(payload)
     payload.setdefault(
         "assessment_id",
         "dprime-assessment:"
@@ -924,7 +925,27 @@ def _normalized_assessment_payload(
     )
     payload["assessment_digest"] = ""
     payload["assessment_digest"] = assessment_validation.assessment_digest(payload)
+    if challenge_normalization_ref:
+        payload["challenge_relation_normalization_ref"] = challenge_normalization_ref
     return payload
+
+
+def _challenge_relation_normalization_ref(payload: dict[str, Any]) -> dict[str, Any]:
+    relation = _normalize_key(payload.get("support_relation"))
+    if relation not in assessment_validation.CHALLENGE_RELATIONS:
+        return {}
+
+    model_provided = payload.get("challenge_recommended") is True
+    derived = not model_provided
+    if derived:
+        payload["challenge_recommended"] = True
+    return {
+        "challenge_recommended_model_provided": model_provided,
+        "challenge_recommended_derived_from_support_relation": derived,
+        "challenge_relation": relation,
+        "normalization_is_conservative": True,
+        "support_not_created": True,
+    }
 
 
 def _assessment_material_ref(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -952,6 +973,9 @@ def _assessment_material_ref(payload: Mapping[str, Any]) -> dict[str, Any]:
             "scope_check": _safe_mapping(safe.get("scope_check")),
             "currentness_check": _safe_mapping(safe.get("currentness_check")),
             "contradiction_check": _safe_mapping(safe.get("contradiction_check")),
+            "challenge_relation_normalization_ref": _safe_mapping(
+                safe.get("challenge_relation_normalization_ref")
+            ),
             "closed_surface_flags": _safe_mapping(safe.get("closed_surface_flags")),
             "support_assessment_only": True,
             "admitted_support": False,

@@ -129,6 +129,49 @@ def test_abstention_and_non_support_relations_remain_non_support(
 
 
 @pytest.mark.parametrize(
+    ("support_relation", "mutator", "expected_error"),
+    [
+        (
+            "weak_or_overclaim_risk",
+            lambda payload: payload.pop("challenge_recommended"),
+            "weak_or_overclaim_risk requires challenge_recommended true",
+        ),
+        (
+            "weak_or_overclaim_risk",
+            lambda payload: payload.update({"challenge_recommended": False}),
+            "weak_or_overclaim_risk requires challenge_recommended true",
+        ),
+        (
+            "currentness_mismatch",
+            lambda payload: payload.update({"challenge_recommended": False}),
+            "currentness_mismatch requires challenge_recommended true",
+        ),
+        (
+            "contradicts",
+            lambda payload: payload.update({"challenge_recommended": False}),
+            "contradicts requires challenge_recommended true",
+        ),
+    ],
+)
+def test_deterministic_challenge_relation_validator_stays_strict(
+    support_relation: str,
+    mutator: Any,
+    expected_error: str,
+) -> None:
+    payload = _assessment_payload(support_relation=support_relation)
+    mutator(payload)
+    _refresh_digest(payload)
+
+    result = assessment_validation.validate_evidence_relative_support_assessment(
+        payload
+    )
+
+    assert result.validation_status == assessment_validation.ASSESSMENT_SCHEMA_INVALID
+    assert expected_error in result.errors
+    assert result.creates_support is False
+
+
+@pytest.mark.parametrize(
     "support_relation",
     [
         "yes",

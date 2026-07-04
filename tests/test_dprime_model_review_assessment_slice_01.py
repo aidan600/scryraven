@@ -189,14 +189,17 @@ def test_model_review_prompt_schema_includes_relation_check_matrix() -> None:
         "wrong_effective_date",
         "currentness_mismatch",
     ]
+    assert matrix["currentness_mismatch"]["challenge_recommended"] is True
     assert matrix["contradicts"]["contradiction_check.status"] == [
         "contradicts",
         "contradicted",
         "failed",
     ]
+    assert matrix["contradicts"]["challenge_recommended"] is True
     assert matrix["weak_or_overclaim_risk"][
         "must_not_have_contradiction_check.status"
     ] == ["contradicts", "contradicted"]
+    assert matrix["weak_or_overclaim_risk"]["challenge_recommended"] is True
     assert matrix["abstained"]["producer_abstained"] is True
 
 
@@ -263,6 +266,7 @@ def test_model_review_prompt_metadata_retains_no_raw_prompt() -> None:
     assert "output_schema.runtime_filled_fields" in prompt
     assert "output_schema.forbidden_authority_object_created_fields" in prompt
     assert "output_schema.relation_check_status_consistency_matrix" in prompt
+    assert "challenge_recommended true" in prompt
     assert "weak_or_overclaim_risk must not be used for an actual contradiction" in prompt
     assert metadata["raw_prompt_retained"] is False
     assert "prompt" not in metadata
@@ -667,6 +671,111 @@ def test_abstention_and_non_support_relations_fail_closed(
     ] is False
     assert result.payload["dprime_status"]["objects_created"]["semantic_observation"] is False
     assert result.payload["dprime_status"]["objects_created"]["component_coverage"] is False
+
+
+@pytest.mark.parametrize(
+    ("support_relation", "mutator"),
+    [
+        (
+            "weak_or_overclaim_risk",
+            lambda payload: payload.pop("challenge_recommended"),
+        ),
+        (
+            "weak_or_overclaim_risk",
+            lambda payload: payload.update({"challenge_recommended": False}),
+        ),
+        (
+            "currentness_mismatch",
+            lambda payload: payload.update({"challenge_recommended": False}),
+        ),
+        (
+            "contradicts",
+            lambda payload: payload.update({"challenge_recommended": False}),
+        ),
+    ],
+)
+def test_challenge_relations_with_missing_or_false_flag_normalize_to_challenge(
+    tmp_path: Path,
+    support_relation: str,
+    mutator: Callable[[dict[str, Any]], object],
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    payload = _assessment_payload(support_relation)
+    mutator(payload)
+
+    result = _run_with_payload(repo_root, payload)
+
+    dprime_status = result.payload["dprime_status"]
+    normalization_ref = dprime_status["assessment_material_ref"][
+        "challenge_relation_normalization_ref"
+    ]
+    assert (
+        result.decision
+        == dprime.BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED
+    )
+    assert dprime_status["assessment_status"] == "challenge-recommended"
+    assert (
+        dprime_status["assessment_validation_status"]
+        == assessment_validation.ASSESSMENT_CHALLENGE_RECOMMENDED
+    )
+    assert dprime_status["support_relation"] == support_relation
+    assert dprime_status["validated_support_proposal_available"] is False
+    assert dprime_status["run_kernel_support_admission_request_ref"] == {}
+    assert dprime_status["objects_created"]["validated_support_proposal"] is False
+    assert (
+        dprime_status["objects_created"][
+            "run_kernel_support_proposal_admission_request"
+        ]
+        is False
+    )
+    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert normalization_ref == {
+        "challenge_recommended_model_provided": False,
+        "challenge_recommended_derived_from_support_relation": True,
+        "challenge_relation": support_relation,
+        "normalization_is_conservative": True,
+        "support_not_created": True,
+    }
+
+
+def test_direct_support_with_overclaim_notes_does_not_derive_challenge(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    payload = _assessment_payload("directly_supports")
+    payload["evidential_adequacy_notes"] = (
+        "Potential overclaim risk is discussed, but relation remains direct support."
+    )
+
+    result = _run_with_payload(repo_root, payload)
+
+    dprime_status = result.payload["dprime_status"]
+    assert result.decision == "PASS"
+    assert dprime_status["support_relation"] == "directly_supports"
+    assert dprime_status["assessment_status"] == "assessed"
+    assert "challenge_relation_normalization_ref" not in (
+        dprime_status["assessment_material_ref"]
+    )
+
+
+def test_non_challenge_non_support_relation_does_not_derive_challenge(
+    tmp_path: Path,
+) -> None:
+    repo_root, _candidate = _passport_retained_repo(tmp_path)
+    payload = _assessment_payload("absent")
+    payload["challenge_recommended"] = False
+
+    result = _run_with_payload(repo_root, payload)
+
+    dprime_status = result.payload["dprime_status"]
+    assert result.decision == dprime.BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_NON_SUPPORT
+    assert dprime_status["support_relation"] == "absent"
+    assert dprime_status["assessment_status"] == "non-support"
+    assert dprime_status["validated_support_proposal_available"] is False
+    assert "challenge_relation_normalization_ref" not in (
+        dprime_status["assessment_material_ref"]
+    )
 
 
 def test_same_lane_unrelated_official_text_does_not_create_support(
