@@ -27,6 +27,14 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from core.generic_query_to_relation_planning import build_generic_query_relation_plan
+from core.run_kernel import (
+    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE,
+    ActionType,
+    Observation,
+    ObservationType,
+    RunKernel,
+    RunStageStatus,
+)
 from core.single_relation_source_obligation_recovery_authorization import (
     AUTHORIZATION_STATUS_NOT_REQUIRED,
     AUTHORIZATION_STATUS_RECOVERY_CALL_AUTHORIZED,
@@ -58,6 +66,7 @@ from tests.test_generic_single_relation_official_source_challenge_recovery_01 im
 ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = ROOT / "proplex" / "mvp_single_relation_live_dogfood_run.py"
 CORE_PATH = ROOT / "core" / "single_relation_source_obligation_recovery_authorization.py"
+RUN_KERNEL_PATH = ROOT / "core" / "run_kernel.py"
 
 
 def test_core_authorization_blocks_non_official_direct_support() -> None:
@@ -162,6 +171,100 @@ def test_core_authorization_blocks_non_official_direct_support() -> None:
     assert contract_state["state_transition"] == (
         "source_obligation_recovery_authorization_reduced"
     )
+    assert contract_state["support_admission_allowed"] is False
+    assert contract_state["answer_display_allowed"] is False
+    assert contract_state["source_display_allowed"] is False
+
+
+def test_runkernel_reduces_authorization_into_runstate_projection() -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    kernel = RunKernel.start(
+        run_id="source-obligation-recovery-run",
+        request_id="source-obligation-recovery-request",
+    )
+    action = kernel.authorize_single_relation_source_obligation_recovery(
+        inputs={
+            "authorization_request_kind": (
+                "single_relation_source_obligation_recovery"
+            ),
+            "component_id": plan["component_id"],
+            "source_obligation_id": plan["source_obligation_id"],
+        }
+    )
+    observation_payload = {
+        "relation_plan": plan,
+        "acquisition_plan": _acquisition_plan(plan),
+        "selected_candidate_diagnostic": _candidate_diagnostic(
+            domain="example-law.invalid",
+            official=False,
+            answer_bearing=True,
+            selected=True,
+        ),
+        "candidate_diagnostics": [
+            _candidate_diagnostic(
+                domain="example-county.gov",
+                official=True,
+                answer_bearing=False,
+                selected=False,
+            )
+        ],
+        "dprime_status": _dprime_status("directly_supports", "assessed"),
+        "provider_acquisition_attempt_counts": {
+            "provider_calls_attempted": 1,
+            "provider_calls_completed": 1,
+            "provider_results_returned": 1,
+        },
+        "recovery_confirmation_authorized": False,
+    }
+    observation = Observation.from_action(
+        action,
+        observation_type=(
+            ObservationType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED
+        ),
+        status=RunStageStatus.COMPLETED,
+        payload=observation_payload,
+    )
+
+    kernel.reduce(observation)
+
+    projection = kernel.state.projections[
+        SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE
+    ]
+    contract_projection = projection["current_answer_contract_projection"]
+    contract_state = projection["updated_contract_state"]
+    assert action.action_type is (
+        ActionType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE
+    )
+    assert action.expected_observation_type is (
+        ObservationType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED
+    )
+    assert observation.observation_type is (
+        ObservationType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED
+    )
+    assert action.action_id in kernel.state.reduced_action_ids
+    assert kernel.state.stage_statuses[
+        SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE
+    ] is RunStageStatus.COMPLETED
+    assert len(kernel.state.observations) == 1
+    assert projection["run_kernel_reduced"] is True
+    assert projection["run_state_projection_key"] == (
+        SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE
+    )
+    assert projection["run_kernel_action_ref"]["action_type"] == (
+        ActionType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE.value
+    )
+    assert projection["run_kernel_observation_ref"]["observation_type"] == (
+        ObservationType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED.value
+    )
+    assert projection["authorization_owner"] == "RunKernel"
+    assert projection["dprime_support_relation"] == "directly_supports"
+    assert projection["recovery_required"] is True
+    assert projection["support_admission_blocked"] is True
+    assert projection["answer_display_blocked"] is True
+    assert projection["source_display_blocked"] is True
+    assert contract_projection["run_kernel_reduced"] is True
+    assert contract_projection["dprime_support_relation"] == "directly_supports"
+    assert contract_state["run_kernel_reduced"] is True
     assert contract_state["support_admission_allowed"] is False
     assert contract_state["answer_display_allowed"] is False
     assert contract_state["source_display_allowed"] is False
@@ -284,7 +387,18 @@ def test_non_official_direct_support_cannot_reach_pass_default_off(
     assert authorization["authorization_owner"] == (
         SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_OWNER
     )
+    assert authorization["run_kernel_reduced"] is True
+    assert authorization["run_state_projection_key"] == (
+        SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE
+    )
+    assert authorization["run_kernel_action_ref"]["action_type"] == (
+        ActionType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE.value
+    )
+    assert authorization["run_kernel_observation_ref"]["observation_type"] == (
+        ObservationType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED.value
+    )
     assert contract_projection["contract_owner"] == "RunKernel"
+    assert contract_projection["run_kernel_reduced"] is True
     assert contract_projection["component_ref"]["component_id"] == (
         packet["component_id"]
     )
@@ -296,6 +410,7 @@ def test_non_official_direct_support_cannot_reach_pass_default_off(
         "blocked_by_source_obligation_recovery_authorization"
     )
     assert contract_state["state_owner"] == "RunKernel"
+    assert contract_state["run_kernel_reduced"] is True
     assert contract_state["support_admission_allowed"] is False
     assert contract_state["answer_display_allowed"] is False
     assert contract_state["source_display_allowed"] is False
@@ -351,6 +466,14 @@ def test_confirmed_fake_recovery_for_direct_support_stops_before_rereview(
     assert packet["source_obligation_recovery_authorization_status"] == (
         AUTHORIZATION_STATUS_RECOVERY_CALL_AUTHORIZED
     )
+    assert packet["source_obligation_recovery_authorization"][
+        "run_kernel_reduced"
+    ] is True
+    assert packet["source_obligation_recovery_authorization"][
+        "run_kernel_action_ref"
+    ]["action_type"] == (
+        ActionType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE.value
+    )
     assert packet["source_challenge_recovery_provider_calls_attempted"] == 1
     assert packet["source_challenge_recovery_provider_calls_completed"] == 1
     assert contract_projection["recovery_attempt_refs"][0]["provider_calls_attempted"] == 1
@@ -374,6 +497,7 @@ def test_confirmed_fake_recovery_for_direct_support_stops_before_rereview(
 def test_cli_runner_consumes_core_authorization_without_owning_policy() -> None:
     runner_text = RUNNER_PATH.read_text(encoding="utf-8")
     core_text = CORE_PATH.read_text(encoding="utf-8")
+    run_kernel_text = RUN_KERNEL_PATH.read_text(encoding="utf-8")
     runner_tree = ast.parse(runner_text)
     imported = _imports(runner_tree)
     functions = {
@@ -381,12 +505,35 @@ def test_cli_runner_consumes_core_authorization_without_owning_policy() -> None:
     }
 
     assert "core.single_relation_source_obligation_recovery_authorization" in imported
+    assert "core.run_kernel" in imported
     assert "source_obligation_recovery_authorization" in runner_text
-    assert "SourceObligationRecoveryAuthorization" in runner_text
+    assert "RunKernel.start" in runner_text
+    assert "authorize_single_relation_source_obligation_recovery" in runner_text
+    assert "Observation.from_action" in runner_text
+    assert "run_kernel.reduce(observation)" in runner_text
+    assert "build_single_relation_source_obligation_recovery_authorization" not in (
+        runner_text
+    )
     assert "class SourceObligationRecoveryAuthorization" in core_text
     assert "current_answer_contract_projection" in core_text
     assert "updated_contract_state" in core_text
     assert SINGLE_RELATION_SOURCE_OBLIGATION_CONTRACT_REDUCER_KIND in core_text
+    assert "SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE" in run_kernel_text
+    assert "SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED" in run_kernel_text
+    assert (
+        "def authorize_single_relation_source_obligation_recovery"
+        in run_kernel_text
+    )
+    assert (
+        "build_single_relation_source_obligation_recovery_authorization("
+        in run_kernel_text
+    )
+    assert (
+        "self.state.projections[action.stage] = deepcopy(\n"
+        "                authorization_projection\n"
+        "            )"
+        in run_kernel_text
+    )
     assert "_source_challenge_recovery_trigger_eligible" not in functions
     assert "_build_source_challenge_recovery_plan" not in functions
     assert "_source_obligation_confirmation_satisfied" not in functions

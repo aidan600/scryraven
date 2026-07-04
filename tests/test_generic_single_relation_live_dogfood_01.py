@@ -1657,7 +1657,6 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     forbidden_imports = {
         "core.pipeline",
         "core.pipeline_orchestrator",
-        "core.run_kernel",
         "core.author_execution_runtime",
         "core.author_prose_finalization_runtime",
         "core.final_answer_packet_runtime",
@@ -1700,6 +1699,9 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     }
 
     assert imported.isdisjoint(forbidden_imports)
+    assert "core.run_kernel" in imported
+    assert "authorize_single_relation_source_obligation_recovery" in module_text
+    assert "run_kernel.reduce(observation)" in module_text
     assert adapter_imported.isdisjoint(forbidden_imports)
     assert called.isdisjoint(forbidden_calls)
     assert adapter_called.isdisjoint(forbidden_calls)
