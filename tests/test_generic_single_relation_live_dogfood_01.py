@@ -1912,6 +1912,9 @@ def _provider_extracted_result(
             "provider_extracted_text_digest": dogfood._digest_json(
                 {"provider_extracted_text": extracted_text}
             ),
+            "provider_extracted_source_text_digest": dogfood._digest_json(
+                {"provider_extracted_text": extracted_text}
+            ),
             "provider_extracted_content_type": "text/html",
             "provider_extracted_at": "2026-07-03T00:00:00+00:00",
         }
