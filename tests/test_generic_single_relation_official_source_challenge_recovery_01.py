@@ -25,8 +25,13 @@ import json
 from pathlib import Path
 from typing import Any
 
+import core.single_relation_source_obligation_recovery_authorization as recovery_authorization
 from core.generic_product_provider_acquisition import (
     build_generic_product_provider_acquisition_runner,
+)
+from core.source_of_record_recovery_provider_config import (
+    SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
+    SourceOfRecordRecoveryProviderConfig,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED,
@@ -78,7 +83,7 @@ def test_challenge_recovery_plan_is_default_off_without_extra_provider_call(
         BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED
     )
     assert packet["source_challenge_recovery_provider_calls_attempted"] == 0
-    assert plan["provider_role"] == "extraction_provider"
+    assert plan["provider_role"] == SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
     assert plan["official_source_of_record_recovery_intent"] is True
     assert plan["domain_constraints"] == ["example-county.gov"]
     assert plan["include_domains"] == ["example-county.gov"]
@@ -129,7 +134,7 @@ def test_confirmed_recovery_carries_neutral_domain_constraints_to_adapter(
     serialized_plan = json.dumps(plan, sort_keys=True)
     assert "source_challenge_recovery_tavily" not in serialized_plan
     assert "tavily_recovery" not in serialized_plan
-    assert plan["provider_role"] == "extraction_provider"
+    assert plan["provider_role"] == SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
     assert packet["source_challenge_recovery_provider_calls_attempted"] == 1
     assert packet["source_challenge_recovery_provider_calls_completed"] == 1
     assert packet["source_challenge_recovery_material_acquired"] is True
@@ -148,6 +153,53 @@ def test_confirmed_recovery_carries_neutral_domain_constraints_to_adapter(
     assert CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG in packet[
         "command_harness_used"
     ]
+
+
+def test_recovery_role_config_can_select_linkup_without_changing_first_stage(
+    tmp_path: Path,
+    monkeypatch: Any,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    monkeypatch.setattr(
+        recovery_authorization,
+        "get_source_of_record_recovery_extraction_provider_config",
+        lambda: SourceOfRecordRecoveryProviderConfig(provider="linkup"),
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="source-challenge-linkup-role-config",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_live_source_challenge_recovery=True,
+        product_provider_acquisition_runner=_product_runner_with_linkup_recovery(calls),
+        fetch_read_runner=_fetch_read_must_not_run,
+        dprime_model_review_callable=_weak_or_overclaim_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+    packet = result.packet
+    plan = packet["source_challenge_recovery_plan"]
+
+    assert len(calls) == 2
+    assert calls[0]["provider"] == "tavily"
+    assert calls[0]["role"] == "extraction_provider"
+    assert calls[1]["provider"] == "linkup"
+    assert calls[1]["role"] == SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
+    assert calls[1]["include_domains"] == ["example-county.gov"]
+    assert plan["provider"] == "linkup"
+    assert plan["provider_role"] == SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
+    assert plan["ordinary_first_stage_provider"] == "tavily"
+    assert plan["ordinary_first_stage_provider_unchanged"] is True
+    assert plan["provider_decision_global_default"] is False
+    assert plan["provider_decision_hardcoded_in_runner"] is False
+    assert packet["extraction_provider"] == "tavily"
+    assert packet["source_challenge_recovery_material_acquired"] is True
+    assert result.decision == (
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED
+    )
 
 
 def test_confirmed_recovery_reports_no_official_answer_bearing_material(
@@ -234,6 +286,31 @@ def _product_runner(
 
     return build_generic_product_provider_acquisition_runner(
         tavily_product_provider_callable=fake_tavily,
+        scout_product_provider_callable=fake_scout,
+    )
+
+
+def _product_runner_with_linkup_recovery(calls: list[dict[str, Any]]) -> Any:
+    def fake_tavily(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        calls.append({"provider": "tavily", "role": "extraction_provider", **kwargs})
+        return _first_stage_results(), []
+
+    def fake_linkup(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        calls.append(
+            {
+                "provider": "linkup",
+                "role": SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
+                **kwargs,
+            }
+        )
+        return _official_answer_bearing_recovery_results(), []
+
+    def fake_scout(**_kwargs: Any) -> list[dict[str, Any]]:
+        raise AssertionError("scout must not run in this recovery role test")
+
+    return build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+        linkup_product_provider_callable=fake_linkup,
         scout_product_provider_callable=fake_scout,
     )
 

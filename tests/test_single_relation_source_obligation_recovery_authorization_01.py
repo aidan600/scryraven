@@ -48,6 +48,9 @@ from core.single_relation_source_obligation_recovery_authorization import (
     SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_OWNER,
     build_single_relation_source_obligation_recovery_authorization,
 )
+from core.source_of_record_recovery_provider_config import (
+    SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
+)
 from proplex.mvp_single_relation_live_dogfood_run import (
     DEFAULT_OUTPUT_DIR,
     build_generic_single_relation_live_dogfood_run_output,
@@ -133,6 +136,14 @@ def test_core_authorization_blocks_non_official_direct_support() -> None:
     assert recovery_plan["source_of_record_domain_constraints"] == [
         "example-county.gov"
     ]
+    assert recovery_plan["provider_role"] == (
+        SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
+    )
+    assert recovery_plan["provider_role_config_ref"]["provider_role"] == (
+        SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
+    )
+    assert recovery_plan["provider_decision_global_default"] is False
+    assert recovery_plan["provider_decision_hardcoded_in_runner"] is False
     assert recovery_plan["closed_surface_flags"]["support_created"] is False
     assert recovery_plan["closed_surface_flags"]["source_authority_adjudicated"] is False
     assert recovery_plan["closed_surface_flags"]["source_obligation_satisfied"] is False

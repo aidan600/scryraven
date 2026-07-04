@@ -15,6 +15,10 @@ from hashlib import sha256
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
+from core.source_of_record_recovery_provider_config import (
+    get_source_of_record_recovery_extraction_provider_config,
+)
+
 SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_SCHEMA_VERSION = (
     "single_relation_source_obligation_recovery_authorization_v1"
 )
@@ -933,6 +937,14 @@ def _build_recovery_plan(
     recovery_query: str,
     domains: Sequence[str],
 ) -> dict[str, Any]:
+    provider_config = get_source_of_record_recovery_extraction_provider_config()
+    configured_provider = _clean_text(provider_config.provider, limit=80)
+    configured_operation = _clean_text(provider_config.operation, limit=80)
+    configured_provider_role = _clean_text(provider_config.provider_role, limit=120)
+    configured_max_results = _bounded_int(
+        provider_config.max_results,
+        default=DEFAULT_MAX_RESULTS,
+    )
     plan = {
         "schema_version": SOURCE_CHALLENGE_RECOVERY_PLAN_SCHEMA_VERSION,
         "authorization_owner": (
@@ -965,12 +977,17 @@ def _build_recovery_plan(
         "domain_constraints": list(domains),
         "domain_constraints_acquisition_only": True,
         "recovery_query": recovery_query,
-        "provider": acquisition_plan.get("extraction_provider")
+        "provider": configured_provider or DEFAULT_EXTRACTION_PROVIDER,
+        "provider_role": configured_provider_role or "extraction_provider",
+        "provider_operation": configured_operation or DEFAULT_PROVIDER_OPERATION,
+        "max_results": configured_max_results or DEFAULT_MAX_RESULTS,
+        "provider_role_config_ref": provider_config.to_dict(),
+        "provider_decision_scope": provider_config.decision_scope,
+        "provider_decision_global_default": provider_config.global_default_provider,
+        "ordinary_first_stage_provider": acquisition_plan.get("extraction_provider")
         or DEFAULT_EXTRACTION_PROVIDER,
-        "provider_role": "extraction_provider",
-        "provider_operation": acquisition_plan.get("provider_operation")
-        or DEFAULT_PROVIDER_OPERATION,
-        "max_results": DEFAULT_MAX_RESULTS,
+        "ordinary_first_stage_provider_unchanged": True,
+        "provider_decision_hardcoded_in_runner": False,
         "include_domains": list(domains),
         "exclude_domains": [],
         "source_of_record_domain_constraints": list(domains),
