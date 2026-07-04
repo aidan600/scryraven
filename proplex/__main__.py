@@ -90,6 +90,9 @@ from core.retrieval import (  # noqa: E402
     is_plausible_domain,
 )
 from core.run_config import RunConfig, RunDeps  # noqa: E402
+from core.strict_accounted_model_route import (  # noqa: E402
+    build_strict_accounted_fast_model_planning_route,
+)
 from core.text_utils import clean_json_response  # noqa: E402
 from proplex.env_aliases import get_env_alias  # noqa: E402
 from proplex.live_acquisition_readability_status import (  # noqa: E402
@@ -698,6 +701,11 @@ def _run_mvp_single_relation_live_dogfood_run(
 ) -> int:
     del log
     output_dir = args.mvp_output_dir or DEFAULT_MVP_SINGLE_RELATION_LIVE_OUTPUT_DIR
+    fast_model_planning_route = build_strict_accounted_fast_model_planning_route(
+        fast_provider=args.fast_provider,
+        fast_model=args.fast_model,
+        local_url=args.local_url,
+    )
     try:
         result = build_generic_single_relation_live_dogfood_run_output(
             query=args.query,
@@ -713,6 +721,9 @@ def _run_mvp_single_relation_live_dogfood_run(
             fast_provider=args.fast_provider,
             fast_model=args.fast_model,
             fast_model_local_url=args.local_url,
+            fast_model_planner_callable=fast_model_planning_route,
+            fast_model_planner_clean_json_response=clean_json_response,
+            fast_model_planner_strict_route_ref=fast_model_planning_route.to_ref(),
             require_model_assisted_planning=True,
         )
     except Exception as exc:

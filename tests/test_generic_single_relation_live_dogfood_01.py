@@ -1652,10 +1652,79 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert captured["fast_model_local_url"] == "http://localhost:5678/v1"
     assert captured["smart_provider"] == "OpenAI"
     assert captured["smart_model"] == "smart-dprime-model"
+    assert callable(captured["fast_model_planner_callable"])
+    assert captured["fast_model_planner_clean_json_response"] is cli.clean_json_response
+    route_ref = captured["fast_model_planner_strict_route_ref"]
+    serialized_route_ref = json.dumps(route_ref, sort_keys=True)
+    assert route_ref["model_task"] == "model_assisted_single_relation_planning"
+    assert route_ref["product_model_role"] == "fast"
+    assert route_ref["product_route_kind"] == "strict_accounted_fast_model_route"
+    assert route_ref["configured_fast_provider"] == "OpenRouter"
+    assert route_ref["configured_fast_model"] == "fast-planner-model"
+    assert route_ref["configured_local_url_present"] is True
+    assert route_ref["configured_local_url_posture"] == "local_configured_not_retained"
+    assert route_ref["strict_one_shot"] is True
+    assert route_ref["retry_policy"] == "forbidden"
+    assert route_ref["fallback_policy"] == "forbidden"
+    assert route_ref["provider_switching_allowed"] is False
+    assert "smart-dprime-model" not in serialized_route_ref
+    assert "http://localhost:5678/v1" not in serialized_route_ref
     assert "broker_url" not in captured
     assert "private_broker_path" not in captured
     assert "env_file_paths" not in captured
     assert "fake generic live blocker" in capsys.readouterr().out
+
+
+def test_cli_env_fastmodel_config_flows_into_strict_route(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = importlib.import_module("proplex.__main__")
+    captured: dict[str, Any] = {}
+
+    def fake_live_run(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return type(
+            "FakeResult",
+            (),
+            {"return_code": 2, "output": "fake env generic live blocker"},
+        )()
+
+    monkeypatch.setenv("SCRYRAVEN_FAST_PROVIDER", "Local (LM Studio)")
+    monkeypatch.setenv("SCRYRAVEN_FAST_MODEL", "env-fast-planner-model")
+    monkeypatch.setenv("SCRYRAVEN_LOCAL_URL", "http://localhost:6789/v1")
+    monkeypatch.setenv("SCRYRAVEN_SMART_PROVIDER", "OpenAI")
+    monkeypatch.setenv("SCRYRAVEN_SMART_MODEL", "env-smart-dprime-model")
+    monkeypatch.setattr(cli, "_build_logger", lambda _verbose: None)
+    monkeypatch.setattr(
+        cli,
+        "build_generic_single_relation_live_dogfood_run_output",
+        fake_live_run,
+    )
+
+    rc = cli.main(
+        [
+            MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+            "--query",
+            SMALL_CLAIMS_QUERY,
+            "--confirm-live-dogfood",
+        ]
+    )
+
+    route_ref = captured["fast_model_planner_strict_route_ref"]
+    serialized_route_ref = json.dumps(route_ref, sort_keys=True)
+    assert rc == 2
+    assert captured["fast_provider"] == "Local (LM Studio)"
+    assert captured["fast_model"] == "env-fast-planner-model"
+    assert captured["fast_model_local_url"] == "http://localhost:6789/v1"
+    assert captured["smart_model"] == "env-smart-dprime-model"
+    assert route_ref["configured_fast_provider"] == "Local (LM Studio)"
+    assert route_ref["configured_fast_model"] == "env-fast-planner-model"
+    assert route_ref["configured_local_url_present"] is True
+    assert route_ref["configured_local_url_posture"] == "local_configured_not_retained"
+    assert "env-smart-dprime-model" not in serialized_route_ref
+    assert "http://localhost:6789/v1" not in serialized_route_ref
+    assert "fake env generic live blocker" in capsys.readouterr().out
 
 
 def test_new_flag_is_registered_as_default_off_status_path() -> None:
