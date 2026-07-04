@@ -34,6 +34,7 @@ from core.dprime_model_review_assessment import (
     build_dprime_model_review_input_packet,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
+    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
     DEFAULT_OUTPUT_DIR,
     build_generic_single_relation_live_dogfood_run_output,
 )
@@ -233,7 +234,7 @@ def test_challenge_relation_with_false_flag_routes_to_challenge_blocker(
     ]
     assert (
         result.decision
-        == dprime.BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED
+        == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED
     )
     assert dprime_status["assessment_status"] == "challenge-recommended"
     assert dprime_status["support_relation"] == "weak_or_overclaim_risk"

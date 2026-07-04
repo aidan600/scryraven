@@ -1420,7 +1420,7 @@ def test_provider_result_with_invalid_url_records_invalid_url_diagnostic(
         (
             SMALL_CLAIMS_QUERY,
             "Example County Fee Schedule",
-            "https://example-county.invalid/small-claims-fees",
+            "https://example-county.gov/small-claims-fees",
             "Example County official fee schedule lists the current small claims "
             "filing fee as $42 for the example case type.",
             "Example County small claims filing fee is $42.",
@@ -1657,7 +1657,6 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     forbidden_imports = {
         "core.pipeline",
         "core.pipeline_orchestrator",
-        "core.run_kernel",
         "core.author_execution_runtime",
         "core.author_prose_finalization_runtime",
         "core.final_answer_packet_runtime",
@@ -1700,6 +1699,9 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     }
 
     assert imported.isdisjoint(forbidden_imports)
+    assert "core.run_kernel" in imported
+    assert "authorize_single_relation_source_obligation_recovery" in module_text
+    assert "run_kernel.reduce(observation)" in module_text
     assert adapter_imported.isdisjoint(forbidden_imports)
     assert called.isdisjoint(forbidden_calls)
     assert adapter_called.isdisjoint(forbidden_calls)

@@ -519,6 +519,9 @@ from core.semantic_producer_bundle_commit_runtime import (
     normalize_semantic_producer_bundle_payload,
     stage_semantic_producer_bundle_commit,
 )
+from core.single_relation_source_obligation_recovery_authorization import (
+    build_single_relation_source_obligation_recovery_authorization,
+)
 from core.specialist_source_bound_calculation_runtime import (
     SPECIALIST_SOURCE_BOUND_CALCULATION_REASON,
     SpecialistSourceBoundCalculationRuntimeError,
@@ -663,6 +666,9 @@ FOLLOWUP_AUTHOR_RESPONSE_FINALIZATION_STAGE = (
 FOLLOWUP_FINAL_ANSWER_PACKET_STAGE = FOLLOWUP_FINAL_ANSWER_PACKET_STAGE_NAME
 FOLLOWUP_AUTHOR_GATE_STAGE = FOLLOWUP_AUTHOR_GATE_STAGE_NAME
 FOLLOWUP_AUTHOR_OBSERVATION_STAGE = FOLLOWUP_AUTHOR_OBSERVATION_STAGE_NAME
+SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE = (
+    "single_relation_source_obligation_recovery_authorization"
+)
 
 _SENSITIVE_KEYS = frozenset(
     {
@@ -718,6 +724,9 @@ class ActionType(str, Enum):
         "dprime_citation_source_handoff_authority"
     )
     DPRIME_CITATION_SOURCE_DISPLAY = "dprime_citation_source_display"
+    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE = (
+        "single_relation_source_obligation_recovery_authorize"
+    )
     SEARCH_WORK_PLAN_CONSTRUCT = "search_work_plan_construct"
     QUERY_PRODUCTION = "query_production"
     QUERY_PLAN_ADMISSION = "query_plan_admission"
@@ -810,6 +819,9 @@ class ObservationType(str, Enum):
         "dprime_citation_source_handoff_authority_consumed"
     )
     DPRIME_CITATION_SOURCE_DISPLAY_CREATED = "dprime_citation_source_display_created"
+    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED = (
+        "single_relation_source_obligation_recovery_authorized"
+    )
     SEARCH_WORK_PLAN_CONSTRUCTED = "search_work_plan_constructed"
     QUERY_CANDIDATES_PRODUCED = "query_candidates_produced"
     QUERY_PLAN_ADMITTED = "query_plan_admitted"
@@ -3839,6 +3851,28 @@ class RunKernel:
             inputs=merged_inputs,
             expected_observation_type=(
                 ObservationType.DPRIME_CITATION_SOURCE_DISPLAY_CREATED
+            ),
+        )
+
+    def authorize_single_relation_source_obligation_recovery(
+        self,
+        *,
+        reason: str = (
+            "single_relation_source_obligation_recovery_authorization"
+        ),
+        inputs: Mapping[str, Any] | None = None,
+    ) -> AuthorizedAction:
+        """Authorize the post-D-prime source-obligation contract reducer."""
+
+        return self.authorize(
+            stage=SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE,
+            action_type=(
+                ActionType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE
+            ),
+            reason=reason,
+            inputs=inputs,
+            expected_observation_type=(
+                ObservationType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED
             ),
         )
 
@@ -12735,6 +12769,98 @@ class RunKernel:
                 context="D-prime source display",
             )
             self.state.projections[action.stage] = deepcopy(display)
+        elif (
+            action.action_type
+            is ActionType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZE
+        ):
+            reduction_inputs = {
+                **_safe_mapping(action.inputs),
+                **_safe_mapping(observation.payload),
+            }
+            authorization = (
+                build_single_relation_source_obligation_recovery_authorization(
+                    relation_plan=_safe_mapping(
+                        reduction_inputs.get("relation_plan")
+                    ),
+                    acquisition_plan=_safe_mapping(
+                        reduction_inputs.get("acquisition_plan")
+                    ),
+                    selected_candidate_diagnostic=_safe_mapping(
+                        reduction_inputs.get("selected_candidate_diagnostic")
+                    ),
+                    candidate_diagnostics=tuple(
+                        _safe_mapping(item)
+                        for item in (
+                            reduction_inputs.get("candidate_diagnostics") or ()
+                        )
+                    ),
+                    dprime_status=_safe_mapping(
+                        reduction_inputs.get("dprime_status")
+                    ),
+                    provider_acquisition_attempt_counts=_safe_mapping(
+                        reduction_inputs.get("provider_acquisition_attempt_counts")
+                    ),
+                    evidence_admission_ref=_safe_mapping(
+                        reduction_inputs.get("evidence_admission_ref")
+                    ),
+                    recovery_attempt_ref=_safe_mapping(
+                        reduction_inputs.get("recovery_attempt_ref")
+                    ),
+                    recovery_attempt_counts=_safe_mapping(
+                        reduction_inputs.get("recovery_attempt_counts")
+                    ),
+                    recovery_confirmation_authorized=bool(
+                        reduction_inputs.get("recovery_confirmation_authorized")
+                    ),
+                )
+            )
+            authorization_projection = authorization.to_dict()
+            contract_projection = _safe_mapping(
+                authorization_projection.get("current_answer_contract_projection")
+            )
+            contract_state = _safe_mapping(
+                authorization_projection.get("updated_contract_state")
+            )
+            if not contract_projection or not contract_state:
+                raise RunKernelTransitionError(
+                    "single-relation source-obligation recovery authorization "
+                    "requires contract projection and updated state"
+                )
+            run_kernel_ref = {
+                "action_id": action.action_id,
+                "action_type": action.action_type.value,
+                "observation_id": observation.observation_id,
+                "observation_type": observation.observation_type.value,
+                "stage": action.stage,
+                "run_id": self.state.run_id,
+                "request_id": self.state.request_id,
+                "sequence": action.sequence,
+            }
+            authorization_projection.update(
+                {
+                    "run_kernel_reduced": True,
+                    "run_kernel_action_ref": dict(run_kernel_ref),
+                    "run_kernel_observation_ref": dict(run_kernel_ref),
+                    "run_state_projection_key": action.stage,
+                }
+            )
+            authorization_projection["current_answer_contract_projection"] = {
+                **contract_projection,
+                "run_kernel_reduced": True,
+                "run_state_projection_key": action.stage,
+                "run_kernel_action_ref": dict(run_kernel_ref),
+                "run_kernel_observation_ref": dict(run_kernel_ref),
+            }
+            authorization_projection["updated_contract_state"] = {
+                **contract_state,
+                "run_kernel_reduced": True,
+                "run_state_projection_key": action.stage,
+                "run_kernel_action_ref": dict(run_kernel_ref),
+                "run_kernel_observation_ref": dict(run_kernel_ref),
+            }
+            self.state.projections[action.stage] = deepcopy(
+                authorization_projection
+            )
         elif action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE:
             packet_projection = _safe_mapping(
                 observation.payload.get("packet_projection")
@@ -15566,6 +15692,7 @@ __all__ = [
     "FOLLOWUP_SEARCH_AUTHORIZATION_STAGE",
     "SCRUTINEER_REVIEW_STAGE",
     "SPECIALIST_SOURCE_BOUND_CALCULATION_STAGE",
+    "SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE",
     "SUFFICIENCY_READINESS_STAGE",
     "FOLLOWUP_EVIDENCE_INTAKE_STAGE",
     "FOLLOWUP_EXECUTION_STAGE",

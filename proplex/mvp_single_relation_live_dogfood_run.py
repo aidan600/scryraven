@@ -31,7 +31,6 @@ from core.dprime_product_smart_one_shot_transport import (
 )
 from core.dprime_support_proposal_schema import (
     BLOCKED_APPROVED_MODEL_UNAVAILABLE,
-    BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED,
     BLOCKED_DPRIME_MODEL_REVIEW_CALL_FAILED,
     BLOCKED_DPRIME_MODEL_REVIEW_OUTPUT_INVALID,
     BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE,
@@ -63,10 +62,27 @@ from core.product_model_route_config import (
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
 )
+from core.run_kernel import (
+    SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE,
+    Observation,
+    ObservationType,
+    RunKernel,
+    RunStageStatus,
+)
 from core.search_result_candidate_packet import (
     SearchResultCandidatePacket,
     SearchResultCandidateRecord,
     validate_search_result_candidate_packet,
+)
+from core.single_relation_source_obligation_recovery_authorization import (
+    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED,
+    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL,
+    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
+    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED,
+    DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED,
+    candidate_answer_bearing_by_safe_diagnostics,
+    candidate_official_source_of_record_looking_by_safe_diagnostics,
+    selected_candidate_ref_from_diagnostic,
 )
 from proplex.live_acquisition_readability_status import (
     FETCH_READ_ARTIFACT_DIR,
@@ -152,16 +168,6 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_ENFORCEMENT = (
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE"
 )
-BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED = (
-    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED"
-)
-BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL = (
-    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL"
-)
-BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED = (
-    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED"
-)
-
 DEFAULT_PROVIDER = "tavily"
 DEFAULT_EXTRACTION_PROVIDER = "tavily"
 DEFAULT_SCOUT_PROVIDER = "serper"
@@ -256,14 +262,7 @@ ANSWER_BEARING_CANDIDATE_WINDOW_ESTABLISHED = (
 ANSWER_BEARING_CANDIDATE_WINDOW_NOT_SELECTED = (
     "ANSWER_BEARING_CANDIDATE_WINDOW_NOT_SELECTED"
 )
-SOURCE_CHALLENGE_RECOVERY_PLAN_SCHEMA_VERSION = (
-    "generic_single_relation_source_challenge_recovery_plan_v1"
-)
 SOURCE_CHALLENGE_RECOVERY_ARTIFACT_DIR = "source_challenge_recovery"
-SOURCE_CHALLENGE_RECOVERY_TRIGGER_RELATIONS = frozenset(
-    {"weak_or_overclaim_risk", "currentness_mismatch", "contradicts"}
-)
-
 _CANDIDATE_PRIORITY_STOPWORDS = frozenset(
     {
         "a",
@@ -675,6 +674,12 @@ def build_generic_single_relation_live_dogfood_run_output(
     semantic_payload: Mapping[str, Any] = {}
     acquisition_plan: dict[str, Any] | None = None
     disambiguation_record: dict[str, Any] | None = None
+    source_obligation_run_kernel = RunKernel.start(
+        run_id=run_id,
+        request_id=f"{run_id}:single_relation_source_obligation_recovery",
+        request={"surface": "mvp_single_relation_live_dogfood_run"},
+    )
+    source_obligation_authorization: dict[str, Any] | None = None
     source_challenge_recovery: dict[str, Any] | None = None
 
     try:
@@ -834,6 +839,18 @@ def build_generic_single_relation_live_dogfood_run_output(
         counts["fetch_read_packet_created"] = 1
         _enforce_caps(counts)
 
+        source_obligation_authorization = (
+            _build_source_obligation_recovery_authorization(
+                run_kernel=source_obligation_run_kernel,
+                relation_plan=relation_plan,
+                acquisition_plan=acquisition_plan,
+                counts=counts,
+                dprime_status=None,
+                recovery_confirmation_authorized=(
+                    confirm_live_source_challenge_recovery
+                ),
+            )
+        )
         dprime_kwargs: dict[str, Any] = {}
         if confirm_live_dprime_review:
             dprime_kwargs = _dprime_review_kwargs(
@@ -851,6 +868,12 @@ def build_generic_single_relation_live_dogfood_run_output(
             repo_root=retained_root,
             smart_provider=smart_provider,
             smart_model=smart_model,
+            dprime_run_kernel_admission_decision_status=(
+                source_obligation_authorization.get(
+                    "run_kernel_support_admission_decision_status"
+                )
+                or DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+            ),
             **dprime_kwargs,
         )
         semantic_payload = _safe_mapping(semantic_status.payload)
@@ -865,6 +888,19 @@ def build_generic_single_relation_live_dogfood_run_output(
         )
         counts["followup_loop_count"] = _followup_loop_count(semantic_payload)
         _enforce_caps(counts)
+        source_obligation_authorization = (
+            _build_source_obligation_recovery_authorization(
+                run_kernel=source_obligation_run_kernel,
+                relation_plan=relation_plan,
+                acquisition_plan=acquisition_plan,
+                counts=counts,
+                dprime_status=_safe_mapping(semantic_payload.get("dprime_status")),
+                semantic_payload=semantic_payload,
+                recovery_confirmation_authorized=(
+                    confirm_live_source_challenge_recovery
+                ),
+            )
+        )
         packet = _packet_from_semantic_status(
             relation_plan=relation_plan,
             run_id=run_id,
@@ -878,12 +914,12 @@ def build_generic_single_relation_live_dogfood_run_output(
             confirm_live_source_challenge_recovery=(
                 confirm_live_source_challenge_recovery
             ),
+            source_obligation_recovery_authorization=(
+                source_obligation_authorization
+            ),
             source_challenge_recovery=None,
         )
-        if _source_challenge_recovery_trigger_eligible(
-            semantic_payload=semantic_payload,
-            counts=counts,
-        ):
+        if source_obligation_authorization.get("recovery_required") is True:
             source_challenge_recovery = _run_source_challenge_recovery(
                 root=root,
                 run_dir=run_dir,
@@ -893,6 +929,9 @@ def build_generic_single_relation_live_dogfood_run_output(
                 acquisition_plan=acquisition_plan,
                 first_stage_counts=counts,
                 first_stage_semantic_payload=semantic_payload,
+                source_obligation_recovery_authorization=(
+                    source_obligation_authorization
+                ),
                 provider_runner=provider_runner,
                 fetch_read_runner=fetch_read_runner or fetch_public_url_once,
                 confirm_live_source_challenge_recovery=(
@@ -903,6 +942,22 @@ def build_generic_single_relation_live_dogfood_run_output(
                 _source_challenge_recovery_counts(source_challenge_recovery)
             )
             _enforce_caps(counts)
+            source_obligation_authorization = (
+                _build_source_obligation_recovery_authorization(
+                    run_kernel=source_obligation_run_kernel,
+                    relation_plan=relation_plan,
+                    acquisition_plan=acquisition_plan,
+                    counts=counts,
+                    dprime_status=_safe_mapping(
+                        semantic_payload.get("dprime_status")
+                    ),
+                    semantic_payload=semantic_payload,
+                    source_challenge_recovery=source_challenge_recovery,
+                    recovery_confirmation_authorized=(
+                        confirm_live_source_challenge_recovery
+                    ),
+                )
+            )
             packet = _packet_from_semantic_status(
                 relation_plan=relation_plan,
                 run_id=run_id,
@@ -915,6 +970,9 @@ def build_generic_single_relation_live_dogfood_run_output(
                 confirm_live_dprime_review=confirm_live_dprime_review,
                 confirm_live_source_challenge_recovery=(
                     confirm_live_source_challenge_recovery
+                ),
+                source_obligation_recovery_authorization=(
+                    source_obligation_authorization
                 ),
                 source_challenge_recovery=source_challenge_recovery,
             )
@@ -933,6 +991,9 @@ def build_generic_single_relation_live_dogfood_run_output(
             confirm_live_dprime_review=confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 confirm_live_source_challenge_recovery
+            ),
+            source_obligation_recovery_authorization=(
+                source_obligation_authorization
             ),
             source_challenge_recovery=source_challenge_recovery,
             semantic_payload={},
@@ -953,6 +1014,9 @@ def build_generic_single_relation_live_dogfood_run_output(
             confirm_live_dprime_review=confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 confirm_live_source_challenge_recovery
+            ),
+            source_obligation_recovery_authorization=(
+                source_obligation_authorization
             ),
             source_challenge_recovery=source_challenge_recovery,
             semantic_payload=semantic_payload,
@@ -1632,6 +1696,7 @@ def _packet_from_semantic_status(
     status_decision: str,
     confirm_live_dprime_review: bool,
     confirm_live_source_challenge_recovery: bool,
+    source_obligation_recovery_authorization: Mapping[str, Any] | None,
     source_challenge_recovery: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     decision = _mapped_live_decision(
@@ -1660,6 +1725,9 @@ def _packet_from_semantic_status(
         disambiguation_record=disambiguation_record,
         confirm_live_dprime_review=confirm_live_dprime_review,
         confirm_live_source_challenge_recovery=confirm_live_source_challenge_recovery,
+        source_obligation_recovery_authorization=(
+            source_obligation_recovery_authorization
+        ),
         source_challenge_recovery=source_challenge_recovery,
         caps_exhausted=False,
         semantic_payload=semantic_payload,
@@ -1708,6 +1776,7 @@ def _blocked_packet(
     caps_exhausted: bool,
     confirm_live_dprime_review: bool,
     confirm_live_source_challenge_recovery: bool,
+    source_obligation_recovery_authorization: Mapping[str, Any] | None,
     source_challenge_recovery: Mapping[str, Any] | None,
     semantic_payload: Mapping[str, Any],
     hard_exclusion_category: str | None,
@@ -1722,6 +1791,9 @@ def _blocked_packet(
         disambiguation_record=disambiguation_record,
         confirm_live_dprime_review=confirm_live_dprime_review,
         confirm_live_source_challenge_recovery=confirm_live_source_challenge_recovery,
+        source_obligation_recovery_authorization=(
+            source_obligation_recovery_authorization
+        ),
         source_challenge_recovery=source_challenge_recovery,
         caps_exhausted=caps_exhausted,
         semantic_payload=semantic_payload,
@@ -1763,29 +1835,91 @@ def _provider_acquisition_route_posture(counts: Mapping[str, Any]) -> str:
     return "blocked_before_provider_search"
 
 
-def _source_challenge_recovery_trigger_eligible(
+def _build_source_obligation_recovery_authorization(
     *,
-    semantic_payload: Mapping[str, Any],
+    run_kernel: RunKernel,
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
     counts: Mapping[str, Any],
-) -> bool:
-    dprime = _safe_mapping(semantic_payload.get("dprime_status"))
-    if dprime.get("assessment_status") != "challenge-recommended":
-        return False
-    if dprime.get("support_relation") not in SOURCE_CHALLENGE_RECOVERY_TRIGGER_RELATIONS:
-        return False
-    if (
-        semantic_payload.get("decision")
-        != BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED
-    ):
-        return False
-    selected = _selected_source_challenge_candidate_diagnostic(counts)
-    if not selected:
-        return False
-    if not _diagnostic_answer_bearing_by_safe_window(selected):
-        return False
-    if _diagnostic_official_or_source_record_looking(selected):
-        return False
-    return not _source_obligation_confirmation_satisfied(dprime)
+    dprime_status: Mapping[str, Any] | None,
+    semantic_payload: Mapping[str, Any] | None = None,
+    source_challenge_recovery: Mapping[str, Any] | None = None,
+    recovery_confirmation_authorized: bool = False,
+) -> dict[str, Any]:
+    semantic = _safe_mapping(semantic_payload)
+    recovery = _safe_mapping(source_challenge_recovery)
+    recovery_result = _safe_mapping(recovery.get("source_challenge_recovery_result"))
+    reduction_payload = {
+        "relation_plan": _safe_mapping(relation_plan),
+        "acquisition_plan": _safe_mapping(acquisition_plan),
+        "selected_candidate_diagnostic": (
+            _selected_source_challenge_candidate_diagnostic(counts)
+        ),
+        "candidate_diagnostics": [
+            _safe_mapping(item)
+            for item in _safe_sequence(counts.get("fetch_read_candidate_diagnostics"))
+        ],
+        "dprime_status": _safe_mapping(dprime_status),
+        "provider_acquisition_attempt_counts": {
+            "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
+            "provider_calls_completed": counts.get("provider_calls_completed", 0),
+            "provider_results_returned": counts.get("provider_results_returned", 0),
+            "extraction_provider_calls_attempted": counts.get(
+                "extraction_provider_calls_attempted",
+                0,
+            ),
+            "extraction_provider_calls_completed": counts.get(
+                "extraction_provider_calls_completed",
+                0,
+            ),
+        },
+        "evidence_admission_ref": _safe_mapping(
+            semantic.get("source_evidence_admission_ref")
+        ),
+        "recovery_attempt_ref": {
+            "status": recovery.get("status"),
+            "blocker": recovery.get("blocker"),
+            "detail": recovery.get("detail"),
+            "source_challenge_recovery_plan_created": bool(
+                recovery.get("source_challenge_recovery_plan")
+            ),
+        }
+        if recovery
+        else {},
+        "recovery_attempt_counts": recovery_result,
+        "recovery_confirmation_authorized": recovery_confirmation_authorized,
+        "closed_surface_request_flags": {
+            "source_authority_adjudication_requested": False,
+            "source_obligation_satisfaction_requested": False,
+            "citation_eligibility_requested": False,
+            "fap_requested": False,
+            "author_requested": False,
+            "product_correctness_requested": False,
+        },
+    }
+    action = run_kernel.authorize_single_relation_source_obligation_recovery(
+        inputs=reduction_payload
+    )
+    observation = Observation.from_action(
+        action,
+        observation_type=(
+            ObservationType.SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZED
+        ),
+        status=RunStageStatus.COMPLETED,
+        payload=reduction_payload,
+    )
+    run_kernel.reduce(observation)
+    return _safe_mapping(
+        run_kernel.state.projections.get(
+            SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE
+        )
+    )
+
+
+def _source_obligation_authorization_dict(
+    authorization: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    return _safe_mapping(authorization)
 
 
 def _run_source_challenge_recovery(
@@ -1798,27 +1932,48 @@ def _run_source_challenge_recovery(
     acquisition_plan: Mapping[str, Any],
     first_stage_counts: Mapping[str, Any],
     first_stage_semantic_payload: Mapping[str, Any],
+    source_obligation_recovery_authorization: Mapping[str, Any],
     provider_runner: ProviderProxyRunner,
     fetch_read_runner: FetchReadRunner,
     confirm_live_source_challenge_recovery: bool,
 ) -> dict[str, Any]:
-    del fetch_read_runner
-    plan = _build_source_challenge_recovery_plan(
-        relation_plan=relation_plan,
-        acquisition_plan=acquisition_plan,
-        first_stage_counts=first_stage_counts,
-        first_stage_semantic_payload=first_stage_semantic_payload,
+    del fetch_read_runner, first_stage_counts, first_stage_semantic_payload
+    authorization = _source_obligation_authorization_dict(
+        source_obligation_recovery_authorization
     )
+    plan = _safe_mapping(authorization.get("source_challenge_recovery_plan"))
+    if not plan:
+        return {
+            "trigger_eligible": False,
+            "status": "not_triggered",
+            "blocker": None,
+            "detail": "source-obligation recovery authorization did not require recovery.",
+            "source_challenge_recovery_plan": {},
+            "source_challenge_recovery_authorization": authorization,
+            "source_challenge_recovery_result": {
+                "provider_calls_attempted": 0,
+                "provider_calls_completed": 0,
+                "official_answer_bearing_material_acquired": False,
+                "support_created": False,
+                "source_authority_adjudicated": False,
+                "source_obligation_satisfied": False,
+                "answer_created": False,
+            },
+        }
     if not confirm_live_source_challenge_recovery:
         return {
             "trigger_eligible": True,
             "status": "not_executed_confirmation_required",
-            "blocker": BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
+            "blocker": (
+                authorization.get("authorization_blocker")
+                or BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED
+            ),
             "detail": (
                 f"{CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG} is required "
                 "before an additional source-challenge recovery acquisition."
             ),
             "source_challenge_recovery_plan": plan,
+            "source_challenge_recovery_authorization": authorization,
             "source_challenge_recovery_result": {
                 "provider_calls_attempted": 0,
                 "provider_calls_completed": 0,
@@ -1868,6 +2023,7 @@ def _run_source_challenge_recovery(
                 default="source-challenge recovery provider acquisition failed closed.",
             ),
             "source_challenge_recovery_plan": plan,
+            "source_challenge_recovery_authorization": authorization,
             "source_challenge_recovery_result": {
                 "provider_calls_attempted": provider_result.provider_calls_attempted,
                 "provider_calls_completed": provider_result.provider_calls_completed,
@@ -1901,6 +2057,7 @@ def _run_source_challenge_recovery(
     if not any(_provider_extracted_text(item) for item in results):
         return _source_challenge_recovery_no_material_result(
             plan=plan,
+            authorization=authorization,
             provider_result=provider_result,
             provider_results_returned=len(results),
             detail=(
@@ -1920,8 +2077,10 @@ def _run_source_challenge_recovery(
     material_acquired = bool(
         fetch_packet
         and selected
-        and _diagnostic_answer_bearing_by_safe_window(selected)
-        and _diagnostic_official_or_source_record_looking(selected)
+        and candidate_answer_bearing_by_safe_diagnostics(selected)
+        and candidate_official_source_of_record_looking_by_safe_diagnostics(
+            selected
+        )
     )
     recovery_result = {
         "provider_calls_attempted": provider_result.provider_calls_attempted,
@@ -1938,7 +2097,10 @@ def _run_source_challenge_recovery(
         "selected_candidate_ref": _source_challenge_selected_candidate_ref(selected),
         "official_answer_bearing_material_acquired": material_acquired,
         "official_source_of_record_looking_candidate_selected": bool(
-            selected and _diagnostic_official_or_source_record_looking(selected)
+            selected
+            and candidate_official_source_of_record_looking_by_safe_diagnostics(
+                selected
+            )
         ),
         "support_created": False,
         "dprime_rereview_licensed": False,
@@ -1963,6 +2125,7 @@ def _run_source_challenge_recovery(
                 "satisfaction, citation eligibility, FAP, and Author remain closed."
             ),
             "source_challenge_recovery_plan": plan,
+            "source_challenge_recovery_authorization": authorization,
             "source_challenge_recovery_result": recovery_result,
         }
     return {
@@ -1976,6 +2139,7 @@ def _run_source_challenge_recovery(
             "answer-bearing material by safe diagnostics."
         ),
         "source_challenge_recovery_plan": plan,
+        "source_challenge_recovery_authorization": authorization,
         "source_challenge_recovery_result": recovery_result,
     }
 
@@ -1983,6 +2147,7 @@ def _run_source_challenge_recovery(
 def _source_challenge_recovery_no_material_result(
     *,
     plan: Mapping[str, Any],
+    authorization: Mapping[str, Any],
     provider_result: GenericProviderProxyRunResult,
     provider_results_returned: int,
     detail: str,
@@ -1995,6 +2160,7 @@ def _source_challenge_recovery_no_material_result(
         ),
         "detail": detail,
         "source_challenge_recovery_plan": dict(plan),
+        "source_challenge_recovery_authorization": dict(authorization),
         "source_challenge_recovery_result": {
             "provider_calls_attempted": provider_result.provider_calls_attempted,
             "provider_calls_completed": provider_result.provider_calls_completed,
@@ -2020,111 +2186,6 @@ def _source_challenge_recovery_fetch_read_closed(
     )
 
 
-def _build_source_challenge_recovery_plan(
-    *,
-    relation_plan: Mapping[str, Any],
-    acquisition_plan: Mapping[str, Any],
-    first_stage_counts: Mapping[str, Any],
-    first_stage_semantic_payload: Mapping[str, Any],
-) -> dict[str, Any]:
-    dprime = _safe_mapping(first_stage_semantic_payload.get("dprime_status"))
-    selected = _selected_source_challenge_candidate_diagnostic(first_stage_counts)
-    domains = _observed_official_recovery_domains(first_stage_counts)
-    recovery_query = _source_challenge_recovery_query(
-        acquisition_plan=acquisition_plan,
-        observed_domains=domains,
-    )
-    source_obligation = _first_mapping(relation_plan.get("source_obligations"))
-    plan = {
-        "schema_version": SOURCE_CHALLENGE_RECOVERY_PLAN_SCHEMA_VERSION,
-        "trigger_relation": dprime.get("support_relation"),
-        "trigger_blocker": (
-            BLOCKED_DPRIME_MODEL_REVIEW_ASSESSMENT_CHALLENGE_RECOMMENDED
-        ),
-        "selected_candidate_ref": _source_challenge_selected_candidate_ref(selected),
-        "selected_candidate_source_class_posture": {
-            "answer_bearing_by_safe_diagnostics": (
-                _diagnostic_answer_bearing_by_safe_window(selected)
-            ),
-            "official_source_of_record_looking_by_safe_diagnostics": (
-                _diagnostic_official_or_source_record_looking(selected)
-            ),
-            "source_authority_created": False,
-            "source_obligation_satisfied": False,
-            "citation_eligible": False,
-        },
-        "source_obligation_id": relation_plan.get("source_obligation_id"),
-        "source_obligation_ref": source_obligation,
-        "acquisition_plan_ref": {
-            "schema_version": acquisition_plan.get("schema_version"),
-            "relation_plan_id": acquisition_plan.get("relation_plan_id"),
-            "component_id": acquisition_plan.get("component_id"),
-            "search_requirement_id": acquisition_plan.get("search_requirement_id"),
-            "source_obligation_id": acquisition_plan.get("source_obligation_id"),
-        },
-        "recovery_reason": (
-            "D-prime challenge recommended because answer-bearing material "
-            "was not official/source-of-record confirmation."
-        ),
-        "official_source_of_record_recovery_intent": True,
-        "candidate_official_domains_observed": list(domains),
-        "domain_constraints": list(domains),
-        "domain_constraints_acquisition_only": True,
-        "recovery_query": recovery_query,
-        "provider": acquisition_plan.get("extraction_provider")
-        or DEFAULT_EXTRACTION_PROVIDER,
-        "provider_role": "extraction_provider",
-        "provider_operation": acquisition_plan.get("provider_operation")
-        or DEFAULT_OPERATION,
-        "max_results": MAX_PROVIDER_RESULTS,
-        "include_domains": list(domains),
-        "exclude_domains": [],
-        "source_of_record_domain_constraints": list(domains),
-        "raw_private_retention": False,
-        "raw_provider_payload_retained": False,
-        "raw_search_response_retained": False,
-        "closed_surface_flags": {
-            "support_created": False,
-            "source_authority_adjudicated": False,
-            "source_obligation_satisfied": False,
-            "citation_eligible": False,
-            "answer_created": False,
-            "fap_opened": False,
-            "author_opened": False,
-            "provider_chooser_created": False,
-            "provider_bakeoff_created": False,
-        },
-    }
-    _reject_forbidden_material(plan, context="source challenge recovery plan")
-    return _json_safe(plan)
-
-
-def _source_challenge_recovery_query(
-    *,
-    acquisition_plan: Mapping[str, Any],
-    observed_domains: Sequence[str],
-) -> str:
-    parts: list[str] = []
-    acquisition_query = _clean_text(acquisition_plan.get("acquisition_query"), limit=220)
-    if acquisition_query:
-        parts.append(acquisition_query)
-    parts.extend(
-        str(item)
-        for item in _safe_sequence(acquisition_plan.get("answer_bearing_anchor_terms"))
-        if _clean_text(item, limit=80)
-    )
-    parts.extend(
-        str(item)
-        for item in _safe_sequence(acquisition_plan.get("artifact_source_terms"))
-        if _clean_text(item, limit=80)
-    )
-    parts.extend(("official", "current", "source of record"))
-    parts.extend(observed_domains)
-    return _clean_text(" ".join(_unique_clean_terms(parts, limit=18)), limit=260) or (
-        acquisition_query or "official current source of record"
-    )
-
-
 def _selected_source_challenge_candidate_diagnostic(
     counts: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -2135,86 +2196,10 @@ def _selected_source_challenge_candidate_diagnostic(
     return {}
 
 
-def _diagnostic_answer_bearing_by_safe_window(
-    diagnostic: Mapping[str, Any],
-) -> bool:
-    safe = _safe_mapping(diagnostic)
-    return (
-        safe.get("answer_bearing_candidate_window_status")
-        == ANSWER_BEARING_CANDIDATE_WINDOW_ESTABLISHED
-        and bool(_safe_sequence(safe.get("matched_value_token_kinds")))
-        and _bounded_int(safe.get("matched_anchor_count")) > 0
-    )
-
-
-def _diagnostic_official_or_source_record_looking(
-    diagnostic: Mapping[str, Any],
-) -> bool:
-    safe = _safe_mapping(diagnostic)
-    features = _safe_mapping(safe.get("candidate_selection_features"))
-    return bool(
-        safe.get("official_or_source_record_looking_http_candidate") is True
-        or features.get("source_of_record_domain_signal") is True
-        or features.get("official_domain_signal") is True
-        or features.get("public_agency_domain_signal") is True
-    )
-
-
-def _source_obligation_confirmation_satisfied(dprime: Mapping[str, Any]) -> bool:
-    return bool(
-        dprime.get("source_obligation_satisfaction_claimed") is True
-        or dprime.get("citation_eligibility_claimed") is True
-        or dprime.get("validated_support_proposal_available") is True
-    )
-
-
-def _observed_official_recovery_domains(counts: Mapping[str, Any]) -> tuple[str, ...]:
-    domains: list[str] = []
-    seen: set[str] = set()
-    for item in _safe_sequence(counts.get("fetch_read_candidate_diagnostics")):
-        diagnostic = _safe_mapping(item)
-        if not _diagnostic_official_or_source_record_looking(diagnostic):
-            continue
-        domain = _constraint_domain_from_diagnostic(diagnostic)
-        if not domain or domain in seen:
-            continue
-        seen.add(domain)
-        domains.append(domain)
-    return tuple(domains[:MAX_PROVIDER_RESULTS])
-
-
-def _constraint_domain_from_diagnostic(diagnostic: Mapping[str, Any]) -> str | None:
-    domain = _clean_domain(diagnostic.get("domain"))
-    if not domain:
-        url = _clean_text(diagnostic.get("url"), limit=700)
-        domain = urlparse(url or "").netloc.casefold() if url else ""
-    if not domain:
-        return None
-    return domain[4:] if domain.startswith("www.") else domain
-
-
 def _source_challenge_selected_candidate_ref(
     diagnostic: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    safe = _safe_mapping(diagnostic)
-    if not safe:
-        return {}
-    return {
-        "candidate_id": _clean_text(safe.get("candidate_id"), limit=320),
-        "result_rank": _bounded_int(safe.get("result_rank"), default=0),
-        "title": _clean_text(safe.get("title"), limit=220),
-        "domain": _clean_domain(safe.get("domain")),
-        "url": _clean_text(safe.get("url"), limit=700),
-        "answer_bearing_candidate_window_status": safe.get(
-            "answer_bearing_candidate_window_status"
-        ),
-        "matched_value_token_kinds": list(
-            _safe_sequence(safe.get("matched_value_token_kinds"))
-        ),
-        "official_source_of_record_looking": (
-            _diagnostic_official_or_source_record_looking(safe)
-        ),
-    }
+    return selected_candidate_ref_from_diagnostic(diagnostic)
 
 
 def _source_challenge_recovery_counts(
@@ -2243,6 +2228,7 @@ def _source_challenge_recovery_decision(
     safe = _safe_mapping(recovery)
     status = safe.get("status")
     if status in {
+        "not_executed_confirmation_required",
         "official_answer_bearing_recovery_material_acquired",
         "no_official_answer_bearing_material",
         "provider_acquisition_failed_closed",
@@ -2259,6 +2245,7 @@ def _source_challenge_recovery_detail(
 ) -> str:
     safe = _safe_mapping(recovery)
     if safe.get("status") in {
+        "not_executed_confirmation_required",
         "official_answer_bearing_recovery_material_acquired",
         "no_official_answer_bearing_material",
         "provider_acquisition_failed_closed",
@@ -2349,6 +2336,7 @@ def _base_packet(
     disambiguation_record: Mapping[str, Any] | None,
     confirm_live_dprime_review: bool,
     confirm_live_source_challenge_recovery: bool,
+    source_obligation_recovery_authorization: Mapping[str, Any] | None,
     source_challenge_recovery: Mapping[str, Any] | None,
     caps_exhausted: bool,
     semantic_payload: Mapping[str, Any],
@@ -2362,6 +2350,11 @@ def _base_packet(
     dprime_candidate = _safe_mapping(plan.get("dprime_relation_intake_candidate"))
     future_node = _safe_mapping(plan.get("future_component_work_node_candidate"))
     semantic = _safe_mapping(semantic_payload)
+    source_obligation_authorization = (
+        _source_obligation_authorization_dict(
+            source_obligation_recovery_authorization
+        )
+    )
     recovery = _safe_mapping(source_challenge_recovery)
     recovery_plan = _safe_mapping(recovery.get("source_challenge_recovery_plan"))
     recovery_result = _safe_mapping(
@@ -2599,6 +2592,65 @@ def _base_packet(
         "query_plans_consumed": counts.get("query_plans_consumed", 0),
         "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
         "provider_calls_completed": counts.get("provider_calls_completed", 0),
+        "source_obligation_recovery_authorization": (
+            source_obligation_authorization
+        ),
+        "single_relation_source_obligation_recovery_authorization": (
+            source_obligation_authorization
+        ),
+        "source_obligation_recovery_authorization_status": (
+            source_obligation_authorization.get("authorization_status")
+            or "not_created"
+        ),
+        "source_obligation_recovery_authorization_owner": (
+            source_obligation_authorization.get("authorization_owner")
+        ),
+        "single_relation_answer_contract_projection": (
+            source_obligation_authorization.get("current_answer_contract_projection")
+            or {}
+        ),
+        "single_relation_answer_contract_state": (
+            source_obligation_authorization.get("updated_contract_state") or {}
+        ),
+        "answer_contract_reducer_owner": source_obligation_authorization.get(
+            "contract_reducer_owner"
+        ),
+        "answer_contract_reducer_kind": source_obligation_authorization.get(
+            "contract_reducer_kind"
+        ),
+        "source_obligation_recovery_required": bool(
+            source_obligation_authorization.get("recovery_required")
+        ),
+        "source_obligation_recovery_confirmation_required": bool(
+            source_obligation_authorization.get("recovery_confirmation_required")
+        ),
+        "source_obligation_recovery_call_policy_authorized": bool(
+            source_obligation_authorization.get("recovery_call_policy_authorized")
+        ),
+        "source_obligation_recovery_support_admission_blocked": bool(
+            source_obligation_authorization.get("support_admission_blocked")
+        ),
+        "source_obligation_recovery_answer_display_blocked": bool(
+            source_obligation_authorization.get("answer_display_blocked")
+        ),
+        "source_obligation_recovery_source_display_blocked": bool(
+            source_obligation_authorization.get("source_display_blocked")
+        ),
+        "source_obligation_recovery_reason": (
+            source_obligation_authorization.get("recovery_reason")
+        ),
+        "source_obligation_recovery_provider_neutral_domain_constraints": list(
+            _safe_sequence(
+                source_obligation_authorization.get(
+                    "provider_neutral_domain_constraints"
+                )
+            )
+        ),
+        "source_obligation_recovery_run_kernel_support_admission_decision_status": (
+            source_obligation_authorization.get(
+                "run_kernel_support_admission_decision_status"
+            )
+        ),
         "source_challenge_recovery_trigger_eligible": bool(
             recovery.get("trigger_eligible")
         ),
@@ -6245,6 +6297,10 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING",
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_DPRIME_REREVIEW_NOT_LICENSED",
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED",
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL",
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
     "DEFAULT_OUTPUT_DIR",
     "GenericLiveFetchReadResult",
