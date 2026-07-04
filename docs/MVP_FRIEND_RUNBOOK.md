@@ -84,10 +84,12 @@ posture come from the relation plan rather than from the fixed passport dogfood
 path.
 
 Current repair status: the ordinary generic path no longer uses the
-broker/doorman as its default provider route. Until a product-owned provider
-adapter/service is wired, confirmed generic live dogfood runs fail closed with
-`BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE`.
-Injected fake provider runners remain test-only.
+broker/doorman as its default provider route. It now has a product-owned
+provider acquisition adapter for Tavily extraction and optional Serper scout
+directionality. Offline tests monkeypatch the adapter-level provider callables;
+they do not prove live provider availability, source correctness, source
+authority, citation eligibility, source-obligation satisfaction, D-prime
+support, FAP, or Author output.
 
 Source acquisition now uses a minimal local acquisition planner over the
 relation plan. For clear single-relation queries, including the licensed N-400
@@ -113,6 +115,11 @@ HTTP 4xx during the direct fetch/read fallback, the run reports
 is an HTTP source-survival blocker, not source authority, evidence support,
 citation eligibility, source-obligation satisfaction, PDF support, FAP/Author,
 or product correctness.
+
+A later separately licensed live validation can run one ordinary generic live
+dogfood command to determine whether the product-owned adapter reaches
+provider-extracted source content with real provider credentials or exposes the
+next precise blocker.
 
 Without D-prime confirmation, the command may acquire bounded live
 search/fetch/read/custody status and then stops with:

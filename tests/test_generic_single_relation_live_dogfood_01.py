@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+import core.generic_product_provider_acquisition as product_acquisition
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
 from core.generic_query_to_relation_planning import (
     MVP_QUERY_PLAN_PACKET_NAME,
@@ -62,6 +63,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
     DEFAULT_OUTPUT_DIR,
     GenericLiveFetchReadResult,
@@ -74,6 +76,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
 
 ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = ROOT / "proplex" / "mvp_single_relation_live_dogfood_run.py"
+ADAPTER_MODULE_PATH = ROOT / "core" / "generic_product_provider_acquisition.py"
 TEST_PATH = Path(__file__).resolve()
 N400_QUERY = "What is the current USCIS Form N-400 paper filing fee?"
 SMALL_CLAIMS_QUERY = (
@@ -143,14 +146,20 @@ def test_supported_query_without_live_confirmation_consumes_plan_only(
     assert calls == []
 
 
-def test_confirmed_product_path_without_provider_route_fails_closed(
+def test_confirmed_product_path_with_missing_tavily_credential_fails_closed(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def missing_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        raise RuntimeError("TAVILY_API_KEY is not set; secret-value-not-retained")
+
+    monkeypatch.setattr(product_acquisition, "search_web_results", missing_tavily)
+
     result = build_generic_single_relation_live_dogfood_run_output(
         query=SMALL_CLAIMS_QUERY,
         repo_root=tmp_path,
         output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
-        run_id="missing-product-provider-route",
+        run_id="missing-tavily-credential",
         confirm_live_dogfood=True,
         fetch_read_runner=_fake_fetch_runner("unused"),
         environ={},
@@ -160,16 +169,215 @@ def test_confirmed_product_path_without_provider_route_fails_closed(
     assert result.return_code == 2
     assert (
         result.decision
-        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE
     )
     assert result.packet["relation_plan_consumed"] is True
-    assert result.packet["provider_calls_attempted"] == 0
+    assert result.packet["provider_calls_attempted"] == 1
+    assert result.packet["provider_calls_completed"] == 0
     assert result.packet["provider_acquisition_route_posture"] == (
-        "blocked_before_provider_search"
+        "product_provider_acquisition_adapter_failed_closed"
     )
     assert result.packet["serper_scout_calls_attempted"] == 0
     assert result.packet["fetch_read_attempts"] == 0
     assert result.packet["dprime_model_review_calls_attempted"] == 0
+    assert "tavily_api_key" in detail
+    assert "secret-value" not in detail
+    assert "approved broker" not in detail
+    assert "broker/operator" not in detail
+
+
+def test_default_product_owned_adapter_supplies_tavily_results(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    tavily_calls: list[dict[str, Any]] = []
+    fetch_urls: list[str] = []
+    extracted_text = "USCIS lists the current Form N-400 paper filing fee as $760."
+
+    def fake_tavily(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        tavily_calls.append(kwargs)
+        return (
+            [
+                {
+                    "title": "USCIS Form N-400 Filing Fee",
+                    "url": "https://www.uscis.gov/forms/filing-fees",
+                    "domain": "uscis.gov",
+                    "snippet": "Current filing fee table.",
+                    "raw_content": extracted_text,
+                }
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(product_acquisition, "search_web_results", fake_tavily)
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="default-product-provider-adapter",
+        confirm_live_dogfood=True,
+        fetch_read_runner=_recording_fake_fetch_runner(fetch_urls, "unused"),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    ), result.packet.get("blocker_detail")
+    assert tavily_calls[0]["query"] == plan["search_query_seeds"][0]
+    assert tavily_calls[0]["search_depth"] == "basic"
+    assert fetch_urls == []
+    assert result.packet["planner_marked_ambiguity"] is False
+    assert result.packet["provider_calls_attempted"] == 1
+    assert result.packet["provider_calls_completed"] == 1
+    assert result.packet["serper_scout_calls_attempted"] == 0
+    assert result.packet["provider_acquisition_route_posture"] == (
+        "product_provider_acquisition_adapter_sanitized_results_to_"
+        "plan_derived_retained_artifacts"
+    )
+    assert result.packet["decision"] != (
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE
+    )
+    assert result.packet["provider_extracted_content_obtained"] is True
+    assert result.packet["source_acquisition_mode"] == (
+        "provider_extracted_source_content"
+    )
+    assert result.packet["direct_fetch_read_attempts"] == 0
+    assert result.packet["fetch_read_attempts"] == 0
+    fetch_packet = _retained_fetch_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    assert reference["content_acquisition_provider"] == "tavily"
+    assert reference["bounded_text"] == extracted_text
+    assert reference["original_source_url"] == "https://www.uscis.gov/forms/filing-fees"
+    assert reference["raw_provider_payload_retained"] is False
+    assert reference["raw_search_response_retained"] is False
+    assert reference["not_citation_eligible"] is True
+    assert reference["not_source_obligation_satisfaction"] is True
+
+
+def test_default_product_owned_adapter_uses_serper_scout_for_ambiguity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    query = "What is the current filing fee for the form?"
+    scout_calls: list[dict[str, Any]] = []
+    tavily_calls: list[dict[str, Any]] = []
+    extracted_text = "USCIS lists the current Form N-400 paper filing fee as $760."
+
+    def fake_scout(**kwargs: Any) -> list[dict[str, Any]]:
+        scout_calls.append(kwargs)
+        return [
+            {
+                "title": "USCIS Form N-400 Filing Fee",
+                "url": "https://www.uscis.gov/forms/filing-fees",
+                "domain": "uscis.gov",
+                "snippet": "Directionality only scout result.",
+                "position": 1,
+            }
+        ]
+
+    def fake_tavily(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        tavily_calls.append(kwargs)
+        return (
+            [
+                {
+                    "title": "USCIS Form N-400 Filing Fee",
+                    "url": "https://www.uscis.gov/forms/filing-fees",
+                    "domain": "uscis.gov",
+                    "snippet": "Current filing fee table.",
+                    "raw_content": extracted_text,
+                }
+            ],
+            [],
+        )
+
+    monkeypatch.setattr(product_acquisition, "search_scout_results", fake_scout)
+    monkeypatch.setattr(product_acquisition, "search_web_results", fake_tavily)
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=query,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="default-product-provider-ambiguous",
+        confirm_live_dogfood=True,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    ), result.packet.get("blocker_detail")
+    assert scout_calls == [
+        {
+            "provider": "serper",
+            "query": "What is the current filing fee for the form?",
+            "max_results": 5,
+        }
+    ]
+    assert len(tavily_calls) == 1
+    assert "USCIS Form N-400 Filing Fee" in tavily_calls[0]["query"]
+    assert result.packet["planner_marked_ambiguity"] is True
+    assert result.packet["serper_scout_calls_attempted"] == 1
+    assert result.packet["serper_scout_calls_completed"] == 1
+    assert result.packet["extraction_provider_calls_attempted"] == 1
+    assert result.packet["provider_acquisition_route_posture"] == (
+        "product_provider_acquisition_adapter_sanitized_results_to_"
+        "plan_derived_retained_artifacts"
+    )
+    assert result.packet["serper_output_recorded_as_non_evidence"] is True
+    assert result.packet["serper_output_used_as_evidence"] is False
+    observation = result.packet["disambiguation_record"]["observations"][0]
+    assert observation["not_evidence"] is True
+    assert observation["not_source_custody"] is True
+    assert observation["not_citation_eligible"] is True
+    assert "provider_extracted_text" not in observation
+    assert result.packet["provider_extracted_content_obtained"] is True
+    assert result.packet["direct_fetch_read_attempts"] == 0
+
+
+def test_missing_serper_credential_for_ambiguous_scout_fails_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def missing_scout(**_kwargs: Any) -> list[dict[str, Any]]:
+        raise RuntimeError("SERPER_API_KEY is not set; secret-value-not-retained")
+
+    def tavily_must_not_run(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        raise AssertionError("Tavily extraction must not run after scout failure")
+
+    monkeypatch.setattr(product_acquisition, "search_scout_results", missing_scout)
+    monkeypatch.setattr(product_acquisition, "search_web_results", tavily_must_not_run)
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query="What is the current filing fee for the form?",
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="missing-serper-credential",
+        confirm_live_dogfood=True,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    detail = str(result.packet["blocker_detail"]).casefold()
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE
+    )
+    assert result.packet["serper_scout_calls_attempted"] == 1
+    assert result.packet["serper_scout_calls_completed"] == 0
+    assert result.packet["extraction_provider_calls_attempted"] == 0
+    assert result.packet["provider_calls_attempted"] == 0
+    assert result.packet["provider_acquisition_route_posture"] == (
+        "product_provider_acquisition_adapter_selected_before_provider_search"
+    )
+    assert "serper_api_key" in detail
+    assert "secret-value" not in detail
     assert "approved broker" not in detail
     assert "broker/operator" not in detail
 
@@ -1424,8 +1632,10 @@ def test_new_flag_is_registered_as_default_off_status_path() -> None:
 
 def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     imported, called = _module_static_shape(MODULE_PATH)
+    adapter_imported, adapter_called = _module_static_shape(ADAPTER_MODULE_PATH)
     test_imported, test_called = _module_static_shape(TEST_PATH)
     module_text = MODULE_PATH.read_text(encoding="utf-8")
+    adapter_text = ADAPTER_MODULE_PATH.read_text(encoding="utf-8")
     forbidden_imports = {
         "core.pipeline",
         "core.pipeline_orchestrator",
@@ -1436,6 +1646,7 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
         "core.social_signal_controller",
         "core.social_signal_scoring",
         "proplex.mvp_live_dogfood_run",
+        "subprocess",
         "scripts.request_provider_proxy_broker",
         "scripts.run_provider_proxy_broker_once",
     }
@@ -1471,11 +1682,14 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     }
 
     assert imported.isdisjoint(forbidden_imports)
+    assert adapter_imported.isdisjoint(forbidden_imports)
     assert called.isdisjoint(forbidden_calls)
+    assert adapter_called.isdisjoint(forbidden_calls)
     assert test_imported.isdisjoint(forbidden_test_imports)
     assert test_called.isdisjoint(forbidden_test_calls)
     assert not any(text in module_text for text in forbidden_policy_text)
     assert not any(text in module_text for text in forbidden_product_route_text)
+    assert not any(text in adapter_text for text in forbidden_product_route_text)
 
 
 def _recording_proxy_runner(

@@ -45,6 +45,14 @@ from core.fetch_read_content_reference import (
     select_bounded_answer_bearing_text,
     validate_fetch_read_content_packet,
 )
+from core.generic_product_provider_acquisition import (
+    BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_CREDENTIAL_UNAVAILABLE,
+    BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE,
+    ProductProviderAcquisitionRequest,
+    ProductProviderAcquisitionResult,
+    ProductProviderAcquisitionRunner,
+    build_generic_product_provider_acquisition_runner,
+)
 from core.generic_query_to_relation_planning import (
     GenericQueryRelationPlanningError,
     build_generic_query_relation_plan,
@@ -82,6 +90,9 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED = (
 )
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE"
+)
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE = (
+    BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_CREDENTIAL_UNAVAILABLE
 )
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM"
@@ -146,7 +157,12 @@ DEFAULT_EXTRACTION_PROVIDER = "tavily"
 DEFAULT_SCOUT_PROVIDER = "serper"
 DEFAULT_OPERATION = "search"
 DEFAULT_OUTPUT_DIR = Path("output") / "mvp_single_relation_live_dogfood_01"
-SANITIZED_PROVIDER_PROXY_RESPONSE_NAME = "sanitized-provider-proxy-response.json"
+SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME = (
+    "sanitized-product-provider-acquisition-response.json"
+)
+SANITIZED_SCOUT_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME = (
+    "sanitized-scout-product-provider-acquisition-response.json"
+)
 LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
 
 MAX_LIVE_RUNS = 1
@@ -426,6 +442,12 @@ _PRIVATE_VALUE_MARKERS = frozenset(
         "sk-",
     }
 )
+_PUBLIC_CREDENTIAL_NAME_REFERENCES = frozenset(
+    {
+        "SERPER_API_KEY",
+        "TAVILY_API_KEY",
+    }
+)
 
 
 class GenericSingleRelationLiveDogfoodRunError(ValueError):
@@ -478,6 +500,8 @@ class GenericProviderProxyRunResult:
     output_path: Path
     provider_calls_attempted: int
     provider_calls_completed: int
+    blocker: str | None = None
+    detail: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -503,6 +527,55 @@ ProviderProxyRunner = Callable[
 FetchReadRunner = Callable[[str], GenericLiveFetchReadResult]
 
 
+def _select_generic_provider_acquisition_runner(
+    *,
+    legacy_injected_provider_runner: ProviderProxyRunner | None,
+    product_provider_acquisition_runner: ProductProviderAcquisitionRunner | None,
+    counts: dict[str, Any],
+) -> ProviderProxyRunner | None:
+    if legacy_injected_provider_runner is not None:
+        counts["product_provider_acquisition_adapter_used"] = 0
+        return legacy_injected_provider_runner
+    product_runner = (
+        product_provider_acquisition_runner
+        or build_generic_product_provider_acquisition_runner()
+    )
+    counts["product_provider_acquisition_adapter_used"] = 1
+    return _provider_runner_from_product_acquisition_runner(product_runner)
+
+
+def _provider_runner_from_product_acquisition_runner(
+    product_provider_acquisition_runner: ProductProviderAcquisitionRunner,
+) -> ProviderProxyRunner:
+    def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
+        result = product_provider_acquisition_runner(
+            ProductProviderAcquisitionRequest(
+                repo_root=request.repo_root,
+                output_path=request.output_path,
+                query=request.query,
+                provider=request.provider,
+                operation=request.operation,
+                max_results=request.max_results,
+            )
+        )
+        return _generic_result_from_product_acquisition_result(result)
+
+    return runner
+
+
+def _generic_result_from_product_acquisition_result(
+    result: ProductProviderAcquisitionResult,
+) -> GenericProviderProxyRunResult:
+    return GenericProviderProxyRunResult(
+        return_code=result.return_code,
+        output_path=result.output_path,
+        provider_calls_attempted=result.provider_calls_attempted,
+        provider_calls_completed=result.provider_calls_completed,
+        blocker=result.blocker,
+        detail=result.detail,
+    )
+
+
 def build_generic_single_relation_live_dogfood_run_output(
     *,
     query: str,
@@ -511,6 +584,7 @@ def build_generic_single_relation_live_dogfood_run_output(
     run_id: str | None = None,
     confirm_live_dogfood: bool = False,
     confirm_live_dprime_review: bool = False,
+    product_provider_acquisition_runner: ProductProviderAcquisitionRunner | None = None,
     provider_proxy_runner: ProviderProxyRunner | None = None,
     fetch_read_runner: FetchReadRunner | None = None,
     smart_provider: str | None = None,
@@ -527,7 +601,7 @@ def build_generic_single_relation_live_dogfood_run_output(
     run_id = _run_id(run_id)
     run_dir = _run_output_dir(root, output_dir or DEFAULT_OUTPUT_DIR, run_id)
     retained_root = run_dir / "retained_status_repo"
-    provider_output_path = run_dir / SANITIZED_PROVIDER_PROXY_RESPONSE_NAME
+    provider_output_path = run_dir / SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME
     packet_path = run_dir / LIVE_DOGFOOD_PACKET_NAME
     counts = _empty_counts()
     relation_plan: dict[str, Any] | None = None
@@ -549,15 +623,15 @@ def build_generic_single_relation_live_dogfood_run_output(
                     "provider/search/fetch/read contact."
                 ),
             )
-        if provider_proxy_runner is None:
+        provider_runner = _select_generic_provider_acquisition_runner(
+            legacy_injected_provider_runner=provider_proxy_runner,
+            product_provider_acquisition_runner=product_provider_acquisition_runner,
+            counts=counts,
+        )
+        if provider_runner is None:
             raise GenericSingleRelationLiveDogfoodRunError(
                 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
-                (
-                    "Generic single-relation live dogfood has no product-owned "
-                    "provider acquisition route configured. Inject a test "
-                    "provider runner for offline tests or wire a product-owned "
-                    "provider adapter before live acquisition."
-                ),
+                "Generic single-relation live dogfood has no product provider route.",
             )
         _guard_dprime_review_route(
             confirm_live_dprime_review=confirm_live_dprime_review,
@@ -568,10 +642,11 @@ def build_generic_single_relation_live_dogfood_run_output(
             environ=environ,
         )
 
-        proxy_runner = provider_proxy_runner
         if acquisition_plan["disambiguation_required"]:
-            scout_output_path = run_dir / "sanitized-scout-proxy-response.json"
-            scout_result = proxy_runner(
+            scout_output_path = (
+                run_dir / SANITIZED_SCOUT_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME
+            )
+            scout_result = provider_runner(
                 GenericProviderProxyRunRequest(
                     repo_root=root,
                     output_path=scout_output_path,
@@ -589,8 +664,17 @@ def build_generic_single_relation_live_dogfood_run_output(
             _enforce_caps(counts)
             if scout_result.return_code != 0:
                 raise GenericSingleRelationLiveDogfoodRunError(
-                    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
-                    "Serper scout/disambiguation provider runner did not complete.",
+                    _provider_result_blocker(
+                        scout_result,
+                        default=BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+                    ),
+                    _provider_result_detail(
+                        scout_result,
+                        default=(
+                            "Serper scout/disambiguation product provider "
+                            "acquisition did not complete."
+                        ),
+                    ),
                 )
             scout_payload = _load_sanitized_provider_output(scout_result.output_path)
             disambiguation_record = _disambiguation_record_from_scout_payload(
@@ -604,7 +688,7 @@ def build_generic_single_relation_live_dogfood_run_output(
 
         search_query_seed = str(acquisition_plan["acquisition_query"])
         extraction_provider = str(acquisition_plan["extraction_provider"])
-        proxy_result = proxy_runner(
+        provider_result = provider_runner(
             GenericProviderProxyRunRequest(
                 repo_root=root,
                 output_path=provider_output_path,
@@ -613,22 +697,31 @@ def build_generic_single_relation_live_dogfood_run_output(
                 operation=str(acquisition_plan["provider_operation"]),
             )
         )
-        counts["provider_calls_attempted"] = proxy_result.provider_calls_attempted
-        counts["provider_calls_completed"] = proxy_result.provider_calls_completed
+        counts["provider_calls_attempted"] = provider_result.provider_calls_attempted
+        counts["provider_calls_completed"] = provider_result.provider_calls_completed
         counts["extraction_provider_calls_attempted"] = (
-            proxy_result.provider_calls_attempted
+            provider_result.provider_calls_attempted
         )
         counts["extraction_provider_calls_completed"] = (
-            proxy_result.provider_calls_completed
+            provider_result.provider_calls_completed
         )
         _enforce_caps(counts)
-        if proxy_result.return_code != 0:
+        if provider_result.return_code != 0:
             raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
-                "extraction-capable provider runner did not complete.",
+                _provider_result_blocker(
+                    provider_result,
+                    default=BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+                ),
+                _provider_result_detail(
+                    provider_result,
+                    default=(
+                        "extraction-capable product provider acquisition did "
+                        "not complete."
+                    ),
+                ),
             )
 
-        provider_payload = _load_sanitized_provider_output(proxy_result.output_path)
+        provider_payload = _load_sanitized_provider_output(provider_result.output_path)
         results = _provider_results(provider_payload)
         counts["provider_results_returned"] = len(results)
         _enforce_caps(counts)
@@ -1505,6 +1598,24 @@ def _blocked_packet(
     return packet
 
 
+def _provider_acquisition_route_posture(counts: Mapping[str, Any]) -> str:
+    if _bounded_int(counts.get("product_provider_acquisition_adapter_used")):
+        if _bounded_int(counts.get("provider_calls_completed")):
+            return (
+                "product_provider_acquisition_adapter_sanitized_results_to_"
+                "plan_derived_retained_artifacts"
+            )
+        if _bounded_int(counts.get("provider_calls_attempted")):
+            return "product_provider_acquisition_adapter_failed_closed"
+        return "product_provider_acquisition_adapter_selected_before_provider_search"
+    if _bounded_int(counts.get("provider_calls_attempted")):
+        return (
+            "injected_provider_runner_sanitized_results_to_plan_"
+            "derived_retained_artifacts"
+        )
+    return "blocked_before_provider_search"
+
+
 def _base_packet(
     *,
     relation_plan: Mapping[str, Any] | None,
@@ -1612,10 +1723,7 @@ def _base_packet(
         ),
         "future_component_work_node_candidate": future_node,
         "provider_acquisition_route_posture": (
-            "injected_provider_runner_sanitized_results_to_plan_"
-            "derived_retained_artifacts"
-            if counts.get("provider_calls_attempted", 0)
-            else "blocked_before_provider_search"
+            _provider_acquisition_route_posture(counts)
         ),
         "run_kernel_local_accounting_authorized_planner": bool(acquisition),
         "run_kernel_local_accounting_authorized_disambiguation": bool(
@@ -1690,7 +1798,14 @@ def _base_packet(
         "direct_fetch_read_attempts": counts.get("direct_fetch_read_attempts", 0),
         "optional_evidence_triage_implemented": False,
         "optional_evidence_triage_deferred_to": "SOURCE-EVIDENCE-INTAKE-TRIAGE-01",
-        "live_runs_attempted": 1 if counts.get("provider_calls_attempted", 0) else 0,
+        "live_runs_attempted": (
+            1
+            if (
+                counts.get("provider_calls_attempted", 0)
+                or counts.get("serper_scout_calls_attempted", 0)
+            )
+            else 0
+        ),
         "query_plans_consumed": counts.get("query_plans_consumed", 0),
         "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
         "provider_calls_completed": counts.get("provider_calls_completed", 0),
@@ -4031,6 +4146,7 @@ def _empty_counts() -> dict[str, Any]:
         "query_plans_consumed": 0,
         "fast_planner_calls_attempted": 0,
         "fast_planner_model_calls_attempted": 0,
+        "product_provider_acquisition_adapter_used": 0,
         "serper_scout_calls_attempted": 0,
         "serper_scout_calls_completed": 0,
         "provider_calls_attempted": 0,
@@ -4116,11 +4232,18 @@ def _private_value_markers(value: Any) -> set[str]:
         for item in value:
             found.update(_private_value_markers(item))
     elif isinstance(value, str):
-        lowered = value.casefold()
+        lowered = _credential_name_safe_value(value).casefold()
         for marker in _PRIVATE_VALUE_MARKERS:
             if marker in lowered:
                 found.add(marker)
     return found
+
+
+def _credential_name_safe_value(value: str) -> str:
+    text = value
+    for name in _PUBLIC_CREDENTIAL_NAME_REFERENCES:
+        text = re.sub(rf"\b{re.escape(name)}\b(?!\s*[:=])", "", text)
+    return text
 
 
 def _collect_keys(value: Any) -> set[str]:
@@ -4222,6 +4345,25 @@ def _blocked_cap(detail: str) -> None:
         detail,
         caps_exhausted=True,
     )
+
+
+def _provider_result_blocker(
+    result: GenericProviderProxyRunResult,
+    *,
+    default: str,
+) -> str:
+    blocker = _clean_text(result.blocker, limit=220)
+    if blocker == BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE:
+        return BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE
+    return blocker or default
+
+
+def _provider_result_detail(
+    result: GenericProviderProxyRunResult,
+    *,
+    default: str,
+) -> str:
+    return _clean_text(result.detail, limit=900) or default
 
 
 class _RedirectLimiter(HTTPRedirectHandler):
@@ -4558,6 +4700,7 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM",
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING",
