@@ -13,7 +13,7 @@ The broker is a dumb durable provider proxy:
 - Secrets live in the private broker/operator boundary.
 - The broker receives only `provider`, `operation`, `query`, and bounded
   `max_results`.
-- The broker returns only sanitized provider result records.
+- The tracked output contains only sanitized provider result records.
 - Raw provider payload and raw search response retention must remain false.
 
 The broker must not know or require task ids, phase names, validation profiles,
@@ -42,8 +42,9 @@ The helper:
 - requires `--confirm-provider-call`;
 - generates a temporary `SCRYRAVEN_BROKER_TOKEN` per run;
 - does not print the token;
-- loads `SERPER_API_KEY` from the current process or explicit local env files
-  without printing it;
+- loads the selected provider key, currently `SERPER_API_KEY` or
+  `TAVILY_API_KEY`, from the current process or explicit local env files without
+  printing it;
 - starts the private broker on loopback as a subprocess;
 - delegates the actual POST to `scripts/request_provider_proxy_broker.py`;
 - writes only sanitized JSON under `output/`;
@@ -53,7 +54,7 @@ The temporary broker token is an operator-local run credential, not a permanent
 secret. Do not paste it into chat, docs, issues, pull requests, or committed
 files.
 
-`SERPER_API_KEY` stays private. It should be loaded only in the trusted local
+Provider API keys stay private. They should be loaded only in the trusted local
 operator or private broker boundary, never committed and never pasted.
 
 ## Sanitized Output
@@ -68,6 +69,12 @@ The generic client writes UTF-8 JSON without a BOM. Output must stay under
 }
 ```
 
+Broker output is not source custody, evidence, citation eligible, or
+source-obligation satisfaction. Bounded `provider_extracted_text`, when present,
+is sanitized provider record material only. Only a downstream product path, under
+its own licensed custody, readability, and candidate-fit gates, may convert that
+material into source-bound custody.
+
 Allowed result fields are the generic sanitized record shape:
 
 ```text
@@ -78,11 +85,20 @@ snippet
 date or published_or_observed_date
 rank or result_rank
 call_index or provider_call_index
+provider_extracted_text
+provider_extracted_text_sanitized
+provider_extracted_text_bounded
+provider_extracted_text_char_count
+provider_extracted_text_digest
+provider_extracted_content_type
 ```
 
-Any raw/private field, auth header, token, secret, log, DB/cache row, prompt,
-full trace, raw provider payload, or raw search response is a fail-closed
-condition.
+For Tavily, provider-extracted page material may cross the private
+broker-to-client boundary only as bounded provider record material and must be
+written by the tracked client as `provider_extracted_text`, not `raw_content`.
+Any other raw/private field, auth header, token, secret, log, DB/cache row,
+prompt, full trace, raw provider payload, or raw search response is a
+fail-closed condition.
 
 ## LIVE-RUN-01 Mapping Example
 
@@ -129,7 +145,8 @@ Stop without retry when any of these are true:
 - the phase has not explicitly licensed live provider contact;
 - the output path is outside `output/`;
 - the broker URL is not loopback HTTP;
-- `SERPER_API_KEY` is unavailable to the trusted local operator boundary;
+- the selected provider key is unavailable to the trusted local operator
+  boundary;
 - the broker returns unsupported provider/operation, token, config, cap, or
   provider errors;
 - sanitized output contains raw/private fields or true raw-retention flags;

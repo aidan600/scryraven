@@ -46,6 +46,39 @@ def _imports(path: Path) -> set[str]:
     return imported
 
 
+def _normalized_keys(value: Any) -> set[str]:
+    if isinstance(value, Mapping):
+        keys = {str(key).strip().casefold() for key in value}
+        for item in value.values():
+            keys.update(_normalized_keys(item))
+        return keys
+    if isinstance(value, list | tuple | set | frozenset):
+        keys: set[str] = set()
+        for item in value:
+            keys.update(_normalized_keys(item))
+        return keys
+    return set()
+
+
+def _assert_no_custody_evidence_or_citation_keys(payload: Mapping[str, Any]) -> None:
+    keys = _normalized_keys(payload)
+    assert not keys.intersection(
+        {
+            "broker_output_is_evidence",
+            "broker_output_satisfies_source_obligation",
+            "citation",
+            "citation_eligible",
+            "evidence",
+            "evidence_id",
+            "evidenceledger",
+            "source_custody",
+            "source_obligation",
+            "source_obligation_satisfied",
+            "satisfies_source_obligation",
+        }
+    )
+
+
 def test_request_shape_is_generic_provider_proxy_not_phase_job_policy() -> None:
     payload = client.build_provider_proxy_request(
         provider="serper",
@@ -357,6 +390,7 @@ def test_sanitizer_converts_tavily_result_raw_content_to_extracted_text() -> Non
         result["provider_extracted_text"]
     )
     assert result["provider_extracted_content_type"] == "text/html"
+    _assert_no_custody_evidence_or_citation_keys(sanitized)
 
 
 def test_sanitizer_rejects_tavily_envelope_raw_content() -> None:
