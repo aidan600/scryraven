@@ -62,6 +62,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
     DEFAULT_OUTPUT_DIR,
     GenericLiveFetchReadResult,
     GenericProviderProxyRunRequest,
@@ -140,6 +141,37 @@ def test_supported_query_without_live_confirmation_consumes_plan_only(
     assert result.packet["dprime_model_review_calls_attempted"] == 0
     assert result.packet["dprime_relation_intake_ref"] == {}
     assert calls == []
+
+
+def test_confirmed_product_path_without_provider_route_fails_closed(
+    tmp_path: Path,
+) -> None:
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="missing-product-provider-route",
+        confirm_live_dogfood=True,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    detail = str(result.packet["blocker_detail"]).casefold()
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE
+    )
+    assert result.packet["relation_plan_consumed"] is True
+    assert result.packet["provider_calls_attempted"] == 0
+    assert result.packet["provider_acquisition_route_posture"] == (
+        "blocked_before_provider_search"
+    )
+    assert result.packet["serper_scout_calls_attempted"] == 0
+    assert result.packet["fetch_read_attempts"] == 0
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
+    assert "approved broker" not in detail
+    assert "broker/operator" not in detail
 
 
 def test_live_confirmation_without_dprime_stops_after_custody_status(
@@ -516,12 +548,18 @@ def test_clear_query_uses_extraction_provider_before_direct_fetch(
     assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
     assert [call.provider for call in calls] == ["tavily"]
     assert calls[0].query == plan["search_query_seeds"][0]
+    assert not hasattr(calls[0], "broker_url")
+    assert not hasattr(calls[0], "private_broker_path")
     assert fetch_urls == []
     assert result.packet["fast_planner_used"] is True
     assert result.packet["planner_marked_ambiguity"] is False
     assert result.packet["serper_scout_calls_attempted"] == 0
     assert result.packet["extraction_provider"] == "tavily"
     assert result.packet["extraction_provider_calls_attempted"] == 1
+    assert result.packet["provider_acquisition_route_posture"] == (
+        "injected_provider_runner_sanitized_results_to_plan_"
+        "derived_retained_artifacts"
+    )
     assert result.packet["provider_extracted_content_obtained"] is True
     assert result.packet["provider_extracted_original_url_bindings_preserved"] is True
     assert result.packet["source_acquisition_mode"] == (
@@ -1373,6 +1411,9 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert captured["query"] == SMALL_CLAIMS_QUERY
     assert captured["confirm_live_dogfood"] is True
     assert captured["confirm_live_dprime_review"] is False
+    assert "broker_url" not in captured
+    assert "private_broker_path" not in captured
+    assert "env_file_paths" not in captured
     assert "fake generic live blocker" in capsys.readouterr().out
 
 
@@ -1395,10 +1436,13 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
         "core.social_signal_controller",
         "core.social_signal_scoring",
         "proplex.mvp_live_dogfood_run",
+        "scripts.request_provider_proxy_broker",
+        "scripts.run_provider_proxy_broker_once",
     }
     forbidden_calls = {
         "run_pipeline",
         "build_mvp_live_dogfood_run_output",
+        "run_provider_proxy_helper_once",
     }
     forbidden_test_imports = {
         "openai",
@@ -1416,12 +1460,22 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
         "domain_allowlist",
         "domain_blocklist",
     }
+    forbidden_product_route_text = {
+        "DEFAULT_PRIVATE_BROKER_PATH",
+        "SCRYRAVEN_BROKER_TOKEN",
+        "ScryRavenLiveBroker",
+        "broker_url",
+        "private_broker_path",
+        "provider_broker_posture",
+        "run_provider_proxy_helper_once",
+    }
 
     assert imported.isdisjoint(forbidden_imports)
     assert called.isdisjoint(forbidden_calls)
     assert test_imported.isdisjoint(forbidden_test_imports)
     assert test_called.isdisjoint(forbidden_test_calls)
     assert not any(text in module_text for text in forbidden_policy_text)
+    assert not any(text in module_text for text in forbidden_product_route_text)
 
 
 def _recording_proxy_runner(

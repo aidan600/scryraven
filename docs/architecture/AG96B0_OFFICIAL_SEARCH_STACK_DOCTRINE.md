@@ -22,6 +22,35 @@ source-specific resolvers, package names, CLI names, environment names, or
 Pricing and current provider-market facts are out of scope for this repo-static
 phase unless already present in repo-tracked docs. No web browsing was used.
 
+## 1A. Durable product search path and broker boundary
+
+The durable ScryRaven product search path is:
+
+```text
+User query
+-> Planner / query understanding
+-> component structure proposal, single-relation first
+-> ambiguity detection
+-> optional Disambiguator / cheap scout
+-> Planner revises acquisition plan
+-> product-owned provider adapter/service
+-> extraction-capable source acquisition
+-> source-bound extracted content
+-> custody/readability/candidate-fit gates
+-> optional evidence intake triage
+-> Analyst / D-prime
+-> answer/source display or precise blocker
+```
+
+The broker/doorman is not part of this ordinary product runtime path. It is
+testing/operator infrastructure only. It may support Codex/local operator
+testing, phase-specific harnesses, and explicitly licensed sanitized
+provider-record capture without exposing API keys.
+
+The broker/doorman must not become the CLI provider layer, source custody,
+evidence, citation eligibility, source-obligation satisfaction, product answer
+material, provider ranking, RunKernel, Analyst/D-prime, FAP, or Author.
+
 ## 2. Diagnosis: what AG-96A1-A5 proved
 
 Static repo inspection found AG-96A0 and AG-96A2 architecture docs, plus AG-96A2
