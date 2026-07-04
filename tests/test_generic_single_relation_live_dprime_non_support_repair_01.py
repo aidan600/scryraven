@@ -35,6 +35,7 @@ from core.dprime_model_review_assessment import (
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
+    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED,
     DEFAULT_OUTPUT_DIR,
     build_generic_single_relation_live_dogfood_run_output,
 )
@@ -269,6 +270,82 @@ def test_challenge_relation_with_false_flag_routes_to_challenge_blocker(
     assert result.packet["raw_prompt_retained"] is False
     assert result.packet["raw_model_response_retained"] is False
     assert "bounded_text" not in json.dumps(result.packet, sort_keys=True)
+
+
+def test_non_official_direct_support_still_requires_source_obligation_recovery(
+    tmp_path: Path,
+) -> None:
+    calls: list[Any] = []
+    extracted_text = (
+        "N-400 Naturalization Fee in 2026: Costs and Fee Waivers. The page says "
+        "the current Form N-400 paper filing fee is $760, but it is a "
+        "non-official explainer rather than source-of-record confirmation."
+    )
+
+    def fake_review(*_args: Any, **kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(
+            kwargs["input_packet"],
+            support_relation="directly_supports",
+            claim="USCIS Form N-400 paper filing fee is $760.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="dprime-direct-support-non-official-source-obligation",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "N-400 Naturalization Fee in 2026: Costs and Fee Waivers",
+                    "https://example-law.invalid/n-400-fee-guide",
+                    extracted_text,
+                )
+            ],
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    authorization = result.packet["source_obligation_recovery_authorization"]
+    contract_state = result.packet["single_relation_answer_contract_state"]
+
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED
+    )
+    assert authorization["run_kernel_reduced"] is True
+    assert authorization["recovery_required"] is True
+    assert authorization["selected_candidate_ref"]["domain"] == "example-law.invalid"
+    assert authorization["selected_candidate_source_class_posture"][
+        "official_source_of_record_looking_by_safe_diagnostics"
+    ] is False
+    assert authorization["selected_candidate_source_class_posture"][
+        "source_obligation_satisfied"
+    ] is False
+    assert authorization["support_admission_blocked"] is True
+    assert authorization["answer_display_blocked"] is True
+    assert authorization["source_display_blocked"] is True
+    assert contract_state["support_admission_status"] == (
+        "blocked_by_source_obligation_recovery_authorization"
+    )
+    assert contract_state["answer_display_allowed"] is False
+    assert contract_state["source_display_allowed"] is False
+    assert result.packet["answer_text_present"] is False
+    assert result.packet["source_display_entries"] == []
+    assert result.packet["actual_source_authority_posture_created"] is False
+    assert result.packet["candidate_selection_created_source_authority"] is False
+    assert result.packet["candidate_selection_citation_eligible"] is False
+    assert result.packet["candidate_selection_satisfies_source_obligation"] is False
+    assert result.packet["fap_author_opened"] is False
+    assert result.packet["product_correctness_claimed"] is False
+    assert result.packet["raw_provider_payload_retained"] is False
+    assert result.packet["raw_search_response_retained"] is False
+    assert result.packet["raw_prompt_retained"] is False
+    assert result.packet["raw_model_response_retained"] is False
 
 
 def test_missing_or_mismatched_content_reference_fails_before_model_review(

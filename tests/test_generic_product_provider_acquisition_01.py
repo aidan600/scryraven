@@ -26,10 +26,12 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from core.fetch_read_content_reference import FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
 from core.generic_product_provider_acquisition import (
     BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_CREDENTIAL_UNAVAILABLE,
     BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE,
     PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND,
+    PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS,
     ProductProviderAcquisitionRequest,
     build_generic_product_provider_acquisition_runner,
 )
@@ -93,10 +95,68 @@ def test_tavily_product_provider_results_normalize_raw_content(
     assert record["provider_extracted_text_digest"] == _provider_text_digest(
         extracted_text
     )
+    assert record["provider_extracted_source_text_digest"] == _provider_text_digest(
+        extracted_text
+    )
     assert record["provider_extracted_content_type"] == "text/html"
     assert record["raw_provider_payload_retained"] is False
     assert record["raw_search_response_retained"] is False
     assert "raw_content" not in record
+
+
+def test_tavily_product_provider_preserves_source_digest_above_fetch_window_cap(
+    tmp_path: Path,
+) -> None:
+    prefix = "Agency fee schedule background. " * 120
+    answer = "The current filing fee is $42 for this synthetic source. "
+    suffix = "Additional sanitized provider-extracted source text. " * 120
+    extracted_text = " ".join(f"{prefix}{answer}{suffix}".split())
+    assert len(extracted_text) > FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
+    assert len(extracted_text) < PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS
+
+    def fake_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        return (
+            [
+                {
+                    "title": "Official Fee Schedule",
+                    "url": "https://fees.agency.gov/current",
+                    "snippet": "Official current fee schedule.",
+                    "raw_content": extracted_text,
+                }
+            ],
+            [],
+        )
+
+    output_path = tmp_path / "provider-long.json"
+    runner = build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    result = runner(
+        ProductProviderAcquisitionRequest(
+            repo_root=tmp_path,
+            output_path=output_path,
+            query="official current fee schedule",
+            provider="tavily",
+            max_results=5,
+        )
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    record = payload["results"][0]
+
+    assert result.return_code == 0
+    assert record["provider_extracted_text"] == extracted_text
+    assert record["provider_extracted_text_char_count"] == len(extracted_text)
+    assert record["provider_extracted_text_digest"] == _provider_text_digest(
+        extracted_text
+    )
+    assert record["provider_extracted_source_text_digest"] == _provider_text_digest(
+        extracted_text
+    )
+    assert record["provider_extracted_text_bounded"] is True
+    assert record["provider_extracted_text_sanitized"] is True
+    assert record["raw_provider_payload_retained"] is False
+    assert record["raw_search_response_retained"] is False
 
 
 def test_neutral_domain_constraints_map_inside_current_tavily_adapter(

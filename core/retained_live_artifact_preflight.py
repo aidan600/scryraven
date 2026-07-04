@@ -75,6 +75,7 @@ ALLOWED_PROVIDER_RESULT_KEYS = frozenset(
         "provider_call_index",
         "provider_extracted_text_char_count",
         "provider_extracted_text_digest",
+        "provider_extracted_source_text_digest",
         "provider_extracted_content_type",
         "provider_extracted_at",
         "raw_provider_payload_retained",

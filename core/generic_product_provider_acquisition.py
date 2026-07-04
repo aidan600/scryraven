@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlparse
 
-from core.fetch_read_content_reference import FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
 from core.search_providers import search_scout_results, search_web_results
 
 PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND = (
@@ -34,6 +33,7 @@ DEFAULT_SCOUT_PROVIDER = "serper"
 DEFAULT_OPERATION = "search"
 DEFAULT_MAX_RESULTS = 5
 PROVIDER_EXTRACTED_CONTENT_TYPE = "text/html"
+PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS = 20_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -246,6 +246,9 @@ def normalize_tavily_product_provider_results(
                     "provider_extracted_text_digest": _digest_provider_text(
                         extracted_text
                     ),
+                    "provider_extracted_source_text_digest": _digest_provider_text(
+                        extracted_text
+                    ),
                     "provider_extracted_content_type": (
                         PROVIDER_EXTRACTED_CONTENT_TYPE
                     ),
@@ -375,7 +378,7 @@ def _digest_provider_text(text: str) -> str:
 
 
 def _bounded_provider_text(value: Any) -> str | None:
-    text = _clean_text(value, limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS)
+    text = _clean_text(value, limit=PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS)
     return text or None
 
 
@@ -477,6 +480,7 @@ __all__ = [
     "ProductProviderAcquisitionRequest",
     "ProductProviderAcquisitionResult",
     "ProductProviderAcquisitionRunner",
+    "PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS",
     "build_generic_product_provider_acquisition_runner",
     "normalize_scout_product_provider_results",
     "normalize_tavily_product_provider_results",

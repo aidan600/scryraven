@@ -24,9 +24,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+import proplex.mvp_single_relation_live_dogfood_run as dogfood
+from core.fetch_read_content_reference import FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
 from proplex.mvp_single_relation_live_dogfood_run import (
     ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED,
+    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
     DEFAULT_OUTPUT_DIR,
     build_generic_single_relation_live_dogfood_run_output,
 )
@@ -41,6 +44,126 @@ from tests.test_generic_single_relation_live_dogfood_01 import (
 )
 
 SSA_WAGE_BASE_QUERY = "What is the current SSA taxable maximum wage base for 2026?"
+
+
+def test_provider_extracted_source_digest_lineage_inside_window_cap(
+    tmp_path: Path,
+) -> None:
+    extracted_text = (
+        "USCIS Form N-400 paper filing fee schedule. The current Form N-400 "
+        "paper filing fee is $760 in this synthetic provider-extracted fixture."
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="candidate-window-source-digest-within-cap",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_extracted_result(
+                    "Synthetic N-400 Fee Schedule",
+                    "https://example.invalid/n400-fee-schedule",
+                    extracted_text,
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    fetch_packet = _retained_fetch_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    selection = reference["bounded_text_selection"]
+    source_digest = dogfood._digest_json({"provider_extracted_text": extracted_text})
+
+    assert reference["provider_extracted_source_text_digest"] == source_digest
+    assert reference["excerpt_digest"] == selection["bounded_text_digest"]
+    assert reference["bounded_character_count"] == selection["bounded_text_char_count"]
+    assert reference["excerpt_digest"] != source_digest
+
+    diagnostic = result.packet["answer_bearing_candidate_window_diagnostics"][0]
+    assert diagnostic["provider_extracted_source_text_digest"] == source_digest
+    assert diagnostic["bounded_content_digest"] == reference["excerpt_digest"]
+    assert diagnostic["selected_window_digest"] == reference["excerpt_digest"]
+    assert diagnostic["source_text_digest_distinct_from_selected_window_digest"] is True
+    assert result.packet["raw_provider_payload_retained"] is False
+    assert result.packet["raw_search_response_retained"] is False
+
+
+def test_provider_extracted_selected_window_digest_is_not_full_source_digest(
+    tmp_path: Path,
+) -> None:
+    prefix = "Naturalization eligibility background without a fee amount. " * 80
+    answer = (
+        "USCIS Form N-400 paper filing fee schedule. The current Form N-400 "
+        "paper filing fee is $760 in this synthetic provider-extracted source. "
+    )
+    suffix = "Additional sanitized provider-extracted background material. " * 80
+    extracted_text = " ".join(f"{prefix}{answer}{suffix}".split())
+    assert len(extracted_text) > FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="candidate-window-long-source-digest",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_extracted_result(
+                    "Synthetic N-400 Long Fee Schedule",
+                    "https://example.invalid/n400-long-fee-schedule",
+                    extracted_text,
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    assert result.decision != BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert result.packet["blocker_detail"] != (
+        "sanitized provider result extracted text digest mismatch."
+    )
+
+    fetch_packet = _retained_fetch_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    selection = reference["bounded_text_selection"]
+    source_digest = dogfood._digest_json({"provider_extracted_text": extracted_text})
+
+    assert reference["bounded_text"] != extracted_text
+    assert reference["bounded_character_count"] <= FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
+    assert reference["provider_extracted_source_text_digest"] == source_digest
+    assert reference["excerpt_digest"] == selection["bounded_text_digest"]
+    assert reference["excerpt_digest"] != source_digest
+    assert selection["selected_window_end_offset"] - selection[
+        "selected_window_start_offset"
+    ] == reference["bounded_character_count"]
+
+    diagnostic = result.packet["answer_bearing_candidate_window_diagnostics"][0]
+    assert diagnostic["provider_extracted_source_text_digest"] == source_digest
+    assert diagnostic["provider_extracted_source_text_char_count"] == len(
+        extracted_text
+    )
+    assert diagnostic["bounded_content_digest"] == reference["excerpt_digest"]
+    assert diagnostic["bounded_content_char_count"] == reference[
+        "bounded_character_count"
+    ]
+    assert diagnostic["selected_window_digest"] == reference["excerpt_digest"]
+    assert diagnostic["source_text_digest_distinct_from_selected_window_digest"] is True
+    assert result.packet["candidate_selection_created_source_authority"] is False
+    assert result.packet["candidate_selection_citation_eligible"] is False
+    assert result.packet["candidate_selection_satisfies_source_obligation"] is False
+    assert result.packet["product_correctness_claimed"] is False
+    assert result.packet["fap_author_opened"] is False
+    assert result.packet["raw_provider_payload_retained"] is False
+    assert result.packet["raw_search_response_retained"] is False
 
 
 def test_later_provider_extracted_candidate_with_currency_window_is_selected(

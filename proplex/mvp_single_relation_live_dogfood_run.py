@@ -48,6 +48,7 @@ from core.fetch_read_content_reference import (
 from core.generic_product_provider_acquisition import (
     BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_CREDENTIAL_UNAVAILABLE,
     BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE,
+    PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS,
     ProductProviderAcquisitionRequest,
     ProductProviderAcquisitionResult,
     ProductProviderAcquisitionRunner,
@@ -402,6 +403,7 @@ _ALLOWED_PROVIDER_RESULT_KEYS = frozenset(
         "provider_extracted_text_bounded",
         "provider_extracted_text_char_count",
         "provider_extracted_text_digest",
+        "provider_extracted_source_text_digest",
         "provider_extracted_content_type",
         "provider_extracted_at",
         "raw_provider_payload_retained",
@@ -3396,6 +3398,9 @@ def _retained_provider_payload_for_candidate_packet(
                 "provider_extracted_text_digest": safe.get(
                     "provider_extracted_text_digest"
                 ),
+                "provider_extracted_source_text_digest": safe.get(
+                    "provider_extracted_source_text_digest"
+                ),
                 "provider_extracted_content_type": safe.get(
                     "provider_extracted_content_type"
                 ),
@@ -3996,6 +4001,9 @@ def _candidate_diagnostics_from_provider_results(
                     result.get("provider_extracted_text_char_count"),
                     default=len(_provider_extracted_text(result) or ""),
                 ),
+                "provider_extracted_source_text_digest": (
+                    _provider_extracted_source_text_digest(result)
+                ),
                 "provider_extracted_source_content_can_feed_custody": (
                     provider_extracted_text_obtained
                 ),
@@ -4474,11 +4482,26 @@ def _provider_results_by_candidate_id(
 
 
 def _provider_extracted_text(provider_result: Mapping[str, Any]) -> str | None:
-    text = _clean_text(
-        provider_result.get("provider_extracted_text"),
-        limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
+    text = _clean_provider_extracted_source_text(
+        provider_result.get("provider_extracted_text")
     )
     return text or None
+
+
+def _provider_extracted_source_text_digest(
+    provider_result: Mapping[str, Any],
+) -> str | None:
+    declared = _clean_text(
+        provider_result.get("provider_extracted_source_text_digest")
+        or provider_result.get("provider_extracted_text_digest"),
+        limit=128,
+    )
+    if declared:
+        return declared
+    text = _provider_extracted_text(provider_result)
+    if not text:
+        return None
+    return _digest_json({"provider_extracted_text": text})
 
 
 def _provider_extracted_candidate_window_evaluations(
@@ -4599,6 +4622,7 @@ def _candidate_window_diagnostic(
     selected: bool,
 ) -> dict[str, Any]:
     provider_text = _provider_extracted_text(provider_result) or ""
+    provider_source_digest = _provider_extracted_source_text_digest(provider_result)
     features = _safe_mapping(candidate.get("candidate_selection_features"))
     result_rank = _bounded_int(candidate.get("result_rank"), default=0)
     priority_rank = _bounded_int(candidate.get("fetch_read_priority_rank"), default=0)
@@ -4617,12 +4641,16 @@ def _candidate_window_diagnostic(
         "title": _clean_text(candidate.get("title"), limit=220),
         "domain": _clean_domain(candidate.get("domain")),
         "url": _clean_text(candidate.get("url"), limit=700),
-        "bounded_content_digest": _digest_json(
-            {"provider_extracted_text": provider_text}
-        ),
-        "bounded_content_char_count": len(provider_text),
+        "provider_extracted_source_text_digest": provider_source_digest,
+        "provider_extracted_source_text_char_count": len(provider_text),
+        "bounded_content_digest": selection.bounded_text_digest,
+        "bounded_content_char_count": selection.bounded_text_char_count,
         "selected_window_digest": selection.bounded_text_digest,
         "selected_window_char_count": selection.bounded_text_char_count,
+        "source_text_digest_distinct_from_selected_window_digest": (
+            bool(provider_source_digest)
+            and provider_source_digest != selection.bounded_text_digest
+        ),
         "required_anchor_count": selection.required_anchor_count,
         "matched_anchor_count": selection.matched_anchor_count,
         "missing_anchor_count": len(selection.missing_anchors),
@@ -4700,6 +4728,17 @@ def _apply_candidate_window_diagnostics(
         diagnostic["selected_window_char_count"] = window_diagnostic[
             "selected_window_char_count"
         ]
+        diagnostic["provider_extracted_source_text_digest"] = window_diagnostic[
+            "provider_extracted_source_text_digest"
+        ]
+        diagnostic["provider_extracted_source_text_char_count"] = window_diagnostic[
+            "provider_extracted_source_text_char_count"
+        ]
+        diagnostic[
+            "source_text_digest_distinct_from_selected_window_digest"
+        ] = window_diagnostic[
+            "source_text_digest_distinct_from_selected_window_digest"
+        ]
         diagnostic["bounded_content_digest"] = window_diagnostic[
             "bounded_content_digest"
         ]
@@ -4759,6 +4798,7 @@ def _provider_extracted_fetch_read_material(
     selection: BoundedTextSelection,
 ) -> dict[str, Any]:
     bounded_text = selection.bounded_text
+    provider_text = _provider_extracted_text(provider_result) or ""
     provider = _clean_text(provider_result.get("provider"), limit=80) or DEFAULT_PROVIDER
     content_type = (
         _content_type_or_unknown(provider_result.get("provider_extracted_content_type"))
@@ -4786,8 +4826,8 @@ def _provider_extracted_fetch_read_material(
         "content_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
         "content_acquisition_provider": provider,
         "provider_extracted_source_content": True,
-        "provider_extracted_source_text_digest": _digest_json(
-            {"provider_extracted_text": _provider_extracted_text(provider_result)}
+        "provider_extracted_source_text_digest": (
+            _provider_extracted_source_text_digest(provider_result)
         ),
         "provider_extracted_source_text_bounded": True,
         "provider_extracted_source_text_sanitized": True,
@@ -4803,7 +4843,7 @@ def _provider_extracted_fetch_read_material(
         "retrieved_or_observed_at": observed_at,
         "published_or_observed_date": candidate.get("published_or_observed_date"),
         "content_title": candidate.get("title"),
-        "content_length": len(_provider_extracted_text(provider_result) or ""),
+        "content_length": len(provider_text),
         "redirect_chain_digest": None,
         "redirect_count": 0,
         "bounded_text": bounded_text,
@@ -4854,6 +4894,9 @@ def _provider_extracted_content_diagnostic(
         "provider_extracted_text_char_count": _bounded_int(
             provider_result.get("provider_extracted_text_char_count"),
             default=len(_provider_extracted_text(provider_result) or ""),
+        ),
+        "provider_extracted_source_text_digest": (
+            _provider_extracted_source_text_digest(provider_result)
         ),
         "candidate_selection_policy_id": FETCH_READ_CANDIDATE_SELECTION_POLICY_ID,
         "candidate_selection_policy_scope": FETCH_READ_CANDIDATE_SELECTION_SCOPE,
@@ -5414,27 +5457,31 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
     domain = _clean_domain(raw.get("domain")) or (
         urlparse(url).netloc.lower() if url and urlparse(url).netloc else None
     )
-    provider_extracted_text = _clean_text(
-        raw.get("provider_extracted_text"),
-        limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
+    provider_extracted_text = _clean_provider_extracted_source_text(
+        raw.get("provider_extracted_text")
     )
     provider_extracted_text_digest = (
         _digest_json({"provider_extracted_text": provider_extracted_text})
         if provider_extracted_text
         else None
     )
-    declared_provider_extracted_digest = _clean_text(
-        raw.get("provider_extracted_text_digest"),
-        limit=128,
-    )
-    if (
-        declared_provider_extracted_digest
-        and declared_provider_extracted_digest != provider_extracted_text_digest
-    ):
-        raise GenericSingleRelationLiveDogfoodRunError(
-            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
-            "sanitized provider result extracted text digest mismatch.",
+    declared_provider_extracted_digests = tuple(
+        digest
+        for digest in (
+            _clean_text(raw.get("provider_extracted_text_digest"), limit=128),
+            _clean_text(
+                raw.get("provider_extracted_source_text_digest"),
+                limit=128,
+            ),
         )
+        if digest
+    )
+    for declared_provider_extracted_digest in declared_provider_extracted_digests:
+        if declared_provider_extracted_digest != provider_extracted_text_digest:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+                "sanitized provider result extracted text digest mismatch.",
+            )
     declared_provider_extracted_count = _bounded_int(
         raw.get("provider_extracted_text_char_count"),
         default=len(provider_extracted_text or ""),
@@ -5484,6 +5531,7 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
             len(provider_extracted_text) if provider_extracted_text else 0
         ),
         "provider_extracted_text_digest": provider_extracted_text_digest,
+        "provider_extracted_source_text_digest": provider_extracted_text_digest,
         "provider_extracted_content_type": _content_type_or_unknown(
             raw.get("provider_extracted_content_type")
             or PROVIDER_EXTRACTED_CONTENT_TYPE
@@ -6140,6 +6188,16 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
         )
     text = " ".join(str(value).strip().split())
     return text[:limit] if text else None
+
+
+def _clean_provider_extracted_source_text(value: Any) -> str | None:
+    text = _clean_text(value, limit=PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS + 1)
+    if text and len(text) > PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            "sanitized provider result extracted text exceeds source-text cap.",
+        )
+    return text
 
 
 def _clean_domain(value: Any) -> str | None:
