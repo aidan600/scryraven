@@ -83,17 +83,26 @@ refs, source-authority posture requirement ref, and D-prime relation-intake
 posture come from the relation plan rather than from the fixed passport dogfood
 path.
 
-Fetch/read attempts use a local, packet-visible acquisition-priority policy over
-the already-sanitized provider candidates. The policy may prefer
-official/source-of-record-looking candidates under the existing fetch/read cap,
-but it is acquisition only: it does not decide source authority, satisfy source
-obligations, make candidates citation-eligible, claim correctness, or use
-provider snippets as evidence. PDF-looking candidates may be attempted, but PDF
-parsing/support remains closed and PDF content type failures remain diagnostic
-until a later PDF phase opens that surface.
+Source acquisition now uses a minimal local acquisition planner over the
+relation plan. For clear single-relation queries, including the licensed N-400
+dogfood query, Serper scout calls are expected to be `0`. Serper is used only as
+a cheap ambiguity scout when the planner records a concrete ambiguity, and its
+output remains non-evidence directionality.
+
+The happy path asks the configured extraction-capable provider for
+source-bound extracted content first. Provider-extracted source text may be
+admitted only through the bounded fetch/read custody packet with original
+URL/title/domain/provider metadata preserved. Provider answer products,
+`sourcedAnswer`, snippets, summaries, and provider-written prose remain bridge
+or context only; they must not become ScryRaven evidence or answer text.
+Direct public URL fetch/read remains fallback or diagnostic only, not the
+primary acquisition path. Candidate ordering and provider-extracted custody are
+acquisition only: they do not decide source authority, satisfy source
+obligations, make candidates citation-eligible, claim correctness, or open PDF
+support.
 
 If all selected official/source-of-record-looking public-web candidates return
-HTTP 4xx under the existing fetch/read cap, the run reports
+HTTP 4xx during the direct fetch/read fallback, the run reports
 `BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX`. That
 is an HTTP source-survival blocker, not source authority, evidence support,
 citation eligibility, source-obligation satisfaction, PDF support, FAP/Author,

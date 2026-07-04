@@ -16,10 +16,15 @@ if str(ROOT) not in sys.path:
 from scripts import request_provider_proxy_broker as client  # noqa: E402
 
 SERPER_KEY_ENV_VAR = "SERPER_API_KEY"
+TAVILY_KEY_ENV_VAR = "TAVILY_API_KEY"
 DEFAULT_PRIVATE_BROKER_PATH = (
     Path.home() / "ScryRavenLiveBroker" / "scryraven_live_broker.py"
 )
-LOCAL_PROVIDER_ENV_NAMES = frozenset({SERPER_KEY_ENV_VAR})
+PROVIDER_KEY_ENV_VAR = {
+    "serper": SERPER_KEY_ENV_VAR,
+    "tavily": TAVILY_KEY_ENV_VAR,
+}
+LOCAL_PROVIDER_ENV_NAMES = frozenset(PROVIDER_KEY_ENV_VAR.values())
 
 
 class ProviderProxyOperatorError(ValueError):
@@ -130,9 +135,10 @@ def broker_environment(
     process_env: Mapping[str, str],
 ) -> dict[str, str]:
     provider_key = _provider_api_key(provider, env_file_paths, process_env)
+    provider_env_var = _provider_env_var(provider)
     env: dict[str, str] = {
         client.TOKEN_ENV_VAR: token,
-        SERPER_KEY_ENV_VAR: provider_key,
+        provider_env_var: provider_key,
         "PYTHONIOENCODING": "utf-8",
     }
     for name in ("PATH", "SystemRoot", "TEMP", "TMP"):
@@ -229,18 +235,26 @@ def _provider_api_key(
     env_file_paths: list[str],
     process_env: Mapping[str, str],
 ) -> str:
-    if provider != "serper":
+    env_var = PROVIDER_KEY_ENV_VAR.get(provider)
+    if env_var is None:
         raise ProviderProxyOperatorError("provider is not supported by the local operator")
-    existing = process_env.get(SERPER_KEY_ENV_VAR)
+    existing = process_env.get(env_var)
     if existing:
         return existing
     for env_file_path in env_file_paths:
-        value = load_env_file_values(env_file_path).get(SERPER_KEY_ENV_VAR)
+        value = load_env_file_values(env_file_path).get(env_var)
         if value:
             return value
     raise ProviderProxyOperatorError(
-        f"{SERPER_KEY_ENV_VAR} must be present in the operator process or explicit env file"
+        f"{env_var} must be present in the operator process or explicit env file"
     )
+
+
+def _provider_env_var(provider: str) -> str:
+    env_var = PROVIDER_KEY_ENV_VAR.get(provider)
+    if env_var is None:
+        raise ProviderProxyOperatorError("provider is not supported by the local operator")
+    return env_var
 
 
 def _private_broker_path(path: str) -> Path:

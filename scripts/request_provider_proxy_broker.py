@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -16,9 +17,10 @@ TOKEN_HEADER = "X-ScryRaven-Broker-Token"
 REQUEST_KIND = "generic_provider_proxy_request"
 OUTPUT_HYGIENE_DECISION = "BLOCKED_OUTPUT_HYGIENE"
 OUTPUT_PREFLIGHT_SENTINEL = ".scryraven_provider_proxy_output_preflight.tmp"
-SUPPORTED_PROVIDERS = frozenset({"serper"})
+SUPPORTED_PROVIDERS = frozenset({"serper", "tavily"})
 SUPPORTED_OPERATIONS = frozenset({"search"})
 MAX_RESULTS_CAP = 10
+MAX_PROVIDER_EXTRACTED_TEXT_CHARS = 2_000
 
 ALLOWED_RESULT_KEYS = frozenset(
     {
@@ -26,7 +28,9 @@ ALLOWED_RESULT_KEYS = frozenset(
         "url",
         "link",
         "domain",
+        "content",
         "snippet",
+        "raw_content",
         "date",
         "published_or_observed_date",
         "rank",
@@ -189,7 +193,10 @@ def sanitize_broker_response(
     operation: str,
 ) -> dict[str, Any]:
     response = _safe_mapping(response_json)
-    _reject_forbidden_keys(response, context="broker response")
+    response_envelope = {
+        key: value for key, value in response.items() if _normalize_key(key) != "results"
+    }
+    _reject_forbidden_keys(response_envelope, context="broker response")
     if response.get("raw_provider_payload_retained") is not False:
         raise ProviderProxyClientError("broker response must not retain raw provider payloads")
     if response.get("raw_search_response_retained") is not False:
@@ -198,7 +205,12 @@ def sanitize_broker_response(
     if not isinstance(raw_results, list):
         raise ProviderProxyClientError("broker response results must be a list")
     results = [
-        normalize_provider_result(result, default_rank=index, default_call_index=index)
+        normalize_provider_result(
+            result,
+            provider=provider,
+            default_rank=index,
+            default_call_index=index,
+        )
         for index, result in enumerate(raw_results, start=1)
     ]
     return {
@@ -298,11 +310,16 @@ def print_output_hygiene_failure_summary(exc: OutputHygieneError) -> None:
 def normalize_provider_result(
     result: Mapping[str, Any],
     *,
+    provider: str,
     default_rank: int,
     default_call_index: int,
 ) -> dict[str, Any]:
     raw = _safe_mapping(result)
-    _reject_forbidden_keys(raw, context="provider result")
+    _reject_forbidden_keys(
+        raw,
+        context="provider result",
+        allow_tavily_result_extraction=provider == "tavily",
+    )
     unknown = sorted(set(raw) - ALLOWED_RESULT_KEYS)
     if unknown:
         raise ProviderProxyClientError(
@@ -317,12 +334,14 @@ def normalize_provider_result(
     domain = _clean_domain(raw.get("domain")) or _domain_from_url(url)
     if not domain:
         raise ProviderProxyClientError("provider result requires domain")
+    snippet = _clean_token(raw.get("snippet") or raw.get("content"), limit=500)
+    provider_extracted_text = _provider_extracted_text(raw, provider=provider)
     return _without_empty(
         {
             "title": title,
             "url": url,
             "domain": domain,
-            "snippet": _clean_token(raw.get("snippet"), limit=500),
+            "snippet": snippet,
             "published_or_observed_date": _clean_token(
                 raw.get("published_or_observed_date") or raw.get("date"),
                 limit=80,
@@ -336,6 +355,24 @@ def normalize_provider_result(
                 or raw.get("call_index")
                 or default_call_index,
                 "provider result call index must be positive",
+            ),
+            "provider_extracted_text": provider_extracted_text,
+            "provider_extracted_text_sanitized": (
+                True if provider_extracted_text else None
+            ),
+            "provider_extracted_text_bounded": (
+                True if provider_extracted_text else None
+            ),
+            "provider_extracted_text_char_count": (
+                len(provider_extracted_text) if provider_extracted_text else None
+            ),
+            "provider_extracted_text_digest": (
+                _digest_text(provider_extracted_text)
+                if provider_extracted_text
+                else None
+            ),
+            "provider_extracted_content_type": (
+                "text/html" if provider_extracted_text else None
             ),
         }
     )
@@ -410,7 +447,28 @@ def _safe_output_path(path: Path) -> str:
         return str(path.resolve())
 
 
-def _reject_forbidden_keys(value: Any, *, context: str) -> None:
+def _provider_extracted_text(raw: Mapping[str, Any], *, provider: str) -> str | None:
+    if provider != "tavily":
+        return None
+    text = _clean_token(raw.get("raw_content"), limit=MAX_PROVIDER_EXTRACTED_TEXT_CHARS)
+    return text or None
+
+
+def _digest_text(text: str) -> str:
+    encoded = json.dumps(
+        {"provider_extracted_text": text},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _reject_forbidden_keys(
+    value: Any,
+    *,
+    context: str,
+    allow_tavily_result_extraction: bool = False,
+) -> None:
     keys = _collect_keys(value)
     forbidden = sorted(
         key
@@ -423,6 +481,8 @@ def _reject_forbidden_keys(value: Any, *, context: str) -> None:
     ):
         if allowed_false_flag in forbidden:
             forbidden.remove(allowed_false_flag)
+    if allow_tavily_result_extraction and "raw_content" in forbidden:
+        forbidden.remove("raw_content")
     if forbidden:
         raise ProviderProxyClientError(
             f"{context} contains raw/private fields: " + ", ".join(forbidden)

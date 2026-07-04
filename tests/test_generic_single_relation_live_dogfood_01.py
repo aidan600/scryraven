@@ -467,7 +467,9 @@ def test_official_http_4xx_returns_sharp_source_survival_blocker(
         result.packet["http_source_survival_domain_specific_url_fallback_opened"]
         is False
     )
-    assert result.packet["provider_routing_changed"] is False
+    assert result.packet["provider_routing_changed"] is True
+    assert result.packet["direct_url_fetch_primary_happy_path"] is False
+    assert result.packet["direct_url_fetch_fallback_or_diagnostic_only"] is True
     assert result.packet["provider_query_generation_changed"] is False
     assert result.packet["fetch_read_cap_preserved"] is True
     assert result.packet["fetch_read_cap_value"] == 3
@@ -480,6 +482,127 @@ def test_official_http_4xx_returns_sharp_source_survival_blocker(
     assert "- Fetch/read failure categories: HTTP_4XX=3" in formatted
     assert "- Official HTTP source-survival blocker active: true" in formatted
     assert len(fetch_urls) == 3
+
+
+def test_clear_query_uses_extraction_provider_before_direct_fetch(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    fetch_urls: list[str] = []
+    extracted_text = "USCIS lists the current Form N-400 paper filing fee as $760."
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="clear-query-provider-extracted",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                    extracted_text,
+                )
+            ],
+        ),
+        fetch_read_runner=_recording_fake_fetch_runner(fetch_urls, "unused"),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    assert [call.provider for call in calls] == ["tavily"]
+    assert calls[0].query == plan["search_query_seeds"][0]
+    assert fetch_urls == []
+    assert result.packet["fast_planner_used"] is True
+    assert result.packet["planner_marked_ambiguity"] is False
+    assert result.packet["serper_scout_calls_attempted"] == 0
+    assert result.packet["extraction_provider"] == "tavily"
+    assert result.packet["extraction_provider_calls_attempted"] == 1
+    assert result.packet["provider_extracted_content_obtained"] is True
+    assert result.packet["provider_extracted_original_url_bindings_preserved"] is True
+    assert result.packet["source_acquisition_mode"] == (
+        "provider_extracted_source_content"
+    )
+    assert result.packet["direct_fetch_read_attempts"] == 0
+    assert result.packet["fetch_read_attempts"] == 0
+    assert result.packet["fetch_read_completed"] == 1
+    assert result.packet["evidence_ledger_admissions"] == 1
+    assert result.packet["serper_used_as_primary_source_acquisition"] is False
+    assert result.packet["provider_answer_products_used"] is False
+    assert result.packet["provider_sourced_answer_used"] is False
+    assert result.packet["provider_snippets_used_as_evidence"] is False
+    assert result.packet["actual_source_authority_posture_created"] is False
+    assert result.packet["candidate_selection_satisfies_source_obligation"] is False
+    fetch_packet = _retained_fetch_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    assert reference["content_acquisition_mode"] == (
+        "provider_extracted_source_content"
+    )
+    assert reference["content_acquisition_provider"] == "tavily"
+    assert reference["provider_extracted_source_content"] is True
+    assert reference["original_source_url"] == "https://www.uscis.gov/forms/filing-fees"
+    assert reference["candidate_url"] == "https://www.uscis.gov/forms/filing-fees"
+    assert reference["bounded_text"] == extracted_text
+    assert reference["raw_provider_payload_retained"] is False
+    assert reference["raw_search_response_retained"] is False
+    assert reference["not_citation_eligible"] is True
+    assert reference["not_source_obligation_satisfaction"] is True
+
+
+def test_ambiguous_query_uses_serper_scout_then_extraction_provider(
+    tmp_path: Path,
+) -> None:
+    query = "What is the current filing fee for the form?"
+    calls: list[GenericProviderProxyRunRequest] = []
+    extracted_text = "USCIS lists the current Form N-400 paper filing fee as $760."
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=query,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="ambiguous-query-serper-scout",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_routing_proxy_runner(
+            calls,
+            {
+                "serper": [
+                    _provider_result(
+                        "USCIS Form N-400 Filing Fee",
+                        "https://www.uscis.gov/forms/filing-fees",
+                    )
+                ],
+                "tavily": [
+                    _provider_extracted_result(
+                        "USCIS Form N-400 Filing Fee",
+                        "https://www.uscis.gov/forms/filing-fees",
+                        extracted_text,
+                    )
+                ],
+            },
+        ),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert [call.provider for call in calls] == ["serper", "tavily"]
+    assert result.packet["planner_marked_ambiguity"] is True
+    assert result.packet["run_kernel_local_accounting_authorized_disambiguation"] is True
+    assert result.packet["serper_scout_calls_attempted"] == 1
+    assert result.packet["serper_output_recorded_as_non_evidence"] is True
+    assert result.packet["serper_output_used_as_evidence"] is False
+    assert result.packet["disambiguation_record"]["observations"][0]["not_evidence"] is True
+    assert result.packet["fast_planner_output"]["serper_scout_used"] is True
+    assert result.packet["fast_planner_output"]["planner_revision_source"] == (
+        "serper_directionality_bridge_term"
+    )
+    assert result.packet["extraction_provider_calls_attempted"] == 1
+    assert result.packet["provider_extracted_content_obtained"] is True
+    assert result.packet["direct_fetch_read_attempts"] == 0
 
 
 def test_pdf_content_type_is_diagnostic_only_unsupported_content_type(
@@ -1309,8 +1432,39 @@ def _recording_proxy_runner(
         calls.append(request)
         payload = {
             "request_kind": "provider_proxy_search",
-            "provider": "serper",
-            "operation": "search",
+            "provider": request.provider,
+            "operation": request.operation,
+            "result_count": len(results),
+            "results": results,
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+        }
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        request.output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return GenericProviderProxyRunResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+        )
+
+    return runner
+
+
+def _routing_proxy_runner(
+    calls: list[GenericProviderProxyRunRequest],
+    results_by_provider: Mapping[str, list[dict[str, Any]]],
+) -> Any:
+    def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
+        calls.append(request)
+        results = results_by_provider.get(request.provider, [])
+        payload = {
+            "request_kind": "provider_proxy_search",
+            "provider": request.provider,
+            "operation": request.operation,
             "result_count": len(results),
             "results": results,
             "raw_provider_payload_retained": False,
@@ -1453,6 +1607,30 @@ def _provider_result(title: str, url: str, *, rank: int = 1) -> dict[str, Any]:
     }
 
 
+def _provider_extracted_result(
+    title: str,
+    url: str,
+    extracted_text: str,
+    *,
+    rank: int = 1,
+) -> dict[str, Any]:
+    result = _provider_result(title, url, rank=rank)
+    result.update(
+        {
+            "provider_extracted_text": extracted_text,
+            "provider_extracted_text_sanitized": True,
+            "provider_extracted_text_bounded": True,
+            "provider_extracted_text_char_count": len(extracted_text),
+            "provider_extracted_text_digest": dogfood._digest_json(
+                {"provider_extracted_text": extracted_text}
+            ),
+            "provider_extracted_content_type": "text/html",
+            "provider_extracted_at": "2026-07-03T00:00:00+00:00",
+        }
+    )
+    return result
+
+
 def _provider_link_result(title: str, link: str, *, rank: int = 1) -> dict[str, Any]:
     result = _provider_result(title, link, rank=rank)
     result["link"] = result.pop("url")
@@ -1517,6 +1695,12 @@ def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str,
 
 def _small_claims_url() -> str:
     return "https://example-county.invalid/small-claims-fees"
+
+
+def _retained_fetch_packet(result: Any) -> dict[str, Any]:
+    root = Path(result.retained_artifact_root)
+    path = root / dogfood.FETCH_READ_ARTIFACT_DIR / dogfood.FETCH_READ_CONTENT_PACKET_NAME
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _module_static_shape(path: Path) -> tuple[set[str], set[str]]:

@@ -19,6 +19,8 @@ from core.search_result_candidate_packet import (
 )
 
 DEFAULT_PROVIDER = "serper"
+EXTRACTION_PROVIDER = "tavily"
+ALLOWED_PROVIDERS = frozenset({DEFAULT_PROVIDER, EXTRACTION_PROVIDER})
 DEFAULT_OPERATION = "search"
 MAX_RESULTS = 5
 CURRENT_RUN_CANDIDATE_PACKET_NAME = "search_candidate_packet.json"
@@ -71,6 +73,10 @@ ALLOWED_PROVIDER_RESULT_KEYS = frozenset(
         "result_rank",
         "call_index",
         "provider_call_index",
+        "provider_extracted_text_char_count",
+        "provider_extracted_text_digest",
+        "provider_extracted_content_type",
+        "provider_extracted_at",
         "raw_provider_payload_retained",
         "raw_search_response_retained",
     }
@@ -469,7 +475,7 @@ def _validate_provider_results_envelope(decoded: Mapping[str, Any]) -> dict[str,
         "provider results envelope requires operation",
         80,
     )
-    if provider != DEFAULT_PROVIDER:
+    if provider not in ALLOWED_PROVIDERS:
         raise RetainedLiveArtifactPreflightError(
             "provider results provider mismatch"
         )

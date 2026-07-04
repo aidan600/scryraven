@@ -338,6 +338,39 @@ def test_sanitizer_rejects_raw_or_private_fields(forbidden: str) -> None:
         )
 
 
+def test_sanitizer_converts_tavily_result_raw_content_to_extracted_text() -> None:
+    response = _sample_broker_response()
+    response["results"][0]["raw_content"] = "Official source text. " * 20
+
+    sanitized = client.sanitize_broker_response(
+        response,
+        provider="tavily",
+        operation="search",
+    )
+
+    result = sanitized["results"][0]
+    assert "raw_content" not in result
+    assert result["provider_extracted_text"].startswith("Official source text.")
+    assert result["provider_extracted_text_sanitized"] is True
+    assert result["provider_extracted_text_bounded"] is True
+    assert result["provider_extracted_text_char_count"] == len(
+        result["provider_extracted_text"]
+    )
+    assert result["provider_extracted_content_type"] == "text/html"
+
+
+def test_sanitizer_rejects_tavily_envelope_raw_content() -> None:
+    response = _sample_broker_response()
+    response["raw_content"] = "raw envelope content must not be accepted"
+
+    with pytest.raises(client.ProviderProxyClientError, match="raw/private"):
+        client.sanitize_broker_response(
+            response,
+            provider="tavily",
+            operation="search",
+        )
+
+
 def test_sanitizer_rejects_raw_retention_true() -> None:
     response = _sample_broker_response()
     response["raw_provider_payload_retained"] = True
