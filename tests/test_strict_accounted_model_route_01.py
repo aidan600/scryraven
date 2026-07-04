@@ -37,7 +37,7 @@ def test_openai_route_success_is_one_attempt_without_secret_serialization() -> N
     route_callable = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="OpenAI",
         fast_model="fast-planner",
-        credential_lookup={"OPENAI_API_KEY": "sk-test-openai-secret"}.get,
+        credential_lookup=_credential_lookup("unit-test-openai-credential"),
         client_factory=_fake_client_factory(
             calls,
             json.dumps(_proposal()),
@@ -69,7 +69,7 @@ def test_openai_route_success_is_one_attempt_without_secret_serialization() -> N
     assert "base_url" not in calls[0]["factory"]
     assert calls[0]["create"]["response_format"] == {"type": "json_object"}
     assert calls[0]["create"]["stream"] is False
-    assert "sk-test-openai-secret" not in serialized_ref
+    assert "unit-test-openai-credential" not in serialized_ref
     assert "OPENAI_API_KEY" not in serialized_ref
     assert result.to_safe_diagnostic()["credential_values_retained"] is False
 
@@ -81,7 +81,7 @@ def test_openrouter_and_local_use_provider_specific_config_without_leaking() -> 
         fast_provider="OpenRouter",
         fast_model="or-fast",
         local_url="http://localhost:5678/v1",
-        credential_lookup={"OPENROUTER_API_KEY": "sk-test-openrouter-secret"}.get,
+        credential_lookup=_credential_lookup("unit-test-openrouter-credential"),
         client_factory=_fake_client_factory(openrouter_calls, json.dumps(_proposal())),
     )
     local = route.build_strict_accounted_fast_model_planning_route(
@@ -122,7 +122,7 @@ def test_openrouter_and_local_use_provider_specific_config_without_leaking() -> 
     assert local_calls[0]["factory"]["base_url"] == "http://localhost:5678/v1"
     assert openrouter_calls[0]["factory"]["max_retries"] == 0
     assert local_calls[0]["factory"]["max_retries"] == 0
-    assert "sk-test-openrouter-secret" not in serialized_refs
+    assert "unit-test-openrouter-credential" not in serialized_refs
     assert "OPENROUTER_API_KEY" not in serialized_refs
     assert "http://localhost:5678/v1" not in serialized_refs
     assert openrouter.to_ref()["configured_local_url_posture"] == (
@@ -138,7 +138,7 @@ def test_provider_exception_is_one_attempt_no_retry_or_fallback() -> None:
     route_callable = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="OpenAI",
         fast_model="fast-planner",
-        credential_lookup={"OPENAI_API_KEY": "sk-test-openai-secret"}.get,
+        credential_lookup=_credential_lookup("unit-test-openai-credential"),
         client_factory=_fake_client_factory(calls, RuntimeError("provider down")),
     )
 
@@ -170,7 +170,7 @@ def test_unsupported_provider_and_provider_switching_fail_before_call() -> None:
     strict = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="OpenAI",
         fast_model="fast-planner",
-        credential_lookup={"OPENAI_API_KEY": "sk-test-openai-secret"}.get,
+        credential_lookup=_credential_lookup("unit-test-openai-credential"),
         client_factory=_fake_client_factory(switch_calls, json.dumps(_proposal())),
     )
 
@@ -204,7 +204,7 @@ def test_invalid_json_blocks_in_reducer_without_second_provider_call() -> None:
     route_callable = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="OpenAI",
         fast_model="fast-planner",
-        credential_lookup={"OPENAI_API_KEY": "sk-test-openai-secret"}.get,
+        credential_lookup=_credential_lookup("unit-test-openai-credential"),
         client_factory=_fake_client_factory(calls, "not json"),
     )
 
@@ -254,6 +254,13 @@ def _fake_client_factory(
         return _FakeClient(record, response_or_exc)
 
     return factory
+
+
+def _credential_lookup(value: str) -> Any:
+    def lookup(_name: str) -> str:
+        return value
+
+    return lookup
 
 
 class _FakeClient:
