@@ -372,6 +372,12 @@ def validate_model_assisted_planning_strict_route(
             route.get("configured_fast_model") or route.get("fast_model"),
             limit=120,
         ),
+        "configured_local_url_present": route.get("configured_local_url_present")
+        is True,
+        "configured_local_url_posture": _clean_text(
+            route.get("configured_local_url_posture"),
+            limit=80,
+        ),
         "max_model_calls": _bounded_int(
             route.get("max_model_calls") or route.get("max_provider_attempts"),
             default=0,

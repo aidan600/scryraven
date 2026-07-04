@@ -1629,6 +1629,16 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
             MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
             "--query",
             SMALL_CLAIMS_QUERY,
+            "--fast-provider",
+            "OpenRouter",
+            "--fast-model",
+            "fast-planner-model",
+            "--local-url",
+            "http://localhost:5678/v1",
+            "--smart-provider",
+            "OpenAI",
+            "--smart-model",
+            "smart-dprime-model",
             "--confirm-live-dogfood",
         ]
     )
@@ -1637,6 +1647,11 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert captured["query"] == SMALL_CLAIMS_QUERY
     assert captured["confirm_live_dogfood"] is True
     assert captured["confirm_live_dprime_review"] is False
+    assert captured["fast_provider"] == "OpenRouter"
+    assert captured["fast_model"] == "fast-planner-model"
+    assert captured["fast_model_local_url"] == "http://localhost:5678/v1"
+    assert captured["smart_provider"] == "OpenAI"
+    assert captured["smart_model"] == "smart-dprime-model"
     assert "broker_url" not in captured
     assert "private_broker_path" not in captured
     assert "env_file_paths" not in captured

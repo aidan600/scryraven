@@ -99,16 +99,46 @@ def test_required_live_model_planning_blocks_without_strict_route(
         confirm_live_dogfood=True,
         confirm_live_dprime_review=True,
         product_provider_acquisition_runner=_product_runner(provider_calls),
+        fast_provider="OpenRouter",
+        fast_model="configured-fast-planner",
+        fast_model_local_url="http://localhost:4321/v1",
         require_model_assisted_planning=True,
         dprime_model_review_callable=_must_not_review,
-        environ={"PYTEST_CURRENT_TEST": "test"},
+        environ={
+            "PYTEST_CURRENT_TEST": "test",
+            "TEST_SENTINEL": "fixture-marker-must-not-serialize",
+        },
     )
 
+    serialized = json.dumps(result.packet, sort_keys=True)
+    route_ref = result.packet["model_assisted_planning_packet"][
+        "strict_model_route_ref"
+    ]
     assert result.return_code == 2
     assert (
         result.decision
         == BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE
     )
+    assert result.packet["model_assisted_planning_required"] is True
+    assert result.packet["model_assisted_planning_configured_fast_provider"] == (
+        "OpenRouter"
+    )
+    assert result.packet["model_assisted_planning_configured_fast_model"] == (
+        "configured-fast-planner"
+    )
+    assert result.packet["model_assisted_planning_configured_local_url_present"] is True
+    assert result.packet["model_assisted_planning_configured_local_url_posture"] == (
+        "local_configured_not_retained"
+    )
+    assert route_ref["configured_fast_provider"] == "OpenRouter"
+    assert route_ref["configured_fast_model"] == "configured-fast-planner"
+    assert route_ref["configured_local_url_present"] is True
+    assert route_ref["configured_local_url_posture"] == "local_configured_not_retained"
+    assert route_ref["strict_one_shot"] is False
+    assert route_ref["max_model_calls"] == 0
+    assert route_ref["retry_policy"] == "unavailable"
+    assert route_ref["fallback_policy"] == "unavailable"
+    assert result.packet["model_assisted_planning_strict_model_route_valid"] is False
     assert result.packet["failure_attribution_bucket"] == (
         "fast_model_planner_strict_route_unavailable"
     )
@@ -117,6 +147,8 @@ def test_required_live_model_planning_blocks_without_strict_route(
     assert result.packet["fast_planner_model_calls_attempted"] == 0
     assert result.packet["model_assisted_planning_raw_private_retention_false"] is True
     assert result.packet["model_assisted_planning_closed_surfaces_preserved"] is True
+    assert "fixture-marker-must-not-serialize" not in serialized
+    assert "http://localhost:4321/v1" not in serialized
     assert provider_calls == []
 
 
@@ -256,6 +288,7 @@ def test_acquisition_query_consumes_model_official_artifact_hypotheses(
     tmp_path: Path,
 ) -> None:
     provider_calls: list[dict[str, Any]] = []
+    planner_calls: list[dict[str, Any]] = []
     preferred_query = (
         "Example County official small claims fee schedule current filing fee"
     )
@@ -267,8 +300,13 @@ def test_acquisition_query_consumes_model_official_artifact_hypotheses(
         run_id="model-planning-acquisition-consumed",
         confirm_live_dogfood=True,
         product_provider_acquisition_runner=_product_runner(provider_calls),
+        smart_provider="SmartProvider",
+        smart_model="smart-dprime-model",
+        fast_provider="ConfiguredFastProvider",
+        fast_model="configured-fast-planner-model",
+        fast_model_local_url="http://localhost:9876/v1",
         fast_model_planner_callable=_planner(
-            [],
+            planner_calls,
             proposal=_proposal(
                 planning.PLANNING_CONTEXT_INITIAL_SINGLE_RELATION,
                 preferred_acquisition_query=preferred_query,
@@ -284,7 +322,17 @@ def test_acquisition_query_consumes_model_official_artifact_hypotheses(
     )
 
     assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    assert planner_calls[0]["provider"] == "ConfiguredFastProvider"
+    assert planner_calls[0]["model"] == "configured-fast-planner-model"
+    assert planner_calls[0]["provider"] != "SmartProvider"
+    assert planner_calls[0]["model"] != "smart-dprime-model"
     assert provider_calls[0]["query"] == preferred_query
+    assert result.packet["model_assisted_planning_configured_fast_provider"] == (
+        "ConfiguredFastProvider"
+    )
+    assert result.packet["model_assisted_planning_configured_fast_model"] == (
+        "configured-fast-planner-model"
+    )
     assert result.packet["model_assisted_planning_consumed_by_acquisition"] is True
     assert result.packet["acquisition_query_after_model_assisted_planning"] == (
         preferred_query

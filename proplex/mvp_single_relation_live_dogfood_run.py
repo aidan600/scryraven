@@ -60,6 +60,8 @@ from core.generic_query_to_relation_planning import (
 )
 from core.model_assisted_single_relation_planning import (
     BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE,
+    MODEL_ASSISTED_PLANNING_MODEL_TASK,
+    MODEL_ASSISTED_PLANNING_PRODUCT_MODEL_ROLE,
     PLANNING_CONTEXT_INITIAL_SINGLE_RELATION,
     PLANNING_CONTEXT_SOURCE_OF_RECORD_RECOVERY,
     build_model_assisted_single_relation_planning_packet,
@@ -670,6 +672,9 @@ def build_generic_single_relation_live_dogfood_run_output(
     fetch_read_runner: FetchReadRunner | None = None,
     smart_provider: str | None = None,
     smart_model: str | None = None,
+    fast_provider: str | None = None,
+    fast_model: str | None = None,
+    fast_model_local_url: str | None = None,
     fast_model_planner_callable: Callable[..., Any] | None = None,
     fast_model_planner_clean_json_response: Callable[[str], str] | None = None,
     fast_model_planner_strict_route_ref: Mapping[str, Any] | None = None,
@@ -702,6 +707,14 @@ def build_generic_single_relation_live_dogfood_run_output(
     source_challenge_recovery: dict[str, Any] | None = None
     initial_model_planning_packet: dict[str, Any] | None = None
     recovery_model_planning_packet: dict[str, Any] | None = None
+    planning_strict_route_ref = _model_assisted_planning_route_ref(
+        strict_model_route_ref=fast_model_planner_strict_route_ref,
+        fast_provider=fast_provider,
+        fast_model=fast_model,
+        fast_model_local_url=fast_model_local_url,
+        require_model_assisted_planning=require_model_assisted_planning,
+        planner_callable=fast_model_planner_callable,
+    )
 
     try:
         relation_plan = build_generic_query_relation_plan(query)
@@ -711,7 +724,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             planning_context_kind=PLANNING_CONTEXT_INITIAL_SINGLE_RELATION,
             context_state=_initial_model_planning_context(relation_plan),
             planner_callable=fast_model_planner_callable,
-            strict_model_route_ref=fast_model_planner_strict_route_ref,
+            strict_model_route_ref=planning_strict_route_ref,
             clean_json_response=fast_model_planner_clean_json_response,
             require_model_assisted_planning=require_model_assisted_planning,
         )
@@ -991,6 +1004,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             source_challenge_recovery=None,
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
         )
         if source_obligation_authorization.get("recovery_required") is True:
             recovery_model_planning_packet = _build_model_assisted_planning_packet(
@@ -1003,7 +1017,7 @@ def build_generic_single_relation_live_dogfood_run_output(
                     source_obligation_authorization=source_obligation_authorization,
                 ),
                 planner_callable=fast_model_planner_callable,
-                strict_model_route_ref=fast_model_planner_strict_route_ref,
+                strict_model_route_ref=planning_strict_route_ref,
                 clean_json_response=fast_model_planner_clean_json_response,
                 require_model_assisted_planning=require_model_assisted_planning,
             )
@@ -1082,6 +1096,7 @@ def build_generic_single_relation_live_dogfood_run_output(
                 source_challenge_recovery=source_challenge_recovery,
                 initial_model_planning_packet=initial_model_planning_packet,
                 recovery_model_planning_packet=recovery_model_planning_packet,
+                require_model_assisted_planning=require_model_assisted_planning,
             )
     except GenericQueryRelationPlanningError as exc:
         packet = _blocked_packet(
@@ -1107,6 +1122,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             hard_exclusion_category=exc.hard_exclusion_category,
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
         )
     except GenericSingleRelationLiveDogfoodRunError as exc:
         packet = _blocked_packet(
@@ -1132,6 +1148,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             hard_exclusion_category=None,
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
+            require_model_assisted_planning=require_model_assisted_planning,
         )
 
     validate_generic_single_relation_live_dogfood_packet(packet)
@@ -1842,6 +1859,7 @@ def _packet_from_semantic_status(
     source_challenge_recovery: Mapping[str, Any] | None,
     initial_model_planning_packet: Mapping[str, Any] | None,
     recovery_model_planning_packet: Mapping[str, Any] | None,
+    require_model_assisted_planning: bool,
 ) -> dict[str, Any]:
     decision = _mapped_live_decision(
         status_decision,
@@ -1875,6 +1893,7 @@ def _packet_from_semantic_status(
         source_challenge_recovery=source_challenge_recovery,
         initial_model_planning_packet=initial_model_planning_packet,
         recovery_model_planning_packet=recovery_model_planning_packet,
+        require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=False,
         semantic_payload=semantic_payload,
     )
@@ -1929,6 +1948,7 @@ def _blocked_packet(
     hard_exclusion_category: str | None,
     initial_model_planning_packet: Mapping[str, Any] | None,
     recovery_model_planning_packet: Mapping[str, Any] | None,
+    require_model_assisted_planning: bool,
 ) -> dict[str, Any]:
     packet = _base_packet(
         relation_plan=relation_plan,
@@ -1946,6 +1966,7 @@ def _blocked_packet(
         source_challenge_recovery=source_challenge_recovery,
         initial_model_planning_packet=initial_model_planning_packet,
         recovery_model_planning_packet=recovery_model_planning_packet,
+        require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=caps_exhausted,
         semantic_payload=semantic_payload,
     )
@@ -2544,6 +2565,7 @@ def _base_packet(
     source_challenge_recovery: Mapping[str, Any] | None,
     initial_model_planning_packet: Mapping[str, Any] | None,
     recovery_model_planning_packet: Mapping[str, Any] | None,
+    require_model_assisted_planning: bool,
     caps_exhausted: bool,
     semantic_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
@@ -2563,6 +2585,10 @@ def _base_packet(
     )
     initial_model_planning = _safe_mapping(initial_model_planning_packet)
     recovery_model_planning = _safe_mapping(recovery_model_planning_packet)
+    model_route_ref = _model_assisted_planning_route_diagnostic_ref(
+        initial_model_planning,
+        recovery_model_planning,
+    )
     recovery = _safe_mapping(source_challenge_recovery)
     recovery_plan = _safe_mapping(recovery.get("source_challenge_recovery_plan"))
     recovery_result = _safe_mapping(
@@ -2644,6 +2670,29 @@ def _base_packet(
         "model_assisted_planning_packet": initial_model_planning,
         "initial_model_assisted_planning_packet": initial_model_planning,
         "recovery_model_assisted_planning_packet": recovery_model_planning,
+        "model_assisted_planning_required": bool(require_model_assisted_planning),
+        "model_assisted_planning_strict_model_route_valid": (
+            initial_model_planning.get("strict_model_route_valid") is True
+            or recovery_model_planning.get("strict_model_route_valid") is True
+        ),
+        "model_assisted_planning_strict_model_route_blockers": list(
+            _safe_sequence(
+                initial_model_planning.get("strict_model_route_blockers")
+                or recovery_model_planning.get("strict_model_route_blockers")
+            )
+        ),
+        "model_assisted_planning_configured_fast_provider": model_route_ref.get(
+            "configured_fast_provider"
+        ),
+        "model_assisted_planning_configured_fast_model": model_route_ref.get(
+            "configured_fast_model"
+        ),
+        "model_assisted_planning_configured_local_url_present": (
+            model_route_ref.get("configured_local_url_present") is True
+        ),
+        "model_assisted_planning_configured_local_url_posture": (
+            model_route_ref.get("configured_local_url_posture")
+        ),
         "model_assisted_planning_context_kinds_exercised": list(
             _safe_sequence(counts.get("model_assisted_planning_context_kinds"))
         ),
@@ -3196,6 +3245,111 @@ def _recovery_model_planning_context(
         "citation_eligible_by_planner": False,
         "answer_text_created_by_planner": False,
     }
+
+
+def _model_assisted_planning_route_ref(
+    *,
+    strict_model_route_ref: Mapping[str, Any] | None,
+    fast_provider: str | None,
+    fast_model: str | None,
+    fast_model_local_url: str | None,
+    require_model_assisted_planning: bool,
+    planner_callable: Callable[..., Any] | None,
+) -> dict[str, Any] | None:
+    if strict_model_route_ref is None:
+        if not require_model_assisted_planning and planner_callable is None:
+            return None
+        return _strict_route_unavailable_candidate_ref(
+            fast_provider=fast_provider,
+            fast_model=fast_model,
+            fast_model_local_url=fast_model_local_url,
+        )
+    route = dict(strict_model_route_ref)
+    route.update(
+        _configured_fast_model_route_posture(
+            fast_provider=fast_provider,
+            fast_model=fast_model,
+            fast_model_local_url=fast_model_local_url,
+            include_absent=False,
+        )
+    )
+    return _json_safe(route)
+
+
+def _strict_route_unavailable_candidate_ref(
+    *,
+    fast_provider: str | None,
+    fast_model: str | None,
+    fast_model_local_url: str | None,
+) -> dict[str, Any]:
+    route = {
+        "model_task": MODEL_ASSISTED_PLANNING_MODEL_TASK,
+        "product_model_role": MODEL_ASSISTED_PLANNING_PRODUCT_MODEL_ROLE,
+        "product_route_kind": "strict_one_shot_model_route_unavailable_candidate",
+        "max_model_calls": 0,
+        "retry_policy": "unavailable",
+        "fallback_policy": "unavailable",
+        "timeout_policy": "unavailable",
+        "provider_switching_allowed": False,
+        "strict_one_shot": False,
+        "call_count": 0,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "provider_payload_retained": False,
+    }
+    route.update(
+        _configured_fast_model_route_posture(
+            fast_provider=fast_provider,
+            fast_model=fast_model,
+            fast_model_local_url=fast_model_local_url,
+        )
+    )
+    return _json_safe(route)
+
+
+def _configured_fast_model_route_posture(
+    *,
+    fast_provider: str | None,
+    fast_model: str | None,
+    fast_model_local_url: str | None,
+    include_absent: bool = True,
+) -> dict[str, Any]:
+    posture: dict[str, Any] = {}
+    cleaned_provider = _clean_text(fast_provider, limit=80)
+    cleaned_model = _clean_text(fast_model, limit=120)
+    local_url = _clean_text(fast_model_local_url, limit=500)
+    if cleaned_provider or include_absent:
+        posture["configured_fast_provider"] = cleaned_provider
+    if cleaned_model or include_absent:
+        posture["configured_fast_model"] = cleaned_model
+    if local_url or include_absent:
+        posture["configured_local_url_present"] = bool(local_url)
+        posture["configured_local_url_posture"] = _local_url_posture(local_url)
+    return posture
+
+
+def _local_url_posture(local_url: str | None) -> str:
+    if not local_url:
+        return "not_configured"
+    parsed = urlparse(local_url)
+    host = (parsed.hostname or "").casefold()
+    if host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".localhost"):
+        return "local_configured_not_retained"
+    if parsed.scheme in {"http", "https"} and host:
+        return "remote_configured_not_retained"
+    return "configured_unvalidated_not_retained"
+
+
+def _model_assisted_planning_route_diagnostic_ref(
+    *packets: Mapping[str, Any],
+) -> dict[str, Any]:
+    for packet in packets:
+        route_ref = _safe_mapping(_safe_mapping(packet).get("strict_model_route_ref"))
+        if route_ref:
+            return route_ref
+    return {}
 
 
 def _build_model_assisted_planning_packet(
