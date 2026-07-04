@@ -14,7 +14,7 @@ from hashlib import sha256
 from typing import Any, Mapping
 
 DPRIME_MODEL_REVIEW_PROMPT_SCHEMA_VERSION = (
-    "dprime_model_review_prompt_assessment_slice_01_v3"
+    "dprime_model_review_prompt_assessment_slice_01_v4"
 )
 
 MODEL_FILLABLE_ASSESSMENT_FIELDS = [
@@ -163,15 +163,18 @@ DPRIME_MODEL_REVIEW_RELATION_CHECK_STATUS_CONSISTENCY_MATRIX: dict[str, Any] = {
             "wrong_effective_date",
             "currentness_mismatch",
         ],
+        "challenge_recommended": True,
     },
     "contradicts": {
         "contradiction_check.status": ["contradicts", "contradicted", "failed"],
+        "challenge_recommended": True,
     },
     "weak_or_overclaim_risk": {
         "must_not_have_contradiction_check.status": [
             "contradicts",
             "contradicted",
         ],
+        "challenge_recommended": True,
     },
     "abstained": {
         "producer_abstained": True,
@@ -319,6 +322,8 @@ def build_dprime_model_review_prompt(
         "  currentness_mismatch requires failed/stale/wrong_effective_date/",
         "  currentness_mismatch currentness; contradicts requires",
         "  contradicts/contradicted/failed contradiction status;",
+        "  currentness_mismatch, contradicts, and weak_or_overclaim_risk require",
+        "  challenge_recommended true;",
         "  weak_or_overclaim_risk must not be used for an actual contradiction;",
         "  abstained requires producer_abstained true.",
         "- Do not add extra keys, aliases, explanatory wrappers, object-created",
