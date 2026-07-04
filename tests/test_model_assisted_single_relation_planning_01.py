@@ -333,6 +333,22 @@ def test_acquisition_query_consumes_model_official_artifact_hypotheses(
     assert result.packet["model_assisted_planning_configured_fast_model"] == (
         "configured-fast-planner-model"
     )
+    assert result.packet["model_assisted_planning_provider_used"] == (
+        "ConfiguredFastProvider"
+    )
+    assert result.packet["model_assisted_planning_model_used"] == (
+        "configured-fast-planner-model"
+    )
+    assert result.packet["model_assisted_planning_strict_one_shot"] is True
+    assert result.packet["model_assisted_planning_retry_policy"] == "forbidden"
+    assert result.packet["model_assisted_planning_fallback_policy"] == "forbidden"
+    assert result.packet["model_assisted_planning_provider_switching_allowed"] is False
+    assert result.packet["initial_model_assisted_planning_packet"][
+        "strict_model_route_result_ref"
+    ]["model_calls_attempted"] == 1
+    assert result.packet["initial_model_assisted_planning_packet"][
+        "strict_model_route_result_ref"
+    ]["model_calls_completed"] == 1
     assert result.packet["model_assisted_planning_consumed_by_acquisition"] is True
     assert result.packet["acquisition_query_after_model_assisted_planning"] == (
         preferred_query

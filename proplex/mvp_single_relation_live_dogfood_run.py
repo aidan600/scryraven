@@ -2589,6 +2589,10 @@ def _base_packet(
         initial_model_planning,
         recovery_model_planning,
     )
+    model_route_result_ref = _model_assisted_planning_route_result_diagnostic_ref(
+        initial_model_planning,
+        recovery_model_planning,
+    )
     recovery = _safe_mapping(source_challenge_recovery)
     recovery_plan = _safe_mapping(recovery.get("source_challenge_recovery_plan"))
     recovery_result = _safe_mapping(
@@ -2692,6 +2696,24 @@ def _base_packet(
         ),
         "model_assisted_planning_configured_local_url_posture": (
             model_route_ref.get("configured_local_url_posture")
+        ),
+        "model_assisted_planning_provider_used": (
+            model_route_result_ref.get("provider_used")
+        ),
+        "model_assisted_planning_model_used": (
+            model_route_result_ref.get("model_used")
+        ),
+        "model_assisted_planning_strict_one_shot": (
+            model_route_result_ref.get("strict_one_shot") is True
+        ),
+        "model_assisted_planning_retry_policy": (
+            model_route_result_ref.get("retry_policy")
+        ),
+        "model_assisted_planning_fallback_policy": (
+            model_route_result_ref.get("fallback_policy")
+        ),
+        "model_assisted_planning_provider_switching_allowed": (
+            model_route_result_ref.get("provider_switching_allowed") is True
         ),
         "model_assisted_planning_context_kinds_exercised": list(
             _safe_sequence(counts.get("model_assisted_planning_context_kinds"))
@@ -3347,6 +3369,18 @@ def _model_assisted_planning_route_diagnostic_ref(
 ) -> dict[str, Any]:
     for packet in packets:
         route_ref = _safe_mapping(_safe_mapping(packet).get("strict_model_route_ref"))
+        if route_ref:
+            return route_ref
+    return {}
+
+
+def _model_assisted_planning_route_result_diagnostic_ref(
+    *packets: Mapping[str, Any],
+) -> dict[str, Any]:
+    for packet in packets:
+        route_ref = _safe_mapping(
+            _safe_mapping(packet).get("strict_model_route_result_ref")
+        )
         if route_ref:
             return route_ref
     return {}

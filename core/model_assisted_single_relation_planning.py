@@ -304,22 +304,64 @@ def build_model_assisted_single_relation_planning_packet(
             max_tokens=1800,
         )
     except Exception as exc:
+        route_result_ref = _planner_exception_result_ref(exc, route_validation)
         return _blocked_packet(
             planning_context_kind=context_kind,
             context_state=safe_context,
-            blocker=BLOCKED_MODEL_ASSISTED_PLANNING_MODEL_CALL_FAILED,
-            detail=(
+            blocker=(
+                _safe_optional_text(route_result_ref.get("blocker"), limit=220)
+                or BLOCKED_MODEL_ASSISTED_PLANNING_MODEL_CALL_FAILED
+            ),
+            detail=_safe_optional_text(route_result_ref.get("detail"), limit=900)
+            or (
                 "Strict FastModel planning callable failed closed: "
                 f"{type(exc).__name__}."
             ),
             route_validation=route_validation,
-            model_calls_attempted=1,
-            model_calls_completed=0,
+            model_calls_attempted=_bounded_int(
+                route_result_ref.get("model_calls_attempted"),
+                default=1,
+            ),
+            model_calls_completed=_bounded_int(
+                route_result_ref.get("model_calls_completed"),
+                default=0,
+            ),
             prompt_ref=prompt_ref,
+            route_result_ref=route_result_ref,
+        )
+
+    call_result = _planner_call_result(raw, route_validation=route_validation)
+    route_result_ref = _safe_mapping(call_result.get("route_result_ref"))
+    model_calls_attempted = _bounded_int(
+        route_result_ref.get("model_calls_attempted"),
+        default=1,
+    )
+    model_calls_completed = _bounded_int(
+        route_result_ref.get("model_calls_completed"),
+        default=1,
+    )
+    if _bounded_int(route_result_ref.get("return_code"), default=0) != 0:
+        return _blocked_packet(
+            planning_context_kind=context_kind,
+            context_state=safe_context,
+            blocker=(
+                _safe_optional_text(route_result_ref.get("blocker"), limit=220)
+                or BLOCKED_MODEL_ASSISTED_PLANNING_MODEL_CALL_FAILED
+            ),
+            detail=_safe_optional_text(route_result_ref.get("detail"), limit=900)
+            or "Strict FastModel planning route failed closed.",
+            route_validation=route_validation,
+            model_calls_attempted=model_calls_attempted,
+            model_calls_completed=model_calls_completed,
+            prompt_ref=prompt_ref,
+            route_result_ref=route_result_ref,
         )
 
     try:
-        parsed = _parse_model_output(raw, clean_json_response=clean_json_response)
+        parsed = _parse_model_output(
+            call_result.get("output"),
+            clean_json_response=clean_json_response,
+        )
         reduced = reduce_model_assisted_single_relation_proposal(
             parsed,
             planning_context_kind=context_kind,
@@ -332,18 +374,20 @@ def build_model_assisted_single_relation_planning_packet(
             blocker=exc.blocker,
             detail=exc.detail,
             route_validation=route_validation,
-            model_calls_attempted=1,
-            model_calls_completed=1,
+            model_calls_attempted=model_calls_attempted,
+            model_calls_completed=model_calls_completed,
             prompt_ref=prompt_ref,
+            route_result_ref=route_result_ref,
         )
 
     reduced.update(
         {
             "strict_model_route_ref": dict(route_validation["route_ref"]),
+            "strict_model_route_result_ref": route_result_ref,
             "strict_model_route_valid": True,
             "planner_callable_invoked": True,
-            "model_calls_attempted": 1,
-            "model_calls_completed": 1,
+            "model_calls_attempted": model_calls_attempted,
+            "model_calls_completed": model_calls_completed,
             "planning_input_ref": prompt_ref,
             "raw_prompt_retained": False,
             "raw_model_response_retained": False,
@@ -720,6 +764,197 @@ def _parse_model_output(
     return parsed
 
 
+def _planner_call_result(
+    raw: Any,
+    *,
+    route_validation: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not _looks_like_strict_route_result(raw):
+        return {
+            "output": raw,
+            "route_result_ref": _default_route_result_ref(
+                route_validation,
+                return_code=0,
+                attempted=1,
+                completed=1,
+            ),
+        }
+    route_result_ref = _strict_route_result_ref(raw, route_validation)
+    return {
+        "output": _route_result_value(raw, "output_text", ""),
+        "route_result_ref": route_result_ref,
+    }
+
+
+def _planner_exception_result_ref(
+    exc: Exception,
+    route_validation: Mapping[str, Any],
+) -> dict[str, Any]:
+    if _looks_like_strict_route_result(exc):
+        return _strict_route_result_ref(exc, route_validation)
+    ref = _default_route_result_ref(
+        route_validation,
+        return_code=2,
+        attempted=_bounded_int(
+            _route_result_value(exc, "model_calls_attempted", 1),
+            default=1,
+        ),
+        completed=_bounded_int(
+            _route_result_value(exc, "model_calls_completed", 0),
+            default=0,
+        ),
+    )
+    ref["blocker"] = (
+        _safe_optional_text(_route_result_value(exc, "blocker", None), limit=220)
+        or BLOCKED_MODEL_ASSISTED_PLANNING_MODEL_CALL_FAILED
+    )
+    ref["detail"] = _safe_optional_text(
+        _route_result_value(exc, "detail", None),
+        limit=900,
+    )
+    return _json_safe(ref)
+
+
+def _looks_like_strict_route_result(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        return "output_text" in value and (
+            "return_code" in value or "model_calls_attempted" in value
+        )
+    return hasattr(value, "output_text") and hasattr(value, "return_code")
+
+
+def _strict_route_result_ref(
+    value: Any,
+    route_validation: Mapping[str, Any],
+) -> dict[str, Any]:
+    if hasattr(value, "to_safe_diagnostic"):
+        try:
+            diagnostic = value.to_safe_diagnostic()
+        except Exception:  # noqa: BLE001 - fail closed to default diagnostic.
+            diagnostic = {}
+    else:
+        diagnostic = {}
+    if not isinstance(diagnostic, Mapping):
+        diagnostic = {}
+    route = _safe_mapping(route_validation.get("route_ref"))
+    allowed = {
+        "return_code",
+        "blocker",
+        "detail",
+        "model_calls_attempted",
+        "model_calls_completed",
+        "configured_provider",
+        "configured_model",
+        "provider_used",
+        "model_used",
+        "configured_local_url_present",
+        "configured_local_url_posture",
+        "credential_present",
+        "strict_one_shot",
+        "retry_policy",
+        "fallback_policy",
+        "timeout_policy",
+        "provider_switching_allowed",
+        "raw_prompt_retained",
+        "raw_model_response_retained",
+        "raw_provider_payload_retained",
+        "provider_payload_retained",
+        "credential_values_retained",
+    }
+    ref = {
+        key: _route_result_value(value, key, diagnostic.get(key))
+        for key in allowed
+        if _route_result_value(value, key, diagnostic.get(key)) is not None
+    }
+    if "return_code" not in ref:
+        ref["return_code"] = 0
+    if "model_calls_attempted" not in ref:
+        ref["model_calls_attempted"] = 1
+    if "model_calls_completed" not in ref:
+        ref["model_calls_completed"] = (
+            1 if _bounded_int(ref.get("return_code"), default=0) == 0 else 0
+        )
+    ref.setdefault("configured_provider", route.get("configured_fast_provider"))
+    ref.setdefault("configured_model", route.get("configured_fast_model"))
+    ref.setdefault("provider_used", route.get("configured_fast_provider"))
+    ref.setdefault("model_used", route.get("configured_fast_model"))
+    ref.setdefault(
+        "configured_local_url_present",
+        route.get("configured_local_url_present") is True,
+    )
+    ref.setdefault(
+        "configured_local_url_posture",
+        route.get("configured_local_url_posture"),
+    )
+    ref.setdefault("strict_one_shot", route.get("strict_one_shot") is True)
+    ref.setdefault("retry_policy", route.get("retry_policy"))
+    ref.setdefault("fallback_policy", route.get("fallback_policy"))
+    ref.setdefault("timeout_policy", route.get("timeout_policy"))
+    ref.setdefault(
+        "provider_switching_allowed",
+        route.get("provider_switching_allowed") is True,
+    )
+    ref.setdefault("raw_prompt_retained", False)
+    ref.setdefault("raw_model_response_retained", False)
+    ref.setdefault("raw_provider_payload_retained", False)
+    ref.setdefault("provider_payload_retained", False)
+    ref.setdefault("credential_values_retained", False)
+    return _json_safe(ref)
+
+
+def _default_route_result_ref(
+    route_validation: Mapping[str, Any],
+    *,
+    return_code: int,
+    attempted: int,
+    completed: int,
+) -> dict[str, Any]:
+    route = _safe_mapping(route_validation.get("route_ref"))
+    return _json_safe(
+        {
+            "return_code": return_code,
+            "model_calls_attempted": attempted,
+            "model_calls_completed": completed,
+            "configured_provider": route.get("configured_fast_provider"),
+            "configured_model": route.get("configured_fast_model"),
+            "provider_used": route.get("configured_fast_provider"),
+            "model_used": route.get("configured_fast_model"),
+            "configured_local_url_present": (
+                route.get("configured_local_url_present") is True
+            ),
+            "configured_local_url_posture": route.get(
+                "configured_local_url_posture"
+            ),
+            "credential_present": False,
+            "strict_one_shot": route.get("strict_one_shot") is True,
+            "retry_policy": route.get("retry_policy"),
+            "fallback_policy": route.get("fallback_policy"),
+            "timeout_policy": route.get("timeout_policy"),
+            "provider_switching_allowed": (
+                route.get("provider_switching_allowed") is True
+            ),
+            "raw_prompt_retained": False,
+            "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+            "provider_payload_retained": False,
+            "credential_values_retained": False,
+        }
+    )
+
+
+def _route_result_value(value: Any, key: str, default: Any = None) -> Any:
+    if isinstance(value, Mapping):
+        return value.get(key, default)
+    return getattr(value, key, default)
+
+
+def _safe_optional_text(value: Any, *, limit: int) -> str | None:
+    try:
+        return _clean_text(value, limit=limit)
+    except ModelAssistedSingleRelationPlanningError:
+        return None
+
+
 def _blocked_packet(
     *,
     planning_context_kind: str,
@@ -730,6 +965,7 @@ def _blocked_packet(
     model_calls_attempted: int,
     model_calls_completed: int,
     prompt_ref: Mapping[str, Any] | None = None,
+    route_result_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     packet = {
         "schema_version": MODEL_ASSISTED_SINGLE_RELATION_PLANNING_SCHEMA_VERSION,
@@ -750,6 +986,7 @@ def _blocked_packet(
         ),
         "strict_model_route_valid": route_validation.get("valid") is True,
         "strict_model_route_ref": _safe_mapping(route_validation.get("route_ref")),
+        "strict_model_route_result_ref": _safe_mapping(route_result_ref),
         "strict_model_route_blockers": list(
             _safe_sequence(route_validation.get("blockers"))
         ),
