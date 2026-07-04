@@ -223,7 +223,9 @@ FETCH_READ_CANDIDATE_SELECTION_SCOPE = "local_fetch_read_acquisition_only"
 ACQUISITION_PLANNER_SCHEMA_VERSION = (
     "generic_single_relation_live_acquisition_planner_v1"
 )
-ACQUISITION_PLANNER_KIND = "minimal_single_relation_acquisition_planner"
+ACQUISITION_PLANNER_KIND = (
+    "deterministic_artifact_single_relation_acquisition_planner"
+)
 SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED = "provider_extracted_source_content"
 SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK = "direct_public_web_fetch_fallback"
 SOURCE_ACQUISITION_MODE_NONE = "none"
@@ -745,6 +747,7 @@ def build_generic_single_relation_live_dogfood_run_output(
         fetch_packet, fetch_counts = _write_fetch_read_artifacts(
             retained_root=retained_root,
             relation_plan=relation_plan,
+            acquisition_plan=acquisition_plan,
             provider_results=results,
             fetch_read_runner=fetch_read_runner or fetch_public_url_once,
         )
@@ -1111,11 +1114,14 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         "http_source_survival_domain_specific_header_hacks_opened",
         "http_source_survival_domain_specific_url_fallback_opened",
         "http_source_survival_canonical_url_transformation_opened",
-        "provider_query_generation_changed",
     ):
         expected = key == "candidate_diagnostics_observability_only"
         if packet.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    if packet.get("provider_query_generation_changed") not in {True, False}:
+        _blocked_output_hygiene(
+            "generic live packet provider_query_generation_changed invalid."
+        )
     if packet.get("provider_routing_changed") not in {True, False}:
         _blocked_output_hygiene("generic live packet provider_routing_changed invalid.")
     for key in (
@@ -1616,6 +1622,77 @@ def _provider_acquisition_route_posture(counts: Mapping[str, Any]) -> str:
     return "blocked_before_provider_search"
 
 
+def _acquisition_plan_diagnostics(
+    acquisition_plan: Mapping[str, Any],
+    *,
+    counts: Mapping[str, Any],
+) -> dict[str, Any]:
+    acquisition = _safe_mapping(acquisition_plan)
+    if not acquisition:
+        return {
+            "available": False,
+            "raw_private_retention": False,
+        }
+    answer_anchors = list(
+        _safe_sequence(acquisition.get("answer_bearing_anchor_terms"))
+    )
+    value_kinds = list(
+        _safe_sequence(acquisition.get("expected_value_token_kinds"))
+    )
+    artifact_terms = list(_safe_sequence(acquisition.get("artifact_source_terms")))
+    return {
+        "available": True,
+        "schema_version": acquisition.get("schema_version"),
+        "planner_type": acquisition.get("planner_type") or "deterministic",
+        "planner_kind": acquisition.get("planner_kind"),
+        "fast_model_planner_used": acquisition.get("fast_model_planner_used")
+        is True,
+        "fast_model_route_used": acquisition.get("fast_model_route_used") is True,
+        "ambiguity_required": acquisition.get("ambiguity_required") is True
+        or acquisition.get("disambiguation_required") is True,
+        "ambiguity_status": acquisition.get("ambiguity_status"),
+        "acquisition_query": acquisition.get("acquisition_query"),
+        "answer_bearing_anchor_count": len(answer_anchors),
+        "expected_value_token_kinds": value_kinds,
+        "artifact_source_terms_used": artifact_terms,
+        "selected_window_guidance_produced": bool(
+            counts.get("selected_window_guidance_produced", 0)
+            or acquisition.get("selected_window_guidance")
+        ),
+        "selected_window_guidance_consumed": bool(
+            counts.get("selected_window_guidance_consumed", 0)
+        ),
+        "selected_window_guidance_blocked": bool(
+            counts.get("selected_window_guidance_blocked", 0)
+        ),
+        "selected_window_anchor_guidance_consumed": bool(
+            counts.get("selected_window_anchor_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_consumed": bool(
+            counts.get("selected_window_value_token_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_blocked": bool(
+            counts.get("selected_window_value_token_guidance_blocked", 0)
+        ),
+        "selected_window_value_token_guidance_blocker": _clean_text(
+            counts.get("selected_window_value_token_guidance_blocker"),
+            limit=220,
+        ),
+        "selected_window_guidance_blocker": _clean_text(
+            counts.get("selected_window_guidance_blocker"),
+            limit=220,
+        ),
+        "raw_private_retention": False,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "closed_surface_flags": dict(
+            _safe_mapping(acquisition.get("closed_surface_flags"))
+        ),
+    }
+
+
 def _base_packet(
     *,
     relation_plan: Mapping[str, Any] | None,
@@ -1711,7 +1788,60 @@ def _base_packet(
         "search_requirement_text": plan.get("search_requirement_text"),
         "search_requirement_ref": search_requirement,
         "search_query_seeds": list(_safe_sequence(plan.get("search_query_seeds"))),
-        "search_query_seed_used": _search_query_seed(plan) if plan else None,
+        "search_query_seed_used": (
+            acquisition.get("acquisition_query") or _search_query_seed(plan)
+            if plan
+            else None
+        ),
+        "relation_plan_search_query_seed": _search_query_seed(plan) if plan else None,
+        "acquisition_plan_diagnostics": _acquisition_plan_diagnostics(
+            acquisition,
+            counts=counts,
+        ),
+        "acquisition_plan_consumed_by_product_path": bool(acquisition),
+        "provider_acquisition_query_from_plan": bool(
+            acquisition.get("acquisition_query")
+        ),
+        "acquisition_query": acquisition.get("acquisition_query"),
+        "answer_bearing_anchor_count": len(
+            _safe_sequence(acquisition.get("answer_bearing_anchor_terms"))
+        ),
+        "expected_value_token_kinds": list(
+            _safe_sequence(acquisition.get("expected_value_token_kinds"))
+        ),
+        "artifact_source_terms_used": list(
+            _safe_sequence(acquisition.get("artifact_source_terms"))
+        ),
+        "selected_window_guidance_produced": bool(
+            counts.get("selected_window_guidance_produced", 0)
+            or acquisition.get("selected_window_guidance")
+        ),
+        "selected_window_guidance_consumed": bool(
+            counts.get("selected_window_guidance_consumed", 0)
+        ),
+        "selected_window_guidance_blocked": bool(
+            counts.get("selected_window_guidance_blocked", 0)
+        ),
+        "selected_window_anchor_guidance_consumed": bool(
+            counts.get("selected_window_anchor_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_consumed": bool(
+            counts.get("selected_window_value_token_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_blocked": bool(
+            counts.get("selected_window_value_token_guidance_blocked", 0)
+        ),
+        "selected_window_value_token_guidance_blocker": _clean_text(
+            counts.get("selected_window_value_token_guidance_blocker"),
+            limit=220,
+        ),
+        "selected_window_guidance_blocker": _clean_text(
+            counts.get("selected_window_guidance_blocker"),
+            limit=220,
+        ),
+        "selected_window_value_token_expectations_reached_diagnostic_path": bool(
+            acquisition.get("expected_value_token_kinds")
+        ),
         "relation_plan_dprime_relation_intake_candidate": dprime_candidate,
         "dprime_relation_intake_ref": relation_ref,
         "dprime_relation_intake_candidate_consumed_from_plan": bool(
@@ -1860,7 +1990,10 @@ def _base_packet(
         "http_source_survival_domain_specific_url_fallback_opened": False,
         "http_source_survival_canonical_url_transformation_opened": False,
         "provider_routing_changed": bool(plan),
-        "provider_query_generation_changed": False,
+        "provider_query_generation_changed": bool(
+            acquisition.get("acquisition_query")
+            and acquisition.get("acquisition_query") != _search_query_seed(plan)
+        ),
         "fetch_read_cap_preserved": True,
         "fetch_read_cap_value": MAX_FETCH_READ_ATTEMPTS,
         "candidate_diagnostics_observability_only": True,
@@ -1953,34 +2086,111 @@ def _guard_plan_for_live_acquisition(plan: Mapping[str, Any]) -> None:
 
 
 def _build_fast_acquisition_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
-    search_query = _search_query_seed(plan)
+    relation_seed = _search_query_seed(plan)
+    component_text = _clean_text(plan.get("component_text"), limit=260) or relation_seed
+    query_text = _clean_text(plan.get("sanitized_query"), limit=500) or relation_seed
+    fact_kind = _clean_text(plan.get("fact_kind"), limit=80) or "current_value"
+    subject_anchors = _subject_entity_anchors(query_text, component_text)
+    form_anchors = _form_document_code_anchors(query_text, component_text)
+    fact_anchor = _fact_kind_anchor(component_text, fact_kind)
+    timeframe_posture = _timeframe_currentness_posture(query_text, component_text)
+    source_artifact_expectation = _source_artifact_expectation(fact_kind)
+    artifact_terms = _artifact_source_terms(
+        fact_kind=fact_kind,
+        form_anchors=form_anchors,
+        timeframe_posture=timeframe_posture,
+    )
+    answer_bearing_anchors = _answer_bearing_anchor_terms(
+        subject_anchors=subject_anchors,
+        form_anchors=form_anchors,
+        fact_anchor=fact_anchor,
+        component_text=component_text,
+        fact_kind=fact_kind,
+    )
+    value_token_kinds = _expected_value_token_kinds(fact_kind, component_text)
+    acquisition_query = _artifact_oriented_acquisition_query(
+        subject_anchors=subject_anchors,
+        form_anchors=form_anchors,
+        fact_anchor=fact_anchor,
+        component_text=component_text,
+        artifact_terms=artifact_terms,
+        timeframe_posture=timeframe_posture,
+        fallback=relation_seed,
+    )
     ambiguity_required, ambiguity_reason = _planner_ambiguity_posture(plan)
     payload = {
         "schema_version": ACQUISITION_PLANNER_SCHEMA_VERSION,
         "planner_kind": ACQUISITION_PLANNER_KIND,
         "planner_route": "existing_deterministic_relation_plan_adapter",
+        "planner_type": "deterministic",
         "fast_model_route_used": False,
+        "fast_model_planner_used": False,
         "fast_model_route_reason": "no broad model-routing layer introduced",
         "model_calls_attempted": 0,
         "relation_plan_id": plan.get("plan_id"),
         "component_id": plan.get("component_id"),
         "search_requirement_id": plan.get("search_requirement_id"),
         "source_obligation_id": plan.get("source_obligation_id"),
-        "acquisition_query": search_query,
-        "original_acquisition_query": search_query,
+        "relation_plan_search_query_seed": relation_seed,
+        "subject_entity_anchors": subject_anchors,
+        "form_document_code_anchors": form_anchors,
+        "fact_kind": fact_kind,
+        "fact_kind_anchor": fact_anchor,
+        "timeframe_currentness_posture": timeframe_posture,
+        "source_artifact_expectation": source_artifact_expectation,
+        "official_source_of_record_acquisition_intent": True,
+        "answer_bearing_anchor_terms": answer_bearing_anchors,
+        "expected_value_token_kinds": value_token_kinds,
+        "artifact_source_terms": artifact_terms,
+        "acquisition_query": acquisition_query,
+        "original_acquisition_query": acquisition_query,
+        "query_shaping_reason": (
+            "artifact_oriented_source_discovery_from_relation_plan_anchors"
+        ),
         "disambiguation_required": ambiguity_required,
+        "ambiguity_required": ambiguity_required,
         "disambiguation_reason": ambiguity_reason,
-        "disambiguation_query": search_query if ambiguity_required else None,
+        "ambiguity_status": "required" if ambiguity_required else "clear",
+        "disambiguation_query": relation_seed if ambiguity_required else None,
+        "scout_query": relation_seed if ambiguity_required else None,
         "extraction_provider": DEFAULT_EXTRACTION_PROVIDER,
         "provider_operation": DEFAULT_OPERATION,
         "max_provider_results": MAX_PROVIDER_RESULTS,
         "max_selected_source_content_candidates": MAX_EVIDENCE_LEDGER_ADMISSIONS,
+        "selected_window_guidance": {
+            "guidance_kind": "answer_bearing_anchor_and_value_token_expectation",
+            "answer_bearing_anchor_terms": answer_bearing_anchors,
+            "expected_value_token_kinds": value_token_kinds,
+            "existing_selector_consumer": (
+                "core.fetch_read_content_reference.select_bounded_answer_bearing_text"
+            ),
+            "selection_system_parallel_path_created": False,
+        },
         "serper_scout_allowed": ambiguity_required,
         "serper_scout_used": False,
+        "diagnostics": {
+            "safe_diagnostic": True,
+            "answer_bearing_anchor_count": len(answer_bearing_anchors),
+            "expected_value_token_kinds": value_token_kinds,
+            "artifact_source_terms_used": artifact_terms,
+            "raw_private_retention": False,
+        },
+        "closed_surface_flags": {
+            "planner_dispatched_provider": False,
+            "source_authority_decided": False,
+            "evidence_created": False,
+            "citation_eligibility_created": False,
+            "source_obligation_satisfaction_created": False,
+            "answer_text_created": False,
+            "dprime_permissiveness_changed": False,
+            "multi_component_planning_opened": False,
+            "live_fast_model_route_opened": False,
+        },
         "source_authority_decided": False,
         "source_obligation_satisfied": False,
         "citation_eligible": False,
         "correctness_claimed": False,
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
         "raw_prompt_retained": False,
         "raw_model_response_retained": False,
         "raw_provider_payload_retained": False,
@@ -2009,6 +2219,209 @@ def _planner_ambiguity_posture(plan: Mapping[str, Any]) -> tuple[bool, str]:
     if len(_relation_plan_priority_tokens(plan)) < 2:
         return True, "insufficient_entity_terms_for_source_acquisition"
     return False, "clear_single_relation_query"
+
+
+def _subject_entity_anchors(query_text: str, component_text: str) -> list[str]:
+    text = f"{query_text} {component_text}"
+    anchors: list[str] = []
+    seen: set[str] = set()
+    patterns = (
+        r"\b[A-Z][A-Z0-9&.-]{1,}(?:\s+[A-Z][A-Z0-9&.-]{1,})*\b",
+        (
+            r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+"
+            r"(?:Agency|Authority|Board|Bureau|Commission|County|Department|"
+            r"Division|Office|Service)\b"
+        ),
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            value = _clean_text(match.group(0), limit=80)
+            if not value or value.casefold() in {"form"}:
+                continue
+            key = value.casefold()
+            if key not in seen:
+                seen.add(key)
+                anchors.append(value)
+    return anchors[:4]
+
+
+def _form_document_code_anchors(query_text: str, component_text: str) -> list[str]:
+    text = f"{query_text} {component_text}"
+    anchors: list[str] = []
+    seen: set[str] = set()
+    patterns = (
+        r"\bForm\s+[A-Z]{1,5}-\d+[A-Z]?\b",
+        r"\b[A-Z]{1,5}-\d+[A-Z]?\b",
+        r"\b\d{4}\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text, flags=re.IGNORECASE):
+            value = _clean_text(match.group(0), limit=80)
+            if not value:
+                continue
+            if re.fullmatch(r"\d{4}", value) and not (1900 <= int(value) <= 2100):
+                continue
+            key = value.casefold()
+            if key not in seen:
+                seen.add(key)
+                anchors.append(value)
+    return anchors[:5]
+
+
+def _fact_kind_anchor(component_text: str, fact_kind: str) -> str:
+    lowered = component_text.casefold()
+    fact_phrases = {
+        "fee": (
+            "paper filing fee",
+            "filing fee",
+            "renewal fee",
+            "fee",
+        ),
+        "current_value": (
+            "standard mileage rate",
+            "wage base",
+            "maximum",
+            "limit",
+            "rate",
+        ),
+        "deadline": ("filing deadline", "deadline", "due date"),
+        "requirement": ("requirements", "requirement"),
+        "status": ("status", "availability"),
+    }
+    for phrase in fact_phrases.get(fact_kind, (fact_kind,)):
+        if phrase in lowered:
+            return phrase
+    return fact_kind.replace("_", " ")
+
+
+def _timeframe_currentness_posture(query_text: str, component_text: str) -> str:
+    lowered = f"{query_text} {component_text}".casefold()
+    if re.search(r"\b(?:19|20)\d{2}\b", lowered):
+        return "year_specific_current"
+    if any(term in lowered for term in ("current", "currently", "latest", "today", "now")):
+        return "current"
+    if "official" in lowered:
+        return "official_currentness_implied"
+    return "currentness_required_by_supported_class"
+
+
+def _source_artifact_expectation(fact_kind: str) -> str:
+    if fact_kind == "fee":
+        return "official fee schedule or filing-fee instructions"
+    if fact_kind == "deadline":
+        return "official deadline schedule or filing instructions"
+    if fact_kind == "requirement":
+        return "official requirements page or instructions"
+    if fact_kind == "status":
+        return "official status page or notice"
+    return "official rate table, notice, schedule, or source-of-record page"
+
+
+def _artifact_source_terms(
+    *,
+    fact_kind: str,
+    form_anchors: Sequence[str],
+    timeframe_posture: str,
+) -> list[str]:
+    terms = ["official", "current"]
+    if fact_kind == "fee":
+        terms.extend(["fee schedule", "filing fees"])
+        if form_anchors:
+            terms.append("form instructions")
+    elif fact_kind == "deadline":
+        terms.extend(["deadline", "instructions"])
+    elif fact_kind == "requirement":
+        terms.extend(["requirements", "instructions"])
+    elif fact_kind == "status":
+        terms.extend(["status", "notice"])
+    else:
+        terms.extend(["rate", "notice", "table"])
+    if timeframe_posture == "year_specific_current":
+        terms.append("effective")
+    return _unique_clean_terms(terms, limit=8)
+
+
+def _answer_bearing_anchor_terms(
+    *,
+    subject_anchors: Sequence[str],
+    form_anchors: Sequence[str],
+    fact_anchor: str,
+    component_text: str,
+    fact_kind: str,
+) -> list[str]:
+    terms: list[str] = []
+    terms.extend(subject_anchors)
+    terms.extend(form_anchors)
+    if fact_anchor:
+        terms.append(fact_anchor)
+    lowered = component_text.casefold()
+    for phrase in (
+        "business use",
+        "small claims",
+        "paper",
+        "filing fee",
+        "fee schedule",
+        "standard mileage rate",
+        "wage base",
+    ):
+        if phrase in lowered:
+            terms.append(phrase)
+    if fact_kind == "fee":
+        terms.append("fee")
+    elif fact_kind == "current_value":
+        terms.append("rate")
+    return _unique_clean_terms(terms, limit=10)
+
+
+def _expected_value_token_kinds(fact_kind: str, component_text: str) -> list[str]:
+    lowered = component_text.casefold()
+    if fact_kind == "fee":
+        return ["currency"]
+    if "rate" in lowered or "mileage" in lowered:
+        return ["currency", "number"]
+    if fact_kind == "deadline":
+        return ["date_like"]
+    if fact_kind == "current_value":
+        return ["number"]
+    return ["number"]
+
+
+def _artifact_oriented_acquisition_query(
+    *,
+    subject_anchors: Sequence[str],
+    form_anchors: Sequence[str],
+    fact_anchor: str,
+    component_text: str,
+    artifact_terms: Sequence[str],
+    timeframe_posture: str,
+    fallback: str,
+) -> str:
+    parts: list[str] = []
+    parts.extend(subject_anchors)
+    parts.extend(form_anchors)
+    if fact_anchor:
+        parts.append(fact_anchor)
+    lowered = component_text.casefold()
+    for qualifier in ("business use", "small claims", "paper"):
+        if qualifier in lowered:
+            parts.append(qualifier)
+    if timeframe_posture:
+        parts.append("current")
+    parts.extend(artifact_terms)
+    query = " ".join(_unique_clean_terms(parts, limit=14))
+    return _clean_text(query or fallback, limit=220) or fallback
+
+
+def _unique_clean_terms(terms: Sequence[Any], *, limit: int) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for term in terms:
+        clean = _clean_text(term, limit=120)
+        key = clean.casefold() if clean else ""
+        if clean and key not in seen:
+            seen.add(key)
+            out.append(clean)
+    return out[:limit]
 
 
 def _disambiguation_record_from_scout_payload(
@@ -2240,6 +2653,7 @@ def _write_fetch_read_artifacts(
     *,
     retained_root: Path,
     relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
     provider_results: Sequence[Mapping[str, Any]],
     fetch_read_runner: FetchReadRunner,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
@@ -2276,6 +2690,12 @@ def _write_fetch_read_artifacts(
             ),
             "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
             "fetch_read_attempt_diagnostics": (),
+            **_selected_window_guidance_counts(
+                acquisition_plan=acquisition_plan,
+                selection=None,
+                blocked=True,
+                blocker="no usable http(s) URL candidate reached selected-window guidance.",
+            ),
         }
     provider_results_by_candidate_id = _provider_results_by_candidate_id(
         provider_results,
@@ -2296,6 +2716,7 @@ def _write_fetch_read_artifacts(
             selection = _bounded_plan_text_selection(
                 _provider_extracted_text(provider_result) or "",
                 relation_plan=relation_plan,
+                acquisition_plan=acquisition_plan,
             )
             material = _provider_extracted_fetch_read_material(
                 candidate=candidate,
@@ -2331,6 +2752,12 @@ def _write_fetch_read_artifacts(
                 ),
                 "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
                 "fetch_read_attempt_diagnostics": (),
+                **_selected_window_guidance_counts(
+                    acquisition_plan=acquisition_plan,
+                    selection=None,
+                    blocked=True,
+                    blocker=str(exc),
+                ),
             }
         fetch_dir.mkdir(parents=True, exist_ok=True)
         _write_json(fetch_dir / FETCH_READ_CONTENT_PACKET_NAME, fetch_packet)
@@ -2360,6 +2787,10 @@ def _write_fetch_read_artifacts(
             ),
             "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
             "fetch_read_attempt_diagnostics": (),
+            **_selected_window_guidance_counts(
+                acquisition_plan=acquisition_plan,
+                selection=selection,
+            ),
         }
     fetch_attempts = 0
     last_error: GenericSingleRelationLiveDogfoodRunError | None = None
@@ -2380,6 +2811,7 @@ def _write_fetch_read_artifacts(
             selection = _bounded_plan_text_selection(
                 fetch_result.sanitized_text,
                 relation_plan=relation_plan,
+                acquisition_plan=acquisition_plan,
             )
             material = _fetch_read_material(
                 candidate=candidate,
@@ -2428,6 +2860,10 @@ def _write_fetch_read_artifacts(
                 ),
                 "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
                 "fetch_read_attempt_diagnostics": tuple(attempt_diagnostics),
+                **_selected_window_guidance_counts(
+                    acquisition_plan=acquisition_plan,
+                    selection=selection,
+                ),
             }
         except GenericSingleRelationLiveDogfoodRunError as exc:
             last_error = exc
@@ -2468,6 +2904,12 @@ def _write_fetch_read_artifacts(
         ),
         "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
         "fetch_read_attempt_diagnostics": tuple(attempt_diagnostics),
+        **_selected_window_guidance_counts(
+            acquisition_plan=acquisition_plan,
+            selection=None,
+            blocked=True,
+            blocker=detail,
+        ),
     }
 
 
@@ -3548,17 +3990,35 @@ def _bounded_plan_text_selection(
     text: str,
     *,
     relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None = None,
 ) -> BoundedTextSelection:
     return select_bounded_answer_bearing_text(
         text,
         max_chars=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
-        required_or_preferred_anchors=_generic_anchor_groups(relation_plan),
+        required_or_preferred_anchors=_generic_anchor_groups(
+            relation_plan,
+            acquisition_plan=acquisition_plan,
+        ),
+        expected_value_token_kinds=_expected_value_token_kinds_from_plan(
+            acquisition_plan
+        ),
         component_text=_clean_text(relation_plan.get("component_text"), limit=260),
         claim_under_test=_clean_text(relation_plan.get("claim_under_test"), limit=500),
     )
 
 
-def _generic_anchor_groups(relation_plan: Mapping[str, Any]) -> list[tuple[str, ...]]:
+def _generic_anchor_groups(
+    relation_plan: Mapping[str, Any],
+    *,
+    acquisition_plan: Mapping[str, Any] | None = None,
+) -> list[tuple[str, ...]]:
+    acquisition = _safe_mapping(acquisition_plan)
+    anchor_terms = [
+        _clean_text(item, limit=120)
+        for item in _safe_sequence(acquisition.get("answer_bearing_anchor_terms"))
+    ]
+    if any(anchor_terms):
+        return [(term,) for term in anchor_terms if term]
     text = " ".join(
         str(item or "")
         for item in (
@@ -3584,6 +4044,59 @@ def _generic_anchor_groups(relation_plan: Mapping[str, Any]) -> list[tuple[str, 
             seen.add(token)
             tokens.append(token)
     return [(token,) for token in tokens[:8]]
+
+
+def _selected_window_guidance_counts(
+    *,
+    acquisition_plan: Mapping[str, Any] | None,
+    selection: BoundedTextSelection | None,
+    blocked: bool = False,
+    blocker: str | None = None,
+) -> dict[str, Any]:
+    acquisition = _safe_mapping(acquisition_plan)
+    produced = bool(acquisition.get("selected_window_guidance"))
+    anchor_consumed = bool(produced and selection is not None)
+    expected_value_kinds = _expected_value_token_kinds_from_plan(acquisition)
+    value_consumed = bool(
+        expected_value_kinds
+        and selection is not None
+        and selection.value_token_guidance_consumed is True
+    )
+    value_blocked = bool(expected_value_kinds and (blocked or not value_consumed))
+    value_blocker = blocker
+    if expected_value_kinds and not value_consumed and not value_blocker:
+        value_blocker = (
+            "existing bounded-window selector did not consume expected "
+            "value-token kinds"
+        )
+    return {
+        "selected_window_guidance_produced": 1 if produced else 0,
+        "selected_window_guidance_consumed": 1 if anchor_consumed and value_consumed else 0,
+        "selected_window_guidance_blocked": 1 if produced and blocked else 0,
+        "selected_window_guidance_blocker": (
+            _clean_text(blocker, limit=220) if produced and blocked else None
+        ),
+        "selected_window_anchor_guidance_consumed": 1 if anchor_consumed else 0,
+        "selected_window_value_token_guidance_consumed": 1 if value_consumed else 0,
+        "selected_window_value_token_guidance_blocked": 1 if value_blocked else 0,
+        "selected_window_value_token_guidance_blocker": (
+            _clean_text(value_blocker, limit=220) if value_blocked else None
+        ),
+    }
+
+
+def _expected_value_token_kinds_from_plan(
+    acquisition_plan: Mapping[str, Any] | None,
+) -> list[str]:
+    acquisition = _safe_mapping(acquisition_plan)
+    return [
+        item
+        for item in (
+            _clean_text(raw, limit=40)
+            for raw in _safe_sequence(acquisition.get("expected_value_token_kinds"))
+        )
+        if item
+    ]
 
 
 def _guard_dprime_review_route(
