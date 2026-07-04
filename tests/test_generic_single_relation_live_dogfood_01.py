@@ -138,7 +138,10 @@ def test_supported_query_without_live_confirmation_consumes_plan_only(
     assert result.packet["component_id"] == plan["component_id"]
     assert result.packet["source_obligation_id"] == plan["source_obligation_id"]
     assert result.packet["search_requirement_id"] == plan["search_requirement_id"]
-    assert result.packet["search_query_seed_used"] == plan["search_query_seeds"][0]
+    assert result.packet["relation_plan_search_query_seed"] == (
+        plan["search_query_seeds"][0]
+    )
+    assert result.packet["search_query_seed_used"] == result.packet["acquisition_query"]
     assert result.packet["provider_calls_attempted"] == 0
     assert result.packet["fetch_read_attempts"] == 0
     assert result.packet["dprime_model_review_calls_attempted"] == 0
@@ -227,7 +230,10 @@ def test_default_product_owned_adapter_supplies_tavily_results(
         result.decision
         == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
     ), result.packet.get("blocker_detail")
-    assert tavily_calls[0]["query"] == plan["search_query_seeds"][0]
+    assert tavily_calls[0]["query"] == result.packet["acquisition_query"]
+    assert result.packet["relation_plan_search_query_seed"] == (
+        plan["search_query_seeds"][0]
+    )
     assert tavily_calls[0]["search_depth"] == "basic"
     assert fetch_urls == []
     assert result.packet["planner_marked_ambiguity"] is False
@@ -407,7 +413,10 @@ def test_live_confirmation_without_dprime_stops_after_custody_status(
 
     assert result.return_code == 2
     assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
-    assert calls[0].query == plan["search_query_seeds"][0]
+    assert calls[0].query == result.packet["acquisition_query"]
+    assert result.packet["relation_plan_search_query_seed"] == (
+        plan["search_query_seeds"][0]
+    )
     assert result.packet["relation_plan_consumed"] is True
     assert result.packet["dprime_relation_intake_candidate_consumed_from_plan"] is True
     assert result.packet["provider_calls_attempted"] == 1
@@ -450,7 +459,10 @@ def test_provider_link_field_feeds_generic_fetch_read_adapter_and_custody(
 
     assert result.return_code == 2
     assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
-    assert provider_calls[0].query == plan["search_query_seeds"][0]
+    assert provider_calls[0].query == result.packet["acquisition_query"]
+    assert result.packet["relation_plan_search_query_seed"] == (
+        plan["search_query_seeds"][0]
+    )
     assert fetch_urls == [link]
     assert result.packet["provider_results_returned"] == 1
     assert result.packet["fetch_read_attempts"] == 1
@@ -710,7 +722,7 @@ def test_official_http_4xx_returns_sharp_source_survival_blocker(
     assert result.packet["provider_routing_changed"] is True
     assert result.packet["direct_url_fetch_primary_happy_path"] is False
     assert result.packet["direct_url_fetch_fallback_or_diagnostic_only"] is True
-    assert result.packet["provider_query_generation_changed"] is False
+    assert result.packet["provider_query_generation_changed"] is True
     assert result.packet["fetch_read_cap_preserved"] is True
     assert result.packet["fetch_read_cap_value"] == 3
     formatted = format_generic_single_relation_live_dogfood_output(
@@ -755,7 +767,10 @@ def test_clear_query_uses_extraction_provider_before_direct_fetch(
     assert result.return_code == 2
     assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
     assert [call.provider for call in calls] == ["tavily"]
-    assert calls[0].query == plan["search_query_seeds"][0]
+    assert calls[0].query == result.packet["acquisition_query"]
+    assert result.packet["relation_plan_search_query_seed"] == (
+        plan["search_query_seeds"][0]
+    )
     assert not hasattr(calls[0], "broker_url")
     assert not hasattr(calls[0], "private_broker_path")
     assert fetch_urls == []
@@ -1449,7 +1464,10 @@ def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
     assert result.return_code == 0, result.packet.get("blocker_detail")
     assert result.decision == "PASS"
     assert review_calls == 1
-    assert calls[0].query == plan["search_query_seeds"][0]
+    assert calls[0].query == result.packet["acquisition_query"]
+    assert result.packet["relation_plan_search_query_seed"] == (
+        plan["search_query_seeds"][0]
+    )
     assert result.packet["relation_plan_consumed"] is True
     assert result.packet["relation_plan_id"] == plan["plan_id"]
     assert result.packet["supported_query_class_id"] == MVP_SUPPORTED_QUERY_CLASS_ID
@@ -1463,7 +1481,7 @@ def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
     assert result.packet["component_text"] == plan["component_text"]
     assert result.packet["source_obligation_id"] == plan["source_obligation_id"]
     assert result.packet["search_requirement_id"] == plan["search_requirement_id"]
-    assert result.packet["search_query_seed_used"] == plan["search_query_seeds"][0]
+    assert result.packet["search_query_seed_used"] == result.packet["acquisition_query"]
     assert result.packet["relation_plan_dprime_relation_intake_candidate"][
         "component_id"
     ] == plan["component_id"]
