@@ -1665,6 +1665,19 @@ def _acquisition_plan_diagnostics(
         "selected_window_guidance_blocked": bool(
             counts.get("selected_window_guidance_blocked", 0)
         ),
+        "selected_window_anchor_guidance_consumed": bool(
+            counts.get("selected_window_anchor_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_consumed": bool(
+            counts.get("selected_window_value_token_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_blocked": bool(
+            counts.get("selected_window_value_token_guidance_blocked", 0)
+        ),
+        "selected_window_value_token_guidance_blocker": _clean_text(
+            counts.get("selected_window_value_token_guidance_blocker"),
+            limit=220,
+        ),
         "selected_window_guidance_blocker": _clean_text(
             counts.get("selected_window_guidance_blocker"),
             limit=220,
@@ -1808,6 +1821,19 @@ def _base_packet(
         ),
         "selected_window_guidance_blocked": bool(
             counts.get("selected_window_guidance_blocked", 0)
+        ),
+        "selected_window_anchor_guidance_consumed": bool(
+            counts.get("selected_window_anchor_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_consumed": bool(
+            counts.get("selected_window_value_token_guidance_consumed", 0)
+        ),
+        "selected_window_value_token_guidance_blocked": bool(
+            counts.get("selected_window_value_token_guidance_blocked", 0)
+        ),
+        "selected_window_value_token_guidance_blocker": _clean_text(
+            counts.get("selected_window_value_token_guidance_blocker"),
+            limit=220,
         ),
         "selected_window_guidance_blocker": _clean_text(
             counts.get("selected_window_guidance_blocker"),
@@ -3973,6 +3999,9 @@ def _bounded_plan_text_selection(
             relation_plan,
             acquisition_plan=acquisition_plan,
         ),
+        expected_value_token_kinds=_expected_value_token_kinds_from_plan(
+            acquisition_plan
+        ),
         component_text=_clean_text(relation_plan.get("component_text"), limit=260),
         claim_under_test=_clean_text(relation_plan.get("claim_under_test"), limit=500),
     )
@@ -4026,15 +4055,48 @@ def _selected_window_guidance_counts(
 ) -> dict[str, Any]:
     acquisition = _safe_mapping(acquisition_plan)
     produced = bool(acquisition.get("selected_window_guidance"))
-    consumed = bool(produced and selection is not None)
+    anchor_consumed = bool(produced and selection is not None)
+    expected_value_kinds = _expected_value_token_kinds_from_plan(acquisition)
+    value_consumed = bool(
+        expected_value_kinds
+        and selection is not None
+        and selection.value_token_guidance_consumed is True
+    )
+    value_blocked = bool(expected_value_kinds and (blocked or not value_consumed))
+    value_blocker = blocker
+    if expected_value_kinds and not value_consumed and not value_blocker:
+        value_blocker = (
+            "existing bounded-window selector did not consume expected "
+            "value-token kinds"
+        )
     return {
         "selected_window_guidance_produced": 1 if produced else 0,
-        "selected_window_guidance_consumed": 1 if consumed else 0,
+        "selected_window_guidance_consumed": 1 if anchor_consumed and value_consumed else 0,
         "selected_window_guidance_blocked": 1 if produced and blocked else 0,
         "selected_window_guidance_blocker": (
             _clean_text(blocker, limit=220) if produced and blocked else None
         ),
+        "selected_window_anchor_guidance_consumed": 1 if anchor_consumed else 0,
+        "selected_window_value_token_guidance_consumed": 1 if value_consumed else 0,
+        "selected_window_value_token_guidance_blocked": 1 if value_blocked else 0,
+        "selected_window_value_token_guidance_blocker": (
+            _clean_text(value_blocker, limit=220) if value_blocked else None
+        ),
     }
+
+
+def _expected_value_token_kinds_from_plan(
+    acquisition_plan: Mapping[str, Any] | None,
+) -> list[str]:
+    acquisition = _safe_mapping(acquisition_plan)
+    return [
+        item
+        for item in (
+            _clean_text(raw, limit=40)
+            for raw in _safe_sequence(acquisition.get("expected_value_token_kinds"))
+        )
+        if item
+    ]
 
 
 def _guard_dprime_review_route(

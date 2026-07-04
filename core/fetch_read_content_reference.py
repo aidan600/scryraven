@@ -265,6 +265,11 @@ class BoundedTextSelection:
     missing_anchors: tuple[str, ...]
     selected_window_start_offset: int
     selected_window_end_offset: int
+    expected_value_token_kinds: tuple[str, ...] = ()
+    matched_value_token_kinds: tuple[str, ...] = ()
+    matched_value_token_kind_count: int = 0
+    missing_value_token_kinds: tuple[str, ...] = ()
+    value_token_guidance_consumed: bool = False
     local_context_posture: str = "single_contiguous_window"
     anti_anchor_laundering_passed: bool = True
     not_semantic_support: bool = True
@@ -280,6 +285,11 @@ class BoundedTextSelection:
             "matched_anchors": list(self.matched_anchors),
             "matched_anchor_count": self.matched_anchor_count,
             "missing_anchors": list(self.missing_anchors),
+            "expected_value_token_kinds": list(self.expected_value_token_kinds),
+            "matched_value_token_kinds": list(self.matched_value_token_kinds),
+            "matched_value_token_kind_count": self.matched_value_token_kind_count,
+            "missing_value_token_kinds": list(self.missing_value_token_kinds),
+            "value_token_guidance_consumed": self.value_token_guidance_consumed,
             "selected_window_start_offset": self.selected_window_start_offset,
             "selected_window_end_offset": self.selected_window_end_offset,
             "local_context_posture": self.local_context_posture,
@@ -303,6 +313,7 @@ def select_bounded_answer_bearing_text(
     readable_text: str,
     max_chars: int = FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
     required_or_preferred_anchors: Sequence[Any] = (),
+    expected_value_token_kinds: Sequence[str] = (),
     component_text: str | None = None,
     claim_under_test: str | None = None,
 ) -> BoundedTextSelection:
@@ -320,6 +331,7 @@ def select_bounded_answer_bearing_text(
     collapsed = _collapse_readable_text(readable_text)
     bounded_limit = min(max_chars, FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS)
     anchor_groups = _normalize_anchor_groups(required_or_preferred_anchors)
+    value_token_kinds = _normalize_value_token_kinds(expected_value_token_kinds)
     if not collapsed:
         return _selection_from_window(
             text="",
@@ -327,6 +339,7 @@ def select_bounded_answer_bearing_text(
             end=0,
             anchor_groups=anchor_groups,
             matches=(),
+            expected_value_token_kinds=value_token_kinds,
             strategy="empty_readable_text",
         )
     matches = _anchor_matches(collapsed, anchor_groups)
@@ -342,29 +355,31 @@ def select_bounded_answer_bearing_text(
             end=len(collapsed),
             anchor_groups=anchor_groups,
             matches=matches,
+            expected_value_token_kinds=value_token_kinds,
             strategy=strategy,
         )
-    if not matches:
-        return _selection_from_window(
-            text=collapsed,
-            start=0,
-            end=bounded_limit,
-            anchor_groups=anchor_groups,
-            matches=(),
-            strategy="prefix_fallback_no_anchor_match",
-        )
 
-    best: tuple[tuple[int, int, int, int, int], int, int, tuple[_AnchorMatch, ...]] | None = None
-    for start in _candidate_window_starts(matches, text_length=len(collapsed), max_chars=bounded_limit):
+    best: tuple[tuple[int, int, int, int, int, int], int, int, tuple[_AnchorMatch, ...]] | None = None
+    for start in _candidate_window_starts(
+        matches,
+        text=collapsed,
+        expected_value_token_kinds=value_token_kinds,
+        text_length=len(collapsed),
+        max_chars=bounded_limit,
+    ):
         end = min(len(collapsed), start + bounded_limit)
         window_matches = tuple(match for match in matches if start <= match.start and match.end <= end)
         matched_group_count = len({match.group_index for match in window_matches})
         occurrence_count = len(window_matches)
         anchor_span = _window_anchor_span(window_matches)
         full_match = int(bool(anchor_groups) and matched_group_count == len(anchor_groups))
+        matched_value_kind_count = len(
+            set(_value_token_kind_counts(collapsed[start:end])) & set(value_token_kinds)
+        )
         score = (
             full_match,
             matched_group_count,
+            matched_value_kind_count,
             occurrence_count,
             -anchor_span,
             -start,
@@ -380,6 +395,7 @@ def select_bounded_answer_bearing_text(
             end=bounded_limit,
             anchor_groups=anchor_groups,
             matches=(),
+            expected_value_token_kinds=value_token_kinds,
             strategy="prefix_fallback_no_candidate_window",
         )
     _score, start, end, window_matches = best
@@ -395,6 +411,7 @@ def select_bounded_answer_bearing_text(
         end=end,
         anchor_groups=anchor_groups,
         matches=window_matches,
+        expected_value_token_kinds=value_token_kinds,
         strategy=strategy,
     )
 
@@ -1309,6 +1326,11 @@ def _validate_bounded_text_selection_metadata(
         "matched_anchors",
         "matched_anchor_count",
         "missing_anchors",
+        "expected_value_token_kinds",
+        "matched_value_token_kinds",
+        "matched_value_token_kind_count",
+        "missing_value_token_kinds",
+        "value_token_guidance_consumed",
         "selected_window_start_offset",
         "selected_window_end_offset",
         "local_context_posture",
@@ -1354,6 +1376,16 @@ def _validate_bounded_text_selection_metadata(
         raise FetchReadContentReferenceError("bounded text selection matched anchor count mismatch")
     if required_count != len(matched) + len(missing):
         raise FetchReadContentReferenceError("bounded text selection required anchor count mismatch")
+    expected_value_kinds = _text_list(safe.get("expected_value_token_kinds"), limit=40)
+    matched_value_kinds = _text_list(safe.get("matched_value_token_kinds"), limit=40)
+    missing_value_kinds = _text_list(safe.get("missing_value_token_kinds"), limit=40)
+    matched_value_count = _optional_int(safe.get("matched_value_token_kind_count"))
+    if matched_value_count is None or matched_value_count != len(matched_value_kinds):
+        raise FetchReadContentReferenceError("bounded text selection value-token count mismatch")
+    if len(expected_value_kinds) != len(matched_value_kinds) + len(missing_value_kinds):
+        raise FetchReadContentReferenceError("bounded text selection value-token expectation mismatch")
+    if bool(expected_value_kinds) != (safe.get("value_token_guidance_consumed") is True):
+        raise FetchReadContentReferenceError("bounded text selection value-token guidance flag mismatch")
 
 
 def _validate_bounded_text_digest(reference: Mapping[str, Any]) -> None:
@@ -1717,9 +1749,52 @@ def _iter_anchor_term_matches(text: str, term: str) -> tuple[re.Match[str], ...]
     return tuple(re.finditer(pattern, text, flags=re.IGNORECASE))
 
 
+_VALUE_TOKEN_KIND_PATTERNS = {
+    "currency": r"\$\s?\d{1,6}(?:,\d{3})*(?:\.\d{2})?",
+    "percent": r"\b\d{1,3}(?:\.\d+)?%",
+    "date_like": r"\b(?:19|20)\d{2}(?:-\d{1,2}(?:-\d{1,2})?)?\b",
+    "number": r"\b\d+(?:,\d{3})*(?:\.\d+)?\b",
+}
+
+
+def _normalize_value_token_kinds(kinds: Sequence[str]) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for kind in kinds:
+        normalized = _normalize_key(kind)
+        if normalized in _VALUE_TOKEN_KIND_PATTERNS and normalized not in seen:
+            seen.add(normalized)
+            out.append(normalized)
+    return tuple(out)
+
+
+def _value_token_kind_counts(text: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for kind, pattern in _VALUE_TOKEN_KIND_PATTERNS.items():
+        matches = {match.group(0) for match in re.finditer(pattern, text)}
+        if matches:
+            counts[kind] = len(matches)
+    return counts
+
+
+def _iter_value_token_spans(
+    text: str,
+    expected_value_token_kinds: Sequence[str],
+) -> tuple[tuple[int, int], ...]:
+    spans: list[tuple[int, int]] = []
+    for kind in expected_value_token_kinds:
+        pattern = _VALUE_TOKEN_KIND_PATTERNS.get(kind)
+        if not pattern:
+            continue
+        spans.extend((match.start(), match.end()) for match in re.finditer(pattern, text))
+    return tuple(sorted(set(spans)))
+
+
 def _candidate_window_starts(
     matches: Sequence[_AnchorMatch],
     *,
+    text: str,
+    expected_value_token_kinds: Sequence[str],
     text_length: int,
     max_chars: int,
 ) -> tuple[int, ...]:
@@ -1731,6 +1806,14 @@ def _candidate_window_starts(
             match.start - context_margin,
             match.start - (max_chars // 3),
             match.end - max_chars,
+        ):
+            starts.add(_clamp_window_start(raw, text_length=text_length, max_chars=max_chars))
+    for start, end in _iter_value_token_spans(text, expected_value_token_kinds):
+        for raw in (
+            start,
+            start - context_margin,
+            start - (max_chars // 3),
+            end - max_chars,
         ):
             starts.add(_clamp_window_start(raw, text_length=text_length, max_chars=max_chars))
     return tuple(sorted(starts))
@@ -1754,6 +1837,7 @@ def _selection_from_window(
     end: int,
     anchor_groups: Sequence[tuple[str, tuple[str, ...]]],
     matches: Sequence[_AnchorMatch],
+    expected_value_token_kinds: Sequence[str],
     strategy: str,
 ) -> BoundedTextSelection:
     bounded_text = text[start:end].rstrip()
@@ -1769,6 +1853,10 @@ def _selection_from_window(
         for index, (label, _alternatives) in enumerate(anchor_groups)
         if index not in matched_indices
     )
+    value_counts = _value_token_kind_counts(bounded_text)
+    expected_value_kinds = tuple(expected_value_token_kinds)
+    matched_value_kinds = tuple(kind for kind in expected_value_kinds if value_counts.get(kind))
+    missing_value_kinds = tuple(kind for kind in expected_value_kinds if kind not in matched_value_kinds)
     return BoundedTextSelection(
         bounded_text=bounded_text,
         bounded_text_char_count=len(bounded_text),
@@ -1778,6 +1866,11 @@ def _selection_from_window(
         matched_anchors=matched_anchors,
         matched_anchor_count=len(matched_anchors),
         missing_anchors=missing_anchors,
+        expected_value_token_kinds=expected_value_kinds,
+        matched_value_token_kinds=matched_value_kinds,
+        matched_value_token_kind_count=len(matched_value_kinds),
+        missing_value_token_kinds=missing_value_kinds,
+        value_token_guidance_consumed=bool(expected_value_kinds),
         selected_window_start_offset=start,
         selected_window_end_offset=end,
     )
