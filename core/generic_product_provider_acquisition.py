@@ -42,8 +42,13 @@ class ProductProviderAcquisitionRequest:
     output_path: Path
     query: str
     provider: str = DEFAULT_EXTRACTION_PROVIDER
+    acquisition_provider_role: str = "extraction_provider"
     operation: str = DEFAULT_OPERATION
     max_results: int = DEFAULT_MAX_RESULTS
+    domain_constraints: tuple[str, ...] = ()
+    include_domains: tuple[str, ...] = ()
+    exclude_domains: tuple[str, ...] = ()
+    source_of_record_domain_constraints: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +102,14 @@ def run_generic_product_provider_acquisition(
     provider = _clean_provider(request.provider)
     operation = _clean_operation(request.operation)
     max_results = _max_results(request.max_results)
+    include_domains = _domain_constraints(
+        (
+            *request.domain_constraints,
+            *request.include_domains,
+            *request.source_of_record_domain_constraints,
+        )
+    )
+    exclude_domains = _domain_constraints(request.exclude_domains)
     if operation != DEFAULT_OPERATION:
         return _failed_result(
             request,
@@ -106,12 +119,19 @@ def run_generic_product_provider_acquisition(
         )
     try:
         if provider == DEFAULT_EXTRACTION_PROVIDER:
+            tavily_kwargs: dict[str, Any] = {
+                "query": request.query,
+                "intent": "general",
+                "complexity": "low",
+                "max_results": max_results,
+                "search_depth": "basic",
+            }
+            if include_domains:
+                tavily_kwargs["include_domains"] = list(include_domains)
+            if exclude_domains:
+                tavily_kwargs["exclude_domains"] = list(exclude_domains)
             provider_records, _images = tavily_product_provider_callable(
-                query=request.query,
-                intent="general",
-                complexity="low",
-                max_results=max_results,
-                search_depth="basic",
+                **tavily_kwargs,
             )
             results = normalize_tavily_product_provider_results(
                 provider_records,
@@ -147,9 +167,23 @@ def run_generic_product_provider_acquisition(
     payload = {
         "request_kind": PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND,
         "provider": provider,
+        "acquisition_provider_role": _clean_provider_role(
+            request.acquisition_provider_role
+        ),
         "operation": operation,
         "result_count": len(results),
         "results": results,
+        "domain_constraints": list(include_domains),
+        "include_domains": list(include_domains),
+        "exclude_domains": list(exclude_domains),
+        "source_of_record_domain_constraints": list(
+            _domain_constraints(request.source_of_record_domain_constraints)
+        ),
+        "domain_constraints_acquisition_only": True,
+        "domain_constraints_create_source_authority": False,
+        "domain_constraints_satisfy_source_obligation": False,
+        "domain_constraints_citation_eligible": False,
+        "domain_constraints_claim_correctness": False,
         "raw_provider_payload_retained": False,
         "raw_search_response_retained": False,
     }
@@ -353,9 +387,43 @@ def _clean_operation(value: Any) -> str:
     return str(value or "").strip().casefold() or DEFAULT_OPERATION
 
 
+def _clean_provider_role(value: Any) -> str:
+    text = str(value or "").strip().casefold().replace("-", "_")
+    return text or "extraction_provider"
+
+
 def _max_results(value: Any) -> int:
     parsed = _positive_int(value, default=DEFAULT_MAX_RESULTS)
     return min(parsed, DEFAULT_MAX_RESULTS)
+
+
+def _domain_constraints(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        raw_items: Sequence[Any] = (value,)
+    elif isinstance(value, Sequence):
+        raw_items = value
+    else:
+        raw_items = ()
+    domains: list[str] = []
+    seen: set[str] = set()
+    for raw in raw_items:
+        domain = _clean_domain_constraint(raw)
+        if not domain or domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+    return tuple(domains[:DEFAULT_MAX_RESULTS])
+
+
+def _clean_domain_constraint(value: Any) -> str | None:
+    text = _clean_text(value, limit=260)
+    if not text:
+        return None
+    parsed = urlparse(text if "://" in text else f"https://{text}")
+    domain = (parsed.netloc or parsed.path).casefold().strip().strip("/")
+    if not domain or "/" in domain or " " in domain:
+        return None
+    return domain[4:] if domain.startswith("www.") else domain
 
 
 def _positive_int(value: Any, *, default: int) -> int:

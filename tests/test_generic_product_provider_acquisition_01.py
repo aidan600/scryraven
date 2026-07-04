@@ -99,6 +99,59 @@ def test_tavily_product_provider_results_normalize_raw_content(
     assert "raw_content" not in record
 
 
+def test_neutral_domain_constraints_map_inside_current_tavily_adapter(
+    tmp_path: Path,
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_tavily(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        calls.append(kwargs)
+        return (
+            [
+                {
+                    "title": "Official Fee Schedule",
+                    "url": "https://fees.agency.gov/current",
+                    "snippet": "Official current fee schedule.",
+                    "raw_content": "Official fee schedule lists the current fee as 42.",
+                }
+            ],
+            [],
+        )
+
+    output_path = tmp_path / "provider-domain-constraints.json"
+    runner = build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    result = runner(
+        ProductProviderAcquisitionRequest(
+            repo_root=tmp_path,
+            output_path=output_path,
+            query="official current fee schedule",
+            provider="tavily",
+            acquisition_provider_role="extraction_provider",
+            domain_constraints=("www.fees.agency.gov",),
+            include_domains=("fees.agency.gov",),
+            source_of_record_domain_constraints=("fees.agency.gov",),
+            exclude_domains=("example-law.invalid",),
+        )
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+
+    assert result.return_code == 0
+    assert calls[0]["include_domains"] == ["fees.agency.gov"]
+    assert calls[0]["exclude_domains"] == ["example-law.invalid"]
+    assert payload["acquisition_provider_role"] == "extraction_provider"
+    assert payload["domain_constraints"] == ["fees.agency.gov"]
+    assert payload["include_domains"] == ["fees.agency.gov"]
+    assert payload["source_of_record_domain_constraints"] == ["fees.agency.gov"]
+    assert payload["domain_constraints_acquisition_only"] is True
+    assert payload["domain_constraints_create_source_authority"] is False
+    assert payload["domain_constraints_satisfy_source_obligation"] is False
+    assert payload["domain_constraints_citation_eligible"] is False
+    assert payload["domain_constraints_claim_correctness"] is False
+
+
 def test_serper_scout_results_normalize_without_extracted_text(
     tmp_path: Path,
 ) -> None:
