@@ -662,9 +662,6 @@ def _run_mvp_single_relation_live_dogfood_run(
             output_dir=output_dir,
             confirm_live_dogfood=args.confirm_live_dogfood,
             confirm_live_dprime_review=args.confirm_live_dprime_review,
-            broker_url=args.mvp_live_broker_url,
-            private_broker_path=args.mvp_live_private_broker_path,
-            env_file_paths=args.mvp_live_env_file,
             smart_provider=args.smart_provider,
             smart_model=args.smart_model,
         )

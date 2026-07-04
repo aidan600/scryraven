@@ -83,14 +83,20 @@ refs, source-authority posture requirement ref, and D-prime relation-intake
 posture come from the relation plan rather than from the fixed passport dogfood
 path.
 
+Current repair status: the ordinary generic path no longer uses the
+broker/doorman as its default provider route. Until a product-owned provider
+adapter/service is wired, confirmed generic live dogfood runs fail closed with
+`BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE`.
+Injected fake provider runners remain test-only.
+
 Source acquisition now uses a minimal local acquisition planner over the
 relation plan. For clear single-relation queries, including the licensed N-400
 dogfood query, Serper scout calls are expected to be `0`. Serper is used only as
 a cheap ambiguity scout when the planner records a concrete ambiguity, and its
 output remains non-evidence directionality.
 
-The happy path asks the configured extraction-capable provider for
-source-bound extracted content first. Provider-extracted source text may be
+The intended durable happy path asks the configured extraction-capable provider
+for source-bound extracted content first. Provider-extracted source text may be
 admitted only through the bounded fetch/read custody packet with original
 URL/title/domain/provider metadata preserved. Provider answer products,
 `sourcedAnswer`, snippets, summaries, and provider-written prose remain bridge

@@ -18,6 +18,19 @@ are repo files; use repo-visible files and the current phase prompt.
   [CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
   Codex edits and tests in the workspace sandbox; exact-approved Git commands
   publish.
+- **Provider-related phase classification:** every phase touching provider
+  acquisition, provider runtime wiring, broker/doorman scripts, or provider
+  record capture must classify itself as exactly one of
+  `product provider/runtime integration` or
+  `testing/operator broker-doorman work`. Product provider/runtime integration
+  phases close broker/doorman scripts except as explicitly licensed test
+  fixtures; the ordinary product path must use a product-owned provider
+  adapter/service or fail closed with a product-provider-route blocker, and the
+  broker/doorman must not become the default runtime provider route.
+  Testing/operator broker-doorman phases close ordinary product behavior files;
+  broker output remains sanitized provider-record material only and is not
+  source custody, evidence, citation eligible, source-obligation satisfaction,
+  or answer material.
 - **Generic provider-proxy broker operator flow:** read
   [../operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md](../operator/GENERIC_PROVIDER_PROXY_BROKER_OPERATOR_FLOW.md)
   and [../operator/BROKER_REACTIVATION_RUNBOOK.md](../operator/BROKER_REACTIVATION_RUNBOOK.md)

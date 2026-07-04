@@ -12,8 +12,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
-import sys
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -82,14 +80,8 @@ CONFIRM_LIVE_DOGFOOD_FLAG = "--confirm-live-dogfood"
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED"
 )
-BLOCKED_GENERIC_SINGLE_RELATION_LIVE_TEST_OR_CI_GUARD = (
-    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_TEST_OR_CI_GUARD"
-)
-BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE = (
-    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE"
-)
-BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PROVIDER_PROXY_HELPER_MISSING = (
-    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PROVIDER_PROXY_HELPER_MISSING"
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE"
 )
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM"
@@ -153,11 +145,6 @@ DEFAULT_PROVIDER = "tavily"
 DEFAULT_EXTRACTION_PROVIDER = "tavily"
 DEFAULT_SCOUT_PROVIDER = "serper"
 DEFAULT_OPERATION = "search"
-DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
-DEFAULT_PRIVATE_BROKER_PATH = (
-    Path.home() / "ScryRavenLiveBroker" / "scryraven_live_broker.py"
-)
-DEFAULT_PRIVATE_BROKER_ENV_FILE = Path.home() / "ScryRavenLiveBroker" / ".env"
 DEFAULT_OUTPUT_DIR = Path("output") / "mvp_single_relation_live_dogfood_01"
 SANITIZED_PROVIDER_PROXY_RESPONSE_NAME = "sanitized-provider-proxy-response.json"
 LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
@@ -483,9 +470,6 @@ class GenericProviderProxyRunRequest:
     provider: str = DEFAULT_PROVIDER
     operation: str = DEFAULT_OPERATION
     max_results: int = MAX_PROVIDER_RESULTS
-    broker_url: str = DEFAULT_BROKER_URL
-    private_broker_path: Path = DEFAULT_PRIVATE_BROKER_PATH
-    env_file_paths: tuple[Path, ...] = (DEFAULT_PRIVATE_BROKER_ENV_FILE,)
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,9 +511,6 @@ def build_generic_single_relation_live_dogfood_run_output(
     run_id: str | None = None,
     confirm_live_dogfood: bool = False,
     confirm_live_dprime_review: bool = False,
-    broker_url: str = DEFAULT_BROKER_URL,
-    private_broker_path: str | Path = DEFAULT_PRIVATE_BROKER_PATH,
-    env_file_paths: Sequence[str | Path] | None = None,
     provider_proxy_runner: ProviderProxyRunner | None = None,
     fetch_read_runner: FetchReadRunner | None = None,
     smart_provider: str | None = None,
@@ -568,6 +549,16 @@ def build_generic_single_relation_live_dogfood_run_output(
                     "provider/search/fetch/read contact."
                 ),
             )
+        if provider_proxy_runner is None:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
+                (
+                    "Generic single-relation live dogfood has no product-owned "
+                    "provider acquisition route configured. Inject a test "
+                    "provider runner for offline tests or wire a product-owned "
+                    "provider adapter before live acquisition."
+                ),
+            )
         _guard_dprime_review_route(
             confirm_live_dprime_review=confirm_live_dprime_review,
             dprime_model_review_callable=dprime_model_review_callable,
@@ -576,13 +567,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             ),
             environ=environ,
         )
-        if provider_proxy_runner is None and _pytest_or_ci_guard(environ):
-            raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_TEST_OR_CI_GUARD,
-                "Default live provider runner is disabled under pytest/CI.",
-            )
 
-        proxy_runner = provider_proxy_runner or run_provider_proxy_helper_once
+        proxy_runner = provider_proxy_runner
         if acquisition_plan["disambiguation_required"]:
             scout_output_path = run_dir / "sanitized-scout-proxy-response.json"
             scout_result = proxy_runner(
@@ -592,9 +578,6 @@ def build_generic_single_relation_live_dogfood_run_output(
                     query=str(acquisition_plan["disambiguation_query"]),
                     provider=DEFAULT_SCOUT_PROVIDER,
                     operation=DEFAULT_OPERATION,
-                    broker_url=broker_url,
-                    private_broker_path=Path(private_broker_path),
-                    env_file_paths=_env_file_paths(env_file_paths),
                 )
             )
             counts["serper_scout_calls_attempted"] = (
@@ -606,8 +589,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             _enforce_caps(counts)
             if scout_result.return_code != 0:
                 raise GenericSingleRelationLiveDogfoodRunError(
-                    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE,
-                    "Serper scout/disambiguation call did not complete.",
+                    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+                    "Serper scout/disambiguation provider runner did not complete.",
                 )
             scout_payload = _load_sanitized_provider_output(scout_result.output_path)
             disambiguation_record = _disambiguation_record_from_scout_payload(
@@ -628,9 +611,6 @@ def build_generic_single_relation_live_dogfood_run_output(
                 query=search_query_seed,
                 provider=extraction_provider,
                 operation=str(acquisition_plan["provider_operation"]),
-                broker_url=broker_url,
-                private_broker_path=Path(private_broker_path),
-                env_file_paths=_env_file_paths(env_file_paths),
             )
         )
         counts["provider_calls_attempted"] = proxy_result.provider_calls_attempted
@@ -645,10 +625,7 @@ def build_generic_single_relation_live_dogfood_run_output(
         if proxy_result.return_code != 0:
             raise GenericSingleRelationLiveDogfoodRunError(
                 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
-                (
-                    "extraction-capable provider route did not complete through "
-                    "the approved broker/operator mechanism."
-                ),
+                "extraction-capable provider runner did not complete.",
             )
 
         provider_payload = _load_sanitized_provider_output(proxy_result.output_path)
@@ -782,53 +759,6 @@ def build_generic_single_relation_live_dogfood_run_output(
         packet=packet,
         packet_path=packet_path,
         retained_artifact_root=retained_root if retained_root.exists() else None,
-    )
-
-
-def run_provider_proxy_helper_once(
-    request: GenericProviderProxyRunRequest,
-) -> GenericProviderProxyRunResult:
-    """Invoke the generic one-run provider-proxy helper without printing secrets."""
-
-    helper = request.repo_root / "scripts" / "run_provider_proxy_broker_once.py"
-    if not helper.is_file():
-        raise GenericSingleRelationLiveDogfoodRunError(
-            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PROVIDER_PROXY_HELPER_MISSING,
-            "provider-proxy helper script is missing.",
-        )
-    command = [
-        sys.executable,
-        str(helper),
-        "--provider",
-        request.provider,
-        "--operation",
-        request.operation,
-        "--query",
-        request.query,
-        "--max-results",
-        str(request.max_results),
-        "--output",
-        str(request.output_path),
-        "--broker-url",
-        request.broker_url,
-        "--private-broker-path",
-        str(request.private_broker_path),
-        "--confirm-provider-call",
-    ]
-    for env_file in request.env_file_paths:
-        command.extend(["--env-file", str(env_file)])
-    completed = subprocess.run(
-        command,
-        cwd=request.repo_root,
-        capture_output=True,
-        text=True,
-        timeout=90,
-    )
-    return GenericProviderProxyRunResult(
-        return_code=completed.returncode,
-        output_path=request.output_path,
-        provider_calls_attempted=1,
-        provider_calls_completed=1 if completed.returncode == 0 else 0,
     )
 
 
@@ -1681,8 +1611,14 @@ def _base_packet(
             == [plan.get("source_obligation_id")]
         ),
         "future_component_work_node_candidate": future_node,
+        "provider_acquisition_route_posture": (
+            "injected_provider_runner_sanitized_results_to_plan_"
+            "derived_retained_artifacts"
+            if counts.get("provider_calls_attempted", 0)
+            else "blocked_before_provider_search"
+        ),
         "provider_broker_posture": (
-            "generic_provider_proxy_broker_sanitized_results_to_plan_"
+            "injected_provider_runner_sanitized_results_to_plan_"
             "derived_retained_artifacts"
             if counts.get("provider_calls_attempted", 0)
             else "blocked_before_provider_search"
@@ -3704,8 +3640,8 @@ def _load_sanitized_provider_output(path: Path) -> dict[str, Any]:
         decoded = _read_json(path)
     except FileNotFoundError as exc:
         raise GenericSingleRelationLiveDogfoodRunError(
-            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE,
-            "sanitized provider proxy response was not written.",
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+            "sanitized provider acquisition response was not written.",
         ) from exc
     return _validate_provider_payload(decoded)
 
@@ -4089,12 +4025,6 @@ def _run_output_dir(root: Path, output_dir: str | Path, run_id: str) -> Path:
     target = resolved / _clean_run_id(run_id)
     target.mkdir(parents=True, exist_ok=True)
     return target
-
-
-def _env_file_paths(values: Sequence[str | Path] | None) -> tuple[Path, ...]:
-    if values is None:
-        return (DEFAULT_PRIVATE_BROKER_ENV_FILE,)
-    return tuple(Path(value) for value in values)
 
 
 def _pytest_or_ci_guard(environ: Mapping[str, str] | None) -> bool:
@@ -4634,11 +4564,9 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PLAN_TO_ACQUISITION_SEAM",
-    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE",
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED",
-    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PROVIDER_PROXY_HELPER_MISSING",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_SEARCH_ARTIFACT_REDUCTION_MISSING",
-    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_TEST_OR_CI_GUARD",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
     "DEFAULT_OUTPUT_DIR",
     "GenericLiveFetchReadResult",
@@ -4649,6 +4577,5 @@ __all__ = [
     "build_generic_single_relation_live_dogfood_run_output",
     "fetch_public_url_once",
     "format_generic_single_relation_live_dogfood_output",
-    "run_provider_proxy_helper_once",
     "validate_generic_single_relation_live_dogfood_packet",
 ]
