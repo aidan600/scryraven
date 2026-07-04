@@ -24,6 +24,7 @@ remain supported as a compatibility layer.
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 import os
 import sys
@@ -131,6 +132,9 @@ from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
 
 OUTPUT_DIR = _ROOT / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
+SOURCE_OF_RECORD_RECOVERY_PROVIDER_DECISION_FLAG = (
+    "--source-of-record-recovery-provider-decision"
+)
 
 
 def _build_logger(verbose: bool) -> logging.Logger:
@@ -371,6 +375,35 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        SOURCE_OF_RECORD_RECOVERY_PROVIDER_DECISION_FLAG,
+        action="store_true",
+        dest="source_of_record_recovery_provider_decision",
+        help=(
+            "Run the default-off source-of-record recovery provider decision "
+            "flow through the ordinary proplex credential boundary."
+        ),
+    )
+    p.add_argument(
+        "--confirm-live-provider-comparison",
+        action="store_true",
+        dest="confirm_live_provider_comparison",
+        help="Confirm the one licensed live provider comparison job.",
+    )
+    p.add_argument(
+        "--output-root",
+        default=None,
+        metavar="DIR",
+        help=(
+            "Write source-of-record recovery provider decision packets under DIR."
+        ),
+    )
+    p.add_argument(
+        "--provider-decision-run-id",
+        default=None,
+        metavar="ID",
+        help="Optional run id for the source-of-record provider decision packet.",
+    )
+    p.add_argument(
         "--mvp-output-dir",
         default=None,
         metavar="DIR",
@@ -428,7 +461,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         or args.mvp_live_dogfood_status
     ):
         args.query = DEFAULT_MVP_QUERY
-    if not args.query:
+    if not args.query and not args.source_of_record_recovery_provider_decision:
         p.error("the following arguments are required: query")
     return args
 
@@ -748,9 +781,38 @@ def _run_mvp_query_plan_status(
     return result.return_code
 
 
+def _run_source_of_record_recovery_provider_decision(
+    *,
+    args: argparse.Namespace,
+    log: logging.Logger,
+) -> int:
+    del log
+    decision_module = importlib.import_module(
+        "scripts.source_of_record_recovery_provider_decision_01"
+    )
+    result = decision_module.run_source_of_record_recovery_provider_decision_comparison(
+        repo_root=_ROOT,
+        output_root=args.output_root,
+        run_id=args.provider_decision_run_id,
+        confirm_live_provider_comparison=args.confirm_live_provider_comparison,
+        product_model_route_config_initialization=(
+            PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION.to_safe_status()
+        ),
+    )
+    selected = result.selected_provider or "none"
+    blocker = result.blocker or "none"
+    print(f"provider_decision_packet: {result.packet_path}")
+    print(f"selected_provider: {selected}")
+    print(f"blocker: {blocker}")
+    return result.return_code
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(sys.argv[1:] if argv is None else list(argv))
     log = _build_logger(args.verbose)
+
+    if args.source_of_record_recovery_provider_decision:
+        return _run_source_of_record_recovery_provider_decision(args=args, log=log)
 
     if args.mvp_demo:
         return _run_mvp_demo(args=args, log=log)

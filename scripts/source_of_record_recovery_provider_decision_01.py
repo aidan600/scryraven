@@ -24,10 +24,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlparse
 
 from core.generic_product_provider_acquisition import (
@@ -39,6 +41,10 @@ from core.generic_product_provider_acquisition import (
     build_generic_product_provider_acquisition_runner,
 )
 from core.generic_query_to_relation_planning import build_generic_query_relation_plan
+from core.product_model_route_config import (
+    ProductModelRouteConfigInitialization,
+    initialize_product_model_route_config,
+)
 from core.source_of_record_recovery_provider_config import (
     SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
     SOURCE_OF_RECORD_RECOVERY_SCOUT_PROVIDER_ROLE,
@@ -62,6 +68,13 @@ DIAGNOSTIC_RELATION_QUERY = (
 DOMAIN_CONSTRAINTS = ("uscis.gov",)
 PROVIDER_ORDER = ("tavily", "linkup", "exa", "brave", "serper")
 MAX_RESULTS = 5
+PROVIDER_CREDENTIAL_ENV_NAMES = {
+    "tavily": "TAVILY_API_KEY",
+    "linkup": "LINKUP_API_KEY",
+    "exa": "EXA_API_KEY",
+    "brave": "BRAVE_API_KEY",
+    "serper": "SERPER_API_KEY",
+}
 
 QUALITY_OFFICIAL_ANSWER = "official_answer_bearing_extracted_material_found"
 QUALITY_OFFICIAL_NOT_ANSWER = "official_material_found_but_not_answer_bearing"
@@ -88,13 +101,21 @@ def run_source_of_record_recovery_provider_decision_comparison(
     run_id: str | None = None,
     confirm_live_provider_comparison: bool = False,
     product_provider_acquisition_runner: ProductProviderAcquisitionRunner | None = None,
+    load_dotenv_func: Callable[[], Any] | None = None,
+    environ: Mapping[str, str] | None = None,
+    product_model_route_config_initialization: Mapping[str, Any] | None = None,
 ) -> ProviderDecisionComparisonResult:
     root = Path(repo_root).resolve()
+    env = os.environ if environ is None else environ
     run_id = _run_id(run_id)
     run_dir = _run_output_dir(root, output_root or DEFAULT_OUTPUT_ROOT, run_id)
     packet_path = run_dir / PACKET_NAME
     if not confirm_live_provider_comparison:
-        packet = _blocked_confirmation_packet(run_id=run_id)
+        packet = _blocked_confirmation_packet(
+            run_id=run_id,
+            dotenv_initialization_status=_dotenv_not_invoked_status(env),
+            credential_present_by_provider=_credential_present_by_provider(env),
+        )
         _write_json(packet_path, packet)
         return ProviderDecisionComparisonResult(
             return_code=2,
@@ -106,7 +127,38 @@ def run_source_of_record_recovery_provider_decision_comparison(
 
     output_blocker = _prepare_output_dir(run_dir)
     if output_blocker:
-        packet = _blocked_output_packet(run_id=run_id, blocker_detail=output_blocker)
+        packet = _blocked_output_packet(
+            run_id=run_id,
+            blocker_detail=output_blocker,
+            dotenv_initialization_status=_dotenv_not_invoked_status(env),
+            credential_present_by_provider=_credential_present_by_provider(env),
+        )
+        return ProviderDecisionComparisonResult(
+            return_code=2,
+            packet_path=packet_path,
+            selected_provider=None,
+            blocker=str(packet["decision_blocker"]),
+            packet=packet,
+        )
+
+    if product_model_route_config_initialization is None:
+        dotenv_status, dotenv_blocker = _initialize_repo_dotenv_status(
+            root=root,
+            load_dotenv_func=load_dotenv_func,
+            environ=env,
+        )
+    else:
+        dotenv_status = dict(product_model_route_config_initialization)
+        dotenv_blocker = None
+    credential_present_by_provider = _credential_present_by_provider(env)
+    if dotenv_blocker:
+        packet = _blocked_dotenv_packet(
+            run_id=run_id,
+            blocker=dotenv_blocker,
+            dotenv_initialization_status=dotenv_status,
+            credential_present_by_provider=credential_present_by_provider,
+        )
+        _write_json(packet_path, packet)
         return ProviderDecisionComparisonResult(
             return_code=2,
             packet_path=packet_path,
@@ -131,6 +183,10 @@ def run_source_of_record_recovery_provider_decision_comparison(
                 run_dir=run_dir,
                 relation_plan=relation_plan,
                 acquisition_plan=acquisition_plan,
+                credential_present=credential_present_by_provider.get(
+                    provider,
+                    False,
+                ),
             )
         )
     selected = _select_provider(provider_diagnostics)
@@ -142,6 +198,8 @@ def run_source_of_record_recovery_provider_decision_comparison(
         provider_diagnostics=provider_diagnostics,
         selected_provider=selected,
         blocker=blocker,
+        dotenv_initialization_status=dotenv_status,
+        credential_present_by_provider=credential_present_by_provider,
     )
     _write_json(packet_path, packet)
     return ProviderDecisionComparisonResult(
@@ -161,6 +219,7 @@ def _run_provider_comparison(
     run_dir: Path,
     relation_plan: Mapping[str, Any],
     acquisition_plan: Mapping[str, Any],
+    credential_present: bool,
 ) -> dict[str, Any]:
     provider_role = (
         SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE
@@ -193,6 +252,7 @@ def _run_provider_comparison(
         "extraction_capable": provider in EXTRACTION_CAPABLE_PROVIDERS,
         "scout_only": provider in SCOUT_ONLY_PROVIDERS,
         "provider_available": result.return_code == 0,
+        "credential_present": bool(credential_present),
         "credential_unavailable": credential_unavailable,
         "provider_call_attempted": result.provider_calls_attempted > 0,
         "provider_call_completed": result.provider_calls_completed > 0,
@@ -461,6 +521,8 @@ def _decision_packet(
     provider_diagnostics: Sequence[Mapping[str, Any]],
     selected_provider: str | None,
     blocker: str | None,
+    dotenv_initialization_status: Mapping[str, Any],
+    credential_present_by_provider: Mapping[str, bool],
 ) -> dict[str, Any]:
     providers_attempted = [
         str(item.get("provider"))
@@ -495,6 +557,10 @@ def _decision_packet(
         "not_global_provider_default": True,
         "providers_attempted": providers_attempted,
         "credentials_unavailable": credentials_unavailable,
+        "product_model_route_config_initialization": dict(
+            dotenv_initialization_status
+        ),
+        "credential_present_by_provider": dict(credential_present_by_provider),
         "provider_call_counts": {
             "total_logical_provider_calls_attempted": sum(
                 _bounded_int(item.get("provider_calls_attempted"))
@@ -556,7 +622,12 @@ def _best_official_answer_bearing_candidate(
     return best
 
 
-def _blocked_confirmation_packet(*, run_id: str) -> dict[str, Any]:
+def _blocked_confirmation_packet(
+    *,
+    run_id: str,
+    dotenv_initialization_status: Mapping[str, Any],
+    credential_present_by_provider: Mapping[str, bool],
+) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "phase_name": PHASE_NAME,
@@ -564,6 +635,10 @@ def _blocked_confirmation_packet(*, run_id: str) -> dict[str, Any]:
         "created_at": _observed_at(),
         "request_kind": "source_of_record_recovery_provider_decision",
         "decision_blocker": "CONFIRM_LIVE_PROVIDER_COMPARISON_REQUIRED",
+        "product_model_route_config_initialization": dict(
+            dotenv_initialization_status
+        ),
+        "credential_present_by_provider": dict(credential_present_by_provider),
         "providers_attempted": [],
         "provider_call_counts": {
             "total_logical_provider_calls_attempted": 0,
@@ -580,7 +655,13 @@ def _blocked_confirmation_packet(*, run_id: str) -> dict[str, Any]:
     }
 
 
-def _blocked_output_packet(*, run_id: str, blocker_detail: str) -> dict[str, Any]:
+def _blocked_output_packet(
+    *,
+    run_id: str,
+    blocker_detail: str,
+    dotenv_initialization_status: Mapping[str, Any],
+    credential_present_by_provider: Mapping[str, bool],
+) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "phase_name": PHASE_NAME,
@@ -589,6 +670,44 @@ def _blocked_output_packet(*, run_id: str, blocker_detail: str) -> dict[str, Any
         "request_kind": "source_of_record_recovery_provider_decision",
         "decision_blocker": "PROVIDER_DECISION_PACKET_OUTPUT_UNAVAILABLE",
         "decision_blocker_detail": blocker_detail,
+        "product_model_route_config_initialization": dict(
+            dotenv_initialization_status
+        ),
+        "credential_present_by_provider": dict(credential_present_by_provider),
+        "providers_attempted": [],
+        "provider_call_counts": {
+            "total_logical_provider_calls_attempted": 0,
+            "total_logical_provider_calls_completed": 0,
+            "fetch_read_calls": 0,
+            "model_calls": 0,
+            "broker_doorman_calls": 0,
+            "manual_browser_or_source_lookup_calls": 0,
+        },
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "raw_private_retention": False,
+        "closed_surface_flags": _closed_surface_flags(),
+    }
+
+
+def _blocked_dotenv_packet(
+    *,
+    run_id: str,
+    blocker: str,
+    dotenv_initialization_status: Mapping[str, Any],
+    credential_present_by_provider: Mapping[str, bool],
+) -> dict[str, Any]:
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "phase_name": PHASE_NAME,
+        "run_id": run_id,
+        "created_at": _observed_at(),
+        "request_kind": "source_of_record_recovery_provider_decision",
+        "decision_blocker": blocker,
+        "product_model_route_config_initialization": dict(
+            dotenv_initialization_status
+        ),
+        "credential_present_by_provider": dict(credential_present_by_provider),
         "providers_attempted": [],
         "provider_call_counts": {
             "total_logical_provider_calls_attempted": 0,
@@ -616,6 +735,53 @@ def _closed_surface_flags() -> dict[str, bool]:
         "product_correctness_claimed": False,
         "global_provider_chooser_created": False,
         "hidden_fallback_loop_created": False,
+    }
+
+
+def _initialize_repo_dotenv_status(
+    *,
+    root: Path,
+    load_dotenv_func: Callable[[], Any] | None,
+    environ: Mapping[str, str],
+) -> tuple[dict[str, Any], str | None]:
+    loader = load_dotenv_func or _build_repo_dotenv_loader(root)
+    try:
+        status = initialize_product_model_route_config(
+            argv=[],
+            load_dotenv_func=loader,
+            environ=environ,
+            skip_for_status_dry_run=False,
+        ).to_safe_status()
+    except ModuleNotFoundError as exc:
+        if exc.name != "dotenv":
+            raise
+        status = _dotenv_not_invoked_status(environ)
+        status["dotenv_helper_unavailable"] = True
+        return status, "DOTENV_HELPER_UNAVAILABLE"
+    return status, None
+
+
+def _build_repo_dotenv_loader(root: Path) -> Callable[[], Any]:
+    dotenv_path = root / ".env"
+
+    def load_repo_dotenv() -> Any:
+        from dotenv import load_dotenv
+
+        return load_dotenv(dotenv_path=dotenv_path, encoding="utf-8-sig")
+
+    return load_repo_dotenv
+
+
+def _dotenv_not_invoked_status(environ: Mapping[str, str]) -> dict[str, Any]:
+    return ProductModelRouteConfigInitialization(
+        openai_api_key_present=bool(environ.get("OPENAI_API_KEY")),
+    ).to_safe_status()
+
+
+def _credential_present_by_provider(environ: Mapping[str, str]) -> dict[str, bool]:
+    return {
+        provider: bool(environ.get(env_name))
+        for provider, env_name in PROVIDER_CREDENTIAL_ENV_NAMES.items()
     }
 
 
@@ -742,6 +908,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--output-root", default=str(DEFAULT_OUTPUT_ROOT))
     parser.add_argument("--run-id")
     args = parser.parse_args(argv)
+    if args.confirm_live_provider_comparison:
+        print(
+            "ERROR: direct live provider-decision script invocation is closed; "
+            "use `py -m proplex --source-of-record-recovery-provider-decision "
+            "--confirm-live-provider-comparison --output-root "
+            ".\\tmp_provider_decision_output_dotenv`.",
+            file=sys.stderr,
+        )
+        return 2
     result = run_source_of_record_recovery_provider_decision_comparison(
         repo_root=args.repo_root,
         output_root=args.output_root,

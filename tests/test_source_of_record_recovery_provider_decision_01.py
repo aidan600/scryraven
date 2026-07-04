@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from core.generic_product_provider_acquisition import (
@@ -35,15 +36,26 @@ from scripts.source_of_record_recovery_provider_decision_01 import (
     QUALITY_SCOUT_ONLY,
     run_source_of_record_recovery_provider_decision_comparison,
 )
+from scripts.source_of_record_recovery_provider_decision_01 import (
+    main as provider_decision_script_main,
+)
 
 
 def test_linkup_can_win_recovery_extraction_role_with_fake_callables(
     tmp_path: Path,
 ) -> None:
     calls: list[tuple[str, dict[str, Any]]] = []
+    events: list[str] = []
+    environ: dict[str, str] = {}
+    credential_value = "provider-credential-value-must-not-serialize"
     hidden_answer_sentence = (
         "USCIS source table confirms Form N-400 paper filing fee is $760."
     )
+
+    def fake_load_dotenv() -> bool:
+        events.append("dotenv")
+        environ["LINKUP_API_KEY"] = credential_value
+        return True
 
     runner = build_generic_product_provider_acquisition_runner(
         tavily_product_provider_callable=_fake_tavily(calls, answer_bearing=False),
@@ -58,6 +70,8 @@ def test_linkup_can_win_recovery_extraction_role_with_fake_callables(
         run_id="linkup-wins",
         confirm_live_provider_comparison=True,
         product_provider_acquisition_runner=runner,
+        load_dotenv_func=fake_load_dotenv,
+        environ=environ,
     )
     packet = result.packet
     buckets = packet["quality_bucket_by_provider"]
@@ -81,9 +95,27 @@ def test_linkup_can_win_recovery_extraction_role_with_fake_callables(
     assert packet["raw_search_response_retained"] is False
     assert packet["closed_surface_flags"]["global_provider_chooser_created"] is False
     assert packet["closed_surface_flags"]["source_obligation_satisfied"] is False
+    assert all(value is False for value in packet["closed_surface_flags"].values())
+    assert all(
+        value is False
+        for diagnostic in packet["provider_diagnostics"]
+        for value in diagnostic["closed_surface_flags"].values()
+    )
+    assert events == ["dotenv"]
     assert calls[1][0] == "linkup"
     assert calls[1][1]["output_type"] == "searchResults"
     assert calls[1][1]["include_domains"] == ["uscis.gov"]
+    assert packet["product_model_route_config_initialization"][
+        "dotenv_helper_invoked"
+    ] is True
+    assert packet["product_model_route_config_initialization"]["dotenv_result"] is True
+    assert packet["credential_present_by_provider"]["linkup"] is True
+    assert all(
+        isinstance(value, bool)
+        for value in packet["credential_present_by_provider"].values()
+    )
+    assert packet["provider_diagnostics"][1]["credential_present"] is True
+    assert credential_value not in serialized_packet
     assert hidden_answer_sentence not in serialized_packet
     assert '"provider_extracted_text":' not in serialized_packet
 
@@ -103,6 +135,8 @@ def test_scout_only_promising_urls_do_not_select_provider(tmp_path: Path) -> Non
         run_id="scout-only-no-winner",
         confirm_live_provider_comparison=True,
         product_provider_acquisition_runner=runner,
+        load_dotenv_func=lambda: False,
+        environ={},
     )
     packet = result.packet
 
@@ -117,6 +151,7 @@ def test_scout_only_promising_urls_do_not_select_provider(tmp_path: Path) -> Non
 
 def test_comparison_harness_is_default_off(tmp_path: Path) -> None:
     calls: list[Any] = []
+    dotenv_calls: list[str] = []
 
     def runner(_request: Any) -> Any:
         calls.append(_request)
@@ -127,17 +162,24 @@ def test_comparison_harness_is_default_off(tmp_path: Path) -> None:
         output_root=tmp_path / "output" / "decision",
         run_id="default-off",
         product_provider_acquisition_runner=runner,
+        load_dotenv_func=lambda: dotenv_calls.append("dotenv"),
+        environ={},
     )
 
     assert result.return_code == 2
     assert result.selected_provider is None
     assert result.packet["decision_blocker"] == "CONFIRM_LIVE_PROVIDER_COMPARISON_REQUIRED"
     assert result.packet["provider_call_counts"]["total_logical_provider_calls_attempted"] == 0
+    assert result.packet["product_model_route_config_initialization"][
+        "dotenv_helper_invoked"
+    ] is False
+    assert dotenv_calls == []
     assert calls == []
 
 
 def test_output_directory_preflight_blocks_before_provider_calls(tmp_path: Path) -> None:
     calls: list[Any] = []
+    dotenv_calls: list[str] = []
     output_file = tmp_path / "not-a-directory"
     output_file.write_text("not a directory\n", encoding="utf-8")
 
@@ -151,6 +193,8 @@ def test_output_directory_preflight_blocks_before_provider_calls(tmp_path: Path)
         run_id="output-blocked",
         confirm_live_provider_comparison=True,
         product_provider_acquisition_runner=runner,
+        load_dotenv_func=lambda: dotenv_calls.append("dotenv"),
+        environ={},
     )
 
     assert result.return_code == 2
@@ -161,7 +205,106 @@ def test_output_directory_preflight_blocks_before_provider_calls(tmp_path: Path)
     assert result.packet["provider_call_counts"][
         "total_logical_provider_calls_attempted"
     ] == 0
+    assert result.packet["product_model_route_config_initialization"][
+        "dotenv_helper_invoked"
+    ] is False
+    assert dotenv_calls == []
     assert calls == []
+
+
+def test_direct_live_script_invocation_fails_closed_before_helper(
+    tmp_path: Path,
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    def fail_helper(**_kwargs: Any) -> Any:
+        raise AssertionError("direct live script invocation must not call helper")
+
+    monkeypatch.setattr(
+        "scripts.source_of_record_recovery_provider_decision_01."
+        "run_source_of_record_recovery_provider_decision_comparison",
+        fail_helper,
+    )
+
+    rc = provider_decision_script_main(
+        [
+            "--confirm-live-provider-comparison",
+            "--repo-root",
+            str(tmp_path),
+            "--output-root",
+            str(tmp_path / "output"),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert "direct live provider-decision script invocation is closed" in captured.err
+    assert "py -m proplex --source-of-record-recovery-provider-decision" in captured.err
+    assert not (tmp_path / "output").exists()
+
+
+def test_proplex_entrypoint_routes_provider_decision_after_dotenv_status(
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    import proplex.__main__ as cli
+
+    events: list[str] = []
+    captured: dict[str, Any] = {}
+
+    class FakeInitialization:
+        def to_safe_status(self) -> dict[str, Any]:
+            events.append("dotenv-status-observed")
+            return {
+                "boundary": (
+                    "core.product_model_route_config."
+                    "initialize_product_model_route_config"
+                ),
+                "dotenv_helper_invoked": True,
+                "dotenv_skipped_for_status_dry_run": False,
+                "dotenv_result": True,
+                "OPENAI_API_KEY_present": False,
+            }
+
+    def fake_import_module(name: str) -> Any:
+        assert name == "scripts.source_of_record_recovery_provider_decision_01"
+
+        def fake_run(**kwargs: Any) -> Any:
+            captured.update(kwargs)
+            events.append("provider-decision-flow")
+            return SimpleNamespace(
+                return_code=2,
+                packet_path=Path("packet.json"),
+                selected_provider=None,
+                blocker="CONFIRM_LIVE_PROVIDER_COMPARISON_REQUIRED",
+            )
+
+        return SimpleNamespace(
+            run_source_of_record_recovery_provider_decision_comparison=fake_run,
+        )
+
+    monkeypatch.setattr(cli, "PRODUCT_MODEL_ROUTE_CONFIG_INITIALIZATION", FakeInitialization())
+    monkeypatch.setattr(cli.importlib, "import_module", fake_import_module)
+    monkeypatch.setattr(cli, "_build_logger", lambda _verbose: None)
+
+    rc = cli.main(
+        [
+            "--source-of-record-recovery-provider-decision",
+            "--confirm-live-provider-comparison",
+            "--output-root",
+            "out",
+        ]
+    )
+
+    assert rc == 2
+    assert events == ["dotenv-status-observed", "provider-decision-flow"]
+    assert captured["repo_root"] == cli._ROOT
+    assert captured["output_root"] == "out"
+    assert captured["confirm_live_provider_comparison"] is True
+    assert captured["product_model_route_config_initialization"][
+        "dotenv_helper_invoked"
+    ] is True
+    assert "provider_decision_packet: packet.json" in capsys.readouterr().out
 
 
 def _fake_tavily(
