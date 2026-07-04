@@ -32,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ROUTE_MODULE_PATH = ROOT / "core" / "strict_accounted_model_route.py"
 
 
-def test_openai_route_success_is_one_attempt_without_secret_serialization() -> None:
+def test_openai_route_success_is_one_responses_attempt_without_secret_serialization() -> None:
     calls: list[dict[str, Any]] = []
     route_callable = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="OpenAI",
@@ -65,10 +65,22 @@ def test_openai_route_success_is_one_attempt_without_secret_serialization() -> N
     assert result.model_calls_completed == 1
     assert result.provider_used == "OpenAI"
     assert result.model_used == "fast-planner"
+    assert result.configured_endpoint_kind == route.ENDPOINT_KIND_OPENAI_RESPONSES
+    assert result.endpoint_used == route.ENDPOINT_KIND_OPENAI_RESPONSES
+    assert result.to_safe_diagnostic()["endpoint_switching_allowed"] is False
     assert calls[0]["factory"]["max_retries"] == 0
     assert "base_url" not in calls[0]["factory"]
-    assert calls[0]["create"]["response_format"] == {"type": "json_object"}
-    assert calls[0]["create"]["stream"] is False
+    assert calls[0]["responses_create_count"] == 1
+    assert calls[0]["chat_create_count"] == 0
+    assert calls[0]["responses_create"]["text"] == {
+        "format": {"type": "json_object"}
+    }
+    assert calls[0]["responses_create"]["max_output_tokens"] == 1800
+    assert calls[0]["responses_create"]["stream"] is False
+    assert calls[0]["responses_create"]["store"] is False
+    assert calls[0]["responses_create"]["instructions"] == "system"
+    assert calls[0]["responses_create"]["input"] == "{}"
+    assert "messages" not in calls[0]["responses_create"]
     assert "unit-test-openai-credential" not in serialized_ref
     assert "OPENAI_API_KEY" not in serialized_ref
     assert result.to_safe_diagnostic()["credential_values_retained"] is False
@@ -122,6 +134,20 @@ def test_openrouter_and_local_use_provider_specific_config_without_leaking() -> 
     assert local_calls[0]["factory"]["base_url"] == "http://localhost:5678/v1"
     assert openrouter_calls[0]["factory"]["max_retries"] == 0
     assert local_calls[0]["factory"]["max_retries"] == 0
+    assert openrouter_result.endpoint_used == (
+        route.ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE
+    )
+    assert local_result.endpoint_used == (
+        route.ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE
+    )
+    assert openrouter_calls[0]["chat_create_count"] == 1
+    assert local_calls[0]["chat_create_count"] == 1
+    assert openrouter_calls[0]["responses_create_count"] == 0
+    assert local_calls[0]["responses_create_count"] == 0
+    assert openrouter_calls[0]["chat_create"]["response_format"] == (
+        {"type": "json_object"}
+    )
+    assert local_calls[0]["chat_create"]["response_format"] == {"type": "json_object"}
     assert "unit-test-openrouter-credential" not in serialized_refs
     assert "OPENROUTER_API_KEY" not in serialized_refs
     assert "http://localhost:5678/v1" not in serialized_refs
@@ -133,7 +159,7 @@ def test_openrouter_and_local_use_provider_specific_config_without_leaking() -> 
     )
 
 
-def test_provider_exception_is_one_attempt_no_retry_or_fallback() -> None:
+def test_openai_responses_exception_is_one_attempt_no_retry_or_fallback() -> None:
     calls: list[dict[str, Any]] = []
     route_callable = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="OpenAI",
@@ -154,24 +180,49 @@ def test_provider_exception_is_one_attempt_no_retry_or_fallback() -> None:
     assert result.blocker == route.BLOCKED_STRICT_ACCOUNTED_FASTMODEL_PROVIDER_CALL_FAILED
     assert result.model_calls_attempted == 1
     assert result.model_calls_completed == 0
+    assert result.endpoint_used == route.ENDPOINT_KIND_OPENAI_RESPONSES
     assert len(calls) == 1
-    assert calls[0]["create_count"] == 1
+    assert calls[0]["responses_create_count"] == 1
+    assert calls[0]["chat_create_count"] == 0
 
 
-def test_unsupported_provider_and_provider_switching_fail_before_call() -> None:
+def test_switching_attempts_fail_before_provider_request() -> None:
     unsupported_calls: list[dict[str, Any]] = []
-    switch_calls: list[dict[str, Any]] = []
+    provider_switch_calls: list[dict[str, Any]] = []
+    model_switch_calls: list[dict[str, Any]] = []
+    endpoint_switch_calls: list[dict[str, Any]] = []
     unsupported = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="MysteryAI",
         fast_model="fast-planner",
         credential_lookup={}.get,
         client_factory=_fake_client_factory(unsupported_calls, json.dumps(_proposal())),
     )
-    strict = route.build_strict_accounted_fast_model_planning_route(
+    provider_strict = route.build_strict_accounted_fast_model_planning_route(
         fast_provider="OpenAI",
         fast_model="fast-planner",
         credential_lookup=_credential_lookup("unit-test-openai-credential"),
-        client_factory=_fake_client_factory(switch_calls, json.dumps(_proposal())),
+        client_factory=_fake_client_factory(
+            provider_switch_calls,
+            json.dumps(_proposal()),
+        ),
+    )
+    model_strict = route.build_strict_accounted_fast_model_planning_route(
+        fast_provider="OpenAI",
+        fast_model="fast-planner",
+        credential_lookup=_credential_lookup("unit-test-openai-credential"),
+        client_factory=_fake_client_factory(
+            model_switch_calls,
+            json.dumps(_proposal()),
+        ),
+    )
+    endpoint_strict = route.build_strict_accounted_fast_model_planning_route(
+        fast_provider="OpenAI",
+        fast_model="fast-planner",
+        credential_lookup=_credential_lookup("unit-test-openai-credential"),
+        client_factory=_fake_client_factory(
+            endpoint_switch_calls,
+            json.dumps(_proposal()),
+        ),
     )
 
     unsupported_result = unsupported(
@@ -181,11 +232,26 @@ def test_unsupported_provider_and_provider_switching_fail_before_call() -> None:
         model="fast-planner",
         require_json=True,
     )
-    switch_result = strict(
+    provider_switch_result = provider_strict(
         "{}",
         "system",
         provider="OpenRouter",
         model="fast-planner",
+        require_json=True,
+    )
+    model_switch_result = model_strict(
+        "{}",
+        "system",
+        provider="OpenAI",
+        model="different-fast-planner",
+        require_json=True,
+    )
+    endpoint_switch_result = endpoint_strict(
+        "{}",
+        "system",
+        provider="OpenAI",
+        model="fast-planner",
+        endpoint_kind=route.ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE,
         require_json=True,
     )
 
@@ -193,10 +259,22 @@ def test_unsupported_provider_and_provider_switching_fail_before_call() -> None:
         route.BLOCKED_STRICT_ACCOUNTED_FASTMODEL_PROVIDER_UNSUPPORTED
     )
     assert unsupported_result.model_calls_attempted == 0
-    assert switch_result.blocker == route.BLOCKED_STRICT_ACCOUNTED_FASTMODEL_UNSAFE_REQUEST
-    assert switch_result.model_calls_attempted == 0
+    assert provider_switch_result.blocker == (
+        route.BLOCKED_STRICT_ACCOUNTED_FASTMODEL_UNSAFE_REQUEST
+    )
+    assert model_switch_result.blocker == (
+        route.BLOCKED_STRICT_ACCOUNTED_FASTMODEL_UNSAFE_REQUEST
+    )
+    assert endpoint_switch_result.blocker == (
+        route.BLOCKED_STRICT_ACCOUNTED_FASTMODEL_UNSAFE_REQUEST
+    )
+    assert provider_switch_result.model_calls_attempted == 0
+    assert model_switch_result.model_calls_attempted == 0
+    assert endpoint_switch_result.model_calls_attempted == 0
     assert unsupported_calls == []
-    assert switch_calls == []
+    assert provider_switch_calls == []
+    assert model_switch_calls == []
+    assert endpoint_switch_calls == []
 
 
 def test_invalid_json_blocks_in_reducer_without_second_provider_call() -> None:
@@ -220,8 +298,12 @@ def test_invalid_json_blocks_in_reducer_without_second_provider_call() -> None:
     assert packet["model_calls_attempted"] == 1
     assert packet["model_calls_completed"] == 1
     assert packet["strict_model_route_result_ref"]["return_code"] == 0
+    assert packet["strict_model_route_result_ref"]["endpoint_used"] == (
+        route.ENDPOINT_KIND_OPENAI_RESPONSES
+    )
     assert len(calls) == 1
-    assert calls[0]["create_count"] == 1
+    assert calls[0]["responses_create_count"] == 1
+    assert calls[0]["chat_create_count"] == 0
 
 
 def test_static_route_does_not_use_broad_llm_helper_or_fallback_surfaces() -> None:
@@ -229,7 +311,8 @@ def test_static_route_does_not_use_broad_llm_helper_or_fallback_surfaces() -> No
 
     assert "core.llm" not in text
     assert "ask_model" not in text.replace("core.llm.ask_model", "")
-    assert ".responses.create" not in text
+    assert ".responses.create" in text
+    assert ".chat.completions.create" in text
     assert "retry_with_backoff" not in text
     assert "for attempt" not in text
 
@@ -249,7 +332,12 @@ def _fake_client_factory(
     response_or_exc: str | Exception,
 ) -> Any:
     def factory(**kwargs: Any) -> _FakeClient:
-        record = {"factory": dict(kwargs), "create_count": 0}
+        record = {
+            "factory": dict(kwargs),
+            "create_count": 0,
+            "chat_create_count": 0,
+            "responses_create_count": 0,
+        }
         calls.append(record)
         return _FakeClient(record, response_or_exc)
 
@@ -266,6 +354,7 @@ def _credential_lookup(value: str) -> Any:
 class _FakeClient:
     def __init__(self, record: dict[str, Any], response_or_exc: str | Exception) -> None:
         self.chat = _FakeChat(record, response_or_exc)
+        self.responses = _FakeResponses(record, response_or_exc)
 
 
 class _FakeChat:
@@ -280,15 +369,35 @@ class _FakeCompletions:
 
     def create(self, **kwargs: Any) -> Any:
         self._record["create_count"] += 1
-        self._record["create"] = dict(kwargs)
+        self._record["chat_create_count"] += 1
+        self._record["chat_create"] = dict(kwargs)
         if isinstance(self._response_or_exc, Exception):
             raise self._response_or_exc
-        return _FakeResponse(self._response_or_exc)
+        return _FakeChatResponse(self._response_or_exc)
 
 
-class _FakeResponse:
+class _FakeResponses:
+    def __init__(self, record: dict[str, Any], response_or_exc: str | Exception) -> None:
+        self._record = record
+        self._response_or_exc = response_or_exc
+
+    def create(self, **kwargs: Any) -> Any:
+        self._record["create_count"] += 1
+        self._record["responses_create_count"] += 1
+        self._record["responses_create"] = dict(kwargs)
+        if isinstance(self._response_or_exc, Exception):
+            raise self._response_or_exc
+        return _FakeResponsesResponse(self._response_or_exc)
+
+
+class _FakeChatResponse:
     def __init__(self, text: str) -> None:
         self.choices = [_FakeChoice(text)]
+
+
+class _FakeResponsesResponse:
+    def __init__(self, text: str) -> None:
+        self.output_text = text
 
 
 class _FakeChoice:

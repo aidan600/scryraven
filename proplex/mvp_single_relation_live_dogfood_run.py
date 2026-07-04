@@ -2691,6 +2691,9 @@ def _base_packet(
         "model_assisted_planning_configured_fast_model": model_route_ref.get(
             "configured_fast_model"
         ),
+        "model_assisted_planning_configured_endpoint_kind": (
+            model_route_ref.get("configured_endpoint_kind")
+        ),
         "model_assisted_planning_configured_local_url_present": (
             model_route_ref.get("configured_local_url_present") is True
         ),
@@ -2703,6 +2706,9 @@ def _base_packet(
         "model_assisted_planning_model_used": (
             model_route_result_ref.get("model_used")
         ),
+        "model_assisted_planning_endpoint_used": (
+            model_route_result_ref.get("endpoint_used")
+        ),
         "model_assisted_planning_strict_one_shot": (
             model_route_result_ref.get("strict_one_shot") is True
         ),
@@ -2714,6 +2720,9 @@ def _base_packet(
         ),
         "model_assisted_planning_provider_switching_allowed": (
             model_route_result_ref.get("provider_switching_allowed") is True
+        ),
+        "model_assisted_planning_endpoint_switching_allowed": (
+            model_route_result_ref.get("endpoint_switching_allowed") is True
         ),
         "model_assisted_planning_context_kinds_exercised": list(
             _safe_sequence(counts.get("model_assisted_planning_context_kinds"))
@@ -3313,6 +3322,7 @@ def _strict_route_unavailable_candidate_ref(
         "fallback_policy": "unavailable",
         "timeout_policy": "unavailable",
         "provider_switching_allowed": False,
+        "endpoint_switching_allowed": False,
         "strict_one_shot": False,
         "call_count": 0,
         "raw_prompt_retained": False,
@@ -3344,12 +3354,31 @@ def _configured_fast_model_route_posture(
     local_url = _clean_text(fast_model_local_url, limit=500)
     if cleaned_provider or include_absent:
         posture["configured_fast_provider"] = cleaned_provider
+        endpoint_kind = _configured_endpoint_kind(cleaned_provider)
+        if endpoint_kind or include_absent:
+            posture["configured_endpoint_kind"] = endpoint_kind
     if cleaned_model or include_absent:
         posture["configured_fast_model"] = cleaned_model
     if local_url or include_absent:
         posture["configured_local_url_present"] = bool(local_url)
         posture["configured_local_url_posture"] = _local_url_posture(local_url)
     return posture
+
+
+def _configured_endpoint_kind(fast_provider: str | None) -> str | None:
+    normalized = _normalize_key(fast_provider)
+    if normalized == "openai":
+        return "openai_responses_api"
+    if normalized in {
+        "openrouter",
+        "open_router",
+        "local",
+        "lm_studio",
+        "local_lm_studio",
+        "local_(lm_studio)",
+    }:
+        return "chat_completions_compatible"
+    return None
 
 
 def _local_url_posture(local_url: str | None) -> str:

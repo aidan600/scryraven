@@ -2,9 +2,10 @@
 
 This module owns the live FastModel provider boundary for model-assisted
 single-relation planning. It avoids the broad product LLM helper because that
-path can retry or fall back; each route invocation makes at most one chat
-completion request to the configured FastModel provider and returns only safe
-accounting diagnostics plus transient output text for the reducer.
+path can retry or fall back; each route invocation makes at most one provider
+request to the configured FastModel provider and returns only safe accounting
+diagnostics plus transient output text for the reducer. OpenAI uses the
+Responses API; OpenRouter and Local keep the chat-completions-compatible path.
 """
 
 from __future__ import annotations
@@ -40,6 +41,8 @@ PRODUCT_CONFIG_INITIALIZATION_BOUNDARY = (
 PROVIDER_OPENAI = "OpenAI"
 PROVIDER_OPENROUTER = "OpenRouter"
 PROVIDER_LOCAL = "Local (LM Studio)"
+ENDPOINT_KIND_OPENAI_RESPONSES = "openai_responses_api"
+ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE = "chat_completions_compatible"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 LOCAL_STUDIO_KEY_PLACEHOLDER = "lm-studio"
 
@@ -80,8 +83,15 @@ _FORBIDDEN_RUNTIME_KWARGS = frozenset(
         "api_key",
         "auth",
         "authorization",
+        "base_url",
+        "configured_endpoint_kind",
+        "endpoint",
+        "endpoint_kind",
+        "endpoint_switching_allowed",
+        "endpoint_used",
         "fallback",
         "fallback_policy",
+        "local_url",
         "provider_payload",
         "raw_model_response",
         "raw_prompt",
@@ -106,6 +116,8 @@ class StrictAccountedModelRouteResult:
     configured_model: str = ""
     provider_used: str = ""
     model_used: str = ""
+    configured_endpoint_kind: str = ""
+    endpoint_used: str = ""
     configured_local_url_present: bool = False
     configured_local_url_posture: str = "not_configured"
     credential_present: bool = False
@@ -114,6 +126,7 @@ class StrictAccountedModelRouteResult:
     fallback_policy: str = FALLBACK_POLICY_FORBIDDEN
     timeout_policy: str = TIMEOUT_POLICY_FAIL_CLOSED
     provider_switching_allowed: bool = False
+    endpoint_switching_allowed: bool = False
     raw_prompt_retained: bool = False
     raw_model_response_retained: bool = False
     raw_provider_payload_retained: bool = False
@@ -131,6 +144,8 @@ class StrictAccountedModelRouteResult:
             "configured_model": self.configured_model,
             "provider_used": self.provider_used,
             "model_used": self.model_used,
+            "configured_endpoint_kind": self.configured_endpoint_kind,
+            "endpoint_used": self.endpoint_used,
             "configured_local_url_present": self.configured_local_url_present,
             "configured_local_url_posture": self.configured_local_url_posture,
             "credential_present": self.credential_present,
@@ -139,6 +154,7 @@ class StrictAccountedModelRouteResult:
             "fallback_policy": self.fallback_policy,
             "timeout_policy": self.timeout_policy,
             "provider_switching_allowed": self.provider_switching_allowed,
+            "endpoint_switching_allowed": self.endpoint_switching_allowed,
             "raw_prompt_retained": self.raw_prompt_retained,
             "raw_model_response_retained": self.raw_model_response_retained,
             "raw_provider_payload_retained": self.raw_provider_payload_retained,
@@ -200,15 +216,15 @@ class StrictAccountedFastModelRoute:
         if isinstance(client_result, StrictAccountedModelRouteResult):
             return client_result
         client, credential_present = client_result
-        create_kwargs = self._chat_create_kwargs(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            provider=provider,
-            model=model,
-            kwargs=kwargs,
-        )
         try:
-            response = client.chat.completions.create(**create_kwargs)
+            response = self._create_provider_response_once(
+                client,
+                prompt=prompt,
+                system_prompt=system_prompt,
+                provider=provider,
+                model=model,
+                kwargs=kwargs,
+            )
         except Exception as exc:  # noqa: BLE001 - fail closed with safe blocker only.
             return self._failed_result(
                 base,
@@ -258,6 +274,7 @@ class StrictAccountedFastModelRoute:
             ),
             "configured_fast_provider": provider,
             "configured_fast_model": model,
+            "configured_endpoint_kind": _endpoint_kind_for_provider(provider),
             "configured_local_url_present": bool(local_url),
             "configured_local_url_posture": _local_url_posture(local_url),
             "execution_policy": "strict_accounted_one_provider_request",
@@ -267,6 +284,7 @@ class StrictAccountedFastModelRoute:
             "fallback_policy": FALLBACK_POLICY_FORBIDDEN,
             "timeout_policy": TIMEOUT_POLICY_FAIL_CLOSED,
             "provider_switching_allowed": False,
+            "endpoint_switching_allowed": False,
             "strict_one_shot": True,
             "call_count": 0,
             "raw_prompt_retained": False,
@@ -279,6 +297,7 @@ class StrictAccountedFastModelRoute:
 
     def _base_result(self, *, provider: str, model: str) -> dict[str, Any]:
         local_url = _clean_route_value(self.local_url)
+        endpoint_kind = _endpoint_kind_for_provider(provider)
         return {
             "configured_provider": provider,
             "configured_model": model,
@@ -288,6 +307,8 @@ class StrictAccountedFastModelRoute:
                 PROVIDER_LOCAL,
             } else "",
             "model_used": model,
+            "configured_endpoint_kind": endpoint_kind,
+            "endpoint_used": endpoint_kind,
             "configured_local_url_present": bool(local_url),
             "configured_local_url_posture": _local_url_posture(local_url),
             "strict_one_shot": True,
@@ -295,6 +316,7 @@ class StrictAccountedFastModelRoute:
             "fallback_policy": FALLBACK_POLICY_FORBIDDEN,
             "timeout_policy": TIMEOUT_POLICY_FAIL_CLOSED,
             "provider_switching_allowed": False,
+            "endpoint_switching_allowed": False,
             "raw_prompt_retained": False,
             "raw_model_response_retained": False,
             "raw_provider_payload_retained": False,
@@ -389,6 +411,64 @@ class StrictAccountedFastModelRoute:
                     f"{type(exc).__name__}."
                 ),
             )
+
+    def _create_provider_response_once(
+        self,
+        client: Any,
+        *,
+        prompt: str,
+        system_prompt: str,
+        provider: str,
+        model: str,
+        kwargs: Mapping[str, Any],
+    ) -> Any:
+        if provider == PROVIDER_OPENAI:
+            return client.responses.create(
+                **self._responses_create_kwargs(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    model=model,
+                    kwargs=kwargs,
+                )
+            )
+        return client.chat.completions.create(
+            **self._chat_create_kwargs(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                provider=provider,
+                model=model,
+                kwargs=kwargs,
+            )
+        )
+
+    def _responses_create_kwargs(
+        self,
+        *,
+        prompt: str,
+        system_prompt: str,
+        model: str,
+        kwargs: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        create_kwargs: dict[str, Any] = {
+            "model": model,
+            "instructions": system_prompt,
+            "input": prompt,
+            "stream": False,
+            "store": False,
+        }
+        if kwargs.get("require_json") is True:
+            create_kwargs["text"] = {"format": {"type": "json_object"}}
+        max_tokens = _positive_int(kwargs.get("max_tokens"))
+        if max_tokens is not None:
+            create_kwargs["max_output_tokens"] = max_tokens
+        effort = _normalize_key(kwargs.get("effort"))
+        if (
+            kwargs.get("use_reasoning") is True
+            and effort in {"none", "minimal", "low", "medium", "high", "xhigh"}
+            and _is_reasoning_model(model)
+        ):
+            create_kwargs["reasoning"] = {"effort": effort}
+        return create_kwargs
 
     def _chat_create_kwargs(
         self,
@@ -489,6 +569,14 @@ def _build_openai_compatible_client(**kwargs: Any) -> Any:
     return OpenAI(**kwargs)
 
 
+def _endpoint_kind_for_provider(provider: str) -> str:
+    if provider == PROVIDER_OPENAI:
+        return ENDPOINT_KIND_OPENAI_RESPONSES
+    if provider in {PROVIDER_OPENROUTER, PROVIDER_LOCAL}:
+        return ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE
+    return ""
+
+
 def _provider_error_blocker(exc: Exception) -> str:
     if _looks_like_model_unavailable(exc):
         return BLOCKED_STRICT_ACCOUNTED_FASTMODEL_MODEL_UNAVAILABLE
@@ -584,6 +672,8 @@ __all__ = [
     "BLOCKED_STRICT_ACCOUNTED_FASTMODEL_PROVIDER_CALL_FAILED",
     "BLOCKED_STRICT_ACCOUNTED_FASTMODEL_PROVIDER_UNSUPPORTED",
     "BLOCKED_STRICT_ACCOUNTED_FASTMODEL_UNSAFE_REQUEST",
+    "ENDPOINT_KIND_CHAT_COMPLETIONS_COMPATIBLE",
+    "ENDPOINT_KIND_OPENAI_RESPONSES",
     "FALLBACK_POLICY_FORBIDDEN",
     "OPENROUTER_BASE_URL",
     "PRODUCT_ROUTE_KIND_STRICT_FASTMODEL",

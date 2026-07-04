@@ -1661,12 +1661,14 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert route_ref["product_route_kind"] == "strict_accounted_fast_model_route"
     assert route_ref["configured_fast_provider"] == "OpenRouter"
     assert route_ref["configured_fast_model"] == "fast-planner-model"
+    assert route_ref["configured_endpoint_kind"] == "chat_completions_compatible"
     assert route_ref["configured_local_url_present"] is True
     assert route_ref["configured_local_url_posture"] == "local_configured_not_retained"
     assert route_ref["strict_one_shot"] is True
     assert route_ref["retry_policy"] == "forbidden"
     assert route_ref["fallback_policy"] == "forbidden"
     assert route_ref["provider_switching_allowed"] is False
+    assert route_ref["endpoint_switching_allowed"] is False
     assert "smart-dprime-model" not in serialized_route_ref
     assert "http://localhost:5678/v1" not in serialized_route_ref
     assert "broker_url" not in captured
@@ -1720,6 +1722,7 @@ def test_cli_env_fastmodel_config_flows_into_strict_route(
     assert captured["smart_model"] == "env-smart-dprime-model"
     assert route_ref["configured_fast_provider"] == "Local (LM Studio)"
     assert route_ref["configured_fast_model"] == "env-fast-planner-model"
+    assert route_ref["configured_endpoint_kind"] == "chat_completions_compatible"
     assert route_ref["configured_local_url_present"] is True
     assert route_ref["configured_local_url_posture"] == "local_configured_not_retained"
     assert "env-smart-dprime-model" not in serialized_route_ref
