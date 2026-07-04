@@ -1420,7 +1420,7 @@ def test_provider_result_with_invalid_url_records_invalid_url_diagnostic(
         (
             SMALL_CLAIMS_QUERY,
             "Example County Fee Schedule",
-            "https://example-county.invalid/small-claims-fees",
+            "https://example-county.gov/small-claims-fees",
             "Example County official fee schedule lists the current small claims "
             "filing fee as $42 for the example case type.",
             "Example County small claims filing fee is $42.",
