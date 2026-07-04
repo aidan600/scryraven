@@ -368,6 +368,7 @@ _ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
     {
         "request_kind",
         "provider",
+        "provider_role",
         "acquisition_provider_role",
         "operation",
         "result_count",

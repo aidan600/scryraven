@@ -16,7 +16,16 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 from urllib.parse import urlparse
 
-from core.search_providers import search_scout_results, search_web_results
+from core.search_providers import (
+    search_exa_results,
+    search_linkup_results,
+    search_scout_results,
+    search_web_results,
+)
+from core.source_of_record_recovery_provider_config import (
+    SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE,
+    SOURCE_OF_RECORD_RECOVERY_SCOUT_PROVIDER_ROLE,
+)
 
 PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND = (
     "generic_product_provider_acquisition_response"
@@ -30,10 +39,17 @@ BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE = (
 
 DEFAULT_EXTRACTION_PROVIDER = "tavily"
 DEFAULT_SCOUT_PROVIDER = "serper"
+BRAVE_SCOUT_PROVIDER = "brave"
+LINKUP_EXTRACTION_PROVIDER = "linkup"
+EXA_EXTRACTION_PROVIDER = "exa"
 DEFAULT_OPERATION = "search"
 DEFAULT_MAX_RESULTS = 5
 PROVIDER_EXTRACTED_CONTENT_TYPE = "text/html"
 PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS = 20_000
+EXTRACTION_CAPABLE_PROVIDERS = frozenset(
+    {DEFAULT_EXTRACTION_PROVIDER, LINKUP_EXTRACTION_PROVIDER, EXA_EXTRACTION_PROVIDER}
+)
+SCOUT_ONLY_PROVIDERS = frozenset({DEFAULT_SCOUT_PROVIDER, BRAVE_SCOUT_PROVIDER})
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +78,8 @@ class ProductProviderAcquisitionResult:
 
 
 TavilyProductProviderCallable = Callable[..., tuple[list[dict[str, Any]], list[Any]]]
+LinkupProductProviderCallable = Callable[..., tuple[list[dict[str, Any]], list[Any]]]
+ExaProductProviderCallable = Callable[..., tuple[list[dict[str, Any]], list[Any]]]
 ScoutProductProviderCallable = Callable[..., list[dict[str, Any]]]
 ProductProviderAcquisitionRunner = Callable[
     [ProductProviderAcquisitionRequest],
@@ -72,11 +90,15 @@ ProductProviderAcquisitionRunner = Callable[
 def build_generic_product_provider_acquisition_runner(
     *,
     tavily_product_provider_callable: TavilyProductProviderCallable | None = None,
+    linkup_product_provider_callable: LinkupProductProviderCallable | None = None,
+    exa_product_provider_callable: ExaProductProviderCallable | None = None,
     scout_product_provider_callable: ScoutProductProviderCallable | None = None,
 ) -> ProductProviderAcquisitionRunner:
     """Build the default product-owned acquisition runner."""
 
     tavily_callable = tavily_product_provider_callable or search_web_results
+    linkup_callable = linkup_product_provider_callable or search_linkup_results
+    exa_callable = exa_product_provider_callable or search_exa_results
     scout_callable = scout_product_provider_callable or search_scout_results
 
     def runner(
@@ -85,6 +107,8 @@ def build_generic_product_provider_acquisition_runner(
         return run_generic_product_provider_acquisition(
             request,
             tavily_product_provider_callable=tavily_callable,
+            linkup_product_provider_callable=linkup_callable,
+            exa_product_provider_callable=exa_callable,
             scout_product_provider_callable=scout_callable,
         )
 
@@ -95,6 +119,8 @@ def run_generic_product_provider_acquisition(
     request: ProductProviderAcquisitionRequest,
     *,
     tavily_product_provider_callable: TavilyProductProviderCallable = search_web_results,
+    linkup_product_provider_callable: LinkupProductProviderCallable = search_linkup_results,
+    exa_product_provider_callable: ExaProductProviderCallable = search_exa_results,
     scout_product_provider_callable: ScoutProductProviderCallable = search_scout_results,
 ) -> ProductProviderAcquisitionResult:
     """Acquire sanitized provider records through product provider surfaces."""
@@ -137,9 +163,46 @@ def run_generic_product_provider_acquisition(
                 provider_records,
                 provider_call_index=1,
             )
-        elif provider == DEFAULT_SCOUT_PROVIDER:
+        elif provider == LINKUP_EXTRACTION_PROVIDER:
+            linkup_kwargs: dict[str, Any] = {
+                "query": request.query,
+                "depth": "standard",
+                "output_type": "searchResults",
+                "intent": "general",
+                "max_results": max_results,
+            }
+            if include_domains:
+                linkup_kwargs["include_domains"] = list(include_domains)
+            if exclude_domains:
+                linkup_kwargs["exclude_domains"] = list(exclude_domains)
+            provider_records, _images = linkup_product_provider_callable(
+                **linkup_kwargs,
+            )
+            results = normalize_linkup_product_provider_results(
+                provider_records,
+                provider_call_index=1,
+                output_type="searchResults",
+            )
+        elif provider == EXA_EXTRACTION_PROVIDER:
+            exa_kwargs: dict[str, Any] = {
+                "query": request.query,
+                "intent": "general",
+                "max_results": max_results,
+            }
+            if include_domains:
+                exa_kwargs["include_domains"] = list(include_domains)
+            if exclude_domains:
+                exa_kwargs["exclude_domains"] = list(exclude_domains)
+            provider_records, _images = exa_product_provider_callable(
+                **exa_kwargs,
+            )
+            results = normalize_exa_product_provider_results(
+                provider_records,
+                provider_call_index=1,
+            )
+        elif provider in SCOUT_ONLY_PROVIDERS:
             provider_records = scout_product_provider_callable(
-                provider=DEFAULT_SCOUT_PROVIDER,
+                provider=provider,
                 query=request.query,
                 max_results=max_results,
             )
@@ -167,6 +230,7 @@ def run_generic_product_provider_acquisition(
     payload = {
         "request_kind": PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND,
         "provider": provider,
+        "provider_role": _clean_provider_role(request.acquisition_provider_role),
         "acquisition_provider_role": _clean_provider_role(
             request.acquisition_provider_role
         ),
@@ -204,6 +268,56 @@ def normalize_tavily_product_provider_results(
 ) -> list[dict[str, Any]]:
     """Normalize Tavily records into the generic sanitized provider envelope."""
 
+    return _normalize_extraction_product_provider_results(
+        results,
+        provider_call_index=provider_call_index,
+        observed_at=observed_at,
+        allow_provider_extracted_text=True,
+    )
+
+
+def normalize_linkup_product_provider_results(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    provider_call_index: int,
+    output_type: str = "searchResults",
+    observed_at: str | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize LinkUp searchResults without admitting sourcedAnswer text."""
+
+    return _normalize_extraction_product_provider_results(
+        results,
+        provider_call_index=provider_call_index,
+        observed_at=observed_at,
+        allow_provider_extracted_text=output_type == "searchResults",
+    )
+
+
+def normalize_exa_product_provider_results(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    provider_call_index: int,
+    observed_at: str | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize Exa text results into the generic sanitized provider envelope."""
+
+    return _normalize_extraction_product_provider_results(
+        results,
+        provider_call_index=provider_call_index,
+        observed_at=observed_at,
+        allow_provider_extracted_text=True,
+    )
+
+
+def _normalize_extraction_product_provider_results(
+    results: Sequence[Mapping[str, Any]],
+    *,
+    provider_call_index: int,
+    allow_provider_extracted_text: bool,
+    observed_at: str | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize URL-bound provider extraction records."""
+
     normalized: list[dict[str, Any]] = []
     extracted_at = observed_at or _observed_at()
     for index, item in enumerate(results, 1):
@@ -235,7 +349,12 @@ def normalize_tavily_product_provider_results(
             "raw_provider_payload_retained": False,
             "raw_search_response_retained": False,
         }
-        extracted_text = _bounded_provider_text(safe.get("raw_content"))
+        sourced_answer_record = safe.get("_linkup_sourced_answer") is True
+        extracted_text = (
+            _bounded_provider_text(safe.get("raw_content"))
+            if allow_provider_extracted_text and not sourced_answer_record
+            else None
+        )
         if extracted_text:
             record.update(
                 {
@@ -355,8 +474,14 @@ def _credential_name_from_exception(*, provider: str, exc: Exception) -> str | N
     detail = str(exc)
     if provider == DEFAULT_EXTRACTION_PROVIDER and "TAVILY_API_KEY" in detail:
         return "TAVILY_API_KEY"
+    if provider == LINKUP_EXTRACTION_PROVIDER and "LINKUP_API_KEY" in detail:
+        return "LINKUP_API_KEY"
+    if provider == EXA_EXTRACTION_PROVIDER and "EXA_API_KEY" in detail:
+        return "EXA_API_KEY"
     if provider == DEFAULT_SCOUT_PROVIDER and "SERPER_API_KEY" in detail:
         return "SERPER_API_KEY"
+    if provider == BRAVE_SCOUT_PROVIDER and "BRAVE_API_KEY" in detail:
+        return "BRAVE_API_KEY"
     return None
 
 
@@ -476,12 +601,23 @@ def _observed_at() -> str:
 __all__ = [
     "BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_CREDENTIAL_UNAVAILABLE",
     "BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE",
+    "BRAVE_SCOUT_PROVIDER",
+    "DEFAULT_EXTRACTION_PROVIDER",
+    "DEFAULT_SCOUT_PROVIDER",
+    "EXA_EXTRACTION_PROVIDER",
+    "EXTRACTION_CAPABLE_PROVIDERS",
+    "LINKUP_EXTRACTION_PROVIDER",
     "PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND",
     "ProductProviderAcquisitionRequest",
     "ProductProviderAcquisitionResult",
     "ProductProviderAcquisitionRunner",
     "PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS",
+    "SCOUT_ONLY_PROVIDERS",
+    "SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE",
+    "SOURCE_OF_RECORD_RECOVERY_SCOUT_PROVIDER_ROLE",
     "build_generic_product_provider_acquisition_runner",
+    "normalize_exa_product_provider_results",
+    "normalize_linkup_product_provider_results",
     "normalize_scout_product_provider_results",
     "normalize_tavily_product_provider_results",
     "run_generic_product_provider_acquisition",
