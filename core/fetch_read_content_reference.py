@@ -555,6 +555,38 @@ class SanitizedContentReference:
                     limit=80,
                 ),
                 "fetch_read_status": status,
+                "content_acquisition_mode": _clean_token(
+                    material.get("content_acquisition_mode"),
+                    limit=120,
+                ),
+                "content_acquisition_provider": _clean_token(
+                    material.get("content_acquisition_provider"),
+                    limit=80,
+                ),
+                "provider_extracted_source_content": (
+                    material.get("provider_extracted_source_content") is True
+                    or None
+                ),
+                "provider_extracted_source_text_digest": _clean_token(
+                    material.get("provider_extracted_source_text_digest"),
+                    limit=128,
+                ),
+                "provider_extracted_source_text_bounded": (
+                    material.get("provider_extracted_source_text_bounded") is True
+                    or None
+                ),
+                "provider_extracted_source_text_sanitized": (
+                    material.get("provider_extracted_source_text_sanitized") is True
+                    or None
+                ),
+                "original_source_url": _clean_url(material.get("original_source_url")),
+                "original_source_title": _clean_text(
+                    material.get("original_source_title"),
+                    limit=300,
+                ),
+                "original_source_domain": _clean_domain(
+                    material.get("original_source_domain")
+                ),
                 "attempted_url": attempted_url,
                 "resolved_url": resolved_url,
                 "final_url": final_url,

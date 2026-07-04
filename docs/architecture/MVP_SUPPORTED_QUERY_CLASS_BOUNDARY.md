@@ -114,15 +114,22 @@ source-class adapters, social/review aggregation, FAP/Author, friend-level or
 general MVP readiness, source-obligation satisfaction by the packet alone, or
 product correctness.
 
-Within this path only, fetch/read candidate selection may use a transparent
-acquisition-priority policy over already-sanitized provider metadata so
-official/source-of-record-looking candidates can be attempted within the
-existing cap before derivative-looking candidates. This is not a global ranking
-system, source-authority policy, approved-domain list, retrieval/filtering
-layer, evidence support decision, citation-eligibility decision,
-source-obligation satisfaction, answer readiness, or correctness claim. Provider
-rank remains preserved in diagnostics, fetch/read priority rank is diagnostic,
-and PDF parsing/support remains closed.
+Within this path only, a minimal local acquisition planner may route the single
+planned relation to an extraction-capable provider first. For clear queries,
+including the N-400 paper-filing-fee dogfood query, Serper scout calls are
+expected to be `0`; Serper may run only when the planner records concrete
+ambiguity, and its output is non-evidence directionality. Provider-extracted
+source text may enter only through the bounded fetch/read custody packet with
+original URL/title/domain/provider metadata preserved. Direct public URL
+fetch/read is fallback or diagnostic only. Provider answer products,
+`sourcedAnswer`, snippets, summaries, and provider-written prose must not become
+evidence or answer text.
+
+This is not a global ranking system, source-authority policy, approved-domain
+list, retrieval/filtering layer, evidence support decision, citation-eligibility
+decision, source-obligation satisfaction, answer readiness, or correctness
+claim. Provider rank remains preserved in diagnostics, fetch/read priority rank
+is diagnostic, and PDF parsing/support remains closed.
 
 ## Roadmap Preserved
 

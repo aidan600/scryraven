@@ -42,6 +42,7 @@ from core.dprime_support_proposal_schema import (
 from core.fetch_read_content_reference import (
     FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
     BoundedTextSelection,
+    FetchReadContentReferenceError,
     build_fetch_read_content_packet_from_candidate_packet,
     select_bounded_answer_bearing_text,
     validate_fetch_read_content_packet,
@@ -72,9 +73,9 @@ from proplex.live_acquisition_readability_status import (
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from proplex.mvp_friend_shareable_output import MvpFriendOutputResult
 
-PHASE_NAME = "GENERIC-SINGLE-RELATION-LIVE-DOGFOOD-01"
+PHASE_NAME = "GENERIC-SINGLE-RELATION-LIVE-SEARCH-PLAN-AND-EXTRACTION-ROUTING-01"
 SCHEMA_VERSION = "generic_single_relation_live_dogfood_v1"
-MODE = "BUILD"
+MODE = "REPAIR"
 PASS_DECISION = "PASS"
 CONFIRM_LIVE_DOGFOOD_FLAG = "--confirm-live-dogfood"
 
@@ -132,6 +133,12 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_OUTPUT_INVALID = (
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED"
 )
+BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
+)
+PROVIDER_EXTRACTED_CONTENT_CUSTODY_ADMISSION_BLOCKED = (
+    "PROVIDER_EXTRACTED_CONTENT_CUSTODY_ADMISSION_BLOCKED"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED"
 )
@@ -142,7 +149,9 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE"
 )
 
-DEFAULT_PROVIDER = "serper"
+DEFAULT_PROVIDER = "tavily"
+DEFAULT_EXTRACTION_PROVIDER = "tavily"
+DEFAULT_SCOUT_PROVIDER = "serper"
 DEFAULT_OPERATION = "search"
 DEFAULT_BROKER_URL = "http://127.0.0.1:8765/run"
 DEFAULT_PRIVATE_BROKER_PATH = (
@@ -156,6 +165,7 @@ LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
 MAX_LIVE_RUNS = 1
 MAX_QUERY_PLANS_CONSUMED = 1
 MAX_PROVIDER_SEARCH_CALLS = 1
+MAX_SERPER_SCOUT_CALLS = 1
 MAX_PROVIDER_RESULTS = 5
 MAX_FETCH_READ_ATTEMPTS = 3
 MAX_EVIDENCE_LEDGER_ADMISSIONS = 3
@@ -207,6 +217,14 @@ FETCH_READ_CANDIDATE_SELECTION_POLICY_ID = (
     "generic_single_relation_live_fetch_read_acquisition_priority_v1"
 )
 FETCH_READ_CANDIDATE_SELECTION_SCOPE = "local_fetch_read_acquisition_only"
+ACQUISITION_PLANNER_SCHEMA_VERSION = (
+    "generic_single_relation_live_acquisition_planner_v1"
+)
+ACQUISITION_PLANNER_KIND = "minimal_single_relation_acquisition_planner"
+SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED = "provider_extracted_source_content"
+SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK = "direct_public_web_fetch_fallback"
+SOURCE_ACQUISITION_MODE_NONE = "none"
+PROVIDER_EXTRACTED_CONTENT_TYPE = "text/html"
 
 _CANDIDATE_PRIORITY_STOPWORDS = frozenset(
     {
@@ -332,6 +350,13 @@ _ALLOWED_PROVIDER_RESULT_KEYS = frozenset(
         "result_rank",
         "call_index",
         "provider_call_index",
+        "provider_extracted_text",
+        "provider_extracted_text_sanitized",
+        "provider_extracted_text_bounded",
+        "provider_extracted_text_char_count",
+        "provider_extracted_text_digest",
+        "provider_extracted_content_type",
+        "provider_extracted_at",
         "raw_provider_payload_retained",
         "raw_search_response_retained",
     }
@@ -526,11 +551,15 @@ def build_generic_single_relation_live_dogfood_run_output(
     counts = _empty_counts()
     relation_plan: dict[str, Any] | None = None
     semantic_payload: Mapping[str, Any] = {}
+    acquisition_plan: dict[str, Any] | None = None
+    disambiguation_record: dict[str, Any] | None = None
 
     try:
         relation_plan = build_generic_query_relation_plan(query)
         counts["query_plans_consumed"] = 1
         _guard_plan_for_live_acquisition(relation_plan)
+        acquisition_plan = _build_fast_acquisition_plan(relation_plan)
+        counts["fast_planner_calls_attempted"] = 1
         if not confirm_live_dogfood:
             raise GenericSingleRelationLiveDogfoodRunError(
                 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED,
@@ -553,13 +582,52 @@ def build_generic_single_relation_live_dogfood_run_output(
                 "Default live provider runner is disabled under pytest/CI.",
             )
 
-        search_query_seed = _search_query_seed(relation_plan)
         proxy_runner = provider_proxy_runner or run_provider_proxy_helper_once
+        if acquisition_plan["disambiguation_required"]:
+            scout_output_path = run_dir / "sanitized-scout-proxy-response.json"
+            scout_result = proxy_runner(
+                GenericProviderProxyRunRequest(
+                    repo_root=root,
+                    output_path=scout_output_path,
+                    query=str(acquisition_plan["disambiguation_query"]),
+                    provider=DEFAULT_SCOUT_PROVIDER,
+                    operation=DEFAULT_OPERATION,
+                    broker_url=broker_url,
+                    private_broker_path=Path(private_broker_path),
+                    env_file_paths=_env_file_paths(env_file_paths),
+                )
+            )
+            counts["serper_scout_calls_attempted"] = (
+                scout_result.provider_calls_attempted
+            )
+            counts["serper_scout_calls_completed"] = (
+                scout_result.provider_calls_completed
+            )
+            _enforce_caps(counts)
+            if scout_result.return_code != 0:
+                raise GenericSingleRelationLiveDogfoodRunError(
+                    BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE,
+                    "Serper scout/disambiguation call did not complete.",
+                )
+            scout_payload = _load_sanitized_provider_output(scout_result.output_path)
+            disambiguation_record = _disambiguation_record_from_scout_payload(
+                scout_payload,
+                acquisition_plan=acquisition_plan,
+            )
+            acquisition_plan = _revised_acquisition_plan_after_disambiguation(
+                acquisition_plan,
+                disambiguation_record=disambiguation_record,
+            )
+
+        search_query_seed = str(acquisition_plan["acquisition_query"])
+        extraction_provider = str(acquisition_plan["extraction_provider"])
         proxy_result = proxy_runner(
             GenericProviderProxyRunRequest(
                 repo_root=root,
                 output_path=provider_output_path,
                 query=search_query_seed,
+                provider=extraction_provider,
+                operation=str(acquisition_plan["provider_operation"]),
                 broker_url=broker_url,
                 private_broker_path=Path(private_broker_path),
                 env_file_paths=_env_file_paths(env_file_paths),
@@ -567,11 +635,20 @@ def build_generic_single_relation_live_dogfood_run_output(
         )
         counts["provider_calls_attempted"] = proxy_result.provider_calls_attempted
         counts["provider_calls_completed"] = proxy_result.provider_calls_completed
+        counts["extraction_provider_calls_attempted"] = (
+            proxy_result.provider_calls_attempted
+        )
+        counts["extraction_provider_calls_completed"] = (
+            proxy_result.provider_calls_completed
+        )
         _enforce_caps(counts)
         if proxy_result.return_code != 0:
             raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRIVATE_BROKER_UNAVAILABLE,
-                "private broker/operator provider call did not complete.",
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
+                (
+                    "extraction-capable provider route did not complete through "
+                    "the approved broker/operator mechanism."
+                ),
             )
 
         provider_payload = _load_sanitized_provider_output(proxy_result.output_path)
@@ -585,6 +662,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             provider_calls_attempted=counts["provider_calls_attempted"],
             provider_calls_completed=counts["provider_calls_completed"],
             search_query_seed=search_query_seed,
+            extraction_provider=extraction_provider,
         )
         _write_search_artifacts(
             retained_root=retained_root,
@@ -653,6 +731,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             run_id=run_id,
             retained_root=retained_root,
             counts=counts,
+            acquisition_plan=acquisition_plan,
+            disambiguation_record=disambiguation_record,
             semantic_payload=semantic_payload,
             status_decision=str(semantic_status.decision),
             confirm_live_dprime_review=confirm_live_dprime_review,
@@ -666,6 +746,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             run_id=run_id,
             retained_root=None,
             counts=counts,
+            acquisition_plan=acquisition_plan,
+            disambiguation_record=disambiguation_record,
             caps_exhausted=False,
             confirm_live_dprime_review=confirm_live_dprime_review,
             semantic_payload={},
@@ -680,6 +762,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             run_id=run_id,
             retained_root=retained_root if retained_root.exists() else None,
             counts=counts,
+            acquisition_plan=acquisition_plan,
+            disambiguation_record=disambiguation_record,
             caps_exhausted=exc.caps_exhausted,
             confirm_live_dprime_review=confirm_live_dprime_review,
             semantic_payload=semantic_payload,
@@ -910,6 +994,12 @@ def validate_generic_single_relation_live_dogfood_packet(
         _blocked_cap("query plan consumption cap exceeded.")
     if _bounded_int(safe.get("provider_calls_attempted")) > MAX_PROVIDER_SEARCH_CALLS:
         _blocked_cap("provider/search call cap exceeded.")
+    if _bounded_int(safe.get("extraction_provider_calls_attempted")) > (
+        MAX_PROVIDER_SEARCH_CALLS
+    ):
+        _blocked_cap("extraction provider/search call cap exceeded.")
+    if _bounded_int(safe.get("serper_scout_calls_attempted")) > MAX_SERPER_SCOUT_CALLS:
+        _blocked_cap("Serper scout call cap exceeded.")
     if _bounded_int(safe.get("provider_results_returned")) > MAX_PROVIDER_RESULTS:
         _blocked_cap("provider result cap exceeded.")
     if _bounded_int(safe.get("fetch_read_attempts")) > MAX_FETCH_READ_ATTEMPTS:
@@ -952,6 +1042,10 @@ def validate_generic_single_relation_live_dogfood_packet(
         for count_key in (
             "provider_calls_attempted",
             "provider_calls_completed",
+            "extraction_provider_calls_attempted",
+            "extraction_provider_calls_completed",
+            "serper_scout_calls_attempted",
+            "serper_scout_calls_completed",
             "fetch_read_attempts",
             "fetch_read_completed",
             "dprime_model_review_calls_attempted",
@@ -994,12 +1088,13 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         "http_source_survival_domain_specific_header_hacks_opened",
         "http_source_survival_domain_specific_url_fallback_opened",
         "http_source_survival_canonical_url_transformation_opened",
-        "provider_routing_changed",
         "provider_query_generation_changed",
     ):
         expected = key == "candidate_diagnostics_observability_only"
         if packet.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    if packet.get("provider_routing_changed") not in {True, False}:
+        _blocked_output_hygiene("generic live packet provider_routing_changed invalid.")
     for key in (
         "official_http_source_survival_blocker_available",
         "http_source_survival_request_hygiene_added",
@@ -1261,6 +1356,8 @@ def _validate_attempt_diagnostic(diagnostic: Mapping[str, Any]) -> None:
         _blocked_output_hygiene("fetch/read request profile invalid.")
     if diagnostic.get("fetch_read_request_posture") != (
         FETCH_READ_PUBLIC_WEB_REQUEST_POSTURE
+    ) and diagnostic.get("fetch_read_request_posture") != (
+        "provider_extracted_source_content_no_direct_fetch"
     ):
         _blocked_output_hygiene("fetch/read request posture invalid.")
     final_url = _clean_text(diagnostic.get("final_url"), limit=700)
@@ -1333,10 +1430,17 @@ def format_generic_single_relation_live_dogfood_output(
         [
             "",
             "Status",
+            f"- Fast planner: {packet.get('fast_planner_kind') or 'not used'}",
+            f"- Planner marked ambiguity: {_bool_text(packet.get('planner_marked_ambiguity'))}",
+            f"- Serper scout calls: {packet.get('serper_scout_calls_attempted')}/"
+            f"{packet.get('serper_scout_calls_completed')}",
+            f"- Extraction provider: {packet.get('extraction_provider') or 'not used'}",
+            "- Provider-extracted content obtained: "
+            f"{_bool_text(packet.get('provider_extracted_content_obtained'))}",
             f"- Provider calls: {packet.get('provider_calls_attempted')}/"
             f"{packet.get('provider_calls_completed')}",
-            f"- Fetch/read: {packet.get('fetch_read_attempts')}/"
-            f"{packet.get('fetch_read_completed')}",
+            f"- Direct fetch/read fallback attempts: {packet.get('direct_fetch_read_attempts')}",
+            f"- Readable content handoff: {packet.get('fetch_read_completed')}",
             "- Fetch/read status classes: "
             f"{_summary_text(packet.get('fetch_read_status_class_summary'))}",
             "- Fetch/read content types: "
@@ -1369,6 +1473,8 @@ def _packet_from_semantic_status(
     run_id: str,
     retained_root: Path,
     counts: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+    disambiguation_record: Mapping[str, Any] | None,
     semantic_payload: Mapping[str, Any],
     status_decision: str,
     confirm_live_dprime_review: bool,
@@ -1390,6 +1496,8 @@ def _packet_from_semantic_status(
         run_id=run_id,
         retained_root=retained_root,
         counts=counts,
+        acquisition_plan=acquisition_plan,
+        disambiguation_record=disambiguation_record,
         confirm_live_dprime_review=confirm_live_dprime_review,
         caps_exhausted=False,
         semantic_payload=semantic_payload,
@@ -1429,6 +1537,8 @@ def _blocked_packet(
     run_id: str,
     retained_root: Path | None,
     counts: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+    disambiguation_record: Mapping[str, Any] | None,
     caps_exhausted: bool,
     confirm_live_dprime_review: bool,
     semantic_payload: Mapping[str, Any],
@@ -1440,6 +1550,8 @@ def _blocked_packet(
         run_id=run_id,
         retained_root=retained_root,
         counts=counts,
+        acquisition_plan=acquisition_plan,
+        disambiguation_record=disambiguation_record,
         confirm_live_dprime_review=confirm_live_dprime_review,
         caps_exhausted=caps_exhausted,
         semantic_payload=semantic_payload,
@@ -1470,11 +1582,15 @@ def _base_packet(
     run_id: str,
     retained_root: Path | None,
     counts: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+    disambiguation_record: Mapping[str, Any] | None,
     confirm_live_dprime_review: bool,
     caps_exhausted: bool,
     semantic_payload: Mapping[str, Any],
 ) -> dict[str, Any]:
     plan = _safe_mapping(relation_plan)
+    acquisition = _safe_mapping(acquisition_plan)
+    disambiguation = _safe_mapping(disambiguation_record)
     requirement = _safe_mapping(plan.get("source_authority_posture_requirement"))
     search_requirement = _first_mapping(plan.get("search_requirements"))
     source_obligation = _first_mapping(plan.get("source_obligations"))
@@ -1528,6 +1644,23 @@ def _base_packet(
             _actual_source_authority_posture_created(semantic)
         ),
         "planner_type": plan.get("planner_type"),
+        "fast_planner_added": bool(acquisition),
+        "fast_planner_used": bool(acquisition),
+        "fast_planner_kind": acquisition.get("planner_kind"),
+        "fast_planner_route": acquisition.get("planner_route"),
+        "fast_planner_model_route_used": acquisition.get("fast_model_route_used")
+        is True,
+        "fast_planner_model_calls_attempted": counts.get(
+            "fast_planner_model_calls_attempted",
+            0,
+        ),
+        "fast_planner_calls_attempted": counts.get(
+            "fast_planner_calls_attempted",
+            0,
+        ),
+        "planner_marked_ambiguity": acquisition.get("disambiguation_required")
+        is True,
+        "fast_planner_output": acquisition,
         "component_id": plan.get("component_id"),
         "component_text": plan.get("component_text"),
         "source_obligation_id": plan.get("source_obligation_id"),
@@ -1554,6 +1687,79 @@ def _base_packet(
             if counts.get("provider_calls_attempted", 0)
             else "blocked_before_provider_search"
         ),
+        "run_kernel_local_accounting_authorized_planner": bool(acquisition),
+        "run_kernel_local_accounting_authorized_disambiguation": bool(
+            disambiguation
+        ),
+        "run_kernel_local_accounting_authorized_source_acquisition": bool(
+            counts.get("extraction_provider_calls_attempted", 0)
+        ),
+        "run_kernel_dag_scheduling_required": False,
+        "disambiguator_added": True,
+        "disambiguator_used": bool(disambiguation),
+        "disambiguation_record": disambiguation,
+        "serper_primary_source_acquisition_removed": True,
+        "serper_used_as_primary_source_acquisition": False,
+        "serper_output_used_as_evidence": False,
+        "serper_output_recorded_as_non_evidence": bool(disambiguation),
+        "serper_scout_calls_attempted": counts.get(
+            "serper_scout_calls_attempted",
+            0,
+        ),
+        "serper_scout_calls_completed": counts.get(
+            "serper_scout_calls_completed",
+            0,
+        ),
+        "serper_scout_reason": (
+            acquisition.get("disambiguation_reason")
+            if disambiguation
+            else "not_attempted_clear_query"
+        ),
+        "extraction_provider": acquisition.get("extraction_provider")
+        or DEFAULT_EXTRACTION_PROVIDER,
+        "extraction_provider_used": bool(
+            counts.get("extraction_provider_calls_attempted", 0)
+        ),
+        "extraction_provider_calls_attempted": counts.get(
+            "extraction_provider_calls_attempted",
+            0,
+        ),
+        "extraction_provider_calls_completed": counts.get(
+            "extraction_provider_calls_completed",
+            0,
+        ),
+        "source_acquisition_mode": counts.get(
+            "source_acquisition_mode",
+            SOURCE_ACQUISITION_MODE_NONE,
+        ),
+        "provider_extracted_content_obtained": bool(
+            counts.get("provider_extracted_content_handoff_created", 0)
+        ),
+        "provider_extracted_content_candidate_count": counts.get(
+            "provider_extracted_content_candidate_count",
+            0,
+        ),
+        "provider_extracted_content_handoff_created": bool(
+            counts.get("provider_extracted_content_handoff_created", 0)
+        ),
+        "provider_extracted_content_admitted_to_fetch_read_packet": bool(
+            counts.get("provider_extracted_content_handoff_created", 0)
+        ),
+        "provider_extracted_content_admission_blocked": (
+            counts.get("fetch_read_blocker")
+            == PROVIDER_EXTRACTED_CONTENT_CUSTODY_ADMISSION_BLOCKED
+        ),
+        "provider_extracted_original_url_bindings_preserved": bool(
+            counts.get("provider_extracted_content_handoff_created", 0)
+        ),
+        "provider_answer_products_used": False,
+        "provider_sourced_answer_used": False,
+        "provider_snippets_remain_directionality_only": True,
+        "direct_url_fetch_primary_happy_path": False,
+        "direct_url_fetch_fallback_or_diagnostic_only": True,
+        "direct_fetch_read_attempts": counts.get("direct_fetch_read_attempts", 0),
+        "optional_evidence_triage_implemented": False,
+        "optional_evidence_triage_deferred_to": "SOURCE-EVIDENCE-INTAKE-TRIAGE-01",
         "live_runs_attempted": 1 if counts.get("provider_calls_attempted", 0) else 0,
         "query_plans_consumed": counts.get("query_plans_consumed", 0),
         "provider_calls_attempted": counts.get("provider_calls_attempted", 0),
@@ -1608,7 +1814,7 @@ def _base_packet(
         "http_source_survival_domain_specific_header_hacks_opened": False,
         "http_source_survival_domain_specific_url_fallback_opened": False,
         "http_source_survival_canonical_url_transformation_opened": False,
-        "provider_routing_changed": False,
+        "provider_routing_changed": bool(plan),
         "provider_query_generation_changed": False,
         "fetch_read_cap_preserved": True,
         "fetch_read_cap_value": MAX_FETCH_READ_ATTEMPTS,
@@ -1701,6 +1907,141 @@ def _guard_plan_for_live_acquisition(plan: Mapping[str, Any]) -> None:
         )
 
 
+def _build_fast_acquisition_plan(plan: Mapping[str, Any]) -> dict[str, Any]:
+    search_query = _search_query_seed(plan)
+    ambiguity_required, ambiguity_reason = _planner_ambiguity_posture(plan)
+    payload = {
+        "schema_version": ACQUISITION_PLANNER_SCHEMA_VERSION,
+        "planner_kind": ACQUISITION_PLANNER_KIND,
+        "planner_route": "existing_deterministic_relation_plan_adapter",
+        "fast_model_route_used": False,
+        "fast_model_route_reason": "no broad model-routing layer introduced",
+        "model_calls_attempted": 0,
+        "relation_plan_id": plan.get("plan_id"),
+        "component_id": plan.get("component_id"),
+        "search_requirement_id": plan.get("search_requirement_id"),
+        "source_obligation_id": plan.get("source_obligation_id"),
+        "acquisition_query": search_query,
+        "original_acquisition_query": search_query,
+        "disambiguation_required": ambiguity_required,
+        "disambiguation_reason": ambiguity_reason,
+        "disambiguation_query": search_query if ambiguity_required else None,
+        "extraction_provider": DEFAULT_EXTRACTION_PROVIDER,
+        "provider_operation": DEFAULT_OPERATION,
+        "max_provider_results": MAX_PROVIDER_RESULTS,
+        "max_selected_source_content_candidates": MAX_EVIDENCE_LEDGER_ADMISSIONS,
+        "serper_scout_allowed": ambiguity_required,
+        "serper_scout_used": False,
+        "source_authority_decided": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+        "correctness_claimed": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+    _reject_forbidden_material(payload, context="fast acquisition planner output")
+    return _json_safe(payload)
+
+
+def _planner_ambiguity_posture(plan: Mapping[str, Any]) -> tuple[bool, str]:
+    query = (_clean_text(plan.get("sanitized_query"), limit=500) or "").casefold()
+    component = (_clean_text(plan.get("component_text"), limit=260) or "").casefold()
+    combined = f"{query} {component}"
+    vague_markers = (
+        " this ",
+        " that ",
+        " the form",
+        " the application",
+        " the filing",
+        " my ",
+        " near me",
+        " in my county",
+    )
+    if any(marker in f" {combined} " for marker in vague_markers):
+        return True, "vague_entity_or_form_reference"
+    if len(_relation_plan_priority_tokens(plan)) < 2:
+        return True, "insufficient_entity_terms_for_source_acquisition"
+    return False, "clear_single_relation_query"
+
+
+def _disambiguation_record_from_scout_payload(
+    scout_payload: Mapping[str, Any],
+    *,
+    acquisition_plan: Mapping[str, Any],
+) -> dict[str, Any]:
+    results = _provider_results(scout_payload)
+    observations = []
+    for result in results[:MAX_PROVIDER_RESULTS]:
+        observations.append(
+            {
+                "title": _clean_text(result.get("title"), limit=220),
+                "url": _clean_text(result.get("url"), limit=700),
+                "domain": _clean_domain(result.get("domain")),
+                "result_rank": _bounded_int(result.get("result_rank"), default=0),
+                "directionality_only": True,
+                "not_evidence": True,
+                "not_source_custody": True,
+                "not_citation_eligible": True,
+                "not_source_obligation_satisfaction": True,
+            }
+        )
+    record = {
+        "schema_version": "generic_single_relation_disambiguator_record_v1",
+        "disambiguator_role": "cheap_scout_directionality",
+        "scout_provider": DEFAULT_SCOUT_PROVIDER,
+        "scout_query": acquisition_plan.get("disambiguation_query"),
+        "scout_result_count": len(observations),
+        "observations": observations,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "scout_output_used_as_evidence": False,
+        "scout_output_used_as_source_custody": False,
+        "scout_output_citation_eligible": False,
+        "scout_output_satisfies_source_obligation": False,
+        "planner_revision_allowed": True,
+    }
+    _reject_forbidden_material(record, context="disambiguator scout record")
+    return _json_safe(record)
+
+
+def _revised_acquisition_plan_after_disambiguation(
+    acquisition_plan: Mapping[str, Any],
+    *,
+    disambiguation_record: Mapping[str, Any],
+) -> dict[str, Any]:
+    revised = dict(acquisition_plan)
+    bridge_term = _disambiguation_bridge_term(disambiguation_record)
+    if bridge_term:
+        revised["acquisition_query"] = _clean_text(
+            f"{acquisition_plan.get('original_acquisition_query')} {bridge_term}",
+            limit=220,
+        )
+        revised["planner_revision_source"] = "serper_directionality_bridge_term"
+    else:
+        revised["planner_revision_source"] = "no_concrete_scout_bridge_term"
+    revised["serper_scout_used"] = True
+    revised["scout_output_used_as_evidence"] = False
+    revised["scout_output_used_as_source_custody"] = False
+    revised["scout_output_citation_eligible"] = False
+    revised["scout_output_satisfies_source_obligation"] = False
+    _reject_forbidden_material(revised, context="revised acquisition planner output")
+    return _json_safe(revised)
+
+
+def _disambiguation_bridge_term(record: Mapping[str, Any]) -> str | None:
+    for observation in _safe_sequence(record.get("observations")):
+        safe = _safe_mapping(observation)
+        title = _clean_text(safe.get("title"), limit=120)
+        if title:
+            return title
+        domain = _clean_domain(safe.get("domain"))
+        if domain:
+            return domain
+    return None
+
+
 def _candidate_packet_from_provider_results(
     *,
     relation_plan: Mapping[str, Any],
@@ -1709,6 +2050,7 @@ def _candidate_packet_from_provider_results(
     provider_calls_attempted: int,
     provider_calls_completed: int,
     search_query_seed: str,
+    extraction_provider: str,
 ) -> dict[str, Any]:
     contract_ref = _contract_ref_from_plan(relation_plan)
     handoff_ref = _handoff_ref_from_plan(relation_plan, contract_ref=contract_ref)
@@ -1718,6 +2060,8 @@ def _candidate_packet_from_provider_results(
         "candidate_count": len(results),
         "relation_plan_id": relation_plan.get("plan_id"),
         "search_query_seed_used": search_query_seed,
+        "source_acquisition_provider": extraction_provider,
+        "source_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
         "provider_calls_attempted": provider_calls_attempted,
         "provider_calls_completed": provider_calls_completed,
         "raw_provider_payload_retained": False,
@@ -1742,8 +2086,8 @@ def _candidate_packet_from_provider_results(
                 current_answer_contract_ref=contract_ref,
                 search_executor_handoff_ref=handoff_ref,
                 search_task_id=str(relation_plan["search_requirement_id"]),
-                provider_authorized=DEFAULT_PROVIDER,
-                provider_used=str(result.get("provider") or DEFAULT_PROVIDER),
+                provider_authorized=extraction_provider,
+                provider_used=str(result.get("provider") or extraction_provider),
                 provider_call_index=_positive_int(
                     result.get("provider_call_index"),
                     "provider call index",
@@ -1775,8 +2119,8 @@ def _candidate_packet_from_provider_results(
         search_executor_handoff_ref=handoff_ref,
         candidate_records=records,
         selected_search_task_ids=[str(relation_plan["search_requirement_id"])],
-        provider_authorized=DEFAULT_PROVIDER,
-        provider_used=DEFAULT_PROVIDER,
+        provider_authorized=extraction_provider,
+        provider_used=extraction_provider,
         parent_live_search_validation_ref=validation_ref,
     ).to_dict()
     return validate_search_result_candidate_packet(packet)
@@ -1822,6 +2166,16 @@ def _retained_provider_payload_for_candidate_packet(
                 "published_or_observed_date": safe.get("published_or_observed_date"),
                 "result_rank": safe.get("result_rank"),
                 "provider_call_index": safe.get("provider_call_index"),
+                "provider_extracted_text_char_count": safe.get(
+                    "provider_extracted_text_char_count"
+                ),
+                "provider_extracted_text_digest": safe.get(
+                    "provider_extracted_text_digest"
+                ),
+                "provider_extracted_content_type": safe.get(
+                    "provider_extracted_content_type"
+                ),
+                "provider_extracted_at": safe.get("provider_extracted_at"),
                 "raw_provider_payload_retained": False,
                 "raw_search_response_retained": False,
             }
@@ -1857,6 +2211,10 @@ def _write_fetch_read_artifacts(
     candidates = _fetch_candidate_records(candidate_packet, relation_plan=relation_plan)
     if not candidates:
         return None, {
+            "source_acquisition_mode": SOURCE_ACQUISITION_MODE_NONE,
+            "provider_extracted_content_candidate_count": 0,
+            "provider_extracted_content_handoff_created": 0,
+            "direct_fetch_read_attempts": 0,
             "fetch_read_attempts": 0,
             "fetch_read_completed": 0,
             "fetch_read_blocker": (
@@ -1866,6 +2224,90 @@ def _write_fetch_read_artifacts(
                 "no provider result candidate exposed a usable http(s) URL "
                 "for bounded fetch/read."
             ),
+            "fetch_read_status_classes": (),
+            "fetch_read_content_types": (),
+            "fetch_read_failure_categories": tuple(
+                _candidate_failure_categories(candidate_diagnostics)
+            ),
+            "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
+            "fetch_read_attempt_diagnostics": (),
+        }
+    provider_results_by_candidate_id = _provider_results_by_candidate_id(
+        provider_results,
+        relation_plan=relation_plan,
+        run_id=str(candidate_packet["run_id"]),
+    )
+    provider_extracted_candidates = [
+        candidate
+        for candidate in candidates
+        if _provider_extracted_text(
+            provider_results_by_candidate_id.get(str(candidate["candidate_id"]), {})
+        )
+    ]
+    if provider_extracted_candidates:
+        candidate = provider_extracted_candidates[0]
+        provider_result = provider_results_by_candidate_id[str(candidate["candidate_id"])]
+        try:
+            selection = _bounded_plan_text_selection(
+                _provider_extracted_text(provider_result) or "",
+                relation_plan=relation_plan,
+            )
+            material = _provider_extracted_fetch_read_material(
+                candidate=candidate,
+                candidate_packet=candidate_packet,
+                provider_result=provider_result,
+                selection=selection,
+            )
+            fetch_packet = validate_fetch_read_content_packet(
+                build_fetch_read_content_packet_from_candidate_packet(
+                    candidate_packet,
+                    [material],
+                    selected_candidate_ids=[str(candidate["candidate_id"])],
+                )
+            )
+        except FetchReadContentReferenceError as exc:
+            return None, {
+                "source_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
+                "provider_extracted_content_candidate_count": len(
+                    provider_extracted_candidates
+                ),
+                "provider_extracted_content_handoff_created": 0,
+                "direct_fetch_read_attempts": 0,
+                "fetch_read_attempts": 0,
+                "fetch_read_completed": 0,
+                "fetch_read_blocker": (
+                    PROVIDER_EXTRACTED_CONTENT_CUSTODY_ADMISSION_BLOCKED
+                ),
+                "fetch_read_blocker_detail": str(exc),
+                "fetch_read_status_classes": (),
+                "fetch_read_content_types": (),
+                "fetch_read_failure_categories": tuple(
+                    _candidate_failure_categories(candidate_diagnostics)
+                ),
+                "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
+                "fetch_read_attempt_diagnostics": (),
+            }
+        fetch_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(fetch_dir / FETCH_READ_CONTENT_PACKET_NAME, fetch_packet)
+        _write_json(
+            fetch_dir / LIVE_SOURCE_SURVIVAL_SUMMARY_NAME,
+            _fetch_summary(fetch_packet),
+        )
+        provider_diagnostic = _provider_extracted_content_diagnostic(
+            candidate,
+            provider_result=provider_result,
+        )
+        _apply_attempt_diagnostic(candidate_diagnostics, provider_diagnostic)
+        _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
+        return fetch_packet, {
+            "source_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
+            "provider_extracted_content_candidate_count": len(
+                provider_extracted_candidates
+            ),
+            "provider_extracted_content_handoff_created": 1,
+            "direct_fetch_read_attempts": 0,
+            "fetch_read_attempts": 0,
+            "fetch_read_completed": 1,
             "fetch_read_status_classes": (),
             "fetch_read_content_types": (),
             "fetch_read_failure_categories": tuple(
@@ -1923,6 +2365,10 @@ def _write_fetch_read_artifacts(
             _apply_attempt_diagnostic(candidate_diagnostics, attempt_diagnostic)
             _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
             return fetch_packet, {
+                "source_acquisition_mode": SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK,
+                "provider_extracted_content_candidate_count": 0,
+                "provider_extracted_content_handoff_created": 0,
+                "direct_fetch_read_attempts": fetch_attempts,
                 "fetch_read_attempts": fetch_attempts,
                 "fetch_read_completed": 1,
                 "fetch_read_status_classes": tuple(
@@ -1959,6 +2405,10 @@ def _write_fetch_read_artifacts(
         last_error=last_error,
     )
     return None, {
+        "source_acquisition_mode": SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK,
+        "provider_extracted_content_candidate_count": 0,
+        "provider_extracted_content_handoff_created": 0,
+        "direct_fetch_read_attempts": fetch_attempts,
         "fetch_read_attempts": fetch_attempts,
         "fetch_read_completed": 0,
         "fetch_read_blocker": blocker,
@@ -2210,8 +2660,11 @@ def _candidate_diagnostics_from_provider_results(
         url = _clean_text(result.get("url"), limit=700)
         url_source = _clean_text(result.get("url_source"), limit=20) or "missing"
         url_valid = _is_valid_http_url(url)
+        provider_extracted_text_obtained = bool(_provider_extracted_text(result))
         selected_for_fetch_read = (
-            url_valid and 0 < priority_rank <= MAX_FETCH_READ_ATTEMPTS
+            url_valid
+            and not provider_extracted_text_obtained
+            and 0 < priority_rank <= MAX_FETCH_READ_ATTEMPTS
         )
         skipped_reason = None
         failure_category = None
@@ -2258,6 +2711,18 @@ def _candidate_diagnostics_from_provider_results(
                 "source_survival_diagnostic_satisfies_source_obligation": False,
                 "source_survival_diagnostic_citation_eligible": False,
                 "selected_for_fetch_read": selected_for_fetch_read,
+                "provider_extracted_text_obtained": provider_extracted_text_obtained,
+                "provider_extracted_text_char_count": _bounded_int(
+                    result.get("provider_extracted_text_char_count"),
+                    default=len(_provider_extracted_text(result) or ""),
+                ),
+                "provider_extracted_source_content_can_feed_custody": (
+                    provider_extracted_text_obtained
+                ),
+                "provider_extracted_content_creates_source_authority": False,
+                "provider_extracted_content_satisfies_source_obligation": False,
+                "provider_extracted_content_citation_eligible": False,
+                "provider_extracted_content_claims_correctness": False,
                 "attempted": False,
                 "skipped_reason": skipped_reason,
                 "title": _clean_text(result.get("title"), limit=220),
@@ -2418,7 +2883,20 @@ def _apply_attempt_diagnostic(
     for diagnostic in candidate_diagnostics:
         if diagnostic.get("candidate_id") != candidate_id:
             continue
-        diagnostic["selected_for_fetch_read"] = True
+        provider_extracted = attempt_diagnostic.get("content_acquisition_mode") == (
+            SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED
+        )
+        diagnostic["selected_for_fetch_read"] = not provider_extracted
+        diagnostic["provider_extracted_content_selected"] = provider_extracted
+        diagnostic["content_acquisition_mode"] = attempt_diagnostic.get(
+            "content_acquisition_mode"
+        )
+        diagnostic["content_acquisition_provider"] = attempt_diagnostic.get(
+            "content_acquisition_provider"
+        )
+        diagnostic["provider_extracted_source_content"] = attempt_diagnostic.get(
+            "provider_extracted_source_content"
+        )
         diagnostic["attempted"] = True
         diagnostic["skipped_reason"] = None
         diagnostic["http_status_class"] = attempt_diagnostic.get("http_status_class")
@@ -2694,6 +3172,174 @@ def _candidate_failure_categories(
         if category in {FETCH_READ_FAILURE_MISSING_URL, FETCH_READ_FAILURE_INVALID_URL}:
             categories.append(_fetch_read_failure_category(category))
     return categories
+
+
+def _provider_results_by_candidate_id(
+    provider_results: Sequence[Mapping[str, Any]],
+    *,
+    relation_plan: Mapping[str, Any],
+    run_id: str,
+) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for result in provider_results:
+        if not isinstance(result, Mapping):
+            continue
+        candidate_id, _candidate_digest = _provider_result_candidate_identity(
+            result,
+            relation_plan=relation_plan,
+            run_id=run_id,
+        )
+        out[candidate_id] = _safe_mapping(result)
+    return out
+
+
+def _provider_extracted_text(provider_result: Mapping[str, Any]) -> str | None:
+    text = _clean_text(
+        provider_result.get("provider_extracted_text"),
+        limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
+    )
+    return text or None
+
+
+def _provider_extracted_fetch_read_material(
+    *,
+    candidate: Mapping[str, Any],
+    candidate_packet: Mapping[str, Any],
+    provider_result: Mapping[str, Any],
+    selection: BoundedTextSelection,
+) -> dict[str, Any]:
+    bounded_text = selection.bounded_text
+    provider = _clean_text(provider_result.get("provider"), limit=80) or DEFAULT_PROVIDER
+    content_type = (
+        _content_type_or_unknown(provider_result.get("provider_extracted_content_type"))
+        if provider_result.get("provider_extracted_content_type")
+        else PROVIDER_EXTRACTED_CONTENT_TYPE
+    )
+    observed_at = (
+        _clean_text(provider_result.get("provider_extracted_at"), limit=80)
+        or datetime.now(UTC).replace(microsecond=0).isoformat()
+    )
+    return {
+        "candidate_id": candidate["candidate_id"],
+        "candidate_digest": candidate["candidate_digest"],
+        "run_id": candidate_packet["run_id"],
+        "request_id": candidate_packet["request_id"],
+        "current_answer_contract_digest": candidate_packet[
+            "current_answer_contract_digest"
+        ],
+        "search_executor_handoff_digest": candidate_packet[
+            "search_executor_handoff_digest"
+        ],
+        "search_result_candidate_packet_id": candidate_packet["packet_id"],
+        "search_result_candidate_packet_digest": candidate_packet["packet_digest"],
+        "fetch_read_status": "readable",
+        "content_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
+        "content_acquisition_provider": provider,
+        "provider_extracted_source_content": True,
+        "provider_extracted_source_text_digest": _digest_json(
+            {"provider_extracted_text": _provider_extracted_text(provider_result)}
+        ),
+        "provider_extracted_source_text_bounded": True,
+        "provider_extracted_source_text_sanitized": True,
+        "original_source_url": candidate["url"],
+        "original_source_title": candidate.get("title"),
+        "original_source_domain": candidate.get("domain"),
+        "attempted_url": candidate["url"],
+        "resolved_url": candidate["url"],
+        "final_url": candidate["url"],
+        "resolved_domain": candidate.get("domain"),
+        "content_type": content_type,
+        "http_status": None,
+        "retrieved_or_observed_at": observed_at,
+        "published_or_observed_date": candidate.get("published_or_observed_date"),
+        "content_title": candidate.get("title"),
+        "content_length": len(_provider_extracted_text(provider_result) or ""),
+        "redirect_chain_digest": None,
+        "redirect_count": 0,
+        "bounded_text": bounded_text,
+        "bounded_text_sanitized": True,
+        "bounded_text_bounded": True,
+        "bounded_text_char_count": len(bounded_text),
+        "bounded_text_selection": selection.to_metadata(),
+        "raw_page_content_retained": False,
+        "raw_page_text_retained": False,
+        "raw_headers_retained": False,
+        "raw_prompt_retained": False,
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+
+
+def _provider_extracted_content_diagnostic(
+    candidate: Mapping[str, Any],
+    *,
+    provider_result: Mapping[str, Any],
+) -> dict[str, Any]:
+    selection_features = _safe_mapping(candidate.get("candidate_selection_features"))
+    url = _clean_text(candidate.get("url"), limit=700)
+    provider = _clean_text(provider_result.get("provider"), limit=80) or DEFAULT_PROVIDER
+    return {
+        "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
+        "attempt_index": 0,
+        "attempted_url": url,
+        "attempted_domain": _clean_domain(candidate.get("domain"))
+        or (urlparse(url or "").netloc.lower() if url else None),
+        "final_url": url,
+        "final_domain": _clean_domain(candidate.get("domain"))
+        or (urlparse(url or "").netloc.lower() if url else None),
+        "http_status_code": None,
+        "redirect_count": 0,
+        "redirect_chain_digest": None,
+        "provider_rank": _bounded_int(candidate.get("result_rank"), default=0),
+        "result_rank": _bounded_int(candidate.get("result_rank"), default=0),
+        "fetch_read_priority_rank": _bounded_int(
+            candidate.get("fetch_read_priority_rank"),
+            default=0,
+        ),
+        "fetch_read_request_profile_id": FETCH_READ_PUBLIC_WEB_REQUEST_PROFILE_ID,
+        "fetch_read_request_posture": "provider_extracted_source_content_no_direct_fetch",
+        "content_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
+        "content_acquisition_provider": provider,
+        "provider_extracted_source_content": True,
+        "provider_extracted_text_char_count": _bounded_int(
+            provider_result.get("provider_extracted_text_char_count"),
+            default=len(_provider_extracted_text(provider_result) or ""),
+        ),
+        "candidate_selection_policy_id": FETCH_READ_CANDIDATE_SELECTION_POLICY_ID,
+        "candidate_selection_policy_scope": FETCH_READ_CANDIDATE_SELECTION_SCOPE,
+        "candidate_selection_is_acquisition_only": True,
+        "candidate_selection_created_source_authority": False,
+        "candidate_selection_satisfies_source_obligation": False,
+        "candidate_selection_citation_eligible": False,
+        "candidate_selection_claims_correctness": False,
+        "candidate_selection_features": selection_features,
+        "source_survival_scope": "provider_extracted_source_content",
+        "source_survival_candidate_signal": (
+            _source_survival_candidate_signal(selection_features)
+        ),
+        "official_or_source_record_looking_http_candidate": (
+            _official_source_survival_features(selection_features)
+        ),
+        "source_survival_diagnostic_only": True,
+        "source_survival_diagnostic_creates_source_authority": False,
+        "source_survival_diagnostic_satisfies_source_obligation": False,
+        "source_survival_diagnostic_citation_eligible": False,
+        "http_status_class": FETCH_READ_UNKNOWN,
+        "content_type": _content_type_or_unknown(
+            provider_result.get("provider_extracted_content_type")
+            or PROVIDER_EXTRACTED_CONTENT_TYPE
+        ),
+        "readable_content_type": True,
+        "readable_text_obtained": True,
+        "failure_category": None,
+        "diagnostic_posture": "observability_only",
+        "not_evidence": True,
+        "not_citation_eligible": True,
+        "not_source_obligation_satisfaction": True,
+        "candidate_diagnostics_satisfy_source_obligations": False,
+        "fetch_read_failure_metadata_citation_eligible": False,
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+    }
 
 
 def _fetch_read_material(
@@ -3147,6 +3793,46 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
     domain = _clean_domain(raw.get("domain")) or (
         urlparse(url).netloc.lower() if url and urlparse(url).netloc else None
     )
+    provider_extracted_text = _clean_text(
+        raw.get("provider_extracted_text"),
+        limit=FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
+    )
+    provider_extracted_text_digest = (
+        _digest_json({"provider_extracted_text": provider_extracted_text})
+        if provider_extracted_text
+        else None
+    )
+    declared_provider_extracted_digest = _clean_text(
+        raw.get("provider_extracted_text_digest"),
+        limit=128,
+    )
+    if (
+        declared_provider_extracted_digest
+        and declared_provider_extracted_digest != provider_extracted_text_digest
+    ):
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            "sanitized provider result extracted text digest mismatch.",
+        )
+    declared_provider_extracted_count = _bounded_int(
+        raw.get("provider_extracted_text_char_count"),
+        default=len(provider_extracted_text or ""),
+    )
+    if provider_extracted_text and declared_provider_extracted_count != len(
+        provider_extracted_text
+    ):
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            "sanitized provider result extracted text count mismatch.",
+        )
+    if provider_extracted_text and (
+        raw.get("provider_extracted_text_sanitized") is not True
+        or raw.get("provider_extracted_text_bounded") is not True
+    ):
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            "sanitized provider result extracted text must be bounded and sanitized.",
+        )
     return {
         "title": _required_text(raw.get("title"), "provider result requires title", 220),
         "url": url,
@@ -3161,6 +3847,31 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
         "result_rank": _positive_int(raw.get("result_rank") or raw.get("rank") or index),
         "provider_call_index": _positive_int(
             raw.get("provider_call_index") or raw.get("call_index") or 1
+        ),
+        "provider_extracted_text": provider_extracted_text,
+        "provider_extracted_text_sanitized": (
+            raw.get("provider_extracted_text_sanitized") is True
+            if provider_extracted_text
+            else False
+        ),
+        "provider_extracted_text_bounded": (
+            raw.get("provider_extracted_text_bounded") is True
+            if provider_extracted_text
+            else False
+        ),
+        "provider_extracted_text_char_count": (
+            len(provider_extracted_text) if provider_extracted_text else 0
+        ),
+        "provider_extracted_text_digest": provider_extracted_text_digest,
+        "provider_extracted_content_type": _content_type_or_unknown(
+            raw.get("provider_extracted_content_type")
+            or PROVIDER_EXTRACTED_CONTENT_TYPE
+        )
+        if provider_extracted_text
+        else None,
+        "provider_extracted_at": _clean_text(
+            raw.get("provider_extracted_at"),
+            limit=80,
         ),
         "raw_provider_payload_retained": False,
         "raw_search_response_retained": False,
@@ -3292,7 +4003,12 @@ def _actual_source_authority_posture_created(payload: Mapping[str, Any]) -> bool
 def _enforce_caps(counts: Mapping[str, int]) -> None:
     checks = (
         ("query_plans_consumed", MAX_QUERY_PLANS_CONSUMED, "query plan"),
-        ("provider_calls_attempted", MAX_PROVIDER_SEARCH_CALLS, "provider/search"),
+        (
+            "extraction_provider_calls_attempted",
+            MAX_PROVIDER_SEARCH_CALLS,
+            "extraction provider/search",
+        ),
+        ("serper_scout_calls_attempted", MAX_SERPER_SCOUT_CALLS, "Serper scout"),
         ("provider_results_returned", MAX_PROVIDER_RESULTS, "provider results"),
         ("fetch_read_attempts", MAX_FETCH_READ_ATTEMPTS, "fetch/read"),
         (
@@ -3326,6 +4042,8 @@ def _caps_ref() -> dict[str, int]:
         "max_live_runs": MAX_LIVE_RUNS,
         "max_query_plans_consumed": MAX_QUERY_PLANS_CONSUMED,
         "max_provider_search_calls": MAX_PROVIDER_SEARCH_CALLS,
+        "max_extraction_provider_calls": MAX_PROVIDER_SEARCH_CALLS,
+        "max_serper_scout_calls": MAX_SERPER_SCOUT_CALLS,
         "max_provider_results": MAX_PROVIDER_RESULTS,
         "max_fetch_read_attempts": MAX_FETCH_READ_ATTEMPTS,
         "max_evidence_ledger_admissions": MAX_EVIDENCE_LEDGER_ADMISSIONS,
@@ -3387,11 +4105,21 @@ def _pytest_or_ci_guard(environ: Mapping[str, str] | None) -> bool:
 def _empty_counts() -> dict[str, Any]:
     return {
         "query_plans_consumed": 0,
+        "fast_planner_calls_attempted": 0,
+        "fast_planner_model_calls_attempted": 0,
+        "serper_scout_calls_attempted": 0,
+        "serper_scout_calls_completed": 0,
         "provider_calls_attempted": 0,
         "provider_calls_completed": 0,
+        "extraction_provider_calls_attempted": 0,
+        "extraction_provider_calls_completed": 0,
         "search_tasks_attempted": 0,
         "search_tasks_completed": 0,
         "provider_results_returned": 0,
+        "source_acquisition_mode": SOURCE_ACQUISITION_MODE_NONE,
+        "provider_extracted_content_candidate_count": 0,
+        "provider_extracted_content_handoff_created": 0,
+        "direct_fetch_read_attempts": 0,
         "fetch_read_attempts": 0,
         "fetch_read_completed": 0,
         "fetch_read_blocker": None,
@@ -3897,6 +4625,7 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_OUTPUT_INVALID",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE",
+    "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_CANDIDATE_CONTRACT_MISSING",
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING",
@@ -3916,6 +4645,7 @@ __all__ = [
     "GenericProviderProxyRunRequest",
     "GenericProviderProxyRunResult",
     "GenericSingleRelationLiveDogfoodRunError",
+    "PROVIDER_EXTRACTED_CONTENT_CUSTODY_ADMISSION_BLOCKED",
     "build_generic_single_relation_live_dogfood_run_output",
     "fetch_public_url_once",
     "format_generic_single_relation_live_dogfood_output",

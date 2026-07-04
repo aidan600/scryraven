@@ -63,11 +63,15 @@ The current packet encodes this as both a required nonclaim and a validation
 rule. Social/forum/review source classes validate only as `directionality` or
 `ignore`.
 
-Generic single-relation live dogfood fetch/read candidate priority is local
-acquisition ordering only. Its packet-visible signals may decide which
-already-sanitized provider candidates are attempted first under the existing cap,
-but they do not create source-authority posture, satisfy source obligations,
-make candidates citation eligible, claim correctness, or open PDF support.
+Generic single-relation live dogfood source acquisition is local routing and
+custody admission only. Its packet-visible planner, ambiguity-scout, extraction
+provider, provider-extracted-content, and direct-fetch-fallback signals may
+decide how source material is acquired and bounded for the existing fetch/read
+custody packet, but they do not create source-authority posture, satisfy source
+obligations, make candidates citation eligible, claim correctness, or open PDF
+support. Provider answer products, snippets, summaries, and scout outputs remain
+bridge or diagnostic material unless a later product path admits source-bound
+evidence through the appropriate custody and authority gates.
 
 ## Boundaries
 
