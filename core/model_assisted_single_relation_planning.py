@@ -416,6 +416,10 @@ def validate_model_assisted_planning_strict_route(
             route.get("configured_fast_model") or route.get("fast_model"),
             limit=120,
         ),
+        "configured_endpoint_kind": _clean_text(
+            route.get("configured_endpoint_kind"),
+            limit=80,
+        ),
         "configured_local_url_present": route.get("configured_local_url_present")
         is True,
         "configured_local_url_posture": _clean_text(
@@ -430,6 +434,8 @@ def validate_model_assisted_planning_strict_route(
         "fallback_policy": _normalize_token(route.get("fallback_policy")),
         "timeout_policy": _normalize_token(route.get("timeout_policy")),
         "provider_switching_allowed": route.get("provider_switching_allowed")
+        is True,
+        "endpoint_switching_allowed": route.get("endpoint_switching_allowed")
         is True,
         "strict_one_shot": route.get("strict_one_shot") is True,
         "call_count": _bounded_int(route.get("call_count"), default=0),
@@ -459,6 +465,8 @@ def validate_model_assisted_planning_strict_route(
         blockers.append("route fallback is not forbidden")
     if safe_route["provider_switching_allowed"]:
         blockers.append("route allows provider switching")
+    if safe_route["endpoint_switching_allowed"]:
+        blockers.append("route allows endpoint switching")
     if not safe_route["strict_one_shot"]:
         blockers.append("route does not prove strict_one_shot")
     if safe_route["call_count"] != 0:
@@ -847,6 +855,8 @@ def _strict_route_result_ref(
         "configured_model",
         "provider_used",
         "model_used",
+        "configured_endpoint_kind",
+        "endpoint_used",
         "configured_local_url_present",
         "configured_local_url_posture",
         "credential_present",
@@ -855,6 +865,7 @@ def _strict_route_result_ref(
         "fallback_policy",
         "timeout_policy",
         "provider_switching_allowed",
+        "endpoint_switching_allowed",
         "raw_prompt_retained",
         "raw_model_response_retained",
         "raw_provider_payload_retained",
@@ -878,6 +889,8 @@ def _strict_route_result_ref(
     ref.setdefault("configured_model", route.get("configured_fast_model"))
     ref.setdefault("provider_used", route.get("configured_fast_provider"))
     ref.setdefault("model_used", route.get("configured_fast_model"))
+    ref.setdefault("configured_endpoint_kind", route.get("configured_endpoint_kind"))
+    ref.setdefault("endpoint_used", route.get("configured_endpoint_kind"))
     ref.setdefault(
         "configured_local_url_present",
         route.get("configured_local_url_present") is True,
@@ -893,6 +906,10 @@ def _strict_route_result_ref(
     ref.setdefault(
         "provider_switching_allowed",
         route.get("provider_switching_allowed") is True,
+    )
+    ref.setdefault(
+        "endpoint_switching_allowed",
+        route.get("endpoint_switching_allowed") is True,
     )
     ref.setdefault("raw_prompt_retained", False)
     ref.setdefault("raw_model_response_retained", False)
@@ -919,6 +936,8 @@ def _default_route_result_ref(
             "configured_model": route.get("configured_fast_model"),
             "provider_used": route.get("configured_fast_provider"),
             "model_used": route.get("configured_fast_model"),
+            "configured_endpoint_kind": route.get("configured_endpoint_kind"),
+            "endpoint_used": route.get("configured_endpoint_kind"),
             "configured_local_url_present": (
                 route.get("configured_local_url_present") is True
             ),
@@ -932,6 +951,9 @@ def _default_route_result_ref(
             "timeout_policy": route.get("timeout_policy"),
             "provider_switching_allowed": (
                 route.get("provider_switching_allowed") is True
+            ),
+            "endpoint_switching_allowed": (
+                route.get("endpoint_switching_allowed") is True
             ),
             "raw_prompt_retained": False,
             "raw_model_response_retained": False,

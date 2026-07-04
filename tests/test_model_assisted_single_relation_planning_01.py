@@ -132,12 +132,14 @@ def test_required_live_model_planning_blocks_without_strict_route(
     )
     assert route_ref["configured_fast_provider"] == "OpenRouter"
     assert route_ref["configured_fast_model"] == "configured-fast-planner"
+    assert route_ref["configured_endpoint_kind"] == "chat_completions_compatible"
     assert route_ref["configured_local_url_present"] is True
     assert route_ref["configured_local_url_posture"] == "local_configured_not_retained"
     assert route_ref["strict_one_shot"] is False
     assert route_ref["max_model_calls"] == 0
     assert route_ref["retry_policy"] == "unavailable"
     assert route_ref["fallback_policy"] == "unavailable"
+    assert route_ref["endpoint_switching_allowed"] is False
     assert result.packet["model_assisted_planning_strict_model_route_valid"] is False
     assert result.packet["failure_attribution_bucket"] == (
         "fast_model_planner_strict_route_unavailable"
@@ -339,10 +341,17 @@ def test_acquisition_query_consumes_model_official_artifact_hypotheses(
     assert result.packet["model_assisted_planning_model_used"] == (
         "configured-fast-planner-model"
     )
+    assert result.packet["model_assisted_planning_configured_endpoint_kind"] == (
+        "openai_responses_api"
+    )
+    assert result.packet["model_assisted_planning_endpoint_used"] == (
+        "openai_responses_api"
+    )
     assert result.packet["model_assisted_planning_strict_one_shot"] is True
     assert result.packet["model_assisted_planning_retry_policy"] == "forbidden"
     assert result.packet["model_assisted_planning_fallback_policy"] == "forbidden"
     assert result.packet["model_assisted_planning_provider_switching_allowed"] is False
+    assert result.packet["model_assisted_planning_endpoint_switching_allowed"] is False
     assert result.packet["initial_model_assisted_planning_packet"][
         "strict_model_route_result_ref"
     ]["model_calls_attempted"] == 1
@@ -545,11 +554,13 @@ def _strict_route_ref() -> dict[str, Any]:
         "product_route_kind": "strict_one_shot_model_route",
         "configured_fast_provider": "FakeFast",
         "configured_fast_model": "fake-fast",
+        "configured_endpoint_kind": "openai_responses_api",
         "max_model_calls": 1,
         "retry_policy": "forbidden",
         "fallback_policy": "forbidden",
         "timeout_policy": "fail_closed",
         "provider_switching_allowed": False,
+        "endpoint_switching_allowed": False,
         "strict_one_shot": True,
         "call_count": 0,
         "raw_prompt_retained": False,
