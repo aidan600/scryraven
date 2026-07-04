@@ -36,6 +36,7 @@ from core.dprime_support_proposal_schema import (
     BLOCKED_OPENAI_CREDENTIAL_UNAVAILABLE,
     BLOCKED_OPENAI_ONE_SHOT_TRANSPORT_UNSAFE,
     BLOCKED_PRODUCT_SMART_MODEL_ROUTE_CANNOT_ENFORCE_DPRIME_ONE_SHOT,
+    DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
 )
 from core.fetch_read_content_reference import (
     FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS,
@@ -105,9 +106,9 @@ from proplex.live_acquisition_readability_status import (
 from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
 from proplex.mvp_friend_shareable_output import MvpFriendOutputResult
 
-PHASE_NAME = "GENERIC-SINGLE-RELATION-LIVE-SEARCH-PLAN-AND-EXTRACTION-ROUTING-01"
+PHASE_NAME = "GENERIC-SINGLE-RELATION-ANSWER-SOURCE-GATEWAY-01"
 SCHEMA_VERSION = "generic_single_relation_live_dogfood_v1"
-MODE = "REPAIR"
+MODE = "BUILD"
 PASS_DECISION = "PASS"
 CONFIRM_LIVE_DOGFOOD_FLAG = "--confirm-live-dogfood"
 
@@ -162,6 +163,15 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_OUTPUT_INVALID = (
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED"
 )
+BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING"
+)
+BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING"
+)
+BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
 )
@@ -192,6 +202,7 @@ SANITIZED_SCOUT_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME = (
     "sanitized-scout-product-provider-acquisition-response.json"
 )
 LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
+SOURCE_READINESS_GATEWAY_SCHEMA_VERSION = "generic_single_relation_source_readiness_gateway_v1"
 
 MAX_LIVE_RUNS = 1
 MAX_QUERY_PLANS_CONSUMED = 1
@@ -356,6 +367,11 @@ CLOSED_FALSE_FLAGS = {
     "product_correctness_claimed": False,
     "friend_level_mvp_claimed": False,
     "general_supported_query_mvp_claimed": False,
+    "source_obligation_satisfied": False,
+    "citation_eligible": False,
+    "source_authority_finalized": False,
+    "final_answer_packet_created": False,
+    "author_prose_created": False,
     "multi_component_planning_opened": False,
     "runkernel_dag_scheduling_opened": False,
     "budget_leases_opened": False,
@@ -377,7 +393,18 @@ EXPLICIT_NON_PROOFS = (
     "not social/review aggregation",
     "not FAP or Author execution",
     "not source-obligation satisfaction by this packet alone",
+    "not citation eligibility",
+    "not source-authority finality",
+    "not final answer prose generation",
 )
+SOURCE_READINESS_GATEWAY_NON_CLAIMS = {
+    "source_obligation_satisfied": False,
+    "citation_eligible": False,
+    "source_authority_finalized": False,
+    "final_answer_packet_created": False,
+    "author_prose_created": False,
+    "product_correctness_claimed": False,
+}
 _ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
     {
         "request_kind",
@@ -952,6 +979,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             repo_root=retained_root,
             smart_provider=smart_provider,
             smart_model=smart_model,
+            dprime_downstream_authority_enabled=False,
             dprime_run_kernel_admission_decision_status=(
                 source_obligation_authorization.get(
                     "run_kernel_support_admission_decision_status"
@@ -1417,11 +1445,59 @@ def validate_generic_single_relation_live_dogfood_packet(
         ):
             if _bounded_int(safe.get(count_key)) != 0:
                 _blocked_output_hygiene("unsupported query made live/model calls.")
-    if safe.get("answer_text_present") is True and safe.get("decision") != PASS_DECISION:
-        _blocked_output_hygiene("blocked packet must not expose answer text.")
+    if safe.get("answer_text_present") is True:
+        _blocked_output_hygiene("generic live packet must not expose answer text.")
+    if _clean_text(safe.get("product_answer_text"), limit=20):
+        _blocked_output_hygiene("generic live packet must not expose product answer text.")
+    if _safe_sequence(safe.get("source_display_entries")):
+        _blocked_output_hygiene("generic live packet must not create source display entries.")
+    _validate_source_readiness_gateway(safe)
     _validate_fetch_read_observability(safe)
     _reject_forbidden_material(safe, context="generic live dogfood packet")
     return safe
+
+
+def _validate_source_readiness_gateway(packet: Mapping[str, Any]) -> None:
+    gateway = _safe_mapping(packet.get("source_readiness_gateway"))
+    if not gateway:
+        _blocked_output_hygiene("source/readiness gateway section missing.")
+    if gateway.get("schema_version") != SOURCE_READINESS_GATEWAY_SCHEMA_VERSION:
+        _blocked_output_hygiene("source/readiness gateway schema mismatch.")
+    if gateway.get("raw_private_retention_flags") != RAW_FALSE_FLAGS:
+        _blocked_output_hygiene("source/readiness gateway raw/private posture invalid.")
+    non_claims = _safe_mapping(gateway.get("explicit_non_claims"))
+    if non_claims != SOURCE_READINESS_GATEWAY_NON_CLAIMS:
+        _blocked_output_hygiene("source/readiness gateway non-claims invalid.")
+    for key, expected in SOURCE_READINESS_GATEWAY_NON_CLAIMS.items():
+        if gateway.get(key) is not None and gateway.get(key) is not expected:
+            _blocked_output_hygiene(
+                f"source/readiness gateway must keep {key}=false."
+            )
+    for key in (
+        "final_answer_prose_created",
+        "source_display_entries_created",
+        "source_obligation_satisfaction_used_for_display",
+        "citation_eligibility_used_for_display",
+        "product_correctness_claimed",
+    ):
+        if gateway.get(key) is not False:
+            _blocked_output_hygiene(f"source/readiness gateway {key} invalid.")
+    status = gateway.get("status")
+    if status not in {"ready", "blocked", "not_reached"}:
+        _blocked_output_hygiene("source/readiness gateway status invalid.")
+    if packet.get("decision") == PASS_DECISION:
+        if status != "ready":
+            _blocked_output_hygiene("PASS packet requires a ready source/readiness gateway.")
+        if not _clean_text(gateway.get("selected_current_value_text"), limit=700):
+            _blocked_output_hygiene("ready gateway requires selected current value text.")
+        source = _safe_mapping(gateway.get("selected_source_ref"))
+        if not _clean_text(source.get("url"), limit=700):
+            _blocked_output_hygiene("ready gateway requires selected source URL.")
+        window = _safe_mapping(gateway.get("selected_window_ref"))
+        if not _clean_text(window.get("selected_window_digest"), limit=128):
+            _blocked_output_hygiene("ready gateway requires selected window digest.")
+    elif status == "ready":
+        _blocked_output_hygiene("blocked packet must not carry ready gateway status.")
 
 
 def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
@@ -1768,6 +1844,10 @@ def format_generic_single_relation_live_dogfood_output(
     """Render a compact CLI view for one generic relation dogfood run."""
 
     sources = _source_display_entries(packet)
+    gateway = _safe_mapping(packet.get("source_readiness_gateway"))
+    gateway_source = _safe_mapping(gateway.get("selected_source_ref"))
+    gateway_window = _safe_mapping(gateway.get("selected_window_ref"))
+    gateway_non_claims = _safe_mapping(gateway.get("explicit_non_claims"))
     relation_status = _safe_mapping(packet.get("dprime_relation_intake_ref")).get(
         "status",
         "not reached",
@@ -1783,9 +1863,31 @@ def format_generic_single_relation_live_dogfood_output(
         f"- Component: {packet.get('component_text') or 'not created'}",
         f"- Search seed used: {packet.get('search_query_seed_used') or 'not used'}",
         "",
+        "Source/readiness gateway",
+        f"- Status: {gateway.get('status') or 'not reached'}",
+        f"- Blocker: {gateway.get('blocker_code') or 'none'}",
+        "- Selected current value status: "
+        f"{gateway.get('selected_current_value_display_status') or 'not displayed'}",
+        "- Selected current value: "
+        f"{gateway.get('selected_current_value_text') or 'not displayed'}",
+        "- Selected source: "
+        f"{gateway_source.get('title') or 'not available'} "
+        f"({gateway_source.get('domain') or 'unknown domain'})",
+        f"- Selected source URL: {gateway_source.get('url') or 'not available'}",
+        f"- Selected window digest: {gateway_window.get('selected_window_digest') or 'not available'}",
+        "- Source obligation satisfied: "
+        f"{_bool_text(gateway_non_claims.get('source_obligation_satisfied'))}",
+        "- Citation eligible: "
+        f"{_bool_text(gateway_non_claims.get('citation_eligible'))}",
+        "- Source authority finalized: "
+        f"{_bool_text(gateway_non_claims.get('source_authority_finalized'))}",
+        "",
         "Answer",
+        "- Final answer prose created: false.",
+        "- FinalAnswerPacket created: false.",
+        "- Product answer text: not created.",
         _clean_text(packet.get("answer_or_blocker_text"), limit=1_400)
-        or "No answer text is available.",
+        or "No gateway status is available.",
         "",
         "Sources",
     ]
@@ -1901,24 +2003,49 @@ def _packet_from_semantic_status(
         source_challenge_recovery,
         fallback_detail=blocker_detail,
     )
-    answer_text = _answer_text_from_semantic_payload(semantic_payload)
-    source_entries = _source_entries_from_semantic_payload(semantic_payload)
+    source_readiness_gateway = _source_readiness_gateway_from_packet(
+        packet,
+        semantic_payload=semantic_payload,
+    )
+    if source_readiness_gateway.get("status") == "ready":
+        decision = PASS_DECISION
+        blocker_detail = None
+    elif source_readiness_gateway.get("dprime_pass_evaluated") is True:
+        decision = (
+            _clean_text(source_readiness_gateway.get("blocker_code"), limit=220)
+            or BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING
+        )
+        blocker_detail = _clean_text(
+            source_readiness_gateway.get("blocker_detail"),
+            limit=900,
+        ) or "Source/readiness gateway required current-path state is missing."
     packet.update(
         {
             "decision": decision,
             "status_decision": status_decision,
             "blocker_code": None if decision == PASS_DECISION else decision,
             "blocker_detail": None if decision == PASS_DECISION else blocker_detail,
+            "source_readiness_gateway": source_readiness_gateway,
+            "source_readiness_gateway_status": source_readiness_gateway.get("status"),
+            "source_readiness_gateway_blocker": source_readiness_gateway.get(
+                "blocker_code"
+            ),
+            "selected_current_value_display_status": (
+                source_readiness_gateway.get("selected_current_value_display_status")
+            ),
+            "selected_current_value_text_present": bool(
+                source_readiness_gateway.get("selected_current_value_text")
+            ),
             "answer_or_blocker_text": (
-                _friend_answer_from_semantic_payload(semantic_payload)
+                _source_readiness_gateway_summary(source_readiness_gateway)
                 if decision == PASS_DECISION
                 else f"Blocked before answer: {decision}. {blocker_detail}".strip()
             ),
-            "product_answer_text": answer_text if decision == PASS_DECISION else "",
-            "answer_text_present": bool(answer_text) and decision == PASS_DECISION,
-            "source_display_entries": source_entries if decision == PASS_DECISION else [],
+            "product_answer_text": "",
+            "answer_text_present": False,
+            "source_display_entries": [],
             "decision_made_by_the_run": (
-                "generic_single_relation_live_dogfood_answer_or_source_display_consumed"
+                "generic_single_relation_source_readiness_gateway_emitted"
                 if decision == PASS_DECISION
                 else "generic_single_relation_live_dogfood_named_blocker_recorded"
             ),
@@ -1981,6 +2108,14 @@ def _blocked_packet(
             "product_answer_text": "",
             "answer_text_present": False,
             "source_display_entries": [],
+            "source_readiness_gateway": _source_readiness_gateway_not_reached(
+                blocker=blocker,
+                detail=detail,
+            ),
+            "source_readiness_gateway_status": "not_reached",
+            "source_readiness_gateway_blocker": blocker,
+            "selected_current_value_display_status": "not_displayed",
+            "selected_current_value_text_present": False,
             "decision_made_by_the_run": (
                 "generic_single_relation_live_dogfood_blocker_recorded"
             ),
@@ -1988,6 +2123,389 @@ def _blocked_packet(
     )
     packet["failure_attribution_bucket"] = _failure_attribution_bucket(packet)
     return packet
+
+
+def _source_readiness_gateway_from_packet(
+    packet: Mapping[str, Any],
+    *,
+    semantic_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    semantic = _safe_mapping(semantic_payload)
+    dprime = _safe_mapping(semantic.get("dprime_status"))
+    admission_ref = _safe_mapping(semantic.get("source_evidence_admission_ref"))
+    selected_candidate = _selected_gateway_candidate(packet)
+    selected_window = _selected_window_ref_from_dprime(dprime)
+    source_ref = _selected_source_ref(
+        packet=packet,
+        relation_ref=_safe_mapping(semantic.get("dprime_relation_intake_ref")),
+        selected_candidate=selected_candidate,
+        admission_ref=admission_ref,
+    )
+    value_ref = _selected_current_value_ref(packet=packet, dprime=dprime)
+    dprime_ref = _gateway_dprime_ref(dprime)
+    contract_state = _safe_mapping(packet.get("single_relation_answer_contract_state"))
+    dprime_pass_ready = _dprime_pass_ready_for_gateway(dprime)
+    blocker, detail = _source_readiness_gateway_blocker(
+        packet=packet,
+        dprime_pass_ready=dprime_pass_ready,
+        selected_candidate=selected_candidate,
+        selected_window=selected_window,
+        source_ref=source_ref,
+        value_ref=value_ref,
+        contract_state=contract_state,
+    )
+    status = "ready" if blocker is None else (
+        "blocked" if dprime_pass_ready else "not_reached"
+    )
+    gateway = {
+        "schema_version": SOURCE_READINESS_GATEWAY_SCHEMA_VERSION,
+        "status": status,
+        "gateway_owner": (
+            "proplex.mvp_single_relation_live_dogfood_run."
+            "source_readiness_gateway"
+        ),
+        "runtime_consumer": packet.get("runtime_consumer"),
+        "ordinary_product_path_consumed": True,
+        "dprime_pass_evaluated": dprime_pass_ready,
+        "blocker_code": blocker,
+        "blocker_detail": detail,
+        "query_ref": {
+            "relation_plan_id": packet.get("relation_plan_id"),
+            "component_id": packet.get("component_id"),
+            "source_obligation_id": packet.get("source_obligation_id"),
+            "search_requirement_id": packet.get("search_requirement_id"),
+        },
+        "selected_current_value_display_status": (
+            "displayed_from_current_path_admitted_dprime_state"
+            if status == "ready"
+            else "blocked_current_path_state_missing"
+            if dprime_pass_ready
+            else "not_displayed"
+        ),
+        "selected_current_value_text": (
+            value_ref.get("selected_current_value_text")
+            if status == "ready"
+            else None
+        ),
+        "selected_current_value_ref": value_ref,
+        "selected_source_ref": source_ref,
+        "selected_window_ref": selected_window,
+        "custody_readability_ref": {
+            "source_evidence_admission_ref": admission_ref,
+            "fetch_read_completed": packet.get("fetch_read_completed"),
+            "fetch_read_packet_created": packet.get("fetch_read_packet_created"),
+            "source_acquisition_mode": packet.get("source_acquisition_mode"),
+            "answer_bearing_candidate_window_status": packet.get(
+                "answer_bearing_candidate_window_status"
+            ),
+        },
+        "dprime_ref": dprime_ref,
+        "model_assisted_planning_ref": {
+            "provider": packet.get("model_assisted_planning_provider_used"),
+            "model": packet.get("model_assisted_planning_model_used"),
+            "endpoint": packet.get("model_assisted_planning_endpoint_used"),
+            "call_count": packet.get("fast_planner_model_calls_attempted"),
+            "status": packet.get("model_assisted_planning_reduced_status"),
+        },
+        "source_obligation_contract_ref": {
+            "source_display_allowed": contract_state.get("source_display_allowed"),
+            "answer_display_allowed": contract_state.get("answer_display_allowed"),
+            "support_admission_allowed": contract_state.get(
+                "support_admission_allowed"
+            ),
+            "blocker_status": contract_state.get("blocker_status"),
+        },
+        "explicit_non_claims": dict(SOURCE_READINESS_GATEWAY_NON_CLAIMS),
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+        "final_answer_prose_created": False,
+        "source_display_entries_created": False,
+        "source_obligation_satisfaction_used_for_display": False,
+        "citation_eligibility_used_for_display": False,
+        "product_correctness_claimed": False,
+    }
+    return _json_safe(gateway)
+
+
+def _source_readiness_gateway_not_reached(
+    *,
+    blocker: str,
+    detail: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": SOURCE_READINESS_GATEWAY_SCHEMA_VERSION,
+        "status": "not_reached",
+        "gateway_owner": (
+            "proplex.mvp_single_relation_live_dogfood_run."
+            "source_readiness_gateway"
+        ),
+        "runtime_consumer": (
+            "proplex.mvp_single_relation_live_dogfood_run."
+            "build_generic_single_relation_live_dogfood_run_output"
+        ),
+        "ordinary_product_path_consumed": True,
+        "dprime_pass_evaluated": False,
+        "blocker_code": blocker,
+        "blocker_detail": detail,
+        "selected_current_value_display_status": "not_displayed",
+        "selected_current_value_text": None,
+        "selected_current_value_ref": {},
+        "selected_source_ref": {},
+        "selected_window_ref": {},
+        "custody_readability_ref": {},
+        "dprime_ref": {},
+        "model_assisted_planning_ref": {},
+        "source_obligation_contract_ref": {},
+        "explicit_non_claims": dict(SOURCE_READINESS_GATEWAY_NON_CLAIMS),
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+        "final_answer_prose_created": False,
+        "source_display_entries_created": False,
+        "source_obligation_satisfaction_used_for_display": False,
+        "citation_eligibility_used_for_display": False,
+        "product_correctness_claimed": False,
+    }
+
+
+def _source_readiness_gateway_summary(gateway: Mapping[str, Any]) -> str:
+    source = _safe_mapping(gateway.get("selected_source_ref"))
+    value = _clean_text(gateway.get("selected_current_value_text"), limit=700)
+    return (
+        "Source/readiness gateway ready; selected current value text is "
+        f"{value or 'not displayed'}; selected source is "
+        f"{source.get('title') or 'not available'} "
+        f"({source.get('domain') or 'unknown domain'}). Final answer prose, "
+        "citation eligibility, source-obligation satisfaction, source-authority "
+        "finality, FAP, Author, and product correctness remain unclaimed."
+    )
+
+
+def _source_readiness_gateway_blocker(
+    *,
+    packet: Mapping[str, Any],
+    dprime_pass_ready: bool,
+    selected_candidate: Mapping[str, Any],
+    selected_window: Mapping[str, Any],
+    source_ref: Mapping[str, Any],
+    value_ref: Mapping[str, Any],
+    contract_state: Mapping[str, Any],
+) -> tuple[str | None, str | None]:
+    if not dprime_pass_ready:
+        return (
+            BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
+            "D-prime admitted support state is not present for gateway display.",
+        )
+    if (
+        packet.get("source_obligation_recovery_answer_display_blocked") is True
+        or packet.get("source_obligation_recovery_source_display_blocked") is True
+        or contract_state.get("answer_display_allowed") is False
+        or contract_state.get("source_display_allowed") is False
+    ):
+        return (
+            BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED,
+            "Source-obligation recovery contract state blocks answer/source display.",
+        )
+    missing = []
+    if not value_ref.get("selected_current_value_text"):
+        missing.append("selected_current_value_text")
+    if not source_ref.get("url") or not source_ref.get("domain"):
+        missing.append("selected_source_ref")
+    if not source_ref.get("candidate_id") and not selected_candidate.get("candidate_id"):
+        missing.append("selected_candidate_ref")
+    if not selected_window.get("selected_window_digest"):
+        missing.append("selected_window_digest")
+    if not selected_window.get("evidence_window_ref"):
+        missing.append("evidence_window_ref")
+    if missing:
+        return (
+            BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING,
+            "Source/readiness gateway missing current-path state: "
+            + ", ".join(missing)
+            + ".",
+        )
+    return None, None
+
+
+def _dprime_pass_ready_for_gateway(dprime: Mapping[str, Any]) -> bool:
+    objects = _safe_mapping(dprime.get("objects_created"))
+    return (
+        dprime.get("assessment_status") == "assessed"
+        and dprime.get("support_relation") == "directly_supports"
+        and dprime.get("proposal_validation_status")
+        == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+        and dprime.get("run_kernel_admission_decision_status") == "admitted"
+        and (
+            dprime.get("semantic_observation_admission_status") == "materialized"
+            or objects.get("semantic_observation") is True
+        )
+    )
+
+
+def _selected_gateway_candidate(packet: Mapping[str, Any]) -> dict[str, Any]:
+    for item in _safe_sequence(packet.get("answer_bearing_candidate_window_diagnostics")):
+        safe = _safe_mapping(item)
+        if safe.get("answer_bearing_candidate_window_selected") is True:
+            return safe
+    for item in _safe_sequence(packet.get("fetch_read_candidate_diagnostics")):
+        safe = _safe_mapping(item)
+        if (
+            safe.get("answer_bearing_candidate_window_selected") is True
+            or safe.get("selected_for_fetch_read") is True
+            or safe.get("attempted") is True
+        ):
+            return safe
+    authorization = _safe_mapping(packet.get("source_obligation_recovery_authorization"))
+    return _safe_mapping(authorization.get("selected_candidate_ref"))
+
+
+def _selected_window_ref_from_dprime(dprime: Mapping[str, Any]) -> dict[str, Any]:
+    input_ref = _safe_mapping(dprime.get("input_packet_ref"))
+    diagnostic = _safe_mapping(input_ref.get("selected_window_diagnostic_ref"))
+    evidence_window = _safe_mapping(input_ref.get("evidence_window_ref"))
+    return {
+        "selected_window_digest": _clean_text(
+            diagnostic.get("selected_window_digest"),
+            limit=128,
+        )
+        or _clean_text(diagnostic.get("bounded_content_digest"), limit=128)
+        or _clean_text(evidence_window.get("window_digest"), limit=128)
+        or _clean_text(evidence_window.get("bounded_content_digest"), limit=128),
+        "selected_window_char_count": _bounded_int(
+            diagnostic.get("selected_window_char_count")
+            or diagnostic.get("bounded_character_count")
+            or evidence_window.get("window_char_count")
+            or evidence_window.get("bounded_character_count")
+        ),
+        "provider_extracted_source_text_digest": _clean_text(
+            diagnostic.get("provider_extracted_source_text_digest"),
+            limit=128,
+        ),
+        "source_text_digest_distinct_from_selected_window_digest": (
+            diagnostic.get("source_text_digest_distinct_from_selected_window_digest")
+            is True
+        ),
+        "value_token_observed": diagnostic.get("value_token_observed") is True,
+        "value_token_kind_counts": _safe_mapping(
+            diagnostic.get("value_token_kind_counts")
+        ),
+        "anchor_match_status": _clean_text(
+            diagnostic.get("anchor_match_status"),
+            limit=120,
+        ),
+        "diagnostic_ref": _without_window_text(diagnostic),
+        "evidence_window_ref": _without_window_text(evidence_window),
+    }
+
+
+def _selected_source_ref(
+    *,
+    packet: Mapping[str, Any],
+    relation_ref: Mapping[str, Any],
+    selected_candidate: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    title = (
+        _clean_text(selected_candidate.get("title"), limit=220)
+        or _clean_text(relation_ref.get("source_title"), limit=220)
+    )
+    url = (
+        _clean_text(selected_candidate.get("url"), limit=700)
+        or _clean_text(relation_ref.get("source_url"), limit=700)
+    )
+    domain = (
+        _clean_domain(selected_candidate.get("domain"))
+        or _clean_domain(relation_ref.get("source_domain"))
+    )
+    return {
+        "title": title,
+        "url": url,
+        "domain": domain,
+        "provider": packet.get("extraction_provider"),
+        "candidate_id": _clean_text(
+            relation_ref.get("candidate_id")
+            or selected_candidate.get("candidate_id")
+            or admission_ref.get("candidate_id"),
+            limit=320,
+        ),
+        "candidate_digest": _clean_text(
+            relation_ref.get("candidate_digest")
+            or selected_candidate.get("candidate_digest")
+            or admission_ref.get("candidate_digest"),
+            limit=128,
+        ),
+        "result_rank": _bounded_int(selected_candidate.get("result_rank")),
+        "source_ref_kind": "current_path_selected_candidate_source_ref",
+    }
+
+
+def _selected_current_value_ref(
+    *,
+    packet: Mapping[str, Any],
+    dprime: Mapping[str, Any],
+) -> dict[str, Any]:
+    assessment = _safe_mapping(dprime.get("assessment_material_ref"))
+    claim = _safe_mapping(assessment.get("answer_component_claim"))
+    claim_text = _clean_text(claim.get("claim"), limit=700)
+    component_id = _clean_text(claim.get("component_id"), limit=320)
+    component_matches = bool(component_id and component_id == packet.get("component_id"))
+    if not component_matches:
+        claim_text = None
+    semantic_ref = _safe_mapping(dprime.get("semantic_observation_ref"))
+    return {
+        "selected_current_value_text": claim_text,
+        "value_source": (
+            "dprime_assessment_material_ref.answer_component_claim.claim"
+            if claim_text
+            else None
+        ),
+        "component_id": component_id,
+        "component_matches_relation_plan": component_matches,
+        "assessment_id": _clean_text(assessment.get("assessment_id"), limit=320),
+        "assessment_digest": _clean_text(assessment.get("assessment_digest"), limit=128),
+        "semantic_observation_ref": {
+            "observation_id": semantic_ref.get("observation_id"),
+            "observation_digest": semantic_ref.get("observation_digest"),
+            "owner": semantic_ref.get("owner"),
+        },
+        "not_final_answer_prose": True,
+        "not_model_knowledge_generation": True,
+    }
+
+
+def _gateway_dprime_ref(dprime: Mapping[str, Any]) -> dict[str, Any]:
+    objects = _safe_mapping(dprime.get("objects_created"))
+    return {
+        "assessment_status": dprime.get("assessment_status"),
+        "support_relation": dprime.get("support_relation"),
+        "proposal_validation_status": dprime.get("proposal_validation_status"),
+        "run_kernel_admission_decision_status": dprime.get(
+            "run_kernel_admission_decision_status"
+        ),
+        "semantic_observation_admission_status": dprime.get(
+            "semantic_observation_admission_status"
+        ),
+        "semantic_observation_created": objects.get("semantic_observation") is True,
+        "component_coverage_created": objects.get("component_coverage") is True,
+        "final_answer_packet_created": False,
+        "author_answer_created": False,
+        "citation_source_display_created": False,
+        "model_review_status": dprime.get("model_review_status"),
+        "model_review_call_count": dprime.get("model_review_call_count"),
+    }
+
+
+def _without_window_text(value: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: item
+        for key, item in _safe_mapping(value).items()
+        if _normalize_key(key)
+        not in {
+            "window_text",
+            "bounded_text",
+            "source_text",
+            "raw_text",
+            "raw_source_text",
+            "full_text",
+        }
+    }
 
 
 def _provider_acquisition_route_posture(counts: Mapping[str, Any]) -> str:
@@ -2051,6 +2569,12 @@ def _failure_attribution_bucket(packet: Mapping[str, Any]) -> str:
         return "dprime"
     if packet.get("source_obligation_recovery_required") is True:
         return "runkernel_source_obligation_gate"
+    if decision in {
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING,
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED,
+    }:
+        return "source_readiness_gateway"
     if _bounded_int(packet.get("evidence_ledger_admissions")) > 0:
         return "runkernel_or_downstream_gate"
     return "blocked_before_acquisition"
@@ -6488,43 +7012,6 @@ def _followup_loop_count(payload: Mapping[str, Any]) -> int:
     followup = _safe_mapping(payload.get("dprime_followup_search_reentry_ref"))
     status = str(followup.get("status") or "")
     return 1 if status and status != "not reached" else 0
-
-
-def _answer_text_from_semantic_payload(payload: Mapping[str, Any]) -> str | None:
-    answer_path = _safe_mapping(payload.get("dprime_answer_path_ref"))
-    return _clean_text(answer_path.get("answer_text"), limit=2_000)
-
-
-def _friend_answer_from_semantic_payload(payload: Mapping[str, Any]) -> str | None:
-    answer_path = _safe_mapping(payload.get("dprime_answer_path_ref"))
-    dprime = _safe_mapping(payload.get("dprime_status"))
-    material = _safe_mapping(dprime.get("assessment_material_ref"))
-    claim = _clean_text(
-        _safe_mapping(material.get("answer_component_claim")).get("claim"),
-        limit=1_000,
-    )
-    return claim or _clean_text(answer_path.get("answer_text"), limit=2_000)
-
-
-def _source_entries_from_semantic_payload(
-    payload: Mapping[str, Any],
-) -> list[dict[str, Any]]:
-    answer_path = _safe_mapping(payload.get("dprime_answer_path_ref"))
-    display = _safe_mapping(answer_path.get("citation_source_display"))
-    entries = []
-    for entry in display.get("citation_source_entries") or []:
-        safe = _safe_mapping(entry)
-        text = _clean_text(safe.get("display_text"), limit=700)
-        if text:
-            entries.append(
-                {
-                    "display_text": text,
-                    "url": _clean_text(safe.get("url"), limit=700),
-                    "domain": _clean_text(safe.get("domain"), limit=260),
-                    "product_correctness_claimed": False,
-                }
-            )
-    return entries
 
 
 def _source_display_entries(packet: Mapping[str, Any]) -> list[str]:
