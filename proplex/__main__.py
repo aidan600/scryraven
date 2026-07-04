@@ -117,10 +117,11 @@ from proplex.mvp_live_dogfood_run import (  # noqa: E402
     build_mvp_live_dogfood_run_output,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (  # noqa: E402
-    DEFAULT_OUTPUT_DIR as DEFAULT_MVP_SINGLE_RELATION_LIVE_OUTPUT_DIR,
+    CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG,
+    build_generic_single_relation_live_dogfood_run_output,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
-    build_generic_single_relation_live_dogfood_run_output,
+    DEFAULT_OUTPUT_DIR as DEFAULT_MVP_SINGLE_RELATION_LIVE_OUTPUT_DIR,
 )
 from proplex.ordinary_live_entrypoint_dry_run import (  # noqa: E402
     OrdinaryLiveEntrypointDryRunDeps,
@@ -341,6 +342,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         dest="confirm_live_dprime_review",
         help="Confirm one D-prime product-route model-review attempt for live dogfood.",
+    )
+    p.add_argument(
+        CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG,
+        action="store_true",
+        dest="confirm_live_source_challenge_recovery",
+        help=(
+            "Confirm one additional generic single-relation source-challenge "
+            "recovery acquisition attempt."
+        ),
     )
     p.add_argument(
         MVP_LIVE_DOGFOOD_STATUS_FLAG,
@@ -662,6 +672,9 @@ def _run_mvp_single_relation_live_dogfood_run(
             output_dir=output_dir,
             confirm_live_dogfood=args.confirm_live_dogfood,
             confirm_live_dprime_review=args.confirm_live_dprime_review,
+            confirm_live_source_challenge_recovery=(
+                args.confirm_live_source_challenge_recovery
+            ),
             smart_provider=args.smart_provider,
             smart_model=args.smart_model,
         )
