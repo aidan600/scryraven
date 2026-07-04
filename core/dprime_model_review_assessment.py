@@ -13,6 +13,7 @@ citations, write answer text, or claim product correctness.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
@@ -261,11 +262,20 @@ class DPrimeModelReviewInputPacket:
         return dict(self.safe_packet)
 
     def ref(self) -> dict[str, Any]:
-        return {
+        ref = {
             "input_packet_schema_version": DPRIME_MODEL_REVIEW_INPUT_SCHEMA_VERSION,
             "input_packet_digest": self.input_packet_digest,
             "phase": DPRIME_MODEL_REVIEW_ASSESSMENT_PHASE,
         }
+        evidence_window_ref = _safe_mapping(self.safe_packet.get("evidence_window_ref"))
+        if evidence_window_ref:
+            ref["evidence_window_ref"] = evidence_window_ref
+        selected_window_diagnostic_ref = _safe_mapping(
+            self.safe_packet.get("selected_window_diagnostic_ref")
+        )
+        if selected_window_diagnostic_ref:
+            ref["selected_window_diagnostic_ref"] = selected_window_diagnostic_ref
+        return ref
 
 
 @dataclass(frozen=True, slots=True)
@@ -677,6 +687,10 @@ def build_dprime_model_review_input_packet(
                 "current_answer_contract_digest"
             ),
             "evidence_window_ref": _evidence_window_ref(reference),
+            "selected_window_diagnostic_ref": _selected_window_diagnostic_ref(
+                reference,
+                transient_bounded_evidence_window=window,
+            ),
             "closed_surface_flags": dict(_CLOSED_SURFACE_FLAGS),
             "forbidden_surfaces": [
                 "ValidatedSupportProposal",
@@ -1426,6 +1440,72 @@ def _evidence_window_ref(reference: Mapping[str, Any]) -> dict[str, Any]:
         "window_text_retained": False,
         "window_text_printed": False,
     }
+
+
+def _selected_window_diagnostic_ref(
+    reference: Mapping[str, Any],
+    *,
+    transient_bounded_evidence_window: str,
+) -> dict[str, Any]:
+    selection = _safe_mapping(reference.get("bounded_text_selection"))
+    required_anchor_count = _bounded_int(
+        selection.get("required_anchor_count"),
+        default=0,
+    )
+    matched_anchor_count = _bounded_int(
+        selection.get("matched_anchor_count"),
+        default=0,
+    )
+    missing_anchor_count = len(_text_tuple(selection.get("missing_anchors")))
+    if required_anchor_count <= 0:
+        anchor_match_status = "no_anchor_requirements"
+    elif matched_anchor_count == required_anchor_count:
+        anchor_match_status = "all_required_anchors_matched"
+    elif matched_anchor_count == 0:
+        anchor_match_status = "no_required_anchors_matched"
+    else:
+        anchor_match_status = "partial_required_anchor_match"
+    value_token_kind_counts = _value_token_kind_counts(
+        transient_bounded_evidence_window
+    )
+    value_token_count = sum(value_token_kind_counts.values())
+    return _without_empty(
+        {
+            "diagnostic_kind": "selected_transient_evidence_window",
+            "diagnostic_only": True,
+            "not_semantic_support": True,
+            "not_model_decision": True,
+            "not_source_obligation_satisfaction": True,
+            "not_citation_eligibility": True,
+            "bounded_content_digest": reference.get("excerpt_digest"),
+            "bounded_character_count": reference.get("bounded_character_count"),
+            "selection_strategy": selection.get("selection_strategy"),
+            "required_anchor_count": required_anchor_count,
+            "matched_anchor_count": matched_anchor_count,
+            "missing_anchor_count": missing_anchor_count,
+            "anchor_match_status": anchor_match_status,
+            "value_token_kind_counts": value_token_kind_counts,
+            "value_token_count": value_token_count,
+            "value_token_observed": value_token_count > 0,
+            "window_text_retained": False,
+            "window_text_printed": False,
+        }
+    )
+
+
+def _value_token_kind_counts(text: str) -> dict[str, int]:
+    patterns = {
+        "currency": r"\$\s?\d{1,4}(?:\.\d{2})?",
+        "percent": r"\b\d{1,3}(?:\.\d+)?%",
+        "date_like": r"\b(?:19|20)\d{2}(?:-\d{1,2}(?:-\d{1,2})?)?\b",
+        "number": r"\b\d+(?:\.\d+)?\b",
+    }
+    counts: dict[str, int] = {}
+    for kind, pattern in patterns.items():
+        values = {match.group(0) for match in re.finditer(pattern, text)}
+        if values:
+            counts[kind] = len(values)
+    return counts
 
 
 def _reject_forbidden_payload(
