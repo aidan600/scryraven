@@ -1428,7 +1428,7 @@ def test_provider_result_with_invalid_url_records_invalid_url_diagnostic(
         ),
     ],
 )
-def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
+def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     tmp_path: Path,
     query: str,
     title: str,
@@ -1462,8 +1462,12 @@ def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
     )
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
 
-    assert result.return_code == 0, result.packet.get("blocker_detail")
-    assert result.decision == "PASS"
+    assert result.return_code == 2, result.packet.get("blocker_detail")
+    assert result.decision == (
+        dogfood.BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+    )
+    assert result.packet["blocker_code"] == result.decision
+    assert result.packet["failure_attribution_bucket"] == "dprime_authority_integration"
     assert review_calls == 1
     assert calls[0].query == result.packet["acquisition_query"]
     assert result.packet["relation_plan_search_query_seed"] == (
@@ -1528,6 +1532,53 @@ def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
     assert dprime_status["objects_created"]["final_answer_packet"] is False
     assert dprime_status["objects_created"]["author_answer"] is False
     assert dprime_status["objects_created"]["citation_source_display"] is False
+    integration = result.packet["single_relation_dprime_authority_integration"]
+    assert integration["status"] == "blocked"
+    assert integration["blocker_code"] == result.decision
+    assert result.packet["single_relation_dprime_authority_integration_status"] == (
+        "blocked"
+    )
+    assert result.packet["source_obligation_citation_readiness_status"] == "blocked"
+    assert result.packet["source_obligation_citation_readiness_blocker"] == (
+        result.decision
+    )
+    assert integration["existing_dprime_authority_referenced"] is True
+    assert integration["existing_dprime_authority_reused"] is False
+    assert integration[
+        "existing_dprime_source_obligation_citation_authority_exists"
+    ] is True
+    assert integration["existing_dprime_source_obligation_citation_authority_module"] == (
+        "core.dprime_source_obligation_citation_authority_runtime"
+    )
+    assert integration["existing_single_lane_answer_path_module"] == (
+        "core.dprime_single_lane_answer_path_runtime"
+    )
+    assert integration["dprime_downstream_authority_enabled"] is False
+    assert integration["generic_dogfood_downstream_authority_kept_disabled"] is True
+    assert integration["dprime_support_slice_present"] is True
+    assert integration["gateway_display_present"] is True
+    assert integration["gateway_treated_as_authority"] is False
+    assert integration["dprime_support_slice_treated_as_readiness"] is False
+    assert integration[
+        "gateway_ready_and_dprime_pass_insufficient_for_"
+        "source_obligation_citation_readiness"
+    ] is True
+    assert integration["downstream_dprime_authority_invoked"] is False
+    assert integration["component_coverage_created"] is False
+    assert integration["semantic_observation_created"] is True
+    assert integration["single_relation_source_obligation_ready"] is False
+    assert integration["single_relation_citation_handoff_ready"] is False
+    assert integration["source_obligation_satisfied"] is False
+    assert integration["citation_eligible"] is False
+    assert integration["source_authority_finalized"] is False
+    assert integration["final_answer_packet_created"] is False
+    assert integration["author_prose_created"] is False
+    assert integration["author_answer_created"] is False
+    assert integration["citation_source_display_created"] is False
+    assert integration["product_correctness_claimed"] is False
+    assert integration["next_phase"] == (
+        dogfood.DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE
+    )
     assert result.packet["actual_source_authority_posture_created"] is False
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["friend_level_mvp_claimed"] is False
@@ -1546,6 +1597,10 @@ def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
     assert result.packet["raw_prompt_retained"] is False
     assert result.packet["raw_model_response_retained"] is False
     assert "Source/readiness gateway" in result.output
+    assert "D-prime authority integration" in result.output
+    assert "D-prime pass + gateway display sufficient for readiness: false." in (
+        result.output
+    )
     assert "- Final answer prose created: false." in result.output
     assert "passport" not in serialized
     assert "travel.state.gov" not in serialized
@@ -1906,6 +1961,9 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
         "core.pipeline_orchestrator",
         "core.author_execution_runtime",
         "core.author_prose_finalization_runtime",
+        "core.dprime_evidence_support_bundle_runtime",
+        "core.dprime_single_lane_answer_path_runtime",
+        "core.dprime_source_obligation_citation_authority_runtime",
         "core.final_answer_packet_runtime",
         "core.social_signal_controller",
         "core.social_signal_scoring",
@@ -1917,6 +1975,8 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     forbidden_calls = {
         "run_pipeline",
         "build_mvp_live_dogfood_run_output",
+        "build_dprime_single_lane_answer_path",
+        "consume_dprime_source_obligation_and_citation_authority",
         "run_provider_proxy_helper_once",
     }
     forbidden_test_imports = {
@@ -1949,6 +2009,12 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     assert "core.run_kernel" in imported
     assert "authorize_single_relation_source_obligation_recovery" in module_text
     assert "run_kernel.reduce(observation)" in module_text
+    assert "dprime_downstream_authority_enabled=False" in module_text
+    assert (
+        "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD"
+        in module_text
+    )
+    assert "core.dprime_source_obligation_citation_authority_runtime" in module_text
     assert adapter_imported.isdisjoint(forbidden_imports)
     assert called.isdisjoint(forbidden_calls)
     assert adapter_called.isdisjoint(forbidden_calls)
