@@ -34,6 +34,7 @@ from core.dprime_model_review_assessment import (
     build_dprime_model_review_input_packet,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
+    BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED,
@@ -95,11 +96,14 @@ def test_answer_bearing_provider_extracted_content_reaches_dprime_window_ref(
     )
 
     assert result.return_code == 2
-    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
     assert result.packet["source_readiness_gateway_status"] == "ready"
     integration = result.packet["single_relation_dprime_authority_integration"]
     assert integration["status"] == "consumed"
-    assert integration["blocker_code"] == result.decision
+    assert (
+        integration["blocker_code"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    )
     assert integration["dprime_support_slice_present"] is True
     assert integration["gateway_display_present"] is True
     assert integration["gateway_treated_as_authority"] is False
@@ -116,6 +120,27 @@ def test_answer_bearing_provider_extracted_content_reaches_dprime_window_ref(
     assert result.packet["citation_source_handoff_authority_consumed"] is True
     assert result.packet["single_relation_source_obligation_ready"] is True
     assert result.packet["single_relation_citation_handoff_ready"] is True
+    boundary = result.packet["source_citation_display_boundary"]
+    entries = result.packet["source_citation_display_entries"]
+    assert boundary["status"] == "created"
+    assert (
+        boundary["blocker_code"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+    )
+    assert boundary["derived_from_dprime_authority"] is True
+    assert boundary["derived_from_gateway_only"] is False
+    assert boundary["gateway_treated_as_authority"] is False
+    assert result.packet["source_citation_display_entries_created"] is True
+    assert len(entries) == 1
+    assert entries[0]["selected_current_value_display_text"] == (
+        "USCIS Form N-400 paper filing fee is $760."
+    )
+    assert entries[0]["derived_from_dprime_authority"] is True
+    assert entries[0]["derived_from_gateway_only"] is False
+    assert entries[0]["citation_rendering_created"] is False
+    assert boundary["final_answer_packet_created"] is False
+    assert boundary["author_answer_created"] is False
+    assert boundary["final_citation_rendering_created"] is False
     assert len(review_input_packets) == 1
     dprime_status = result.packet["semantic_status_payload"]["dprime_status"]
     input_ref = dprime_status["input_packet_ref"]

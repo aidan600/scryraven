@@ -67,6 +67,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
+    BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
     DEFAULT_OUTPUT_DIR,
     GenericLiveFetchReadResult,
@@ -1430,7 +1431,7 @@ def test_provider_result_with_invalid_url_records_invalid_url_diagnostic(
         ),
     ],
 )
-def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
+def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     query: str,
@@ -1475,7 +1476,7 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
 
     assert result.return_code == 2, result.packet.get("blocker_detail")
-    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
     assert result.packet["blocker_code"] == result.decision
     assert result.packet["failure_attribution_bucket"] == (
         "source_citation_display_boundary"
@@ -1555,13 +1556,16 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     assert dprime_status["objects_created"]["citation_source_display"] is False
     integration = result.packet["single_relation_dprime_authority_integration"]
     assert integration["status"] == "consumed"
-    assert integration["blocker_code"] == result.decision
+    assert (
+        integration["blocker_code"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    )
     assert result.packet["single_relation_dprime_authority_integration_status"] == (
         "consumed"
     )
     assert result.packet["source_obligation_citation_readiness_status"] == "consumed"
     assert result.packet["source_obligation_citation_readiness_blocker"] == (
-        result.decision
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
     )
     assert result.packet["dprime_source_citation_stoppoint_status"] == "consumed"
     assert result.packet["source_obligation_authority_consumed"] is True
@@ -1623,6 +1627,72 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     assert citation_handoff["citation_source_handoff_id"]
     assert citation_handoff["citation_source_handoff_digest"]
     assert citation_handoff != gateway
+    boundary = result.packet["source_citation_display_boundary"]
+    entries = result.packet["source_citation_display_entries"]
+    assert boundary["status"] == "created"
+    assert (
+        boundary["blocker_code"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+    )
+    assert result.packet["source_citation_display_boundary_status"] == "created"
+    assert (
+        result.packet["source_citation_display_boundary_blocker"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+    )
+    assert boundary["authority_source"] == (
+        "core.dprime_source_obligation_citation_authority_runtime"
+    )
+    assert result.packet["source_citation_display_authority_source"] == (
+        "core.dprime_source_obligation_citation_authority_runtime"
+    )
+    assert boundary["derived_from_dprime_authority"] is True
+    assert boundary["derived_from_gateway_only"] is False
+    assert boundary["gateway_treated_as_authority"] is False
+    assert result.packet["source_citation_display_derived_from_dprime_authority"] is True
+    assert result.packet["source_citation_display_derived_from_gateway_only"] is False
+    assert boundary["source_obligation_authority_ref_owner"] == (
+        "RunKernel.DPrimeSourceObligationAuthority"
+    )
+    assert boundary["citation_source_handoff_authority_ref_owner"] == (
+        "RunKernel.DPrimeCitationSourceHandoffAuthority"
+    )
+    assert boundary["source_obligation_authority_ref"][
+        "source_obligation_authority_digest"
+    ] == source_authority["source_obligation_authority_digest"]
+    assert boundary["citation_source_handoff_authority_ref"][
+        "citation_source_handoff_digest"
+    ] == citation_handoff["citation_source_handoff_digest"]
+    assert result.packet["source_citation_display_entries_created"] is True
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["source_title"] == citation_handoff["citation_source_records"][0][
+        "title"
+    ]
+    assert entry["source_url"] == url
+    assert entry["selected_current_value_display_text"] == answer_claim
+    assert entry["selected_window_digest"] == gateway["selected_window_ref"][
+        "selected_window_digest"
+    ]
+    assert entry["source_obligation_authority_digest"] == source_authority[
+        "source_obligation_authority_digest"
+    ]
+    assert entry["citation_source_handoff_digest"] == citation_handoff[
+        "citation_source_handoff_digest"
+    ]
+    assert entry["derived_from_dprime_authority"] is True
+    assert entry["derived_from_gateway_only"] is False
+    assert entry["citation_rendering_created"] is False
+    assert entry["final_answer_prose_created"] is False
+    assert entry["product_correctness_claimed"] is False
+    assert boundary["sufficiency_readiness_created"] is False
+    assert boundary["final_answer_prose_created"] is False
+    assert boundary["final_answer_packet_created"] is False
+    assert boundary["author_answer_created"] is False
+    assert boundary["author_invoked"] is False
+    assert boundary["citation_rendering_invoked"] is False
+    assert boundary["final_citation_rendering_created"] is False
+    assert boundary["product_correctness_claimed"] is False
+    assert result.packet["final_citation_rendering_created"] is False
     assert integration["source_obligation_satisfied"] is False
     assert integration["citation_eligible"] is False
     assert integration["source_authority_finalized"] is False
@@ -1655,6 +1725,10 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     assert result.packet["raw_model_response_retained"] is False
     assert "Source/readiness gateway" in result.output
     assert "D-prime authority integration" in result.output
+    assert "Source/citation display boundary" in result.output
+    assert "- Entries created: true" in result.output
+    assert "- Derived from D-prime authority: true" in result.output
+    assert "- Derived from gateway-only state: false" in result.output
     assert "D-prime pass + gateway display sufficient for readiness: false." in (
         result.output
     )
@@ -1790,6 +1864,17 @@ def test_ready_gateway_and_dprime_slice_still_block_without_source_citation_auth
     assert integration["single_relation_source_obligation_ready"] is False
     assert integration["single_relation_citation_handoff_ready"] is False
     assert integration["gateway_treated_as_authority"] is False
+    boundary = result.packet["source_citation_display_boundary"]
+    assert boundary["status"] == "not_reached"
+    assert boundary["source_citation_display_entries"] == []
+    assert boundary["source_citation_display_entries_created"] is False
+    assert boundary["derived_from_dprime_authority"] is False
+    assert boundary["derived_from_gateway_only"] is False
+    assert boundary["gateway_treated_as_authority"] is False
+    assert result.packet["source_citation_display_entries"] == []
+    assert result.packet["source_citation_display_entries_created"] is False
+    assert result.packet["source_citation_display_derived_from_dprime_authority"] is False
+    assert result.packet["source_citation_display_derived_from_gateway_only"] is False
 
 
 def test_dprime_pass_without_stable_selected_value_fails_closed_at_gateway(
