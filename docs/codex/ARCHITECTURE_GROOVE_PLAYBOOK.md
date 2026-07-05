@@ -153,6 +153,66 @@ path and produces the claimed reviewable output.
 Fail condition: the ordinary product path cannot consume the change. Stop with a
 blocker report instead of demonstrating the behavior beside the product.
 
+## Capability inventory / reuse-first gate
+
+Before implementing new code, any phase touching mature authority or product
+surfaces must inventory the existing repo-visible capability and classify each
+relevant surface as `REUSE`, `ADAPT`, `UPGRADE`, `RETIRE`, or `REPLACE`.
+If existing current capability may already own the responsibility, stop for
+capability inventory instead of building a parallel surface.
+
+Trigger surfaces include:
+
+- D-prime / DPrime
+- Analyst / EvidenceRelativeAnalysisPacket
+- source authority
+- source obligation
+- citation eligibility / citation-source handoff
+- SufficiencyReadiness
+- FinalAnswerPacket / FAP
+- Author
+- SemanticObservation
+- ComponentCoverage
+- RunKernel admission / RunKernel authority
+- follow-up / recovery
+- SearchPlanner / query planner
+- model-assisted planning
+- FastModel / SmartModel
+- Scrutineer
+- multi-source
+- multi-component
+- EvidenceLedger
+- fetch/read
+- provider acquisition
+- evidence triage
+- source gateway / answer gateway / readiness
+
+Required inventory table:
+
+```text
+Surface:
+Existing owner module/doc:
+Current consumer:
+Current status:
+Action: REUSE | ADAPT | UPGRADE | RETIRE | REPLACE
+Why not duplicate:
+Tests/guards:
+```
+
+Reuse-first means the phase should prefer adapting existing product-consumed or
+current internal authority surfaces over introducing new authority seams. A
+`REPLACE` classification must explain why `REUSE`, `ADAPT`, and `UPGRADE` are
+insufficient and how the old path will be deleted, demoted, bypassed,
+subordinated, or scheduled for retirement.
+
+D-prime downstream machinery already includes source-obligation authority,
+citation-source handoff, a single-lane answer path, follow-up re-entry, and
+same-lane multi-source scrutiny in the status path. Generic dogfood or adapter
+work near source-obligation, citation readiness, FAP, Author, or answer-path
+readiness should inventory those D-prime surfaces first and prefer
+reuse/adaptation over rebuilding source-obligation or citation-readiness
+machinery.
+
 ## Codex Cloud and local validation roles
 
 ### Codex Cloud implementation role

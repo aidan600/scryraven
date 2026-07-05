@@ -158,6 +158,15 @@ current phase. It performs no live/provider/search/fetch/read/retrieval calls,
 does not create a new search subsystem, and does not make a product correctness
 claim.
 
+Future generic dogfood, adapter, or readiness work near D-prime must use the
+capability inventory / reuse-first gate in
+`docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md` before adding a new authority
+surface. The current D-prime downstream machinery already includes
+source-obligation authority, citation-source handoff, a single-lane answer path,
+follow-up re-entry, and same-lane multi-source scrutiny in the status path, so
+source-obligation, citation-readiness, FAP, Author, and answer-path work should
+prefer reuse or adaptation of those surfaces over rebuilding parallel machinery.
+
 ## Current implemented product path
 
 Implemented and consumed by the ordinary dry-run status path:

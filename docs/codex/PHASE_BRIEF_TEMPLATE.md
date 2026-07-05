@@ -100,6 +100,29 @@ Non-proofs:
 Live validation status:
 Bridge or exit condition:
 
+Capability inventory / reuse-first gate:
+- Required when this phase touches mature authority or product surfaces.
+- Trigger surfaces include D-prime / DPrime, Analyst /
+  EvidenceRelativeAnalysisPacket, source authority, source obligation, citation
+  eligibility / citation-source handoff, SufficiencyReadiness,
+  FinalAnswerPacket / FAP, Author, SemanticObservation, ComponentCoverage,
+  RunKernel admission / RunKernel authority, follow-up / recovery,
+  SearchPlanner / query planner, model-assisted planning, FastModel /
+  SmartModel, Scrutineer, multi-source, multi-component, EvidenceLedger,
+  fetch/read, provider acquisition, evidence triage, and source gateway /
+  answer gateway / readiness.
+- If existing current capability may already own the responsibility, stop for
+  capability inventory instead of building a parallel surface.
+
+Inventory table:
+Surface:
+Existing owner module/doc:
+Current consumer:
+Current status:
+Action: REUSE | ADAPT | UPGRADE | RETIRE | REPLACE
+Why not duplicate:
+Tests/guards:
+
 For BUILD or product-facing REPAIR phases, also fill in:
 Ordinary entrypoint:
 User-style demonstration input:
