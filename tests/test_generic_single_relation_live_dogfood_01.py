@@ -37,6 +37,7 @@ import pytest
 import core.generic_product_provider_acquisition as product_acquisition
 import proplex.live_semantic_coverage_status as semantic_status_runtime
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
+from core.dprime_single_lane_answer_path_runtime import DPrimeSingleLaneAnswerPathError
 from core.generic_query_to_relation_planning import (
     MVP_QUERY_PLAN_PACKET_NAME,
     build_generic_query_plan_status_output,
@@ -1447,16 +1448,202 @@ def test_provider_result_with_invalid_url_records_invalid_url_diagnostic(
     assert candidate["raw_private_retention_flags"]["raw_provider_payload_retained"] is False
 
 
+def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    review_calls = 0
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal review_calls
+        review_calls += 1
+        return _assessment_payload(
+            plan,
+            "USCIS Form N-400 paper filing fee is $760.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-n400-answer-path",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner(
+            "USCIS lists the current Form N-400 paper filing fee as $760."
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    assert result.return_code == 0, result.packet.get("blocker_detail")
+    assert result.decision == "PASS"
+    assert result.packet["blocker_code"] is None
+    assert result.packet["command_flag"] == MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+    assert result.packet["confirmation_flag"] == (
+        CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+    )
+    assert result.packet["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert result.packet["diagnostic_dogfood_alias"] is False
+    assert result.packet["supported_query_class"] == (
+        dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+    )
+    assert result.packet["answer_text_present"] is True
+    assert result.packet["product_answer_text"]
+    assert result.packet["final_answer_packet_created"] is True
+    assert result.packet["author_answer_created"] is True
+    assert result.packet["citation_source_display_created"] is True
+    assert result.packet["product_correctness_claimed"] is False
+    assert result.packet["source_display_entries"]
+    assert review_calls == 1
+
+    semantic_payload = result.packet["semantic_status_payload"]
+    dprime_status = semantic_payload["dprime_status"]
+    assert semantic_payload["dprime_source_citation_authority_enabled"] is True
+    assert semantic_payload["dprime_single_lane_answer_path_enabled"] is True
+    assert dprime_status["objects_created"]["final_answer_packet"] is True
+    assert dprime_status["objects_created"]["author_answer"] is True
+    assert dprime_status["objects_created"]["citation_source_display"] is True
+    answer_path_ref = result.packet["dprime_answer_path_ref"]
+    assert answer_path_ref["status"] == "consumed"
+    assert answer_path_ref["final_answer_packet_ref"]["packet_created"] is True
+    assert answer_path_ref["author_answer_ref"]["author_prose_status"] in {
+        "full_answer_prose_created",
+        "partial_answer_prose_created",
+    }
+    assert answer_path_ref["citation_source_display_ref"]["status"] == "created"
+    assert answer_path_ref["product_correctness_claimed"] is False
+
+    integration = result.packet["single_relation_dprime_authority_integration"]
+    assert integration["status"] == "consumed"
+    assert integration["blocker_code"] == "PASS"
+    assert integration["dprime_single_lane_answer_path_enabled"] is True
+    assert integration["source_obligation_authority_consumed"] is True
+    assert integration["citation_source_handoff_authority_consumed"] is True
+    assert integration["final_answer_packet_created"] is True
+    assert integration["author_answer_created"] is True
+    assert integration["citation_source_display_created"] is True
+    assert integration["product_correctness_claimed"] is False
+
+    boundary = result.packet["source_citation_display_boundary"]
+    assert boundary["status"] == "created"
+    assert boundary["blocker_code"] == "PASS"
+    assert boundary["authority_source"] == "core.dprime_single_lane_answer_path_runtime"
+    assert boundary["derived_from_dprime_authority"] is True
+    assert boundary["derived_from_gateway_only"] is False
+    assert result.packet["source_citation_display_entries_created"] is True
+    assert result.packet["source_citation_display_entries"]
+    assert BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED not in {
+        result.decision,
+        result.packet["blocker_code"],
+    }
+    assert "Product answer text: " in result.output
+    assert "Product correctness claimed: false." in result.output
+    serialized = json.dumps(result.packet, sort_keys=True).casefold()
+    assert "bounded_text" not in serialized
+    assert result.packet["raw_prompt_retained"] is False
+    assert result.packet["raw_model_response_retained"] is False
+    assert result.packet["raw_provider_payload_retained"] is False
+
+
+def test_product_single_fact_cli_reports_exact_dprime_answer_path_blocker(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(
+            plan,
+            "USCIS Form N-400 paper filing fee is $760.",
+        )
+
+    def blocked_answer_path(*_args: Any, **_kwargs: Any) -> None:
+        raise DPrimeSingleLaneAnswerPathError(
+            "BLOCKED_DPRIME_AUTHOR_OUTPUT_AUTHORITY_MISSING",
+            "Author/answer output did not create answer text",
+            "Author/answer output",
+        )
+
+    monkeypatch.setattr(
+        semantic_status_runtime,
+        "build_dprime_single_lane_answer_path",
+        blocked_answer_path,
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-n400-answer-path-blocked",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner(
+            "USCIS lists the current Form N-400 paper filing fee as $760."
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == "BLOCKED_DPRIME_AUTHOR_OUTPUT_AUTHORITY_MISSING"
+    assert result.packet["blocker_code"] == result.decision
+    assert result.packet["failure_attribution_bucket"] == "dprime_answer_path"
+    assert result.packet["answer_text_present"] is False
+    assert result.packet["product_answer_text"] == ""
+    assert result.packet["product_correctness_claimed"] is False
+    assert result.packet["answer_path_existing_blocker"] == result.decision
+    assert result.packet["answer_path_next_blocked_surface"] == (
+        "Author/answer output"
+    )
+    answer_path_ref = result.packet["dprime_answer_path_ref"]
+    assert answer_path_ref["status"] == "blocked"
+    assert answer_path_ref["blocker"] == result.decision
+    assert answer_path_ref["next_blocked_surface"] == "Author/answer output"
+    integration = result.packet["single_relation_dprime_authority_integration"]
+    assert integration["status"] == "consumed"
+    assert integration["blocker_code"] == result.decision
+    assert integration["dprime_single_lane_answer_path_enabled"] is True
+    assert integration["source_obligation_authority_consumed"] is True
+    assert integration["citation_source_handoff_authority_consumed"] is True
+    assert integration["author_answer_created"] is False
+    assert BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED not in {
+        result.decision,
+        result.packet["blocker_code"],
+    }
+
+
 @pytest.mark.parametrize(
     ("query", "title", "url", "bounded_text", "answer_claim"),
     [
-        (
-            N400_QUERY,
-            "USCIS Form N-400 Filing Fee",
-            "https://www.uscis.gov/forms/filing-fees",
-            "USCIS lists the current Form N-400 paper filing fee as $760.",
-            "USCIS Form N-400 paper filing fee is $760.",
-        ),
         (
             SMALL_CLAIMS_QUERY,
             "Example County Fee Schedule",
@@ -2470,7 +2657,9 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     assert "run_kernel.reduce(observation)" in module_text
     assert "dprime_downstream_authority_enabled=False" in module_text
     assert "dprime_source_citation_authority_enabled=True" in module_text
-    assert "dprime_single_lane_answer_path_enabled=False" in module_text
+    assert "product_single_fact_answer_path_enabled" in module_text
+    assert "PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND" in module_text
+    assert "DOGFOOD_ENTRYPOINT_KIND" in module_text
     assert (
         "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD"
         in module_text
