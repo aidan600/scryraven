@@ -70,6 +70,7 @@ from core.model_assisted_single_relation_planning import (
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.product_model_route_config import (
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+    MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
 )
 from core.run_kernel import (
@@ -111,6 +112,16 @@ SCHEMA_VERSION = "generic_single_relation_live_dogfood_v1"
 MODE = "BUILD"
 PASS_DECISION = "PASS"
 CONFIRM_LIVE_DOGFOOD_FLAG = "--confirm-live-dogfood"
+DOGFOOD_ENTRYPOINT_SURFACE = "mvp_single_relation_live_dogfood"
+DOGFOOD_ENTRYPOINT_KIND = "diagnostic_dogfood_cli"
+DOGFOOD_SUPPORTED_QUERY_CLASS = "generic-single-relation-live-dogfood-v1"
+PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE = (
+    "mvp_current_source_of_record_single_fact"
+)
+PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND = "product_supported_query_cli"
+PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS = (
+    "mvp-current-source-of-record-single-fact-v1"
+)
 
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED"
@@ -220,6 +231,9 @@ SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION = (
 )
 DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE = (
     "GENERIC-DOGFOOD-DPRIME-AUTHORITY-ADAPTER-01"
+)
+SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE = (
+    "GENERIC-SINGLE-RELATION-QUICK-SUFFICIENCY-READINESS-01"
 )
 EXISTING_DPRIME_DOWNSTREAM_AUTHORITY_MODULE_REFS = (
     "core.dprime_runkernel_admission_runtime",
@@ -734,6 +748,10 @@ def build_generic_single_relation_live_dogfood_run_output(
     confirm_live_dogfood: bool = False,
     confirm_live_dprime_review: bool = False,
     confirm_live_source_challenge_recovery: bool = False,
+    entrypoint_surface: str = DOGFOOD_ENTRYPOINT_SURFACE,
+    entrypoint_kind: str = DOGFOOD_ENTRYPOINT_KIND,
+    diagnostic_dogfood_alias: bool = True,
+    supported_query_class: str = DOGFOOD_SUPPORTED_QUERY_CLASS,
     product_provider_acquisition_runner: ProductProviderAcquisitionRunner | None = None,
     provider_proxy_runner: ProviderProxyRunner | None = None,
     fetch_read_runner: FetchReadRunner | None = None,
@@ -774,6 +792,12 @@ def build_generic_single_relation_live_dogfood_run_output(
     source_challenge_recovery: dict[str, Any] | None = None
     initial_model_planning_packet: dict[str, Any] | None = None
     recovery_model_planning_packet: dict[str, Any] | None = None
+    entrypoint_metadata = _entrypoint_metadata(
+        entrypoint_surface=entrypoint_surface,
+        entrypoint_kind=entrypoint_kind,
+        diagnostic_dogfood_alias=diagnostic_dogfood_alias,
+        supported_query_class=supported_query_class,
+    )
     planning_strict_route_ref = _model_assisted_planning_route_ref(
         strict_model_route_ref=fast_model_planner_strict_route_ref,
         fast_provider=fast_provider,
@@ -1075,6 +1099,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
             require_model_assisted_planning=require_model_assisted_planning,
+            entrypoint_metadata=entrypoint_metadata,
         )
         if source_obligation_authorization.get("recovery_required") is True:
             recovery_model_planning_packet = _build_model_assisted_planning_packet(
@@ -1167,6 +1192,7 @@ def build_generic_single_relation_live_dogfood_run_output(
                 initial_model_planning_packet=initial_model_planning_packet,
                 recovery_model_planning_packet=recovery_model_planning_packet,
                 require_model_assisted_planning=require_model_assisted_planning,
+                entrypoint_metadata=entrypoint_metadata,
             )
     except GenericQueryRelationPlanningError as exc:
         packet = _blocked_packet(
@@ -1193,6 +1219,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
             require_model_assisted_planning=require_model_assisted_planning,
+            entrypoint_metadata=entrypoint_metadata,
         )
     except GenericSingleRelationLiveDogfoodRunError as exc:
         packet = _blocked_packet(
@@ -1219,6 +1246,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
             require_model_assisted_planning=require_model_assisted_planning,
+            entrypoint_metadata=entrypoint_metadata,
         )
 
     validate_generic_single_relation_live_dogfood_packet(packet)
@@ -1386,6 +1414,7 @@ def validate_generic_single_relation_live_dogfood_packet(
         _blocked_output_hygiene("generic live packet phase mismatch.")
     if safe.get("mode") != MODE:
         _blocked_output_hygiene("generic live packet mode mismatch.")
+    _validate_entrypoint_metadata(safe)
     for key, expected in RAW_FALSE_FLAGS.items():
         if safe.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet must keep {key}=false.")
@@ -1636,6 +1665,34 @@ def _validate_consumed_dprime_authority_integration(
     ):
         if integration.get(key) is not False:
             _blocked_output_hygiene(f"D-prime stop point {key} invalid.")
+
+
+def _validate_entrypoint_metadata(packet: Mapping[str, Any]) -> None:
+    flag = packet.get("command_flag")
+    surface = packet.get("entrypoint_surface")
+    kind = packet.get("entrypoint_kind")
+    alias = packet.get("diagnostic_dogfood_alias")
+    supported_query_class = packet.get("supported_query_class")
+    if kind == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
+        if flag != MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG:
+            _blocked_output_hygiene("product entrypoint command flag mismatch.")
+        if surface != PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE:
+            _blocked_output_hygiene("product entrypoint surface mismatch.")
+        if alias is not False:
+            _blocked_output_hygiene("product entrypoint cannot be dogfood alias.")
+        if supported_query_class != PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS:
+            _blocked_output_hygiene("product entrypoint query class mismatch.")
+        return
+    if kind != DOGFOOD_ENTRYPOINT_KIND:
+        _blocked_output_hygiene("generic live entrypoint kind invalid.")
+    if flag != MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG:
+        _blocked_output_hygiene("dogfood entrypoint command flag mismatch.")
+    if surface != DOGFOOD_ENTRYPOINT_SURFACE:
+        _blocked_output_hygiene("dogfood entrypoint surface mismatch.")
+    if alias is not True:
+        _blocked_output_hygiene("dogfood entrypoint alias flag mismatch.")
+    if supported_query_class != DOGFOOD_SUPPORTED_QUERY_CLASS:
+        _blocked_output_hygiene("dogfood entrypoint query class mismatch.")
 
 
 def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
@@ -2216,10 +2273,23 @@ def format_generic_single_relation_live_dogfood_output(
         "status",
         "not reached",
     )
+    header = (
+        "ScryRaven current source-of-record single-fact run"
+        if packet.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+        else "ScryRaven generic single-relation live dogfood run"
+    )
     lines = [
-        "ScryRaven generic single-relation live dogfood run",
+        header,
         f"Question: {_clean_text(packet.get('query'), limit=500)}",
         f"Decision: {packet.get('decision')}",
+        f"Next product checkpoint: {packet.get('next_product_path_checkpoint') or 'not named'}",
+        "",
+        "Entrypoint",
+        f"- Surface: {packet.get('entrypoint_surface') or 'not named'}",
+        f"- Kind: {packet.get('entrypoint_kind') or 'not named'}",
+        "- Diagnostic dogfood alias: "
+        f"{_bool_text(packet.get('diagnostic_dogfood_alias'))}",
+        f"- Supported query class: {packet.get('supported_query_class') or 'not named'}",
         "",
         "Plan",
         f"- Relation plan consumed: {_bool_text(packet.get('relation_plan_consumed'))}",
@@ -2375,6 +2445,7 @@ def _packet_from_semantic_status(
     initial_model_planning_packet: Mapping[str, Any] | None,
     recovery_model_planning_packet: Mapping[str, Any] | None,
     require_model_assisted_planning: bool,
+    entrypoint_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     decision = _mapped_live_decision(
         status_decision,
@@ -2411,6 +2482,7 @@ def _packet_from_semantic_status(
         require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=False,
         semantic_payload=semantic_payload,
+        entrypoint_metadata=entrypoint_metadata,
     )
     blocker_detail = _source_challenge_recovery_detail(
         source_challenge_recovery,
@@ -2524,6 +2596,10 @@ def _packet_from_semantic_status(
                 )
                 is True
             ),
+            "next_product_path_checkpoint": (
+                source_citation_display_boundary.get("next_product_path_checkpoint")
+                or dprime_authority_integration.get("next_product_path_checkpoint")
+            ),
             "final_citation_rendering_created": False,
             "dprime_source_citation_stoppoint_status": (
                 dprime_authority_integration.get(
@@ -2623,6 +2699,7 @@ def _blocked_packet(
     initial_model_planning_packet: Mapping[str, Any] | None,
     recovery_model_planning_packet: Mapping[str, Any] | None,
     require_model_assisted_planning: bool,
+    entrypoint_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     source_readiness_gateway = _source_readiness_gateway_not_reached(
         blocker=blocker,
@@ -2652,6 +2729,7 @@ def _blocked_packet(
         require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=caps_exhausted,
         semantic_payload=semantic_payload,
+        entrypoint_metadata=entrypoint_metadata,
     )
     packet.update(
         {
@@ -2688,6 +2766,9 @@ def _blocked_packet(
             "source_citation_display_authority_source": None,
             "source_citation_display_derived_from_dprime_authority": False,
             "source_citation_display_derived_from_gateway_only": False,
+            "next_product_path_checkpoint": (
+                dprime_authority_integration.get("next_product_path_checkpoint")
+            ),
             "final_citation_rendering_created": False,
             "dprime_source_citation_stoppoint_status": "not_reached",
             "dprime_source_citation_stoppoint_blocker": blocker,
@@ -2922,6 +3003,11 @@ def _dprime_authority_integration_from_gateway(
         )
     )
     status = "consumed" if source_citation_consumed else "blocked" if reached else "not_reached"
+    next_checkpoint = (
+        SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+        if source_citation_consumed
+        else DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE
+    )
     return _json_safe(
         {
             "schema_version": DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION,
@@ -3017,8 +3103,8 @@ def _dprime_authority_integration_from_gateway(
             "citation_rendering_invoked": False,
             "product_correctness_claimed": False,
             "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
-            "next_phase": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
-            "next_product_path_checkpoint": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
+            "next_phase": next_checkpoint,
+            "next_product_path_checkpoint": next_checkpoint,
         }
     )
 
@@ -3236,7 +3322,7 @@ def _source_citation_display_boundary_from_authority(
             "not final citation rendering",
             "not product correctness",
         ],
-        "next_product_path_checkpoint": "SufficiencyReadiness or FAP/Author licensing",
+        "next_product_path_checkpoint": SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE,
     }
     boundary["boundary_digest"] = _digest_json(
         {
@@ -4289,6 +4375,7 @@ def _base_packet(
     require_model_assisted_planning: bool,
     caps_exhausted: bool,
     semantic_payload: Mapping[str, Any],
+    entrypoint_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     plan = _safe_mapping(relation_plan)
     acquisition = _safe_mapping(acquisition_plan)
@@ -4325,14 +4412,20 @@ def _base_packet(
         if query_retained and plan
         else "unsupported query (not retained)"
     )
+    entrypoint = _entrypoint_metadata_from_mapping(entrypoint_metadata)
     return {
         "schema_version": SCHEMA_VERSION,
         "phase_name": PHASE_NAME,
         "mode": MODE,
         "ordinary_entrypoint": "python -m proplex",
-        "command_flag": MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
-        "status_flag": MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+        "command_flag": entrypoint["command_flag"],
+        "status_flag": entrypoint["command_flag"],
+        "entrypoint_surface": entrypoint["entrypoint_surface"],
+        "entrypoint_kind": entrypoint["entrypoint_kind"],
+        "diagnostic_dogfood_alias": entrypoint["diagnostic_dogfood_alias"],
+        "supported_query_class": entrypoint["supported_query_class"],
         "command_harness_used": _command_harness(
+            command_flag=entrypoint["command_flag"],
             confirm_live_dprime_review=confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 confirm_live_source_challenge_recovery
@@ -8327,18 +8420,69 @@ def _packet_safe_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 def _command_harness(
     *,
+    command_flag: str = MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
     confirm_live_dprime_review: bool,
     confirm_live_source_challenge_recovery: bool,
 ) -> str:
     command = (
-        f"python -m proplex {MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG} "
-        f"{CONFIRM_LIVE_DOGFOOD_FLAG}"
+        f"python -m proplex {command_flag} {CONFIRM_LIVE_DOGFOOD_FLAG}"
     )
     if confirm_live_dprime_review:
         command = f"{command} {CONFIRM_LIVE_DPRIME_REVIEW_FLAG}"
     if confirm_live_source_challenge_recovery:
         command = f"{command} {CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG}"
     return command
+
+
+def _entrypoint_metadata(
+    *,
+    entrypoint_surface: str,
+    entrypoint_kind: str,
+    diagnostic_dogfood_alias: bool,
+    supported_query_class: str,
+) -> dict[str, Any]:
+    if entrypoint_kind == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
+        return {
+            "command_flag": MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "entrypoint_surface": PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+            "entrypoint_kind": PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+            "diagnostic_dogfood_alias": False,
+            "supported_query_class": PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        }
+    if (
+        entrypoint_surface != DOGFOOD_ENTRYPOINT_SURFACE
+        or supported_query_class != DOGFOOD_SUPPORTED_QUERY_CLASS
+        or diagnostic_dogfood_alias is not True
+    ):
+        _blocked_output_hygiene("generic live dogfood entrypoint metadata invalid.")
+    return {
+        "command_flag": MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+        "entrypoint_surface": DOGFOOD_ENTRYPOINT_SURFACE,
+        "entrypoint_kind": DOGFOOD_ENTRYPOINT_KIND,
+        "diagnostic_dogfood_alias": True,
+        "supported_query_class": DOGFOOD_SUPPORTED_QUERY_CLASS,
+    }
+
+
+def _entrypoint_metadata_from_mapping(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    entrypoint = _safe_mapping(metadata)
+    return _entrypoint_metadata(
+        entrypoint_surface=_clean_text(
+            entrypoint.get("entrypoint_surface"),
+            limit=120,
+        )
+        or DOGFOOD_ENTRYPOINT_SURFACE,
+        entrypoint_kind=_clean_text(entrypoint.get("entrypoint_kind"), limit=120)
+        or DOGFOOD_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=(
+            entrypoint.get("diagnostic_dogfood_alias") is True
+        ),
+        supported_query_class=_clean_text(
+            entrypoint.get("supported_query_class"),
+            limit=160,
+        )
+        or DOGFOOD_SUPPORTED_QUERY_CLASS,
+    )
 
 
 def _run_output_dir(root: Path, output_dir: str | Path, run_id: str) -> Path:
@@ -8953,6 +9097,9 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED",
     "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
+    "DOGFOOD_ENTRYPOINT_KIND",
+    "DOGFOOD_ENTRYPOINT_SURFACE",
+    "DOGFOOD_SUPPORTED_QUERY_CLASS",
     "DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE",
     "DEFAULT_OUTPUT_DIR",
     "GenericLiveFetchReadResult",
@@ -8960,6 +9107,10 @@ __all__ = [
     "GenericProviderProxyRunResult",
     "GenericSingleRelationLiveDogfoodRunError",
     "PROVIDER_EXTRACTED_CONTENT_CUSTODY_ADMISSION_BLOCKED",
+    "PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND",
+    "PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE",
+    "PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS",
+    "SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE",
     "build_generic_single_relation_live_dogfood_run_output",
     "fetch_public_url_once",
     "format_generic_single_relation_live_dogfood_output",

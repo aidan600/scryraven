@@ -39,7 +39,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED,
     DEFAULT_OUTPUT_DIR,
-    DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
+    SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE,
     build_generic_single_relation_live_dogfood_run_output,
 )
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -113,7 +113,11 @@ def test_answer_bearing_provider_extracted_content_reaches_dprime_window_ref(
     assert integration["existing_dprime_authority_reused"] is True
     assert integration["source_obligation_authority_consumed"] is True
     assert integration["citation_source_handoff_authority_consumed"] is True
-    assert integration["next_phase"] == DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE
+    assert integration["next_phase"] == SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    assert (
+        integration["next_product_path_checkpoint"]
+        == SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    )
     assert result.packet["source_obligation_citation_readiness_status"] == "consumed"
     assert result.packet["dprime_source_citation_stoppoint_status"] == "consumed"
     assert result.packet["source_obligation_authority_consumed"] is True

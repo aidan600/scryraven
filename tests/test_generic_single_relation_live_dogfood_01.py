@@ -45,6 +45,7 @@ from core.generic_query_to_relation_planning import (
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.product_model_route_config import (
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+    MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_QUERY_PLAN_STATUS_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
@@ -1465,6 +1466,22 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
         run_id=f"pass-{abs(hash(query))}",
         confirm_live_dogfood=True,
         confirm_live_dprime_review=True,
+        entrypoint_surface=(
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
+            if query == N400_QUERY
+            else dogfood.DOGFOOD_ENTRYPOINT_SURFACE
+        ),
+        entrypoint_kind=(
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+            if query == N400_QUERY
+            else dogfood.DOGFOOD_ENTRYPOINT_KIND
+        ),
+        diagnostic_dogfood_alias=query != N400_QUERY,
+        supported_query_class=(
+            dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+            if query == N400_QUERY
+            else dogfood.DOGFOOD_SUPPORTED_QUERY_CLASS
+        ),
         provider_proxy_runner=_recording_proxy_runner(
             calls,
             [_provider_result(title, url)],
@@ -1487,6 +1504,33 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
         plan["search_query_seeds"][0]
     )
     assert result.packet["relation_plan_consumed"] is True
+    if query == N400_QUERY:
+        assert result.packet["command_flag"] == (
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+        )
+        assert result.packet["entrypoint_surface"] == (
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
+        )
+        assert result.packet["entrypoint_kind"] == (
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+        )
+        assert result.packet["diagnostic_dogfood_alias"] is False
+        assert result.packet["supported_query_class"] == (
+            dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+        )
+        assert "current source-of-record single-fact run" in result.output
+        assert MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in (
+            result.packet["command_harness_used"]
+        )
+    else:
+        assert result.packet["command_flag"] == MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG
+        assert result.packet["entrypoint_surface"] == dogfood.DOGFOOD_ENTRYPOINT_SURFACE
+        assert result.packet["entrypoint_kind"] == dogfood.DOGFOOD_ENTRYPOINT_KIND
+        assert result.packet["diagnostic_dogfood_alias"] is True
+        assert result.packet["supported_query_class"] == (
+            dogfood.DOGFOOD_SUPPORTED_QUERY_CLASS
+        )
+        assert "generic single-relation live dogfood run" in result.output
     assert result.packet["relation_plan_id"] == plan["plan_id"]
     assert result.packet["supported_query_class_id"] == MVP_SUPPORTED_QUERY_CLASS_ID
     assert result.packet["source_authority_posture_contract_ref"] == (
@@ -1702,8 +1746,18 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert integration["citation_source_display_created"] is False
     assert integration["product_correctness_claimed"] is False
     assert integration["next_phase"] == (
-        dogfood.DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
     )
+    assert integration["next_product_path_checkpoint"] == (
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    )
+    assert boundary["next_product_path_checkpoint"] == (
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    )
+    assert result.packet["next_product_path_checkpoint"] == (
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    )
+    assert dogfood.DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE not in result.output
     assert result.packet["actual_source_authority_posture_created"] is False
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["friend_level_mvp_claimed"] is False
@@ -2133,6 +2187,10 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert captured["query"] == SMALL_CLAIMS_QUERY
     assert captured["confirm_live_dogfood"] is True
     assert captured["confirm_live_dprime_review"] is False
+    assert captured["entrypoint_surface"] == dogfood.DOGFOOD_ENTRYPOINT_SURFACE
+    assert captured["entrypoint_kind"] == dogfood.DOGFOOD_ENTRYPOINT_KIND
+    assert captured["diagnostic_dogfood_alias"] is True
+    assert captured["supported_query_class"] == dogfood.DOGFOOD_SUPPORTED_QUERY_CLASS
     assert captured["fast_provider"] == "OpenRouter"
     assert captured["fast_model"] == "fast-planner-model"
     assert captured["fast_model_local_url"] == "http://localhost:5678/v1"
@@ -2161,6 +2219,61 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert "private_broker_path" not in captured
     assert "env_file_paths" not in captured
     assert "fake generic live blocker" in capsys.readouterr().out
+
+
+def test_product_named_single_fact_cli_uses_same_generic_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = importlib.import_module("proplex.__main__")
+    captured: dict[str, Any] = {}
+
+    def fail_key_validation(**_kwargs: Any) -> list[str]:
+        raise AssertionError("product-supported query CLI must preempt key validation")
+
+    def fake_live_run(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return type(
+            "FakeResult",
+            (),
+            {"return_code": 2, "output": "fake product single-fact blocker"},
+        )()
+
+    monkeypatch.setattr(cli, "_build_logger", lambda _verbose: None)
+    monkeypatch.setattr(cli, "missing_required_api_keys", fail_key_validation)
+    monkeypatch.setattr(
+        cli,
+        "build_generic_single_relation_live_dogfood_run_output",
+        fake_live_run,
+    )
+
+    rc = cli.main(
+        [
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "--query",
+            N400_QUERY,
+            "--confirm-live-dogfood",
+            "--confirm-live-dprime-review",
+        ]
+    )
+
+    assert rc == 2
+    assert captured["query"] == N400_QUERY
+    assert captured["confirm_live_dogfood"] is True
+    assert captured["confirm_live_dprime_review"] is True
+    assert captured["entrypoint_surface"] == (
+        dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
+    )
+    assert captured["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert captured["diagnostic_dogfood_alias"] is False
+    assert captured["supported_query_class"] == (
+        dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+    )
+    assert callable(captured["fast_model_planner_callable"])
+    assert captured["fast_model_planner_clean_json_response"] is cli.clean_json_response
+    assert "broker_url" not in captured
+    assert "private_broker_path" not in captured
+    assert "fake product single-fact blocker" in capsys.readouterr().out
 
 
 def test_cli_env_fastmodel_config_flows_into_strict_route(
@@ -2218,7 +2331,26 @@ def test_cli_env_fastmodel_config_flows_into_strict_route(
 
 def test_new_flag_is_registered_as_default_off_status_path() -> None:
     assert MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
+    assert (
+        MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+        in PRODUCT_STATUS_DRY_RUN_FLAGS
+    )
     assert MVP_QUERY_PLAN_STATUS_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
+    assert initialize_product_model_route_config(
+        [MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG, "--query", N400_QUERY],
+        load_dotenv_func=lambda: True,
+        environ={},
+    ).dotenv_skipped_for_status_dry_run is True
+    assert initialize_product_model_route_config(
+        [
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "--query",
+            N400_QUERY,
+            CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+        ],
+        load_dotenv_func=lambda: True,
+        environ={},
+    ).dotenv_skipped_for_status_dry_run is False
 
 
 def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:

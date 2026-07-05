@@ -32,6 +32,9 @@ MVP_LIVE_DOGFOOD_RUN_FLAG = "--mvp-live-dogfood-run"
 MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG = (
     "--mvp-single-relation-live-dogfood-run"
 )
+MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG = (
+    "--mvp-current-source-of-record-single-fact-run"
+)
 MVP_LIVE_DOGFOOD_STATUS_FLAG = "--mvp-live-dogfood-status"
 MVP_QUERY_PLAN_STATUS_FLAG = "--mvp-query-plan-status"
 CONFIRM_LIVE_DPRIME_REVIEW_FLAG = "--confirm-live-dprime-review"
@@ -45,6 +48,7 @@ PRODUCT_STATUS_DRY_RUN_FLAGS = (
     MVP_DEMO_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+    MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_LIVE_DOGFOOD_STATUS_FLAG,
     MVP_QUERY_PLAN_STATUS_FLAG,
 )
@@ -79,6 +83,7 @@ def argv_requests_product_status_dry_run(argv: Sequence[str] | None = None) -> b
     if CONFIRM_LIVE_DPRIME_REVIEW_FLAG in raw and (
         MVP_LIVE_DOGFOOD_RUN_FLAG in raw
         or MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG in raw
+        or MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in raw
     ):
         return False
     return any(flag in raw for flag in PRODUCT_STATUS_DRY_RUN_FLAGS)
@@ -120,6 +125,7 @@ __all__ = [
     "LIVE_SEMANTIC_COVERAGE_STATUS_FLAG",
     "LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG",
     "MVP_DEMO_FLAG",
+    "MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG",
     "MVP_LIVE_DOGFOOD_RUN_FLAG",
     "MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG",
     "MVP_LIVE_DOGFOOD_STATUS_FLAG",
