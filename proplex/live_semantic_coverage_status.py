@@ -241,6 +241,7 @@ def build_live_semantic_coverage_status(
     dprime_run_kernel_admission_decision_status: str = (
         DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
     ),
+    dprime_downstream_authority_enabled: bool = True,
 ) -> LiveSemanticCoverageStatusResult:
     """Consume retained status chain and return CLI-safe semantic coverage status."""
 
@@ -447,6 +448,7 @@ def build_live_semantic_coverage_status(
             run_kernel_admission_decision_status=(
                 dprime_run_kernel_admission_decision_status
             ),
+            dprime_downstream_authority_enabled=dprime_downstream_authority_enabled,
         )
     if dprime_status.decision != PASS_DECISION:
         return _blocked_dprime_status_result(
@@ -1117,6 +1119,7 @@ def _blocked_dprime_model_review_assessment_result(
     dprime_multi_source_relation_inputs: Sequence[Mapping[str, Any]],
     dprime_multi_source_scrutineer_enabled: bool,
     run_kernel_admission_decision_status: str,
+    dprime_downstream_authority_enabled: bool,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
     dprime["generic_relation_intake_ref"] = dict(relation_ref)
@@ -1309,54 +1312,71 @@ def _blocked_dprime_model_review_assessment_result(
                     dprime["multi_source_enabled"] = True
                     dprime["objects_created"] = objects_created
                 try:
-                    if multi_source_blocker is not None:
-                        raise DPrimeEvidenceSupportBundleError(
-                            multi_source_blocker,
-                            multi_source_detail
-                            or "multi-source Scrutineer gate blocked answer path",
-                        )
-                    support_bundle = build_dprime_evidence_support_bundle(
-                        semantic_materialization=semantic_materialization,
-                        run_kernel=contract_authority.run_kernel,
-                        source_obligation_ref=_materialization_ref(
-                            source_obligation_ref
-                        ),
-                        citation_source_obligation_readiness_ref=(
-                            _materialization_ref(readiness_ref)
-                        ),
-                        additional_semantic_materializations=(
-                            additional_semantic_materializations
-                        ),
-                    )
-                    dprime.update(support_bundle.to_status_overlay())
-                    objects_created["component_coverage"] = True
-                    try:
-                        answer_path = build_dprime_single_lane_answer_path(
-                            support_bundle=support_bundle,
-                            run_kernel=contract_authority.run_kernel,
-                        )
-                        dprime.update(answer_path.to_status_overlay())
-                        objects_created["sufficiency_readiness"] = True
-                        objects_created["final_answer_packet"] = True
-                        objects_created["author_answer"] = True
-                        objects_created["citation_source_display"] = True
-                    except DPrimeSingleLaneAnswerPathError as exc:
-                        answer_path_error = exc
-                        kernel = contract_authority.run_kernel
-                        objects_created["sufficiency_readiness"] = bool(
-                            kernel.state.sufficiency_readiness_projection
-                        )
-                        objects_created["final_answer_packet"] = bool(
-                            kernel.state.final_answer_authority_projection
-                        )
-                        objects_created["author_answer"] = bool(
-                            kernel.state.author_prose_projection
-                        )
-                        objects_created["citation_source_display"] = bool(
-                            kernel.state.projections.get(
-                                "dprime_citation_source_display"
+                    if not dprime_downstream_authority_enabled:
+                        dprime["downstream_authority_disabled_by_caller"] = True
+                        dprime["source_obligation_authority_consumed"] = False
+                        dprime[
+                            "citation_eligibility_or_source_handoff_authority_consumed"
+                        ] = False
+                        dprime["sufficiency_readiness_created"] = False
+                        dprime["final_answer_packet_created"] = False
+                        dprime["author_answer_created"] = False
+                        dprime["citation_source_display_created"] = False
+                        objects_created["component_coverage"] = False
+                        objects_created["sufficiency_readiness"] = False
+                        objects_created["final_answer_packet"] = False
+                        objects_created["author_answer"] = False
+                        objects_created["citation_source_display"] = False
+                        dprime["objects_created"] = objects_created
+                    else:
+                        if multi_source_blocker is not None:
+                            raise DPrimeEvidenceSupportBundleError(
+                                multi_source_blocker,
+                                multi_source_detail
+                                or "multi-source Scrutineer gate blocked answer path",
                             )
+                        support_bundle = build_dprime_evidence_support_bundle(
+                            semantic_materialization=semantic_materialization,
+                            run_kernel=contract_authority.run_kernel,
+                            source_obligation_ref=_materialization_ref(
+                                source_obligation_ref
+                            ),
+                            citation_source_obligation_readiness_ref=(
+                                _materialization_ref(readiness_ref)
+                            ),
+                            additional_semantic_materializations=(
+                                additional_semantic_materializations
+                            ),
                         )
+                        dprime.update(support_bundle.to_status_overlay())
+                        objects_created["component_coverage"] = True
+                        try:
+                            answer_path = build_dprime_single_lane_answer_path(
+                                support_bundle=support_bundle,
+                                run_kernel=contract_authority.run_kernel,
+                            )
+                            dprime.update(answer_path.to_status_overlay())
+                            objects_created["sufficiency_readiness"] = True
+                            objects_created["final_answer_packet"] = True
+                            objects_created["author_answer"] = True
+                            objects_created["citation_source_display"] = True
+                        except DPrimeSingleLaneAnswerPathError as exc:
+                            answer_path_error = exc
+                            kernel = contract_authority.run_kernel
+                            objects_created["sufficiency_readiness"] = bool(
+                                kernel.state.sufficiency_readiness_projection
+                            )
+                            objects_created["final_answer_packet"] = bool(
+                                kernel.state.final_answer_authority_projection
+                            )
+                            objects_created["author_answer"] = bool(
+                                kernel.state.author_prose_projection
+                            )
+                            objects_created["citation_source_display"] = bool(
+                                kernel.state.projections.get(
+                                    "dprime_citation_source_display"
+                                )
+                            )
                 except DPrimeEvidenceSupportBundleError as exc:
                     support_bundle_error = exc
                     objects_created["component_coverage"] = False
@@ -1551,6 +1571,9 @@ def _blocked_dprime_model_review_assessment_result(
             "component_coverage_only_treated_as_pass": False,
             "detached_posture_status_packet_treated_as_authority": False,
             "semantic_support_custody_distinction_preserved": True,
+            "dprime_downstream_authority_enabled": bool(
+                dprime_downstream_authority_enabled
+            ),
             "analyst_support_proposal_consumer": (
                 (
                     "D-prime proposal candidate validated; RunKernel-owned "

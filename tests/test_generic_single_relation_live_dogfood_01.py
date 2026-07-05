@@ -28,6 +28,7 @@ import ast
 import importlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
@@ -1492,12 +1493,50 @@ def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
     assert result.packet["evidence_ledger_admissions"] == 1
     assert result.packet["dprime_model_review_calls_attempted"] == 1
     assert result.packet["dprime_model_review_calls_completed"] == 1
-    assert result.packet["answer_text_present"] is True
-    assert result.packet["source_display_entries"]
+    gateway = result.packet["source_readiness_gateway"]
+    assert gateway["status"] == "ready"
+    assert result.packet["source_readiness_gateway_status"] == "ready"
+    assert gateway["selected_current_value_text"] == answer_claim
+    assert gateway["selected_current_value_display_status"] == (
+        "displayed_from_current_path_admitted_dprime_state"
+    )
+    assert gateway["selected_current_value_ref"]["value_source"] == (
+        "dprime_assessment_material_ref.answer_component_claim.claim"
+    )
+    assert gateway["selected_current_value_ref"]["not_final_answer_prose"] is True
+    assert gateway["selected_source_ref"]["title"] == title
+    assert gateway["selected_source_ref"]["url"] == url
+    assert gateway["selected_source_ref"]["candidate_id"]
+    assert gateway["selected_window_ref"]["selected_window_digest"]
+    assert gateway["selected_window_ref"]["evidence_window_ref"]
+    assert gateway["explicit_non_claims"] == {
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+        "source_authority_finalized": False,
+        "final_answer_packet_created": False,
+        "author_prose_created": False,
+        "product_correctness_claimed": False,
+    }
+    assert result.packet["product_answer_text"] == ""
+    assert result.packet["answer_text_present"] is False
+    assert result.packet["source_display_entries"] == []
+    semantic_payload = result.packet["semantic_status_payload"]
+    dprime_status = semantic_payload["dprime_status"]
+    assert semantic_payload["dprime_downstream_authority_enabled"] is False
+    assert dprime_status["objects_created"]["semantic_observation"] is True
+    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert dprime_status["objects_created"]["final_answer_packet"] is False
+    assert dprime_status["objects_created"]["author_answer"] is False
+    assert dprime_status["objects_created"]["citation_source_display"] is False
     assert result.packet["actual_source_authority_posture_created"] is False
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["friend_level_mvp_claimed"] is False
     assert result.packet["general_supported_query_mvp_claimed"] is False
+    assert result.packet["source_obligation_satisfied"] is False
+    assert result.packet["citation_eligible"] is False
+    assert result.packet["source_authority_finalized"] is False
+    assert result.packet["final_answer_packet_created"] is False
+    assert result.packet["author_prose_created"] is False
     assert result.packet["multi_component_planning_opened"] is False
     assert result.packet["runkernel_dag_scheduling_opened"] is False
     assert result.packet["fap_author_opened"] is False
@@ -1506,8 +1545,129 @@ def test_fake_full_path_pass_packet_is_plan_derived_and_not_passport_shaped(
     assert result.packet["raw_search_response_retained"] is False
     assert result.packet["raw_prompt_retained"] is False
     assert result.packet["raw_model_response_retained"] is False
+    assert "Source/readiness gateway" in result.output
+    assert "- Final answer prose created: false." in result.output
     assert "passport" not in serialized
     assert "travel.state.gov" not in serialized
+
+
+def test_dprime_pass_without_stable_selected_value_fails_closed_at_gateway(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+
+    def fake_semantic_status(**_kwargs: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            decision="PASS",
+            payload={
+                "generic_relation_intake_consumed_by_product_status": True,
+                "dprime_relation_intake_ref": {
+                    "status": "consumed",
+                    "component_id": plan["component_id"],
+                    "source_obligation_candidate_ids": [
+                        plan["source_obligation_id"]
+                    ],
+                    "source_title": "USCIS Form N-400 Filing Fee",
+                    "source_url": "https://www.uscis.gov/forms/filing-fees",
+                    "source_domain": "www.uscis.gov",
+                    "candidate_id": "candidate:n400",
+                    "candidate_digest": "candidate-digest:n400",
+                },
+                "source_evidence_admission_ref": {
+                    "status": "custody_created",
+                    "candidate_id": "candidate:n400",
+                    "candidate_digest": "candidate-digest:n400",
+                    "reference_id": "reference:n400",
+                    "reference_digest": "reference-digest:n400",
+                },
+                "dprime_status": {
+                    "assessment_status": "assessed",
+                    "support_relation": "directly_supports",
+                    "validated_support_proposal_available": True,
+                    "proposal_validation_status": (
+                        "DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED"
+                    ),
+                    "run_kernel_admission_decision_status": "admitted",
+                    "semantic_observation_admission_status": "materialized",
+                    "objects_created": {
+                        "semantic_observation": True,
+                        "component_coverage": False,
+                        "final_answer_packet": False,
+                        "author_answer": False,
+                        "citation_source_display": False,
+                    },
+                    "model_review_status": "completed",
+                    "model_review_call_count": 1,
+                    "assessment_material_ref": {
+                        "assessment_id": "assessment:n400",
+                        "assessment_digest": "assessment-digest:n400",
+                        "answer_component_claim": {
+                            "component_id": plan["component_id"],
+                        },
+                    },
+                    "semantic_observation_ref": {
+                        "observation_id": "semantic-observation:n400",
+                        "observation_digest": "semantic-digest:n400",
+                        "owner": "RunKernel.SemanticObservationAdmission",
+                    },
+                    "input_packet_ref": {
+                        "selected_window_diagnostic_ref": {
+                            "bounded_content_digest": "window-digest:n400",
+                            "bounded_character_count": 80,
+                            "value_token_observed": True,
+                        },
+                        "evidence_window_ref": {
+                            "bounded_content_digest": "window-digest:n400",
+                            "bounded_character_count": 80,
+                            "window_text_retained": False,
+                            "window_text_printed": False,
+                        },
+                    },
+                },
+            },
+        )
+
+    monkeypatch.setattr(dogfood, "build_live_semantic_coverage_status", fake_semantic_status)
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="gateway-missing-selected-value",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner(
+            "USCIS lists the current Form N-400 paper filing fee as $760."
+        ),
+        dprime_model_review_callable=lambda *_args, **_kwargs: {},
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    gateway = result.packet["source_readiness_gateway"]
+
+    assert result.return_code == 2
+    assert result.decision == (
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING
+    )
+    assert gateway["status"] == "blocked"
+    assert gateway["blocker_code"] == result.decision
+    assert "selected_current_value_text" in gateway["blocker_detail"]
+    assert result.packet["selected_current_value_text_present"] is False
+    assert result.packet["answer_text_present"] is False
+    assert result.packet["product_answer_text"] == ""
+    assert result.packet["source_display_entries"] == []
+    assert "Source/readiness gateway" in result.output
+    assert "Blocked before answer" in result.output
 
 
 def test_caps_fail_closed_when_provider_returns_too_many_results(
