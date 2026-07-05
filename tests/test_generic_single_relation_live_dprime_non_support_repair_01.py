@@ -36,7 +36,9 @@ from core.dprime_model_review_assessment import (
 from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED,
+    BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD,
     DEFAULT_OUTPUT_DIR,
+    DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
     build_generic_single_relation_live_dogfood_run_output,
 )
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
@@ -92,7 +94,25 @@ def test_answer_bearing_provider_extracted_content_reaches_dprime_window_ref(
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
-    assert result.decision == "PASS", result.packet.get("blocker_detail")
+    assert result.return_code == 2
+    assert result.decision == (
+        BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+    )
+    assert result.packet["source_readiness_gateway_status"] == "ready"
+    integration = result.packet["single_relation_dprime_authority_integration"]
+    assert integration["status"] == "blocked"
+    assert integration["blocker_code"] == result.decision
+    assert integration["dprime_support_slice_present"] is True
+    assert integration["gateway_display_present"] is True
+    assert integration["gateway_treated_as_authority"] is False
+    assert integration["dprime_support_slice_treated_as_readiness"] is False
+    assert integration["dprime_downstream_authority_enabled"] is False
+    assert integration["existing_dprime_authority_referenced"] is True
+    assert integration["existing_dprime_authority_reused"] is False
+    assert integration["next_phase"] == DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE
+    assert result.packet["source_obligation_citation_readiness_status"] == "blocked"
+    assert result.packet["single_relation_source_obligation_ready"] is False
+    assert result.packet["single_relation_citation_handoff_ready"] is False
     assert len(review_input_packets) == 1
     dprime_status = result.packet["semantic_status_payload"]["dprime_status"]
     input_ref = dprime_status["input_packet_ref"]

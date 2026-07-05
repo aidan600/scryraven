@@ -172,6 +172,9 @@ BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING = (
 BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED"
 )
+BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD = (
+    "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
 )
@@ -203,6 +206,22 @@ SANITIZED_SCOUT_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME = (
 )
 LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
 SOURCE_READINESS_GATEWAY_SCHEMA_VERSION = "generic_single_relation_source_readiness_gateway_v1"
+DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION = (
+    "generic_single_relation_dprime_authority_integration_v1"
+)
+DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE = (
+    "GENERIC-DOGFOOD-DPRIME-AUTHORITY-ADAPTER-01"
+)
+EXISTING_DPRIME_DOWNSTREAM_AUTHORITY_MODULE_REFS = (
+    "core.dprime_runkernel_admission_runtime",
+    "core.dprime_ordinary_contract_authority_runtime",
+    "core.dprime_semantic_observation_materialization_runtime",
+    "core.dprime_evidence_support_bundle_runtime",
+    "core.dprime_source_obligation_citation_authority_runtime",
+    "core.dprime_single_lane_answer_path_runtime",
+    "core.runkernel_followup_search_reentry_ordinary_search_runtime",
+    "core.dprime_multi_source_analyst_scrutiny_runtime",
+)
 
 MAX_LIVE_RUNS = 1
 MAX_QUERY_PLANS_CONSUMED = 1
@@ -1452,6 +1471,7 @@ def validate_generic_single_relation_live_dogfood_packet(
     if _safe_sequence(safe.get("source_display_entries")):
         _blocked_output_hygiene("generic live packet must not create source display entries.")
     _validate_source_readiness_gateway(safe)
+    _validate_dprime_authority_integration(safe)
     _validate_fetch_read_observability(safe)
     _reject_forbidden_material(safe, context="generic live dogfood packet")
     return safe
@@ -1497,7 +1517,89 @@ def _validate_source_readiness_gateway(packet: Mapping[str, Any]) -> None:
         if not _clean_text(window.get("selected_window_digest"), limit=128):
             _blocked_output_hygiene("ready gateway requires selected window digest.")
     elif status == "ready":
-        _blocked_output_hygiene("blocked packet must not carry ready gateway status.")
+        integration = _safe_mapping(
+            packet.get("single_relation_dprime_authority_integration")
+        )
+        if not (
+            packet.get("decision")
+            == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+            and integration.get("status") == "blocked"
+            and integration.get("gateway_treated_as_authority") is False
+        ):
+            _blocked_output_hygiene("blocked packet must not carry ready gateway status.")
+
+
+def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
+    integration = _safe_mapping(
+        packet.get("single_relation_dprime_authority_integration")
+    )
+    if not integration:
+        _blocked_output_hygiene("D-prime authority integration section missing.")
+    if integration.get("schema_version") != DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION:
+        _blocked_output_hygiene("D-prime authority integration schema mismatch.")
+    if integration.get("status") not in {"blocked", "not_reached"}:
+        _blocked_output_hygiene("D-prime authority integration status invalid.")
+    if integration.get("existing_dprime_authority_referenced") is not True:
+        _blocked_output_hygiene("existing D-prime authority reference missing.")
+    if (
+        integration.get("existing_dprime_source_obligation_citation_authority_exists")
+        is not True
+    ):
+        _blocked_output_hygiene("existing D-prime source/citation authority not named.")
+    if integration.get("existing_dprime_authority_reused") is not False:
+        _blocked_output_hygiene("generic dogfood must not claim authority reuse yet.")
+    if integration.get("gateway_treated_as_authority") is not False:
+        _blocked_output_hygiene("gateway must not be treated as authority.")
+    if integration.get("dprime_support_slice_treated_as_readiness") is not False:
+        _blocked_output_hygiene("D-prime support slice must not satisfy readiness.")
+    if integration.get("dprime_downstream_authority_enabled") is not False:
+        _blocked_output_hygiene("generic dogfood must keep downstream D-prime disabled.")
+    for key in (
+        "source_obligation_satisfied",
+        "citation_eligible",
+        "source_authority_finalized",
+        "final_answer_packet_created",
+        "author_prose_created",
+        "author_answer_created",
+        "citation_source_display_created",
+        "final_answer_prose_created",
+        "product_correctness_claimed",
+        "single_relation_source_obligation_ready",
+        "single_relation_citation_handoff_ready",
+        "downstream_dprime_authority_invoked",
+        "fap_invoked",
+        "author_invoked",
+        "citation_rendering_invoked",
+    ):
+        if integration.get(key) is not False:
+            _blocked_output_hygiene(f"D-prime authority integration {key} invalid.")
+    if (
+        packet.get("source_obligation_citation_readiness_status")
+        != integration.get("status")
+    ):
+        _blocked_output_hygiene("readiness status alias mismatch.")
+    if (
+        packet.get("source_obligation_citation_readiness_blocker")
+        != integration.get("blocker_code")
+    ):
+        _blocked_output_hygiene("readiness blocker alias mismatch.")
+    if integration.get("status") == "blocked":
+        if (
+            integration.get("blocker_code")
+            != BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+        ):
+            _blocked_output_hygiene("D-prime authority integration blocker invalid.")
+        if (
+            packet.get("decision")
+            != BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+        ):
+            _blocked_output_hygiene("blocked authority integration must own decision.")
+        if integration.get("gateway_display_present") is not True:
+            _blocked_output_hygiene("blocked authority integration requires gateway display.")
+        if integration.get("dprime_support_slice_present") is not True:
+            _blocked_output_hygiene("blocked authority integration requires D-prime slice.")
+    elif packet.get("decision") == PASS_DECISION:
+        _blocked_output_hygiene("PASS requires D-prime authority integration readiness.")
 
 
 def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
@@ -1848,6 +1950,9 @@ def format_generic_single_relation_live_dogfood_output(
     gateway_source = _safe_mapping(gateway.get("selected_source_ref"))
     gateway_window = _safe_mapping(gateway.get("selected_window_ref"))
     gateway_non_claims = _safe_mapping(gateway.get("explicit_non_claims"))
+    dprime_integration = _safe_mapping(
+        packet.get("single_relation_dprime_authority_integration")
+    )
     relation_status = _safe_mapping(packet.get("dprime_relation_intake_ref")).get(
         "status",
         "not reached",
@@ -1881,6 +1986,22 @@ def format_generic_single_relation_live_dogfood_output(
         f"{_bool_text(gateway_non_claims.get('citation_eligible'))}",
         "- Source authority finalized: "
         f"{_bool_text(gateway_non_claims.get('source_authority_finalized'))}",
+        "",
+        "D-prime authority integration",
+        f"- Status: {dprime_integration.get('status') or 'not reached'}",
+        f"- Blocker: {dprime_integration.get('blocker_code') or 'none'}",
+        "- Existing source/citation authority exists: "
+        f"{_bool_text(dprime_integration.get('existing_dprime_source_obligation_citation_authority_exists'))}",
+        "- Downstream D-prime authority enabled: "
+        f"{_bool_text(dprime_integration.get('dprime_downstream_authority_enabled'))}",
+        "- D-prime pass + gateway display sufficient for readiness: false.",
+        "- Gateway treated as authority: "
+        f"{_bool_text(dprime_integration.get('gateway_treated_as_authority'))}",
+        "- Source-obligation ready: "
+        f"{_bool_text(dprime_integration.get('single_relation_source_obligation_ready'))}",
+        "- Citation handoff ready: "
+        f"{_bool_text(dprime_integration.get('single_relation_citation_handoff_ready'))}",
+        f"- Next phase: {dprime_integration.get('next_phase') or 'not named'}",
         "",
         "Answer",
         "- Final answer prose created: false.",
@@ -2007,7 +2128,20 @@ def _packet_from_semantic_status(
         packet,
         semantic_payload=semantic_payload,
     )
-    if source_readiness_gateway.get("status") == "ready":
+    dprime_authority_integration = _dprime_authority_integration_from_gateway(
+        source_readiness_gateway=source_readiness_gateway,
+        semantic_payload=semantic_payload,
+    )
+    if dprime_authority_integration.get("status") == "blocked":
+        decision = BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+        blocker_detail = _clean_text(
+            dprime_authority_integration.get("blocker_detail"),
+            limit=900,
+        ) or (
+            "Existing D-prime source-obligation/citation authority cannot be "
+            "safely consumed by generic dogfood yet."
+        )
+    elif source_readiness_gateway.get("status") == "ready":
         decision = PASS_DECISION
         blocker_detail = None
     elif source_readiness_gateway.get("dprime_pass_evaluated") is True:
@@ -2030,6 +2164,30 @@ def _packet_from_semantic_status(
             "source_readiness_gateway_blocker": source_readiness_gateway.get(
                 "blocker_code"
             ),
+            "single_relation_dprime_authority_integration": (
+                dprime_authority_integration
+            ),
+            "dprime_authority_integration": dprime_authority_integration,
+            "single_relation_dprime_authority_integration_status": (
+                dprime_authority_integration.get("status")
+            ),
+            "single_relation_dprime_authority_integration_blocker": (
+                dprime_authority_integration.get("blocker_code")
+            ),
+            "source_obligation_citation_readiness_status": (
+                dprime_authority_integration.get("status")
+            ),
+            "source_obligation_citation_readiness_blocker": (
+                dprime_authority_integration.get("blocker_code")
+            ),
+            "single_relation_source_obligation_ready": False,
+            "single_relation_citation_handoff_ready": False,
+            "dprime_pass_and_gateway_ready_rejected_as_readiness_authority": (
+                dprime_authority_integration.get(
+                    "gateway_ready_and_dprime_pass_insufficient_for_"
+                    "source_obligation_citation_readiness"
+                )
+            ),
             "selected_current_value_display_status": (
                 source_readiness_gateway.get("selected_current_value_display_status")
             ),
@@ -2045,6 +2203,10 @@ def _packet_from_semantic_status(
             "answer_text_present": False,
             "source_display_entries": [],
             "decision_made_by_the_run": (
+                "generic_single_relation_dprime_authority_integration_blocked"
+                if decision
+                == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+                else
                 "generic_single_relation_source_readiness_gateway_emitted"
                 if decision == PASS_DECISION
                 else "generic_single_relation_live_dogfood_named_blocker_recorded"
@@ -2077,6 +2239,15 @@ def _blocked_packet(
     recovery_model_planning_packet: Mapping[str, Any] | None,
     require_model_assisted_planning: bool,
 ) -> dict[str, Any]:
+    source_readiness_gateway = _source_readiness_gateway_not_reached(
+        blocker=blocker,
+        detail=detail,
+    )
+    dprime_authority_integration = _dprime_authority_integration_not_reached(
+        blocker=blocker,
+        detail=detail,
+        source_readiness_gateway=source_readiness_gateway,
+    )
     packet = _base_packet(
         relation_plan=relation_plan,
         query_retained=query_retained,
@@ -2108,12 +2279,20 @@ def _blocked_packet(
             "product_answer_text": "",
             "answer_text_present": False,
             "source_display_entries": [],
-            "source_readiness_gateway": _source_readiness_gateway_not_reached(
-                blocker=blocker,
-                detail=detail,
-            ),
+            "source_readiness_gateway": source_readiness_gateway,
             "source_readiness_gateway_status": "not_reached",
             "source_readiness_gateway_blocker": blocker,
+            "single_relation_dprime_authority_integration": (
+                dprime_authority_integration
+            ),
+            "dprime_authority_integration": dprime_authority_integration,
+            "single_relation_dprime_authority_integration_status": "not_reached",
+            "single_relation_dprime_authority_integration_blocker": blocker,
+            "source_obligation_citation_readiness_status": "not_reached",
+            "source_obligation_citation_readiness_blocker": blocker,
+            "single_relation_source_obligation_ready": False,
+            "single_relation_citation_handoff_ready": False,
+            "dprime_pass_and_gateway_ready_rejected_as_readiness_authority": False,
             "selected_current_value_display_status": "not_displayed",
             "selected_current_value_text_present": False,
             "decision_made_by_the_run": (
@@ -2263,6 +2442,181 @@ def _source_readiness_gateway_not_reached(
         "citation_eligibility_used_for_display": False,
         "product_correctness_claimed": False,
     }
+
+
+def _dprime_authority_integration_from_gateway(
+    *,
+    source_readiness_gateway: Mapping[str, Any],
+    semantic_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    gateway = _safe_mapping(source_readiness_gateway)
+    semantic = _safe_mapping(semantic_payload)
+    dprime = _safe_mapping(semantic.get("dprime_status"))
+    dprime_objects = _safe_mapping(dprime.get("objects_created"))
+    gateway_ready = gateway.get("status") == "ready"
+    dprime_pass_slice_present = _dprime_pass_ready_for_gateway(dprime)
+    reached = gateway_ready and dprime_pass_slice_present
+    blocker_code = (
+        BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+        if reached
+        else _clean_text(gateway.get("blocker_code"), limit=220)
+        or BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING
+    )
+    blocker_detail = (
+        "Existing D-prime source-obligation/citation authority is present, "
+        "but generic single-relation dogfood currently keeps "
+        "dprime_downstream_authority_enabled=False. D-prime support-slice PASS "
+        "plus #434 gateway display is insufficient for source-obligation or "
+        "citation handoff readiness, and enabling the current downstream "
+        "single-lane path would also open SufficiencyReadiness, FAP, Author, "
+        "and citation/source display surfaces."
+        if reached
+        else _clean_text(gateway.get("blocker_detail"), limit=900)
+        or "D-prime authority integration was not reached."
+    )
+    downstream_enabled = semantic.get("dprime_downstream_authority_enabled") is True
+    downstream_objects_created = any(
+        dprime_objects.get(key) is True
+        for key in (
+            "component_coverage",
+            "final_answer_packet",
+            "author_answer",
+            "citation_source_display",
+        )
+    )
+    status = "blocked" if reached else "not_reached"
+    return _json_safe(
+        {
+            "schema_version": DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION,
+            "status": status,
+            "blocker_code": blocker_code,
+            "blocker_detail": blocker_detail,
+            "integration_owner": (
+                "proplex.mvp_single_relation_live_dogfood_run."
+                "single_relation_dprime_authority_integration_blocker"
+            ),
+            "runtime_consumer": (
+                "proplex.mvp_single_relation_live_dogfood_run."
+                "build_generic_single_relation_live_dogfood_run_output"
+            ),
+            "ordinary_product_path_consumed": True,
+            "existing_dprime_authority_referenced": True,
+            "existing_dprime_authority_reused": False,
+            "existing_dprime_authority_modules": list(
+                EXISTING_DPRIME_DOWNSTREAM_AUTHORITY_MODULE_REFS
+            ),
+            "existing_dprime_source_obligation_citation_authority_exists": True,
+            "existing_dprime_source_obligation_citation_authority_module": (
+                "core.dprime_source_obligation_citation_authority_runtime"
+            ),
+            "existing_single_lane_answer_path_module": (
+                "core.dprime_single_lane_answer_path_runtime"
+            ),
+            "existing_dprime_authority_integration_blocked": reached,
+            "dprime_downstream_authority_enabled": downstream_enabled,
+            "generic_dogfood_downstream_authority_kept_disabled": (
+                downstream_enabled is False
+            ),
+            "dprime_support_slice_present": dprime_pass_slice_present,
+            "gateway_display_present": gateway_ready,
+            "gateway_treated_as_authority": False,
+            "dprime_support_slice_treated_as_readiness": False,
+            "gateway_ready_and_dprime_pass_insufficient_for_"
+            "source_obligation_citation_readiness": reached,
+            "downstream_dprime_authority_invoked": (
+                downstream_enabled or downstream_objects_created
+            ),
+            "component_coverage_created": dprime_objects.get("component_coverage")
+            is True,
+            "semantic_observation_created": dprime_objects.get("semantic_observation")
+            is True,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
+            "source_authority_finalized": False,
+            "single_relation_source_obligation_ready": False,
+            "single_relation_citation_handoff_ready": False,
+            "final_answer_packet_created": False,
+            "author_prose_created": False,
+            "author_answer_created": False,
+            "citation_source_display_created": False,
+            "final_answer_prose_created": False,
+            "fap_invoked": False,
+            "author_invoked": False,
+            "citation_rendering_invoked": False,
+            "product_correctness_claimed": False,
+            "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+            "next_phase": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
+            "next_product_path_checkpoint": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
+        }
+    )
+
+
+def _dprime_authority_integration_not_reached(
+    *,
+    blocker: str,
+    detail: str,
+    source_readiness_gateway: Mapping[str, Any],
+) -> dict[str, Any]:
+    return _json_safe(
+        {
+            "schema_version": DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION,
+            "status": "not_reached",
+            "blocker_code": blocker,
+            "blocker_detail": detail,
+            "integration_owner": (
+                "proplex.mvp_single_relation_live_dogfood_run."
+                "single_relation_dprime_authority_integration_blocker"
+            ),
+            "runtime_consumer": (
+                "proplex.mvp_single_relation_live_dogfood_run."
+                "build_generic_single_relation_live_dogfood_run_output"
+            ),
+            "ordinary_product_path_consumed": True,
+            "existing_dprime_authority_referenced": True,
+            "existing_dprime_authority_reused": False,
+            "existing_dprime_authority_modules": list(
+                EXISTING_DPRIME_DOWNSTREAM_AUTHORITY_MODULE_REFS
+            ),
+            "existing_dprime_source_obligation_citation_authority_exists": True,
+            "existing_dprime_source_obligation_citation_authority_module": (
+                "core.dprime_source_obligation_citation_authority_runtime"
+            ),
+            "existing_single_lane_answer_path_module": (
+                "core.dprime_single_lane_answer_path_runtime"
+            ),
+            "existing_dprime_authority_integration_blocked": False,
+            "dprime_downstream_authority_enabled": False,
+            "generic_dogfood_downstream_authority_kept_disabled": True,
+            "dprime_support_slice_present": False,
+            "gateway_display_present": (
+                _safe_mapping(source_readiness_gateway).get("status") == "ready"
+            ),
+            "gateway_treated_as_authority": False,
+            "dprime_support_slice_treated_as_readiness": False,
+            "gateway_ready_and_dprime_pass_insufficient_for_"
+            "source_obligation_citation_readiness": False,
+            "downstream_dprime_authority_invoked": False,
+            "component_coverage_created": False,
+            "semantic_observation_created": False,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
+            "source_authority_finalized": False,
+            "single_relation_source_obligation_ready": False,
+            "single_relation_citation_handoff_ready": False,
+            "final_answer_packet_created": False,
+            "author_prose_created": False,
+            "author_answer_created": False,
+            "citation_source_display_created": False,
+            "final_answer_prose_created": False,
+            "fap_invoked": False,
+            "author_invoked": False,
+            "citation_rendering_invoked": False,
+            "product_correctness_claimed": False,
+            "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+            "next_phase": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
+            "next_product_path_checkpoint": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
+        }
+    )
 
 
 def _source_readiness_gateway_summary(gateway: Mapping[str, Any]) -> str:
@@ -2575,6 +2929,8 @@ def _failure_attribution_bucket(packet: Mapping[str, Any]) -> str:
         BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED,
     }:
         return "source_readiness_gateway"
+    if decision == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD:
+        return "dprime_authority_integration"
     if _bounded_int(packet.get("evidence_ledger_admissions")) > 0:
         return "runkernel_or_downstream_gate"
     return "blocked_before_acquisition"
@@ -7746,7 +8102,9 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED",
+    "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
+    "DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE",
     "DEFAULT_OUTPUT_DIR",
     "GenericLiveFetchReadResult",
     "GenericProviderProxyRunRequest",
