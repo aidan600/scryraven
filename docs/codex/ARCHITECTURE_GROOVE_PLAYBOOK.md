@@ -213,6 +213,19 @@ readiness should inventory those D-prime surfaces first and prefer
 reuse/adaptation over rebuilding source-obligation or citation-readiness
 machinery.
 
+Recent generic single-relation dogfood, planning, and acquisition work is also
+a mature capability surface. Future phases touching query planning, acquisition
+planning, FastModel/SmartModel routing, provider acquisition/extraction,
+fetch/read, candidate/window selection, source gateway, readiness, or generic
+dogfood output must inventory the shared model-assisted single-relation
+planning, strict accounted FastModel planning route, OpenAI Responses-backed
+FastModel route for OpenAI, product-owned provider acquisition/extraction,
+answer-bearing candidate/window selection diagnostics, source/readiness
+gateway, and generic dogfood D-prime authority integration blocker before
+adding new modules or replacement seams. Prefer `REUSE` / `ADAPT` / `UPGRADE`
+over parallel replacement; `REPLACE` requires a reason and an exit plan for the
+old surface.
+
 ## Codex Cloud and local validation roles
 
 ### Codex Cloud implementation role

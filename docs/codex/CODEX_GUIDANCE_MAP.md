@@ -27,7 +27,9 @@ are repo files; use repo-visible files and the current phase prompt.
   recovery, SearchPlanner/query planner/model-assisted planning,
   FastModel/SmartModel, Scrutineer, multi-source, multi-component,
   EvidenceLedger, fetch/read, provider acquisition, evidence triage, and
-  source/answer gateway readiness.
+  source/answer gateway readiness. Generic dogfood, query-planning, and
+  provider-acquisition phases must also inventory the current generic
+  single-relation dogfood path before implementation.
 - **Local Windows sandbox and publication rule:** read
   [CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
   Codex edits and tests in the workspace sandbox; exact-approved Git commands

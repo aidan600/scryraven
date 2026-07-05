@@ -89,3 +89,21 @@ def test_dprime_reuse_lesson_points_to_existing_downstream_machinery() -> None:
         "rebuilding source-obligation or citation-readiness machinery",
     )
     assert any(phrase in collapsed for phrase in forbidden)
+
+
+def test_generic_dogfood_planning_and_acquisition_reuse_lesson_is_visible() -> None:
+    combined = "\n".join(_read(path) for path in (PLAYBOOK_DOC, GUIDANCE_MAP_DOC))
+    collapsed = " ".join(combined.split())
+
+    for phrase in (
+        "model-assisted single-relation planning",
+        "strict accounted FastModel",
+        "OpenAI Responses",
+        "provider acquisition",
+        "answer-bearing candidate/window",
+        "source/readiness gateway",
+        "D-prime authority integration blocker",
+        "Prefer `REUSE` / `ADAPT` / `UPGRADE`",
+        "generic single-relation dogfood path",
+    ):
+        assert phrase in combined or phrase in collapsed
