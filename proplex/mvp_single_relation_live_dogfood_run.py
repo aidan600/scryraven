@@ -69,6 +69,7 @@ from core.model_assisted_single_relation_planning import (
 )
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.product_model_route_config import (
+    CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
@@ -867,7 +868,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             raise GenericSingleRelationLiveDogfoodRunError(
                 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED,
                 (
-                    f"{CONFIRM_LIVE_DOGFOOD_FLAG} is required before live "
+                    f"{entrypoint_metadata['confirmation_flag']} is required before live "
                     "provider/search/fetch/read contact."
                 ),
             )
@@ -1669,6 +1670,7 @@ def _validate_consumed_dprime_authority_integration(
 
 def _validate_entrypoint_metadata(packet: Mapping[str, Any]) -> None:
     flag = packet.get("command_flag")
+    confirmation_flag = packet.get("confirmation_flag")
     surface = packet.get("entrypoint_surface")
     kind = packet.get("entrypoint_kind")
     alias = packet.get("diagnostic_dogfood_alias")
@@ -1676,6 +1678,8 @@ def _validate_entrypoint_metadata(packet: Mapping[str, Any]) -> None:
     if kind == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
         if flag != MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG:
             _blocked_output_hygiene("product entrypoint command flag mismatch.")
+        if confirmation_flag != CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG:
+            _blocked_output_hygiene("product entrypoint confirmation flag mismatch.")
         if surface != PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE:
             _blocked_output_hygiene("product entrypoint surface mismatch.")
         if alias is not False:
@@ -1687,6 +1691,8 @@ def _validate_entrypoint_metadata(packet: Mapping[str, Any]) -> None:
         _blocked_output_hygiene("generic live entrypoint kind invalid.")
     if flag != MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG:
         _blocked_output_hygiene("dogfood entrypoint command flag mismatch.")
+    if confirmation_flag != CONFIRM_LIVE_DOGFOOD_FLAG:
+        _blocked_output_hygiene("dogfood entrypoint confirmation flag mismatch.")
     if surface != DOGFOOD_ENTRYPOINT_SURFACE:
         _blocked_output_hygiene("dogfood entrypoint surface mismatch.")
     if alias is not True:
@@ -4420,12 +4426,14 @@ def _base_packet(
         "ordinary_entrypoint": "python -m proplex",
         "command_flag": entrypoint["command_flag"],
         "status_flag": entrypoint["command_flag"],
+        "confirmation_flag": entrypoint["confirmation_flag"],
         "entrypoint_surface": entrypoint["entrypoint_surface"],
         "entrypoint_kind": entrypoint["entrypoint_kind"],
         "diagnostic_dogfood_alias": entrypoint["diagnostic_dogfood_alias"],
         "supported_query_class": entrypoint["supported_query_class"],
         "command_harness_used": _command_harness(
             command_flag=entrypoint["command_flag"],
+            confirmation_flag=entrypoint["confirmation_flag"],
             confirm_live_dprime_review=confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 confirm_live_source_challenge_recovery
@@ -8421,12 +8429,11 @@ def _packet_safe_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 def _command_harness(
     *,
     command_flag: str = MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+    confirmation_flag: str = CONFIRM_LIVE_DOGFOOD_FLAG,
     confirm_live_dprime_review: bool,
     confirm_live_source_challenge_recovery: bool,
 ) -> str:
-    command = (
-        f"python -m proplex {command_flag} {CONFIRM_LIVE_DOGFOOD_FLAG}"
-    )
+    command = f"python -m proplex {command_flag} {confirmation_flag}"
     if confirm_live_dprime_review:
         command = f"{command} {CONFIRM_LIVE_DPRIME_REVIEW_FLAG}"
     if confirm_live_source_challenge_recovery:
@@ -8444,6 +8451,7 @@ def _entrypoint_metadata(
     if entrypoint_kind == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
         return {
             "command_flag": MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "confirmation_flag": CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
             "entrypoint_surface": PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
             "entrypoint_kind": PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
             "diagnostic_dogfood_alias": False,
@@ -8457,6 +8465,7 @@ def _entrypoint_metadata(
         _blocked_output_hygiene("generic live dogfood entrypoint metadata invalid.")
     return {
         "command_flag": MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+        "confirmation_flag": CONFIRM_LIVE_DOGFOOD_FLAG,
         "entrypoint_surface": DOGFOOD_ENTRYPOINT_SURFACE,
         "entrypoint_kind": DOGFOOD_ENTRYPOINT_KIND,
         "diagnostic_dogfood_alias": True,
@@ -9096,6 +9105,7 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED",
     "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD",
+    "CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
     "DOGFOOD_ENTRYPOINT_KIND",
     "DOGFOOD_ENTRYPOINT_SURFACE",

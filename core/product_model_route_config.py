@@ -37,6 +37,9 @@ MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG = (
 )
 MVP_LIVE_DOGFOOD_STATUS_FLAG = "--mvp-live-dogfood-status"
 MVP_QUERY_PLAN_STATUS_FLAG = "--mvp-query-plan-status"
+CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG = (
+    "--confirm-current-source-of-record-single-fact-run"
+)
 CONFIRM_LIVE_DPRIME_REVIEW_FLAG = "--confirm-live-dprime-review"
 
 PRODUCT_STATUS_DRY_RUN_FLAGS = (
@@ -119,6 +122,7 @@ def initialize_product_model_route_config(
 
 
 __all__ = [
+    "CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG",
     "CONFIRM_LIVE_DPRIME_REVIEW_FLAG",
     "LIVE_ACQUISITION_READABILITY_STATUS_FLAG",
     "LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG",

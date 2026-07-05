@@ -44,6 +44,7 @@ from core.generic_query_to_relation_planning import (
 )
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.product_model_route_config import (
+    CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
@@ -151,6 +152,40 @@ def test_supported_query_without_live_confirmation_consumes_plan_only(
     assert result.packet["fetch_read_attempts"] == 0
     assert result.packet["dprime_model_review_calls_attempted"] == 0
     assert result.packet["dprime_relation_intake_ref"] == {}
+    assert calls == []
+
+
+def test_product_named_single_fact_missing_confirmation_fails_closed(
+    tmp_path: Path,
+) -> None:
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-single-fact-missing-confirmation",
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(calls, []),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    detail = str(result.packet["blocker_detail"])
+    assert result.return_code == 2
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED
+    assert result.packet["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert result.packet["confirmation_flag"] == (
+        CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+    )
+    assert CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in detail
+    assert dogfood.CONFIRM_LIVE_DOGFOOD_FLAG not in detail
+    assert result.packet["provider_calls_attempted"] == 0
+    assert result.packet["fetch_read_attempts"] == 0
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
     assert calls == []
 
 
@@ -1508,6 +1543,9 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
         assert result.packet["command_flag"] == (
             MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
         )
+        assert result.packet["confirmation_flag"] == (
+            CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+        )
         assert result.packet["entrypoint_surface"] == (
             dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
         )
@@ -1522,8 +1560,15 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
         assert MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in (
             result.packet["command_harness_used"]
         )
+        assert CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in (
+            result.packet["command_harness_used"]
+        )
+        assert dogfood.CONFIRM_LIVE_DOGFOOD_FLAG not in (
+            result.packet["command_harness_used"]
+        )
     else:
         assert result.packet["command_flag"] == MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG
+        assert result.packet["confirmation_flag"] == dogfood.CONFIRM_LIVE_DOGFOOD_FLAG
         assert result.packet["entrypoint_surface"] == dogfood.DOGFOOD_ENTRYPOINT_SURFACE
         assert result.packet["entrypoint_kind"] == dogfood.DOGFOOD_ENTRYPOINT_KIND
         assert result.packet["diagnostic_dogfood_alias"] is True
@@ -2252,7 +2297,7 @@ def test_product_named_single_fact_cli_uses_same_generic_runtime(
             MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
             "--query",
             N400_QUERY,
-            "--confirm-live-dogfood",
+            CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
             "--confirm-live-dprime-review",
         ]
     )
@@ -2330,6 +2375,7 @@ def test_cli_env_fastmodel_config_flows_into_strict_route(
 
 
 def test_new_flag_is_registered_as_default_off_status_path() -> None:
+    cli = importlib.import_module("proplex.__main__")
     assert MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
     assert (
         MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
@@ -2351,6 +2397,16 @@ def test_new_flag_is_registered_as_default_off_status_path() -> None:
         load_dotenv_func=lambda: True,
         environ={},
     ).dotenv_skipped_for_status_dry_run is False
+    parsed = cli._parse_args(
+        [
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "--query",
+            N400_QUERY,
+            CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+        ]
+    )
+    assert parsed.mvp_current_source_of_record_single_fact_run is True
+    assert parsed.confirm_current_source_of_record_single_fact_run is True
 
 
 def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:

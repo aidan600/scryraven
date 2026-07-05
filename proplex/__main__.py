@@ -41,6 +41,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from core.product_model_route_config import (  # noqa: E402
+    CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
     LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
@@ -359,6 +360,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         dest="confirm_live_dogfood",
         help="Confirm the single live MVP dogfood attempt.",
+    )
+    p.add_argument(
+        CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+        action="store_true",
+        dest="confirm_current_source_of_record_single_fact_run",
+        help="Confirm the current source-of-record single-fact supported-query run.",
     )
     p.add_argument(
         CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
@@ -717,6 +724,11 @@ def _run_mvp_single_relation_live_dogfood_run(
 ) -> int:
     del log
     product_entrypoint = bool(args.mvp_current_source_of_record_single_fact_run)
+    confirm_single_relation_run = (
+        bool(args.confirm_current_source_of_record_single_fact_run)
+        if product_entrypoint
+        else bool(args.confirm_live_dogfood)
+    )
     output_dir = args.mvp_output_dir or DEFAULT_MVP_SINGLE_RELATION_LIVE_OUTPUT_DIR
     fast_model_planning_route = build_strict_accounted_fast_model_planning_route(
         fast_provider=args.fast_provider,
@@ -728,7 +740,7 @@ def _run_mvp_single_relation_live_dogfood_run(
             query=args.query,
             repo_root=_ROOT,
             output_dir=output_dir,
-            confirm_live_dogfood=args.confirm_live_dogfood,
+            confirm_live_dogfood=confirm_single_relation_run,
             confirm_live_dprime_review=args.confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 args.confirm_live_source_challenge_recovery
