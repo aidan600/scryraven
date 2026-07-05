@@ -14,6 +14,22 @@ are repo files; use repo-visible files and the current phase prompt.
   [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md).
 - **Reusable phase prompt shape:** read
   [PHASE_BRIEF_TEMPLATE.md](PHASE_BRIEF_TEMPLATE.md).
+- **Capability inventory / reuse-first gate:** before implementing new code,
+  phases touching mature authority or product surfaces must use the inventory
+  table in [ARCHITECTURE_GROOVE_PLAYBOOK.md](ARCHITECTURE_GROOVE_PLAYBOOK.md)
+  and [PHASE_BRIEF_TEMPLATE.md](PHASE_BRIEF_TEMPLATE.md), classify each
+  relevant surface as `REUSE`, `ADAPT`, `UPGRADE`, `RETIRE`, or `REPLACE`, and
+  stop for inventory if an existing current capability may already own the
+  responsibility. This applies especially near D-prime / DPrime, Analyst /
+  EvidenceRelativeAnalysisPacket, source authority/obligation, citation
+  eligibility or citation-source handoff, SufficiencyReadiness, FAP, Author,
+  SemanticObservation, ComponentCoverage, RunKernel authority, follow-up /
+  recovery, SearchPlanner/query planner/model-assisted planning,
+  FastModel/SmartModel, Scrutineer, multi-source, multi-component,
+  EvidenceLedger, fetch/read, provider acquisition, evidence triage, and
+  source/answer gateway readiness. Generic dogfood, query-planning, and
+  provider-acquisition phases must also inventory the current generic
+  single-relation dogfood path before implementation.
 - **Local Windows sandbox and publication rule:** read
   [CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md](CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md).
   Codex edits and tests in the workspace sandbox; exact-approved Git commands
@@ -415,7 +431,11 @@ content is explicitly pasted into the current prompt or committed here.
 - **D-prime evidence-relative model review overview:** read
   `docs/architecture/DPRIME_ARCHITECTURE.md` for the current D-prime authority
   split, allowed/forbidden outputs, negative controls, and post-#392
-  RunKernel-admission-missing stop point.
+  RunKernel-admission-missing stop point. For generic dogfood or adapter work
+  near D-prime source-obligation authority, citation-source handoff,
+  single-lane answer path, follow-up re-entry, same-lane multi-source scrutiny,
+  FAP, Author, or readiness, perform the capability inventory / reuse-first gate
+  before adding a new surface.
 - **Previous AG-SEM posture:** AG-SEM-05 through AG-SEM-10 completed the
   canonical reducer and conditional Sufficiency-consumption chain; AG-SEM-11
   and the later semantic atomicity work moved the ordinary semantic producer
