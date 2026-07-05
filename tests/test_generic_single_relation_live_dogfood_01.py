@@ -44,7 +44,9 @@ from core.generic_query_to_relation_planning import (
 )
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.product_model_route_config import (
+    CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+    MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_QUERY_PLAN_STATUS_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
@@ -67,6 +69,7 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
+    BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
     DEFAULT_OUTPUT_DIR,
     GenericLiveFetchReadResult,
@@ -149,6 +152,40 @@ def test_supported_query_without_live_confirmation_consumes_plan_only(
     assert result.packet["fetch_read_attempts"] == 0
     assert result.packet["dprime_model_review_calls_attempted"] == 0
     assert result.packet["dprime_relation_intake_ref"] == {}
+    assert calls == []
+
+
+def test_product_named_single_fact_missing_confirmation_fails_closed(
+    tmp_path: Path,
+) -> None:
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-single-fact-missing-confirmation",
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(calls, []),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    detail = str(result.packet["blocker_detail"])
+    assert result.return_code == 2
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED
+    assert result.packet["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert result.packet["confirmation_flag"] == (
+        CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+    )
+    assert CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in detail
+    assert dogfood.CONFIRM_LIVE_DOGFOOD_FLAG not in detail
+    assert result.packet["provider_calls_attempted"] == 0
+    assert result.packet["fetch_read_attempts"] == 0
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
     assert calls == []
 
 
@@ -1430,7 +1467,7 @@ def test_provider_result_with_invalid_url_records_invalid_url_diagnostic(
         ),
     ],
 )
-def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
+def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     query: str,
@@ -1464,6 +1501,22 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
         run_id=f"pass-{abs(hash(query))}",
         confirm_live_dogfood=True,
         confirm_live_dprime_review=True,
+        entrypoint_surface=(
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
+            if query == N400_QUERY
+            else dogfood.DOGFOOD_ENTRYPOINT_SURFACE
+        ),
+        entrypoint_kind=(
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+            if query == N400_QUERY
+            else dogfood.DOGFOOD_ENTRYPOINT_KIND
+        ),
+        diagnostic_dogfood_alias=query != N400_QUERY,
+        supported_query_class=(
+            dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+            if query == N400_QUERY
+            else dogfood.DOGFOOD_SUPPORTED_QUERY_CLASS
+        ),
         provider_proxy_runner=_recording_proxy_runner(
             calls,
             [_provider_result(title, url)],
@@ -1475,7 +1528,7 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
 
     assert result.return_code == 2, result.packet.get("blocker_detail")
-    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
     assert result.packet["blocker_code"] == result.decision
     assert result.packet["failure_attribution_bucket"] == (
         "source_citation_display_boundary"
@@ -1486,6 +1539,43 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
         plan["search_query_seeds"][0]
     )
     assert result.packet["relation_plan_consumed"] is True
+    if query == N400_QUERY:
+        assert result.packet["command_flag"] == (
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+        )
+        assert result.packet["confirmation_flag"] == (
+            CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+        )
+        assert result.packet["entrypoint_surface"] == (
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
+        )
+        assert result.packet["entrypoint_kind"] == (
+            dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+        )
+        assert result.packet["diagnostic_dogfood_alias"] is False
+        assert result.packet["supported_query_class"] == (
+            dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+        )
+        assert "current source-of-record single-fact run" in result.output
+        assert MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in (
+            result.packet["command_harness_used"]
+        )
+        assert CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG in (
+            result.packet["command_harness_used"]
+        )
+        assert dogfood.CONFIRM_LIVE_DOGFOOD_FLAG not in (
+            result.packet["command_harness_used"]
+        )
+    else:
+        assert result.packet["command_flag"] == MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG
+        assert result.packet["confirmation_flag"] == dogfood.CONFIRM_LIVE_DOGFOOD_FLAG
+        assert result.packet["entrypoint_surface"] == dogfood.DOGFOOD_ENTRYPOINT_SURFACE
+        assert result.packet["entrypoint_kind"] == dogfood.DOGFOOD_ENTRYPOINT_KIND
+        assert result.packet["diagnostic_dogfood_alias"] is True
+        assert result.packet["supported_query_class"] == (
+            dogfood.DOGFOOD_SUPPORTED_QUERY_CLASS
+        )
+        assert "generic single-relation live dogfood run" in result.output
     assert result.packet["relation_plan_id"] == plan["plan_id"]
     assert result.packet["supported_query_class_id"] == MVP_SUPPORTED_QUERY_CLASS_ID
     assert result.packet["source_authority_posture_contract_ref"] == (
@@ -1555,13 +1645,16 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     assert dprime_status["objects_created"]["citation_source_display"] is False
     integration = result.packet["single_relation_dprime_authority_integration"]
     assert integration["status"] == "consumed"
-    assert integration["blocker_code"] == result.decision
+    assert (
+        integration["blocker_code"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    )
     assert result.packet["single_relation_dprime_authority_integration_status"] == (
         "consumed"
     )
     assert result.packet["source_obligation_citation_readiness_status"] == "consumed"
     assert result.packet["source_obligation_citation_readiness_blocker"] == (
-        result.decision
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
     )
     assert result.packet["dprime_source_citation_stoppoint_status"] == "consumed"
     assert result.packet["source_obligation_authority_consumed"] is True
@@ -1623,6 +1716,72 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     assert citation_handoff["citation_source_handoff_id"]
     assert citation_handoff["citation_source_handoff_digest"]
     assert citation_handoff != gateway
+    boundary = result.packet["source_citation_display_boundary"]
+    entries = result.packet["source_citation_display_entries"]
+    assert boundary["status"] == "created"
+    assert (
+        boundary["blocker_code"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+    )
+    assert result.packet["source_citation_display_boundary_status"] == "created"
+    assert (
+        result.packet["source_citation_display_boundary_blocker"]
+        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+    )
+    assert boundary["authority_source"] == (
+        "core.dprime_source_obligation_citation_authority_runtime"
+    )
+    assert result.packet["source_citation_display_authority_source"] == (
+        "core.dprime_source_obligation_citation_authority_runtime"
+    )
+    assert boundary["derived_from_dprime_authority"] is True
+    assert boundary["derived_from_gateway_only"] is False
+    assert boundary["gateway_treated_as_authority"] is False
+    assert result.packet["source_citation_display_derived_from_dprime_authority"] is True
+    assert result.packet["source_citation_display_derived_from_gateway_only"] is False
+    assert boundary["source_obligation_authority_ref_owner"] == (
+        "RunKernel.DPrimeSourceObligationAuthority"
+    )
+    assert boundary["citation_source_handoff_authority_ref_owner"] == (
+        "RunKernel.DPrimeCitationSourceHandoffAuthority"
+    )
+    assert boundary["source_obligation_authority_ref"][
+        "source_obligation_authority_digest"
+    ] == source_authority["source_obligation_authority_digest"]
+    assert boundary["citation_source_handoff_authority_ref"][
+        "citation_source_handoff_digest"
+    ] == citation_handoff["citation_source_handoff_digest"]
+    assert result.packet["source_citation_display_entries_created"] is True
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["source_title"] == citation_handoff["citation_source_records"][0][
+        "title"
+    ]
+    assert entry["source_url"] == url
+    assert entry["selected_current_value_display_text"] == answer_claim
+    assert entry["selected_window_digest"] == gateway["selected_window_ref"][
+        "selected_window_digest"
+    ]
+    assert entry["source_obligation_authority_digest"] == source_authority[
+        "source_obligation_authority_digest"
+    ]
+    assert entry["citation_source_handoff_digest"] == citation_handoff[
+        "citation_source_handoff_digest"
+    ]
+    assert entry["derived_from_dprime_authority"] is True
+    assert entry["derived_from_gateway_only"] is False
+    assert entry["citation_rendering_created"] is False
+    assert entry["final_answer_prose_created"] is False
+    assert entry["product_correctness_claimed"] is False
+    assert boundary["sufficiency_readiness_created"] is False
+    assert boundary["final_answer_prose_created"] is False
+    assert boundary["final_answer_packet_created"] is False
+    assert boundary["author_answer_created"] is False
+    assert boundary["author_invoked"] is False
+    assert boundary["citation_rendering_invoked"] is False
+    assert boundary["final_citation_rendering_created"] is False
+    assert boundary["product_correctness_claimed"] is False
+    assert result.packet["final_citation_rendering_created"] is False
     assert integration["source_obligation_satisfied"] is False
     assert integration["citation_eligible"] is False
     assert integration["source_authority_finalized"] is False
@@ -1632,8 +1791,18 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     assert integration["citation_source_display_created"] is False
     assert integration["product_correctness_claimed"] is False
     assert integration["next_phase"] == (
-        dogfood.DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
     )
+    assert integration["next_product_path_checkpoint"] == (
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    )
+    assert boundary["next_product_path_checkpoint"] == (
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    )
+    assert result.packet["next_product_path_checkpoint"] == (
+        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+    )
+    assert dogfood.DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE not in result.output
     assert result.packet["actual_source_authority_posture_created"] is False
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["friend_level_mvp_claimed"] is False
@@ -1655,6 +1824,10 @@ def test_dprime_pass_ready_gateway_blocks_on_dprime_authority_integration(
     assert result.packet["raw_model_response_retained"] is False
     assert "Source/readiness gateway" in result.output
     assert "D-prime authority integration" in result.output
+    assert "Source/citation display boundary" in result.output
+    assert "- Entries created: true" in result.output
+    assert "- Derived from D-prime authority: true" in result.output
+    assert "- Derived from gateway-only state: false" in result.output
     assert "D-prime pass + gateway display sufficient for readiness: false." in (
         result.output
     )
@@ -1790,6 +1963,17 @@ def test_ready_gateway_and_dprime_slice_still_block_without_source_citation_auth
     assert integration["single_relation_source_obligation_ready"] is False
     assert integration["single_relation_citation_handoff_ready"] is False
     assert integration["gateway_treated_as_authority"] is False
+    boundary = result.packet["source_citation_display_boundary"]
+    assert boundary["status"] == "not_reached"
+    assert boundary["source_citation_display_entries"] == []
+    assert boundary["source_citation_display_entries_created"] is False
+    assert boundary["derived_from_dprime_authority"] is False
+    assert boundary["derived_from_gateway_only"] is False
+    assert boundary["gateway_treated_as_authority"] is False
+    assert result.packet["source_citation_display_entries"] == []
+    assert result.packet["source_citation_display_entries_created"] is False
+    assert result.packet["source_citation_display_derived_from_dprime_authority"] is False
+    assert result.packet["source_citation_display_derived_from_gateway_only"] is False
 
 
 def test_dprime_pass_without_stable_selected_value_fails_closed_at_gateway(
@@ -2048,6 +2232,10 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert captured["query"] == SMALL_CLAIMS_QUERY
     assert captured["confirm_live_dogfood"] is True
     assert captured["confirm_live_dprime_review"] is False
+    assert captured["entrypoint_surface"] == dogfood.DOGFOOD_ENTRYPOINT_SURFACE
+    assert captured["entrypoint_kind"] == dogfood.DOGFOOD_ENTRYPOINT_KIND
+    assert captured["diagnostic_dogfood_alias"] is True
+    assert captured["supported_query_class"] == dogfood.DOGFOOD_SUPPORTED_QUERY_CLASS
     assert captured["fast_provider"] == "OpenRouter"
     assert captured["fast_model"] == "fast-planner-model"
     assert captured["fast_model_local_url"] == "http://localhost:5678/v1"
@@ -2076,6 +2264,61 @@ def test_cli_route_skips_key_validation_until_dprime_confirmation(
     assert "private_broker_path" not in captured
     assert "env_file_paths" not in captured
     assert "fake generic live blocker" in capsys.readouterr().out
+
+
+def test_product_named_single_fact_cli_uses_same_generic_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cli = importlib.import_module("proplex.__main__")
+    captured: dict[str, Any] = {}
+
+    def fail_key_validation(**_kwargs: Any) -> list[str]:
+        raise AssertionError("product-supported query CLI must preempt key validation")
+
+    def fake_live_run(**kwargs: Any) -> Any:
+        captured.update(kwargs)
+        return type(
+            "FakeResult",
+            (),
+            {"return_code": 2, "output": "fake product single-fact blocker"},
+        )()
+
+    monkeypatch.setattr(cli, "_build_logger", lambda _verbose: None)
+    monkeypatch.setattr(cli, "missing_required_api_keys", fail_key_validation)
+    monkeypatch.setattr(
+        cli,
+        "build_generic_single_relation_live_dogfood_run_output",
+        fake_live_run,
+    )
+
+    rc = cli.main(
+        [
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "--query",
+            N400_QUERY,
+            CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "--confirm-live-dprime-review",
+        ]
+    )
+
+    assert rc == 2
+    assert captured["query"] == N400_QUERY
+    assert captured["confirm_live_dogfood"] is True
+    assert captured["confirm_live_dprime_review"] is True
+    assert captured["entrypoint_surface"] == (
+        dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
+    )
+    assert captured["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert captured["diagnostic_dogfood_alias"] is False
+    assert captured["supported_query_class"] == (
+        dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+    )
+    assert callable(captured["fast_model_planner_callable"])
+    assert captured["fast_model_planner_clean_json_response"] is cli.clean_json_response
+    assert "broker_url" not in captured
+    assert "private_broker_path" not in captured
+    assert "fake product single-fact blocker" in capsys.readouterr().out
 
 
 def test_cli_env_fastmodel_config_flows_into_strict_route(
@@ -2132,8 +2375,38 @@ def test_cli_env_fastmodel_config_flows_into_strict_route(
 
 
 def test_new_flag_is_registered_as_default_off_status_path() -> None:
+    cli = importlib.import_module("proplex.__main__")
     assert MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
+    assert (
+        MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
+        in PRODUCT_STATUS_DRY_RUN_FLAGS
+    )
     assert MVP_QUERY_PLAN_STATUS_FLAG in PRODUCT_STATUS_DRY_RUN_FLAGS
+    assert initialize_product_model_route_config(
+        [MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG, "--query", N400_QUERY],
+        load_dotenv_func=lambda: True,
+        environ={},
+    ).dotenv_skipped_for_status_dry_run is True
+    assert initialize_product_model_route_config(
+        [
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "--query",
+            N400_QUERY,
+            CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+        ],
+        load_dotenv_func=lambda: True,
+        environ={},
+    ).dotenv_skipped_for_status_dry_run is False
+    parsed = cli._parse_args(
+        [
+            MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "--query",
+            N400_QUERY,
+            CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+        ]
+    )
+    assert parsed.mvp_current_source_of_record_single_fact_run is True
+    assert parsed.confirm_current_source_of_record_single_fact_run is True
 
 
 def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:

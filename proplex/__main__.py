@@ -41,11 +41,13 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from core.product_model_route_config import (  # noqa: E402
+    CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
     LIVE_CITATION_SOURCE_OBLIGATION_READINESS_STATUS_FLAG,
     LIVE_SEMANTIC_COVERAGE_STATUS_FLAG,
     LIVE_SOURCE_EVIDENCE_ADMISSION_STATUS_FLAG,
+    MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_DEMO_FLAG,
     MVP_LIVE_DOGFOOD_RUN_FLAG,
     MVP_LIVE_DOGFOOD_STATUS_FLAG,
@@ -122,6 +124,12 @@ from proplex.mvp_live_dogfood_run import (  # noqa: E402
 )
 from proplex.mvp_single_relation_live_dogfood_run import (  # noqa: E402
     CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG,
+    DOGFOOD_ENTRYPOINT_KIND,
+    DOGFOOD_ENTRYPOINT_SURFACE,
+    DOGFOOD_SUPPORTED_QUERY_CLASS,
+    PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+    PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+    PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
     build_generic_single_relation_live_dogfood_run_output,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
@@ -339,10 +347,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     p.add_argument(
+        MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+        action="store_true",
+        dest="mvp_current_source_of_record_single_fact_run",
+        help=(
+            "Run the supported current source-of-record single-fact query CLI "
+            "through the generic single-relation product path."
+        ),
+    )
+    p.add_argument(
         CONFIRM_LIVE_DOGFOOD_FLAG,
         action="store_true",
         dest="confirm_live_dogfood",
         help="Confirm the single live MVP dogfood attempt.",
+    )
+    p.add_argument(
+        CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+        action="store_true",
+        dest="confirm_current_source_of_record_single_fact_run",
+        help="Confirm the current source-of-record single-fact supported-query run.",
     )
     p.add_argument(
         CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
@@ -700,6 +723,12 @@ def _run_mvp_single_relation_live_dogfood_run(
     log: logging.Logger,
 ) -> int:
     del log
+    product_entrypoint = bool(args.mvp_current_source_of_record_single_fact_run)
+    confirm_single_relation_run = (
+        bool(args.confirm_current_source_of_record_single_fact_run)
+        if product_entrypoint
+        else bool(args.confirm_live_dogfood)
+    )
     output_dir = args.mvp_output_dir or DEFAULT_MVP_SINGLE_RELATION_LIVE_OUTPUT_DIR
     fast_model_planning_route = build_strict_accounted_fast_model_planning_route(
         fast_provider=args.fast_provider,
@@ -711,10 +740,26 @@ def _run_mvp_single_relation_live_dogfood_run(
             query=args.query,
             repo_root=_ROOT,
             output_dir=output_dir,
-            confirm_live_dogfood=args.confirm_live_dogfood,
+            confirm_live_dogfood=confirm_single_relation_run,
             confirm_live_dprime_review=args.confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 args.confirm_live_source_challenge_recovery
+            ),
+            entrypoint_surface=(
+                PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
+                if product_entrypoint
+                else DOGFOOD_ENTRYPOINT_SURFACE
+            ),
+            entrypoint_kind=(
+                PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+                if product_entrypoint
+                else DOGFOOD_ENTRYPOINT_KIND
+            ),
+            diagnostic_dogfood_alias=not product_entrypoint,
+            supported_query_class=(
+                PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
+                if product_entrypoint
+                else DOGFOOD_SUPPORTED_QUERY_CLASS
             ),
             smart_provider=args.smart_provider,
             smart_model=args.smart_model,
@@ -835,7 +880,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.mvp_live_dogfood_run:
         return _run_mvp_live_dogfood_run(args=args, log=log)
 
-    if args.mvp_single_relation_live_dogfood_run:
+    if (
+        args.mvp_single_relation_live_dogfood_run
+        or args.mvp_current_source_of_record_single_fact_run
+    ):
         return _run_mvp_single_relation_live_dogfood_run(args=args, log=log)
 
     if args.mvp_live_dogfood_status:

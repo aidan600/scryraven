@@ -69,7 +69,9 @@ from core.model_assisted_single_relation_planning import (
 )
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
 from core.product_model_route_config import (
+    CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
+    MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
 )
 from core.run_kernel import (
@@ -111,6 +113,16 @@ SCHEMA_VERSION = "generic_single_relation_live_dogfood_v1"
 MODE = "BUILD"
 PASS_DECISION = "PASS"
 CONFIRM_LIVE_DOGFOOD_FLAG = "--confirm-live-dogfood"
+DOGFOOD_ENTRYPOINT_SURFACE = "mvp_single_relation_live_dogfood"
+DOGFOOD_ENTRYPOINT_KIND = "diagnostic_dogfood_cli"
+DOGFOOD_SUPPORTED_QUERY_CLASS = "generic-single-relation-live-dogfood-v1"
+PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE = (
+    "mvp_current_source_of_record_single_fact"
+)
+PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND = "product_supported_query_cli"
+PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS = (
+    "mvp-current-source-of-record-single-fact-v1"
+)
 
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED"
@@ -178,6 +190,9 @@ BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD = (
 BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED"
 )
+BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
 )
@@ -212,8 +227,14 @@ SOURCE_READINESS_GATEWAY_SCHEMA_VERSION = "generic_single_relation_source_readin
 DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION = (
     "generic_single_relation_dprime_authority_integration_v1"
 )
+SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION = (
+    "generic_single_relation_source_citation_display_boundary_v1"
+)
 DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE = (
     "GENERIC-DOGFOOD-DPRIME-AUTHORITY-ADAPTER-01"
+)
+SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE = (
+    "GENERIC-SINGLE-RELATION-QUICK-SUFFICIENCY-READINESS-01"
 )
 EXISTING_DPRIME_DOWNSTREAM_AUTHORITY_MODULE_REFS = (
     "core.dprime_runkernel_admission_runtime",
@@ -427,6 +448,16 @@ SOURCE_READINESS_GATEWAY_NON_CLAIMS = {
     "source_authority_finalized": False,
     "final_answer_packet_created": False,
     "author_prose_created": False,
+    "product_correctness_claimed": False,
+}
+SOURCE_CITATION_DISPLAY_BOUNDARY_NON_CLAIMS = {
+    "sufficiency_readiness_created": False,
+    "final_answer_prose_created": False,
+    "final_answer_packet_created": False,
+    "author_answer_created": False,
+    "author_invoked": False,
+    "citation_rendering_invoked": False,
+    "final_citation_rendering_created": False,
     "product_correctness_claimed": False,
 }
 _ALLOWED_PROVIDER_ENVELOPE_KEYS = frozenset(
@@ -718,6 +749,10 @@ def build_generic_single_relation_live_dogfood_run_output(
     confirm_live_dogfood: bool = False,
     confirm_live_dprime_review: bool = False,
     confirm_live_source_challenge_recovery: bool = False,
+    entrypoint_surface: str = DOGFOOD_ENTRYPOINT_SURFACE,
+    entrypoint_kind: str = DOGFOOD_ENTRYPOINT_KIND,
+    diagnostic_dogfood_alias: bool = True,
+    supported_query_class: str = DOGFOOD_SUPPORTED_QUERY_CLASS,
     product_provider_acquisition_runner: ProductProviderAcquisitionRunner | None = None,
     provider_proxy_runner: ProviderProxyRunner | None = None,
     fetch_read_runner: FetchReadRunner | None = None,
@@ -758,6 +793,12 @@ def build_generic_single_relation_live_dogfood_run_output(
     source_challenge_recovery: dict[str, Any] | None = None
     initial_model_planning_packet: dict[str, Any] | None = None
     recovery_model_planning_packet: dict[str, Any] | None = None
+    entrypoint_metadata = _entrypoint_metadata(
+        entrypoint_surface=entrypoint_surface,
+        entrypoint_kind=entrypoint_kind,
+        diagnostic_dogfood_alias=diagnostic_dogfood_alias,
+        supported_query_class=supported_query_class,
+    )
     planning_strict_route_ref = _model_assisted_planning_route_ref(
         strict_model_route_ref=fast_model_planner_strict_route_ref,
         fast_provider=fast_provider,
@@ -827,7 +868,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             raise GenericSingleRelationLiveDogfoodRunError(
                 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED,
                 (
-                    f"{CONFIRM_LIVE_DOGFOOD_FLAG} is required before live "
+                    f"{entrypoint_metadata['confirmation_flag']} is required before live "
                     "provider/search/fetch/read contact."
                 ),
             )
@@ -1059,6 +1100,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
             require_model_assisted_planning=require_model_assisted_planning,
+            entrypoint_metadata=entrypoint_metadata,
         )
         if source_obligation_authorization.get("recovery_required") is True:
             recovery_model_planning_packet = _build_model_assisted_planning_packet(
@@ -1151,6 +1193,7 @@ def build_generic_single_relation_live_dogfood_run_output(
                 initial_model_planning_packet=initial_model_planning_packet,
                 recovery_model_planning_packet=recovery_model_planning_packet,
                 require_model_assisted_planning=require_model_assisted_planning,
+                entrypoint_metadata=entrypoint_metadata,
             )
     except GenericQueryRelationPlanningError as exc:
         packet = _blocked_packet(
@@ -1177,6 +1220,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
             require_model_assisted_planning=require_model_assisted_planning,
+            entrypoint_metadata=entrypoint_metadata,
         )
     except GenericSingleRelationLiveDogfoodRunError as exc:
         packet = _blocked_packet(
@@ -1203,6 +1247,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             initial_model_planning_packet=initial_model_planning_packet,
             recovery_model_planning_packet=recovery_model_planning_packet,
             require_model_assisted_planning=require_model_assisted_planning,
+            entrypoint_metadata=entrypoint_metadata,
         )
 
     validate_generic_single_relation_live_dogfood_packet(packet)
@@ -1370,6 +1415,7 @@ def validate_generic_single_relation_live_dogfood_packet(
         _blocked_output_hygiene("generic live packet phase mismatch.")
     if safe.get("mode") != MODE:
         _blocked_output_hygiene("generic live packet mode mismatch.")
+    _validate_entrypoint_metadata(safe)
     for key, expected in RAW_FALSE_FLAGS.items():
         if safe.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet must keep {key}=false.")
@@ -1479,6 +1525,7 @@ def validate_generic_single_relation_live_dogfood_packet(
         _blocked_output_hygiene("generic live packet must not create source display entries.")
     _validate_source_readiness_gateway(safe)
     _validate_dprime_authority_integration(safe)
+    _validate_source_citation_display_boundary(safe)
     _validate_fetch_read_observability(safe)
     _reject_forbidden_material(safe, context="generic live dogfood packet")
     return safe
@@ -1538,6 +1585,11 @@ def _validate_source_readiness_gateway(packet: Mapping[str, Any]) -> None:
                 == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
                 and integration.get("status") == "consumed"
             )
+            or (
+                packet.get("decision")
+                == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+                and integration.get("status") == "consumed"
+            )
         ) or integration.get("gateway_treated_as_authority") is not False:
             _blocked_output_hygiene("blocked packet must not carry ready gateway status.")
 
@@ -1550,9 +1602,10 @@ def _validate_consumed_dprime_authority_integration(
         BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
     ):
         _blocked_output_hygiene("consumed D-prime stop point blocker invalid.")
-    if packet.get("decision") != (
-        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
-    ):
+    if packet.get("decision") not in {
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
+        BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
+    }:
         _blocked_output_hygiene("consumed D-prime stop point must own decision.")
     if integration.get("existing_dprime_authority_reused") is not True:
         _blocked_output_hygiene("consumed stop point must reuse existing authority.")
@@ -1613,6 +1666,39 @@ def _validate_consumed_dprime_authority_integration(
     ):
         if integration.get(key) is not False:
             _blocked_output_hygiene(f"D-prime stop point {key} invalid.")
+
+
+def _validate_entrypoint_metadata(packet: Mapping[str, Any]) -> None:
+    flag = packet.get("command_flag")
+    confirmation_flag = packet.get("confirmation_flag")
+    surface = packet.get("entrypoint_surface")
+    kind = packet.get("entrypoint_kind")
+    alias = packet.get("diagnostic_dogfood_alias")
+    supported_query_class = packet.get("supported_query_class")
+    if kind == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
+        if flag != MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG:
+            _blocked_output_hygiene("product entrypoint command flag mismatch.")
+        if confirmation_flag != CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG:
+            _blocked_output_hygiene("product entrypoint confirmation flag mismatch.")
+        if surface != PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE:
+            _blocked_output_hygiene("product entrypoint surface mismatch.")
+        if alias is not False:
+            _blocked_output_hygiene("product entrypoint cannot be dogfood alias.")
+        if supported_query_class != PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS:
+            _blocked_output_hygiene("product entrypoint query class mismatch.")
+        return
+    if kind != DOGFOOD_ENTRYPOINT_KIND:
+        _blocked_output_hygiene("generic live entrypoint kind invalid.")
+    if flag != MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG:
+        _blocked_output_hygiene("dogfood entrypoint command flag mismatch.")
+    if confirmation_flag != CONFIRM_LIVE_DOGFOOD_FLAG:
+        _blocked_output_hygiene("dogfood entrypoint confirmation flag mismatch.")
+    if surface != DOGFOOD_ENTRYPOINT_SURFACE:
+        _blocked_output_hygiene("dogfood entrypoint surface mismatch.")
+    if alias is not True:
+        _blocked_output_hygiene("dogfood entrypoint alias flag mismatch.")
+    if supported_query_class != DOGFOOD_SUPPORTED_QUERY_CLASS:
+        _blocked_output_hygiene("dogfood entrypoint query class mismatch.")
 
 
 def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
@@ -1720,6 +1806,120 @@ def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
         _validate_consumed_dprime_authority_integration(integration, packet)
     elif packet.get("decision") == PASS_DECISION:
         _blocked_output_hygiene("PASS requires D-prime authority integration readiness.")
+
+
+def _validate_source_citation_display_boundary(packet: Mapping[str, Any]) -> None:
+    boundary = _safe_mapping(packet.get("source_citation_display_boundary"))
+    if not boundary:
+        _blocked_output_hygiene("source/citation display boundary section missing.")
+    if boundary.get("schema_version") != SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION:
+        _blocked_output_hygiene("source/citation display boundary schema mismatch.")
+    if boundary.get("status") not in {"created", "not_reached"}:
+        _blocked_output_hygiene("source/citation display boundary status invalid.")
+    if boundary.get("raw_private_retention_flags") != RAW_FALSE_FLAGS:
+        _blocked_output_hygiene("source/citation display boundary raw/private posture invalid.")
+    if (
+        _safe_mapping(boundary.get("explicit_non_claims"))
+        != SOURCE_CITATION_DISPLAY_BOUNDARY_NON_CLAIMS
+    ):
+        _blocked_output_hygiene("source/citation display boundary non-claims invalid.")
+    for key, expected in SOURCE_CITATION_DISPLAY_BOUNDARY_NON_CLAIMS.items():
+        if boundary.get(key) is not expected:
+            _blocked_output_hygiene(
+                f"source/citation display boundary must keep {key}=false."
+            )
+    entries = [
+        _safe_mapping(item)
+        for item in _safe_sequence(boundary.get("source_citation_display_entries"))
+    ]
+    if packet.get("source_citation_display_boundary_status") != boundary.get("status"):
+        _blocked_output_hygiene("source/citation display boundary status alias mismatch.")
+    if packet.get("source_citation_display_boundary_blocker") != boundary.get(
+        "blocker_code"
+    ):
+        _blocked_output_hygiene("source/citation display boundary blocker alias mismatch.")
+    if list(_safe_sequence(packet.get("source_citation_display_entries"))) != entries:
+        _blocked_output_hygiene("source/citation display entries alias mismatch.")
+    if packet.get("source_citation_display_entries_created") is not (
+        boundary.get("source_citation_display_entries_created") is True
+    ):
+        _blocked_output_hygiene("source/citation display entries-created alias mismatch.")
+    if packet.get("source_citation_display_derived_from_gateway_only") is not False:
+        _blocked_output_hygiene("source/citation display cannot be gateway-only.")
+    if packet.get("final_citation_rendering_created") is not False:
+        _blocked_output_hygiene("final citation rendering must remain closed.")
+    if boundary.get("status") == "created":
+        _validate_created_source_citation_display_boundary(boundary, packet, entries)
+    else:
+        if entries:
+            _blocked_output_hygiene("not-reached display boundary carried entries.")
+        if boundary.get("source_citation_display_entries_created") is not False:
+            _blocked_output_hygiene("not-reached display boundary claimed entries.")
+        if boundary.get("derived_from_gateway_only") is not False:
+            _blocked_output_hygiene("not-reached display boundary became gateway-only.")
+
+
+def _validate_created_source_citation_display_boundary(
+    boundary: Mapping[str, Any],
+    packet: Mapping[str, Any],
+    entries: Sequence[Mapping[str, Any]],
+) -> None:
+    if packet.get("decision") != BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED:
+        _blocked_output_hygiene("created display boundary must move to quick-sufficiency blocker.")
+    if boundary.get("blocker_code") != BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED:
+        _blocked_output_hygiene("created display boundary blocker invalid.")
+    if boundary.get("authority_source") != "core.dprime_source_obligation_citation_authority_runtime":
+        _blocked_output_hygiene("display boundary authority source invalid.")
+    if boundary.get("derived_from_dprime_authority") is not True:
+        _blocked_output_hygiene("display boundary is not D-prime authority-backed.")
+    if boundary.get("derived_from_gateway_only") is not False:
+        _blocked_output_hygiene("display boundary was derived from gateway-only state.")
+    if boundary.get("gateway_treated_as_authority") is not False:
+        _blocked_output_hygiene("display boundary treated gateway as authority.")
+    if boundary.get("source_obligation_authority_consumed") is not True:
+        _blocked_output_hygiene("display boundary lacks source-obligation authority.")
+    if boundary.get("citation_source_handoff_authority_consumed") is not True:
+        _blocked_output_hygiene("display boundary lacks citation-source handoff authority.")
+    if boundary.get("source_obligation_authority_ref_owner") != (
+        "RunKernel.DPrimeSourceObligationAuthority"
+    ):
+        _blocked_output_hygiene("display boundary source authority owner invalid.")
+    if boundary.get("citation_source_handoff_authority_ref_owner") != (
+        "RunKernel.DPrimeCitationSourceHandoffAuthority"
+    ):
+        _blocked_output_hygiene("display boundary citation handoff owner invalid.")
+    if boundary.get("source_citation_authority_refs_are_dprime_runtime_refs") is not True:
+        _blocked_output_hygiene("display boundary refs are not D-prime runtime refs.")
+    source_ref = _safe_mapping(boundary.get("source_obligation_authority_ref"))
+    citation_ref = _safe_mapping(boundary.get("citation_source_handoff_authority_ref"))
+    if source_ref.get("authority_consumed") is not True:
+        _blocked_output_hygiene("display boundary source authority ref not consumed.")
+    if citation_ref.get("citation_source_handoff_consumed") is not True:
+        _blocked_output_hygiene("display boundary citation handoff ref not consumed.")
+    if not entries:
+        _blocked_output_hygiene("created display boundary requires entries.")
+    for entry in entries:
+        if entry.get("derived_from_dprime_authority") is not True:
+            _blocked_output_hygiene("display entry is not D-prime authority-backed.")
+        if entry.get("derived_from_gateway_only") is not False:
+            _blocked_output_hygiene("display entry derived from gateway-only state.")
+        for key in (
+            "citation_rendering_created",
+            "final_answer_prose_created",
+            "product_correctness_claimed",
+        ):
+            if entry.get(key) is not False:
+                _blocked_output_hygiene(f"display entry {key} invalid.")
+        if not _clean_text(entry.get("citation_source_handoff_digest"), limit=128):
+            _blocked_output_hygiene("display entry lacks citation handoff digest.")
+        if not _clean_text(entry.get("source_obligation_authority_digest"), limit=128):
+            _blocked_output_hygiene("display entry lacks source authority digest.")
+        if not (
+            _clean_text(entry.get("source_url"), limit=700)
+            or _clean_text(entry.get("source_domain"), limit=160)
+            or _clean_text(entry.get("source_id"), limit=320)
+        ):
+            _blocked_output_hygiene("display entry lacks safe source identity.")
 
 
 def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
@@ -2066,6 +2266,7 @@ def format_generic_single_relation_live_dogfood_output(
     """Render a compact CLI view for one generic relation dogfood run."""
 
     sources = _source_display_entries(packet)
+    boundary_sources = _source_citation_display_boundary_entries(packet)
     gateway = _safe_mapping(packet.get("source_readiness_gateway"))
     gateway_source = _safe_mapping(gateway.get("selected_source_ref"))
     gateway_window = _safe_mapping(gateway.get("selected_window_ref"))
@@ -2073,14 +2274,28 @@ def format_generic_single_relation_live_dogfood_output(
     dprime_integration = _safe_mapping(
         packet.get("single_relation_dprime_authority_integration")
     )
+    display_boundary = _safe_mapping(packet.get("source_citation_display_boundary"))
     relation_status = _safe_mapping(packet.get("dprime_relation_intake_ref")).get(
         "status",
         "not reached",
     )
+    header = (
+        "ScryRaven current source-of-record single-fact run"
+        if packet.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+        else "ScryRaven generic single-relation live dogfood run"
+    )
     lines = [
-        "ScryRaven generic single-relation live dogfood run",
+        header,
         f"Question: {_clean_text(packet.get('query'), limit=500)}",
         f"Decision: {packet.get('decision')}",
+        f"Next product checkpoint: {packet.get('next_product_path_checkpoint') or 'not named'}",
+        "",
+        "Entrypoint",
+        f"- Surface: {packet.get('entrypoint_surface') or 'not named'}",
+        f"- Kind: {packet.get('entrypoint_kind') or 'not named'}",
+        "- Diagnostic dogfood alias: "
+        f"{_bool_text(packet.get('diagnostic_dogfood_alias'))}",
+        f"- Supported query class: {packet.get('supported_query_class') or 'not named'}",
         "",
         "Plan",
         f"- Relation plan consumed: {_bool_text(packet.get('relation_plan_consumed'))}",
@@ -2133,6 +2348,28 @@ def format_generic_single_relation_live_dogfood_output(
         f"{_bool_text(dprime_integration.get('single_relation_citation_handoff_ready'))}",
         f"- Next phase: {dprime_integration.get('next_phase') or 'not named'}",
         "",
+        "Source/citation display boundary",
+        f"- Status: {display_boundary.get('status') or 'not reached'}",
+        f"- Blocker: {display_boundary.get('blocker_code') or 'none'}",
+        "- Authority source: "
+        f"{display_boundary.get('authority_source') or 'not available'}",
+        "- Derived from D-prime authority: "
+        f"{_bool_text(display_boundary.get('derived_from_dprime_authority'))}",
+        "- Derived from gateway-only state: "
+        f"{_bool_text(display_boundary.get('derived_from_gateway_only'))}",
+        "- Entries created: "
+        f"{_bool_text(display_boundary.get('source_citation_display_entries_created'))}",
+        "- Final citation rendering created: false.",
+        "- FAP created: false.",
+        "- Author invoked: false.",
+    ]
+    if boundary_sources:
+        lines.extend(f"- {entry}" for entry in boundary_sources)
+    else:
+        lines.append("- No source/citation boundary entries are available yet.")
+    lines.extend(
+        [
+            "",
         "Answer",
         "- Final answer prose created: false.",
         "- FinalAnswerPacket created: false.",
@@ -2141,7 +2378,8 @@ def format_generic_single_relation_live_dogfood_output(
         or "No gateway status is available.",
         "",
         "Sources",
-    ]
+        ]
+    )
     if sources:
         lines.extend(f"- {entry}" for entry in sources)
     else:
@@ -2213,6 +2451,7 @@ def _packet_from_semantic_status(
     initial_model_planning_packet: Mapping[str, Any] | None,
     recovery_model_planning_packet: Mapping[str, Any] | None,
     require_model_assisted_planning: bool,
+    entrypoint_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     decision = _mapped_live_decision(
         status_decision,
@@ -2249,6 +2488,7 @@ def _packet_from_semantic_status(
         require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=False,
         semantic_payload=semantic_payload,
+        entrypoint_metadata=entrypoint_metadata,
     )
     blocker_detail = _source_challenge_recovery_detail(
         source_challenge_recovery,
@@ -2262,6 +2502,13 @@ def _packet_from_semantic_status(
         source_readiness_gateway=source_readiness_gateway,
         semantic_payload=semantic_payload,
     )
+    source_citation_display_boundary = (
+        _source_citation_display_boundary_from_authority(
+            source_readiness_gateway=source_readiness_gateway,
+            dprime_authority_integration=dprime_authority_integration,
+            semantic_payload=semantic_payload,
+        )
+    )
     if dprime_authority_integration.get("status") == "blocked":
         decision = BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
         blocker_detail = _clean_text(
@@ -2271,15 +2518,15 @@ def _packet_from_semantic_status(
             "Existing D-prime source-obligation/citation authority cannot be "
             "safely consumed by generic dogfood yet."
         )
-    elif dprime_authority_integration.get("status") == "consumed":
-        decision = BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    elif source_citation_display_boundary.get("status") == "created":
+        decision = BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
         blocker_detail = _clean_text(
-            dprime_authority_integration.get("blocker_detail"),
+            source_citation_display_boundary.get("blocker_detail"),
             limit=900,
         ) or (
-            "D-prime source/citation authority was consumed; generic dogfood "
-            "stops before display, FAP, Author, citation rendering, and "
-            "product correctness."
+            "Generic dogfood displayed consumed D-prime source/citation handoff "
+            "material and stops before SufficiencyReadiness, FAP, Author, "
+            "final citation rendering, and product correctness."
         )
     elif source_readiness_gateway.get("status") == "ready":
         decision = PASS_DECISION
@@ -2320,6 +2567,46 @@ def _packet_from_semantic_status(
             "source_obligation_citation_readiness_blocker": (
                 dprime_authority_integration.get("blocker_code")
             ),
+            "source_citation_display_boundary": source_citation_display_boundary,
+            "source_citation_display_boundary_status": (
+                source_citation_display_boundary.get("status")
+            ),
+            "source_citation_display_boundary_blocker": (
+                source_citation_display_boundary.get("blocker_code")
+            ),
+            "source_citation_display_entries": list(
+                _safe_sequence(
+                    source_citation_display_boundary.get(
+                        "source_citation_display_entries"
+                    )
+                )
+            ),
+            "source_citation_display_entries_created": (
+                source_citation_display_boundary.get(
+                    "source_citation_display_entries_created"
+                )
+                is True
+            ),
+            "source_citation_display_authority_source": (
+                source_citation_display_boundary.get("authority_source")
+            ),
+            "source_citation_display_derived_from_dprime_authority": (
+                source_citation_display_boundary.get(
+                    "derived_from_dprime_authority"
+                )
+                is True
+            ),
+            "source_citation_display_derived_from_gateway_only": (
+                source_citation_display_boundary.get(
+                    "derived_from_gateway_only"
+                )
+                is True
+            ),
+            "next_product_path_checkpoint": (
+                source_citation_display_boundary.get("next_product_path_checkpoint")
+                or dprime_authority_integration.get("next_product_path_checkpoint")
+            ),
+            "final_citation_rendering_created": False,
             "dprime_source_citation_stoppoint_status": (
                 dprime_authority_integration.get(
                     "dprime_source_citation_stoppoint_status"
@@ -2379,6 +2666,10 @@ def _packet_from_semantic_status(
                 if decision
                 == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
                 else
+                "generic_single_relation_source_citation_display_boundary_emitted"
+                if decision
+                == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+                else
                 "generic_single_relation_dprime_source_citation_stoppoint_consumed"
                 if decision
                 == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
@@ -2414,6 +2705,7 @@ def _blocked_packet(
     initial_model_planning_packet: Mapping[str, Any] | None,
     recovery_model_planning_packet: Mapping[str, Any] | None,
     require_model_assisted_planning: bool,
+    entrypoint_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     source_readiness_gateway = _source_readiness_gateway_not_reached(
         blocker=blocker,
@@ -2443,6 +2735,7 @@ def _blocked_packet(
         require_model_assisted_planning=require_model_assisted_planning,
         caps_exhausted=caps_exhausted,
         semantic_payload=semantic_payload,
+        entrypoint_metadata=entrypoint_metadata,
     )
     packet.update(
         {
@@ -2466,6 +2759,23 @@ def _blocked_packet(
             "single_relation_dprime_authority_integration_blocker": blocker,
             "source_obligation_citation_readiness_status": "not_reached",
             "source_obligation_citation_readiness_blocker": blocker,
+            "source_citation_display_boundary": (
+                _source_citation_display_boundary_not_reached(
+                    blocker=blocker,
+                    detail=detail,
+                )
+            ),
+            "source_citation_display_boundary_status": "not_reached",
+            "source_citation_display_boundary_blocker": blocker,
+            "source_citation_display_entries": [],
+            "source_citation_display_entries_created": False,
+            "source_citation_display_authority_source": None,
+            "source_citation_display_derived_from_dprime_authority": False,
+            "source_citation_display_derived_from_gateway_only": False,
+            "next_product_path_checkpoint": (
+                dprime_authority_integration.get("next_product_path_checkpoint")
+            ),
+            "final_citation_rendering_created": False,
             "dprime_source_citation_stoppoint_status": "not_reached",
             "dprime_source_citation_stoppoint_blocker": blocker,
             "source_obligation_authority_consumed": False,
@@ -2699,6 +3009,11 @@ def _dprime_authority_integration_from_gateway(
         )
     )
     status = "consumed" if source_citation_consumed else "blocked" if reached else "not_reached"
+    next_checkpoint = (
+        SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
+        if source_citation_consumed
+        else DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE
+    )
     return _json_safe(
         {
             "schema_version": DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION,
@@ -2794,8 +3109,8 @@ def _dprime_authority_integration_from_gateway(
             "citation_rendering_invoked": False,
             "product_correctness_claimed": False,
             "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
-            "next_phase": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
-            "next_product_path_checkpoint": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
+            "next_phase": next_checkpoint,
+            "next_product_path_checkpoint": next_checkpoint,
         }
     )
 
@@ -2880,6 +3195,357 @@ def _dprime_authority_integration_not_reached(
             "next_product_path_checkpoint": DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE,
         }
     )
+
+
+def _source_citation_display_boundary_from_authority(
+    *,
+    source_readiness_gateway: Mapping[str, Any],
+    dprime_authority_integration: Mapping[str, Any],
+    semantic_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    gateway = _safe_mapping(source_readiness_gateway)
+    integration = _safe_mapping(dprime_authority_integration)
+    semantic = _safe_mapping(semantic_payload)
+    source_ref = _safe_mapping(integration.get("source_obligation_authority_ref"))
+    citation_ref = _safe_mapping(
+        integration.get("citation_source_handoff_authority_ref")
+    )
+    source_window = _safe_mapping(gateway.get("selected_window_ref"))
+    authority_backed = _source_citation_display_authority_backed(
+        integration=integration,
+        source_ref=source_ref,
+        citation_ref=citation_ref,
+    )
+    if not authority_backed:
+        blocker = (
+            _clean_text(integration.get("blocker_code"), limit=220)
+            or _clean_text(gateway.get("blocker_code"), limit=220)
+            or BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+        )
+        detail = (
+            _clean_text(integration.get("blocker_detail"), limit=900)
+            or _clean_text(gateway.get("blocker_detail"), limit=900)
+            or "Source/citation display boundary requires consumed D-prime authority refs."
+        )
+        return _source_citation_display_boundary_not_reached(
+            blocker=blocker,
+            detail=detail,
+        )
+
+    entries = [
+        _source_citation_display_boundary_entry(
+            record=record,
+            index=index,
+            selected_value_text=gateway.get("selected_current_value_text"),
+            selected_window=source_window,
+            source_obligation_authority_ref=source_ref,
+            citation_handoff_ref=citation_ref,
+        )
+        for index, record in enumerate(
+            _safe_sequence(citation_ref.get("citation_source_records")),
+            start=1,
+        )
+        if isinstance(record, Mapping)
+    ]
+    if not entries:
+        return _source_citation_display_boundary_not_reached(
+            blocker=BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
+            detail=(
+                "D-prime citation-source handoff authority was consumed but "
+                "provided no safe source records for the generic display boundary."
+            ),
+        )
+
+    boundary = {
+        "schema_version": SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION,
+        "status": "created",
+        "blocker_code": BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
+        "blocker_detail": (
+            "Source/citation display boundary was created from consumed D-prime "
+            "source-obligation and citation-source handoff authority. "
+            "Generic dogfood stops next because SufficiencyReadiness, FAP, "
+            "Author, final citation rendering, and product correctness remain "
+            "closed in this phase."
+        ),
+        "boundary_owner": (
+            "proplex.mvp_single_relation_live_dogfood_run."
+            "source_citation_display_boundary"
+        ),
+        "runtime_consumer": (
+            "proplex.mvp_single_relation_live_dogfood_run."
+            "build_generic_single_relation_live_dogfood_run_output"
+        ),
+        "ordinary_product_path_consumed": True,
+        "authority_source": (
+            "core.dprime_source_obligation_citation_authority_runtime"
+        ),
+        "source_citation_display_entries": entries,
+        "source_citation_display_entries_created": True,
+        "entry_count": len(entries),
+        "derived_from_dprime_authority": True,
+        "derived_from_gateway_only": False,
+        "gateway_treated_as_authority": False,
+        "source_obligation_authority_consumed": True,
+        "citation_source_handoff_authority_consumed": True,
+        "source_obligation_authority_ref_owner": source_ref.get("owner"),
+        "citation_source_handoff_authority_ref_owner": citation_ref.get("owner"),
+        "source_citation_authority_refs_are_dprime_runtime_refs": True,
+        "source_obligation_authority_ref": _source_obligation_boundary_ref(source_ref),
+        "citation_source_handoff_authority_ref": _citation_handoff_boundary_ref(
+            citation_ref
+        ),
+        "source_readiness_gateway_ref": {
+            "status": gateway.get("status"),
+            "selected_current_value_display_status": gateway.get(
+                "selected_current_value_display_status"
+            ),
+            "selected_source_ref": gateway.get("selected_source_ref"),
+            "selected_window_digest": source_window.get("selected_window_digest"),
+            "selected_window_char_count": source_window.get(
+                "selected_window_char_count"
+            ),
+        },
+        "dprime_source_citation_stoppoint_status": integration.get(
+            "dprime_source_citation_stoppoint_status"
+        ),
+        "dprime_source_citation_stoppoint_blocker": integration.get(
+            "dprime_source_citation_stoppoint_blocker"
+        ),
+        "semantic_status_decision": semantic.get("decision"),
+        "explicit_non_claims": dict(SOURCE_CITATION_DISPLAY_BOUNDARY_NON_CLAIMS),
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+        "sufficiency_readiness_created": False,
+        "final_answer_prose_created": False,
+        "final_answer_packet_created": False,
+        "author_answer_created": False,
+        "author_invoked": False,
+        "citation_rendering_invoked": False,
+        "final_citation_rendering_created": False,
+        "product_correctness_claimed": False,
+        "nonclaim_labels": [
+            "display boundary only",
+            "not final answer prose",
+            "not final citation rendering",
+            "not product correctness",
+        ],
+        "next_product_path_checkpoint": SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE,
+    }
+    boundary["boundary_digest"] = _digest_json(
+        {
+            "schema_version": boundary["schema_version"],
+            "authority_source": boundary["authority_source"],
+            "entries": entries,
+            "source_obligation_authority_digest": source_ref.get(
+                "source_obligation_authority_digest"
+            ),
+            "citation_source_handoff_digest": citation_ref.get(
+                "citation_source_handoff_digest"
+            ),
+        }
+    )
+    return _json_safe(boundary)
+
+
+def _source_citation_display_boundary_not_reached(
+    *,
+    blocker: str,
+    detail: str,
+) -> dict[str, Any]:
+    return {
+        "schema_version": SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION,
+        "status": "not_reached",
+        "blocker_code": blocker,
+        "blocker_detail": detail,
+        "boundary_owner": (
+            "proplex.mvp_single_relation_live_dogfood_run."
+            "source_citation_display_boundary"
+        ),
+        "runtime_consumer": (
+            "proplex.mvp_single_relation_live_dogfood_run."
+            "build_generic_single_relation_live_dogfood_run_output"
+        ),
+        "ordinary_product_path_consumed": True,
+        "authority_source": None,
+        "source_citation_display_entries": [],
+        "source_citation_display_entries_created": False,
+        "entry_count": 0,
+        "derived_from_dprime_authority": False,
+        "derived_from_gateway_only": False,
+        "gateway_treated_as_authority": False,
+        "source_obligation_authority_consumed": False,
+        "citation_source_handoff_authority_consumed": False,
+        "source_obligation_authority_ref": {},
+        "citation_source_handoff_authority_ref": {},
+        "source_readiness_gateway_ref": {},
+        "explicit_non_claims": dict(SOURCE_CITATION_DISPLAY_BOUNDARY_NON_CLAIMS),
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+        "sufficiency_readiness_created": False,
+        "final_answer_prose_created": False,
+        "final_answer_packet_created": False,
+        "author_answer_created": False,
+        "author_invoked": False,
+        "citation_rendering_invoked": False,
+        "final_citation_rendering_created": False,
+        "product_correctness_claimed": False,
+    }
+
+
+def _source_citation_display_authority_backed(
+    *,
+    integration: Mapping[str, Any],
+    source_ref: Mapping[str, Any],
+    citation_ref: Mapping[str, Any],
+) -> bool:
+    return (
+        integration.get("status") == "consumed"
+        and integration.get("gateway_treated_as_authority") is False
+        and integration.get("source_obligation_authority_consumed") is True
+        and integration.get("citation_source_handoff_authority_consumed") is True
+        and source_ref.get("owner") == "RunKernel.DPrimeSourceObligationAuthority"
+        and citation_ref.get("owner") == "RunKernel.DPrimeCitationSourceHandoffAuthority"
+        and source_ref.get("runtime_surface")
+        == "core.dprime_source_obligation_citation_authority_runtime"
+        and citation_ref.get("runtime_surface")
+        == "core.dprime_source_obligation_citation_authority_runtime"
+        and source_ref.get("authority_consumed") is True
+        and citation_ref.get("citation_source_handoff_consumed") is True
+        and citation_ref.get("authority_consumed") is True
+    )
+
+
+def _source_citation_display_boundary_entry(
+    *,
+    record: Mapping[str, Any],
+    index: int,
+    selected_value_text: Any,
+    selected_window: Mapping[str, Any],
+    source_obligation_authority_ref: Mapping[str, Any],
+    citation_handoff_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    source = _safe_mapping(record)
+    title = _clean_text(source.get("title"), limit=220)
+    domain = _clean_domain(source.get("domain"))
+    url = _clean_text(source.get("url"), limit=700)
+    source_id = _clean_text(source.get("source_id"), limit=320)
+    label = f"D-prime source {index}"
+    display_name = title or domain or source_id or label
+    display_text = (
+        f"{label}: {display_name} ({domain or 'unknown domain'})"
+        if not url
+        else f"{label}: {display_name} - {url}"
+    )
+    return _without_empty(
+        {
+            "label": label,
+            "display_text": display_text,
+            "source_title": title,
+            "source_url": url,
+            "source_domain": domain,
+            "source_id": source_id,
+            "source_obligation_id": _clean_text(
+                source.get("source_obligation_id"),
+                limit=320,
+            ),
+            "evidence_id": _clean_text(source.get("evidence_id"), limit=320),
+            "content_ref_id": _clean_text(source.get("content_ref_id"), limit=320),
+            "source_digest": _clean_text(source.get("source_digest"), limit=128),
+            "selected_current_value_display_text": _clean_text(
+                selected_value_text,
+                limit=700,
+            ),
+            "selected_window_digest": _clean_text(
+                selected_window.get("selected_window_digest"),
+                limit=128,
+            ),
+            "selected_window_char_count": _bounded_int(
+                selected_window.get("selected_window_char_count")
+            ),
+            "source_obligation_authority_id": _clean_text(
+                source_obligation_authority_ref.get("source_obligation_authority_id"),
+                limit=320,
+            ),
+            "source_obligation_authority_digest": _clean_text(
+                source_obligation_authority_ref.get(
+                    "source_obligation_authority_digest"
+                ),
+                limit=128,
+            ),
+            "citation_source_handoff_id": _clean_text(
+                citation_handoff_ref.get("citation_source_handoff_id"),
+                limit=320,
+            ),
+            "citation_source_handoff_digest": _clean_text(
+                citation_handoff_ref.get("citation_source_handoff_digest"),
+                limit=128,
+            ),
+            "source_citation_handoff_status": _clean_text(
+                citation_handoff_ref.get("citation_source_handoff_status"),
+                limit=80,
+            ),
+            "derived_from_dprime_authority": True,
+            "derived_from_gateway_only": False,
+            "citation_rendering_created": False,
+            "final_answer_prose_created": False,
+            "product_correctness_claimed": False,
+            "caveat_labels": [
+                "display boundary only",
+                "not final citation rendering",
+                "not product correctness",
+            ],
+        }
+    )
+
+
+def _source_obligation_boundary_ref(source_ref: Mapping[str, Any]) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "owner": source_ref.get("owner"),
+            "runtime_surface": source_ref.get("runtime_surface"),
+            "source_obligation_authority_id": source_ref.get(
+                "source_obligation_authority_id"
+            ),
+            "source_obligation_authority_digest": source_ref.get(
+                "source_obligation_authority_digest"
+            ),
+            "status": source_ref.get("status"),
+            "authority_consumed": source_ref.get("authority_consumed"),
+            "source_obligation_status": source_ref.get("source_obligation_status"),
+        }
+    )
+
+
+def _citation_handoff_boundary_ref(citation_ref: Mapping[str, Any]) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "owner": citation_ref.get("owner"),
+            "runtime_surface": citation_ref.get("runtime_surface"),
+            "citation_source_handoff_id": citation_ref.get(
+                "citation_source_handoff_id"
+            ),
+            "citation_source_handoff_digest": citation_ref.get(
+                "citation_source_handoff_digest"
+            ),
+            "status": citation_ref.get("status"),
+            "authority_consumed": citation_ref.get("authority_consumed"),
+            "citation_source_handoff_consumed": citation_ref.get(
+                "citation_source_handoff_consumed"
+            ),
+            "citation_source_handoff_status": citation_ref.get(
+                "citation_source_handoff_status"
+            ),
+            "citation_eligible_source_ids": list(
+                _safe_sequence(citation_ref.get("citation_eligible_source_ids"))
+            ),
+        }
+    )
+
+
+def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in payload.items()
+        if value not in (None, "", [], {}, ())
+    }
 
 
 def _source_readiness_gateway_summary(gateway: Mapping[str, Any]) -> str:
@@ -3195,6 +3861,8 @@ def _failure_attribution_bucket(packet: Mapping[str, Any]) -> str:
     if decision == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD:
         return "dprime_authority_integration"
     if decision == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED:
+        return "source_citation_display_boundary"
+    if decision == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED:
         return "source_citation_display_boundary"
     if _bounded_int(packet.get("evidence_ledger_admissions")) > 0:
         return "runkernel_or_downstream_gate"
@@ -3713,6 +4381,7 @@ def _base_packet(
     require_model_assisted_planning: bool,
     caps_exhausted: bool,
     semantic_payload: Mapping[str, Any],
+    entrypoint_metadata: Mapping[str, Any],
 ) -> dict[str, Any]:
     plan = _safe_mapping(relation_plan)
     acquisition = _safe_mapping(acquisition_plan)
@@ -3749,14 +4418,22 @@ def _base_packet(
         if query_retained and plan
         else "unsupported query (not retained)"
     )
+    entrypoint = _entrypoint_metadata_from_mapping(entrypoint_metadata)
     return {
         "schema_version": SCHEMA_VERSION,
         "phase_name": PHASE_NAME,
         "mode": MODE,
         "ordinary_entrypoint": "python -m proplex",
-        "command_flag": MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
-        "status_flag": MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+        "command_flag": entrypoint["command_flag"],
+        "status_flag": entrypoint["command_flag"],
+        "confirmation_flag": entrypoint["confirmation_flag"],
+        "entrypoint_surface": entrypoint["entrypoint_surface"],
+        "entrypoint_kind": entrypoint["entrypoint_kind"],
+        "diagnostic_dogfood_alias": entrypoint["diagnostic_dogfood_alias"],
+        "supported_query_class": entrypoint["supported_query_class"],
         "command_harness_used": _command_harness(
+            command_flag=entrypoint["command_flag"],
+            confirmation_flag=entrypoint["confirmation_flag"],
             confirm_live_dprime_review=confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 confirm_live_source_challenge_recovery
@@ -7643,6 +8320,14 @@ def _source_display_entries(packet: Mapping[str, Any]) -> list[str]:
     ]
 
 
+def _source_citation_display_boundary_entries(packet: Mapping[str, Any]) -> list[str]:
+    return [
+        str(entry.get("display_text"))
+        for entry in packet.get("source_citation_display_entries") or []
+        if isinstance(entry, Mapping) and entry.get("display_text")
+    ]
+
+
 def _actual_source_authority_posture_created(payload: Mapping[str, Any]) -> bool:
     posture = _safe_mapping(payload.get("source_authority_posture_ref"))
     return posture.get("phase") == "ANALYST-SOURCE-AUTHORITY-POSTURE-PACKET-01"
@@ -7743,18 +8428,70 @@ def _packet_safe_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 def _command_harness(
     *,
+    command_flag: str = MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+    confirmation_flag: str = CONFIRM_LIVE_DOGFOOD_FLAG,
     confirm_live_dprime_review: bool,
     confirm_live_source_challenge_recovery: bool,
 ) -> str:
-    command = (
-        f"python -m proplex {MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG} "
-        f"{CONFIRM_LIVE_DOGFOOD_FLAG}"
-    )
+    command = f"python -m proplex {command_flag} {confirmation_flag}"
     if confirm_live_dprime_review:
         command = f"{command} {CONFIRM_LIVE_DPRIME_REVIEW_FLAG}"
     if confirm_live_source_challenge_recovery:
         command = f"{command} {CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG}"
     return command
+
+
+def _entrypoint_metadata(
+    *,
+    entrypoint_surface: str,
+    entrypoint_kind: str,
+    diagnostic_dogfood_alias: bool,
+    supported_query_class: str,
+) -> dict[str, Any]:
+    if entrypoint_kind == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
+        return {
+            "command_flag": MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "confirmation_flag": CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
+            "entrypoint_surface": PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+            "entrypoint_kind": PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+            "diagnostic_dogfood_alias": False,
+            "supported_query_class": PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        }
+    if (
+        entrypoint_surface != DOGFOOD_ENTRYPOINT_SURFACE
+        or supported_query_class != DOGFOOD_SUPPORTED_QUERY_CLASS
+        or diagnostic_dogfood_alias is not True
+    ):
+        _blocked_output_hygiene("generic live dogfood entrypoint metadata invalid.")
+    return {
+        "command_flag": MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
+        "confirmation_flag": CONFIRM_LIVE_DOGFOOD_FLAG,
+        "entrypoint_surface": DOGFOOD_ENTRYPOINT_SURFACE,
+        "entrypoint_kind": DOGFOOD_ENTRYPOINT_KIND,
+        "diagnostic_dogfood_alias": True,
+        "supported_query_class": DOGFOOD_SUPPORTED_QUERY_CLASS,
+    }
+
+
+def _entrypoint_metadata_from_mapping(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    entrypoint = _safe_mapping(metadata)
+    return _entrypoint_metadata(
+        entrypoint_surface=_clean_text(
+            entrypoint.get("entrypoint_surface"),
+            limit=120,
+        )
+        or DOGFOOD_ENTRYPOINT_SURFACE,
+        entrypoint_kind=_clean_text(entrypoint.get("entrypoint_kind"), limit=120)
+        or DOGFOOD_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=(
+            entrypoint.get("diagnostic_dogfood_alias") is True
+        ),
+        supported_query_class=_clean_text(
+            entrypoint.get("supported_query_class"),
+            limit=160,
+        )
+        or DOGFOOD_SUPPORTED_QUERY_CLASS,
+    )
 
 
 def _run_output_dir(root: Path, output_dir: str | Path, run_id: str) -> Path:
@@ -8368,7 +9105,11 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED",
     "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD",
+    "CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
+    "DOGFOOD_ENTRYPOINT_KIND",
+    "DOGFOOD_ENTRYPOINT_SURFACE",
+    "DOGFOOD_SUPPORTED_QUERY_CLASS",
     "DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE",
     "DEFAULT_OUTPUT_DIR",
     "GenericLiveFetchReadResult",
@@ -8376,6 +9117,10 @@ __all__ = [
     "GenericProviderProxyRunResult",
     "GenericSingleRelationLiveDogfoodRunError",
     "PROVIDER_EXTRACTED_CONTENT_CUSTODY_ADMISSION_BLOCKED",
+    "PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND",
+    "PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE",
+    "PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS",
+    "SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE",
     "build_generic_single_relation_live_dogfood_run_output",
     "fetch_public_url_once",
     "format_generic_single_relation_live_dogfood_output",
