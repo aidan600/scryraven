@@ -175,6 +175,9 @@ BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_SOURCE_DISPLAY_BLOCKED 
 BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD = (
     "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD"
 )
+BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED = (
+    "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
 )
@@ -391,6 +394,8 @@ CLOSED_FALSE_FLAGS = {
     "source_authority_finalized": False,
     "final_answer_packet_created": False,
     "author_prose_created": False,
+    "citation_source_display_created": False,
+    "citation_rendering_invoked": False,
     "multi_component_planning_opened": False,
     "runkernel_dag_scheduling_opened": False,
     "budget_leases_opened": False,
@@ -999,6 +1004,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             smart_provider=smart_provider,
             smart_model=smart_model,
             dprime_downstream_authority_enabled=False,
+            dprime_source_citation_authority_enabled=True,
+            dprime_single_lane_answer_path_enabled=False,
             dprime_run_kernel_admission_decision_status=(
                 source_obligation_authorization.get(
                     "run_kernel_support_admission_decision_status"
@@ -1521,39 +1528,75 @@ def _validate_source_readiness_gateway(packet: Mapping[str, Any]) -> None:
             packet.get("single_relation_dprime_authority_integration")
         )
         if not (
-            packet.get("decision")
-            == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
-            and integration.get("status") == "blocked"
-            and integration.get("gateway_treated_as_authority") is False
-        ):
+            (
+                packet.get("decision")
+                == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+                and integration.get("status") == "blocked"
+            )
+            or (
+                packet.get("decision")
+                == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+                and integration.get("status") == "consumed"
+            )
+        ) or integration.get("gateway_treated_as_authority") is not False:
             _blocked_output_hygiene("blocked packet must not carry ready gateway status.")
 
 
-def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
-    integration = _safe_mapping(
-        packet.get("single_relation_dprime_authority_integration")
-    )
-    if not integration:
-        _blocked_output_hygiene("D-prime authority integration section missing.")
-    if integration.get("schema_version") != DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION:
-        _blocked_output_hygiene("D-prime authority integration schema mismatch.")
-    if integration.get("status") not in {"blocked", "not_reached"}:
-        _blocked_output_hygiene("D-prime authority integration status invalid.")
-    if integration.get("existing_dprime_authority_referenced") is not True:
-        _blocked_output_hygiene("existing D-prime authority reference missing.")
+def _validate_consumed_dprime_authority_integration(
+    integration: Mapping[str, Any],
+    packet: Mapping[str, Any],
+) -> None:
+    if integration.get("blocker_code") != (
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    ):
+        _blocked_output_hygiene("consumed D-prime stop point blocker invalid.")
+    if packet.get("decision") != (
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    ):
+        _blocked_output_hygiene("consumed D-prime stop point must own decision.")
+    if integration.get("existing_dprime_authority_reused") is not True:
+        _blocked_output_hygiene("consumed stop point must reuse existing authority.")
+    if integration.get("dprime_source_citation_authority_enabled") is not True:
+        _blocked_output_hygiene("source/citation stop point was not requested.")
+    if integration.get("dprime_single_lane_answer_path_enabled") is not False:
+        _blocked_output_hygiene("single-lane answer path must remain disabled.")
     if (
-        integration.get("existing_dprime_source_obligation_citation_authority_exists")
+        integration.get("generic_dogfood_single_lane_answer_path_kept_disabled")
         is not True
     ):
-        _blocked_output_hygiene("existing D-prime source/citation authority not named.")
-    if integration.get("existing_dprime_authority_reused") is not False:
-        _blocked_output_hygiene("generic dogfood must not claim authority reuse yet.")
-    if integration.get("gateway_treated_as_authority") is not False:
-        _blocked_output_hygiene("gateway must not be treated as authority.")
-    if integration.get("dprime_support_slice_treated_as_readiness") is not False:
-        _blocked_output_hygiene("D-prime support slice must not satisfy readiness.")
-    if integration.get("dprime_downstream_authority_enabled") is not False:
-        _blocked_output_hygiene("generic dogfood must keep downstream D-prime disabled.")
+        _blocked_output_hygiene("generic dogfood opened the answer path.")
+    if integration.get("source_obligation_authority_consumed") is not True:
+        _blocked_output_hygiene("source-obligation authority was not consumed.")
+    if integration.get("citation_source_handoff_authority_consumed") is not True:
+        _blocked_output_hygiene("citation-source handoff authority was not consumed.")
+    if integration.get("single_relation_source_obligation_ready") is not True:
+        _blocked_output_hygiene("source-obligation readiness alias invalid.")
+    if integration.get("single_relation_citation_handoff_ready") is not True:
+        _blocked_output_hygiene("citation handoff readiness alias invalid.")
+    if integration.get("source_readiness_gateway_is_authority") is not False:
+        _blocked_output_hygiene("source/readiness gateway became authority.")
+    if (
+        integration.get("source_citation_authority_refs_are_dprime_runtime_refs")
+        is not True
+    ):
+        _blocked_output_hygiene("source/citation authority refs are not D-prime refs.")
+    source_ref = _safe_mapping(integration.get("source_obligation_authority_ref"))
+    citation_ref = _safe_mapping(
+        integration.get("citation_source_handoff_authority_ref")
+    )
+    if source_ref.get("owner") != "RunKernel.DPrimeSourceObligationAuthority":
+        _blocked_output_hygiene("source-obligation authority owner invalid.")
+    if citation_ref.get("owner") != "RunKernel.DPrimeCitationSourceHandoffAuthority":
+        _blocked_output_hygiene("citation-source handoff authority owner invalid.")
+    if source_ref.get("authority_consumed") is not True:
+        _blocked_output_hygiene("source-obligation authority ref not consumed.")
+    if citation_ref.get("citation_source_handoff_consumed") is not True:
+        _blocked_output_hygiene("citation handoff authority ref not consumed.")
+    if (
+        packet.get("single_relation_source_obligation_ready") is not True
+        or packet.get("single_relation_citation_handoff_ready") is not True
+    ):
+        _blocked_output_hygiene("packet readiness aliases did not reflect authority.")
     for key in (
         "source_obligation_satisfied",
         "citation_eligible",
@@ -1564,15 +1607,74 @@ def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
         "citation_source_display_created",
         "final_answer_prose_created",
         "product_correctness_claimed",
+        "fap_invoked",
+        "author_invoked",
+        "citation_rendering_invoked",
+    ):
+        if integration.get(key) is not False:
+            _blocked_output_hygiene(f"D-prime stop point {key} invalid.")
+
+
+def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
+    integration = _safe_mapping(
+        packet.get("single_relation_dprime_authority_integration")
+    )
+    if not integration:
+        _blocked_output_hygiene("D-prime authority integration section missing.")
+    if integration.get("schema_version") != DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION:
+        _blocked_output_hygiene("D-prime authority integration schema mismatch.")
+    if integration.get("status") not in {"blocked", "not_reached", "consumed"}:
+        _blocked_output_hygiene("D-prime authority integration status invalid.")
+    if integration.get("existing_dprime_authority_referenced") is not True:
+        _blocked_output_hygiene("existing D-prime authority reference missing.")
+    if (
+        integration.get("existing_dprime_source_obligation_citation_authority_exists")
+        is not True
+    ):
+        _blocked_output_hygiene("existing D-prime source/citation authority not named.")
+    if (
+        integration.get("status") == "consumed"
+        and integration.get("existing_dprime_authority_reused") is not True
+    ):
+        _blocked_output_hygiene("generic dogfood did not claim authority reuse.")
+    if (
+        integration.get("status") != "consumed"
+        and integration.get("existing_dprime_authority_reused") is not False
+    ):
+        _blocked_output_hygiene("generic dogfood must not claim authority reuse yet.")
+    if integration.get("gateway_treated_as_authority") is not False:
+        _blocked_output_hygiene("gateway must not be treated as authority.")
+    if integration.get("dprime_support_slice_treated_as_readiness") is not False:
+        _blocked_output_hygiene("D-prime support slice must not satisfy readiness.")
+    if integration.get("dprime_downstream_authority_enabled") is not False:
+        _blocked_output_hygiene("generic dogfood must keep downstream D-prime disabled.")
+    false_unless_consumed = (
         "single_relation_source_obligation_ready",
         "single_relation_citation_handoff_ready",
         "downstream_dprime_authority_invoked",
+    )
+    for key in (
+        "source_obligation_satisfied",
+        "citation_eligible",
+        "source_authority_finalized",
+        "final_answer_packet_created",
+        "author_prose_created",
+        "author_answer_created",
+        "citation_source_display_created",
+        "final_answer_prose_created",
+        "product_correctness_claimed",
         "fap_invoked",
         "author_invoked",
         "citation_rendering_invoked",
     ):
         if integration.get(key) is not False:
             _blocked_output_hygiene(f"D-prime authority integration {key} invalid.")
+    if integration.get("status") != "consumed":
+        for key in false_unless_consumed:
+            if integration.get(key) is not False:
+                _blocked_output_hygiene(
+                    f"D-prime authority integration {key} invalid."
+                )
     if (
         packet.get("source_obligation_citation_readiness_status")
         != integration.get("status")
@@ -1583,6 +1685,22 @@ def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
         != integration.get("blocker_code")
     ):
         _blocked_output_hygiene("readiness blocker alias mismatch.")
+    if packet.get("dprime_source_citation_stoppoint_status") != integration.get(
+        "dprime_source_citation_stoppoint_status"
+    ):
+        _blocked_output_hygiene("source/citation stop-point status alias mismatch.")
+    if packet.get("dprime_source_citation_stoppoint_blocker") != integration.get(
+        "dprime_source_citation_stoppoint_blocker"
+    ):
+        _blocked_output_hygiene("source/citation stop-point blocker alias mismatch.")
+    if packet.get("source_obligation_authority_consumed") is not (
+        integration.get("source_obligation_authority_consumed") is True
+    ):
+        _blocked_output_hygiene("source-obligation consumed alias mismatch.")
+    if packet.get("citation_source_handoff_authority_consumed") is not (
+        integration.get("citation_source_handoff_authority_consumed") is True
+    ):
+        _blocked_output_hygiene("citation-source handoff consumed alias mismatch.")
     if integration.get("status") == "blocked":
         if (
             integration.get("blocker_code")
@@ -1598,6 +1716,8 @@ def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
             _blocked_output_hygiene("blocked authority integration requires gateway display.")
         if integration.get("dprime_support_slice_present") is not True:
             _blocked_output_hygiene("blocked authority integration requires D-prime slice.")
+    elif integration.get("status") == "consumed":
+        _validate_consumed_dprime_authority_integration(integration, packet)
     elif packet.get("decision") == PASS_DECISION:
         _blocked_output_hygiene("PASS requires D-prime authority integration readiness.")
 
@@ -1994,9 +2114,19 @@ def format_generic_single_relation_live_dogfood_output(
         f"{_bool_text(dprime_integration.get('existing_dprime_source_obligation_citation_authority_exists'))}",
         "- Downstream D-prime authority enabled: "
         f"{_bool_text(dprime_integration.get('dprime_downstream_authority_enabled'))}",
+        "- Source/citation authority enabled: "
+        f"{_bool_text(dprime_integration.get('dprime_source_citation_authority_enabled'))}",
+        "- Single-lane answer path enabled: "
+        f"{_bool_text(dprime_integration.get('dprime_single_lane_answer_path_enabled'))}",
+        "- Source/citation stop point: "
+        f"{dprime_integration.get('dprime_source_citation_stoppoint_status') or 'not reached'}",
         "- D-prime pass + gateway display sufficient for readiness: false.",
         "- Gateway treated as authority: "
         f"{_bool_text(dprime_integration.get('gateway_treated_as_authority'))}",
+        "- Source-obligation authority consumed: "
+        f"{_bool_text(dprime_integration.get('source_obligation_authority_consumed'))}",
+        "- Citation-source handoff authority consumed: "
+        f"{_bool_text(dprime_integration.get('citation_source_handoff_authority_consumed'))}",
         "- Source-obligation ready: "
         f"{_bool_text(dprime_integration.get('single_relation_source_obligation_ready'))}",
         "- Citation handoff ready: "
@@ -2141,6 +2271,16 @@ def _packet_from_semantic_status(
             "Existing D-prime source-obligation/citation authority cannot be "
             "safely consumed by generic dogfood yet."
         )
+    elif dprime_authority_integration.get("status") == "consumed":
+        decision = BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+        blocker_detail = _clean_text(
+            dprime_authority_integration.get("blocker_detail"),
+            limit=900,
+        ) or (
+            "D-prime source/citation authority was consumed; generic dogfood "
+            "stops before display, FAP, Author, citation rendering, and "
+            "product correctness."
+        )
     elif source_readiness_gateway.get("status") == "ready":
         decision = PASS_DECISION
         blocker_detail = None
@@ -2180,8 +2320,40 @@ def _packet_from_semantic_status(
             "source_obligation_citation_readiness_blocker": (
                 dprime_authority_integration.get("blocker_code")
             ),
-            "single_relation_source_obligation_ready": False,
-            "single_relation_citation_handoff_ready": False,
+            "dprime_source_citation_stoppoint_status": (
+                dprime_authority_integration.get(
+                    "dprime_source_citation_stoppoint_status"
+                )
+            ),
+            "dprime_source_citation_stoppoint_blocker": (
+                dprime_authority_integration.get(
+                    "dprime_source_citation_stoppoint_blocker"
+                )
+            ),
+            "source_obligation_authority_consumed": (
+                dprime_authority_integration.get(
+                    "source_obligation_authority_consumed"
+                )
+                is True
+            ),
+            "citation_source_handoff_authority_consumed": (
+                dprime_authority_integration.get(
+                    "citation_source_handoff_authority_consumed"
+                )
+                is True
+            ),
+            "single_relation_source_obligation_ready": (
+                dprime_authority_integration.get(
+                    "single_relation_source_obligation_ready"
+                )
+                is True
+            ),
+            "single_relation_citation_handoff_ready": (
+                dprime_authority_integration.get(
+                    "single_relation_citation_handoff_ready"
+                )
+                is True
+            ),
             "dprime_pass_and_gateway_ready_rejected_as_readiness_authority": (
                 dprime_authority_integration.get(
                     "gateway_ready_and_dprime_pass_insufficient_for_"
@@ -2206,6 +2378,10 @@ def _packet_from_semantic_status(
                 "generic_single_relation_dprime_authority_integration_blocked"
                 if decision
                 == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
+                else
+                "generic_single_relation_dprime_source_citation_stoppoint_consumed"
+                if decision
+                == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
                 else
                 "generic_single_relation_source_readiness_gateway_emitted"
                 if decision == PASS_DECISION
@@ -2290,6 +2466,10 @@ def _blocked_packet(
             "single_relation_dprime_authority_integration_blocker": blocker,
             "source_obligation_citation_readiness_status": "not_reached",
             "source_obligation_citation_readiness_blocker": blocker,
+            "dprime_source_citation_stoppoint_status": "not_reached",
+            "dprime_source_citation_stoppoint_blocker": blocker,
+            "source_obligation_authority_consumed": False,
+            "citation_source_handoff_authority_consumed": False,
             "single_relation_source_obligation_ready": False,
             "single_relation_citation_handoff_ready": False,
             "dprime_pass_and_gateway_ready_rejected_as_readiness_authority": False,
@@ -2453,16 +2633,50 @@ def _dprime_authority_integration_from_gateway(
     semantic = _safe_mapping(semantic_payload)
     dprime = _safe_mapping(semantic.get("dprime_status"))
     dprime_objects = _safe_mapping(dprime.get("objects_created"))
+    source_authority_ref = _safe_mapping(
+        semantic.get("source_obligation_authority_ref")
+    )
+    citation_handoff_ref = _safe_mapping(
+        semantic.get("citation_eligibility_authority_ref")
+    )
     gateway_ready = gateway.get("status") == "ready"
     dprime_pass_slice_present = _dprime_pass_ready_for_gateway(dprime)
-    reached = gateway_ready and dprime_pass_slice_present
+    source_obligation_consumed = (
+        dprime.get("source_obligation_authority_consumed") is True
+        and source_authority_ref.get("authority_consumed") is True
+        and source_authority_ref.get("status") == "consumed"
+    )
+    citation_handoff_consumed = (
+        dprime.get("citation_eligibility_or_source_handoff_authority_consumed")
+        is True
+        and citation_handoff_ref.get("authority_consumed") is True
+        and citation_handoff_ref.get("citation_source_handoff_consumed") is True
+        and citation_handoff_ref.get("status") == "consumed"
+    )
+    source_citation_consumed = (
+        gateway_ready
+        and dprime_pass_slice_present
+        and source_obligation_consumed
+        and citation_handoff_consumed
+    )
+    reached = gateway_ready and dprime_pass_slice_present and not source_citation_consumed
     blocker_code = (
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+        if source_citation_consumed
+        else
         BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
         if reached
         else _clean_text(gateway.get("blocker_code"), limit=220)
         or BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING
     )
     blocker_detail = (
+        "Existing D-prime source-obligation authority and citation-source "
+        "handoff authority were consumed through the ordinary status path. "
+        "Generic dogfood stops here because source/citation display, "
+        "SufficiencyReadiness, FAP, Author, final citation rendering, and "
+        "product correctness are closed in this phase."
+        if source_citation_consumed
+        else
         "Existing D-prime source-obligation/citation authority is present, "
         "but generic single-relation dogfood currently keeps "
         "dprime_downstream_authority_enabled=False. D-prime support-slice PASS "
@@ -2484,7 +2698,7 @@ def _dprime_authority_integration_from_gateway(
             "citation_source_display",
         )
     )
-    status = "blocked" if reached else "not_reached"
+    status = "consumed" if source_citation_consumed else "blocked" if reached else "not_reached"
     return _json_safe(
         {
             "schema_version": DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION,
@@ -2501,7 +2715,7 @@ def _dprime_authority_integration_from_gateway(
             ),
             "ordinary_product_path_consumed": True,
             "existing_dprime_authority_referenced": True,
-            "existing_dprime_authority_reused": False,
+            "existing_dprime_authority_reused": source_citation_consumed,
             "existing_dprime_authority_modules": list(
                 EXISTING_DPRIME_DOWNSTREAM_AUTHORITY_MODULE_REFS
             ),
@@ -2514,8 +2728,17 @@ def _dprime_authority_integration_from_gateway(
             ),
             "existing_dprime_authority_integration_blocked": reached,
             "dprime_downstream_authority_enabled": downstream_enabled,
+            "dprime_source_citation_authority_enabled": (
+                semantic.get("dprime_source_citation_authority_enabled") is True
+            ),
+            "dprime_single_lane_answer_path_enabled": (
+                semantic.get("dprime_single_lane_answer_path_enabled") is True
+            ),
             "generic_dogfood_downstream_authority_kept_disabled": (
                 downstream_enabled is False
+            ),
+            "generic_dogfood_single_lane_answer_path_kept_disabled": (
+                semantic.get("dprime_single_lane_answer_path_enabled") is not True
             ),
             "dprime_support_slice_present": dprime_pass_slice_present,
             "gateway_display_present": gateway_ready,
@@ -2524,8 +2747,34 @@ def _dprime_authority_integration_from_gateway(
             "gateway_ready_and_dprime_pass_insufficient_for_"
             "source_obligation_citation_readiness": reached,
             "downstream_dprime_authority_invoked": (
-                downstream_enabled or downstream_objects_created
+                source_citation_consumed or downstream_enabled or downstream_objects_created
             ),
+            "dprime_source_citation_authority_invoked": source_citation_consumed,
+            "source_obligation_authority_consumed": source_obligation_consumed,
+            "citation_source_handoff_authority_consumed": citation_handoff_consumed,
+            "dprime_source_citation_stoppoint_status": (
+                semantic.get("dprime_source_citation_stoppoint_status")
+                or ("consumed" if source_citation_consumed else "not_reached")
+            ),
+            "dprime_source_citation_stoppoint_blocker": (
+                semantic.get("dprime_source_citation_stoppoint_blocker")
+                or blocker_code
+            ),
+            "source_obligation_authority_ref": dict(source_authority_ref),
+            "citation_source_handoff_authority_ref": dict(citation_handoff_ref),
+            "source_obligation_authority_ref_owner": source_authority_ref.get(
+                "owner"
+            ),
+            "citation_source_handoff_authority_ref_owner": citation_handoff_ref.get(
+                "owner"
+            ),
+            "source_citation_authority_refs_are_dprime_runtime_refs": (
+                source_authority_ref.get("runtime_surface")
+                == "core.dprime_source_obligation_citation_authority_runtime"
+                and citation_handoff_ref.get("runtime_surface")
+                == "core.dprime_source_obligation_citation_authority_runtime"
+            ),
+            "source_readiness_gateway_is_authority": False,
             "component_coverage_created": dprime_objects.get("component_coverage")
             is True,
             "semantic_observation_created": dprime_objects.get("semantic_observation")
@@ -2533,8 +2782,8 @@ def _dprime_authority_integration_from_gateway(
             "source_obligation_satisfied": False,
             "citation_eligible": False,
             "source_authority_finalized": False,
-            "single_relation_source_obligation_ready": False,
-            "single_relation_citation_handoff_ready": False,
+            "single_relation_source_obligation_ready": source_obligation_consumed,
+            "single_relation_citation_handoff_ready": citation_handoff_consumed,
             "final_answer_packet_created": False,
             "author_prose_created": False,
             "author_answer_created": False,
@@ -2586,7 +2835,10 @@ def _dprime_authority_integration_not_reached(
             ),
             "existing_dprime_authority_integration_blocked": False,
             "dprime_downstream_authority_enabled": False,
+            "dprime_source_citation_authority_enabled": False,
+            "dprime_single_lane_answer_path_enabled": False,
             "generic_dogfood_downstream_authority_kept_disabled": True,
+            "generic_dogfood_single_lane_answer_path_kept_disabled": True,
             "dprime_support_slice_present": False,
             "gateway_display_present": (
                 _safe_mapping(source_readiness_gateway).get("status") == "ready"
@@ -2596,6 +2848,17 @@ def _dprime_authority_integration_not_reached(
             "gateway_ready_and_dprime_pass_insufficient_for_"
             "source_obligation_citation_readiness": False,
             "downstream_dprime_authority_invoked": False,
+            "dprime_source_citation_authority_invoked": False,
+            "source_obligation_authority_consumed": False,
+            "citation_source_handoff_authority_consumed": False,
+            "dprime_source_citation_stoppoint_status": "not_reached",
+            "dprime_source_citation_stoppoint_blocker": blocker,
+            "source_obligation_authority_ref": {},
+            "citation_source_handoff_authority_ref": {},
+            "source_obligation_authority_ref_owner": None,
+            "citation_source_handoff_authority_ref_owner": None,
+            "source_citation_authority_refs_are_dprime_runtime_refs": False,
+            "source_readiness_gateway_is_authority": False,
             "component_coverage_created": False,
             "semantic_observation_created": False,
             "source_obligation_satisfied": False,
@@ -2931,6 +3194,8 @@ def _failure_attribution_bucket(packet: Mapping[str, Any]) -> str:
         return "source_readiness_gateway"
     if decision == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD:
         return "dprime_authority_integration"
+    if decision == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED:
+        return "source_citation_display_boundary"
     if _bounded_int(packet.get("evidence_ledger_admissions")) > 0:
         return "runkernel_or_downstream_gate"
     return "blocked_before_acquisition"

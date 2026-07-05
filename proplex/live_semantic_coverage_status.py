@@ -242,6 +242,8 @@ def build_live_semantic_coverage_status(
         DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
     ),
     dprime_downstream_authority_enabled: bool = True,
+    dprime_source_citation_authority_enabled: bool | None = None,
+    dprime_single_lane_answer_path_enabled: bool | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     """Consume retained status chain and return CLI-safe semantic coverage status."""
 
@@ -449,6 +451,12 @@ def build_live_semantic_coverage_status(
                 dprime_run_kernel_admission_decision_status
             ),
             dprime_downstream_authority_enabled=dprime_downstream_authority_enabled,
+            dprime_source_citation_authority_enabled=(
+                dprime_source_citation_authority_enabled
+            ),
+            dprime_single_lane_answer_path_enabled=(
+                dprime_single_lane_answer_path_enabled
+            ),
         )
     if dprime_status.decision != PASS_DECISION:
         return _blocked_dprime_status_result(
@@ -1120,9 +1128,30 @@ def _blocked_dprime_model_review_assessment_result(
     dprime_multi_source_scrutineer_enabled: bool,
     run_kernel_admission_decision_status: str,
     dprime_downstream_authority_enabled: bool,
+    dprime_source_citation_authority_enabled: bool | None,
+    dprime_single_lane_answer_path_enabled: bool | None,
 ) -> LiveSemanticCoverageStatusResult:
+    source_citation_authority_enabled = (
+        dprime_downstream_authority_enabled
+        if dprime_source_citation_authority_enabled is None
+        else bool(dprime_source_citation_authority_enabled)
+    )
+    single_lane_answer_path_enabled = (
+        dprime_downstream_authority_enabled
+        if dprime_single_lane_answer_path_enabled is None
+        else bool(dprime_single_lane_answer_path_enabled)
+    )
     dprime = dprime_status.to_dict()
     dprime["generic_relation_intake_ref"] = dict(relation_ref)
+    dprime["dprime_downstream_authority_enabled"] = bool(
+        dprime_downstream_authority_enabled
+    )
+    dprime["dprime_source_citation_authority_enabled"] = bool(
+        source_citation_authority_enabled
+    )
+    dprime["dprime_single_lane_answer_path_enabled"] = bool(
+        single_lane_answer_path_enabled
+    )
     dprime.update(model_review_result.to_status_overlay())
     objects_created = dict(dprime.get("objects_created") or {})
     objects_created.update(model_review_result.objects_created)
@@ -1312,12 +1341,19 @@ def _blocked_dprime_model_review_assessment_result(
                     dprime["multi_source_enabled"] = True
                     dprime["objects_created"] = objects_created
                 try:
-                    if not dprime_downstream_authority_enabled:
+                    if not source_citation_authority_enabled:
                         dprime["downstream_authority_disabled_by_caller"] = True
+                        dprime["source_citation_authority_disabled_by_caller"] = True
                         dprime["source_obligation_authority_consumed"] = False
                         dprime[
                             "citation_eligibility_or_source_handoff_authority_consumed"
                         ] = False
+                        dprime["dprime_source_citation_stoppoint_status"] = (
+                            "not_reached"
+                        )
+                        dprime["dprime_source_citation_stoppoint_blocker"] = (
+                            BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+                        )
                         dprime["sufficiency_readiness_created"] = False
                         dprime["final_answer_packet_created"] = False
                         dprime["author_answer_created"] = False
@@ -1350,33 +1386,50 @@ def _blocked_dprime_model_review_assessment_result(
                         )
                         dprime.update(support_bundle.to_status_overlay())
                         objects_created["component_coverage"] = True
-                        try:
-                            answer_path = build_dprime_single_lane_answer_path(
-                                support_bundle=support_bundle,
-                                run_kernel=contract_authority.run_kernel,
-                            )
-                            dprime.update(answer_path.to_status_overlay())
-                            objects_created["sufficiency_readiness"] = True
-                            objects_created["final_answer_packet"] = True
-                            objects_created["author_answer"] = True
-                            objects_created["citation_source_display"] = True
-                        except DPrimeSingleLaneAnswerPathError as exc:
-                            answer_path_error = exc
-                            kernel = contract_authority.run_kernel
-                            objects_created["sufficiency_readiness"] = bool(
-                                kernel.state.sufficiency_readiness_projection
-                            )
-                            objects_created["final_answer_packet"] = bool(
-                                kernel.state.final_answer_authority_projection
-                            )
-                            objects_created["author_answer"] = bool(
-                                kernel.state.author_prose_projection
-                            )
-                            objects_created["citation_source_display"] = bool(
-                                kernel.state.projections.get(
-                                    "dprime_citation_source_display"
+                        dprime["dprime_source_citation_stoppoint_status"] = (
+                            "consumed"
+                        )
+                        dprime["dprime_source_citation_stoppoint_blocker"] = (
+                            support_bundle.decision
+                        )
+                        if not single_lane_answer_path_enabled:
+                            dprime["single_lane_answer_path_disabled_by_caller"] = True
+                            dprime["sufficiency_readiness_created"] = False
+                            dprime["final_answer_packet_created"] = False
+                            dprime["author_answer_created"] = False
+                            dprime["citation_source_display_created"] = False
+                            objects_created["sufficiency_readiness"] = False
+                            objects_created["final_answer_packet"] = False
+                            objects_created["author_answer"] = False
+                            objects_created["citation_source_display"] = False
+                        else:
+                            try:
+                                answer_path = build_dprime_single_lane_answer_path(
+                                    support_bundle=support_bundle,
+                                    run_kernel=contract_authority.run_kernel,
                                 )
-                            )
+                                dprime.update(answer_path.to_status_overlay())
+                                objects_created["sufficiency_readiness"] = True
+                                objects_created["final_answer_packet"] = True
+                                objects_created["author_answer"] = True
+                                objects_created["citation_source_display"] = True
+                            except DPrimeSingleLaneAnswerPathError as exc:
+                                answer_path_error = exc
+                                kernel = contract_authority.run_kernel
+                                objects_created["sufficiency_readiness"] = bool(
+                                    kernel.state.sufficiency_readiness_projection
+                                )
+                                objects_created["final_answer_packet"] = bool(
+                                    kernel.state.final_answer_authority_projection
+                                )
+                                objects_created["author_answer"] = bool(
+                                    kernel.state.author_prose_projection
+                                )
+                                objects_created["citation_source_display"] = bool(
+                                    kernel.state.projections.get(
+                                        "dprime_citation_source_display"
+                                    )
+                                )
                 except DPrimeEvidenceSupportBundleError as exc:
                     support_bundle_error = exc
                     objects_created["component_coverage"] = False
@@ -1426,7 +1479,11 @@ def _blocked_dprime_model_review_assessment_result(
             else:
                 payload_decision = support_bundle.decision
                 payload_detail = support_bundle.blocker_detail
-                next_surface = "SufficiencyReadiness"
+                next_surface = (
+                    "D-prime source/citation stop point"
+                    if not single_lane_answer_path_enabled
+                    else "SufficiencyReadiness"
+                )
         elif support_bundle_error is not None:
             if multi_source_blocker is not None:
                 coverage_ref = semantic_materialization.coverage_status_ref(
@@ -1573,6 +1630,22 @@ def _blocked_dprime_model_review_assessment_result(
             "semantic_support_custody_distinction_preserved": True,
             "dprime_downstream_authority_enabled": bool(
                 dprime_downstream_authority_enabled
+            ),
+            "dprime_source_citation_authority_enabled": bool(
+                source_citation_authority_enabled
+            ),
+            "dprime_single_lane_answer_path_enabled": bool(
+                single_lane_answer_path_enabled
+            ),
+            "dprime_source_citation_stoppoint_status": (
+                "consumed"
+                if support_bundle is not None
+                else "not_reached"
+            ),
+            "dprime_source_citation_stoppoint_blocker": (
+                support_bundle.decision
+                if support_bundle is not None
+                else payload_decision
             ),
             "analyst_support_proposal_consumer": (
                 (
