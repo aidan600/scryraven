@@ -260,6 +260,7 @@ class SemanticObservationCoverageRef:
     component_contract_digest: str
     support_status: str
     support_posture: SupportPosture | str
+    claim_or_value: Any | None = None
     content_refs: tuple[str, ...] = ()
     accepted: bool = True
     semantic_observation_schema_version: str | None = None
@@ -295,6 +296,7 @@ class SemanticObservationCoverageRef:
             component_contract_digest=str(payload.get("component_contract_digest") or ""),
             support_status=str(payload.get("support_status") or "unknown"),
             support_posture=str(payload.get("directness") or payload.get("support_kind") or "direct"),
+            claim_or_value=payload.get("claim_or_value"),
             content_refs=tuple(payload.get("content_refs") or ()),
             accepted=bool(payload.get("accepted", True)),
             semantic_observation_schema_version=_clean_token(payload.get("schema_version")),
@@ -310,6 +312,7 @@ class SemanticObservationCoverageRef:
                 "component_contract_digest": self.component_contract_digest,
                 "support_status": _clean_token(self.support_status),
                 "support_posture": self.support_posture.value,
+                "claim_or_value": _clean_text(self.claim_or_value, limit=1_000),
                 "content_refs": list(self.content_refs),
                 "accepted": bool(self.accepted),
                 "semantic_observation_schema_version": _clean_token(self.semantic_observation_schema_version),

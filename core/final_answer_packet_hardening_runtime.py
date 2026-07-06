@@ -814,6 +814,10 @@ def _component_packet_entry(
     )
     followup_refs = _component_followup_refs(entry)
     source_refs = _component_source_refs(entry)
+    safe_claim_text = _clean_text(entry.get("safe_answer_claim_text"), limit=1_000)
+    claim_text_authority_path = _fap_claim_text_authority_path(
+        entry.get("claim_text_authority_path")
+    )
     supported_claim_allowed = (
         component_status == "full_answer_ready"
         and fap_status in _SAFE_SUPPORT_FAP_STATUSES
@@ -832,6 +836,47 @@ def _component_packet_entry(
                 caveats=caveats,
             ),
             "supported_claim_allowed": supported_claim_allowed,
+            "supported_safe_claim_allowed": supported_claim_allowed
+            and bool(safe_claim_text),
+            "safe_answer_claim_text": safe_claim_text,
+            "primary_answer_value": _clean_text(
+                entry.get("primary_answer_value"),
+                limit=1_000,
+            ),
+            "selected_current_value": _clean_text(
+                entry.get("selected_current_value"),
+                limit=1_000,
+            ),
+            "claim_text_source": _clean_token(entry.get("claim_text_source")),
+            "claim_text_source_ref": _clean_text(
+                entry.get("claim_text_source_ref"),
+                limit=260,
+            ),
+            "claim_text_authority_path": claim_text_authority_path,
+            "bound_contract_component_id": _clean_token(
+                entry.get("bound_contract_component_id"),
+                limit=260,
+            ),
+            "bound_contract_source_obligation_id": _clean_token(
+                entry.get("bound_contract_source_obligation_id"),
+                limit=260,
+            ),
+            "source_obligation_candidate_ids": _text_list(
+                entry.get("source_obligation_candidate_ids"),
+                limit=260,
+            ),
+            "semantic_observation_ref": _safe_mapping(
+                entry.get("semantic_observation_ref")
+            ),
+            "component_coverage_ref": _safe_mapping(
+                entry.get("component_coverage_ref")
+            ),
+            "fap_safe_claim_ref": _fap_safe_claim_ref(
+                entry=entry,
+                fap_status=fap_status,
+                safe_claim_text=safe_claim_text,
+                claim_text_authority_path=claim_text_authority_path,
+            ),
             "must_not_answer": not supported_claim_allowed,
             "supporting_coverage_refs": _safe_list(entry.get("coverage_refs")),
             "semantic_observation_refs": _safe_list(
@@ -851,6 +896,48 @@ def _component_packet_entry(
             "product_correctness_claimed": False,
         }
     )
+
+
+def _fap_safe_claim_ref(
+    *,
+    entry: Mapping[str, Any],
+    fap_status: str,
+    safe_claim_text: str | None,
+    claim_text_authority_path: str | None,
+) -> dict[str, Any]:
+    if not safe_claim_text:
+        return {}
+    return _without_empty(
+        {
+            "fap_status": fap_status,
+            "component_id": entry.get("component_id"),
+            "safe_answer_claim_text": safe_claim_text,
+            "claim_text_source": entry.get("claim_text_source"),
+            "claim_text_source_ref": entry.get("claim_text_source_ref"),
+            "claim_text_authority_path": claim_text_authority_path,
+            "bound_contract_component_id": entry.get(
+                "bound_contract_component_id"
+            ),
+            "bound_contract_source_obligation_id": entry.get(
+                "bound_contract_source_obligation_id"
+            ),
+            "semantic_observation_ref": _safe_mapping(
+                entry.get("semantic_observation_ref")
+            ),
+            "component_coverage_ref": _safe_mapping(
+                entry.get("component_coverage_ref")
+            ),
+        }
+    )
+
+
+def _fap_claim_text_authority_path(value: Any) -> str | None:
+    path = _clean_text(value, limit=400)
+    if not path:
+        return None
+    if "FAP" in path:
+        return path
+    return f"{path} -> FAP safe claim text"
 
 
 def _allowed_author_treatment(

@@ -366,6 +366,9 @@ def build_author_prose_finalization_state(
         "answer_text": prose["answer_text"],
         "answer_blocks": prose["answer_blocks"],
         "component_prose_entries": prose["component_prose_entries"],
+        "safe_answer_claim_text": prose["safe_answer_claim_text"],
+        "safe_answer_claim_texts": prose["safe_answer_claim_texts"],
+        "safe_answer_claim_refs": prose["safe_answer_claim_refs"],
         "source_ref_presentation": prose["source_ref_presentation"],
         "mandatory_caveats": prose["mandatory_caveats"],
         "prohibited_claims": prose["prohibited_claims"],
@@ -376,6 +379,7 @@ def build_author_prose_finalization_state(
             "full_answer_implication_allowed"
         ],
         "supported_claims_created": prose["supported_claims_created"],
+        "supported_safe_claims_created": prose["supported_safe_claims_created"],
         "supported_component_ids": prose["supported_component_ids"],
         "unresolved_component_ids": prose["unresolved_component_ids"],
         "must_not_answer_component_ids": prose["must_not_answer_component_ids"],
@@ -439,6 +443,12 @@ def build_author_prose_finalization_projection(
         "component_prose_entries": _safe_list(
             state.get("component_prose_entries")
         ),
+        "safe_answer_claim_text": state.get("safe_answer_claim_text"),
+        "safe_answer_claim_texts": _text_list(
+            state.get("safe_answer_claim_texts"),
+            limit=1_000,
+        ),
+        "safe_answer_claim_refs": _safe_list(state.get("safe_answer_claim_refs")),
         "source_ref_presentation": _safe_mapping(
             state.get("source_ref_presentation")
         ),
@@ -454,6 +464,9 @@ def build_author_prose_finalization_projection(
             state.get("full_answer_implication_allowed") is True
         ),
         "supported_claims_created": state.get("supported_claims_created") is True,
+        "supported_safe_claims_created": (
+            state.get("supported_safe_claims_created") is True
+        ),
         "supported_component_ids": _text_list(
             state.get("supported_component_ids"),
             limit=260,
@@ -746,6 +759,7 @@ def _build_prose_payload(
         source_refs=source_refs,
         policy=policy,
     )
+    safe_claim_entries = _safe_claim_entries(component_prose_entries)
     source_ref_presentation = _source_ref_presentation(source_refs, policy)
     blocks = _answer_blocks(
         fap_status=fap_status,
@@ -761,6 +775,17 @@ def _build_prose_payload(
         "answer_text": answer_text,
         "answer_blocks": blocks,
         "component_prose_entries": component_prose_entries,
+        "safe_answer_claim_texts": [
+            item.get("safe_answer_claim_text")
+            for item in safe_claim_entries
+            if item.get("safe_answer_claim_text")
+        ],
+        "safe_answer_claim_refs": safe_claim_entries,
+        "safe_answer_claim_text": (
+            safe_claim_entries[0].get("safe_answer_claim_text")
+            if safe_claim_entries
+            else None
+        ),
         "source_ref_presentation": source_ref_presentation,
         "mandatory_caveats": mandatory_caveats,
         "prohibited_claims": prohibited_claims,
@@ -777,6 +802,7 @@ def _build_prose_payload(
             "full_answer_packet_ready",
             "partial_answer_packet_ready",
         },
+        "supported_safe_claims_created": bool(safe_claim_entries),
         "supported_component_ids": [
             item.get("component_id") for item in supported if item.get("component_id")
         ],
@@ -817,7 +843,8 @@ def _answer_blocks(
                 items,
             )
         )
-        blocks.append(_claim_text_limitation_block())
+        if _missing_safe_claim_text(supported):
+            blocks.append(_claim_text_limitation_block())
     elif fap_status == "partial_answer_packet_ready":
         partial_blocks = _partial_blocks(
             supported=supported,
@@ -825,7 +852,8 @@ def _answer_blocks(
             policy=policy,
         )
         blocks.extend(partial_blocks)
-        blocks.append(_claim_text_limitation_block())
+        if _missing_safe_claim_text(supported):
+            blocks.append(_claim_text_limitation_block())
     elif fap_status == "blocked_answer_packet":
         blocks.append(_blocked_block(unresolved, policy))
     elif fap_status == "followup_required_packet":
@@ -1033,6 +1061,32 @@ def _component_prose_entries(
                     "prose_treatment": treatment,
                     "supported_in_prose": supported,
                     "must_not_answer": entry.get("must_not_answer") is True,
+                    "safe_answer_claim_text": _clean_text(
+                        entry.get("safe_answer_claim_text"),
+                        limit=1_000,
+                    ),
+                    "claim_text_source": _clean_text(
+                        entry.get("claim_text_source"),
+                        limit=260,
+                    ),
+                    "claim_text_source_ref": _clean_text(
+                        entry.get("claim_text_source_ref"),
+                        limit=260,
+                    ),
+                    "claim_text_authority_path": _author_claim_text_authority_path(
+                        entry.get("claim_text_authority_path"),
+                    ),
+                    "bound_contract_component_id": _clean_text(
+                        entry.get("bound_contract_component_id"),
+                        limit=260,
+                    ),
+                    "bound_contract_source_obligation_id": _clean_text(
+                        entry.get("bound_contract_source_obligation_id"),
+                        limit=260,
+                    ),
+                    "fap_safe_claim_ref": _safe_mapping(
+                        entry.get("fap_safe_claim_ref")
+                    ),
                     "text": (
                         _component_sentence(entry, policy)
                         if supported
@@ -1055,6 +1109,9 @@ def _component_prose_entries(
 
 
 def _component_sentence(entry: Mapping[str, Any], policy: AuthorProsePolicy) -> str:
+    safe_claim = _clean_text(entry.get("safe_answer_claim_text"), limit=1_000)
+    if safe_claim:
+        return safe_claim
     label = _component_label(entry)
     suffix = ""
     if policy.source_pass_through_profile is SourcePassThroughProfile.INLINE_SOURCE_REFS:
@@ -1070,6 +1127,53 @@ def _component_sentence(entry: Mapping[str, Any], policy: AuthorProsePolicy) -> 
             f"{suffix}"
         )
     return f"{label} is supported by the hardened packet for this answer.{suffix}"
+
+
+def _author_claim_text_authority_path(value: Any) -> str | None:
+    path = _clean_text(value, limit=500)
+    if not path:
+        return None
+    if "Author" in path:
+        return path
+    return f"{path} -> Author answer text"
+
+
+def _missing_safe_claim_text(entries: Sequence[Mapping[str, Any]]) -> bool:
+    return any(not _clean_text(entry.get("safe_answer_claim_text")) for entry in entries)
+
+
+def _safe_claim_entries(
+    component_prose_entries: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    out = []
+    for entry in component_prose_entries:
+        mapped = _safe_mapping(entry)
+        claim = _clean_text(mapped.get("safe_answer_claim_text"), limit=1_000)
+        if not claim:
+            continue
+        out.append(
+            _without_empty(
+                {
+                    "component_id": mapped.get("component_id"),
+                    "safe_answer_claim_text": claim,
+                    "claim_text_source": mapped.get("claim_text_source"),
+                    "claim_text_source_ref": mapped.get("claim_text_source_ref"),
+                    "claim_text_authority_path": mapped.get(
+                        "claim_text_authority_path"
+                    ),
+                    "bound_contract_component_id": mapped.get(
+                        "bound_contract_component_id"
+                    ),
+                    "bound_contract_source_obligation_id": mapped.get(
+                        "bound_contract_source_obligation_id"
+                    ),
+                    "fap_safe_claim_ref": _safe_mapping(
+                        mapped.get("fap_safe_claim_ref")
+                    ),
+                }
+            )
+        )
+    return out
 
 
 def _unresolved_sentence(entry: Mapping[str, Any], policy: AuthorProsePolicy) -> str:

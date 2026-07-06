@@ -1815,14 +1815,12 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     fetch_urls: list[str] = []
     review_calls = 0
     extracted_text = "USCIS lists the current Form N-400 paper filing fee as $760."
+    answer_claim = "The current USCIS Form N-400 paper filing fee is $760."
 
     def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
         nonlocal review_calls
         review_calls += 1
-        return _assessment_payload(
-            plan,
-            "USCIS Form N-400 paper filing fee is $760.",
-        )
+        return _assessment_payload(plan, answer_claim)
 
     result = build_generic_single_relation_live_dogfood_run_output(
         query=N400_QUERY,
@@ -1863,7 +1861,8 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
     )
     assert result.packet["answer_text_present"] is True
-    assert result.packet["product_answer_text"]
+    assert result.packet["product_answer_text"] == answer_claim
+    assert result.packet["safe_answer_claim_text"] == answer_claim
     assert result.packet["final_answer_packet_created"] is True
     assert result.packet["author_answer_created"] is True
     assert result.packet["citation_source_display_created"] is True
@@ -1895,7 +1894,20 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         "partial_answer_prose_created",
     }
     assert answer_path_ref["citation_source_display_ref"]["status"] == "created"
+    assert answer_path_ref["safe_answer_claim_text"] == answer_claim
+    assert answer_path_ref["claim_text_authority_path"] == (
+        "admitted semantic support -> ComponentCoverage -> SufficiencyReadiness "
+        "-> FAP safe claim text -> Author answer text"
+    )
     assert answer_path_ref["product_correctness_claimed"] is False
+    lineage = result.packet["selected_current_value_to_fap_claim_lineage"]
+    assert lineage["contract_accountable"] is True
+    assert all(lineage["checks"].values())
+    assert lineage["safe_answer_claim_text"] == answer_claim
+    assert lineage["bound_contract_component_id"] == plan["component_id"]
+    assert lineage["bound_contract_source_obligation_id"] == (
+        plan["source_obligation_id"]
+    )
 
     integration = result.packet["single_relation_dprime_authority_integration"]
     assert integration["status"] == "consumed"
@@ -1920,19 +1932,76 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         result.decision,
         result.packet["blocker_code"],
     }
-    assert "FAP, Author" not in result.packet["answer_or_blocker_text"]
-    assert "remain unclaimed" not in result.packet["answer_or_blocker_text"]
-    assert "Final answer prose" not in result.packet["answer_or_blocker_text"]
-    assert "SufficiencyReadiness" in result.packet["answer_or_blocker_text"]
-    assert "hardened FinalAnswerPacket" in result.packet["answer_or_blocker_text"]
-    assert "AuthorProse" in result.packet["answer_or_blocker_text"]
-    assert "Product answer text: " in result.output
-    assert result.packet["product_answer_text"] in result.output
-    assert "FinalAnswerPacket created: true" in result.output
-    assert "FAP/Author consumed through existing D-prime path: true" in result.output
-    assert "Product correctness claimed: false." in result.output
-    assert "FAP created: false" not in result.output
-    assert "Author invoked: false" not in result.output
+    assert result.packet["answer_or_blocker_text"] == answer_claim
+    assert result.output.startswith(f"Answer:\n{answer_claim}")
+    assert "Sources:" in result.output
+    assert "[D1] USCIS Form N-400 Filing Fee" in result.output
+    assert "https://www.uscis.gov/forms/filing-fees" in result.output
+    assert "Status:" in result.output
+    assert "- Decision: PASS" in result.output
+    assert "- Review report: " in result.output
+    assert dogfood.CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_MD_NAME in (
+        result.output
+    )
+    forbidden_output_text = {
+        "Review packet:",
+        "single_relation_live_dogfood_packet",
+        "hardened packet supports the answer posture",
+        "Claim Text Boundary",
+        "component posture",
+        "dogfood",
+        "generic single-relation live dogfood",
+        "FAP/Author consumed through existing D-prime path",
+        "Friend-level/general MVP claimed",
+        "FinalAnswerPacket created",
+        "AuthorProse",
+        "SufficiencyReadiness",
+        "mvp_single_relation_live_dogfood_01",
+    }
+    for text in forbidden_output_text:
+        assert text not in result.output
+    report_json_path = Path(result.packet["review_report_json_path"])
+    report_md_path = Path(result.packet["review_report_markdown_path"])
+    assert report_json_path.exists()
+    assert report_md_path.exists()
+    report = json.loads(report_json_path.read_text(encoding="utf-8"))
+    assert report["answer_contract_lifecycle"][
+        "current_answer_contract_present"
+    ] is True
+    assert report["answer_contract_lifecycle"][
+        "selected_claim_bound_to_current_answer_contract"
+    ] is True
+    assert report["answer_contract_lifecycle"]["active_components"][0][
+        "component_id"
+    ] == plan["component_id"]
+    assert report["answer_contract_lifecycle"]["active_source_obligations"][0][
+        "source_obligation_id"
+    ] == plan["source_obligation_id"]
+    assert report["claim_propagation_lifecycle"][
+        "selected_current_value_present"
+    ] is True
+    assert report["claim_propagation_lifecycle"][
+        "selected_value_entered_component_coverage"
+    ] is True
+    assert report["claim_propagation_lifecycle"][
+        "selected_value_entered_sufficiency_readiness"
+    ] is True
+    assert report["claim_propagation_lifecycle"][
+        "selected_value_entered_fap_safe_claim_text"
+    ] is True
+    assert report["claim_propagation_lifecycle"][
+        "selected_value_entered_author_answer_text"
+    ] is True
+    assert report["claim_propagation_lifecycle"]["fap_safe_claim_text"] == (
+        answer_claim
+    )
+    assert report["claim_propagation_lifecycle"][
+        "product_answer_text_present"
+    ] is True
+    assert report["stage_lifecycle"]["answer_path"]["safe_claim_available"] is True
+    assert "Current Source Record Single-Fact Review Report" in (
+        report_md_path.read_text(encoding="utf-8")
+    )
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
     assert "bounded_text" not in serialized
     assert result.packet["raw_prompt_retained"] is False
@@ -2089,6 +2158,250 @@ def test_product_single_fact_cli_reports_exact_dprime_answer_path_blocker(
         result.decision,
         result.packet["blocker_code"],
     }
+
+
+def test_product_single_fact_cli_blocks_when_fap_safe_claim_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    answer_claim = "The current USCIS Form N-400 paper filing fee is $760."
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(plan, answer_claim)
+
+    def answer_path_without_safe_claim(*_args: Any, **_kwargs: Any) -> Any:
+        return SimpleNamespace(
+            to_status_overlay=lambda: {
+                "dprime_single_lane_answer_path_status": "consumed",
+                "single_lane_only": True,
+                "support_bundle_consumed_by_answer_path": True,
+                "sufficiency_readiness_status": "full_answer_ready",
+                "sufficiency_readiness_ref": {
+                    "readiness_id": "readiness:n400",
+                    "readiness_digest": "readiness-digest:n400",
+                },
+                "final_answer_packet_status": "full_answer_packet_ready",
+                "final_answer_packet_ref": {
+                    "packet_created": True,
+                    "packet_id": "packet:n400",
+                    "packet_digest": "packet-digest:n400",
+                },
+                "author_answer_status": "full_answer_prose_created",
+                "author_answer_ref": {
+                    "author_prose_id": "author:n400",
+                    "author_prose_digest": "author-digest:n400",
+                    "author_prose_status": "full_answer_prose_created",
+                },
+                "answer_text": "The hardened packet supports the answer posture.",
+                "citation_source_display_status": "created",
+                "citation_source_display_ref": {
+                    "display_id": "display:n400",
+                    "display_digest": "display-digest:n400",
+                    "status": "created",
+                },
+                "citation_source_display": {
+                    "status": "created",
+                    "citation_source_entries": [
+                        {
+                            "label": "D1",
+                            "title": "USCIS Form N-400 Filing Fee",
+                            "domain": "www.uscis.gov",
+                            "url": "https://www.uscis.gov/forms/filing-fees",
+                            "source_id": "source:n400",
+                        }
+                    ],
+                },
+                "citation_source_display_created": True,
+                "source_obligation_authority_consumed": True,
+                "citation_source_handoff_authority_consumed": True,
+                "fap_consumed_dprime_source_refs": True,
+                "author_answer_consumed_fap": True,
+                "product_correctness_claimed": False,
+                "decision": "PASS",
+            }
+        )
+
+    monkeypatch.setattr(
+        semantic_status_runtime,
+        "build_dprime_single_lane_answer_path",
+        answer_path_without_safe_claim,
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-n400-fap-safe-claim-missing",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner(answer_claim),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == (
+        dogfood.BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING
+    )
+    assert result.packet["product_answer_text"] == ""
+    assert result.packet["answer_text_present"] is False
+    assert result.packet["fap_author_opened"] is True
+    assert result.packet["safe_answer_claim_text"] is None
+    assert result.packet["source_display_entries"] == []
+    assert result.output.startswith("Answer:\nBlocked before answer:")
+    assert "hardened packet supports the answer posture" not in result.output
+
+
+def test_product_single_fact_cli_blocks_when_claim_not_contract_accountable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    answer_claim = "The current USCIS Form N-400 paper filing fee is $760."
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(plan, answer_claim)
+
+    def answer_path_with_wrong_contract_ref(*_args: Any, **_kwargs: Any) -> Any:
+        return SimpleNamespace(
+            to_status_overlay=lambda: {
+                "dprime_single_lane_answer_path_status": "consumed",
+                "single_lane_only": True,
+                "support_bundle_consumed_by_answer_path": True,
+                "sufficiency_readiness_status": "full_answer_ready",
+                "sufficiency_readiness_ref": {
+                    "readiness_id": "readiness:n400",
+                    "readiness_digest": "readiness-digest:n400",
+                },
+                "final_answer_packet_status": "full_answer_packet_ready",
+                "final_answer_packet_ref": {
+                    "packet_created": True,
+                    "packet_id": "packet:n400",
+                    "packet_digest": "packet-digest:n400",
+                },
+                "author_answer_status": "full_answer_prose_created",
+                "author_answer_ref": {
+                    "author_prose_id": "author:n400",
+                    "author_prose_digest": "author-digest:n400",
+                    "author_prose_status": "full_answer_prose_created",
+                },
+                "answer_text": answer_claim,
+                "safe_answer_claim_text": answer_claim,
+                "selected_current_value": answer_claim,
+                "primary_answer_value": answer_claim,
+                "claim_text_source": (
+                    "selected_current_value_from_admitted_dprime_state"
+                ),
+                "claim_text_source_ref": (
+                    "ComponentCoverage.accepted_observation_refs.claim_or_value"
+                ),
+                "claim_text_authority_path": (
+                    "admitted semantic support -> ComponentCoverage -> "
+                    "SufficiencyReadiness"
+                ),
+                "bound_contract_component_id": plan["component_id"],
+                "bound_contract_source_obligation_id": "wrong-source-obligation",
+                "semantic_observation_ref": {
+                    "observation_id": "semantic-observation:n400",
+                    "observation_digest": "semantic-digest:n400",
+                },
+                "component_coverage_ref": {
+                    "coverage_record_id": "coverage:n400",
+                    "coverage_record_digest": "coverage-digest:n400",
+                },
+                "fap_safe_claim_ref": {
+                    "packet_digest": "packet-digest:n400",
+                    "safe_answer_claim_text": answer_claim,
+                },
+                "author_safe_claim_ref": {
+                    "author_prose_digest": "author-digest:n400",
+                    "safe_answer_claim_text": answer_claim,
+                },
+                "citation_source_display_status": "created",
+                "citation_source_display_ref": {
+                    "display_id": "display:n400",
+                    "display_digest": "display-digest:n400",
+                    "status": "created",
+                },
+                "citation_source_display": {
+                    "status": "created",
+                    "citation_source_entries": [
+                        {
+                            "label": "D1",
+                            "title": "USCIS Form N-400 Filing Fee",
+                            "domain": "www.uscis.gov",
+                            "url": "https://www.uscis.gov/forms/filing-fees",
+                            "source_id": "source:n400",
+                        }
+                    ],
+                },
+                "citation_source_display_created": True,
+                "source_obligation_authority_consumed": True,
+                "citation_source_handoff_authority_consumed": True,
+                "fap_consumed_dprime_source_refs": True,
+                "author_answer_consumed_fap": True,
+                "product_correctness_claimed": False,
+                "decision": "PASS",
+            }
+        )
+
+    monkeypatch.setattr(
+        semantic_status_runtime,
+        "build_dprime_single_lane_answer_path",
+        answer_path_with_wrong_contract_ref,
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-n400-contract-lineage-missing",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner(answer_claim),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == (
+        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE
+    )
+    assert result.packet["product_answer_text"] == ""
+    assert result.packet["answer_text_present"] is False
+    lineage = result.packet["selected_current_value_to_fap_claim_lineage"]
+    assert lineage["contract_accountable"] is False
+    assert "contract_source_obligation_matches" in lineage["missing"]
+    assert result.packet["source_display_entries"] == []
+    assert result.output.startswith("Answer:\nBlocked before answer:")
+    assert answer_claim not in result.output.split("Sources:", maxsplit=1)[0]
 
 
 @pytest.mark.parametrize(
