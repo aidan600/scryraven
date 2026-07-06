@@ -33,6 +33,7 @@ from core.analyst_workbench_runtime import (
     ROLE_OVERCLAIM_RISK,
     ROLE_QUALIFIER_EXCEPTION_CONTEXT,
     ROLE_STRICT_ANSWER_SUPPORT,
+    ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL,
     WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED,
 )
 from core.generic_query_to_relation_planning import build_generic_query_relation_plan
@@ -265,6 +266,11 @@ def test_mixed_fee_schedule_keeps_strict_support_and_context_roles(
     assert gap["gap_kind"] == "not_required"
     assert gap["live_followup_required"] is False
     assert gap["proposed_runkernel_reduction_status"] == "not_required"
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert reentry["workbench_gap_reentry_status"] == "not_required"
+    assert reentry["followup_execution_status"] == "not_required"
+    assert reentry["runkernel_followup_authorization_status"] == "not_required"
+    assert packet["followup_execution_status"] != "followup_not_licensed"
     assert packet["workbench_reduction_projection_status"] != (
         WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
     )
@@ -319,6 +325,10 @@ def test_mixed_deadline_schedule_keeps_strict_support_and_context_roles(
     assert ROLE_QUALIFIER_EXCEPTION_CONTEXT in roles
     assert gap["gap_status"] == "not_required"
     assert gap["live_followup_required"] is False
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert reentry["workbench_gap_reentry_status"] == "not_required"
+    assert reentry["followup_execution_status"] == "not_required"
+    assert packet["followup_execution_status"] != "followup_not_licensed"
     assert packet["workbench_reduction_projection_status"] != (
         WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
     )
@@ -377,11 +387,39 @@ def test_contextual_non_uscis_material_proposes_gap_and_product_blocker(
     roles = _candidate_roles(packet)
     gap = packet["analysis_gap_search_proposal"]
     assert result.return_code == 2
-    assert result.output.startswith(
-        "Answer:\nBlocked before answer: official strict support needed."
-    )
     assert gap["gap_status"] == "proposed"
     assert gap["gap_kind"] in {"strict_support_missing", "overclaim_risk"}
+    assert (
+        packet["decision"] == dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+    )
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert reentry["workbench_gap_reentry_status"] == "followup_not_licensed"
+    assert reentry["gap_sources"] == ["workbench", "dprime"]
+    assert reentry["workbench_gap_proposal_ref"]["gap_status"] == "proposed"
+    assert reentry["dprime_gap_ref"]["support_relation"] == "partially_supports"
+    assert reentry["runkernel_followup_authorization_status"] == (
+        "not_created_followup_not_licensed"
+    )
+    assert reentry["runkernel_followup_authorization_ref"] == {}
+    assert reentry["proposal_or_blocker_ref_only"] is True
+    assert reentry["ordinary_search_path_reused"] is True
+    assert reentry["ordinary_search_reentry_intent_status"] == "intended_not_executed"
+    assert reentry["followup_execution_licensed"] is False
+    assert reentry["provider_called"] is False
+    assert reentry["live_search_called"] is False
+    assert reentry["fetch_read_executed"] is False
+    assert reentry["dprime_dispatch_owner"] is False
+    assert reentry["workbench_dispatch_owner"] is False
+    assert reentry["new_search_subsystem_created"] is False
+    assert reentry["evidence_admitted"] is False
+    assert reentry["source_obligation_satisfied"] is False
+    assert reentry["citation_eligible"] is False
+    assert reentry["final_answer_packet_created"] is False
+    assert reentry["author_prose_created"] is False
+    assert reentry["product_correctness_claimed"] is False
+    assert result.output.startswith(
+        "Answer:\nBlocked before answer: official strict support follow-up is needed."
+    )
     assert packet["workbench_reduction_projection_status"] == (
         WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
     )
@@ -396,6 +434,84 @@ def test_contextual_non_uscis_material_proposes_gap_and_product_blocker(
     assert packet["candidate_evidence_triage_packet"]["dprime_review_candidate_ref"]
     assert packet["analyst_workbench_packet"]["display_candidate_ref_status"] == (
         "not_authorized_by_workbench"
+    )
+    report_json = json.loads(
+        Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
+    )
+    report_md = Path(packet["review_report_markdown_path"]).read_text(
+        encoding="utf-8"
+    )
+    gap_report = report_json["gap_reentry"]
+    assert gap_report["workbench_gap_reentry_status"] == "followup_not_licensed"
+    assert gap_report["runkernel_followup_authorization_status"] == (
+        "not_created_followup_not_licensed"
+    )
+    assert gap_report["ordinary_search_path_reused"] is True
+    assert gap_report["followup_execution_licensed"] is False
+    assert gap_report["provider_called"] is False
+    assert gap_report["live_search_called"] is False
+    assert gap_report["fetch_read_executed"] is False
+    assert gap_report["dprime_dispatch_owner"] is False
+    assert gap_report["new_search_subsystem_created"] is False
+    assert "## Gap Re-entry" in report_md
+    assert "- Status: followup_not_licensed" in report_md
+    assert "- Reducer-produced authorization ref: not created" in report_md
+    _assert_workbench_non_authority(packet)
+
+
+def test_unreadable_high_value_official_candidate_proposes_read_support_gap(
+    tmp_path: Path,
+) -> None:
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-unreadable-official",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=False,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_result(
+                    "Official Example County Small Claims Fee PDF",
+                    "https://official.example.gov/courts/small-claims-fees.pdf",
+                )
+            ],
+        ),
+        fetch_read_runner=_http_403_pdf_fetch_runner,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    roles = _candidate_roles(packet)
+    gap = packet["analysis_gap_search_proposal"]
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert result.return_code == 2
+    assert gap["gap_status"] == "proposed"
+    assert gap["gap_kind"] == "unreadable_high_value_candidate"
+    assert reentry["workbench_gap_reentry_status"] == "followup_not_licensed"
+    assert reentry["gap_sources"] == ["workbench"]
+    assert reentry["dprime_gap_ref"] == {}
+    assert reentry["followup_execution_licensed"] is False
+    assert reentry["fetch_read_executed"] is False
+    assert packet["pdf_parsing_opened"] is False
+    assert packet["fetch_read_completed"] == 0
+    assert packet["fetch_read_packet_created"] == 1
+    assert ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL in roles
+    assert result.output.startswith(
+        "Answer:\nBlocked before answer: official strict support follow-up is needed."
+    )
+    report_json = json.loads(
+        Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
+    )
+    assert report_json["gap_reentry"]["workbench_gap_reentry_status"] == (
+        "followup_not_licensed"
     )
     _assert_workbench_non_authority(packet)
 
@@ -484,6 +600,23 @@ def _provider_extracted_result(
 
 def _failing_fetch_runner(url: str) -> GenericLiveFetchReadResult:
     raise AssertionError(f"provider-extracted content should bypass fetch: {url}")
+
+
+def _http_403_pdf_fetch_runner(url: str) -> GenericLiveFetchReadResult:
+    parsed = urlparse(url)
+    return GenericLiveFetchReadResult(
+        attempted_url=url,
+        final_url=url,
+        final_domain=parsed.netloc.lower(),
+        status_code=403,
+        status_class="4xx",
+        content_type="application/pdf",
+        fetched_byte_count=0,
+        sanitized_text="",
+        content_title="Official PDF",
+        redirect_count=0,
+        retrieved_or_observed_at="2026-07-03T00:00:00+00:00",
+    )
 
 
 def _fake_fetch_runner(text: str) -> Any:
