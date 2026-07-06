@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
+from core.analyst_workbench_runtime import workbench_dprime_dossier_ref
 from core.dprime_analyst_relation_intake_runtime import (
     DPrimeAnalystRelationIntakeError,
     build_dprime_analyst_relation_intake,
@@ -244,10 +245,12 @@ def build_live_semantic_coverage_status(
     dprime_downstream_authority_enabled: bool = True,
     dprime_source_citation_authority_enabled: bool | None = None,
     dprime_single_lane_answer_path_enabled: bool | None = None,
+    workbench_dprime_dossier: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     """Consume retained status chain and return CLI-safe semantic coverage status."""
 
     root = _resolve_root(repo_root)
+    workbench_ref = workbench_dprime_dossier_ref(workbench_dprime_dossier)
     dprime_product_model_route_ref = _dprime_product_smart_model_route_ref(
         query=query,
         smart_provider=smart_provider,
@@ -383,6 +386,7 @@ def build_live_semantic_coverage_status(
             model_review_callable=dprime_model_review_callable,
             one_shot_provider_boundary=dprime_one_shot_provider_boundary,
             one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+            workbench_dprime_dossier=workbench_dprime_dossier,
         )
         if (
             dprime_followup_search_reentry_enabled
@@ -457,6 +461,7 @@ def build_live_semantic_coverage_status(
             dprime_single_lane_answer_path_enabled=(
                 dprime_single_lane_answer_path_enabled
             ),
+            workbench_dprime_dossier_ref=workbench_ref,
         )
     if dprime_status.decision != PASS_DECISION:
         return _blocked_dprime_status_result(
@@ -468,6 +473,7 @@ def build_live_semantic_coverage_status(
             source_obligation_ref=source_obligation_ref,
             relation_ref=generic_relation_ref,
             dprime_status=dprime_status,
+            workbench_dprime_dossier_ref=workbench_ref,
         )
 
     try:
@@ -1051,9 +1057,13 @@ def _blocked_dprime_status_result(
     source_obligation_ref: Mapping[str, Any],
     relation_ref: Mapping[str, Any],
     dprime_status: DPrimeStatusPayload,
+    workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
     dprime["generic_relation_intake_ref"] = dict(relation_ref)
+    workbench_ref = _safe_mapping(workbench_dprime_dossier_ref)
+    if workbench_ref:
+        dprime["workbench_dprime_dossier_ref"] = dict(workbench_ref)
     not_reached_reason = _dprime_not_reached_reason(dprime)
     payload = _base_semantic_payload(
         query=query,
@@ -1082,6 +1092,7 @@ def _blocked_dprime_status_result(
         decision=dprime["decision"],
         blocker_detail=dprime["blocker_detail"],
         next_blocked_surface=_dprime_next_blocked_surface(dprime),
+        workbench_dprime_dossier_ref=workbench_ref,
     )
     payload.update(
         {
@@ -1130,6 +1141,7 @@ def _blocked_dprime_model_review_assessment_result(
     dprime_downstream_authority_enabled: bool,
     dprime_source_citation_authority_enabled: bool | None,
     dprime_single_lane_answer_path_enabled: bool | None,
+    workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     source_citation_authority_enabled = (
         dprime_downstream_authority_enabled
@@ -1143,6 +1155,9 @@ def _blocked_dprime_model_review_assessment_result(
     )
     dprime = dprime_status.to_dict()
     dprime["generic_relation_intake_ref"] = dict(relation_ref)
+    workbench_ref = _safe_mapping(workbench_dprime_dossier_ref)
+    if workbench_ref:
+        dprime["workbench_dprime_dossier_ref"] = dict(workbench_ref)
     dprime["dprime_downstream_authority_enabled"] = bool(
         dprime_downstream_authority_enabled
     )
@@ -1584,6 +1599,7 @@ def _blocked_dprime_model_review_assessment_result(
         decision=payload_decision,
         blocker_detail=payload_detail,
         next_blocked_surface=next_surface,
+        workbench_dprime_dossier_ref=workbench_ref,
     )
     payload.update(
         {
@@ -2136,8 +2152,14 @@ def _base_semantic_payload(
     blocker_detail: str | None,
     next_blocked_surface: str | None,
     relation_intake_ref: Mapping[str, Any] | None = None,
+    workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     selected = _safe_mapping(readiness_payload.get("selected_candidate"))
+    workbench_ref = _safe_mapping(workbench_dprime_dossier_ref)
+    workbench_status = _clean_text(workbench_ref.get("status"), limit=80)
+    workbench_consumed = bool(
+        workbench_ref and workbench_status not in {"not_provided", "not_created"}
+    )
     payload = {
         "phase": PHASE,
         "mode": MODE,
@@ -2174,6 +2196,8 @@ def _base_semantic_payload(
         "generic_relation_intake_consumed_by_product_status": bool(
             relation_intake_ref
         ),
+        "workbench_dprime_dossier_ref": dict(workbench_ref),
+        "workbench_dprime_dossier_consumed_by_product_status": workbench_consumed,
         "semantic_support_source": "retained bounded sanitized content",
         "semantic_support_custody_distinction_preserved": (
             decision == PASS_DECISION

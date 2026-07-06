@@ -20,6 +20,7 @@ from typing import Any, Callable, Mapping, Sequence
 
 import core.dprime_assessment_validation as assessment_validation
 import core.dprime_negative_control_profile as negative_controls
+from core.analyst_workbench_runtime import workbench_dprime_dossier_ref
 from core.dprime_model_review_prompt import (
     DPRIME_MODEL_REVIEW_PROMPT_SCHEMA_VERSION,
     DPRIME_MODEL_REVIEW_SYSTEM_PROMPT,
@@ -275,6 +276,11 @@ class DPrimeModelReviewInputPacket:
         )
         if selected_window_diagnostic_ref:
             ref["selected_window_diagnostic_ref"] = selected_window_diagnostic_ref
+        workbench_ref = _safe_mapping(
+            self.safe_packet.get("workbench_dprime_dossier_ref")
+        )
+        if workbench_ref:
+            ref["workbench_dprime_dossier_ref"] = workbench_ref
         return ref
 
 
@@ -388,6 +394,7 @@ def run_dprime_model_review_assessment(
     one_shot_model_review_adapter: (
         Mapping[str, Any] | DPrimeOneShotModelReviewAdapter | None
     ) = None,
+    workbench_dprime_dossier: Mapping[str, Any] | None = None,
 ) -> DPrimeModelReviewAssessmentResult:
     """Run the single-call injected model-review assessment slice."""
 
@@ -439,6 +446,7 @@ def run_dprime_model_review_assessment(
             assessment_validator_status=assessment_validator_status,
             one_shot_provider_boundary_ref=provider_boundary_status_ref,
             one_shot_model_review_adapter_ref=adapter_status_ref,
+            workbench_dprime_dossier=workbench_dprime_dossier,
         )
     except DPrimeModelReviewAssessmentError as exc:
         return _blocked_result(
@@ -606,6 +614,7 @@ def build_dprime_model_review_input_packet(
     assessment_validator_status: str,
     one_shot_provider_boundary_ref: Mapping[str, Any] | None = None,
     one_shot_model_review_adapter_ref: Mapping[str, Any] | None = None,
+    workbench_dprime_dossier: Mapping[str, Any] | None = None,
 ) -> DPrimeModelReviewInputPacket:
     """Build safe retained input plus a transient bounded evidence window."""
 
@@ -657,6 +666,12 @@ def build_dprime_model_review_input_packet(
         )
     window = _transient_evidence_window(reference)
     selector_ref = _selector_ref(reference, frame_ref=frame_ref)
+    workbench_dossier = _workbench_dprime_dossier_packet(workbench_dprime_dossier)
+    workbench_ref = (
+        workbench_dprime_dossier_ref(workbench_dossier)
+        if workbench_dossier
+        else {}
+    )
     safe_packet = _without_empty(
         {
             "schema_version": DPRIME_MODEL_REVIEW_INPUT_SCHEMA_VERSION,
@@ -691,6 +706,8 @@ def build_dprime_model_review_input_packet(
                 reference,
                 transient_bounded_evidence_window=window,
             ),
+            "workbench_dprime_dossier": workbench_dossier,
+            "workbench_dprime_dossier_ref": workbench_ref,
             "closed_surface_flags": dict(_CLOSED_SURFACE_FLAGS),
             "forbidden_surfaces": [
                 "ValidatedSupportProposal",
@@ -1513,6 +1530,87 @@ def _selected_window_diagnostic_ref(
             "value_token_observed": value_token_count > 0,
             "window_text_retained": False,
             "window_text_printed": False,
+        }
+    )
+
+
+def _workbench_dprime_dossier_packet(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    dossier = _safe_mapping(value)
+    if not dossier:
+        return {}
+    return _without_empty(
+        {
+            "schema_version": dossier.get("schema_version"),
+            "phase": dossier.get("phase"),
+            "dossier_kind": dossier.get("dossier_kind"),
+            "dossier_id": dossier.get("dossier_id"),
+            "dossier_digest": dossier.get("dossier_digest"),
+            "runtime_consumer": dossier.get("runtime_consumer"),
+            "dprime_consumer": dossier.get("dprime_consumer"),
+            "candidate_evidence_triage_ref": _safe_mapping(
+                dossier.get("candidate_evidence_triage_ref")
+            ),
+            "analyst_workbench_ref": _safe_mapping(
+                dossier.get("analyst_workbench_ref")
+            ),
+            "selected_candidate_ref": _safe_mapping(
+                dossier.get("selected_candidate_ref")
+            ),
+            "top_candidate_ref": _safe_mapping(dossier.get("top_candidate_ref")),
+            "dprime_review_candidate_ref": _safe_mapping(
+                dossier.get("dprime_review_candidate_ref")
+            ),
+            "strict_answer_support_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("strict_answer_support_candidate_refs")
+                )
+            ],
+            "contextual_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("contextual_candidate_refs"))
+            ],
+            "overclaim_risk_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("overclaim_risk_candidate_refs")
+                )
+            ],
+            "role_proposal_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("role_proposal_refs"))
+            ],
+            "analyst_finding_proposal_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("analyst_finding_proposal_refs")
+                )
+            ],
+            "scrutineer_lane_ref": _safe_mapping(
+                dossier.get("scrutineer_lane_ref")
+            ),
+            "specialist_lane_ref": _safe_mapping(dossier.get("specialist_lane_ref")),
+            "economist_lane_ref": _safe_mapping(dossier.get("economist_lane_ref")),
+            "analysis_gap_search_proposal_ref": _safe_mapping(
+                dossier.get("analysis_gap_search_proposal_ref")
+            ),
+            "gap_proposal_status": dossier.get("gap_proposal_status"),
+            "strict_answer_support_candidate_count": _bounded_int(
+                dossier.get("strict_answer_support_candidate_count"),
+                default=0,
+            ),
+            "contextual_candidate_count": _bounded_int(
+                dossier.get("contextual_candidate_count"),
+                default=0,
+            ),
+            "overclaim_risk_candidate_count": _bounded_int(
+                dossier.get("overclaim_risk_candidate_count"),
+                default=0,
+            ),
+            "source_text_retained": False,
+            "product_correctness_claimed": False,
         }
     )
 
