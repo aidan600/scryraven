@@ -54,6 +54,7 @@ from core.generic_product_provider_acquisition import (
     ProductProviderAcquisitionResult,
     ProductProviderAcquisitionRunner,
     build_generic_product_provider_acquisition_runner,
+    redact_provider_extracted_source_text,
 )
 from core.generic_query_to_relation_planning import (
     GenericQueryRelationPlanningError,
@@ -8501,7 +8502,11 @@ def _load_sanitized_provider_output(path: Path) -> dict[str, Any]:
 
 def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     raw = _safe_mapping(payload)
-    _reject_forbidden_material(raw, context="sanitized provider response")
+    envelope_guard = {key: item for key, item in raw.items() if key != "results"}
+    _reject_forbidden_material(
+        envelope_guard,
+        context="sanitized provider response",
+    )
     unknown = sorted(set(raw) - _ALLOWED_PROVIDER_ENVELOPE_KEYS)
     if unknown:
         raise GenericSingleRelationLiveDogfoodRunError(
@@ -8560,7 +8565,13 @@ def _provider_results(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
     raw = _safe_mapping(value)
-    _reject_forbidden_material(raw, context="sanitized provider result")
+    provider_extracted_text = _clean_provider_extracted_source_text(
+        raw.get("provider_extracted_text")
+    )
+    result_guard = dict(raw)
+    if "provider_extracted_text" in result_guard:
+        result_guard["provider_extracted_text"] = provider_extracted_text
+    _reject_forbidden_material(result_guard, context="sanitized provider result")
     unknown = sorted(set(raw) - _ALLOWED_PROVIDER_RESULT_KEYS)
     if unknown:
         raise GenericSingleRelationLiveDogfoodRunError(
@@ -8581,9 +8592,6 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
     url_valid = _is_valid_http_url(url)
     domain = _clean_domain(raw.get("domain")) or (
         urlparse(url).netloc.lower() if url and urlparse(url).netloc else None
-    )
-    provider_extracted_text = _clean_provider_extracted_source_text(
-        raw.get("provider_extracted_text")
     )
     provider_extracted_text_digest = (
         _digest_json({"provider_extracted_text": provider_extracted_text})
@@ -9088,7 +9096,14 @@ def _private_value_findings(
                 _private_value_findings(item, path=(*path, f"[{index}]"))
             )
     elif isinstance(value, str):
-        marker = _private_value_marker_class(value)
+        if path and path[-1] == "provider_extracted_text":
+            marker = (
+                "private_prefix_sk"
+                if redact_provider_extracted_source_text(value) != value
+                else None
+            )
+        else:
+            marker = _private_value_marker_class(value)
         if marker:
             findings.append(
                 {
@@ -9502,7 +9517,7 @@ def _clean_provider_extracted_source_text(value: Any) -> str | None:
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
             "sanitized provider result extracted text exceeds source-text cap.",
         )
-    return text
+    return redact_provider_extracted_source_text(text) if text else None
 
 
 def _clean_domain(value: Any) -> str | None:
