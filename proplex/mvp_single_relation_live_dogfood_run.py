@@ -216,6 +216,7 @@ CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG = (
     "--confirm-live-source-challenge-recovery"
 )
 DEFAULT_OUTPUT_DIR = Path("output") / "mvp_single_relation_live_dogfood_01"
+PRODUCT_SINGLE_FACT_OUTPUT_ROOT = Path("output")
 SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME = (
     "sanitized-product-provider-acquisition-response.json"
 )
@@ -783,9 +784,20 @@ def build_generic_single_relation_live_dogfood_run_output(
 ) -> MvpFriendOutputResult:
     """Run one planned generic relation through bounded live dogfood."""
 
+    entrypoint_metadata = _entrypoint_metadata(
+        entrypoint_surface=entrypoint_surface,
+        entrypoint_kind=entrypoint_kind,
+        diagnostic_dogfood_alias=diagnostic_dogfood_alias,
+        supported_query_class=supported_query_class,
+    )
     root = Path(repo_root).resolve()
     run_id = _run_id(run_id)
-    run_dir = _run_output_dir(root, output_dir or DEFAULT_OUTPUT_DIR, run_id)
+    run_dir = _run_output_dir(
+        root,
+        output_dir or DEFAULT_OUTPUT_DIR,
+        run_id,
+        entrypoint_metadata=entrypoint_metadata,
+    )
     retained_root = run_dir / "retained_status_repo"
     provider_output_path = run_dir / SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME
     packet_path = run_dir / LIVE_DOGFOOD_PACKET_NAME
@@ -803,12 +815,6 @@ def build_generic_single_relation_live_dogfood_run_output(
     source_challenge_recovery: dict[str, Any] | None = None
     initial_model_planning_packet: dict[str, Any] | None = None
     recovery_model_planning_packet: dict[str, Any] | None = None
-    entrypoint_metadata = _entrypoint_metadata(
-        entrypoint_surface=entrypoint_surface,
-        entrypoint_kind=entrypoint_kind,
-        diagnostic_dogfood_alias=diagnostic_dogfood_alias,
-        supported_query_class=supported_query_class,
-    )
     product_single_fact_answer_path_enabled = (
         entrypoint_metadata["entrypoint_kind"] == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
         and entrypoint_metadata["supported_query_class"]
@@ -8930,15 +8936,33 @@ def _entrypoint_metadata_from_mapping(metadata: Mapping[str, Any]) -> dict[str, 
     )
 
 
-def _run_output_dir(root: Path, output_dir: str | Path, run_id: str) -> Path:
+def _run_output_dir(
+    root: Path,
+    output_dir: str | Path,
+    run_id: str,
+    *,
+    entrypoint_metadata: Mapping[str, Any],
+) -> Path:
     raw = Path(output_dir)
     if not raw.is_absolute():
         raw = root / raw
     resolved = raw.resolve()
-    allowed = (root / DEFAULT_OUTPUT_DIR).resolve()
+    product_entrypoint = (
+        entrypoint_metadata.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    )
+    allowed = (
+        root / PRODUCT_SINGLE_FACT_OUTPUT_ROOT
+        if product_entrypoint
+        else root / DEFAULT_OUTPUT_DIR
+    ).resolve()
     try:
         resolved.relative_to(allowed)
     except ValueError as exc:
+        if product_entrypoint:
+            raise ValueError(
+                "product-supported current source-of-record single-fact output "
+                "must stay under output/"
+            ) from exc
         raise ValueError(
             "generic single-relation live dogfood output must stay under "
             "output/mvp_single_relation_live_dogfood_01/"
