@@ -24,6 +24,17 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
+from core.analyst_workbench_runtime import (
+    ANALYSIS_GAP_SEARCH_PROPOSAL_SCHEMA_VERSION,
+    ANALYST_WORKBENCH_SCHEMA_VERSION,
+    CANDIDATE_EVIDENCE_TRIAGE_SCHEMA_VERSION,
+    WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION,
+    WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION,
+    AnalystWorkbenchError,
+    build_current_source_record_analyst_workbench,
+    empty_current_source_record_analyst_workbench_bundle,
+    validate_current_source_record_analyst_workbench_bundle,
+)
 from core.dprime_product_smart_one_shot_transport import (
     build_dprime_product_smart_model_review_adapter,
     build_dprime_product_smart_model_review_license,
@@ -1043,6 +1054,20 @@ def build_generic_single_relation_live_dogfood_run_output(
             )
         counts["fetch_read_packet_created"] = 1
         _enforce_caps(counts)
+        analyst_workbench_bundle = build_current_source_record_analyst_workbench(
+            relation_plan=relation_plan,
+            acquisition_plan=acquisition_plan,
+            candidate_diagnostics=_safe_sequence(
+                counts.get("fetch_read_candidate_diagnostics")
+            ),
+            answer_bearing_candidate_window_diagnostics=_safe_sequence(
+                counts.get("answer_bearing_candidate_window_diagnostics")
+            ),
+            provider_results=results,
+            fetch_read_content_packet=fetch_packet,
+            entrypoint_kind=entrypoint_metadata["entrypoint_kind"],
+        )
+        _record_analyst_workbench_counts(counts, analyst_workbench_bundle)
 
         source_obligation_authorization = (
             _build_source_obligation_recovery_authorization(
@@ -1083,6 +1108,9 @@ def build_generic_single_relation_live_dogfood_run_output(
                     "run_kernel_support_admission_decision_status"
                 )
                 or DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+            ),
+            workbench_dprime_dossier=_safe_mapping(
+                analyst_workbench_bundle.get("workbench_dprime_dossier")
             ),
             **dprime_kwargs,
         )
@@ -1599,6 +1627,7 @@ def validate_generic_single_relation_live_dogfood_packet(
     _validate_dprime_authority_integration(safe)
     _validate_source_citation_display_boundary(safe)
     _validate_fetch_read_observability(safe)
+    _validate_analyst_workbench_surface(safe)
     _reject_forbidden_material(safe, context="generic live dogfood packet")
     return safe
 
@@ -2169,6 +2198,168 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         _validate_attempt_diagnostic(diagnostic)
 
 
+def _validate_analyst_workbench_surface(packet: Mapping[str, Any]) -> None:
+    bundle = {
+        "candidate_evidence_triage_packet": _safe_mapping(
+            packet.get("candidate_evidence_triage_packet")
+        ),
+        "analyst_workbench_packet": _safe_mapping(
+            packet.get("analyst_workbench_packet")
+        ),
+        "analysis_gap_search_proposal": _safe_mapping(
+            packet.get("analysis_gap_search_proposal")
+        ),
+        "workbench_dprime_dossier": _safe_mapping(
+            packet.get("workbench_dprime_dossier")
+        ),
+        "workbench_reduction_projection": _safe_mapping(
+            packet.get("workbench_reduction_projection")
+        ),
+        "candidate_evidence_triage_ref": _safe_mapping(
+            packet.get("candidate_evidence_triage_ref")
+        ),
+        "analyst_workbench_ref": _safe_mapping(packet.get("analyst_workbench_ref")),
+        "analysis_gap_search_proposal_ref": _safe_mapping(
+            packet.get("analysis_gap_search_proposal_ref")
+        ),
+        "workbench_dprime_dossier_ref": _safe_mapping(
+            packet.get("workbench_dprime_dossier_ref")
+        ),
+        "workbench_reduction_projection_ref": _safe_mapping(
+            packet.get("workbench_reduction_projection_ref")
+        ),
+    }
+    try:
+        validate_current_source_record_analyst_workbench_bundle(bundle)
+    except AnalystWorkbenchError as exc:
+        _blocked_output_hygiene(f"Analyst Workbench bundle invalid: {exc}")
+    triage = bundle["candidate_evidence_triage_packet"]
+    workbench = bundle["analyst_workbench_packet"]
+    gap = bundle["analysis_gap_search_proposal"]
+    dossier = bundle["workbench_dprime_dossier"]
+    projection = bundle["workbench_reduction_projection"]
+    for section_name, section, schema_version in (
+        (
+            "candidate_evidence_triage_packet",
+            triage,
+            CANDIDATE_EVIDENCE_TRIAGE_SCHEMA_VERSION,
+        ),
+        ("analyst_workbench_packet", workbench, ANALYST_WORKBENCH_SCHEMA_VERSION),
+        (
+            "analysis_gap_search_proposal",
+            gap,
+            ANALYSIS_GAP_SEARCH_PROPOSAL_SCHEMA_VERSION,
+        ),
+        (
+            "workbench_dprime_dossier",
+            dossier,
+            WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION,
+        ),
+    ):
+        if not section:
+            if _bounded_int(packet.get("fetch_read_packet_created")):
+                _blocked_output_hygiene(f"{section_name} missing after fetch/read.")
+            continue
+        if section.get("schema_version") != schema_version:
+            _blocked_output_hygiene(f"{section_name} schema mismatch.")
+        if section.get("ordinary_product_path_consumed") is not True:
+            _blocked_output_hygiene(f"{section_name} not product-consumed.")
+        _validate_workbench_non_authority_posture(section, section_name)
+    if projection.get("schema_version") != WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION:
+        _blocked_output_hygiene("Workbench reduction projection schema mismatch.")
+    if projection.get("owner") != "AnalystWorkbenchRuntime":
+        _blocked_output_hygiene("Workbench reduction projection owner mismatch.")
+    if projection.get("run_kernel_reduced") is not False:
+        _blocked_output_hygiene("Workbench projection claimed RunKernel reduction.")
+    if projection.get("run_kernel_reduction_pending") is not True:
+        _blocked_output_hygiene("Workbench projection pending flag invalid.")
+    if projection.get("proposed_for_runkernel_reduction") is not True:
+        _blocked_output_hygiene("Workbench projection proposal flag invalid.")
+    _validate_workbench_non_authority_posture(
+        projection,
+        "workbench_reduction_projection",
+    )
+    if _bounded_int(packet.get("fetch_read_packet_created")):
+        if packet.get("optional_evidence_triage_implemented") is not True:
+            _blocked_output_hygiene("Analyst Workbench triage was not implemented.")
+        for key in (
+            "candidate_evidence_triage_consumed_by_product_path",
+            "analyst_workbench_consumed_by_product_path",
+            "workbench_dprime_dossier_consumed_by_product_path",
+        ):
+            if packet.get(key) is not True:
+                _blocked_output_hygiene(f"Analyst Workbench {key} invalid.")
+        if projection.get("ordinary_product_path_consumed") is not True:
+            _blocked_output_hygiene("Workbench reduction projection not consumed.")
+    if _bounded_int(packet.get("dprime_model_review_calls_attempted")) and (
+        _semantic_payload_supports_workbench_dossier(packet)
+    ):
+        if packet.get("workbench_dprime_dossier_consumed_by_dprime") is not True:
+            _blocked_output_hygiene("D-prime did not consume Workbench dossier ref.")
+        _validate_workbench_dprime_input_ref(packet)
+
+
+def _semantic_payload_supports_workbench_dossier(packet: Mapping[str, Any]) -> bool:
+    semantic = _safe_mapping(packet.get("semantic_status_payload"))
+    dprime = _safe_mapping(semantic.get("dprime_status"))
+    input_ref = _safe_mapping(dprime.get("input_packet_ref"))
+    return bool(
+        "workbench_dprime_dossier_ref" in semantic
+        or "workbench_dprime_dossier_consumed_by_product_status" in semantic
+        or "workbench_dprime_dossier_ref" in input_ref
+    )
+
+
+def _validate_workbench_dprime_input_ref(packet: Mapping[str, Any]) -> None:
+    expected = _safe_mapping(packet.get("workbench_dprime_dossier_ref"))
+    expected_digest = _clean_text(expected.get("dossier_digest"), limit=128)
+    semantic = _safe_mapping(packet.get("semantic_status_payload"))
+    dprime = _safe_mapping(semantic.get("dprime_status"))
+    input_ref = _safe_mapping(dprime.get("input_packet_ref"))
+    consumed = _safe_mapping(input_ref.get("workbench_dprime_dossier_ref"))
+    if not expected_digest or consumed.get("dossier_digest") != expected_digest:
+        _blocked_output_hygiene("D-prime Workbench dossier ref mismatch.")
+
+
+def _validate_workbench_non_authority_posture(
+    section: Mapping[str, Any],
+    section_name: str,
+) -> None:
+    for item in _iter_mapping_values(section):
+        for key in (
+            "evidence_admitted",
+            "source_obligation_satisfied",
+            "citation_eligible",
+            "source_authority_finalized",
+            "final_answer_packet_created",
+            "author_answer_created",
+            "product_correctness_claimed",
+        ):
+            if key in item and item.get(key) is not False:
+                _blocked_output_hygiene(f"{section_name} authority flag invalid.")
+        if "proposal_only" in item and item.get("proposal_only") is not True:
+            _blocked_output_hygiene(f"{section_name} proposal-only flag invalid.")
+        raw_flags = _safe_mapping(item.get("raw_private_retention_flags"))
+        if raw_flags and raw_flags != RAW_FALSE_FLAGS:
+            _blocked_output_hygiene(f"{section_name} raw/private flags invalid.")
+        for key in RAW_FALSE_FLAGS:
+            if key in item and item.get(key) is not False:
+                _blocked_output_hygiene(f"{section_name} raw/private flag invalid.")
+
+
+def _iter_mapping_values(value: Any) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    if isinstance(value, Mapping):
+        safe = _safe_mapping(value)
+        items.append(safe)
+        for item in safe.values():
+            items.extend(_iter_mapping_values(item))
+    elif isinstance(value, list | tuple | set | frozenset):
+        for item in value:
+            items.extend(_iter_mapping_values(item))
+    return items
+
+
 def _validate_candidate_diagnostic(diagnostic: Mapping[str, Any]) -> None:
     if not _clean_text(diagnostic.get("candidate_id"), limit=320):
         _blocked_output_hygiene("candidate diagnostic requires candidate_id.")
@@ -2588,10 +2779,7 @@ def _format_product_single_fact_output(
 ) -> str:
     answer_text = _clean_text(packet.get("product_answer_text"), limit=4_000)
     if not answer_text:
-        detail = _clean_text(packet.get("blocker_detail"), limit=900)
-        answer_text = (
-            f"Blocked before answer: {packet.get('decision')}. {detail}".strip()
-        )
+        answer_text = _product_single_fact_blocker_text(packet)
     lines = [
         "Answer:",
         answer_text or "Blocked before answer: unavailable.",
@@ -2641,6 +2829,22 @@ def _format_product_single_fact_output(
         ]
     )
     return "\n".join(lines)
+
+
+def _product_single_fact_blocker_text(packet: Mapping[str, Any]) -> str:
+    gap = _safe_mapping(packet.get("analysis_gap_search_proposal"))
+    gap_status = _clean_text(gap.get("gap_status"), limit=80)
+    gap_kind = _clean_text(gap.get("gap_kind"), limit=120)
+    gap_reason = _clean_text(gap.get("gap_reason"), limit=300)
+    if gap_status == "proposed" and gap_kind in {
+        "strict_support_missing",
+        "overclaim_risk",
+        "unreadable_high_value_candidate",
+    }:
+        reason = gap_reason or "contextual material is insufficient."
+        return f"Blocked before answer: official strict support needed. {reason}"
+    detail = _clean_text(packet.get("blocker_detail"), limit=900)
+    return f"Blocked before answer: {packet.get('decision')}. {detail}".strip()
 
 
 def _product_report_display_path(packet: Mapping[str, Any]) -> str:
@@ -2700,6 +2904,8 @@ def _build_current_source_record_single_fact_review_report(
     boundary = _safe_mapping(safe.get("source_citation_display_boundary"))
     semantic = _safe_mapping(safe.get("semantic_status_payload"))
     dprime = _safe_mapping(semantic.get("dprime_status"))
+    analyst_workbench = _current_source_record_workbench_report_section(safe)
+    live_product_run_executed = bool(safe.get("live_runs_attempted"))
     report = {
         "report_kind": "current_source_record_single_fact_review_report",
         "schema_version": "current_source_record_single_fact_review_report_v1",
@@ -2923,12 +3129,15 @@ def _build_current_source_record_single_fact_review_report(
             },
             "retention": {
                 "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
-                "live_validation_status": "not_run",
+                "live_product_run_executed": live_product_run_executed,
+                "live_validation_correctness_claimed": False,
                 "product_correctness_claimed": False,
             },
         },
+        "analyst_workbench": analyst_workbench,
         "non_claims": {
-            "live_validation_not_run": True,
+            "live_product_run_executed": live_product_run_executed,
+            "live_validation_correctness_claimed": False,
             "product_correctness_claimed": False,
             "source_obligation_satisfied_by_cli": False,
             "final_citation_rendering_created": False,
@@ -2936,6 +3145,101 @@ def _build_current_source_record_single_fact_review_report(
         },
     }
     return _json_safe(report)
+
+
+def _current_source_record_workbench_report_section(
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    triage = _safe_mapping(packet.get("candidate_evidence_triage_packet"))
+    workbench = _safe_mapping(packet.get("analyst_workbench_packet"))
+    gap = _safe_mapping(packet.get("analysis_gap_search_proposal"))
+    dossier = _safe_mapping(packet.get("workbench_dprime_dossier"))
+    projection = _safe_mapping(packet.get("workbench_reduction_projection"))
+    return {
+        "schema_version": "analyst_workbench_review_section_v1",
+        "product_path_consumed": bool(
+            packet.get("analyst_workbench_consumed_by_product_path")
+        ),
+        "candidate_evidence_triage_ref": _safe_mapping(
+            packet.get("candidate_evidence_triage_ref")
+        ),
+        "analyst_workbench_ref": _safe_mapping(packet.get("analyst_workbench_ref")),
+        "analysis_gap_search_proposal_ref": _safe_mapping(
+            packet.get("analysis_gap_search_proposal_ref")
+        ),
+        "workbench_dprime_dossier_ref": _safe_mapping(
+            packet.get("workbench_dprime_dossier_ref")
+        ),
+        "workbench_dprime_dossier_consumed_by_dprime": bool(
+            packet.get("workbench_dprime_dossier_consumed_by_dprime")
+        ),
+        "workbench_reduction_projection_ref": _safe_mapping(
+            packet.get("workbench_reduction_projection_ref")
+        ),
+        "workbench_reduction_projection_status": projection.get("status"),
+        "run_kernel_reduced": projection.get("run_kernel_reduced") is True,
+        "run_kernel_reduction_pending": (
+            projection.get("run_kernel_reduction_pending") is True
+        ),
+        "proposed_for_runkernel_reduction": (
+            projection.get("proposed_for_runkernel_reduction") is True
+        ),
+        "top_candidate_ref": _safe_mapping(triage.get("top_candidate_ref")),
+        "selected_candidate_ref": _safe_mapping(triage.get("selected_candidate_ref")),
+        "dprime_review_candidate_ref": _safe_mapping(
+            triage.get("dprime_review_candidate_ref")
+        )
+        or _safe_mapping(dossier.get("dprime_review_candidate_ref")),
+        "strict_answer_support_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                triage.get("strict_answer_support_candidate_refs")
+            )
+        ],
+        "contextual_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(triage.get("contextual_candidate_refs"))
+        ],
+        "overclaim_risk_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(triage.get("overclaim_risk_candidate_refs"))
+        ],
+        "evidence_role_proposal_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(workbench.get("evidence_role_proposal_refs"))
+        ],
+        "analyst_finding_proposal_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(workbench.get("analyst_finding_proposal_refs"))
+        ],
+        "specialist_lane": _safe_mapping(workbench.get("specialist_lane_placeholder")),
+        "economist_lane": _safe_mapping(workbench.get("economist_lane_placeholder")),
+        "scrutineer_lane": _safe_mapping(workbench.get("scrutineer_lane_placeholder")),
+        "analysis_gap_search_proposal": _without_empty(
+            {
+                "gap_status": gap.get("gap_status"),
+                "gap_kind": gap.get("gap_kind"),
+                "gap_reason": gap.get("gap_reason"),
+                "live_followup_required": gap.get("live_followup_required"),
+                "live_followup_licensed": gap.get("live_followup_licensed"),
+                "proposed_runkernel_reduction_status": gap.get(
+                    "proposed_runkernel_reduction_status"
+                ),
+            }
+        ),
+        "display_candidate_ref_status": workbench.get("display_candidate_ref_status"),
+        "non_authority_flags": {
+            "proposal_only": workbench.get("proposal_only") is True
+            or projection.get("proposal_only") is True,
+            "evidence_admitted": False,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
+            "source_authority_finalized": False,
+            "product_correctness_claimed": False,
+        },
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+        "source_text_retained": False,
+    }
 
 
 def _format_current_source_record_single_fact_review_report(
@@ -2946,6 +3250,12 @@ def _format_current_source_record_single_fact_review_report(
     propagation = _safe_mapping(safe.get("claim_propagation_lifecycle"))
     stages = _safe_mapping(safe.get("stage_lifecycle"))
     answer_path = _safe_mapping(stages.get("answer_path"))
+    analyst_workbench = _safe_mapping(safe.get("analyst_workbench"))
+    gap = _safe_mapping(analyst_workbench.get("analysis_gap_search_proposal"))
+    scrutineer = _safe_mapping(analyst_workbench.get("scrutineer_lane"))
+    specialist = _safe_mapping(analyst_workbench.get("specialist_lane"))
+    economist = _safe_mapping(analyst_workbench.get("economist_lane"))
+    non_claims = _safe_mapping(safe.get("non_claims"))
     lines = [
         "# Current Source Record Single-Fact Review Report",
         "",
@@ -2972,6 +3282,30 @@ def _format_current_source_record_single_fact_review_report(
         f"- FAP safe claim: {_bool_text(bool(propagation.get('fap_safe_claim_ref')))}",
         f"- Author safe claim: {_bool_text(bool(propagation.get('author_safe_claim_ref')))}",
         "",
+        "## Analyst Workbench",
+        "- Product path consumed: "
+        f"{_bool_text(analyst_workbench.get('product_path_consumed'))}",
+        "- Candidate triage: "
+        f"{_safe_mapping(analyst_workbench.get('candidate_evidence_triage_ref')).get('packet_digest') or 'not present'}",
+        "- D-prime dossier consumed: "
+        f"{_bool_text(analyst_workbench.get('workbench_dprime_dossier_consumed_by_dprime'))}",
+        "- Workbench reduction projection: "
+        f"{analyst_workbench.get('workbench_reduction_projection_status') or 'not reached'}",
+        "- RunKernel reduction pending: "
+        f"{_bool_text(analyst_workbench.get('run_kernel_reduction_pending'))}",
+        f"- Scrutineer lane: {scrutineer.get('status') or 'not reached'}",
+        f"- Specialist lane: {specialist.get('status') or 'not reached'}",
+        f"- Economist lane: {economist.get('status') or 'not reached'}",
+        "- Gap proposal: "
+        f"{gap.get('gap_status') or 'not present'} / {gap.get('gap_kind') or 'none'}",
+        "- Strict candidates: "
+        f"{len(_safe_sequence(analyst_workbench.get('strict_answer_support_candidate_refs')))}",
+        "- Contextual candidates: "
+        f"{len(_safe_sequence(analyst_workbench.get('contextual_candidate_refs')))}",
+        "- Overclaim-risk candidates: "
+        f"{len(_safe_sequence(analyst_workbench.get('overclaim_risk_candidate_refs')))}",
+        "- Workbench authority: proposal-only",
+        "",
         "## Answer Path",
         f"- SufficiencyReadiness status: {answer_path.get('sufficiency_readiness_status') or 'not reached'}",
         f"- FinalAnswerPacket status: {answer_path.get('final_answer_packet_status') or 'not reached'}",
@@ -2979,8 +3313,12 @@ def _format_current_source_record_single_fact_review_report(
         f"- Source display status: {answer_path.get('citation_source_display_status') or 'not reached'}",
         "",
         "## Non-Claims",
-        "- Live validation: not run",
-        "- Product correctness claimed: false",
+        "- Live product run executed: "
+        f"{_bool_text(non_claims.get('live_product_run_executed'))}",
+        "- Live validation correctness claimed: "
+        f"{_bool_text(non_claims.get('live_validation_correctness_claimed'))}",
+        "- Product correctness claimed: "
+        f"{_bool_text(non_claims.get('product_correctness_claimed'))}",
         "- Raw/private retained: false",
     ]
     return "\n".join(lines) + "\n"
@@ -5536,6 +5874,27 @@ def _base_packet(
         else "unsupported query (not retained)"
     )
     entrypoint = _entrypoint_metadata_from_mapping(entrypoint_metadata)
+    workbench_bundle = _analyst_workbench_bundle_from_counts(counts)
+    triage_packet = _safe_mapping(
+        workbench_bundle.get("candidate_evidence_triage_packet")
+    )
+    workbench_packet = _safe_mapping(workbench_bundle.get("analyst_workbench_packet"))
+    gap_proposal = _safe_mapping(workbench_bundle.get("analysis_gap_search_proposal"))
+    dprime_dossier = _safe_mapping(workbench_bundle.get("workbench_dprime_dossier"))
+    projection = _safe_mapping(workbench_bundle.get("workbench_reduction_projection"))
+    triage_ref = _safe_mapping(workbench_bundle.get("candidate_evidence_triage_ref"))
+    workbench_ref = _safe_mapping(workbench_bundle.get("analyst_workbench_ref"))
+    gap_ref = _safe_mapping(workbench_bundle.get("analysis_gap_search_proposal_ref"))
+    dprime_dossier_ref = _safe_mapping(
+        workbench_bundle.get("workbench_dprime_dossier_ref")
+    )
+    projection_ref = _safe_mapping(
+        workbench_bundle.get("workbench_reduction_projection_ref")
+    )
+    workbench_dprime_consumed = _workbench_dossier_consumed_by_dprime(
+        semantic,
+        dprime_dossier_ref=dprime_dossier_ref,
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "phase_name": PHASE_NAME,
@@ -5868,8 +6227,45 @@ def _base_packet(
         "direct_url_fetch_primary_happy_path": False,
         "direct_url_fetch_fallback_or_diagnostic_only": True,
         "direct_fetch_read_attempts": counts.get("direct_fetch_read_attempts", 0),
-        "optional_evidence_triage_implemented": False,
-        "optional_evidence_triage_deferred_to": "SOURCE-EVIDENCE-INTAKE-TRIAGE-01",
+        "optional_evidence_triage_implemented": bool(triage_packet),
+        "optional_evidence_triage_deferred_to": None if triage_packet else (
+            "CURRENT-SOURCE-RECORD-ANALYST-WORKBENCH-FULL-SLICE-SCAFFOLD-01"
+        ),
+        "candidate_evidence_triage_packet": triage_packet,
+        "candidate_evidence_triage_ref": triage_ref,
+        "candidate_evidence_triage_packet_created": counts.get(
+            "candidate_evidence_triage_packet_created",
+            0,
+        ),
+        "candidate_evidence_triage_consumed_by_product_path": bool(triage_packet),
+        "analyst_workbench_packet": workbench_packet,
+        "analyst_workbench_ref": workbench_ref,
+        "analyst_workbench_packet_created": counts.get(
+            "analyst_workbench_packet_created",
+            0,
+        ),
+        "analyst_workbench_consumed_by_product_path": bool(workbench_packet),
+        "analysis_gap_search_proposal": gap_proposal,
+        "analysis_gap_search_proposal_ref": gap_ref,
+        "analysis_gap_search_proposal_created": counts.get(
+            "analysis_gap_search_proposal_created",
+            0,
+        ),
+        "workbench_dprime_dossier": dprime_dossier,
+        "workbench_dprime_dossier_ref": dprime_dossier_ref,
+        "workbench_dprime_dossier_created": counts.get(
+            "workbench_dprime_dossier_created",
+            0,
+        ),
+        "workbench_dprime_dossier_consumed_by_product_path": bool(dprime_dossier),
+        "workbench_dprime_dossier_consumed_by_dprime": workbench_dprime_consumed,
+        "workbench_reduction_projection": projection,
+        "workbench_reduction_projection_ref": projection_ref,
+        "workbench_reduction_projection_status": projection.get("status"),
+        "workbench_reduction_projection_created": counts.get(
+            "workbench_reduction_projection_created",
+            0,
+        ),
         "live_runs_attempted": (
             1
             if (
@@ -6403,6 +6799,73 @@ def _record_model_assisted_planning_counts(
                 (context_kind,),
             )
         )
+
+
+def _record_analyst_workbench_counts(
+    counts: dict[str, Any],
+    bundle: Mapping[str, Any],
+) -> None:
+    try:
+        safe = validate_current_source_record_analyst_workbench_bundle(bundle)
+    except AnalystWorkbenchError as exc:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+            f"Analyst Workbench proposal-only boundary invalid: {exc}",
+        ) from exc
+    counts["analyst_workbench_bundle"] = safe
+    counts["candidate_evidence_triage_packet_created"] = int(
+        bool(_safe_mapping(safe.get("candidate_evidence_triage_packet")))
+    )
+    counts["analyst_workbench_packet_created"] = int(
+        bool(_safe_mapping(safe.get("analyst_workbench_packet")))
+    )
+    counts["analysis_gap_search_proposal_created"] = int(
+        bool(_safe_mapping(safe.get("analysis_gap_search_proposal")))
+    )
+    counts["workbench_dprime_dossier_created"] = int(
+        bool(_safe_mapping(safe.get("workbench_dprime_dossier")))
+    )
+    counts["workbench_reduction_projection_created"] = int(
+        bool(_safe_mapping(safe.get("workbench_reduction_projection")))
+    )
+
+
+def _analyst_workbench_bundle_from_counts(
+    counts: Mapping[str, Any],
+) -> dict[str, Any]:
+    bundle = _safe_mapping(counts.get("analyst_workbench_bundle"))
+    if bundle:
+        try:
+            return validate_current_source_record_analyst_workbench_bundle(bundle)
+        except AnalystWorkbenchError as exc:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
+                f"Analyst Workbench bundle invalid: {exc}",
+            ) from exc
+    return empty_current_source_record_analyst_workbench_bundle()
+
+
+def _workbench_dossier_consumed_by_dprime(
+    semantic_payload: Mapping[str, Any],
+    *,
+    dprime_dossier_ref: Mapping[str, Any],
+) -> bool:
+    expected_digest = _clean_text(
+        dprime_dossier_ref.get("dossier_digest"),
+        limit=128,
+    )
+    if not expected_digest:
+        return False
+    semantic_ref = _safe_mapping(
+        semantic_payload.get("workbench_dprime_dossier_ref")
+    )
+    dprime = _safe_mapping(semantic_payload.get("dprime_status"))
+    input_ref = _safe_mapping(dprime.get("input_packet_ref"))
+    input_workbench_ref = _safe_mapping(input_ref.get("workbench_dprime_dossier_ref"))
+    return expected_digest in {
+        _clean_text(semantic_ref.get("dossier_digest"), limit=128),
+        _clean_text(input_workbench_ref.get("dossier_digest"), limit=128),
+    }
 
 
 def _merge_model_assisted_planning_contexts(
@@ -9698,6 +10161,12 @@ def _empty_counts() -> dict[str, Any]:
         "fetch_read_candidate_diagnostics": (),
         "fetch_read_attempt_diagnostics": (),
         "fetch_read_packet_created": 0,
+        "analyst_workbench_bundle": {},
+        "candidate_evidence_triage_packet_created": 0,
+        "analyst_workbench_packet_created": 0,
+        "analysis_gap_search_proposal_created": 0,
+        "workbench_dprime_dossier_created": 0,
+        "workbench_reduction_projection_created": 0,
         "evidence_ledger_admissions": 0,
         "dprime_model_review_calls_attempted": 0,
         "dprime_model_review_calls_completed": 0,
