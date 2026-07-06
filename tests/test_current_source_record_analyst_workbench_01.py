@@ -31,6 +31,7 @@ import proplex.mvp_single_relation_live_dogfood_run as dogfood
 from core.analyst_workbench_runtime import (
     ROLE_ANSWER_ADJACENT_CONTEXT,
     ROLE_OVERCLAIM_RISK,
+    ROLE_QUALIFIER_EXCEPTION_CONTEXT,
     ROLE_STRICT_ANSWER_SUPPORT,
     WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED,
 )
@@ -49,6 +50,11 @@ SMALL_CLAIMS_QUERY = (
     "What is the current filing fee for small claims in Example County?"
 )
 SMALL_CLAIMS_URL = "https://example-county.invalid/civil/small-claims-fees"
+DEADLINE_QUERY = (
+    "What is the current filing deadline for Example County annual business "
+    "license renewal?"
+)
+DEADLINE_URL = "https://example-county.invalid/business-license/deadlines"
 
 
 def test_product_cli_consumes_workbench_and_dprime_dossier(
@@ -96,16 +102,23 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     assert packet["workbench_dprime_dossier_consumed_by_product_path"] is True
     assert packet["workbench_dprime_dossier_consumed_by_dprime"] is True
     assert packet["optional_evidence_triage_implemented"] is True
-    assert packet["runkernel_workbench_reduction"]["owner"] == (
-        "RunKernel.AnalystWorkbenchReduction"
-    )
-    assert packet["runkernel_workbench_reduction"]["run_kernel_reduced"] is True
+    projection = packet["workbench_reduction_projection"]
+    assert projection["owner"] == "AnalystWorkbenchRuntime"
+    assert projection["run_kernel_reduced"] is False
+    assert projection["run_kernel_reduction_pending"] is True
+    assert projection["proposed_for_runkernel_reduction"] is True
     assert packet["analyst_workbench_packet"]["specialist_lane_placeholder"][
         "status"
     ] == "not_required"
+    assert packet["analyst_workbench_packet"]["specialist_lane_placeholder"][
+        "owner"
+    ] == "AnalystWorkbenchRuntime.SpecialistLanePlaceholder"
     assert packet["analyst_workbench_packet"]["economist_lane_placeholder"][
         "status"
     ] == "not_required"
+    assert packet["analyst_workbench_packet"]["economist_lane_placeholder"][
+        "owner"
+    ] == "AnalystWorkbenchRuntime.EconomistLanePlaceholder"
     assert packet["analyst_workbench_packet"]["scrutineer_lane_placeholder"][
         "status"
     ] in {"cleared", "challenge_recommended"}
@@ -133,6 +146,8 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     assert report_json["analyst_workbench"][
         "workbench_dprime_dossier_consumed_by_dprime"
     ] is True
+    assert report_json["analyst_workbench"]["run_kernel_reduced"] is False
+    assert report_json["analyst_workbench"]["run_kernel_reduction_pending"] is True
     assert report_json["stage_lifecycle"]["retention"][
         "live_product_run_executed"
     ] is True
@@ -141,6 +156,9 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     ] is False
     assert "## Analyst Workbench" in report_md
     assert "Live validation: not run" not in report_md
+    assert "RunKernel reduced" not in report_md
+    assert "Workbench reduction projection" in report_md
+    assert "- RunKernel reduction pending: true" in report_md
     assert "- Live product run executed: true" in report_md
     assert "- Live validation correctness claimed: false" in report_md
 
@@ -196,6 +214,114 @@ def test_generic_dogfood_consumes_workbench_for_non_uscis_relation(
         "not_authorized_by_workbench"
     )
     assert "USCIS" not in json.dumps(packet, sort_keys=True)
+    _assert_workbench_non_authority(packet)
+
+
+def test_mixed_fee_schedule_keeps_strict_support_and_context_roles(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper filing fee is $54.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-mixed-fee-schedule",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "Example County Clerk Fee Schedule",
+                    SMALL_CLAIMS_URL,
+                    (
+                        "Standard paper filing fee is $54. Online filing is "
+                        "$44. Reduced fee is $20 for eligible filers."
+                    ),
+                )
+            ],
+        ),
+        fetch_read_runner=_failing_fetch_runner,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    roles = _candidate_roles(packet)
+    gap = packet["analysis_gap_search_proposal"]
+    assert ROLE_STRICT_ANSWER_SUPPORT in roles
+    assert ROLE_ANSWER_ADJACENT_CONTEXT in roles
+    assert ROLE_QUALIFIER_EXCEPTION_CONTEXT in roles
+    assert ROLE_OVERCLAIM_RISK in roles
+    assert gap["gap_status"] == "not_required"
+    assert gap["gap_kind"] == "not_required"
+    assert gap["live_followup_required"] is False
+    assert gap["proposed_runkernel_reduction_status"] == "not_required"
+    assert packet["workbench_reduction_projection_status"] != (
+        WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
+    )
+    assert packet["analyst_workbench_packet"]["scrutineer_lane_placeholder"][
+        "status"
+    ] == "challenge_recommended"
+    _assert_workbench_non_authority(packet)
+
+
+def test_mixed_deadline_schedule_keeps_strict_support_and_context_roles(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(DEADLINE_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(
+            plan,
+            "The current Example County standard filing deadline is April 15.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=DEADLINE_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-mixed-deadline-schedule",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "Example County Business License Deadline Schedule",
+                    DEADLINE_URL,
+                    (
+                        "Standard filing deadline is April 15. Extension "
+                        "deadline is October 15."
+                    ),
+                )
+            ],
+        ),
+        fetch_read_runner=_failing_fetch_runner,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    roles = _candidate_roles(packet)
+    gap = packet["analysis_gap_search_proposal"]
+    assert ROLE_STRICT_ANSWER_SUPPORT in roles
+    assert ROLE_ANSWER_ADJACENT_CONTEXT in roles
+    assert ROLE_QUALIFIER_EXCEPTION_CONTEXT in roles
+    assert gap["gap_status"] == "not_required"
+    assert gap["live_followup_required"] is False
+    assert packet["workbench_reduction_projection_status"] != (
+        WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
+    )
     _assert_workbench_non_authority(packet)
 
 
@@ -256,7 +382,7 @@ def test_contextual_non_uscis_material_proposes_gap_and_product_blocker(
     )
     assert gap["gap_status"] == "proposed"
     assert gap["gap_kind"] in {"strict_support_missing", "overclaim_risk"}
-    assert packet["runkernel_workbench_reduction_status"] == (
+    assert packet["workbench_reduction_projection_status"] == (
         WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
     )
     assert packet["analyst_workbench_packet"]["scrutineer_lane_placeholder"][
@@ -425,7 +551,7 @@ def _assert_workbench_non_authority(packet: Mapping[str, Any]) -> None:
         "analyst_workbench_packet",
         "analysis_gap_search_proposal",
         "workbench_dprime_dossier",
-        "runkernel_workbench_reduction",
+        "workbench_reduction_projection",
     ):
         section = packet[section_key]
         assert section["proposal_only"] is True
@@ -436,3 +562,8 @@ def _assert_workbench_non_authority(packet: Mapping[str, Any]) -> None:
         assert section["raw_private_retention_flags"] == dogfood.RAW_FALSE_FLAGS
         for raw_key in dogfood.RAW_FALSE_FLAGS:
             assert section[raw_key] is False
+    projection = packet["workbench_reduction_projection"]
+    assert projection["owner"] == "AnalystWorkbenchRuntime"
+    assert projection["run_kernel_reduced"] is False
+    assert projection["run_kernel_reduction_pending"] is True
+    assert projection["proposed_for_runkernel_reduction"] is True

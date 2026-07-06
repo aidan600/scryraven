@@ -13,7 +13,7 @@ Target surface:
   D-prime/model-review admission for current-source single-fact runs.
 - Candidate evidence triage, evidence-role proposals, analyst finding proposals,
   lane placeholders, gap-search proposal, D-prime dossier handoff, and
-  RunKernel workbench reduction.
+  Workbench reduction projection.
 - Product CLI review output that shows a reviewer-visible Workbench section
   without dumping raw/private material or treating proposals as authority.
 
@@ -46,7 +46,8 @@ Actual user-facing or reviewable output delta:
   the answer-first blocker names the need for official strict support.
 - The current-source record review report now includes an `Analyst Workbench`
   section with triage refs, dossier handoff status, lane placeholder statuses,
-  gap proposal status, and reduction status.
+  gap proposal status, Workbench reduction projection status, and explicit
+  RunKernel reduction-pending status.
 
 Actual consumer seam:
 
@@ -70,11 +71,11 @@ New machinery introduced:
   `CandidateEvidenceTriagePacket`, `EvidenceRoleProposal`,
   `AnalystWorkbenchPacket`, `AnalystFindingProposal`,
   `AnalysisGapSearchProposal`, `WorkbenchDprimeDossier`, and
-  `RunKernelWorkbenchReduction`.
+  `WorkbenchReductionProjection`.
 - Product packet/report validation ensures the Workbench cannot claim evidence
   admission, source-obligation satisfaction, citation eligibility,
-  source-authority finality, product correctness, raw/private retention, or
-  answer prose creation.
+  source-authority finality, product correctness, raw/private retention, answer
+  prose creation, or RunKernel reduction.
 
 Old path treatment:
 
@@ -82,6 +83,9 @@ Old path treatment:
   Workbench bundle after fetch/read.
 - Existing D-prime authority remains the only downstream authority path; the
   Workbench dossier is context, not admission.
+- The local Workbench projection is marked `run_kernel_reduced: false`,
+  `run_kernel_reduction_pending: true`, and
+  `proposed_for_runkernel_reduction: true`.
 
 Why this is not reinventing an existing surface:
 
@@ -94,8 +98,8 @@ Why this is not reinventing an existing surface:
 ## Authority Boundary
 
 Workbench packets are proposal-only. They may classify candidate roles, propose
-analyst findings, propose a gap search, and reduce those proposals into a
-D-prime dossier ref.
+analyst findings, propose a gap search, prepare a local Workbench reduction
+projection, and hand a D-prime dossier ref to the existing D-prime path.
 
 They must not:
 
@@ -107,6 +111,7 @@ They must not:
 - Create answer prose.
 - Retain raw source text, raw provider payloads, raw prompts, raw model
   responses, private logs, DB/cache rows, or full traces.
+- Imply RunKernel authority unless RunKernel actually reduced the state.
 
 ## Validation Status
 

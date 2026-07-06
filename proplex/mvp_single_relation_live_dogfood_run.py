@@ -28,8 +28,8 @@ from core.analyst_workbench_runtime import (
     ANALYSIS_GAP_SEARCH_PROPOSAL_SCHEMA_VERSION,
     ANALYST_WORKBENCH_SCHEMA_VERSION,
     CANDIDATE_EVIDENCE_TRIAGE_SCHEMA_VERSION,
-    RUNKERNEL_WORKBENCH_REDUCTION_SCHEMA_VERSION,
     WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION,
+    WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION,
     AnalystWorkbenchError,
     build_current_source_record_analyst_workbench,
     empty_current_source_record_analyst_workbench_bundle,
@@ -2212,8 +2212,8 @@ def _validate_analyst_workbench_surface(packet: Mapping[str, Any]) -> None:
         "workbench_dprime_dossier": _safe_mapping(
             packet.get("workbench_dprime_dossier")
         ),
-        "runkernel_workbench_reduction": _safe_mapping(
-            packet.get("runkernel_workbench_reduction")
+        "workbench_reduction_projection": _safe_mapping(
+            packet.get("workbench_reduction_projection")
         ),
         "candidate_evidence_triage_ref": _safe_mapping(
             packet.get("candidate_evidence_triage_ref")
@@ -2225,8 +2225,8 @@ def _validate_analyst_workbench_surface(packet: Mapping[str, Any]) -> None:
         "workbench_dprime_dossier_ref": _safe_mapping(
             packet.get("workbench_dprime_dossier_ref")
         ),
-        "runkernel_workbench_reduction_ref": _safe_mapping(
-            packet.get("runkernel_workbench_reduction_ref")
+        "workbench_reduction_projection_ref": _safe_mapping(
+            packet.get("workbench_reduction_projection_ref")
         ),
     }
     try:
@@ -2237,7 +2237,7 @@ def _validate_analyst_workbench_surface(packet: Mapping[str, Any]) -> None:
     workbench = bundle["analyst_workbench_packet"]
     gap = bundle["analysis_gap_search_proposal"]
     dossier = bundle["workbench_dprime_dossier"]
-    reduction = bundle["runkernel_workbench_reduction"]
+    projection = bundle["workbench_reduction_projection"]
     for section_name, section, schema_version in (
         (
             "candidate_evidence_triage_packet",
@@ -2265,13 +2265,19 @@ def _validate_analyst_workbench_surface(packet: Mapping[str, Any]) -> None:
         if section.get("ordinary_product_path_consumed") is not True:
             _blocked_output_hygiene(f"{section_name} not product-consumed.")
         _validate_workbench_non_authority_posture(section, section_name)
-    if reduction.get("schema_version") != RUNKERNEL_WORKBENCH_REDUCTION_SCHEMA_VERSION:
-        _blocked_output_hygiene("RunKernel Workbench reduction schema mismatch.")
-    if reduction.get("owner") != "RunKernel.AnalystWorkbenchReduction":
-        _blocked_output_hygiene("RunKernel Workbench reduction owner mismatch.")
+    if projection.get("schema_version") != WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION:
+        _blocked_output_hygiene("Workbench reduction projection schema mismatch.")
+    if projection.get("owner") != "AnalystWorkbenchRuntime":
+        _blocked_output_hygiene("Workbench reduction projection owner mismatch.")
+    if projection.get("run_kernel_reduced") is not False:
+        _blocked_output_hygiene("Workbench projection claimed RunKernel reduction.")
+    if projection.get("run_kernel_reduction_pending") is not True:
+        _blocked_output_hygiene("Workbench projection pending flag invalid.")
+    if projection.get("proposed_for_runkernel_reduction") is not True:
+        _blocked_output_hygiene("Workbench projection proposal flag invalid.")
     _validate_workbench_non_authority_posture(
-        reduction,
-        "runkernel_workbench_reduction",
+        projection,
+        "workbench_reduction_projection",
     )
     if _bounded_int(packet.get("fetch_read_packet_created")):
         if packet.get("optional_evidence_triage_implemented") is not True:
@@ -2283,10 +2289,8 @@ def _validate_analyst_workbench_surface(packet: Mapping[str, Any]) -> None:
         ):
             if packet.get(key) is not True:
                 _blocked_output_hygiene(f"Analyst Workbench {key} invalid.")
-        if reduction.get("ordinary_product_path_consumed") is not True:
-            _blocked_output_hygiene("RunKernel Workbench reduction not consumed.")
-        if reduction.get("run_kernel_reduced") is not True:
-            _blocked_output_hygiene("RunKernel Workbench reduction did not reduce.")
+        if projection.get("ordinary_product_path_consumed") is not True:
+            _blocked_output_hygiene("Workbench reduction projection not consumed.")
     if _bounded_int(packet.get("dprime_model_review_calls_attempted")) and (
         _semantic_payload_supports_workbench_dossier(packet)
     ):
@@ -3150,7 +3154,7 @@ def _current_source_record_workbench_report_section(
     workbench = _safe_mapping(packet.get("analyst_workbench_packet"))
     gap = _safe_mapping(packet.get("analysis_gap_search_proposal"))
     dossier = _safe_mapping(packet.get("workbench_dprime_dossier"))
-    reduction = _safe_mapping(packet.get("runkernel_workbench_reduction"))
+    projection = _safe_mapping(packet.get("workbench_reduction_projection"))
     return {
         "schema_version": "analyst_workbench_review_section_v1",
         "product_path_consumed": bool(
@@ -3169,10 +3173,17 @@ def _current_source_record_workbench_report_section(
         "workbench_dprime_dossier_consumed_by_dprime": bool(
             packet.get("workbench_dprime_dossier_consumed_by_dprime")
         ),
-        "runkernel_workbench_reduction_ref": _safe_mapping(
-            packet.get("runkernel_workbench_reduction_ref")
+        "workbench_reduction_projection_ref": _safe_mapping(
+            packet.get("workbench_reduction_projection_ref")
         ),
-        "runkernel_workbench_reduction_status": reduction.get("status"),
+        "workbench_reduction_projection_status": projection.get("status"),
+        "run_kernel_reduced": projection.get("run_kernel_reduced") is True,
+        "run_kernel_reduction_pending": (
+            projection.get("run_kernel_reduction_pending") is True
+        ),
+        "proposed_for_runkernel_reduction": (
+            projection.get("proposed_for_runkernel_reduction") is True
+        ),
         "top_candidate_ref": _safe_mapping(triage.get("top_candidate_ref")),
         "selected_candidate_ref": _safe_mapping(triage.get("selected_candidate_ref")),
         "dprime_review_candidate_ref": _safe_mapping(
@@ -3211,15 +3222,15 @@ def _current_source_record_workbench_report_section(
                 "gap_reason": gap.get("gap_reason"),
                 "live_followup_required": gap.get("live_followup_required"),
                 "live_followup_licensed": gap.get("live_followup_licensed"),
-                "runkernel_authorization_status": gap.get(
-                    "runkernel_authorization_status"
+                "proposed_runkernel_reduction_status": gap.get(
+                    "proposed_runkernel_reduction_status"
                 ),
             }
         ),
         "display_candidate_ref_status": workbench.get("display_candidate_ref_status"),
         "non_authority_flags": {
             "proposal_only": workbench.get("proposal_only") is True
-            or reduction.get("proposal_only") is True,
+            or projection.get("proposal_only") is True,
             "evidence_admitted": False,
             "source_obligation_satisfied": False,
             "citation_eligible": False,
@@ -3278,8 +3289,10 @@ def _format_current_source_record_single_fact_review_report(
         f"{_safe_mapping(analyst_workbench.get('candidate_evidence_triage_ref')).get('packet_digest') or 'not present'}",
         "- D-prime dossier consumed: "
         f"{_bool_text(analyst_workbench.get('workbench_dprime_dossier_consumed_by_dprime'))}",
-        "- RunKernel reduction: "
-        f"{analyst_workbench.get('runkernel_workbench_reduction_status') or 'not reached'}",
+        "- Workbench reduction projection: "
+        f"{analyst_workbench.get('workbench_reduction_projection_status') or 'not reached'}",
+        "- RunKernel reduction pending: "
+        f"{_bool_text(analyst_workbench.get('run_kernel_reduction_pending'))}",
         f"- Scrutineer lane: {scrutineer.get('status') or 'not reached'}",
         f"- Specialist lane: {specialist.get('status') or 'not reached'}",
         f"- Economist lane: {economist.get('status') or 'not reached'}",
@@ -5868,15 +5881,15 @@ def _base_packet(
     workbench_packet = _safe_mapping(workbench_bundle.get("analyst_workbench_packet"))
     gap_proposal = _safe_mapping(workbench_bundle.get("analysis_gap_search_proposal"))
     dprime_dossier = _safe_mapping(workbench_bundle.get("workbench_dprime_dossier"))
-    reduction = _safe_mapping(workbench_bundle.get("runkernel_workbench_reduction"))
+    projection = _safe_mapping(workbench_bundle.get("workbench_reduction_projection"))
     triage_ref = _safe_mapping(workbench_bundle.get("candidate_evidence_triage_ref"))
     workbench_ref = _safe_mapping(workbench_bundle.get("analyst_workbench_ref"))
     gap_ref = _safe_mapping(workbench_bundle.get("analysis_gap_search_proposal_ref"))
     dprime_dossier_ref = _safe_mapping(
         workbench_bundle.get("workbench_dprime_dossier_ref")
     )
-    reduction_ref = _safe_mapping(
-        workbench_bundle.get("runkernel_workbench_reduction_ref")
+    projection_ref = _safe_mapping(
+        workbench_bundle.get("workbench_reduction_projection_ref")
     )
     workbench_dprime_consumed = _workbench_dossier_consumed_by_dprime(
         semantic,
@@ -6246,11 +6259,11 @@ def _base_packet(
         ),
         "workbench_dprime_dossier_consumed_by_product_path": bool(dprime_dossier),
         "workbench_dprime_dossier_consumed_by_dprime": workbench_dprime_consumed,
-        "runkernel_workbench_reduction": reduction,
-        "runkernel_workbench_reduction_ref": reduction_ref,
-        "runkernel_workbench_reduction_status": reduction.get("status"),
-        "runkernel_workbench_reduction_created": counts.get(
-            "runkernel_workbench_reduction_created",
+        "workbench_reduction_projection": projection,
+        "workbench_reduction_projection_ref": projection_ref,
+        "workbench_reduction_projection_status": projection.get("status"),
+        "workbench_reduction_projection_created": counts.get(
+            "workbench_reduction_projection_created",
             0,
         ),
         "live_runs_attempted": (
@@ -6812,8 +6825,8 @@ def _record_analyst_workbench_counts(
     counts["workbench_dprime_dossier_created"] = int(
         bool(_safe_mapping(safe.get("workbench_dprime_dossier")))
     )
-    counts["runkernel_workbench_reduction_created"] = int(
-        bool(_safe_mapping(safe.get("runkernel_workbench_reduction")))
+    counts["workbench_reduction_projection_created"] = int(
+        bool(_safe_mapping(safe.get("workbench_reduction_projection")))
     )
 
 
@@ -10153,7 +10166,7 @@ def _empty_counts() -> dict[str, Any]:
         "analyst_workbench_packet_created": 0,
         "analysis_gap_search_proposal_created": 0,
         "workbench_dprime_dossier_created": 0,
-        "runkernel_workbench_reduction_created": 0,
+        "workbench_reduction_projection_created": 0,
         "evidence_ledger_admissions": 0,
         "dprime_model_review_calls_attempted": 0,
         "dprime_model_review_calls_completed": 0,

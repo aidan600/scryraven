@@ -22,7 +22,7 @@ ANALYST_WORKBENCH_SCHEMA_VERSION = "analyst_workbench_packet_v1"
 ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION = "analyst_finding_proposal_v1"
 ANALYSIS_GAP_SEARCH_PROPOSAL_SCHEMA_VERSION = "analysis_gap_search_proposal_v1"
 WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION = "workbench_dprime_dossier_v1"
-RUNKERNEL_WORKBENCH_REDUCTION_SCHEMA_VERSION = "runkernel_workbench_reduction_v1"
+WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION = "workbench_reduction_projection_v1"
 
 RUNTIME_CONSUMER = (
     "proplex.mvp_single_relation_live_dogfood_run."
@@ -102,8 +102,17 @@ _CONTEXT_MARKERS = frozenset(
 _STRICT_MARKERS = frozenset(
     {
         "base",
-        "filing",
         "official",
+        "paper",
+        "regular",
+        "required",
+        "schedule",
+        "standard",
+    }
+)
+_CONTEXTUAL_STRICT_SUPPORT_MARKERS = frozenset(
+    {
+        "base",
         "paper",
         "regular",
         "required",
@@ -189,7 +198,7 @@ def build_current_source_record_analyst_workbench(
         workbench_packet=workbench_packet,
         gap_proposal=gap_proposal,
     )
-    reduction = _runkernel_workbench_reduction(
+    projection = _workbench_reduction_projection(
         triage_packet=triage_packet,
         workbench_packet=workbench_packet,
         gap_proposal=gap_proposal,
@@ -200,12 +209,12 @@ def build_current_source_record_analyst_workbench(
         "analyst_workbench_packet": workbench_packet,
         "analysis_gap_search_proposal": gap_proposal,
         "workbench_dprime_dossier": dossier,
-        "runkernel_workbench_reduction": reduction,
+        "workbench_reduction_projection": projection,
         "candidate_evidence_triage_ref": _triage_ref(triage_packet),
         "analyst_workbench_ref": _workbench_ref(workbench_packet),
         "analysis_gap_search_proposal_ref": _gap_ref(gap_proposal),
         "workbench_dprime_dossier_ref": workbench_dprime_dossier_ref(dossier),
-        "runkernel_workbench_reduction_ref": _reduction_ref(reduction),
+        "workbench_reduction_projection_ref": _projection_ref(projection),
     }
     return validate_current_source_record_analyst_workbench_bundle(bundle)
 
@@ -214,12 +223,14 @@ def empty_current_source_record_analyst_workbench_bundle() -> dict[str, Any]:
     """Return an empty, explicit not-created bundle for pre-intake blockers."""
 
     empty_ref = {"status": "not_created", "phase": ANALYST_WORKBENCH_PHASE}
-    reduction = {
-        "schema_version": RUNKERNEL_WORKBENCH_REDUCTION_SCHEMA_VERSION,
+    projection = {
+        "schema_version": WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION,
         "phase": ANALYST_WORKBENCH_PHASE,
-        "owner": "RunKernel.AnalystWorkbenchReduction",
+        "owner": "AnalystWorkbenchRuntime",
         "status": WORKBENCH_REDUCTION_NOT_REQUIRED,
         "run_kernel_reduced": False,
+        "run_kernel_reduction_pending": True,
+        "proposed_for_runkernel_reduction": True,
         "ordinary_product_path_consumed": False,
         "blocked_before_answer": False,
         **_non_authority_posture(),
@@ -229,12 +240,12 @@ def empty_current_source_record_analyst_workbench_bundle() -> dict[str, Any]:
         "analyst_workbench_packet": {},
         "analysis_gap_search_proposal": {},
         "workbench_dprime_dossier": {},
-        "runkernel_workbench_reduction": reduction,
+        "workbench_reduction_projection": projection,
         "candidate_evidence_triage_ref": dict(empty_ref),
         "analyst_workbench_ref": dict(empty_ref),
         "analysis_gap_search_proposal_ref": dict(empty_ref),
         "workbench_dprime_dossier_ref": dict(empty_ref),
-        "runkernel_workbench_reduction_ref": _reduction_ref(reduction),
+        "workbench_reduction_projection_ref": _projection_ref(projection),
     }
 
 
@@ -272,14 +283,20 @@ def validate_current_source_record_analyst_workbench_bundle(
     bundle: Mapping[str, Any],
 ) -> dict[str, Any]:
     safe = _safe_mapping(bundle)
-    reduction = _safe_mapping(safe.get("runkernel_workbench_reduction"))
-    if reduction.get("schema_version") != RUNKERNEL_WORKBENCH_REDUCTION_SCHEMA_VERSION:
-        raise AnalystWorkbenchError("RunKernelWorkbenchReduction schema mismatch")
-    if reduction.get("owner") != "RunKernel.AnalystWorkbenchReduction":
-        raise AnalystWorkbenchError("RunKernelWorkbenchReduction owner mismatch")
+    projection = _safe_mapping(safe.get("workbench_reduction_projection"))
+    if projection.get("schema_version") != WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION:
+        raise AnalystWorkbenchError("WorkbenchReductionProjection schema mismatch")
+    if projection.get("owner") != "AnalystWorkbenchRuntime":
+        raise AnalystWorkbenchError("WorkbenchReductionProjection owner mismatch")
+    if projection.get("run_kernel_reduced") is not False:
+        raise AnalystWorkbenchError("WorkbenchReductionProjection must not claim RunKernel reduction")
+    if projection.get("run_kernel_reduction_pending") is not True:
+        raise AnalystWorkbenchError("WorkbenchReductionProjection must mark RunKernel reduction pending")
+    if projection.get("proposed_for_runkernel_reduction") is not True:
+        raise AnalystWorkbenchError("WorkbenchReductionProjection must be proposed for RunKernel reduction")
     for key, expected in _NON_AUTHORITY_FALSE_FLAGS.items():
-        if reduction.get(key) is not expected:
-            raise AnalystWorkbenchError(f"reduction authority flag invalid: {key}")
+        if projection.get(key) is not expected:
+            raise AnalystWorkbenchError(f"projection authority flag invalid: {key}")
     _reject_raw_private_or_authority_claims(safe)
     return _json_safe(safe)
 
@@ -326,9 +343,9 @@ def _candidate_workbench_record(
         or window.get("answer_bearing_candidate_window_selected") is True
         or window.get("candidate_window_selected") is True
     )
-    value_count = _bounded_int(
-        window.get("matched_value_token_kind_count"),
-        default=_value_token_count_from_text(provider.get("provider_extracted_text")),
+    value_count = max(
+        _bounded_int(window.get("matched_value_token_kind_count")),
+        _value_token_count_from_text(provider.get("provider_extracted_text")),
     )
     anchor_count = _bounded_int(window.get("matched_anchor_count"))
     readable = bool(
@@ -397,10 +414,13 @@ def _role_proposals_for_candidate(candidate: Mapping[str, Any]) -> list[dict[str
     contextual = bool(_safe_sequence(candidate.get("context_marker_terms")))
     conflict = bool(_safe_sequence(candidate.get("conflict_marker_terms")))
     query_overlap = candidate.get("query_token_overlap") is True
+    strict_terms = set(_safe_sequence(candidate.get("strict_marker_terms")))
+    strict_basis = bool(anchor_count > 0 or query_overlap or strict_terms)
+    contextual_strict_basis = bool(strict_terms & _CONTEXTUAL_STRICT_SUPPORT_MARKERS)
     strictish = bool(
         readable
         and value_count > 0
-        and (anchor_count > 0 or query_overlap or _safe_sequence(candidate.get("strict_marker_terms")))
+        and (contextual_strict_basis if contextual else strict_basis)
     )
     if official:
         roles.append(
@@ -409,11 +429,11 @@ def _role_proposals_for_candidate(candidate: Mapping[str, Any]) -> list[dict[str
                 ["safe diagnostics indicate official or source-record-looking identity"],
             )
         )
-    if strictish and not contextual and not conflict:
+    if strictish and not conflict:
         roles.append(
             (
                 ROLE_STRICT_ANSWER_SUPPORT,
-                ["bounded/readable candidate has value signal without qualifier context"],
+                ["bounded/readable candidate has strict value signal"],
             )
         )
     if contextual:
@@ -633,8 +653,11 @@ def _analysis_gap_search_proposal(
         for item in _safe_sequence(triage_packet.get("evidence_role_proposals"))
         if _safe_mapping(item).get("role") == ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL
     ]
-    gap_needed = bool(not strict_refs or contextual_refs or overclaim_refs or unreadable_refs)
-    if unreadable_refs:
+    gap_needed = bool(unreadable_refs or not strict_refs)
+    if not gap_needed:
+        gap_kind = "not_required"
+        reason = "strict support candidate proposed; contextual risks preserved"
+    elif unreadable_refs:
         gap_kind = "unreadable_high_value_candidate"
         reason = "official-looking candidate needs readable strict support"
     elif not strict_refs and contextual_refs:
@@ -683,7 +706,7 @@ def _analysis_gap_search_proposal(
             "roles_by_candidate": role_map,
             "live_followup_required": bool(gap_needed),
             "live_followup_licensed": False,
-            "runkernel_authorization_status": (
+            "proposed_runkernel_reduction_status": (
                 WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
                 if gap_needed
                 else WORKBENCH_REDUCTION_NOT_REQUIRED
@@ -832,7 +855,7 @@ def _workbench_dprime_dossier(
     return dossier
 
 
-def _runkernel_workbench_reduction(
+def _workbench_reduction_projection(
     *,
     triage_packet: Mapping[str, Any],
     workbench_packet: Mapping[str, Any],
@@ -851,15 +874,17 @@ def _runkernel_workbench_reduction(
         if strict_count
         else WORKBENCH_REDUCTION_NOT_REQUIRED
     )
-    reduction = _without_empty(
+    projection = _without_empty(
         {
-            "schema_version": RUNKERNEL_WORKBENCH_REDUCTION_SCHEMA_VERSION,
+            "schema_version": WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION,
             "phase": ANALYST_WORKBENCH_PHASE,
-            "reduction_kind": "RunKernelWorkbenchReduction",
-            "owner": "RunKernel.AnalystWorkbenchReduction",
+            "projection_kind": "WorkbenchReductionProjection",
+            "owner": "AnalystWorkbenchRuntime",
             "runtime_consumer": RUNTIME_CONSUMER,
             "ordinary_product_path_consumed": True,
-            "run_kernel_reduced": True,
+            "run_kernel_reduced": False,
+            "run_kernel_reduction_pending": True,
+            "proposed_for_runkernel_reduction": True,
             "status": status,
             "blocked_before_answer": status
             in {WORKBENCH_REDUCTION_BLOCKED, WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED},
@@ -870,7 +895,7 @@ def _runkernel_workbench_reduction(
             "reduction_reason": (
                 "strict support follow-up is needed but not licensed"
                 if status == WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
-                else "workbench proposals reduced for D-prime dossier handoff"
+                else "local workbench projection prepared for D-prime dossier handoff"
             ),
             "strict_answer_support_candidate_count": strict_count,
             "overclaim_risk_candidate_count": overclaim_count,
@@ -878,8 +903,8 @@ def _runkernel_workbench_reduction(
             **_non_authority_posture(),
         }
     )
-    reduction["reduction_digest"] = _digest_json(reduction)
-    return reduction
+    projection["projection_digest"] = _digest_json(projection)
+    return projection
 
 
 def _lane_placeholder(lane: str) -> dict[str, Any]:
@@ -887,7 +912,7 @@ def _lane_placeholder(lane: str) -> dict[str, Any]:
         "lane": lane,
         "schema_version": "analyst_workbench_lane_placeholder_v1",
         "phase": ANALYST_WORKBENCH_PHASE,
-        "owner": f"RunKernel.{lane.title()}LanePlaceholder",
+        "owner": f"AnalystWorkbenchRuntime.{lane.title()}LanePlaceholder",
         "status": "not_required",
         "work_request_created": False,
         **_non_authority_posture(),
@@ -898,7 +923,7 @@ def _lane_placeholder(lane: str) -> dict[str, Any]:
 
 def _scrutineer_lane(*, challenge_recommended: bool) -> dict[str, Any]:
     lane = _lane_placeholder("scrutineer")
-    lane["owner"] = "RunKernel.ScrutineerLanePlaceholder"
+    lane["owner"] = "AnalystWorkbenchRuntime.ScrutineerLanePlaceholder"
     lane["status"] = "challenge_recommended" if challenge_recommended else "cleared"
     lane["challenge_recommended"] = bool(challenge_recommended)
     lane["lane_digest"] = _digest_json(lane)
@@ -1044,8 +1069,8 @@ def _gap_ref(proposal: Mapping[str, Any]) -> dict[str, Any]:
             "proposal_digest": proposal.get("proposal_digest"),
             "gap_status": proposal.get("gap_status"),
             "gap_kind": proposal.get("gap_kind"),
-            "runkernel_authorization_status": proposal.get(
-                "runkernel_authorization_status"
+            "proposed_runkernel_reduction_status": proposal.get(
+                "proposed_runkernel_reduction_status"
             ),
             "live_followup_required": proposal.get("live_followup_required"),
             "live_followup_licensed": proposal.get("live_followup_licensed"),
@@ -1053,16 +1078,22 @@ def _gap_ref(proposal: Mapping[str, Any]) -> dict[str, Any]:
     )
 
 
-def _reduction_ref(reduction: Mapping[str, Any]) -> dict[str, Any]:
+def _projection_ref(projection: Mapping[str, Any]) -> dict[str, Any]:
     return _without_empty(
         {
-            "schema_version": reduction.get("schema_version"),
-            "phase": reduction.get("phase"),
-            "owner": reduction.get("owner"),
-            "status": reduction.get("status"),
-            "run_kernel_reduced": reduction.get("run_kernel_reduced"),
-            "reduction_digest": reduction.get("reduction_digest"),
-            "blocked_before_answer": reduction.get("blocked_before_answer"),
+            "schema_version": projection.get("schema_version"),
+            "phase": projection.get("phase"),
+            "owner": projection.get("owner"),
+            "status": projection.get("status"),
+            "run_kernel_reduced": projection.get("run_kernel_reduced"),
+            "run_kernel_reduction_pending": projection.get(
+                "run_kernel_reduction_pending"
+            ),
+            "proposed_for_runkernel_reduction": projection.get(
+                "proposed_for_runkernel_reduction"
+            ),
+            "projection_digest": projection.get("projection_digest"),
+            "blocked_before_answer": projection.get("blocked_before_answer"),
         }
     )
 
@@ -1162,7 +1193,21 @@ def _text_features(value: str) -> dict[str, Any]:
 
 def _value_token_count_from_text(value: Any) -> int:
     text = _clean_text(value, limit=2_000) or ""
-    return len(set(re.findall(r"\$\s?\d{1,6}(?:\.\d{2})?", text)))
+    patterns = (
+        r"\$\s?\d{1,6}(?:\.\d{2})?",
+        r"\b(?:19|20)\d{2}(?:-\d{1,2}(?:-\d{1,2})?)?\b",
+        (
+            r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+            r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+            r"nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}\b"
+        ),
+        r"\b\d+(?:\.\d+)?\b",
+    )
+    values: set[str] = set()
+    lowered = text.casefold()
+    for pattern in patterns:
+        values.update(re.findall(pattern, lowered, flags=re.IGNORECASE))
+    return len(values)
 
 
 def _non_authority_posture() -> dict[str, Any]:
@@ -1267,8 +1312,8 @@ __all__ = [
     "ROLE_OVERCLAIM_RISK",
     "ROLE_QUALIFIER_EXCEPTION_CONTEXT",
     "ROLE_STRICT_ANSWER_SUPPORT",
-    "RUNKERNEL_WORKBENCH_REDUCTION_SCHEMA_VERSION",
     "WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION",
+    "WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION",
     "WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED",
     "build_current_source_record_analyst_workbench",
     "empty_current_source_record_analyst_workbench_bundle",
