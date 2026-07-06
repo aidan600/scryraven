@@ -480,7 +480,10 @@ def test_default_product_owned_adapter_supplies_tavily_results(
     plan = build_generic_query_relation_plan(N400_QUERY)
     tavily_calls: list[dict[str, Any]] = []
     fetch_urls: list[str] = []
-    extracted_text = "USCIS lists the current Form N-400 paper filing fee as $760."
+    extracted_text = (
+        "USCIS explains risk-based screening and task-specific instructions. "
+        "The N-400 paper filing fee is $760."
+    )
 
     def fake_tavily(**kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
         tavily_calls.append(kwargs)
@@ -546,6 +549,119 @@ def test_default_product_owned_adapter_supplies_tavily_results(
     assert reference["raw_search_response_retained"] is False
     assert reference["not_citation_eligible"] is True
     assert reference["not_source_obligation_satisfaction"] is True
+
+
+def test_product_provider_extracted_text_redacts_strict_canary_before_handoff(
+    tmp_path: Path,
+) -> None:
+    canary = PRIVATE_CANARY
+    marker = product_acquisition.PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION
+    raw_text = f"USCIS lists the current fee as $760. {canary} End."
+    redacted_text = raw_text.replace(canary, marker)
+
+    def fake_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        return (
+            [
+                {
+                    "title": "USCIS Form N-400 Filing Fee",
+                    "url": "https://www.uscis.gov/forms/filing-fees",
+                    "domain": "uscis.gov",
+                    "snippet": "Current filing fee table.",
+                    "raw_content": raw_text,
+                }
+            ],
+            [],
+        )
+
+    runner = product_acquisition.build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-provider-extracted-canary-redaction",
+        confirm_live_dogfood=True,
+        product_provider_acquisition_runner=runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    provider_output_text = (
+        result.packet_path.parent / dogfood.SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME
+    ).read_text(encoding="utf-8")
+    retained_provider_text = (
+        Path(result.retained_artifact_root)
+        / dogfood.SEARCH_ARTIFACT_DIR
+        / dogfood.SANITIZED_PROVIDER_RESULTS_NAME
+    ).read_text(encoding="utf-8")
+    fetch_packet = _retained_fetch_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    serialized_packet = json.dumps(result.packet, sort_keys=True)
+
+    assert result.return_code == 2
+    assert (
+        result.decision
+        == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED
+    )
+    assert canary not in provider_output_text
+    assert canary not in retained_provider_text
+    assert canary not in json.dumps(fetch_packet, sort_keys=True)
+    assert canary not in serialized_packet
+    assert canary not in result.output
+    assert marker in provider_output_text
+    assert marker in reference["bounded_text"]
+    assert marker not in serialized_packet
+    assert marker not in result.output
+    assert reference["bounded_text"] == redacted_text
+    assert reference["bounded_character_count"] == len(redacted_text)
+    assert reference["excerpt_digest"] == dogfood._digest_json(
+        {"bounded_text": redacted_text}
+    )
+    provider_payload = json.loads(provider_output_text)
+    provider_record = provider_payload["results"][0]
+    assert provider_record["provider_extracted_text"] == redacted_text
+    assert provider_record["provider_extracted_text_char_count"] == len(redacted_text)
+    assert provider_record["provider_extracted_text_digest"] == dogfood._digest_json(
+        {"provider_extracted_text": redacted_text}
+    )
+
+
+def test_provider_result_metadata_canary_still_fails_closed_without_value(
+    tmp_path: Path,
+) -> None:
+    unsafe_payload = {
+        "request_kind": "provider_proxy_search",
+        "provider": "tavily",
+        "operation": "search",
+        "result_count": 1,
+        "results": [
+            {
+                "title": "USCIS Form N-400 Filing Fee",
+                "url": "https://www.uscis.gov/forms/filing-fees",
+                "domain": "uscis.gov",
+                "snippet": PRIVATE_CANARY,
+                "published_or_observed_date": "2026-07-03",
+                "result_rank": 1,
+                "provider_call_index": 1,
+                "raw_provider_payload_retained": False,
+                "raw_search_response_retained": False,
+            }
+        ],
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+
+    with pytest.raises(GenericSingleRelationLiveDogfoodRunError) as excinfo:
+        dogfood._validate_provider_payload(unsafe_payload)
+
+    detail = excinfo.value.detail
+    assert excinfo.value.blocker == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert "sanitized provider result contains private-looking values" in detail
+    assert "snippet" in detail
+    assert "marker=private_prefix_sk" in detail
+    assert PRIVATE_CANARY not in detail
+    assert "sk-synthetic" not in detail
 
 
 def test_default_product_owned_adapter_uses_serper_scout_for_ambiguity(
@@ -1696,7 +1812,9 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
 ) -> None:
     plan = build_generic_query_relation_plan(N400_QUERY)
     calls: list[GenericProviderProxyRunRequest] = []
+    fetch_urls: list[str] = []
     review_calls = 0
+    extracted_text = "USCIS lists the current Form N-400 paper filing fee as $760."
 
     def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
         nonlocal review_calls
@@ -1720,15 +1838,14 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         provider_proxy_runner=_recording_proxy_runner(
             calls,
             [
-                _provider_result(
+                _provider_extracted_result(
                     "USCIS Form N-400 Filing Fee",
                     "https://www.uscis.gov/forms/filing-fees",
+                    extracted_text,
                 )
             ],
         ),
-        fetch_read_runner=_fake_fetch_runner(
-            "USCIS lists the current Form N-400 paper filing fee as $760."
-        ),
+        fetch_read_runner=_failing_fetch_runner(fetch_urls),
         dprime_model_review_callable=fake_review,
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
@@ -1753,6 +1870,15 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["source_display_entries"]
     assert review_calls == 1
+    assert fetch_urls == []
+    assert result.packet["provider_extracted_content_obtained"] is True
+    assert result.packet["source_acquisition_mode"] == (
+        "provider_extracted_source_content"
+    )
+    assert result.packet["direct_fetch_read_attempts"] == 0
+    assert result.packet["fetch_read_attempts"] == 0
+    fetch_packet = _retained_fetch_packet(result)
+    assert fetch_packet["reference_records"][0]["bounded_text"] == extracted_text
 
     semantic_payload = result.packet["semantic_status_payload"]
     dprime_status = semantic_payload["dprime_status"]

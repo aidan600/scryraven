@@ -9,6 +9,7 @@ satisfaction, answer material, or product-correctness claims.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -46,6 +47,11 @@ DEFAULT_OPERATION = "search"
 DEFAULT_MAX_RESULTS = 5
 PROVIDER_EXTRACTED_CONTENT_TYPE = "text/html"
 PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS = 20_000
+PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION = "private_looking_value_not_retained"
+_STRICT_SK_CREDENTIAL_TOKEN_RE = re.compile(
+    r"(?<![A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,}(?![A-Za-z0-9_])",
+    flags=re.IGNORECASE,
+)
 EXTRACTION_CAPABLE_PROVIDERS = frozenset(
     {DEFAULT_EXTRACTION_PROVIDER, LINKUP_EXTRACTION_PROVIDER, EXA_EXTRACTION_PROVIDER}
 )
@@ -504,7 +510,14 @@ def _digest_provider_text(text: str) -> str:
 
 def _bounded_provider_text(value: Any) -> str | None:
     text = _clean_text(value, limit=PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS)
-    return text or None
+    return redact_provider_extracted_source_text(text) if text else None
+
+
+def redact_provider_extracted_source_text(text: str) -> str:
+    return _STRICT_SK_CREDENTIAL_TOKEN_RE.sub(
+        PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION,
+        text,
+    )
 
 
 def _clean_provider(value: Any) -> str:
@@ -608,6 +621,7 @@ __all__ = [
     "EXTRACTION_CAPABLE_PROVIDERS",
     "LINKUP_EXTRACTION_PROVIDER",
     "PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND",
+    "PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION",
     "ProductProviderAcquisitionRequest",
     "ProductProviderAcquisitionResult",
     "ProductProviderAcquisitionRunner",
@@ -620,5 +634,6 @@ __all__ = [
     "normalize_linkup_product_provider_results",
     "normalize_scout_product_provider_results",
     "normalize_tavily_product_provider_results",
+    "redact_provider_extracted_source_text",
     "run_generic_product_provider_acquisition",
 ]

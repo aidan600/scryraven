@@ -35,6 +35,7 @@ from core.generic_product_provider_acquisition import (
     LINKUP_EXTRACTION_PROVIDER,
     PRODUCT_PROVIDER_ACQUISITION_RESPONSE_KIND,
     PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS,
+    PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION,
     ProductProviderAcquisitionRequest,
     build_generic_product_provider_acquisition_runner,
 )
@@ -108,6 +109,103 @@ def test_tavily_product_provider_results_normalize_raw_content(
     assert record["raw_provider_payload_retained"] is False
     assert record["raw_search_response_retained"] is False
     assert "raw_content" not in record
+
+
+def test_tavily_provider_extracted_text_allows_benign_public_sk_substrings(
+    tmp_path: Path,
+) -> None:
+    extracted_text = (
+        "USCIS explains risk-based screening and task-specific instructions. "
+        "The N-400 paper filing fee is $760."
+    )
+
+    def fake_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        return (
+            [
+                {
+                    "title": "USCIS Form N-400 Filing Fee",
+                    "url": "https://www.uscis.gov/forms/filing-fees",
+                    "snippet": "Current filing fee table.",
+                    "raw_content": extracted_text,
+                }
+            ],
+            [],
+        )
+
+    output_path = tmp_path / "provider-benign-sk.json"
+    runner = build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    result = runner(
+        ProductProviderAcquisitionRequest(
+            repo_root=tmp_path,
+            output_path=output_path,
+            query="What is the current USCIS Form N-400 paper filing fee?",
+            provider="tavily",
+        )
+    )
+    payload = json.loads(output_path.read_text(encoding="utf-8"))
+    record = payload["results"][0]
+
+    assert result.return_code == 0
+    assert record["provider_extracted_text"] == extracted_text
+    assert record["provider_extracted_text_char_count"] == len(extracted_text)
+    assert record["provider_extracted_text_digest"] == _provider_text_digest(
+        extracted_text
+    )
+    assert PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION not in record[
+        "provider_extracted_text"
+    ]
+
+
+def test_tavily_provider_extracted_text_redacts_strict_sk_token(
+    tmp_path: Path,
+) -> None:
+    canary = "sk-synthetic-private-canary-do-not-retain"
+    raw_text = f"Official source text before {canary} and after."
+    redacted_text = raw_text.replace(canary, PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION)
+
+    def fake_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        return (
+            [
+                {
+                    "title": "USCIS Form N-400 Filing Fee",
+                    "url": "https://www.uscis.gov/forms/filing-fees",
+                    "snippet": "Current filing fee table.",
+                    "raw_content": raw_text,
+                }
+            ],
+            [],
+        )
+
+    output_path = tmp_path / "provider-redacted-sk.json"
+    runner = build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    result = runner(
+        ProductProviderAcquisitionRequest(
+            repo_root=tmp_path,
+            output_path=output_path,
+            query="What is the current USCIS Form N-400 paper filing fee?",
+            provider="tavily",
+        )
+    )
+    serialized = output_path.read_text(encoding="utf-8")
+    payload = json.loads(serialized)
+    record = payload["results"][0]
+
+    assert result.return_code == 0
+    assert canary not in serialized
+    assert record["provider_extracted_text"] == redacted_text
+    assert record["provider_extracted_text_char_count"] == len(redacted_text)
+    assert record["provider_extracted_text_digest"] == _provider_text_digest(
+        redacted_text
+    )
+    assert record["provider_extracted_source_text_digest"] == _provider_text_digest(
+        redacted_text
+    )
 
 
 def test_linkup_search_results_normalize_as_url_bound_extracted_content(
