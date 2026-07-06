@@ -583,19 +583,6 @@ _ALLOWED_RAW_FALSE_KEYS = frozenset(
         "raw_source_text_retained",
     }
 )
-_PRIVATE_VALUE_MARKERS = frozenset(
-    {
-        "api_key",
-        "authorization:",
-        "bearer ",
-        "private_sentinel",
-        "provider_payload",
-        "raw_prompt",
-        "raw_provider",
-        "secret",
-        "sk-",
-    }
-)
 PRIVATE_LOOKING_VALUE_REDACTION = "private_looking_value_not_retained"
 PRIVATE_LOOKING_DETAIL_REDACTION = "private-looking detail redacted"
 _PUBLIC_CREDENTIAL_NAME_REFERENCES = frozenset(
@@ -9063,28 +9050,108 @@ def _reject_forbidden_material(value: Any, *, context: str) -> None:
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
             f"{context} contains raw/private fields: " + ", ".join(forbidden),
         )
-    markers = sorted(_private_value_markers(value))
-    if markers:
+    findings = _private_value_findings(value)
+    if findings:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
-            f"{context} contains private-looking values: " + ", ".join(markers),
+            f"{context} contains private-looking values: "
+            + "; ".join(_private_value_finding_summaries(findings)),
         )
 
 
 def _private_value_markers(value: Any) -> set[str]:
-    found: set[str] = set()
+    return {finding["marker"] for finding in _private_value_findings(value)}
+
+
+def _private_value_findings(
+    value: Any,
+    *,
+    path: tuple[str, ...] = (),
+) -> list[dict[str, str]]:
+    findings: list[dict[str, str]] = []
     if isinstance(value, Mapping):
-        for item in value.values():
-            found.update(_private_value_markers(item))
-    elif isinstance(value, list | tuple | set | frozenset):
-        for item in value:
-            found.update(_private_value_markers(item))
+        for key, item in value.items():
+            findings.extend(
+                _private_value_findings(
+                    item,
+                    path=(*path, _safe_path_component(key)),
+                )
+            )
+    elif isinstance(value, list | tuple):
+        for index, item in enumerate(value):
+            findings.extend(
+                _private_value_findings(item, path=(*path, f"[{index}]"))
+            )
+    elif isinstance(value, set | frozenset):
+        for index, item in enumerate(sorted(value, key=str)):
+            findings.extend(
+                _private_value_findings(item, path=(*path, f"[{index}]"))
+            )
     elif isinstance(value, str):
-        lowered = _credential_name_safe_value(value).casefold()
-        for marker in _PRIVATE_VALUE_MARKERS:
-            if marker in lowered:
-                found.add(marker)
-    return found
+        marker = _private_value_marker_class(value)
+        if marker:
+            findings.append(
+                {
+                    "path": _format_private_value_path(path),
+                    "value_type": "str",
+                    "marker": marker,
+                    "category": "credential_shaped_private_value",
+                }
+            )
+    return findings
+
+
+def _private_value_finding_summaries(
+    findings: Sequence[Mapping[str, str]],
+) -> list[str]:
+    return [
+        (
+            "private-looking value detected at "
+            f"{finding.get('path') or '<root>'}; "
+            f"type={finding.get('value_type') or 'unknown'}; "
+            f"marker={finding.get('marker') or 'private_value'}; "
+            f"category={finding.get('category') or 'private_value'}"
+        )
+        for finding in findings[:8]
+    ]
+
+
+def _private_value_marker_class(value: str) -> str | None:
+    lowered = _credential_name_safe_value(value).casefold()
+    marker_classes = (
+        ("sk-", "private_prefix_sk"),
+        ("authorization:", "authorization_header"),
+        ("bearer ", "bearer_token"),
+        ("api_key", "credential_key_name"),
+        ("private_sentinel", "private_sentinel_marker"),
+        ("provider_payload", "provider_payload_marker"),
+        ("raw_prompt", "raw_prompt_marker"),
+        ("raw_provider", "raw_provider_marker"),
+        ("secret", "secret_keyword"),
+    )
+    for marker, marker_class in marker_classes:
+        if marker in lowered:
+            return marker_class
+    return None
+
+
+def _safe_path_component(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "<empty_key>"
+    return re.sub(r"[^A-Za-z0-9_]+", "_", text)[:120] or "<key>"
+
+
+def _format_private_value_path(path: Sequence[str]) -> str:
+    if not path:
+        return "<root>"
+    out = ""
+    for part in path:
+        if part.startswith("["):
+            out = f"{out}{part}" if out else part
+        else:
+            out = f"{out}.{part}" if out else part
+    return out
 
 
 def _credential_name_safe_value(value: str) -> str:

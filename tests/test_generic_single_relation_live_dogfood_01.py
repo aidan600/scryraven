@@ -344,6 +344,48 @@ def test_dprime_smartmodel_route_ref_redacts_synthetic_private_values() -> None:
     assert PRIVATE_CANARY not in serialized
 
 
+def test_private_retention_guard_reports_safe_nested_path_without_value(
+    tmp_path: Path,
+) -> None:
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / "output" / "single-fact-path-diagnostic",
+        run_id="product-single-fact-path-diagnostic",
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner([], []),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    unsafe = dict(result.packet)
+    unsafe["semantic_status_payload"] = {
+        "dprime_status": {
+            "product_model_route_ref": {
+                "configured_smart_model": PRIVATE_CANARY,
+            },
+        },
+    }
+
+    with pytest.raises(GenericSingleRelationLiveDogfoodRunError) as excinfo:
+        dogfood.validate_generic_single_relation_live_dogfood_packet(unsafe)
+    detail = excinfo.value.detail
+
+    assert excinfo.value.blocker == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert (
+        "semantic_status_payload.dprime_status."
+        "product_model_route_ref.configured_smart_model"
+    ) in detail
+    assert "type=str" in detail
+    assert "marker=private_prefix_sk" in detail
+    assert "category=credential_shaped_private_value" in detail
+    assert PRIVATE_CANARY not in detail
+    assert "sk-synthetic" not in detail
+    assert "sk-" not in detail
+
+
 def test_private_retention_guard_still_rejects_unsafe_packet_payload(
     tmp_path: Path,
 ) -> None:
@@ -368,7 +410,10 @@ def test_private_retention_guard_still_rejects_unsafe_packet_payload(
 
     assert excinfo.value.blocker == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
     assert "private-looking values" in excinfo.value.detail
-    assert "sk-" in excinfo.value.detail
+    assert "answer_or_blocker_text" in excinfo.value.detail
+    assert "marker=private_prefix_sk" in excinfo.value.detail
+    assert PRIVATE_CANARY not in excinfo.value.detail
+    assert "sk-synthetic" not in excinfo.value.detail
 
 
 def test_dogfood_entrypoint_still_rejects_non_dogfood_output_dir(
@@ -1767,6 +1812,76 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert result.packet["raw_prompt_retained"] is False
     assert result.packet["raw_model_response_retained"] is False
     assert result.packet["raw_provider_payload_retained"] is False
+
+
+def test_product_single_fact_redacts_live_semantic_model_route_ref_canary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    def unsafe_route_ref(**_kwargs: Any) -> dict[str, Any]:
+        ref = product_smart_model_route_ref(
+            smart_provider="OpenAI",
+            smart_model="gpt-5.4",
+        )
+        ref["configured_smart_model"] = PRIVATE_CANARY
+        return ref
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(
+            plan,
+            "USCIS Form N-400 paper filing fee is $760.",
+        )
+
+    monkeypatch.setattr(
+        semantic_status_runtime,
+        "product_smart_model_route_ref",
+        unsafe_route_ref,
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-n400-semantic-route-canary",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                )
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner(
+            "USCIS lists the current Form N-400 paper filing fee as $760."
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+    serialized = json.dumps(result.packet, sort_keys=True)
+    route_ref = result.packet["semantic_status_payload"]["dprime_status"][
+        "product_model_route_ref"
+    ]
+
+    assert result.return_code == 0, result.packet.get("blocker_detail")
+    assert result.decision == "PASS"
+    assert route_ref["configured_smart_model"] == (
+        dogfood.PRIVATE_LOOKING_VALUE_REDACTION
+    )
+    assert PRIVATE_CANARY not in serialized
+    assert PRIVATE_CANARY not in result.output
+    assert "sk-synthetic" not in serialized
+    assert "sk-synthetic" not in result.output
+    assert len(calls) == 1
 
 
 def test_product_single_fact_cli_reports_exact_dprime_answer_path_blocker(
