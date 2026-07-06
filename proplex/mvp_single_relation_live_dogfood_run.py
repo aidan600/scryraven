@@ -211,6 +211,9 @@ BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING = (
 BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE = (
     "BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE"
 )
+BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED = (
+    "BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
 )
@@ -255,6 +258,7 @@ DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION = (
 SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION = (
     "generic_single_relation_source_citation_display_boundary_v1"
 )
+WORKBENCH_GAP_REENTRY_REF_SCHEMA_VERSION = "workbench_gap_reentry_ref_v1"
 DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE = (
     "GENERIC-DOGFOOD-DPRIME-AUTHORITY-ADAPTER-01"
 )
@@ -1037,6 +1041,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             acquisition_plan=acquisition_plan,
             provider_results=results,
             fetch_read_runner=fetch_read_runner or fetch_public_url_once,
+            retain_failed_fetch_read_packet=product_single_fact_answer_path_enabled,
         )
         counts.update(fetch_counts)
         if fetch_packet is None:
@@ -1628,6 +1633,7 @@ def validate_generic_single_relation_live_dogfood_packet(
     _validate_source_citation_display_boundary(safe)
     _validate_fetch_read_observability(safe)
     _validate_analyst_workbench_surface(safe)
+    _validate_workbench_gap_reentry_ref(safe)
     _reject_forbidden_material(safe, context="generic live dogfood packet")
     return safe
 
@@ -2321,6 +2327,61 @@ def _validate_workbench_dprime_input_ref(packet: Mapping[str, Any]) -> None:
         _blocked_output_hygiene("D-prime Workbench dossier ref mismatch.")
 
 
+def _validate_workbench_gap_reentry_ref(packet: Mapping[str, Any]) -> None:
+    ref = _safe_mapping(packet.get("workbench_gap_reentry_ref"))
+    if not ref:
+        _blocked_output_hygiene("Workbench gap re-entry ref missing.")
+    if ref.get("schema_version") != WORKBENCH_GAP_REENTRY_REF_SCHEMA_VERSION:
+        _blocked_output_hygiene("Workbench gap re-entry ref schema mismatch.")
+    status = ref.get("workbench_gap_reentry_status")
+    if status not in {
+        "not_required",
+        "followup_not_licensed",
+        "runkernel_authorized_not_executed",
+    }:
+        _blocked_output_hygiene("Workbench gap re-entry status invalid.")
+    if packet.get("workbench_gap_reentry_status") != status:
+        _blocked_output_hygiene("Workbench gap re-entry status alias mismatch.")
+    authorization_ref = _safe_mapping(ref.get("runkernel_followup_authorization_ref"))
+    authorization_created = ref.get("runkernel_followup_authorization_created") is True
+    if authorization_created != bool(authorization_ref):
+        _blocked_output_hygiene("Workbench gap re-entry authorization binding invalid.")
+    if not authorization_created and ref.get("proposal_or_blocker_ref_only") is not True:
+        _blocked_output_hygiene("Workbench gap re-entry proposal/blocker label invalid.")
+    if (
+        authorization_created
+        and ref.get("runkernel_authorization_object_source")
+        != "core.runkernel_followup_search_reentry_ordinary_search_runtime"
+    ):
+        _blocked_output_hygiene("Workbench gap re-entry authorization source invalid.")
+    if ref.get("followup_execution_licensed") is not False:
+        _blocked_output_hygiene("Workbench gap re-entry opened follow-up execution.")
+    if ref.get("new_search_subsystem_created") is not False:
+        _blocked_output_hygiene("Workbench gap re-entry created a new search subsystem.")
+    for key in (
+        "provider_called",
+        "live_search_called",
+        "fetch_read_executed",
+        "dprime_dispatch_owner",
+        "workbench_dispatch_owner",
+        "evidence_admitted",
+        "source_obligation_satisfied",
+        "citation_eligible",
+        "source_authority_finalized",
+        "final_answer_packet_created",
+        "author_prose_created",
+        "product_correctness_claimed",
+    ):
+        if ref.get(key) is not False:
+            _blocked_output_hygiene(f"Workbench gap re-entry {key} invalid.")
+    if _safe_mapping(ref.get("raw_private_retention_flags")) != RAW_FALSE_FLAGS:
+        _blocked_output_hygiene("Workbench gap re-entry raw/private flags invalid.")
+    if packet.get("followup_execution_licensed") is not False:
+        _blocked_output_hygiene("follow-up execution license alias invalid.")
+    if packet.get("new_search_subsystem_created_for_gap_reentry") is not False:
+        _blocked_output_hygiene("new search subsystem alias invalid.")
+
+
 def _validate_workbench_non_authority_posture(
     section: Mapping[str, Any],
     section_name: str,
@@ -2832,6 +2893,19 @@ def _format_product_single_fact_output(
 
 
 def _product_single_fact_blocker_text(packet: Mapping[str, Any]) -> str:
+    reentry = _safe_mapping(packet.get("workbench_gap_reentry_ref"))
+    if reentry.get("workbench_gap_reentry_status") == "followup_not_licensed":
+        if reentry.get("runkernel_followup_authorization_created") is True:
+            return (
+                "Blocked before answer: official strict support follow-up is needed. "
+                "The Workbench/D-prime gap was converted into a RunKernel follow-up "
+                "authorization, but live follow-up execution is not licensed."
+            )
+        return (
+            "Blocked before answer: official strict support follow-up is needed. "
+            "The Workbench/D-prime gap remains proposal-only; live follow-up "
+            "execution is not licensed."
+        )
     gap = _safe_mapping(packet.get("analysis_gap_search_proposal"))
     gap_status = _clean_text(gap.get("gap_status"), limit=80)
     gap_kind = _clean_text(gap.get("gap_kind"), limit=120)
@@ -2845,6 +2919,149 @@ def _product_single_fact_blocker_text(packet: Mapping[str, Any]) -> str:
         return f"Blocked before answer: official strict support needed. {reason}"
     detail = _clean_text(packet.get("blocker_detail"), limit=900)
     return f"Blocked before answer: {packet.get('decision')}. {detail}".strip()
+
+
+def _workbench_gap_reentry_ref(
+    *,
+    gap_proposal: Mapping[str, Any],
+    gap_ref: Mapping[str, Any],
+    semantic_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    gap = _safe_mapping(gap_proposal)
+    semantic = _safe_mapping(semantic_payload)
+    followup = _safe_mapping(semantic.get("dprime_followup_search_reentry_ref"))
+    dprime_gap = _dprime_gap_posture_ref(semantic)
+    workbench_gap_required = gap.get("gap_status") == "proposed"
+    dprime_gap_required = bool(dprime_gap)
+    gap_required = workbench_gap_required or dprime_gap_required
+    authorization_ref = _safe_mapping(followup.get("followup_search_authorization_ref"))
+    authorization_created = bool(authorization_ref)
+    if not gap_required:
+        status = "not_required"
+        execution_status = "not_required"
+        ordinary_status = "not_required"
+    elif authorization_created:
+        status = "runkernel_authorized_not_executed"
+        execution_status = "not_executed_live_followup_not_licensed"
+        ordinary_status = _clean_text(
+            followup.get("ordinary_search_executor_handoff_status"),
+            limit=120,
+        ) or "ordinary_search_reentry_intent_created"
+    else:
+        status = "followup_not_licensed"
+        execution_status = "not_executed_followup_not_licensed"
+        ordinary_status = "intended_not_executed"
+    gap_sources: list[str] = []
+    if workbench_gap_required:
+        gap_sources.append("workbench")
+    if dprime_gap_required:
+        gap_sources.append("dprime")
+    ref = {
+        "schema_version": WORKBENCH_GAP_REENTRY_REF_SCHEMA_VERSION,
+        "phase_name": PHASE_NAME,
+        "mode": MODE,
+        "surface": "current_source_record_workbench_dprime_gap_reentry",
+        "workbench_gap_reentry_status": status,
+        "gap_sources": gap_sources,
+        "workbench_gap_proposal_ref": _safe_mapping(gap_ref),
+        "workbench_gap_status": gap.get("gap_status"),
+        "workbench_gap_kind": gap.get("gap_kind"),
+        "dprime_gap_ref": dprime_gap,
+        "followup_search_intent_ref": _safe_mapping(
+            followup.get("followup_search_intent_packet_ref")
+        ),
+        "runkernel_followup_authorization_ref": authorization_ref,
+        "runkernel_followup_authorization_status": (
+            "authorized"
+            if authorization_created
+            else "not_created_followup_not_licensed"
+            if gap_required
+            else "not_required"
+        ),
+        "runkernel_followup_authorization_created": authorization_created,
+        "runkernel_authorization_object_source": (
+            "core.runkernel_followup_search_reentry_ordinary_search_runtime"
+            if authorization_created
+            else "not_created"
+        ),
+        "local_product_path_projection": True,
+        "proposal_or_blocker_ref_only": not authorization_created,
+        "ordinary_search_reentry_intent_status": ordinary_status,
+        "ordinary_search_path_reused": bool(gap_required or authorization_created),
+        "new_search_subsystem_created": False,
+        "followup_execution_status": execution_status,
+        "followup_execution_licensed": False,
+        "provider_called": bool(followup.get("provider_called")),
+        "live_search_called": bool(followup.get("live_search_called")),
+        "fetch_read_executed": bool(followup.get("fetch_read_executed")),
+        "dprime_dispatch_owner": bool(followup.get("dprime_dispatch_owner")),
+        "workbench_dispatch_owner": False,
+        "evidence_admitted": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+        "source_authority_finalized": False,
+        "final_answer_packet_created": False,
+        "author_prose_created": False,
+        "product_correctness_claimed": False,
+        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+        "forbidden_interpretation": (
+            "A local Workbench/D-prime gap re-entry ref is not a "
+            "RunKernel follow-up authorization unless the "
+            "runkernel_followup_authorization_ref is present."
+        ),
+    }
+    ref = {key: value for key, value in ref.items() if value not in (None, "")}
+    ref["ref_digest"] = _digest_json(ref)
+    return ref
+
+
+def _dprime_gap_posture_ref(semantic_payload: Mapping[str, Any]) -> dict[str, Any]:
+    dprime = _safe_mapping(_safe_mapping(semantic_payload).get("dprime_status"))
+    if not dprime:
+        return {}
+    relation = _clean_text(dprime.get("support_relation"), limit=160)
+    assessment_status = _clean_text(dprime.get("assessment_status"), limit=160)
+    proposal_status = _clean_text(
+        dprime.get("proposal_validation_status"),
+        limit=160,
+    )
+    gap_relations = {
+        "absent",
+        "scope_mismatch",
+        "currentness_mismatch",
+        "contradicts",
+        "missing_qualifier",
+        "weak_or_overclaim_risk",
+        "abstained",
+    }
+    gap_statuses = {
+        "non-support",
+        "challenge-recommended",
+        "abstained",
+        "invalid",
+    }
+    gap_required = (
+        relation in gap_relations
+        or assessment_status in gap_statuses
+        or (
+            bool(relation)
+            and relation != "directly_supports"
+            and proposal_status != "DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED"
+        )
+    )
+    if not gap_required:
+        return {}
+    return _without_empty(
+        {
+            "status": "gap_posture_detected",
+            "assessment_status": assessment_status,
+            "support_relation": relation,
+            "proposal_validation_status": proposal_status,
+            "blocker_detail": _clean_text(dprime.get("blocker_detail"), limit=500),
+            "assessment_ref": _safe_mapping(dprime.get("assessment_ref")),
+            "dprime_dispatch_owner": False,
+        }
+    )
 
 
 def _product_report_display_path(packet: Mapping[str, Any]) -> str:
@@ -2905,6 +3122,7 @@ def _build_current_source_record_single_fact_review_report(
     semantic = _safe_mapping(safe.get("semantic_status_payload"))
     dprime = _safe_mapping(semantic.get("dprime_status"))
     analyst_workbench = _current_source_record_workbench_report_section(safe)
+    gap_reentry = _current_source_record_gap_reentry_report_section(safe)
     live_product_run_executed = bool(safe.get("live_runs_attempted"))
     report = {
         "report_kind": "current_source_record_single_fact_review_report",
@@ -3135,6 +3353,7 @@ def _build_current_source_record_single_fact_review_report(
             },
         },
         "analyst_workbench": analyst_workbench,
+        "gap_reentry": gap_reentry,
         "non_claims": {
             "live_product_run_executed": live_product_run_executed,
             "live_validation_correctness_claimed": False,
@@ -3242,6 +3461,54 @@ def _current_source_record_workbench_report_section(
     }
 
 
+def _current_source_record_gap_reentry_report_section(
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    ref = _safe_mapping(packet.get("workbench_gap_reentry_ref"))
+    return {
+        "schema_version": "current_source_record_gap_reentry_section_v1",
+        "workbench_gap_reentry_ref": ref,
+        "workbench_gap_reentry_status": ref.get("workbench_gap_reentry_status"),
+        "workbench_gap_proposal_ref": _safe_mapping(
+            ref.get("workbench_gap_proposal_ref")
+        ),
+        "dprime_gap_ref": _safe_mapping(ref.get("dprime_gap_ref")),
+        "followup_search_intent_ref": _safe_mapping(
+            ref.get("followup_search_intent_ref")
+        ),
+        "runkernel_followup_authorization_ref": _safe_mapping(
+            ref.get("runkernel_followup_authorization_ref")
+        ),
+        "runkernel_followup_authorization_status": ref.get(
+            "runkernel_followup_authorization_status"
+        ),
+        "ordinary_search_path_reused": ref.get("ordinary_search_path_reused") is True,
+        "ordinary_search_reentry_intent_status": ref.get(
+            "ordinary_search_reentry_intent_status"
+        ),
+        "followup_execution_licensed": ref.get("followup_execution_licensed") is True,
+        "followup_execution_status": ref.get("followup_execution_status"),
+        "provider_called": ref.get("provider_called") is True,
+        "live_search_called": ref.get("live_search_called") is True,
+        "fetch_read_executed": ref.get("fetch_read_executed") is True,
+        "dprime_dispatch_owner": ref.get("dprime_dispatch_owner") is True,
+        "workbench_dispatch_owner": ref.get("workbench_dispatch_owner") is True,
+        "new_search_subsystem_created": ref.get("new_search_subsystem_created") is True,
+        "evidence_claimed": ref.get("evidence_admitted") is True,
+        "source_obligation_satisfied": ref.get("source_obligation_satisfied") is True,
+        "citation_eligible": ref.get("citation_eligible") is True,
+        "source_authority_finalized": ref.get("source_authority_finalized") is True,
+        "fap_or_author_created": bool(
+            ref.get("final_answer_packet_created") or ref.get("author_prose_created")
+        ),
+        "product_correctness_claimed": ref.get("product_correctness_claimed") is True,
+        "honest_authority_language": (
+            "This local gap re-entry section is proposal/blocker status unless "
+            "runkernel_followup_authorization_ref is present."
+        ),
+    }
+
+
 def _format_current_source_record_single_fact_review_report(
     report: Mapping[str, Any],
 ) -> str:
@@ -3251,6 +3518,7 @@ def _format_current_source_record_single_fact_review_report(
     stages = _safe_mapping(safe.get("stage_lifecycle"))
     answer_path = _safe_mapping(stages.get("answer_path"))
     analyst_workbench = _safe_mapping(safe.get("analyst_workbench"))
+    gap_reentry = _safe_mapping(safe.get("gap_reentry"))
     gap = _safe_mapping(analyst_workbench.get("analysis_gap_search_proposal"))
     scrutineer = _safe_mapping(analyst_workbench.get("scrutineer_lane"))
     specialist = _safe_mapping(analyst_workbench.get("specialist_lane"))
@@ -3305,6 +3573,41 @@ def _format_current_source_record_single_fact_review_report(
         "- Overclaim-risk candidates: "
         f"{len(_safe_sequence(analyst_workbench.get('overclaim_risk_candidate_refs')))}",
         "- Workbench authority: proposal-only",
+        "",
+        "## Gap Re-entry",
+        f"- Status: {gap_reentry.get('workbench_gap_reentry_status') or 'not reached'}",
+        "- Workbench gap proposal: "
+        f"{_safe_mapping(gap_reentry.get('workbench_gap_proposal_ref')).get('proposal_digest') or 'not present'}",
+        "- D-prime gap posture: "
+        f"{_safe_mapping(gap_reentry.get('dprime_gap_ref')).get('support_relation') or 'not present'}",
+        "- Follow-up intent ref: "
+        f"{_safe_mapping(gap_reentry.get('followup_search_intent_ref')).get('packet_digest') or 'not created'}",
+        "- RunKernel authorization reducer status: "
+        f"{gap_reentry.get('runkernel_followup_authorization_status') or 'not reached'}",
+        "- Reducer-produced authorization ref: "
+        f"{_safe_mapping(gap_reentry.get('runkernel_followup_authorization_ref')).get('authorization_digest') or 'not created'}",
+        "- Ordinary search path reused/intended: "
+        f"{_bool_text(gap_reentry.get('ordinary_search_path_reused'))}",
+        "- Follow-up execution licensed: "
+        f"{_bool_text(gap_reentry.get('followup_execution_licensed'))}",
+        "- Follow-up execution status: "
+        f"{gap_reentry.get('followup_execution_status') or 'not reached'}",
+        "- Provider/search/fetch-read executed: "
+        f"{_bool_text(gap_reentry.get('provider_called'))}/"
+        f"{_bool_text(gap_reentry.get('live_search_called'))}/"
+        f"{_bool_text(gap_reentry.get('fetch_read_executed'))}",
+        "- D-prime dispatched search directly: "
+        f"{_bool_text(gap_reentry.get('dprime_dispatch_owner'))}",
+        "- Workbench dispatched search directly: "
+        f"{_bool_text(gap_reentry.get('workbench_dispatch_owner'))}",
+        "- New search subsystem created: "
+        f"{_bool_text(gap_reentry.get('new_search_subsystem_created'))}",
+        "- Evidence/source-obligation/citation/FAP/Author/correctness claimed: "
+        f"{_bool_text(gap_reentry.get('evidence_claimed'))}/"
+        f"{_bool_text(gap_reentry.get('source_obligation_satisfied'))}/"
+        f"{_bool_text(gap_reentry.get('citation_eligible'))}/"
+        f"{_bool_text(gap_reentry.get('fap_or_author_created'))}/"
+        f"{_bool_text(gap_reentry.get('product_correctness_claimed'))}",
         "",
         "## Answer Path",
         f"- SufficiencyReadiness status: {answer_path.get('sufficiency_readiness_status') or 'not reached'}",
@@ -3456,6 +3759,16 @@ def _packet_from_semantic_status(
         blocker_detail = (
             _clean_text(answer_path_ref.get("blocker_detail"), limit=900)
             or "Existing D-prime single-lane answer path stopped at a named surface."
+        )
+    elif (
+        product_entrypoint
+        and packet.get("workbench_gap_reentry_status") == "followup_not_licensed"
+    ):
+        decision = BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+        blocker_detail = (
+            "Official strict support follow-up is needed; the Workbench/D-prime "
+            "gap remains proposal-only because live follow-up execution is not "
+            "licensed."
         )
     elif source_citation_display_boundary.get("status") == "created":
         decision = BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
@@ -3674,6 +3987,9 @@ def _packet_from_semantic_status(
                 else
                 "product_current_source_record_contract_lineage_missing"
                 if decision == BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE
+                else
+                "current_source_record_followup_not_licensed"
+                if decision == BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
                 else
                 "generic_single_relation_dprime_authority_integration_blocked"
                 if decision
@@ -5895,6 +6211,11 @@ def _base_packet(
         semantic,
         dprime_dossier_ref=dprime_dossier_ref,
     )
+    workbench_gap_reentry = _workbench_gap_reentry_ref(
+        gap_proposal=gap_proposal,
+        gap_ref=gap_ref,
+        semantic_payload=semantic,
+    )
     return {
         "schema_version": SCHEMA_VERSION,
         "phase_name": PHASE_NAME,
@@ -6265,6 +6586,31 @@ def _base_packet(
         "workbench_reduction_projection_created": counts.get(
             "workbench_reduction_projection_created",
             0,
+        ),
+        "workbench_gap_reentry_ref": workbench_gap_reentry,
+        "workbench_gap_reentry_status": workbench_gap_reentry.get(
+            "workbench_gap_reentry_status"
+        ),
+        "followup_search_intent_ref": _safe_mapping(
+            workbench_gap_reentry.get("followup_search_intent_ref")
+        ),
+        "runkernel_followup_authorization_ref": _safe_mapping(
+            workbench_gap_reentry.get("runkernel_followup_authorization_ref")
+        ),
+        "runkernel_followup_authorization_status": (
+            workbench_gap_reentry.get("runkernel_followup_authorization_status")
+        ),
+        "followup_execution_status": workbench_gap_reentry.get(
+            "followup_execution_status"
+        ),
+        "followup_execution_licensed": (
+            workbench_gap_reentry.get("followup_execution_licensed") is True
+        ),
+        "ordinary_search_path_reused_for_gap_reentry": (
+            workbench_gap_reentry.get("ordinary_search_path_reused") is True
+        ),
+        "new_search_subsystem_created_for_gap_reentry": (
+            workbench_gap_reentry.get("new_search_subsystem_created") is True
         ),
         "live_runs_attempted": (
             1
@@ -7700,6 +8046,7 @@ def _write_fetch_read_artifacts(
     acquisition_plan: Mapping[str, Any] | None,
     provider_results: Sequence[Mapping[str, Any]],
     fetch_read_runner: FetchReadRunner,
+    retain_failed_fetch_read_packet: bool = False,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     search_dir = retained_root / SEARCH_ARTIFACT_DIR
     fetch_dir = retained_root / FETCH_READ_ARTIFACT_DIR
@@ -7956,7 +8303,36 @@ def _write_fetch_read_artifacts(
         attempt_diagnostics,
         last_error=last_error,
     )
-    return None, {
+    failed_fetch_packet: dict[str, Any] | None = None
+    if retain_failed_fetch_read_packet:
+        failed_materials = _failed_fetch_read_materials(
+            candidate_packet=candidate_packet,
+            candidates=candidates,
+            attempt_diagnostics=attempt_diagnostics,
+        )
+        if failed_materials:
+            try:
+                failed_fetch_packet = validate_fetch_read_content_packet(
+                    build_fetch_read_content_packet_from_candidate_packet(
+                        candidate_packet,
+                        failed_materials,
+                        selected_candidate_ids=[
+                            str(item["candidate_id"]) for item in failed_materials
+                        ],
+                    )
+                )
+                fetch_dir.mkdir(parents=True, exist_ok=True)
+                _write_json(
+                    fetch_dir / FETCH_READ_CONTENT_PACKET_NAME,
+                    failed_fetch_packet,
+                )
+                _write_json(
+                    fetch_dir / LIVE_SOURCE_SURVIVAL_SUMMARY_NAME,
+                    _fetch_summary(failed_fetch_packet),
+                )
+            except FetchReadContentReferenceError:
+                failed_fetch_packet = None
+    return failed_fetch_packet, {
         "source_acquisition_mode": SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK,
         "provider_extracted_content_candidate_count": 0,
         "provider_extracted_content_handoff_created": 0,
@@ -9257,10 +9633,84 @@ def _fetch_read_material(
     }
 
 
+def _failed_fetch_read_materials(
+    *,
+    candidate_packet: Mapping[str, Any],
+    candidates: Sequence[Mapping[str, Any]],
+    attempt_diagnostics: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates_by_id = {
+        str(candidate.get("candidate_id")): _safe_mapping(candidate)
+        for candidate in candidates
+        if candidate.get("candidate_id")
+    }
+    materials: list[dict[str, Any]] = []
+    for diagnostic in attempt_diagnostics:
+        attempt = _safe_mapping(diagnostic)
+        candidate = candidates_by_id.get(str(attempt.get("candidate_id")))
+        if not candidate:
+            continue
+        materials.append(
+            {
+                "candidate_id": candidate["candidate_id"],
+                "candidate_digest": candidate["candidate_digest"],
+                "run_id": candidate_packet["run_id"],
+                "request_id": candidate_packet["request_id"],
+                "current_answer_contract_digest": candidate_packet[
+                    "current_answer_contract_digest"
+                ],
+                "search_executor_handoff_digest": candidate_packet[
+                    "search_executor_handoff_digest"
+                ],
+                "search_result_candidate_packet_id": candidate_packet["packet_id"],
+                "search_result_candidate_packet_digest": candidate_packet[
+                    "packet_digest"
+                ],
+                "fetch_read_status": "failed",
+                "attempted_url": attempt.get("attempted_url") or candidate.get("url"),
+                "resolved_url": attempt.get("final_url") or candidate.get("url"),
+                "final_url": attempt.get("final_url") or candidate.get("url"),
+                "resolved_domain": attempt.get("final_domain")
+                or candidate.get("domain"),
+                "content_type": attempt.get("content_type"),
+                "http_status": attempt.get("http_status_code"),
+                "retrieved_or_observed_at": datetime.now(UTC)
+                .replace(microsecond=0)
+                .isoformat(),
+                "published_or_observed_date": candidate.get(
+                    "published_or_observed_date"
+                ),
+                "content_title": candidate.get("title"),
+                "content_length": 0,
+                "read_error_code": attempt.get("failure_category")
+                or "fetch_read_failed",
+                "failure_reason": (
+                    "bounded fetch/read failed before readable sanitized text "
+                    "was retained"
+                ),
+                "redirect_chain_digest": attempt.get("redirect_chain_digest"),
+                "redirect_count": attempt.get("redirect_count"),
+                "raw_page_content_retained": False,
+                "raw_page_text_retained": False,
+                "raw_headers_retained": False,
+                "raw_prompt_retained": False,
+            }
+        )
+    return materials
+
+
 def _fetch_summary(fetch_packet: Mapping[str, Any]) -> dict[str, Any]:
+    readable_handoff_created = any(
+        _safe_mapping(reference).get("fetch_read_status") == "readable"
+        for reference in _safe_sequence(fetch_packet.get("reference_records"))
+    )
     return {
-        "decision": PASS_DECISION,
-        "readable_content_handoff_created": True,
+        "decision": (
+            PASS_DECISION
+            if readable_handoff_created
+            else BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES
+        ),
+        "readable_content_handoff_created": readable_handoff_created,
         "retention_flags": {
             "headers_retained": False,
             "page_content_retained": False,
@@ -10834,6 +11284,7 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED",
+    "BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED",
     "BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE",
     "BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING",
     "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD",
@@ -10855,6 +11306,7 @@ __all__ = [
     "PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE",
     "PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS",
     "SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE",
+    "WORKBENCH_GAP_REENTRY_REF_SCHEMA_VERSION",
     "build_generic_single_relation_live_dogfood_run_output",
     "fetch_public_url_once",
     "format_generic_single_relation_live_dogfood_output",
