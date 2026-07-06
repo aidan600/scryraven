@@ -833,6 +833,7 @@ def build_semantic_observation_admission_projection(
         "support_kind": admission_state.get("support_kind"),
         "directness": admission_state.get("directness"),
         "support_bearing": admission_state.get("support_bearing", False),
+        "claim_or_value": admission_state.get("claim_or_value"),
         "candidate_caveats": list(admission_state.get("candidate_caveats", [])),
         "candidate_followup_gaps": list(admission_state.get("candidate_followup_gaps", [])),
         "candidate_contract_amendment_notes": list(

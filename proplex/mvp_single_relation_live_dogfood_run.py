@@ -194,6 +194,12 @@ BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED = (
 BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED"
 )
+BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING = (
+    "BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING"
+)
+BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE = (
+    "BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
 )
@@ -225,6 +231,12 @@ SANITIZED_SCOUT_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME = (
     "sanitized-scout-product-provider-acquisition-response.json"
 )
 LIVE_DOGFOOD_PACKET_NAME = "single_relation_live_dogfood_packet.json"
+CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_JSON_NAME = (
+    "current_source_record_single_fact_review_report.json"
+)
+CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_MD_NAME = (
+    "current_source_record_single_fact_review_report.md"
+)
 SOURCE_READINESS_GATEWAY_SCHEMA_VERSION = "generic_single_relation_source_readiness_gateway_v1"
 DPRIME_AUTHORITY_INTEGRATION_SCHEMA_VERSION = (
     "generic_single_relation_dprime_authority_integration_v1"
@@ -791,6 +803,12 @@ def build_generic_single_relation_live_dogfood_run_output(
     retained_root = run_dir / "retained_status_repo"
     provider_output_path = run_dir / SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME
     packet_path = run_dir / LIVE_DOGFOOD_PACKET_NAME
+    review_report_json_path = (
+        run_dir / CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_JSON_NAME
+    )
+    review_report_md_path = (
+        run_dir / CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_MD_NAME
+    )
     counts = _empty_counts()
     relation_plan: dict[str, Any] | None = None
     semantic_payload: Mapping[str, Any] = {}
@@ -1263,8 +1281,17 @@ def build_generic_single_relation_live_dogfood_run_output(
             entrypoint_metadata=entrypoint_metadata,
         )
 
+    if entrypoint_metadata["entrypoint_kind"] == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
+        packet["review_report_json_path"] = _display_path(review_report_json_path)
+        packet["review_report_markdown_path"] = _display_path(review_report_md_path)
     validate_generic_single_relation_live_dogfood_packet(packet)
     _write_json(packet_path, packet)
+    if entrypoint_metadata["entrypoint_kind"] == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
+        _write_current_source_record_single_fact_review_report(
+            packet=packet,
+            json_path=review_report_json_path,
+            markdown_path=review_report_md_path,
+        )
     output = format_generic_single_relation_live_dogfood_output(
         packet,
         packet_path=packet_path,
@@ -1429,9 +1456,10 @@ def validate_generic_single_relation_live_dogfood_packet(
     if safe.get("mode") != MODE:
         _blocked_output_hygiene("generic live packet mode mismatch.")
     _validate_entrypoint_metadata(safe)
-    product_answer_pass = (
-        safe.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
-        and safe.get("decision") == PASS_DECISION
+    product_entrypoint = safe.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    product_answer_pass = product_entrypoint and safe.get("decision") == PASS_DECISION
+    product_answer_path_consumed = product_entrypoint and (
+        safe.get("fap_author_opened") is True
     )
     product_answer_open_flags = {
         "final_answer_packet_created",
@@ -1445,10 +1473,10 @@ def validate_generic_single_relation_live_dogfood_packet(
         if safe.get(key) is not expected:
             _blocked_output_hygiene(f"generic live packet must keep {key}=false.")
     for key, expected in CLOSED_FALSE_FLAGS.items():
-        if product_answer_pass and key in product_answer_open_flags:
+        if product_answer_path_consumed and key in product_answer_open_flags:
             if safe.get(key) is not True:
                 _blocked_output_hygiene(
-                    f"product answer packet must set {key}=true."
+                    f"product answer-path packet must set {key}=true."
                 )
             continue
         if safe.get(key) is not expected:
@@ -1548,7 +1576,6 @@ def validate_generic_single_relation_live_dogfood_packet(
         ):
             if _bounded_int(safe.get(count_key)) != 0:
                 _blocked_output_hygiene("unsupported query made live/model calls.")
-    product_entrypoint = safe.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
     if not product_entrypoint:
         if safe.get("answer_text_present") is True:
             _blocked_output_hygiene("generic live packet must not expose answer text.")
@@ -1560,6 +1587,14 @@ def validate_generic_single_relation_live_dogfood_packet(
             _blocked_output_hygiene(
                 "generic live packet must not create source display entries."
             )
+    elif product_answer_pass:
+        if not _clean_text(safe.get("product_answer_text"), limit=4_000):
+            _blocked_output_hygiene("product PASS requires product answer text.")
+        lineage = _safe_mapping(
+            safe.get("selected_current_value_to_fap_claim_lineage")
+        )
+        if lineage.get("contract_accountable") is not True:
+            _blocked_output_hygiene("product PASS requires contract-accountable claim lineage.")
     _validate_source_readiness_gateway(safe)
     _validate_dprime_authority_integration(safe)
     _validate_source_citation_display_boundary(safe)
@@ -1626,6 +1661,8 @@ def _validate_source_readiness_gateway(packet: Mapping[str, Any]) -> None:
                 packet.get("decision")
                 in {
                     BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
+                    BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING,
+                    BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE,
                     *EXISTING_DPRIME_ANSWER_PATH_BLOCKERS,
                 }
                 and integration.get("status") == "consumed"
@@ -1641,6 +1678,8 @@ def _validate_consumed_dprime_authority_integration(
     allowed_decisions = {
         BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
         BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
+        BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING,
+        BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE,
         PASS_DECISION,
         *EXISTING_DPRIME_ANSWER_PATH_BLOCKERS,
     }
@@ -1718,7 +1757,10 @@ def _validate_consumed_dprime_authority_integration(
         "fap_invoked",
         "author_invoked",
     )
-    if product_entrypoint and packet.get("decision") == PASS_DECISION:
+    product_answer_path_consumed = product_entrypoint and (
+        packet.get("fap_author_opened") is True
+    )
+    if product_answer_path_consumed:
         for key in answer_path_created_keys:
             if integration.get(key) is not True:
                 _blocked_output_hygiene(f"product D-prime answer path {key} invalid.")
@@ -1797,6 +1839,9 @@ def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
         _blocked_output_hygiene("D-prime support slice must not satisfy readiness.")
     if integration.get("dprime_downstream_authority_enabled") is not False:
         _blocked_output_hygiene("generic dogfood must keep downstream D-prime disabled.")
+    product_answer_path_consumed = product_entrypoint and (
+        packet.get("fap_author_opened") is True
+    )
     false_unless_consumed = (
         "single_relation_source_obligation_ready",
         "single_relation_citation_handoff_ready",
@@ -1821,7 +1866,7 @@ def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
         "citation_rendering_invoked",
     ):
         if (
-            not (product_entrypoint and packet.get("decision") == PASS_DECISION)
+            not product_answer_path_consumed
             and integration.get(key) is not False
         ):
             _blocked_output_hygiene(f"D-prime authority integration {key} invalid.")
@@ -1936,6 +1981,8 @@ def _validate_created_source_citation_display_boundary(
 ) -> None:
     allowed_decisions = {
         BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
+        BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING,
+        BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE,
         PASS_DECISION,
         *EXISTING_DPRIME_ANSWER_PATH_BLOCKERS,
     }
@@ -2345,6 +2392,9 @@ def format_generic_single_relation_live_dogfood_output(
 ) -> str:
     """Render a compact CLI view for one generic relation dogfood run."""
 
+    if packet.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND:
+        return _format_product_single_fact_output(packet, packet_path=packet_path)
+
     sources = _source_display_entries(packet)
     boundary_sources = _source_citation_display_boundary_entries(packet)
     gateway = _safe_mapping(packet.get("source_readiness_gateway"))
@@ -2531,6 +2581,399 @@ def format_generic_single_relation_live_dogfood_output(
     return "\n".join(lines)
 
 
+def _format_product_single_fact_output(
+    packet: Mapping[str, Any],
+    *,
+    packet_path: Path,
+) -> str:
+    answer_text = _clean_text(packet.get("product_answer_text"), limit=4_000)
+    if not answer_text:
+        detail = _clean_text(packet.get("blocker_detail"), limit=900)
+        answer_text = (
+            f"Blocked before answer: {packet.get('decision')}. {detail}".strip()
+        )
+    lines = [
+        "Answer:",
+        answer_text or "Blocked before answer: unavailable.",
+        "",
+        "Sources:",
+    ]
+    source_entries = _product_single_fact_source_entries(packet)
+    if source_entries:
+        for index, source in enumerate(source_entries, start=1):
+            label = _clean_text(source.get("label"), limit=80) or f"D{index}"
+            if not label.startswith("["):
+                label = f"[D{index}]"
+            title = (
+                _clean_text(source.get("source_title"), limit=220)
+                or _clean_text(source.get("title"), limit=220)
+                or _clean_text(source.get("display_text"), limit=400)
+                or "Source"
+            )
+            url = _clean_text(
+                source.get("source_url") or source.get("url"),
+                limit=700,
+            )
+            lines.append(f"{label} {title}")
+            if url:
+                lines.append(url)
+    else:
+        lines.append("No source display is available.")
+    lines.extend(
+        [
+            "",
+            "Status:",
+            f"- Decision: {packet.get('decision')}",
+            f"- Planner calls: {packet.get('query_plans_consumed')}/1",
+            (
+                f"- Provider: {packet.get('extraction_provider') or 'not used'}, "
+                f"{packet.get('provider_calls_completed')}/"
+                f"{packet.get('provider_calls_attempted')}"
+            ),
+            "- Provider-extracted content: "
+            f"{_bool_text(packet.get('provider_extracted_content_obtained'))}",
+            f"- EvidenceLedger admissions: {packet.get('evidence_ledger_admissions')}",
+            f"- D-prime/model calls: {packet.get('dprime_model_review_calls_attempted')}/"
+            f"{packet.get('dprime_model_review_calls_completed')}",
+            "- Raw/private retained: false",
+            "- Review report: "
+            f"{packet.get('review_report_markdown_path') or 'not written'}",
+            f"- Review packet: {_display_path(packet_path)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _product_single_fact_source_entries(packet: Mapping[str, Any]) -> list[dict[str, Any]]:
+    entries = [
+        _safe_mapping(entry)
+        for entry in _safe_sequence(packet.get("source_display_entries"))
+        if isinstance(entry, Mapping)
+    ]
+    if entries:
+        return entries
+    return [
+        _safe_mapping(entry)
+        for entry in _safe_sequence(packet.get("source_citation_display_entries"))
+        if isinstance(entry, Mapping)
+    ]
+
+
+def _write_current_source_record_single_fact_review_report(
+    *,
+    packet: Mapping[str, Any],
+    json_path: Path,
+    markdown_path: Path,
+) -> None:
+    report = _build_current_source_record_single_fact_review_report(packet)
+    _write_json(json_path, report)
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.write_text(
+        _format_current_source_record_single_fact_review_report(report),
+        encoding="utf-8",
+    )
+
+
+def _build_current_source_record_single_fact_review_report(
+    packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(packet)
+    gateway = _safe_mapping(safe.get("source_readiness_gateway"))
+    lineage = _safe_mapping(safe.get("selected_current_value_to_fap_claim_lineage"))
+    contract_projection = _safe_mapping(
+        safe.get("single_relation_answer_contract_projection")
+    )
+    answer_path_ref = _safe_mapping(safe.get("dprime_answer_path_ref"))
+    integration = _safe_mapping(safe.get("single_relation_dprime_authority_integration"))
+    boundary = _safe_mapping(safe.get("source_citation_display_boundary"))
+    semantic = _safe_mapping(safe.get("semantic_status_payload"))
+    dprime = _safe_mapping(semantic.get("dprime_status"))
+    report = {
+        "report_kind": "current_source_record_single_fact_review_report",
+        "schema_version": "current_source_record_single_fact_review_report_v1",
+        "phase_name": PHASE_NAME,
+        "mode": MODE,
+        "decision": safe.get("decision"),
+        "blocker_code": safe.get("blocker_code"),
+        "blocker_detail": safe.get("blocker_detail"),
+        "answer_contract_lifecycle": {
+            "initial_answer_contract_present": "unknown",
+            "current_answer_contract_present": bool(contract_projection),
+            "current_answer_contract_status": (
+                "present" if contract_projection else "unknown"
+            ),
+            "current_answer_contract_id": contract_projection.get(
+                "projection_kind"
+            ),
+            "current_answer_contract_digest": contract_projection.get(
+                "projection_digest"
+            ),
+            "projection_kind": contract_projection.get("projection_kind"),
+            "projection_digest": contract_projection.get("projection_digest"),
+            "contract_owner": contract_projection.get("contract_owner"),
+            "component_ref": _safe_mapping(contract_projection.get("component_ref")),
+            "active_components": [
+                _safe_mapping(contract_projection.get("component_ref"))
+            ]
+            if _safe_mapping(contract_projection.get("component_ref"))
+            else [],
+            "source_obligation_ref": _safe_mapping(
+                contract_projection.get("source_obligation_ref")
+            ),
+            "active_source_obligations": [
+                _safe_mapping(contract_projection.get("source_obligation_ref"))
+            ]
+            if _safe_mapping(contract_projection.get("source_obligation_ref"))
+            else [],
+            "active_fetch_read_obligations": [
+                _safe_mapping(contract_projection.get("acquisition_plan_ref"))
+            ]
+            if _safe_mapping(contract_projection.get("acquisition_plan_ref"))
+            else [],
+            "active_caveats": [],
+            "prohibited_upgrades": [],
+            "amendment_candidates": {
+                "proposed": "unknown",
+                "admitted": "unknown",
+                "applied": "unknown",
+            },
+            "search_executor_handoff_consumed_current_answer_contract": bool(
+                safe.get("acquisition_plan_consumed_by_product_path")
+            ),
+            "updated_contract_state_ref": _without_empty(
+                {
+                    "state_kind": _safe_mapping(
+                        safe.get("single_relation_answer_contract_state")
+                    ).get("state_kind"),
+                    "state_digest": _safe_mapping(
+                        safe.get("single_relation_answer_contract_state")
+                    ).get("state_digest"),
+                    "support_admission_allowed": _safe_mapping(
+                        safe.get("single_relation_answer_contract_state")
+                    ).get("support_admission_allowed"),
+                    "answer_display_allowed": _safe_mapping(
+                        safe.get("single_relation_answer_contract_state")
+                    ).get("answer_display_allowed"),
+                    "source_display_allowed": _safe_mapping(
+                        safe.get("single_relation_answer_contract_state")
+                    ).get("source_display_allowed"),
+                }
+            ),
+            "accepted_current_answer_contract_authority_ref": _safe_mapping(
+                lineage.get("accepted_current_answer_contract_authority_ref")
+            ),
+            "selected_claim_bound_to_current_answer_contract": lineage.get(
+                "contract_accountable"
+            )
+            is True,
+            "selected_value_bound_to_current_answer_contract_component_source_obligation": (
+                lineage.get("contract_accountable") is True
+            ),
+            "lineage_checks": _safe_mapping(lineage.get("checks")),
+            "lineage_missing": list(_safe_sequence(lineage.get("missing"))),
+        },
+        "claim_propagation_lifecycle": {
+            "selected_current_value": gateway.get("selected_current_value_text"),
+            "selected_current_value_present": bool(
+                gateway.get("selected_current_value_text")
+            ),
+            "selected_source_ref": _safe_mapping(gateway.get("selected_source_ref")),
+            "selected_source_present": bool(
+                _safe_mapping(gateway.get("selected_source_ref")).get("url")
+            ),
+            "selected_window_ref": _safe_mapping(gateway.get("selected_window_ref")),
+            "selected_value_bound_to_contract": lineage.get("contract_accountable")
+            is True,
+            "selected_value_bound_to_current_answer_contract_component_source_obligation": (
+                lineage.get("contract_accountable") is True
+            ),
+            "semantic_observation_ref": _safe_mapping(
+                lineage.get("semantic_observation_ref")
+            )
+            or _safe_mapping(answer_path_ref.get("semantic_observation_ref")),
+            "component_coverage_ref": _safe_mapping(
+                lineage.get("component_coverage_ref")
+            )
+            or _safe_mapping(answer_path_ref.get("component_coverage_ref")),
+            "sufficiency_readiness_ref": _safe_mapping(
+                lineage.get("sufficiency_readiness_ref")
+            )
+            or _safe_mapping(answer_path_ref.get("sufficiency_readiness_ref")),
+            "fap_safe_claim_ref": _safe_mapping(lineage.get("fap_safe_claim_ref"))
+            or _safe_mapping(answer_path_ref.get("fap_safe_claim_ref")),
+            "author_safe_claim_ref": _safe_mapping(
+                lineage.get("author_safe_claim_ref")
+            )
+            or _safe_mapping(answer_path_ref.get("author_safe_claim_ref")),
+            "selected_value_entered_admitted_semantic_support": bool(
+                _safe_mapping(lineage.get("semantic_observation_ref")).get(
+                    "observation_digest"
+                )
+                or _safe_mapping(answer_path_ref.get("semantic_observation_ref")).get(
+                    "observation_digest"
+                )
+            ),
+            "selected_value_entered_component_coverage": bool(
+                _safe_mapping(lineage.get("component_coverage_ref")).get(
+                    "coverage_record_digest"
+                )
+                or _safe_mapping(answer_path_ref.get("component_coverage_ref")).get(
+                    "coverage_record_digest"
+                )
+            ),
+            "selected_value_entered_sufficiency_readiness": bool(
+                _safe_mapping(lineage.get("sufficiency_readiness_ref")).get(
+                    "readiness_digest"
+                )
+                or _safe_mapping(answer_path_ref.get("sufficiency_readiness_ref")).get(
+                    "readiness_digest"
+                )
+            ),
+            "selected_value_entered_fap_safe_claim_text": bool(
+                safe.get("safe_answer_claim_text")
+            ),
+            "selected_value_entered_author_answer_text": bool(
+                safe.get("answer_path_author_text_present")
+                and safe.get("safe_answer_claim_text")
+                and (
+                    safe.get("safe_answer_claim_text")
+                    in (safe.get("author_answer_text") or "")
+                )
+            ),
+            "fap_safe_claim_text": safe.get("safe_answer_claim_text"),
+            "author_answer_text_present": safe.get("answer_path_author_text_present")
+            is True,
+            "product_answer_text_present": safe.get("answer_text_present") is True,
+            "authority_path": safe.get("product_claim_text_authority_path")
+            or lineage.get("authority_path"),
+            "unknown_stage_explanations": [],
+        },
+        "stage_lifecycle": {
+            "planner": {
+                "relation_plan_consumed": safe.get("relation_plan_consumed"),
+                "relation_plan_id": safe.get("relation_plan_id"),
+                "query_plans_consumed": safe.get("query_plans_consumed"),
+                "acquisition_query": safe.get("acquisition_query"),
+            },
+            "provider_and_fetch": {
+                "extraction_provider": safe.get("extraction_provider"),
+                "provider_calls_attempted": safe.get("provider_calls_attempted"),
+                "provider_calls_completed": safe.get("provider_calls_completed"),
+                "provider_extracted_content_obtained": safe.get(
+                    "provider_extracted_content_obtained"
+                ),
+                "fetch_read_attempts": safe.get("fetch_read_attempts"),
+                "fetch_read_completed": safe.get("fetch_read_completed"),
+            },
+            "evidence_and_dprime": {
+                "evidence_ledger_admissions": safe.get("evidence_ledger_admissions"),
+                "dprime_relation_intake_ref": _safe_mapping(
+                    safe.get("dprime_relation_intake_ref")
+                ),
+                "dprime_status": _without_empty(
+                    {
+                        "assessment_status": dprime.get("assessment_status"),
+                        "support_relation": dprime.get("support_relation"),
+                        "semantic_observation_admission_status": dprime.get(
+                            "semantic_observation_admission_status"
+                        ),
+                        "objects_created": _safe_mapping(dprime.get("objects_created")),
+                    }
+                ),
+            },
+            "source_obligation_and_display": {
+                "source_obligation_authority_consumed": safe.get(
+                    "source_obligation_authority_consumed"
+                ),
+                "citation_source_handoff_authority_consumed": safe.get(
+                    "citation_source_handoff_authority_consumed"
+                ),
+                "integration_status": integration.get("status"),
+                "display_boundary_status": boundary.get("status"),
+                "source_display_entry_count": len(
+                    _safe_sequence(safe.get("source_citation_display_entries"))
+                ),
+            },
+            "answer_path": {
+                "sufficiency_readiness_status": answer_path_ref.get(
+                    "sufficiency_readiness_status"
+                ),
+                "final_answer_packet_status": answer_path_ref.get(
+                    "final_answer_packet_status"
+                ),
+                "author_answer_status": answer_path_ref.get(
+                    "author_answer_status"
+                ),
+                "citation_source_display_status": answer_path_ref.get(
+                    "citation_source_display_status"
+                ),
+                "safe_claim_available": bool(safe.get("safe_answer_claim_text")),
+            },
+            "retention": {
+                "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+                "live_validation_status": "not_run",
+                "product_correctness_claimed": False,
+            },
+        },
+        "non_claims": {
+            "live_validation_not_run": True,
+            "product_correctness_claimed": False,
+            "source_obligation_satisfied_by_cli": False,
+            "final_citation_rendering_created": False,
+            "raw_private_retained": False,
+        },
+    }
+    return _json_safe(report)
+
+
+def _format_current_source_record_single_fact_review_report(
+    report: Mapping[str, Any],
+) -> str:
+    safe = _safe_mapping(report)
+    contract = _safe_mapping(safe.get("answer_contract_lifecycle"))
+    propagation = _safe_mapping(safe.get("claim_propagation_lifecycle"))
+    stages = _safe_mapping(safe.get("stage_lifecycle"))
+    answer_path = _safe_mapping(stages.get("answer_path"))
+    lines = [
+        "# Current Source Record Single-Fact Review Report",
+        "",
+        f"- Decision: {safe.get('decision')}",
+        f"- Blocker: {safe.get('blocker_code') or 'none'}",
+        "- Selected claim bound to current answer contract: "
+        f"{_bool_text(contract.get('selected_claim_bound_to_current_answer_contract'))}",
+        f"- Selected current value: {propagation.get('selected_current_value') or 'not present'}",
+        f"- FAP safe claim text present: {_bool_text(bool(propagation.get('fap_safe_claim_text')))}",
+        f"- Product answer text present: {_bool_text(propagation.get('product_answer_text_present'))}",
+        "",
+        "## Contract Lifecycle",
+        f"- Projection kind: {contract.get('projection_kind') or 'not present'}",
+        f"- Projection digest: {contract.get('projection_digest') or 'not present'}",
+        f"- Component: {_safe_mapping(contract.get('component_ref')).get('component_id') or 'not present'}",
+        "- Source obligation: "
+        f"{_safe_mapping(contract.get('source_obligation_ref')).get('source_obligation_id') or 'not present'}",
+        f"- Missing lineage checks: {', '.join(_safe_sequence(contract.get('lineage_missing'))) or 'none'}",
+        "",
+        "## Claim Propagation",
+        f"- SemanticObservation: {_safe_mapping(propagation.get('semantic_observation_ref')).get('observation_digest') or 'not present'}",
+        f"- ComponentCoverage: {_safe_mapping(propagation.get('component_coverage_ref')).get('coverage_record_digest') or 'not present'}",
+        f"- SufficiencyReadiness: {_safe_mapping(propagation.get('sufficiency_readiness_ref')).get('readiness_digest') or 'not present'}",
+        f"- FAP safe claim: {_bool_text(bool(propagation.get('fap_safe_claim_ref')))}",
+        f"- Author safe claim: {_bool_text(bool(propagation.get('author_safe_claim_ref')))}",
+        "",
+        "## Answer Path",
+        f"- SufficiencyReadiness status: {answer_path.get('sufficiency_readiness_status') or 'not reached'}",
+        f"- FinalAnswerPacket status: {answer_path.get('final_answer_packet_status') or 'not reached'}",
+        f"- Author status: {answer_path.get('author_answer_status') or 'not reached'}",
+        f"- Source display status: {answer_path.get('citation_source_display_status') or 'not reached'}",
+        "",
+        "## Non-Claims",
+        "- Live validation: not run",
+        "- Product correctness claimed: false",
+        "- Raw/private retained: false",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def _packet_from_semantic_status(
     *,
     relation_plan: Mapping[str, Any],
@@ -2612,8 +3055,18 @@ def _packet_from_semantic_status(
     product_entrypoint = (
         entrypoint_metadata.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
     )
+    answer_path_safe_claim_text = _clean_text(
+        answer_path_ref.get("safe_answer_claim_text"),
+        limit=4_000,
+    )
+    claim_lineage = _current_source_record_contract_claim_lineage(
+        packet=packet,
+        source_readiness_gateway=source_readiness_gateway,
+        answer_path_ref=answer_path_ref,
+        semantic_payload=semantic_payload,
+    )
     product_answer_text = (
-        _clean_text(answer_path_ref.get("answer_text"), limit=4_000)
+        answer_path_safe_claim_text
         if product_entrypoint and answer_path_passed
         else ""
     )
@@ -2626,6 +3079,25 @@ def _packet_from_semantic_status(
             "Existing D-prime source-obligation/citation authority cannot be "
             "safely consumed by generic dogfood yet."
         )
+    elif product_entrypoint and answer_path_passed and not answer_path_safe_claim_text:
+        decision = BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING
+        blocker_detail = (
+            "The product answer path consumed the existing D-prime stages, but "
+            "the selected current value did not reach a FAP safe-claim field."
+        )
+        product_answer_text = ""
+    elif (
+        product_entrypoint
+        and answer_path_passed
+        and claim_lineage.get("contract_accountable") is not True
+    ):
+        decision = BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE
+        blocker_detail = (
+            _clean_text(claim_lineage.get("blocker_detail"), limit=900)
+            or "The selected answer claim could not be shown as bound to the "
+            "current answer contract component and source obligation."
+        )
+        product_answer_text = ""
     elif answer_path_passed:
         decision = PASS_DECISION
         blocker_detail = None
@@ -2776,20 +3248,40 @@ def _packet_from_semantic_status(
             "selected_current_value_text_present": bool(
                 source_readiness_gateway.get("selected_current_value_text")
             ),
+            "selected_current_value_to_fap_claim_lineage": claim_lineage,
+            "product_claim_text_source": answer_path_ref.get("claim_text_source"),
+            "product_claim_text_source_ref": answer_path_ref.get(
+                "claim_text_source_ref"
+            ),
+            "product_claim_text_authority_path": answer_path_ref.get(
+                "claim_text_authority_path"
+            ),
+            "safe_answer_claim_text": answer_path_safe_claim_text,
+            "author_answer_text": _clean_text(
+                answer_path_ref.get("answer_text"),
+                limit=4_000,
+            ),
+            "answer_path_author_text_present": bool(
+                _clean_text(answer_path_ref.get("answer_text"), limit=4_000)
+            ),
             "answer_or_blocker_text": (
                 (
-                    "Existing D-prime single-lane answer path consumed "
+                    product_answer_text
+                    if product_entrypoint and product_answer_text
+                    else "Existing D-prime single-lane answer path consumed "
                     "SufficiencyReadiness, hardened FinalAnswerPacket, "
                     "AuthorProse, and D-prime citation/source display. "
                     "Product correctness is not claimed."
                 )
-                if answer_path_passed
+                if decision == PASS_DECISION and answer_path_passed
                 else _source_readiness_gateway_summary(source_readiness_gateway)
                 if decision == PASS_DECISION
                 else f"Blocked before answer: {decision}. {blocker_detail}".strip()
             ),
             "product_answer_text": product_answer_text or "",
-            "answer_text_present": bool(product_answer_text),
+            "answer_text_present": bool(
+                product_entrypoint and decision == PASS_DECISION and product_answer_text
+            ),
             "source_display_entries": (
                 list(
                     _safe_sequence(
@@ -2798,7 +3290,7 @@ def _packet_from_semantic_status(
                         )
                     )
                 )
-                if product_answer_text
+                if product_entrypoint and decision == PASS_DECISION and product_answer_text
                 else []
             ),
             "dprime_answer_path_ref": answer_path_ref,
@@ -2826,6 +3318,12 @@ def _packet_from_semantic_status(
                 else
                 "existing_dprime_single_lane_answer_path_blocker_recorded"
                 if decision in EXISTING_DPRIME_ANSWER_PATH_BLOCKERS
+                else
+                "product_safe_claim_adapter_missing"
+                if decision == BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING
+                else
+                "product_current_source_record_contract_lineage_missing"
+                if decision == BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE
                 else
                 "generic_single_relation_dprime_authority_integration_blocked"
                 if decision
@@ -2861,6 +3359,176 @@ def _dprime_answer_path_decision(answer_path_ref: Mapping[str, Any]) -> str | No
     if blocker in EXISTING_DPRIME_ANSWER_PATH_BLOCKERS:
         return blocker
     return None
+
+
+def _current_source_record_contract_claim_lineage(
+    *,
+    packet: Mapping[str, Any],
+    source_readiness_gateway: Mapping[str, Any],
+    answer_path_ref: Mapping[str, Any],
+    semantic_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    gateway = _safe_mapping(source_readiness_gateway)
+    answer_path = _safe_mapping(answer_path_ref)
+    semantic = _safe_mapping(semantic_payload)
+    dprime = _safe_mapping(semantic.get("dprime_status"))
+    contract_projection = _safe_mapping(
+        packet.get("single_relation_answer_contract_projection")
+    )
+    contract_component = _safe_mapping(contract_projection.get("component_ref"))
+    contract_source_obligation = _safe_mapping(
+        contract_projection.get("source_obligation_ref")
+    )
+    authority_ref = _safe_mapping(
+        semantic.get("accepted_current_answer_contract_authority_ref")
+    ) or _safe_mapping(dprime.get("accepted_current_answer_contract_authority_ref"))
+    selected_source = _safe_mapping(gateway.get("selected_source_ref"))
+    selected_value = _clean_text(gateway.get("selected_current_value_text"), limit=1_000)
+    safe_claim = _clean_text(answer_path.get("safe_answer_claim_text"), limit=1_000)
+    plan_component_id = _clean_text(packet.get("component_id"), limit=320)
+    plan_source_obligation_id = _clean_text(packet.get("source_obligation_id"), limit=320)
+    bound_component_id = _clean_text(
+        answer_path.get("bound_contract_component_id"),
+        limit=320,
+    )
+    bound_source_obligation_id = _clean_text(
+        answer_path.get("bound_contract_source_obligation_id"),
+        limit=320,
+    )
+    source_ids = _lineage_source_obligation_ids(contract_source_obligation)
+    checks = {
+        "selected_current_value_present": bool(selected_value),
+        "safe_fap_claim_present": bool(safe_claim),
+        "selected_value_matches_safe_claim": bool(
+            selected_value and safe_claim and selected_value == safe_claim
+        ),
+        "selected_source_present": bool(
+            _clean_text(selected_source.get("url"), limit=700)
+        ),
+        "contract_projection_present": bool(contract_projection),
+        "acquisition_consumed_current_answer_contract": bool(
+            packet.get("acquisition_plan_consumed_by_product_path")
+        ),
+        "contract_component_matches": bool(
+            plan_component_id
+            and contract_component.get("component_id") == plan_component_id
+            and bound_component_id == plan_component_id
+        ),
+        "contract_source_obligation_matches": bool(
+            plan_source_obligation_id
+            and (
+                contract_source_obligation.get("source_obligation_id")
+                == plan_source_obligation_id
+                or plan_source_obligation_id in source_ids
+            )
+            and (
+                bound_source_obligation_id == plan_source_obligation_id
+                or bound_source_obligation_id in source_ids
+            )
+        ),
+        "answer_contract_authority_ref_present": bool(
+            authority_ref.get("current_contract_digest")
+            or authority_ref.get("accepted_contract_digest")
+        ),
+        "semantic_observation_ref_present": bool(
+            _safe_mapping(answer_path.get("semantic_observation_ref")).get(
+                "observation_digest"
+            )
+        ),
+        "component_coverage_ref_present": bool(
+            _safe_mapping(answer_path.get("component_coverage_ref")).get(
+                "coverage_record_digest"
+            )
+        ),
+        "sufficiency_readiness_ref_present": bool(
+            _safe_mapping(answer_path.get("sufficiency_readiness_ref")).get(
+                "readiness_digest"
+            )
+        ),
+        "fap_safe_claim_ref_present": bool(
+            _safe_mapping(answer_path.get("fap_safe_claim_ref")).get(
+                "safe_answer_claim_text"
+            )
+            or _safe_mapping(answer_path.get("fap_safe_claim_ref")).get(
+                "packet_digest"
+            )
+        ),
+        "author_safe_claim_ref_present": bool(
+            _safe_mapping(answer_path.get("author_safe_claim_ref")).get(
+                "safe_answer_claim_text"
+            )
+            or _safe_mapping(answer_path.get("author_safe_claim_ref")).get(
+                "author_prose_digest"
+            )
+        ),
+    }
+    missing = [key for key, passed in checks.items() if not passed]
+    return _json_safe(
+        _without_empty(
+            {
+                "contract_accountable": not missing,
+                "checks": checks,
+                "missing": missing,
+                "blocker_detail": (
+                    "Current-source record answer claim lineage missing: "
+                    + ", ".join(missing)
+                    + "."
+                    if missing
+                    else None
+                ),
+                "selected_current_value": selected_value,
+                "safe_answer_claim_text": safe_claim,
+                "selected_source_ref": {
+                    "title": selected_source.get("title"),
+                    "url": selected_source.get("url"),
+                    "domain": selected_source.get("domain"),
+                    "candidate_id": selected_source.get("candidate_id"),
+                },
+                "bound_contract_component_id": bound_component_id,
+                "bound_contract_source_obligation_id": bound_source_obligation_id,
+                "contract_projection_ref": {
+                    "projection_kind": contract_projection.get("projection_kind"),
+                    "projection_digest": contract_projection.get(
+                        "projection_digest"
+                    ),
+                    "contract_owner": contract_projection.get("contract_owner"),
+                    "component_id": contract_component.get("component_id"),
+                    "source_obligation_id": contract_source_obligation.get(
+                        "source_obligation_id"
+                    ),
+                },
+                "accepted_current_answer_contract_authority_ref": authority_ref,
+                "semantic_observation_ref": _safe_mapping(
+                    answer_path.get("semantic_observation_ref")
+                ),
+                "component_coverage_ref": _safe_mapping(
+                    answer_path.get("component_coverage_ref")
+                ),
+                "sufficiency_readiness_ref": _safe_mapping(
+                    answer_path.get("sufficiency_readiness_ref")
+                ),
+                "fap_safe_claim_ref": _safe_mapping(
+                    answer_path.get("fap_safe_claim_ref")
+                ),
+                "author_safe_claim_ref": _safe_mapping(
+                    answer_path.get("author_safe_claim_ref")
+                ),
+                "authority_path": answer_path.get("claim_text_authority_path"),
+            }
+        )
+    )
+
+
+def _lineage_source_obligation_ids(source_obligation: Mapping[str, Any]) -> set[str]:
+    ids = {
+        _clean_text(source_obligation.get("source_obligation_id"), limit=320),
+        _clean_text(source_obligation.get("obligation_id"), limit=320),
+    }
+    for item in _safe_sequence(source_obligation.get("source_obligation_candidate_ids")):
+        text = _clean_text(item, limit=320)
+        if text:
+            ids.add(text)
+    return {item for item in ids if item}
 
 
 def _blocked_packet(
@@ -4243,6 +4911,11 @@ def _failure_attribution_bucket(packet: Mapping[str, Any]) -> str:
     decision = _clean_text(packet.get("decision"), limit=220) or ""
     if decision == PASS_DECISION:
         return "not_blocked"
+    if decision in {
+        BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING,
+        BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE,
+    }:
+        return "current_source_record_answer_contract_lineage"
     if decision == BLOCKED_MODEL_ASSISTED_PLANNING_STRICT_MODEL_ROUTE_UNAVAILABLE:
         return "fast_model_planner_strict_route_unavailable"
     if decision in {
@@ -9680,9 +10353,13 @@ __all__ = [
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NO_OFFICIAL_ANSWER_BEARING_MATERIAL",
     "BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED",
+    "BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE",
+    "BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING",
     "BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD",
     "CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG",
     "CONFIRM_LIVE_DOGFOOD_FLAG",
+    "CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_JSON_NAME",
+    "CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_MD_NAME",
     "DOGFOOD_ENTRYPOINT_KIND",
     "DOGFOOD_ENTRYPOINT_SURFACE",
     "DOGFOOD_SUPPORTED_QUERY_CLASS",

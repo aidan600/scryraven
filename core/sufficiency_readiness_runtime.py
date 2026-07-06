@@ -753,6 +753,19 @@ def _component_readiness_entry(
         latest_review=latest_review,
         followup_budget_posture=followup_budget_posture,
     )
+    safe_claim_ref = _safe_claim_ref(
+        component_id=component_id,
+        coverage_refs=coverage_refs,
+        admission_refs=admission_refs,
+    )
+    claim_text = safe_claim_ref.get("safe_answer_claim_text")
+    source_obligation_ids = _text_list(
+        component.get("source_obligation_candidate_ids"),
+        limit=260,
+    )
+    if status != "full_answer_ready":
+        safe_claim_ref = {}
+        claim_text = None
     return {
         "component_id": component_id,
         "component_revision": component.get("component_revision"),
@@ -770,10 +783,105 @@ def _component_readiness_entry(
         "specialist_calculation_refs": [dict(item) for item in specialist_refs],
         "followup_budget_posture": followup_budget_posture,
         "component_readiness_status": status,
+        "safe_answer_claim_text": claim_text,
+        "primary_answer_value": claim_text,
+        "selected_current_value": claim_text,
+        "claim_text_source": safe_claim_ref.get("claim_text_source"),
+        "claim_text_source_ref": safe_claim_ref.get("claim_text_source_ref"),
+        "claim_text_authority_path": safe_claim_ref.get("claim_text_authority_path"),
+        "bound_contract_component_id": component_id if claim_text else None,
+        "bound_contract_source_obligation_id": (
+            source_obligation_ids[0] if claim_text and source_obligation_ids else None
+        ),
+        "source_obligation_candidate_ids": source_obligation_ids,
+        "semantic_observation_ref": safe_claim_ref.get("semantic_observation_ref"),
+        "component_coverage_ref": safe_claim_ref.get("component_coverage_ref"),
         "blockers": _dedupe_text(blockers),
         "mandatory_caveats": _dedupe_text(caveats),
         "prohibited_upgrades": _dedupe_text(prohibited),
     }
+
+
+def _safe_claim_ref(
+    *,
+    component_id: str,
+    coverage_refs: Sequence[Mapping[str, Any]],
+    admission_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    for coverage in reversed(list(coverage_refs)):
+        coverage_ref = _safe_mapping(coverage)
+        if not coverage_ref:
+            continue
+        if _clean_token(coverage_ref.get("answer_component_id"), limit=260) not in {
+            None,
+            component_id,
+        }:
+            continue
+        observations = [
+            _safe_mapping(item)
+            for item in _safe_list(coverage_ref.get("accepted_observation_refs"))
+        ]
+        for observation in reversed(observations):
+            claim = _clean_text(observation.get("claim_or_value"), limit=1_000)
+            if claim:
+                return {
+                    "safe_answer_claim_text": claim,
+                    "claim_text_source": (
+                        "selected_current_value_from_admitted_dprime_state"
+                    ),
+                    "claim_text_source_ref": "ComponentCoverage.accepted_observation_refs.claim_or_value",
+                    "claim_text_authority_path": (
+                        "admitted semantic support -> ComponentCoverage -> SufficiencyReadiness"
+                    ),
+                    "semantic_observation_ref": _observation_claim_source_ref(
+                        observation
+                    ),
+                    "component_coverage_ref": _component_coverage_claim_source_ref(
+                        coverage_ref
+                    ),
+                }
+    for admission in reversed(list(admission_refs)):
+        admission_ref = _safe_mapping(admission)
+        claim = _clean_text(admission_ref.get("claim_or_value"), limit=1_000)
+        if claim:
+            return {
+                "safe_answer_claim_text": claim,
+                "claim_text_source": (
+                    "selected_current_value_from_admitted_dprime_state"
+                ),
+                "claim_text_source_ref": "SemanticObservationAdmission.claim_or_value",
+                "claim_text_authority_path": (
+                    "admitted semantic support -> SufficiencyReadiness"
+                ),
+                "semantic_observation_ref": _observation_claim_source_ref(
+                    admission_ref
+                ),
+            }
+    return {}
+
+
+def _observation_claim_source_ref(observation: Mapping[str, Any]) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "observation_id": observation.get("observation_id"),
+            "observation_digest": observation.get("observation_digest"),
+            "answer_component_id": observation.get("answer_component_id"),
+            "support_status": observation.get("support_status"),
+            "content_refs": _text_list(observation.get("content_refs"), limit=260),
+        }
+    )
+
+
+def _component_coverage_claim_source_ref(coverage: Mapping[str, Any]) -> dict[str, Any]:
+    return _without_empty(
+        {
+            "coverage_record_id": coverage.get("coverage_record_id"),
+            "coverage_record_digest": coverage.get("coverage_record_digest"),
+            "coverage_state": coverage.get("coverage_state"),
+            "semantic_support_status": coverage.get("semantic_support_status"),
+            "answer_component_id": coverage.get("answer_component_id"),
+        }
+    )
 
 
 def _aggregate_answer_readiness(
@@ -1109,6 +1217,14 @@ def _contract_components(contract: Mapping[str, Any]) -> list[dict[str, Any]]:
                     "allowed_support_kinds": _text_list(
                         mapped.get("allowed_support_kinds")
                     ),
+                    "source_obligation_candidate_ids": _text_list(
+                        mapped.get("source_obligation_candidate_ids"),
+                        limit=260,
+                    ),
+                    "source_obligation_candidate_refs": _text_list(
+                        mapped.get("source_obligation_candidate_refs"),
+                        limit=260,
+                    ),
                     "calculation_policy": _clean_token(
                         mapped.get("calculation_policy"),
                         limit=260,
@@ -1196,6 +1312,7 @@ def _admission_refs(
                 "component_digest": mapped.get("component_digest"),
                 "support_status": mapped.get("support_status"),
                 "support_posture": mapped.get("support_posture"),
+                "claim_or_value": mapped.get("claim_or_value"),
                 "content_refs": _text_list(mapped.get("content_refs"), limit=260),
                 "evidence_refs": _text_list(mapped.get("evidence_refs"), limit=260),
             }
@@ -1419,6 +1536,13 @@ def _component_status_ref(entry: Mapping[str, Any]) -> dict[str, Any]:
         "component_digest": entry.get("component_digest"),
         "component_readiness_status": entry.get("component_readiness_status"),
         "required_or_material": entry.get("required_or_material") is True,
+        "safe_answer_claim_text": entry.get("safe_answer_claim_text"),
+        "claim_text_source": entry.get("claim_text_source"),
+        "claim_text_source_ref": entry.get("claim_text_source_ref"),
+        "bound_contract_component_id": entry.get("bound_contract_component_id"),
+        "bound_contract_source_obligation_id": entry.get(
+            "bound_contract_source_obligation_id"
+        ),
     }
 
 
@@ -1462,6 +1586,7 @@ def _observation_refs(value: Any) -> list[dict[str, Any]]:
                 "observation_digest": mapped.get("observation_digest"),
                 "answer_component_id": mapped.get("answer_component_id"),
                 "support_status": mapped.get("support_status"),
+                "claim_or_value": mapped.get("claim_or_value"),
                 "content_refs": _text_list(mapped.get("content_refs"), limit=260),
             }
         )

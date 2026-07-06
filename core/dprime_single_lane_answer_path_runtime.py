@@ -143,6 +143,11 @@ class DPrimeSingleLaneAnswerPathResult:
         fap = _safe_mapping(self.final_answer_packet_projection)
         author = _safe_mapping(self.author_answer_projection)
         display = _safe_mapping(self.citation_source_display_projection)
+        safe_claim_ref = _answer_path_safe_claim_ref(
+            readiness=readiness,
+            fap=fap,
+            author=author,
+        )
         return {
             "dprime_single_lane_answer_path_status": "consumed",
             "single_lane_only": True,
@@ -158,6 +163,27 @@ class DPrimeSingleLaneAnswerPathResult:
             "author_answer_status": author.get("author_prose_status"),
             "author_answer_ref": _author_ref(author),
             "answer_text": author.get("answer_text"),
+            "safe_answer_claim_text": safe_claim_ref.get("safe_answer_claim_text"),
+            "selected_current_value": safe_claim_ref.get("selected_current_value"),
+            "primary_answer_value": safe_claim_ref.get("primary_answer_value"),
+            "claim_text_source": safe_claim_ref.get("claim_text_source"),
+            "claim_text_source_ref": safe_claim_ref.get("claim_text_source_ref"),
+            "claim_text_authority_path": safe_claim_ref.get(
+                "claim_text_authority_path"
+            ),
+            "bound_contract_component_id": safe_claim_ref.get(
+                "bound_contract_component_id"
+            ),
+            "bound_contract_source_obligation_id": safe_claim_ref.get(
+                "bound_contract_source_obligation_id"
+            ),
+            "semantic_observation_ref": safe_claim_ref.get(
+                "semantic_observation_ref"
+            ),
+            "component_coverage_ref": safe_claim_ref.get("component_coverage_ref"),
+            "fap_safe_claim_ref": safe_claim_ref.get("fap_safe_claim_ref"),
+            "author_safe_claim_ref": safe_claim_ref.get("author_safe_claim_ref"),
+            "claim_propagation_ref": safe_claim_ref,
             "citation_source_display_status": display.get("status"),
             "citation_source_display_ref": _display_ref(display),
             "citation_source_display": display,
@@ -178,6 +204,135 @@ class DPrimeSingleLaneAnswerPathResult:
             "retrieval_executed": False,
             "decision": self.decision,
         }
+
+
+def _answer_path_safe_claim_ref(
+    *,
+    readiness: Mapping[str, Any],
+    fap: Mapping[str, Any],
+    author: Mapping[str, Any],
+) -> dict[str, Any]:
+    readiness_claim = _readiness_safe_claim_ref(readiness)
+    fap_claim = _fap_safe_claim_ref(fap)
+    author_claim = _author_safe_claim_ref(author)
+    if author_claim:
+        return _without_empty(
+            {
+                **readiness_claim,
+                **fap_claim,
+                **author_claim,
+                "answer_path_claim_stage": "AuthorProse",
+            }
+        )
+    if fap_claim:
+        return fap_claim
+    return readiness_claim
+
+
+def _author_safe_claim_ref(author: Mapping[str, Any]) -> dict[str, Any]:
+    for item in _safe_sequence(author.get("safe_answer_claim_refs")):
+        mapped = _safe_mapping(item)
+        claim = _clean_text(mapped.get("safe_answer_claim_text"), limit=1_000)
+        if claim:
+            return _without_empty(
+                {
+                    **_claim_common_ref(mapped, claim),
+                    "author_safe_claim_ref": mapped,
+                    "answer_path_claim_stage": "AuthorProse",
+                }
+            )
+    claim = _clean_text(author.get("safe_answer_claim_text"), limit=1_000)
+    if not claim:
+        return {}
+    return _without_empty(
+        {
+            "safe_answer_claim_text": claim,
+            "selected_current_value": claim,
+            "primary_answer_value": claim,
+            "author_safe_claim_ref": {
+                "author_prose_id": author.get("author_prose_id"),
+                "author_prose_digest": author.get("author_prose_digest"),
+            },
+            "answer_path_claim_stage": "AuthorProse",
+        }
+    )
+
+
+def _fap_safe_claim_ref(fap: Mapping[str, Any]) -> dict[str, Any]:
+    for entry in _safe_sequence(fap.get("component_packet_entries")):
+        mapped = _safe_mapping(entry)
+        claim = _clean_text(mapped.get("safe_answer_claim_text"), limit=1_000)
+        if claim:
+            return _without_empty(
+                {
+                    **_claim_common_ref(mapped, claim),
+                    "semantic_observation_ref": _safe_mapping(
+                        mapped.get("semantic_observation_ref")
+                    ),
+                    "component_coverage_ref": _safe_mapping(
+                        mapped.get("component_coverage_ref")
+                    ),
+                    "fap_safe_claim_ref": _safe_mapping(
+                        mapped.get("fap_safe_claim_ref")
+                    )
+                    or {
+                        "packet_id": fap.get("packet_id"),
+                        "packet_digest": fap.get("packet_digest"),
+                        "component_id": mapped.get("component_id"),
+                    },
+                    "answer_path_claim_stage": "FinalAnswerPacket",
+                }
+            )
+    return {}
+
+
+def _readiness_safe_claim_ref(readiness: Mapping[str, Any]) -> dict[str, Any]:
+    component_map = _safe_mapping(readiness.get("component_readiness_map"))
+    for item in component_map.values():
+        mapped = _safe_mapping(item)
+        claim = _clean_text(mapped.get("safe_answer_claim_text"), limit=1_000)
+        if claim:
+            return _without_empty(
+                {
+                    **_claim_common_ref(mapped, claim),
+                    "semantic_observation_ref": _safe_mapping(
+                        mapped.get("semantic_observation_ref")
+                    ),
+                    "component_coverage_ref": _safe_mapping(
+                        mapped.get("component_coverage_ref")
+                    ),
+                    "sufficiency_readiness_ref": {
+                        "readiness_id": readiness.get("readiness_id"),
+                        "readiness_digest": readiness.get("readiness_digest"),
+                    },
+                    "answer_path_claim_stage": "SufficiencyReadiness",
+                }
+            )
+    return {}
+
+
+def _claim_common_ref(mapped: Mapping[str, Any], claim: str) -> dict[str, Any]:
+    return {
+        "safe_answer_claim_text": claim,
+        "selected_current_value": _clean_text(
+            mapped.get("selected_current_value"),
+            limit=1_000,
+        )
+        or claim,
+        "primary_answer_value": _clean_text(
+            mapped.get("primary_answer_value"),
+            limit=1_000,
+        )
+        or claim,
+        "claim_text_source": mapped.get("claim_text_source"),
+        "claim_text_source_ref": mapped.get("claim_text_source_ref"),
+        "claim_text_authority_path": mapped.get("claim_text_authority_path"),
+        "bound_contract_component_id": mapped.get("bound_contract_component_id")
+        or mapped.get("component_id"),
+        "bound_contract_source_obligation_id": mapped.get(
+            "bound_contract_source_obligation_id"
+        ),
+    }
 
 
 def build_dprime_single_lane_answer_path(
@@ -616,6 +771,12 @@ def _contains_raw_or_private_key(value: Any) -> bool:
 
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _safe_sequence(value: Any) -> list[Any]:
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return list(value)
+    return []
 
 
 def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:

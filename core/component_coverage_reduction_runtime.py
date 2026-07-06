@@ -331,6 +331,7 @@ def _reconstruct_observation_ref(payload: Mapping[str, Any]) -> SemanticObservat
         component_contract_digest=str(payload.get("component_contract_digest") or ""),
         support_status=str(payload.get("support_status") or "unknown"),
         support_posture=str(payload.get("support_posture") or "direct"),
+        claim_or_value=payload.get("claim_or_value"),
         content_refs=tuple(_text_list(payload.get("content_refs"))),
         accepted=bool(payload.get("accepted", True)),
         semantic_observation_schema_version=_clean_token(payload.get("semantic_observation_schema_version")),
