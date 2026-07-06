@@ -2359,6 +2359,11 @@ def format_generic_single_relation_live_dogfood_output(
         packet.get("single_relation_dprime_authority_integration")
     )
     display_boundary = _safe_mapping(packet.get("source_citation_display_boundary"))
+    answer_path_pass = (
+        packet.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+        and packet.get("decision") == PASS_DECISION
+        and packet.get("fap_author_opened") is True
+    )
     relation_status = _safe_mapping(packet.get("dprime_relation_intake_ref")).get(
         "status",
         "not reached",
@@ -2443,9 +2448,17 @@ def format_generic_single_relation_live_dogfood_output(
         f"{_bool_text(display_boundary.get('derived_from_gateway_only'))}",
         "- Entries created: "
         f"{_bool_text(display_boundary.get('source_citation_display_entries_created'))}",
+        (
+            "- FAP/Author consumed through existing D-prime path: true."
+            if answer_path_pass
+            else "- Boundary-only FAP created: false."
+        ),
+        (
+            "- Product correctness claimed: false."
+            if answer_path_pass
+            else "- Boundary-only Author invoked: false."
+        ),
         "- Final citation rendering created: false.",
-        "- FAP created: false.",
-        "- Author invoked: false.",
     ]
     if boundary_sources:
         lines.extend(f"- {entry}" for entry in boundary_sources)
@@ -2768,7 +2781,14 @@ def _packet_from_semantic_status(
                 source_readiness_gateway.get("selected_current_value_text")
             ),
             "answer_or_blocker_text": (
-                _source_readiness_gateway_summary(source_readiness_gateway)
+                (
+                    "Existing D-prime single-lane answer path consumed "
+                    "SufficiencyReadiness, hardened FinalAnswerPacket, "
+                    "AuthorProse, and D-prime citation/source display. "
+                    "Product correctness is not claimed."
+                )
+                if answer_path_passed
+                else _source_readiness_gateway_summary(source_readiness_gateway)
                 if decision == PASS_DECISION
                 else f"Blocked before answer: {decision}. {blocker_detail}".strip()
             ),

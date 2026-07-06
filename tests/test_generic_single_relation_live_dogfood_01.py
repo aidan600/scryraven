@@ -1551,8 +1551,19 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         result.decision,
         result.packet["blocker_code"],
     }
+    assert "FAP, Author" not in result.packet["answer_or_blocker_text"]
+    assert "remain unclaimed" not in result.packet["answer_or_blocker_text"]
+    assert "Final answer prose" not in result.packet["answer_or_blocker_text"]
+    assert "SufficiencyReadiness" in result.packet["answer_or_blocker_text"]
+    assert "hardened FinalAnswerPacket" in result.packet["answer_or_blocker_text"]
+    assert "AuthorProse" in result.packet["answer_or_blocker_text"]
     assert "Product answer text: " in result.output
+    assert result.packet["product_answer_text"] in result.output
+    assert "FinalAnswerPacket created: true" in result.output
+    assert "FAP/Author consumed through existing D-prime path: true" in result.output
     assert "Product correctness claimed: false." in result.output
+    assert "FAP created: false" not in result.output
+    assert "Author invoked: false" not in result.output
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
     assert "bounded_text" not in serialized
     assert result.packet["raw_prompt_retained"] is False
@@ -2018,6 +2029,8 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert "D-prime pass + gateway display sufficient for readiness: false." in (
         result.output
     )
+    assert "- Boundary-only FAP created: false." in result.output
+    assert "- Boundary-only Author invoked: false." in result.output
     assert "- Final answer prose created: false." in result.output
     assert "passport" not in serialized
     assert "travel.state.gov" not in serialized
