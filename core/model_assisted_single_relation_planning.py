@@ -234,6 +234,8 @@ _PRIVATE_VALUE_MARKERS = frozenset(
         "sk-",
     }
 )
+PRIVATE_LOOKING_VALUE_REDACTION = "private_looking_value_not_retained"
+PRIVATE_LOOKING_DETAIL_REDACTION = "private-looking route detail redacted"
 
 MODEL_ASSISTED_SINGLE_RELATION_PLANNING_SYSTEM_PROMPT = (
     "You are a planning-only assistant for ScryRaven's single-relation "
@@ -408,11 +410,11 @@ def validate_model_assisted_planning_strict_route(
         "model_task": _clean_text(route.get("model_task"), limit=120),
         "product_model_role": _normalize_token(route.get("product_model_role")),
         "product_route_kind": _clean_text(route.get("product_route_kind"), limit=160),
-        "configured_fast_provider": _clean_text(
+        "configured_fast_provider": _safe_route_text(
             route.get("configured_fast_provider") or route.get("fast_provider"),
             limit=80,
         ),
-        "configured_fast_model": _clean_text(
+        "configured_fast_model": _safe_route_text(
             route.get("configured_fast_model") or route.get("fast_model"),
             limit=120,
         ),
@@ -877,6 +879,16 @@ def _strict_route_result_ref(
         for key in allowed
         if _route_result_value(value, key, diagnostic.get(key)) is not None
     }
+    for key in (
+        "blocker",
+        "detail",
+        "configured_provider",
+        "configured_model",
+        "provider_used",
+        "model_used",
+    ):
+        if key in ref:
+            ref[key] = _safe_route_text(ref[key], limit=900)
     if "return_code" not in ref:
         ref["return_code"] = 0
     if "model_calls_attempted" not in ref:
@@ -971,10 +983,21 @@ def _route_result_value(value: Any, key: str, default: Any = None) -> Any:
 
 
 def _safe_optional_text(value: Any, *, limit: int) -> str | None:
-    try:
-        return _clean_text(value, limit=limit)
-    except ModelAssistedSingleRelationPlanningError:
+    if value is None or isinstance(value, Mapping | list | tuple | set | frozenset):
         return None
+    text = " ".join(str(value).strip().split())
+    if not text:
+        return None
+    return PRIVATE_LOOKING_DETAIL_REDACTION if _private_value_markers(text) else text[:limit]
+
+
+def _safe_route_text(value: Any, *, limit: int) -> str | None:
+    if value is None or isinstance(value, Mapping | list | tuple | set | frozenset):
+        return None
+    text = " ".join(str(value).strip().split())
+    if not text:
+        return None
+    return PRIVATE_LOOKING_VALUE_REDACTION if _private_value_markers(text) else text[:limit]
 
 
 def _blocked_packet(
@@ -1415,5 +1438,6 @@ __all__ = [
     "default_raw_private_retention_flags",
     "reduce_model_assisted_single_relation_proposal",
     "sanitize_planning_context",
+    "PRIVATE_LOOKING_VALUE_REDACTION",
     "validate_model_assisted_planning_strict_route",
 ]

@@ -596,6 +596,8 @@ _PRIVATE_VALUE_MARKERS = frozenset(
         "sk-",
     }
 )
+PRIVATE_LOOKING_VALUE_REDACTION = "private_looking_value_not_retained"
+PRIVATE_LOOKING_DETAIL_REDACTION = "private-looking detail redacted"
 _PUBLIC_CREDENTIAL_NAME_REFERENCES = frozenset(
     {
         "SERPER_API_KEY",
@@ -5613,8 +5615,8 @@ def _configured_fast_model_route_posture(
     include_absent: bool = True,
 ) -> dict[str, Any]:
     posture: dict[str, Any] = {}
-    cleaned_provider = _clean_text(fast_provider, limit=80)
-    cleaned_model = _clean_text(fast_model, limit=120)
+    cleaned_provider = _safe_route_text(fast_provider, limit=80)
+    cleaned_model = _safe_route_text(fast_model, limit=120)
     local_url = _clean_text(fast_model_local_url, limit=500)
     if cleaned_provider or include_absent:
         posture["configured_fast_provider"] = cleaned_provider
@@ -8475,27 +8477,28 @@ def _mapped_blocker_detail(
             f"intake posture, but {CONFIRM_LIVE_DPRIME_REVIEW_FLAG} was not "
             "provided; no model call was made."
         )
+    safe_original_detail = _redact_private_text(original_detail)
     if decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PATH_NOT_CONSUMED:
         return (
             "The D-prime review was licensed, but the existing product path did "
             f"not produce answer/source-display output; status decision: {status_decision}. "
-            f"{original_detail}"
+            f"{safe_original_detail}"
         ).strip()
     if decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_ROUTE_UNAVAILABLE:
         return (
             "The explicit D-prime review route failed closed before producing a "
             f"validated support proposal; status decision: {status_decision}. "
-            f"{original_detail}"
+            f"{safe_original_detail}"
         ).strip()
     if decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_OUTPUT_INVALID:
         return (
             "The explicit D-prime review route made one attempt, but the model "
             f"review output was invalid; status decision: {status_decision}. "
-            f"{original_detail}"
+            f"{safe_original_detail}"
         ).strip()
-    if model_review_licensed and original_detail:
-        return original_detail
-    return original_detail or f"underlying status decision: {status_decision}."
+    if model_review_licensed and safe_original_detail:
+        return safe_original_detail
+    return safe_original_detail or f"underlying status decision: {status_decision}."
 
 
 def _load_sanitized_provider_output(path: Path) -> dict[str, Any]:
@@ -8863,7 +8866,7 @@ def _caps_ref() -> dict[str, int]:
 
 
 def _packet_safe_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
-    safe = _json_safe(payload)
+    safe = _json_safe(_redact_private_values(payload))
     _reject_forbidden_material(safe, context="generic live semantic status payload")
     return _safe_mapping(safe)
 
@@ -9208,7 +9211,38 @@ def _provider_result_detail(
     *,
     default: str,
 ) -> str:
-    return _clean_text(result.detail, limit=900) or default
+    return _safe_detail_text(result.detail, limit=900) or default
+
+
+def _safe_route_text(value: Any, *, limit: int) -> str | None:
+    text = _clean_text(value, limit=limit)
+    if not text:
+        return None
+    return PRIVATE_LOOKING_VALUE_REDACTION if _private_value_markers(text) else text
+
+
+def _safe_detail_text(value: Any, *, limit: int) -> str | None:
+    text = _clean_text(value, limit=limit)
+    if not text:
+        return None
+    return _redact_private_text(text)
+
+
+def _redact_private_text(value: Any) -> str:
+    text = _clean_text(value, limit=900)
+    if not text:
+        return ""
+    return PRIVATE_LOOKING_DETAIL_REDACTION if _private_value_markers(text) else text
+
+
+def _redact_private_values(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _redact_private_values(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_redact_private_values(item) for item in value]
+    if isinstance(value, str):
+        return PRIVATE_LOOKING_VALUE_REDACTION if _private_value_markers(value) else value
+    return value
 
 
 class _RedirectLimiter(HTTPRedirectHandler):
