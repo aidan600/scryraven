@@ -596,6 +596,59 @@ class SanitizedContentReference:
                     material.get("provider_extracted_source_text_sanitized") is True
                     or None
                 ),
+                "official_artifact_read_support": (
+                    material.get("official_artifact_read_support") is True
+                    or None
+                ),
+                "official_artifact_type": _clean_token(
+                    material.get("official_artifact_type"),
+                    limit=80,
+                ),
+                "official_artifact_read_support_status": _clean_token(
+                    material.get("official_artifact_read_support_status"),
+                    limit=120,
+                ),
+                "official_artifact_read_support_source": _clean_token(
+                    material.get("official_artifact_read_support_source"),
+                    limit=120,
+                ),
+                "official_artifact_read_support_bounded": (
+                    material.get("official_artifact_read_support_bounded") is True
+                    if material.get("official_artifact_read_support") is True
+                    else None
+                ),
+                "official_artifact_read_support_sanitized": (
+                    material.get("official_artifact_read_support_sanitized") is True
+                    if material.get("official_artifact_read_support") is True
+                    else None
+                ),
+                "official_artifact_read_support_raw_content_retained": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "official_artifact_read_support_creates_source_authority": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "official_artifact_read_support_satisfies_source_obligation": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "official_artifact_read_support_citation_eligible": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "official_artifact_read_support_claims_correctness": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "pdf_parsing_opened": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "ocr_opened": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "browser_automation_opened": False
+                if material.get("official_artifact_read_support") is True
+                else None,
+                "heavy_document_parser_dependency_added": False
+                if material.get("official_artifact_read_support") is True
+                else None,
                 "original_source_url": _clean_url(material.get("original_source_url")),
                 "original_source_title": _clean_text(
                     material.get("original_source_title"),

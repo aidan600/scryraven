@@ -320,10 +320,6 @@ def _candidate_workbench_record(
         " ".join(
             item
             for item in (
-                _clean_text(diagnostic.get("title"), limit=220),
-                _clean_text(diagnostic.get("domain"), limit=260),
-                _clean_text(diagnostic.get("url"), limit=700),
-                _clean_text(provider.get("snippet"), limit=500),
                 _clean_text(provider.get("provider_extracted_text"), limit=2_000),
             )
             if item
@@ -343,11 +339,26 @@ def _candidate_workbench_record(
         or window.get("answer_bearing_candidate_window_selected") is True
         or window.get("candidate_window_selected") is True
     )
+    official_artifact = bool(
+        official
+        and (
+            diagnostic.get("official_pdf_or_table_artifact_candidate") is True
+            or window.get("official_pdf_or_table_artifact_candidate") is True
+        )
+    )
+    read_support_status = (
+        _clean_text(diagnostic.get("official_artifact_read_support_status"), limit=120)
+        or _clean_text(window.get("official_artifact_read_support_status"), limit=120)
+    )
     value_count = max(
         _bounded_int(window.get("matched_value_token_kind_count")),
+        _bounded_int(diagnostic.get("matched_value_token_kind_count")),
         _value_token_count_from_text(provider.get("provider_extracted_text")),
     )
-    anchor_count = _bounded_int(window.get("matched_anchor_count"))
+    anchor_count = max(
+        _bounded_int(window.get("matched_anchor_count")),
+        _bounded_int(diagnostic.get("matched_anchor_count")),
+    )
     readable = bool(
         selected
         or diagnostic.get("readable_text_obtained") is True
@@ -377,13 +388,36 @@ def _candidate_workbench_record(
             "readable_or_bounded_window_available": readable,
             "selected_for_dprime_review": selected,
             "selected_window_digest": _clean_text(
-                window.get("selected_window_digest"), limit=128
+                window.get("selected_window_digest")
+                or diagnostic.get("selected_window_digest"),
+                limit=128,
             ),
             "selected_window_char_count": _bounded_int(
                 window.get("selected_window_char_count")
+                or diagnostic.get("selected_window_char_count")
             ),
             "matched_anchor_count": anchor_count,
             "matched_value_token_kind_count": value_count,
+            "official_pdf_or_table_artifact_candidate": official_artifact,
+            "official_artifact_type": (
+                _clean_text(diagnostic.get("official_artifact_type"), limit=80)
+                or _clean_text(window.get("official_artifact_type"), limit=80)
+            ),
+            "official_artifact_read_support_status": read_support_status,
+            "official_artifact_read_support_source": (
+                _clean_text(
+                    diagnostic.get("official_artifact_read_support_source"),
+                    limit=120,
+                )
+                or _clean_text(
+                    window.get("official_artifact_read_support_source"),
+                    limit=120,
+                )
+            ),
+            "official_artifact_read_support_raw_content_retained": False
+            if official_artifact
+            else None,
+            "provider_snippet_used_as_extracted_source_text": False,
             "query_token_overlap": query_overlap,
             "context_marker_terms": contextual_markers,
             "strict_marker_terms": strict_markers,
@@ -527,7 +561,10 @@ def _candidate_evidence_triage_packet(
         role_proposals, ROLE_ANSWER_ADJACENT_CONTEXT
     )
     overclaim_refs = _candidate_refs_with_role(role_proposals, ROLE_OVERCLAIM_RISK)
-    selected_ref = _first_selected_candidate_ref(candidates)
+    selected_ref = _dprime_review_candidate_ref(
+        candidates,
+        strict_refs=strict_refs,
+    )
     top_ref = _first_candidate_ref(candidates)
     packet = _without_empty(
         {
@@ -973,6 +1010,24 @@ def _candidate_ref(
                 or window.get("bounded_content_digest"),
                 limit=128,
             ),
+            "official_pdf_or_table_artifact_candidate": (
+                diagnostic.get("official_pdf_or_table_artifact_candidate") is True
+                or window.get("official_pdf_or_table_artifact_candidate") is True
+            ),
+            "official_artifact_type": (
+                _clean_text(diagnostic.get("official_artifact_type"), limit=80)
+                or _clean_text(window.get("official_artifact_type"), limit=80)
+            ),
+            "official_artifact_read_support_status": (
+                _clean_text(
+                    diagnostic.get("official_artifact_read_support_status"),
+                    limit=120,
+                )
+                or _clean_text(
+                    window.get("official_artifact_read_support_status"),
+                    limit=120,
+                )
+            ),
         }
     )
 
@@ -1163,6 +1218,35 @@ def _first_selected_candidate_ref(
         if candidate.get("selected_for_dprime_review") is True:
             return _safe_mapping(candidate.get("candidate_ref"))
     return _first_candidate_ref(candidates)
+
+
+def _dprime_review_candidate_ref(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    strict_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    strict_ids = {
+        _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+        for item in strict_refs
+    }
+    official_artifact_strict = [
+        candidate
+        for candidate in candidates
+        if _clean_text(candidate.get("candidate_id"), limit=320) in strict_ids
+        and candidate.get("official_pdf_or_table_artifact_candidate") is True
+        and candidate.get("readable_or_bounded_window_available") is True
+    ]
+    if official_artifact_strict:
+        return _safe_mapping(
+            sorted(
+                official_artifact_strict,
+                key=lambda item: (
+                    _bounded_int(item.get("fetch_read_priority_rank"), default=999),
+                    _bounded_int(item.get("provider_rank"), default=999),
+                ),
+            )[0].get("candidate_ref")
+        )
+    return _first_selected_candidate_ref(candidates)
 
 
 def _query_tokens(plan: Mapping[str, Any], acquisition: Mapping[str, Any]) -> set[str]:

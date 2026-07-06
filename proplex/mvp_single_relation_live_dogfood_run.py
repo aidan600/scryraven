@@ -341,6 +341,15 @@ FETCH_READ_FAILURE_CATEGORIES = frozenset(
 FETCH_READ_READABLE_CONTENT_TYPES = frozenset(
     {"text/html", "text/plain", "application/xhtml+xml"}
 )
+OFFICIAL_ARTIFACT_READ_SUPPORT_CONTENT_TYPES = frozenset(
+    {
+        "application/pdf",
+        "text/csv",
+        "text/tab-separated-values",
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }
+)
 FETCH_READ_UNKNOWN = "unknown"
 FETCH_READ_CAP_EXHAUSTED = "FETCH_READ_CAP_EXHAUSTED"
 FETCH_READ_STOPPED_AFTER_SUCCESS = "READABLE_CONTENT_OBTAINED"
@@ -358,6 +367,14 @@ SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED = "provider_extracted_source_content"
 SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK = "direct_public_web_fetch_fallback"
 SOURCE_ACQUISITION_MODE_NONE = "none"
 PROVIDER_EXTRACTED_CONTENT_TYPE = "text/html"
+OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_READABLE = "readable_bounded_sanitized_text"
+OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_UNREADABLE = "unreadable_read_support_needed"
+OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_FETCH_RUNNER = (
+    "existing_fetch_read_runner_sanitized_text"
+)
+OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_PROVIDER_EXTRACTED = (
+    "provider_extracted_sanitized_text"
+)
 ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED = (
     "answer_bearing_candidate_window_not_established"
 )
@@ -694,6 +711,8 @@ class GenericLiveFetchReadResult:
     redirect_count: int = 0
     redirect_chain_digest: str | None = None
     retrieved_or_observed_at: str = ""
+    official_artifact_read_support: bool = False
+    official_artifact_read_support_source: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -703,6 +722,15 @@ class _CandidateWindowEvaluation:
     selection: BoundedTextSelection
     score: tuple[int, ...]
     diagnostic: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class _DirectOfficialArtifactReadSupportAttempt:
+    candidate: Mapping[str, Any]
+    fetch_result: GenericLiveFetchReadResult
+    selection: BoundedTextSelection
+    material: dict[str, Any]
+    score: tuple[int, ...]
 
 
 ProviderProxyRunner = Callable[
@@ -2091,6 +2119,14 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         "candidate_diagnostics_satisfy_source_obligations",
         "fetch_read_failure_metadata_citation_eligible",
         "fetch_read_failure_metadata_satisfies_source_obligations",
+        "official_pdf_table_read_support_raw_content_retained",
+        "official_pdf_table_read_support_creates_source_authority",
+        "official_pdf_table_read_support_satisfies_source_obligation",
+        "official_pdf_table_read_support_citation_eligible",
+        "official_pdf_table_read_support_claims_correctness",
+        "official_pdf_table_read_support_adds_dependency",
+        "official_pdf_table_read_support_uses_ocr",
+        "official_pdf_table_read_support_uses_browser_automation",
         "pdf_content_type_support_opened",
         "pdf_parsing_opened",
         "candidate_ranking_policy_changed",
@@ -2122,6 +2158,15 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         )
     if packet.get("provider_routing_changed") not in {True, False}:
         _blocked_output_hygiene("generic live packet provider_routing_changed invalid.")
+    if packet.get("official_pdf_table_read_support_adapter") != (
+        "existing_fetch_read_content_packet"
+    ):
+        _blocked_output_hygiene("official artifact read-support adapter invalid.")
+    if not isinstance(
+        packet.get("official_pdf_table_read_support_status_summary"),
+        Mapping,
+    ):
+        _blocked_output_hygiene("official artifact read-support summary invalid.")
     for key in (
         "official_http_source_survival_blocker_available",
         "http_source_survival_request_hygiene_added",
@@ -2435,10 +2480,20 @@ def _validate_candidate_diagnostic(diagnostic: Mapping[str, Any]) -> None:
             _blocked_output_hygiene(f"candidate diagnostic requires {key}=true.")
     for key in (
         "provider_snippet_used_as_evidence",
+        "provider_snippet_used_as_extracted_source_text",
         "candidate_diagnostic_satisfies_source_obligation",
         "fetch_read_failure_metadata_citation_eligible",
+        "official_artifact_read_support_raw_content_retained",
+        "official_artifact_read_support_creates_source_authority",
+        "official_artifact_read_support_satisfies_source_obligation",
+        "official_artifact_read_support_citation_eligible",
+        "official_artifact_read_support_claims_correctness",
+        "pdf_parsing_opened",
+        "ocr_opened",
+        "browser_automation_opened",
+        "heavy_document_parser_dependency_added",
     ):
-        if diagnostic.get(key) is not False:
+        if key in diagnostic and diagnostic.get(key) is not False:
             _blocked_output_hygiene(f"candidate diagnostic requires {key}=false.")
     if diagnostic.get("attempted") not in {True, False}:
         _blocked_output_hygiene("candidate diagnostic attempted flag invalid.")
@@ -2521,6 +2576,7 @@ def _validate_candidate_selection_features(
         "public_agency_domain_signal",
         "derivative_domain_signal",
         "pdf_url_or_title_signal",
+        "table_url_or_title_signal",
     ):
         if features.get(key) not in {True, False}:
             _blocked_output_hygiene(f"candidate selection feature {key} invalid.")
@@ -2555,8 +2611,17 @@ def _validate_attempt_diagnostic(diagnostic: Mapping[str, Any]) -> None:
     for key in (
         "candidate_diagnostics_satisfy_source_obligations",
         "fetch_read_failure_metadata_citation_eligible",
+        "official_artifact_read_support_raw_content_retained",
+        "official_artifact_read_support_creates_source_authority",
+        "official_artifact_read_support_satisfies_source_obligation",
+        "official_artifact_read_support_citation_eligible",
+        "official_artifact_read_support_claims_correctness",
+        "pdf_parsing_opened",
+        "ocr_opened",
+        "browser_automation_opened",
+        "heavy_document_parser_dependency_added",
     ):
-        if diagnostic.get(key) is not False:
+        if key in diagnostic and diagnostic.get(key) is not False:
             _blocked_output_hygiene(f"fetch/read diagnostic requires {key}=false.")
     if not _normalized_status_class(diagnostic.get("http_status_class")):
         _blocked_output_hygiene("fetch/read diagnostic status class invalid.")
@@ -2895,6 +2960,12 @@ def _format_product_single_fact_output(
 def _product_single_fact_blocker_text(packet: Mapping[str, Any]) -> str:
     reentry = _safe_mapping(packet.get("workbench_gap_reentry_ref"))
     if reentry.get("workbench_gap_reentry_status") == "followup_not_licensed":
+        if reentry.get("workbench_gap_kind") == "unreadable_high_value_candidate":
+            return (
+                "Blocked before answer: official source read support is needed. "
+                "A high-value official artifact was found, but bounded PDF/table "
+                "text support is not available in this run."
+            )
         if reentry.get("runkernel_followup_authorization_created") is True:
             return (
                 "Blocked before answer: official strict support follow-up is needed. "
@@ -3765,11 +3836,23 @@ def _packet_from_semantic_status(
         and packet.get("workbench_gap_reentry_status") == "followup_not_licensed"
     ):
         decision = BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
-        blocker_detail = (
-            "Official strict support follow-up is needed; the Workbench/D-prime "
-            "gap remains proposal-only because live follow-up execution is not "
-            "licensed."
-        )
+        if (
+            _safe_mapping(packet.get("workbench_gap_reentry_ref")).get(
+                "workbench_gap_kind"
+            )
+            == "unreadable_high_value_candidate"
+        ):
+            blocker_detail = (
+                "Official source read support is needed. A high-value official "
+                "artifact was found, but bounded PDF/table text support is not "
+                "available in this run."
+            )
+        else:
+            blocker_detail = (
+                "Official strict support follow-up is needed; the Workbench/D-prime "
+                "gap remains proposal-only because live follow-up execution is not "
+                "licensed."
+            )
     elif source_citation_display_boundary.get("status") == "created":
         decision = BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
         blocker_detail = _clean_text(
@@ -6807,6 +6890,37 @@ def _base_packet(
         "provider_snippets_used_as_evidence": False,
         "fetch_read_failure_metadata_citation_eligible": False,
         "fetch_read_failure_metadata_satisfies_source_obligations": False,
+        "official_pdf_table_read_support_adapter": "existing_fetch_read_content_packet",
+        "official_pdf_table_read_support_status_summary": (
+            _official_artifact_read_support_status_summary(
+                counts.get("fetch_read_candidate_diagnostics")
+            )
+        ),
+        "official_pdf_table_artifact_candidate_count": (
+            _official_artifact_candidate_count(
+                counts.get("fetch_read_candidate_diagnostics")
+            )
+        ),
+        "official_pdf_table_read_support_obtained": (
+            _official_artifact_read_support_status_seen(
+                counts.get("fetch_read_candidate_diagnostics"),
+                OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_READABLE,
+            )
+        ),
+        "official_pdf_table_read_support_needed": (
+            _official_artifact_read_support_status_seen(
+                counts.get("fetch_read_candidate_diagnostics"),
+                OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_UNREADABLE,
+            )
+        ),
+        "official_pdf_table_read_support_raw_content_retained": False,
+        "official_pdf_table_read_support_creates_source_authority": False,
+        "official_pdf_table_read_support_satisfies_source_obligation": False,
+        "official_pdf_table_read_support_citation_eligible": False,
+        "official_pdf_table_read_support_claims_correctness": False,
+        "official_pdf_table_read_support_adds_dependency": False,
+        "official_pdf_table_read_support_uses_ocr": False,
+        "official_pdf_table_read_support_uses_browser_automation": False,
         "pdf_content_type_support_opened": False,
         "pdf_parsing_opened": False,
         "candidate_ranking_policy_changed": False,
@@ -8114,17 +8228,54 @@ def _write_fetch_read_artifacts(
             candidate = selected_evaluation.candidate
             provider_result = selected_evaluation.provider_result
             selection = selected_evaluation.selection
-            material = _provider_extracted_fetch_read_material(
-                candidate=candidate,
-                candidate_packet=candidate_packet,
-                provider_result=provider_result,
-                selection=selection,
+            direct_read_support_attempt, direct_attempt_diagnostics = (
+                _attempt_direct_official_artifact_read_support_challenge(
+                    candidates=candidates,
+                    provider_results_by_candidate_id=provider_results_by_candidate_id,
+                    candidate_packet=candidate_packet,
+                    relation_plan=relation_plan,
+                    acquisition_plan=acquisition_plan,
+                    fetch_read_runner=fetch_read_runner,
+                    minimum_score=selected_evaluation.score,
+                    provider_extracted_selection=selected_evaluation,
+                )
             )
+            if direct_read_support_attempt is not None:
+                candidate = direct_read_support_attempt.candidate
+                provider_result = {}
+                selection = direct_read_support_attempt.selection
+                material = direct_read_support_attempt.material
+                source_acquisition_mode = SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
+                provider_extracted_handoff_created = 0
+                selected_candidate_id = str(candidate["candidate_id"])
+                selected_window_diagnostics = (
+                    _candidate_window_diagnostics(
+                        evaluations,
+                        selected_candidate_id=selected_candidate_id,
+                    )
+                    + _candidate_window_diagnostics_from_attempt_diagnostics(
+                        direct_attempt_diagnostics
+                    )
+                )
+            else:
+                material = _provider_extracted_fetch_read_material(
+                    candidate=candidate,
+                    candidate_packet=candidate_packet,
+                    provider_result=provider_result,
+                    selection=selection,
+                )
+                source_acquisition_mode = SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED
+                provider_extracted_handoff_created = 1
+                selected_candidate_id = str(candidate["candidate_id"])
+                selected_window_diagnostics = _candidate_window_diagnostics(
+                    evaluations,
+                    selected_candidate_id=selected_candidate_id,
+                )
             fetch_packet = validate_fetch_read_content_packet(
                 build_fetch_read_content_packet_from_candidate_packet(
                     candidate_packet,
                     [material],
-                    selected_candidate_ids=[str(candidate["candidate_id"])],
+                    selected_candidate_ids=[selected_candidate_id],
                 )
             )
         except FetchReadContentReferenceError as exc:
@@ -8164,30 +8315,40 @@ def _write_fetch_read_artifacts(
         provider_diagnostic = _provider_extracted_content_diagnostic(
             candidate,
             provider_result=provider_result,
-        )
+        ) if provider_extracted_handoff_created else None
         _apply_candidate_window_diagnostics(
             candidate_diagnostics,
             evaluations=evaluations,
-            selected_candidate_id=str(candidate["candidate_id"]),
+            selected_candidate_id=selected_candidate_id,
         )
-        _apply_attempt_diagnostic(candidate_diagnostics, provider_diagnostic)
+        for direct_attempt_diagnostic in direct_attempt_diagnostics:
+            _apply_attempt_diagnostic(candidate_diagnostics, direct_attempt_diagnostic)
+        if provider_diagnostic is not None:
+            _apply_attempt_diagnostic(candidate_diagnostics, provider_diagnostic)
         _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
         return fetch_packet, {
-            "source_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
+            "source_acquisition_mode": source_acquisition_mode,
             "provider_extracted_content_candidate_count": len(
                 provider_extracted_candidates
             ),
-            "provider_extracted_content_handoff_created": 1,
-            "direct_fetch_read_attempts": 0,
-            "fetch_read_attempts": 0,
+            "provider_extracted_content_handoff_created": (
+                provider_extracted_handoff_created
+            ),
+            "direct_fetch_read_attempts": len(direct_attempt_diagnostics),
+            "fetch_read_attempts": len(direct_attempt_diagnostics),
             "fetch_read_completed": 1,
-            "fetch_read_status_classes": (),
-            "fetch_read_content_types": (),
+            "fetch_read_status_classes": tuple(
+                _attempt_status_classes(direct_attempt_diagnostics)
+            ),
+            "fetch_read_content_types": tuple(
+                _attempt_content_types(direct_attempt_diagnostics)
+            ),
             "fetch_read_failure_categories": tuple(
                 _candidate_failure_categories(candidate_diagnostics)
+                + _attempt_failure_categories(direct_attempt_diagnostics)
             ),
             "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
-            "fetch_read_attempt_diagnostics": (),
+            "fetch_read_attempt_diagnostics": tuple(direct_attempt_diagnostics),
             "answer_bearing_candidate_window_status": (
                 _candidate_window_status(selection)
             ),
@@ -8200,10 +8361,7 @@ def _write_fetch_read_artifacts(
                 == ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED
             ),
             "answer_bearing_candidate_window_diagnostics": (
-                _candidate_window_diagnostics(
-                    evaluations,
-                    selected_candidate_id=str(candidate["candidate_id"]),
-                )
+                selected_window_diagnostics
             ),
             **_selected_window_guidance_counts(
                 acquisition_plan=acquisition_plan,
@@ -8255,6 +8413,7 @@ def _write_fetch_read_artifacts(
                 attempt_index=fetch_attempts,
                 fetch_result=fetch_result,
                 error=None,
+                selection=selection,
             )
             attempt_diagnostics.append(attempt_diagnostic)
             _apply_attempt_diagnostic(candidate_diagnostics, attempt_diagnostic)
@@ -8275,6 +8434,22 @@ def _write_fetch_read_artifacts(
                 "fetch_read_failure_categories": tuple(
                     _candidate_failure_categories(candidate_diagnostics)
                     + _attempt_failure_categories(attempt_diagnostics)
+                ),
+                "answer_bearing_candidate_window_status": (
+                    _candidate_window_status(selection)
+                ),
+                "answer_bearing_candidate_window_best_effort": (
+                    _candidate_window_status(selection)
+                    == ANSWER_BEARING_CANDIDATE_WINDOW_BEST_EFFORT
+                ),
+                "answer_bearing_candidate_window_not_established": (
+                    _candidate_window_status(selection)
+                    == ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED
+                ),
+                "answer_bearing_candidate_window_diagnostics": (
+                    _candidate_window_diagnostics_from_attempt_diagnostics(
+                        attempt_diagnostics
+                    )
                 ),
                 "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
                 "fetch_read_attempt_diagnostics": tuple(attempt_diagnostics),
@@ -8441,7 +8616,7 @@ def _candidate_priority_bucket(
         )
     )
     if agency_or_record_match:
-        return 2 if features.get("pdf_url_or_title_signal") is True else 1
+        return 2 if _official_artifact_feature_signal(features) else 1
     if (
         features.get("official_domain_signal") is True
         or features.get("public_agency_domain_signal") is True
@@ -8489,6 +8664,7 @@ def _candidate_selection_features(
         "public_agency_domain_signal": public_agency_domain_signal,
         "derivative_domain_signal": derivative_domain_signal,
         "pdf_url_or_title_signal": _pdf_url_or_title_signal(title=title, url=url),
+        "table_url_or_title_signal": _table_url_or_title_signal(title=title, url=url),
         "provider_rank": _bounded_int(candidate.get("result_rank"), default=0),
         "final_fetch_read_priority_rank": 0,
         "features_used_as_evidence": False,
@@ -8556,6 +8732,64 @@ def _pdf_url_or_title_signal(*, title: str, url: str) -> bool:
     return lowered.endswith(".pdf") or ".pdf" in lowered or " pdf" in lowered
 
 
+def _table_url_or_title_signal(*, title: str, url: str) -> bool:
+    lowered = f"{title} {urlparse(url).path if url else ''}".casefold()
+    return any(
+        marker in lowered
+        for marker in (
+            ".csv",
+            ".tsv",
+            ".xls",
+            ".xlsx",
+            " table",
+            " schedule",
+            " fee-schedule",
+            " fee_schedule",
+        )
+    )
+
+
+def _official_artifact_feature_signal(features: Mapping[str, Any]) -> bool:
+    return bool(
+        features.get("pdf_url_or_title_signal") is True
+        or features.get("table_url_or_title_signal") is True
+    )
+
+
+def _official_artifact_type_from_signals(
+    *,
+    features: Mapping[str, Any] | None = None,
+    content_type: str | None = None,
+    title: str | None = None,
+    url: str | None = None,
+) -> str | None:
+    safe_features = _safe_mapping(features)
+    normalized_content_type = _content_type_or_unknown(content_type)
+    pdf_signal = bool(
+        safe_features.get("pdf_url_or_title_signal") is True
+        or normalized_content_type == "application/pdf"
+        or _pdf_url_or_title_signal(title=title or "", url=url or "")
+    )
+    table_signal = bool(
+        safe_features.get("table_url_or_title_signal") is True
+        or normalized_content_type
+        in {
+            "text/csv",
+            "text/tab-separated-values",
+            "application/vnd.ms-excel",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }
+        or _table_url_or_title_signal(title=title or "", url=url or "")
+    )
+    if pdf_signal and table_signal:
+        return "pdf_table_artifact"
+    if pdf_signal:
+        return "pdf_artifact"
+    if table_signal:
+        return "table_artifact"
+    return None
+
+
 def _candidate_diagnostics_from_provider_results(
     provider_results: Sequence[Mapping[str, Any]],
     *,
@@ -8590,6 +8824,12 @@ def _candidate_diagnostics_from_provider_results(
         selection_features = _safe_mapping(priority.get("candidate_selection_features"))
         official_or_source_survival_signal = _official_source_survival_features(
             selection_features
+        )
+        official_artifact_type = _official_artifact_type_from_signals(
+            features=selection_features,
+            content_type=result.get("provider_extracted_content_type"),
+            title=_clean_text(result.get("title"), limit=220),
+            url=_clean_text(result.get("url"), limit=700),
         )
         url = _clean_text(result.get("url"), limit=700)
         url_source = _clean_text(result.get("url_source"), limit=20) or "missing"
@@ -8640,6 +8880,14 @@ def _candidate_diagnostics_from_provider_results(
                 "official_or_source_record_looking_http_candidate": (
                     official_or_source_survival_signal
                 ),
+                "official_pdf_or_table_artifact_candidate": bool(
+                    official_or_source_survival_signal and official_artifact_type
+                ),
+                "official_artifact_type": official_artifact_type,
+                "official_artifact_read_support_status": None,
+                "official_artifact_read_support_source": None,
+                "official_artifact_read_support_raw_content_retained": False,
+                "provider_snippet_used_as_extracted_source_text": False,
                 "source_survival_diagnostic_only": True,
                 "source_survival_diagnostic_creates_source_authority": False,
                 "source_survival_diagnostic_satisfies_source_obligation": False,
@@ -8721,6 +8969,7 @@ def _fetch_read_attempt_diagnostic(
     attempt_index: int,
     fetch_result: GenericLiveFetchReadResult | None,
     error: GenericSingleRelationLiveDogfoodRunError | None,
+    selection: BoundedTextSelection | None = None,
 ) -> dict[str, Any]:
     attempted_url = _clean_text(
         fetch_result.attempted_url if fetch_result else candidate.get("url"),
@@ -8750,6 +8999,28 @@ def _fetch_read_attempt_diagnostic(
         error=error,
     )
     selection_features = _safe_mapping(candidate.get("candidate_selection_features"))
+    artifact_payload = _official_artifact_diagnostic_payload(
+        candidate=candidate,
+        content_type=content_type,
+        readable_text_obtained=readable_text_obtained,
+        support_source=(
+            _clean_text(
+                fetch_result.official_artifact_read_support_source
+                if fetch_result is not None
+                else None,
+                limit=120,
+            )
+            or OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_FETCH_RUNNER
+        ),
+    )
+    window_payload = (
+        _selected_fetch_read_window_diagnostic_payload(
+            selection,
+            content_type=content_type,
+        )
+        if selection is not None
+        else {}
+    )
     return {
         "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
         "attempt_index": attempt_index,
@@ -8793,6 +9064,7 @@ def _fetch_read_attempt_diagnostic(
         "official_or_source_record_looking_http_candidate": (
             _official_source_survival_features(selection_features)
         ),
+        **artifact_payload,
         "source_survival_diagnostic_only": True,
         "source_survival_diagnostic_creates_source_authority": False,
         "source_survival_diagnostic_satisfies_source_obligation": False,
@@ -8801,6 +9073,7 @@ def _fetch_read_attempt_diagnostic(
         "content_type": content_type,
         "readable_content_type": readable_content_type,
         "readable_text_obtained": readable_text_obtained,
+        **window_payload,
         "failure_category": failure_category,
         "diagnostic_posture": "observability_only",
         "not_evidence": True,
@@ -8809,6 +9082,43 @@ def _fetch_read_attempt_diagnostic(
         "candidate_diagnostics_satisfy_source_obligations": False,
         "fetch_read_failure_metadata_citation_eligible": False,
         "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+    }
+
+
+def _selected_fetch_read_window_diagnostic_payload(
+    selection: BoundedTextSelection,
+    *,
+    content_type: str,
+) -> dict[str, Any]:
+    return {
+        "answer_bearing_candidate_window_considered": True,
+        "answer_bearing_candidate_window_selected": True,
+        "answer_bearing_candidate_window_status": _candidate_window_status(selection),
+        "selected_window_digest": selection.bounded_text_digest,
+        "selected_window_char_count": selection.bounded_text_char_count,
+        "bounded_content_digest": selection.bounded_text_digest,
+        "bounded_content_char_count": selection.bounded_text_char_count,
+        "required_anchor_count": selection.required_anchor_count,
+        "matched_anchor_count": selection.matched_anchor_count,
+        "missing_anchor_count": len(selection.missing_anchors),
+        "anchor_match_status": _anchor_match_status(selection),
+        "expected_value_token_kinds": list(selection.expected_value_token_kinds),
+        "matched_value_token_kinds": list(selection.matched_value_token_kinds),
+        "matched_value_token_kind_count": selection.matched_value_token_kind_count,
+        "missing_value_token_kinds": list(selection.missing_value_token_kinds),
+        "value_token_guidance_consumed": selection.value_token_guidance_consumed,
+        "bounded_window_source": (
+            "official_artifact_read_support"
+            if content_type in OFFICIAL_ARTIFACT_READ_SUPPORT_CONTENT_TYPES
+            else "ordinary_fetch_read_sanitized_text"
+        ),
+        "window_text_retained_in_diagnostic": False,
+        "not_evidence": True,
+        "not_semantic_support": True,
+        "not_source_authority": True,
+        "not_citation_eligible": True,
+        "not_source_obligation_satisfaction": True,
+        "not_product_correctness": True,
     }
 
 
@@ -8852,6 +9162,44 @@ def _apply_attempt_diagnostic(
             "redirect_chain_digest"
         )
         diagnostic["failure_category"] = attempt_diagnostic.get("failure_category")
+        for key in (
+            "official_pdf_or_table_artifact_candidate",
+            "official_artifact_type",
+            "official_artifact_read_support_status",
+            "official_artifact_read_support_source",
+            "official_artifact_read_support_raw_content_retained",
+            "official_artifact_read_support_creates_source_authority",
+            "official_artifact_read_support_satisfies_source_obligation",
+            "official_artifact_read_support_citation_eligible",
+            "official_artifact_read_support_claims_correctness",
+            "pdf_parsing_opened",
+            "ocr_opened",
+            "browser_automation_opened",
+            "heavy_document_parser_dependency_added",
+            "answer_bearing_candidate_window_considered",
+            "answer_bearing_candidate_window_selected",
+            "answer_bearing_candidate_window_status",
+            "selected_window_digest",
+            "selected_window_char_count",
+            "bounded_content_digest",
+            "bounded_content_char_count",
+            "required_anchor_count",
+            "matched_anchor_count",
+            "missing_anchor_count",
+            "anchor_match_status",
+            "expected_value_token_kinds",
+            "matched_value_token_kinds",
+            "matched_value_token_kind_count",
+            "missing_value_token_kinds",
+            "value_token_guidance_consumed",
+            "bounded_window_source",
+            "window_text_retained_in_diagnostic",
+            "not_semantic_support",
+            "not_source_authority",
+            "not_product_correctness",
+        ):
+            if key in attempt_diagnostic:
+                diagnostic[key] = attempt_diagnostic.get(key)
         return
 
 
@@ -9198,6 +9546,157 @@ def _select_provider_extracted_candidate_window(
     return max(evaluations, key=lambda item: item.score)
 
 
+def _attempt_direct_official_artifact_read_support_challenge(
+    *,
+    candidates: Sequence[Mapping[str, Any]],
+    provider_results_by_candidate_id: Mapping[str, Mapping[str, Any]],
+    candidate_packet: Mapping[str, Any],
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+    fetch_read_runner: FetchReadRunner,
+    minimum_score: tuple[int, ...],
+    provider_extracted_selection: _CandidateWindowEvaluation,
+) -> tuple[_DirectOfficialArtifactReadSupportAttempt | None, list[dict[str, Any]]]:
+    if not _provider_extracted_selection_allows_direct_artifact_challenge(
+        provider_extracted_selection
+    ):
+        return None, []
+    attempt_diagnostics: list[dict[str, Any]] = []
+    for candidate in _direct_official_artifact_read_support_candidates(
+        candidates,
+        provider_results_by_candidate_id=provider_results_by_candidate_id,
+    ):
+        attempt_index = len(attempt_diagnostics) + 1
+        fetch_result: GenericLiveFetchReadResult | None = None
+        try:
+            fetch_result = fetch_read_runner(str(candidate["url"]))
+            _validate_fetch_result(fetch_result, candidate=candidate)
+            _validate_explicit_direct_official_artifact_read_support(
+                fetch_result,
+                candidate=candidate,
+            )
+            selection = _bounded_plan_text_selection(
+                fetch_result.sanitized_text,
+                relation_plan=relation_plan,
+                acquisition_plan=acquisition_plan,
+            )
+            material = _fetch_read_material(
+                candidate=candidate,
+                candidate_packet=candidate_packet,
+                fetch_result=fetch_result,
+                selection=selection,
+            )
+            score = _candidate_window_score(candidate, selection)
+            attempt_diagnostic = _fetch_read_attempt_diagnostic(
+                candidate,
+                attempt_index=attempt_index,
+                fetch_result=fetch_result,
+                error=None,
+                selection=selection if score >= minimum_score else None,
+            )
+            attempt_diagnostics.append(attempt_diagnostic)
+            if score >= minimum_score:
+                return (
+                    _DirectOfficialArtifactReadSupportAttempt(
+                        candidate=candidate,
+                        fetch_result=fetch_result,
+                        selection=selection,
+                        material=material,
+                        score=score,
+                    ),
+                    attempt_diagnostics,
+                )
+        except GenericSingleRelationLiveDogfoodRunError as exc:
+            attempt_diagnostics.append(
+                _fetch_read_attempt_diagnostic(
+                    candidate,
+                    attempt_index=attempt_index,
+                    fetch_result=fetch_result,
+                    error=exc,
+                )
+            )
+            continue
+    return None, attempt_diagnostics
+
+
+def _provider_extracted_selection_allows_direct_artifact_challenge(
+    selection: _CandidateWindowEvaluation,
+) -> bool:
+    candidate = selection.candidate
+    features = _safe_mapping(candidate.get("candidate_selection_features"))
+    artifact_type = _official_artifact_type_from_signals(
+        features=features,
+        content_type=selection.provider_result.get("provider_extracted_content_type"),
+        title=_clean_text(candidate.get("title"), limit=220),
+        url=_clean_text(candidate.get("url"), limit=700),
+    )
+    return not bool(_official_source_survival_features(features) and artifact_type)
+
+
+def _direct_official_artifact_read_support_candidates(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    provider_results_by_candidate_id: Mapping[str, Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    out: list[Mapping[str, Any]] = []
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        provider_result = provider_results_by_candidate_id.get(candidate_id, {})
+        if _provider_extracted_text(provider_result):
+            continue
+        priority_rank = _bounded_int(candidate.get("fetch_read_priority_rank"))
+        if priority_rank <= 0 or priority_rank > MAX_FETCH_READ_ATTEMPTS:
+            continue
+        if not _is_valid_http_url(candidate.get("url")):
+            continue
+        features = _safe_mapping(candidate.get("candidate_selection_features"))
+        if not _official_source_survival_features(features):
+            continue
+        if not _official_artifact_type_from_signals(
+            features=features,
+            title=_clean_text(candidate.get("title"), limit=220),
+            url=_clean_text(candidate.get("url"), limit=700),
+        ):
+            continue
+        out.append(candidate)
+    return out
+
+
+def _validate_explicit_direct_official_artifact_read_support(
+    fetch_result: GenericLiveFetchReadResult,
+    *,
+    candidate: Mapping[str, Any],
+) -> None:
+    content_type = _content_type_or_unknown(fetch_result.content_type)
+    if _official_artifact_fixture_read_support_allowed(
+        fetch_result,
+        candidate=candidate,
+        content_type=content_type,
+    ):
+        return
+    status_class = (
+        _normalized_status_class(fetch_result.status_class)
+        or _status_class(fetch_result.status_code)
+        or FETCH_READ_UNKNOWN
+    )
+    raise GenericSingleRelationLiveDogfoodRunError(
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+        (
+            "direct official artifact read support requires explicit "
+            "official_artifact_read_support with a supported PDF/table content type."
+        ),
+        fetch_status_class=status_class,
+        fetch_content_type=content_type,
+        fetch_readable_content_type=False,
+        fetch_readable_text_obtained=False,
+        fetch_failure_category=FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE,
+        fetch_final_url=fetch_result.final_url,
+        fetch_status_code=fetch_result.status_code,
+        fetch_redirect_count=fetch_result.redirect_count,
+        fetch_redirect_chain_digest=fetch_result.redirect_chain_digest,
+    )
+
+
 def _candidate_window_score(
     candidate: Mapping[str, Any],
     selection: BoundedTextSelection,
@@ -9217,12 +9716,17 @@ def _candidate_window_score(
         features.get("official_domain_signal") is True
         or features.get("public_agency_domain_signal") is True
     )
+    official_artifact_tie_breaker = int(
+        source_record_tie_breaker
+        and _official_artifact_feature_signal(features)
+    )
     return (
         expected_values_all_matched,
         matched_value_count,
         selection.matched_anchor_count,
         _anchor_match_status_rank(selection),
         -len(selection.missing_anchors),
+        official_artifact_tie_breaker,
         source_record_tie_breaker,
         official_tie_breaker,
         -priority_rank,
@@ -9282,6 +9786,13 @@ def _candidate_window_diagnostic(
         features.get("official_domain_signal") is True
         or features.get("public_agency_domain_signal") is True
     )
+    artifact_type = _official_artifact_type_from_signals(
+        features=features,
+        content_type=provider_result.get("provider_extracted_content_type"),
+        title=_clean_text(candidate.get("title"), limit=220),
+        url=_clean_text(candidate.get("url"), limit=700),
+    )
+    official_artifact_signal = bool(source_record_tie_breaker and artifact_type)
     return {
         "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
         "result_rank": result_rank,
@@ -9322,11 +9833,25 @@ def _candidate_window_diagnostic(
             "matched_anchor_count": selection.matched_anchor_count,
             "anchor_match_status_rank": _anchor_match_status_rank(selection),
             "missing_anchor_count": len(selection.missing_anchors),
+            "official_artifact_tie_breaker": official_artifact_signal,
             "source_of_record_looking_tie_breaker": source_record_tie_breaker,
             "official_or_public_agency_tie_breaker": official_tie_breaker,
             "fetch_read_priority_rank_tie_breaker": priority_rank,
             "result_rank_tie_breaker": result_rank,
         },
+        "official_pdf_or_table_artifact_candidate": official_artifact_signal,
+        "official_artifact_type": artifact_type,
+        "official_artifact_read_support_status": (
+            OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_READABLE
+            if official_artifact_signal
+            else None
+        ),
+        "official_artifact_read_support_source": (
+            OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_PROVIDER_EXTRACTED
+            if official_artifact_signal
+            else None
+        ),
+        "official_artifact_read_support_raw_content_retained": False,
         "selected": selected,
         "candidate_window_selected": selected,
         "answer_bearing_candidate_window_status": _candidate_window_status(selection),
@@ -9416,6 +9941,14 @@ def _apply_candidate_window_diagnostics(
         diagnostic["value_token_guidance_consumed"] = window_diagnostic[
             "value_token_guidance_consumed"
         ]
+        for key in (
+            "official_pdf_or_table_artifact_candidate",
+            "official_artifact_type",
+            "official_artifact_read_support_status",
+            "official_artifact_read_support_source",
+            "official_artifact_read_support_raw_content_retained",
+        ):
+            diagnostic[key] = window_diagnostic.get(key)
         if not selected:
             diagnostic["skipped_reason"] = ANSWER_BEARING_CANDIDATE_WINDOW_NOT_SELECTED
 
@@ -9439,6 +9972,134 @@ def _candidate_window_diagnostics(
     return tuple(diagnostics)
 
 
+def _candidate_window_diagnostics_from_attempt_diagnostics(
+    attempt_diagnostics: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    diagnostics: list[dict[str, Any]] = []
+    for attempt in attempt_diagnostics:
+        safe = _safe_mapping(attempt)
+        if safe.get("answer_bearing_candidate_window_considered") is not True:
+            continue
+        diagnostics.append(
+            _without_empty(
+                {
+                    "candidate_id": _clean_text(
+                        safe.get("candidate_id"),
+                        limit=320,
+                    ),
+                    "result_rank": _bounded_int(safe.get("result_rank"), default=0),
+                    "provider_rank": _bounded_int(
+                        safe.get("provider_rank"),
+                        default=0,
+                    ),
+                    "fetch_read_priority_rank": _bounded_int(
+                        safe.get("fetch_read_priority_rank"),
+                        default=0,
+                    ),
+                    "title": _clean_text(safe.get("title"), limit=220),
+                    "domain": _clean_domain(safe.get("attempted_domain")),
+                    "url": _clean_text(safe.get("attempted_url"), limit=700),
+                    "bounded_content_digest": _clean_text(
+                        safe.get("bounded_content_digest"),
+                        limit=128,
+                    ),
+                    "bounded_content_char_count": _bounded_int(
+                        safe.get("bounded_content_char_count")
+                    ),
+                    "selected_window_digest": _clean_text(
+                        safe.get("selected_window_digest"),
+                        limit=128,
+                    ),
+                    "selected_window_char_count": _bounded_int(
+                        safe.get("selected_window_char_count")
+                    ),
+                    "required_anchor_count": _bounded_int(
+                        safe.get("required_anchor_count")
+                    ),
+                    "matched_anchor_count": _bounded_int(
+                        safe.get("matched_anchor_count")
+                    ),
+                    "missing_anchor_count": _bounded_int(
+                        safe.get("missing_anchor_count")
+                    ),
+                    "anchor_match_status": _clean_text(
+                        safe.get("anchor_match_status"),
+                        limit=80,
+                    ),
+                    "expected_value_token_kinds": [
+                        item
+                        for item in (
+                            _clean_text(raw, limit=40)
+                            for raw in _safe_sequence(
+                                safe.get("expected_value_token_kinds")
+                            )
+                        )
+                        if item
+                    ],
+                    "matched_value_token_kinds": [
+                        item
+                        for item in (
+                            _clean_text(raw, limit=40)
+                            for raw in _safe_sequence(
+                                safe.get("matched_value_token_kinds")
+                            )
+                        )
+                        if item
+                    ],
+                    "matched_value_token_kind_count": _bounded_int(
+                        safe.get("matched_value_token_kind_count")
+                    ),
+                    "missing_value_token_kinds": [
+                        item
+                        for item in (
+                            _clean_text(raw, limit=40)
+                            for raw in _safe_sequence(
+                                safe.get("missing_value_token_kinds")
+                            )
+                        )
+                        if item
+                    ],
+                    "value_token_guidance_consumed": (
+                        safe.get("value_token_guidance_consumed") is True
+                    ),
+                    "selected": safe.get("answer_bearing_candidate_window_selected")
+                    is True,
+                    "candidate_window_selected": (
+                        safe.get("answer_bearing_candidate_window_selected") is True
+                    ),
+                    "answer_bearing_candidate_window_status": _clean_text(
+                        safe.get("answer_bearing_candidate_window_status"),
+                        limit=120,
+                    ),
+                    "official_pdf_or_table_artifact_candidate": (
+                        safe.get("official_pdf_or_table_artifact_candidate") is True
+                    ),
+                    "official_artifact_type": _clean_text(
+                        safe.get("official_artifact_type"),
+                        limit=80,
+                    ),
+                    "official_artifact_read_support_status": _clean_text(
+                        safe.get("official_artifact_read_support_status"),
+                        limit=120,
+                    ),
+                    "official_artifact_read_support_source": _clean_text(
+                        safe.get("official_artifact_read_support_source"),
+                        limit=120,
+                    ),
+                    "diagnostic_posture": "observability_only",
+                    "not_evidence": True,
+                    "not_semantic_support": True,
+                    "not_source_authority": True,
+                    "not_citation_eligible": True,
+                    "not_source_obligation_satisfaction": True,
+                    "not_product_correctness": True,
+                    "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+                }
+            )
+        )
+    return tuple(diagnostics)
+
+
 def _provider_extracted_fetch_read_material(
     *,
     candidate: Mapping[str, Any],
@@ -9457,6 +10118,12 @@ def _provider_extracted_fetch_read_material(
     observed_at = (
         _clean_text(provider_result.get("provider_extracted_at"), limit=80)
         or datetime.now(UTC).replace(microsecond=0).isoformat()
+    )
+    artifact_payload = _official_artifact_read_support_payload(
+        candidate=candidate,
+        content_type=content_type,
+        readable_text_obtained=bool(bounded_text),
+        support_source=OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_PROVIDER_EXTRACTED,
     )
     return {
         "candidate_id": candidate["candidate_id"],
@@ -9500,6 +10167,7 @@ def _provider_extracted_fetch_read_material(
         "bounded_text_bounded": True,
         "bounded_text_char_count": len(bounded_text),
         "bounded_text_selection": selection.to_metadata(),
+        **artifact_payload,
         "raw_page_content_retained": False,
         "raw_page_text_retained": False,
         "raw_headers_retained": False,
@@ -9517,6 +10185,16 @@ def _provider_extracted_content_diagnostic(
     selection_features = _safe_mapping(candidate.get("candidate_selection_features"))
     url = _clean_text(candidate.get("url"), limit=700)
     provider = _clean_text(provider_result.get("provider"), limit=80) or DEFAULT_PROVIDER
+    content_type = _content_type_or_unknown(
+        provider_result.get("provider_extracted_content_type")
+        or PROVIDER_EXTRACTED_CONTENT_TYPE
+    )
+    artifact_payload = _official_artifact_diagnostic_payload(
+        candidate=candidate,
+        content_type=content_type,
+        readable_text_obtained=True,
+        support_source=OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_PROVIDER_EXTRACTED,
+    )
     return {
         "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
         "attempt_index": 0,
@@ -9567,12 +10245,10 @@ def _provider_extracted_content_diagnostic(
         "source_survival_diagnostic_satisfies_source_obligation": False,
         "source_survival_diagnostic_citation_eligible": False,
         "http_status_class": FETCH_READ_UNKNOWN,
-        "content_type": _content_type_or_unknown(
-            provider_result.get("provider_extracted_content_type")
-            or PROVIDER_EXTRACTED_CONTENT_TYPE
-        ),
+        "content_type": content_type,
         "readable_content_type": True,
         "readable_text_obtained": True,
+        **artifact_payload,
         "failure_category": None,
         "diagnostic_posture": "observability_only",
         "not_evidence": True,
@@ -9584,6 +10260,99 @@ def _provider_extracted_content_diagnostic(
     }
 
 
+def _official_artifact_read_support_payload(
+    *,
+    candidate: Mapping[str, Any],
+    content_type: str,
+    readable_text_obtained: bool,
+    support_source: str,
+) -> dict[str, Any]:
+    features = _safe_mapping(candidate.get("candidate_selection_features"))
+    artifact_type = _official_artifact_type_from_signals(
+        features=features,
+        content_type=content_type,
+        title=_clean_text(candidate.get("title"), limit=220),
+        url=_clean_text(candidate.get("url"), limit=700),
+    )
+    if not (
+        artifact_type
+        and _official_source_survival_features(features)
+    ):
+        return {}
+    status = (
+        OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_READABLE
+        if readable_text_obtained
+        else OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_UNREADABLE
+    )
+    return {
+        "official_artifact_read_support": True,
+        "official_artifact_type": artifact_type,
+        "official_artifact_read_support_status": status,
+        "official_artifact_read_support_source": support_source,
+        "official_artifact_read_support_bounded": bool(readable_text_obtained),
+        "official_artifact_read_support_sanitized": bool(readable_text_obtained),
+        "official_artifact_read_support_raw_content_retained": False,
+        "official_artifact_read_support_creates_source_authority": False,
+        "official_artifact_read_support_satisfies_source_obligation": False,
+        "official_artifact_read_support_citation_eligible": False,
+        "official_artifact_read_support_claims_correctness": False,
+        "pdf_parsing_opened": False,
+        "ocr_opened": False,
+        "browser_automation_opened": False,
+        "heavy_document_parser_dependency_added": False,
+    }
+
+
+def _official_artifact_diagnostic_payload(
+    *,
+    candidate: Mapping[str, Any],
+    content_type: str,
+    readable_text_obtained: bool,
+    support_source: str,
+) -> dict[str, Any]:
+    payload = _official_artifact_read_support_payload(
+        candidate=candidate,
+        content_type=content_type,
+        readable_text_obtained=readable_text_obtained,
+        support_source=support_source,
+    )
+    if payload:
+        return {
+            "official_pdf_or_table_artifact_candidate": True,
+            "official_artifact_type": payload["official_artifact_type"],
+            "official_artifact_read_support_status": payload[
+                "official_artifact_read_support_status"
+            ],
+            "official_artifact_read_support_source": payload[
+                "official_artifact_read_support_source"
+            ],
+            "official_artifact_read_support_raw_content_retained": False,
+            "official_artifact_read_support_creates_source_authority": False,
+            "official_artifact_read_support_satisfies_source_obligation": False,
+            "official_artifact_read_support_citation_eligible": False,
+            "official_artifact_read_support_claims_correctness": False,
+            "pdf_parsing_opened": False,
+            "ocr_opened": False,
+            "browser_automation_opened": False,
+            "heavy_document_parser_dependency_added": False,
+        }
+    return {
+        "official_pdf_or_table_artifact_candidate": False,
+        "official_artifact_type": None,
+        "official_artifact_read_support_status": None,
+        "official_artifact_read_support_source": None,
+        "official_artifact_read_support_raw_content_retained": False,
+        "official_artifact_read_support_creates_source_authority": False,
+        "official_artifact_read_support_satisfies_source_obligation": False,
+        "official_artifact_read_support_citation_eligible": False,
+        "official_artifact_read_support_claims_correctness": False,
+        "pdf_parsing_opened": False,
+        "ocr_opened": False,
+        "browser_automation_opened": False,
+        "heavy_document_parser_dependency_added": False,
+    }
+
+
 def _fetch_read_material(
     *,
     candidate: Mapping[str, Any],
@@ -9592,6 +10361,19 @@ def _fetch_read_material(
     selection: BoundedTextSelection,
 ) -> dict[str, Any]:
     bounded_text = selection.bounded_text
+    content_type = _content_type_or_unknown(fetch_result.content_type)
+    artifact_payload = _official_artifact_read_support_payload(
+        candidate=candidate,
+        content_type=content_type,
+        readable_text_obtained=bool(bounded_text),
+        support_source=(
+            _clean_text(
+                fetch_result.official_artifact_read_support_source,
+                limit=120,
+            )
+            or OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_FETCH_RUNNER
+        ),
+    )
     return {
         "candidate_id": candidate["candidate_id"],
         "candidate_digest": candidate["candidate_digest"],
@@ -9606,11 +10388,14 @@ def _fetch_read_material(
         "search_result_candidate_packet_id": candidate_packet["packet_id"],
         "search_result_candidate_packet_digest": candidate_packet["packet_digest"],
         "fetch_read_status": "readable",
+        "original_source_url": candidate["url"],
+        "original_source_title": candidate.get("title"),
+        "original_source_domain": candidate.get("domain"),
         "attempted_url": candidate["url"],
         "resolved_url": fetch_result.final_url,
         "final_url": fetch_result.final_url,
         "resolved_domain": fetch_result.final_domain,
-        "content_type": fetch_result.content_type,
+        "content_type": content_type,
         "http_status": fetch_result.status_code,
         "retrieved_or_observed_at": (
             fetch_result.retrieved_or_observed_at
@@ -9626,6 +10411,7 @@ def _fetch_read_material(
         "bounded_text_bounded": True,
         "bounded_text_char_count": len(bounded_text),
         "bounded_text_selection": selection.to_metadata(),
+        **artifact_payload,
         "raw_page_content_retained": False,
         "raw_page_text_retained": False,
         "raw_headers_retained": False,
@@ -9650,6 +10436,13 @@ def _failed_fetch_read_materials(
         candidate = candidates_by_id.get(str(attempt.get("candidate_id")))
         if not candidate:
             continue
+        content_type = _content_type_or_unknown(attempt.get("content_type"))
+        artifact_payload = _official_artifact_read_support_payload(
+            candidate=candidate,
+            content_type=content_type,
+            readable_text_obtained=False,
+            support_source=OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_FETCH_RUNNER,
+        )
         materials.append(
             {
                 "candidate_id": candidate["candidate_id"],
@@ -9672,7 +10465,7 @@ def _failed_fetch_read_materials(
                 "final_url": attempt.get("final_url") or candidate.get("url"),
                 "resolved_domain": attempt.get("final_domain")
                 or candidate.get("domain"),
-                "content_type": attempt.get("content_type"),
+                "content_type": content_type,
                 "http_status": attempt.get("http_status_code"),
                 "retrieved_or_observed_at": datetime.now(UTC)
                 .replace(microsecond=0)
@@ -9690,6 +10483,7 @@ def _failed_fetch_read_materials(
                 ),
                 "redirect_chain_digest": attempt.get("redirect_chain_digest"),
                 "redirect_count": attempt.get("redirect_count"),
+                **artifact_payload,
                 "raw_page_content_retained": False,
                 "raw_page_text_retained": False,
                 "raw_headers_retained": False,
@@ -9794,6 +10588,25 @@ def _validate_fetch_result(
     content_type = _content_type_or_unknown(fetch_result.content_type)
     readable_content_type = _readable_content_type_value(content_type)
     if readable_content_type is False:
+        if _official_artifact_fixture_read_support_allowed(
+            fetch_result,
+            candidate=candidate,
+            content_type=content_type,
+        ):
+            if fetch_result.sanitized_text:
+                return
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+                (
+                    "official PDF/table artifact read support was flagged, but "
+                    "no bounded sanitized text was supplied."
+                ),
+                fetch_status_class=status_class or FETCH_READ_UNKNOWN,
+                fetch_content_type=content_type,
+                fetch_readable_content_type=False,
+                fetch_readable_text_obtained=False,
+                fetch_failure_category=FETCH_READ_FAILURE_NO_READABLE_TEXT,
+            )
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
             "fetch/read did not receive a readable text/html or text/plain response.",
@@ -9813,6 +10626,28 @@ def _validate_fetch_result(
             fetch_readable_text_obtained=False,
             fetch_failure_category=FETCH_READ_FAILURE_NO_READABLE_TEXT,
         )
+
+
+def _official_artifact_fixture_read_support_allowed(
+    fetch_result: GenericLiveFetchReadResult,
+    *,
+    candidate: Mapping[str, Any],
+    content_type: str,
+) -> bool:
+    if fetch_result.official_artifact_read_support is not True:
+        return False
+    if content_type not in OFFICIAL_ARTIFACT_READ_SUPPORT_CONTENT_TYPES:
+        return False
+    features = _safe_mapping(candidate.get("candidate_selection_features"))
+    return bool(
+        _official_source_survival_features(features)
+        and _official_artifact_type_from_signals(
+            features=features,
+            content_type=content_type,
+            title=_clean_text(candidate.get("title"), limit=220),
+            url=_clean_text(candidate.get("url"), limit=700),
+        )
+    )
 
 
 def _bounded_plan_text_selection(
@@ -11217,6 +12052,35 @@ def _failure_category_summary(value: Any) -> dict[str, int]:
         category: categories.count(category)
         for category in sorted(set(categories))
     }
+
+
+def _official_artifact_candidate_count(value: Any) -> int:
+    return sum(
+        1
+        for item in _safe_sequence(value)
+        if _safe_mapping(item).get("official_pdf_or_table_artifact_candidate") is True
+    )
+
+
+def _official_artifact_read_support_status_summary(value: Any) -> dict[str, int]:
+    statuses = [
+        status
+        for status in (
+            _clean_text(
+                _safe_mapping(item).get("official_artifact_read_support_status"),
+                limit=120,
+            )
+            for item in _safe_sequence(value)
+            if _safe_mapping(item).get("official_pdf_or_table_artifact_candidate")
+            is True
+        )
+        if status
+    ]
+    return {status: statuses.count(status) for status in sorted(set(statuses))}
+
+
+def _official_artifact_read_support_status_seen(value: Any, status: str) -> bool:
+    return status in _official_artifact_read_support_status_summary(value)
 
 
 def _bool_text(value: Any) -> str:
