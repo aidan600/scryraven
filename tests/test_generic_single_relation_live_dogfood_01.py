@@ -190,6 +190,53 @@ def test_product_named_single_fact_missing_confirmation_fails_closed(
     assert calls == []
 
 
+def test_product_named_single_fact_accepts_product_output_dir(
+    tmp_path: Path,
+) -> None:
+    calls: list[GenericProviderProxyRunRequest] = []
+    product_output_dir = (
+        tmp_path / "output" / "current_source_record_single_fact_live_validation_01"
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=product_output_dir,
+        run_id="product-single-fact-output-dir",
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(calls, []),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+
+    assert result.return_code == 2
+    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CONFIRMATION_REQUIRED
+    assert result.packet["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert result.packet["diagnostic_dogfood_alias"] is False
+    assert product_output_dir.exists()
+    assert calls == []
+
+
+def test_dogfood_entrypoint_still_rejects_non_dogfood_output_dir(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(ValueError, match="must stay under"):
+        build_generic_single_relation_live_dogfood_run_output(
+            query=SMALL_CLAIMS_QUERY,
+            repo_root=tmp_path,
+            output_dir=(
+                tmp_path
+                / "output"
+                / "current_source_record_single_fact_live_validation_01"
+            ),
+            run_id="dogfood-output-dir",
+            environ={},
+        )
+
+
 def test_confirmed_product_path_with_missing_tavily_credential_fails_closed(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
