@@ -2637,11 +2637,23 @@ def _format_product_single_fact_output(
             f"{packet.get('dprime_model_review_calls_completed')}",
             "- Raw/private retained: false",
             "- Review report: "
-            f"{packet.get('review_report_markdown_path') or 'not written'}",
-            f"- Review packet: {_display_path(packet_path)}",
+            f"{_product_report_display_path(packet)}",
         ]
     )
     return "\n".join(lines)
+
+
+def _product_report_display_path(packet: Mapping[str, Any]) -> str:
+    path = _clean_text(packet.get("review_report_markdown_path"), limit=900)
+    if not path:
+        return "not written"
+    if (
+        "dogfood" in path.casefold()
+        or "single_relation_live_dogfood_packet" in path.casefold()
+        or "mvp_single_relation_live_dogfood_01" in path.casefold()
+    ):
+        return CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_MD_NAME
+    return path
 
 
 def _product_single_fact_source_entries(packet: Mapping[str, Any]) -> list[dict[str, Any]]:

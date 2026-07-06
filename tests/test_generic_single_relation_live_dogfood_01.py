@@ -1940,16 +1940,23 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert "Status:" in result.output
     assert "- Decision: PASS" in result.output
     assert "- Review report: " in result.output
+    assert dogfood.CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_MD_NAME in (
+        result.output
+    )
     forbidden_output_text = {
+        "Review packet:",
+        "single_relation_live_dogfood_packet",
         "hardened packet supports the answer posture",
         "Claim Text Boundary",
         "component posture",
+        "dogfood",
         "generic single-relation live dogfood",
         "FAP/Author consumed through existing D-prime path",
         "Friend-level/general MVP claimed",
         "FinalAnswerPacket created",
         "AuthorProse",
         "SufficiencyReadiness",
+        "mvp_single_relation_live_dogfood_01",
     }
     for text in forbidden_output_text:
         assert text not in result.output
