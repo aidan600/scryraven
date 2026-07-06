@@ -74,6 +74,7 @@ BLOCKED_STRICT_ACCOUNTED_FASTMODEL_OUTPUT_EMPTY = (
 RETRY_POLICY_FORBIDDEN = "forbidden"
 FALLBACK_POLICY_FORBIDDEN = "forbidden"
 TIMEOUT_POLICY_FAIL_CLOSED = "fail_closed"
+PRIVATE_LOOKING_VALUE_REDACTION = "private_looking_value_not_retained"
 
 CredentialLookup = Callable[[str], str | None]
 OpenAICompatibleClientFactory = Callable[..., Any]
@@ -136,14 +137,14 @@ class StrictAccountedModelRouteResult:
     def to_safe_diagnostic(self) -> dict[str, Any]:
         return {
             "return_code": self.return_code,
-            "blocker": self.blocker,
-            "detail": self.detail,
+            "blocker": _safe_diagnostic_text(self.blocker),
+            "detail": _safe_diagnostic_text(self.detail),
             "model_calls_attempted": self.model_calls_attempted,
             "model_calls_completed": self.model_calls_completed,
-            "configured_provider": self.configured_provider,
-            "configured_model": self.configured_model,
-            "provider_used": self.provider_used,
-            "model_used": self.model_used,
+            "configured_provider": _safe_route_value(self.configured_provider),
+            "configured_model": _safe_route_value(self.configured_model),
+            "provider_used": _safe_route_value(self.provider_used),
+            "model_used": _safe_route_value(self.model_used),
             "configured_endpoint_kind": self.configured_endpoint_kind,
             "endpoint_used": self.endpoint_used,
             "configured_local_url_present": self.configured_local_url_present,
@@ -272,8 +273,8 @@ class StrictAccountedFastModelRoute:
             "product_config_initialization_boundary": (
                 PRODUCT_CONFIG_INITIALIZATION_BOUNDARY
             ),
-            "configured_fast_provider": provider,
-            "configured_fast_model": model,
+            "configured_fast_provider": _safe_route_value(provider),
+            "configured_fast_model": _safe_route_value(model),
             "configured_endpoint_kind": _endpoint_kind_for_provider(provider),
             "configured_local_url_present": bool(local_url),
             "configured_local_url_posture": _local_url_posture(local_url),
@@ -299,14 +300,14 @@ class StrictAccountedFastModelRoute:
         local_url = _clean_route_value(self.local_url)
         endpoint_kind = _endpoint_kind_for_provider(provider)
         return {
-            "configured_provider": provider,
-            "configured_model": model,
-            "provider_used": provider if provider in {
+            "configured_provider": _safe_route_value(provider),
+            "configured_model": _safe_route_value(model),
+            "provider_used": _safe_route_value(provider) if provider in {
                 PROVIDER_OPENAI,
                 PROVIDER_OPENROUTER,
                 PROVIDER_LOCAL,
             } else "",
-            "model_used": model,
+            "model_used": _safe_route_value(model),
             "configured_endpoint_kind": endpoint_kind,
             "endpoint_used": endpoint_kind,
             "configured_local_url_present": bool(local_url),
@@ -339,10 +340,17 @@ class StrictAccountedFastModelRoute:
         if forbidden:
             return "Strict FastModel route rejected unsafe runtime arguments."
         requested_provider = kwargs.get("provider")
-        if requested_provider and normalize_fast_model_provider(requested_provider) != provider:
+        if (
+            requested_provider
+            and _clean_route_value(requested_provider) != PRIVATE_LOOKING_VALUE_REDACTION
+            and normalize_fast_model_provider(requested_provider) != provider
+        ):
             return "Strict FastModel route rejected provider switching."
         requested_model = _clean_route_value(kwargs.get("model"))
-        if requested_model and requested_model != model:
+        if requested_model and requested_model not in {
+            model,
+            PRIVATE_LOOKING_VALUE_REDACTION,
+        }:
             return "Strict FastModel route rejected model switching."
         return None
 
@@ -659,6 +667,41 @@ def _clean_route_value(value: Any) -> str:
     return " ".join(str(value).strip().split())
 
 
+def _safe_route_value(value: Any) -> str:
+    text = _clean_route_value(value)
+    if not text:
+        return ""
+    return PRIVATE_LOOKING_VALUE_REDACTION if _private_value_markers(text) else text
+
+
+def _safe_diagnostic_text(value: Any) -> str | None:
+    text = _clean_route_value(value)
+    if not text:
+        return None
+    return (
+        "private-looking route detail redacted"
+        if _private_value_markers(text)
+        else text
+    )
+
+
+def _private_value_markers(value: str) -> set[str]:
+    lowered = value.casefold()
+    markers = {
+        "api_key",
+        "authorization:",
+        "bearer ",
+        "private_sentinel",
+        "provider_payload",
+        "raw_prompt",
+        "raw_provider",
+        "secret",
+        "sk-",
+        "token",
+    }
+    return {marker for marker in markers if marker in lowered}
+
+
 def _normalize_key(value: Any) -> str:
     return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
 
@@ -677,6 +720,7 @@ __all__ = [
     "FALLBACK_POLICY_FORBIDDEN",
     "OPENROUTER_BASE_URL",
     "PRODUCT_ROUTE_KIND_STRICT_FASTMODEL",
+    "PRIVATE_LOOKING_VALUE_REDACTION",
     "PROVIDER_LOCAL",
     "PROVIDER_OPENAI",
     "PROVIDER_OPENROUTER",

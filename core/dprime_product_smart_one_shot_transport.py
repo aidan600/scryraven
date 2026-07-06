@@ -69,6 +69,7 @@ DPRIME_PRODUCT_SMART_ADAPTER_REF = (
     "dprime-one-shot-model-review-adapter:"
     "product-smart:openai:gpt-5.4:v1"
 )
+PRIVATE_LOOKING_VALUE_REDACTION = "private_looking_value_not_retained"
 
 OpenAIClientFactory = Callable[[], Any]
 
@@ -114,8 +115,8 @@ def product_smart_model_route_ref(
         "product_model_role": PRODUCT_MODEL_ROLE_SMART,
         "product_route_kind": PRODUCT_ROUTE_KIND_SMART_MODEL,
         "product_route_settings_surface": PRODUCT_ROUTE_SETTINGS_SURFACE,
-        "configured_smart_provider": _clean_route_value(smart_provider),
-        "configured_smart_model": _clean_route_value(smart_model),
+        "configured_smart_provider": _safe_route_value(smart_provider),
+        "configured_smart_model": _safe_route_value(smart_model),
         "default_provider": APPROVED_PROVIDER,
         "default_model": APPROVED_MODEL,
         "approved_provider": APPROVED_PROVIDER,
@@ -430,6 +431,30 @@ def _clean_route_value(value: Any) -> str:
     return " ".join(str(value or "").strip().split())
 
 
+def _safe_route_value(value: Any) -> str:
+    text = _clean_route_value(value)
+    if not text:
+        return ""
+    return PRIVATE_LOOKING_VALUE_REDACTION if _private_value_markers(text) else text
+
+
+def _private_value_markers(value: str) -> set[str]:
+    lowered = value.casefold()
+    markers = {
+        "api_key",
+        "authorization:",
+        "bearer ",
+        "private_sentinel",
+        "provider_payload",
+        "raw_prompt",
+        "raw_provider",
+        "secret",
+        "sk-",
+        "token",
+    }
+    return {marker for marker in markers if marker in lowered}
+
+
 def _approved_product_smart_route(*, smart_provider: str, smart_model: str) -> bool:
     return (
         _normalize_key(smart_provider) == _normalize_key(APPROVED_PROVIDER)
@@ -455,6 +480,7 @@ __all__ = [
     "PRODUCT_MODEL_ROLE_SMART",
     "PRODUCT_CONFIG_INITIALIZATION_BOUNDARY",
     "PRODUCT_ROUTE_KIND_SMART_MODEL",
+    "PRIVATE_LOOKING_VALUE_REDACTION",
     "build_dprime_product_smart_model_review_adapter",
     "build_dprime_product_smart_model_review_license",
     "build_dprime_product_smart_model_review_provider_boundary",

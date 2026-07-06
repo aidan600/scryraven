@@ -37,6 +37,7 @@ import pytest
 import core.generic_product_provider_acquisition as product_acquisition
 import proplex.live_semantic_coverage_status as semantic_status_runtime
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
+from core.dprime_product_smart_one_shot_transport import product_smart_model_route_ref
 from core.dprime_single_lane_answer_path_runtime import DPrimeSingleLaneAnswerPathError
 from core.generic_query_to_relation_planning import (
     MVP_QUERY_PLAN_PACKET_NAME,
@@ -53,6 +54,10 @@ from core.product_model_route_config import (
     MVP_SINGLE_RELATION_LIVE_DOGFOOD_RUN_FLAG,
     PRODUCT_STATUS_DRY_RUN_FLAGS,
     initialize_product_model_route_config,
+)
+from core.strict_accounted_model_route import (
+    StrictAccountedModelRouteResult,
+    build_strict_accounted_fast_model_planning_route,
 )
 from proplex.mvp_live_dogfood_run import (
     BLOCKED_MVP_LIVE_CONFIRMATION_REQUIRED,
@@ -90,6 +95,7 @@ SMALL_CLAIMS_QUERY = (
     "What is the current filing fee for small claims in Example County?"
 )
 UNSUPPORTED_QUERY = "What does Reddit say about this paint?"
+PRIVATE_CANARY = "sk-synthetic-private-canary-do-not-retain"
 
 
 def test_unsupported_query_blocks_before_live_and_does_not_retain_text(
@@ -218,6 +224,151 @@ def test_product_named_single_fact_accepts_product_output_dir(
     assert result.packet["diagnostic_dogfood_alias"] is False
     assert product_output_dir.exists()
     assert calls == []
+
+
+def test_product_single_fact_packet_redacts_synthetic_private_route_config(
+    tmp_path: Path,
+) -> None:
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / "output" / "single-fact-canary",
+        run_id="product-single-fact-private-canary",
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        fast_provider="OpenAI",
+        fast_model=PRIVATE_CANARY,
+        fast_model_local_url=PRIVATE_CANARY,
+        require_model_assisted_planning=True,
+        provider_proxy_runner=_recording_proxy_runner(calls, []),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    serialized = json.dumps(result.packet, sort_keys=True)
+
+    assert result.return_code == 2
+    assert result.packet["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert result.packet["diagnostic_dogfood_alias"] is False
+    assert result.packet["model_assisted_planning_configured_fast_model"] == (
+        dogfood.PRIVATE_LOOKING_VALUE_REDACTION
+    )
+    assert result.packet["model_assisted_planning_configured_local_url_present"] is True
+    assert result.packet["raw_private_retention_flags"] == dogfood.RAW_FALSE_FLAGS
+    assert PRIVATE_CANARY not in serialized
+    assert PRIVATE_CANARY not in result.output
+    assert calls == []
+
+
+def test_provider_failure_detail_redacts_synthetic_private_canary(
+    tmp_path: Path,
+) -> None:
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    def failing_runner(
+        request: GenericProviderProxyRunRequest,
+    ) -> GenericProviderProxyRunResult:
+        calls.append(request)
+        return GenericProviderProxyRunResult(
+            return_code=2,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=0,
+            blocker=BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
+            detail=f"provider failed with {PRIVATE_CANARY}",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / "output" / "single-fact-provider-detail-canary",
+        run_id="product-single-fact-provider-detail-canary",
+        confirm_live_dogfood=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=failing_runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    serialized = json.dumps(result.packet, sort_keys=True)
+
+    assert result.return_code == 2
+    assert len(calls) == 1
+    assert result.packet["blocker_detail"] == dogfood.PRIVATE_LOOKING_DETAIL_REDACTION
+    assert PRIVATE_CANARY not in serialized
+    assert PRIVATE_CANARY not in result.output
+
+
+def test_strict_fastmodel_route_refs_redact_synthetic_private_values() -> None:
+    route = build_strict_accounted_fast_model_planning_route(
+        fast_provider="OpenAI",
+        fast_model=PRIVATE_CANARY,
+        local_url=PRIVATE_CANARY,
+        credential_lookup=lambda _name: PRIVATE_CANARY,
+    )
+    route_ref = route.to_ref()
+    diagnostic = StrictAccountedModelRouteResult(
+        return_code=2,
+        blocker="BLOCKED_SYNTHETIC",
+        detail=f"failed with {PRIVATE_CANARY}",
+        configured_provider="OpenAI",
+        configured_model=PRIVATE_CANARY,
+        provider_used="OpenAI",
+        model_used=PRIVATE_CANARY,
+        credential_present=True,
+    ).to_safe_diagnostic()
+    serialized = json.dumps({"diagnostic": diagnostic, "route_ref": route_ref})
+
+    assert route_ref["configured_fast_model"] == dogfood.PRIVATE_LOOKING_VALUE_REDACTION
+    assert route_ref["configured_local_url_present"] is True
+    assert diagnostic["credential_present"] is True
+    assert diagnostic["credential_values_retained"] is False
+    assert diagnostic["detail"] == "private-looking route detail redacted"
+    assert PRIVATE_CANARY not in serialized
+
+
+def test_dprime_smartmodel_route_ref_redacts_synthetic_private_values() -> None:
+    ref = product_smart_model_route_ref(
+        smart_provider="OpenAI",
+        smart_model=PRIVATE_CANARY,
+    )
+    serialized = json.dumps(ref, sort_keys=True)
+
+    assert ref["configured_smart_model"] == dogfood.PRIVATE_LOOKING_VALUE_REDACTION
+    assert ref["approved_model"] == "gpt-5.4"
+    assert PRIVATE_CANARY not in serialized
+
+
+def test_private_retention_guard_still_rejects_unsafe_packet_payload(
+    tmp_path: Path,
+) -> None:
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / "output" / "single-fact-unsafe-guard",
+        run_id="product-single-fact-unsafe-guard",
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner([], []),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    unsafe = dict(result.packet)
+    unsafe["answer_or_blocker_text"] = PRIVATE_CANARY
+
+    with pytest.raises(GenericSingleRelationLiveDogfoodRunError) as excinfo:
+        dogfood.validate_generic_single_relation_live_dogfood_packet(unsafe)
+
+    assert excinfo.value.blocker == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert "private-looking values" in excinfo.value.detail
+    assert "sk-" in excinfo.value.detail
 
 
 def test_dogfood_entrypoint_still_rejects_non_dogfood_output_dir(
