@@ -724,6 +724,15 @@ class _CandidateWindowEvaluation:
     diagnostic: dict[str, Any]
 
 
+@dataclass(frozen=True, slots=True)
+class _DirectOfficialArtifactReadSupportAttempt:
+    candidate: Mapping[str, Any]
+    fetch_result: GenericLiveFetchReadResult
+    selection: BoundedTextSelection
+    material: dict[str, Any]
+    score: tuple[int, ...]
+
+
 ProviderProxyRunner = Callable[
     [GenericProviderProxyRunRequest],
     GenericProviderProxyRunResult,
@@ -8219,17 +8228,54 @@ def _write_fetch_read_artifacts(
             candidate = selected_evaluation.candidate
             provider_result = selected_evaluation.provider_result
             selection = selected_evaluation.selection
-            material = _provider_extracted_fetch_read_material(
-                candidate=candidate,
-                candidate_packet=candidate_packet,
-                provider_result=provider_result,
-                selection=selection,
+            direct_read_support_attempt, direct_attempt_diagnostics = (
+                _attempt_direct_official_artifact_read_support_challenge(
+                    candidates=candidates,
+                    provider_results_by_candidate_id=provider_results_by_candidate_id,
+                    candidate_packet=candidate_packet,
+                    relation_plan=relation_plan,
+                    acquisition_plan=acquisition_plan,
+                    fetch_read_runner=fetch_read_runner,
+                    minimum_score=selected_evaluation.score,
+                    provider_extracted_selection=selected_evaluation,
+                )
             )
+            if direct_read_support_attempt is not None:
+                candidate = direct_read_support_attempt.candidate
+                provider_result = {}
+                selection = direct_read_support_attempt.selection
+                material = direct_read_support_attempt.material
+                source_acquisition_mode = SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
+                provider_extracted_handoff_created = 0
+                selected_candidate_id = str(candidate["candidate_id"])
+                selected_window_diagnostics = (
+                    _candidate_window_diagnostics(
+                        evaluations,
+                        selected_candidate_id=selected_candidate_id,
+                    )
+                    + _candidate_window_diagnostics_from_attempt_diagnostics(
+                        direct_attempt_diagnostics
+                    )
+                )
+            else:
+                material = _provider_extracted_fetch_read_material(
+                    candidate=candidate,
+                    candidate_packet=candidate_packet,
+                    provider_result=provider_result,
+                    selection=selection,
+                )
+                source_acquisition_mode = SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED
+                provider_extracted_handoff_created = 1
+                selected_candidate_id = str(candidate["candidate_id"])
+                selected_window_diagnostics = _candidate_window_diagnostics(
+                    evaluations,
+                    selected_candidate_id=selected_candidate_id,
+                )
             fetch_packet = validate_fetch_read_content_packet(
                 build_fetch_read_content_packet_from_candidate_packet(
                     candidate_packet,
                     [material],
-                    selected_candidate_ids=[str(candidate["candidate_id"])],
+                    selected_candidate_ids=[selected_candidate_id],
                 )
             )
         except FetchReadContentReferenceError as exc:
@@ -8269,30 +8315,40 @@ def _write_fetch_read_artifacts(
         provider_diagnostic = _provider_extracted_content_diagnostic(
             candidate,
             provider_result=provider_result,
-        )
+        ) if provider_extracted_handoff_created else None
         _apply_candidate_window_diagnostics(
             candidate_diagnostics,
             evaluations=evaluations,
-            selected_candidate_id=str(candidate["candidate_id"]),
+            selected_candidate_id=selected_candidate_id,
         )
-        _apply_attempt_diagnostic(candidate_diagnostics, provider_diagnostic)
+        for direct_attempt_diagnostic in direct_attempt_diagnostics:
+            _apply_attempt_diagnostic(candidate_diagnostics, direct_attempt_diagnostic)
+        if provider_diagnostic is not None:
+            _apply_attempt_diagnostic(candidate_diagnostics, provider_diagnostic)
         _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
         return fetch_packet, {
-            "source_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
+            "source_acquisition_mode": source_acquisition_mode,
             "provider_extracted_content_candidate_count": len(
                 provider_extracted_candidates
             ),
-            "provider_extracted_content_handoff_created": 1,
-            "direct_fetch_read_attempts": 0,
-            "fetch_read_attempts": 0,
+            "provider_extracted_content_handoff_created": (
+                provider_extracted_handoff_created
+            ),
+            "direct_fetch_read_attempts": len(direct_attempt_diagnostics),
+            "fetch_read_attempts": len(direct_attempt_diagnostics),
             "fetch_read_completed": 1,
-            "fetch_read_status_classes": (),
-            "fetch_read_content_types": (),
+            "fetch_read_status_classes": tuple(
+                _attempt_status_classes(direct_attempt_diagnostics)
+            ),
+            "fetch_read_content_types": tuple(
+                _attempt_content_types(direct_attempt_diagnostics)
+            ),
             "fetch_read_failure_categories": tuple(
                 _candidate_failure_categories(candidate_diagnostics)
+                + _attempt_failure_categories(direct_attempt_diagnostics)
             ),
             "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
-            "fetch_read_attempt_diagnostics": (),
+            "fetch_read_attempt_diagnostics": tuple(direct_attempt_diagnostics),
             "answer_bearing_candidate_window_status": (
                 _candidate_window_status(selection)
             ),
@@ -8305,10 +8361,7 @@ def _write_fetch_read_artifacts(
                 == ANSWER_BEARING_CANDIDATE_WINDOW_NOT_ESTABLISHED
             ),
             "answer_bearing_candidate_window_diagnostics": (
-                _candidate_window_diagnostics(
-                    evaluations,
-                    selected_candidate_id=str(candidate["candidate_id"]),
-                )
+                selected_window_diagnostics
             ),
             **_selected_window_guidance_counts(
                 acquisition_plan=acquisition_plan,
@@ -9493,6 +9546,157 @@ def _select_provider_extracted_candidate_window(
     return max(evaluations, key=lambda item: item.score)
 
 
+def _attempt_direct_official_artifact_read_support_challenge(
+    *,
+    candidates: Sequence[Mapping[str, Any]],
+    provider_results_by_candidate_id: Mapping[str, Mapping[str, Any]],
+    candidate_packet: Mapping[str, Any],
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+    fetch_read_runner: FetchReadRunner,
+    minimum_score: tuple[int, ...],
+    provider_extracted_selection: _CandidateWindowEvaluation,
+) -> tuple[_DirectOfficialArtifactReadSupportAttempt | None, list[dict[str, Any]]]:
+    if not _provider_extracted_selection_allows_direct_artifact_challenge(
+        provider_extracted_selection
+    ):
+        return None, []
+    attempt_diagnostics: list[dict[str, Any]] = []
+    for candidate in _direct_official_artifact_read_support_candidates(
+        candidates,
+        provider_results_by_candidate_id=provider_results_by_candidate_id,
+    ):
+        attempt_index = len(attempt_diagnostics) + 1
+        fetch_result: GenericLiveFetchReadResult | None = None
+        try:
+            fetch_result = fetch_read_runner(str(candidate["url"]))
+            _validate_fetch_result(fetch_result, candidate=candidate)
+            _validate_explicit_direct_official_artifact_read_support(
+                fetch_result,
+                candidate=candidate,
+            )
+            selection = _bounded_plan_text_selection(
+                fetch_result.sanitized_text,
+                relation_plan=relation_plan,
+                acquisition_plan=acquisition_plan,
+            )
+            material = _fetch_read_material(
+                candidate=candidate,
+                candidate_packet=candidate_packet,
+                fetch_result=fetch_result,
+                selection=selection,
+            )
+            score = _candidate_window_score(candidate, selection)
+            attempt_diagnostic = _fetch_read_attempt_diagnostic(
+                candidate,
+                attempt_index=attempt_index,
+                fetch_result=fetch_result,
+                error=None,
+                selection=selection if score >= minimum_score else None,
+            )
+            attempt_diagnostics.append(attempt_diagnostic)
+            if score >= minimum_score:
+                return (
+                    _DirectOfficialArtifactReadSupportAttempt(
+                        candidate=candidate,
+                        fetch_result=fetch_result,
+                        selection=selection,
+                        material=material,
+                        score=score,
+                    ),
+                    attempt_diagnostics,
+                )
+        except GenericSingleRelationLiveDogfoodRunError as exc:
+            attempt_diagnostics.append(
+                _fetch_read_attempt_diagnostic(
+                    candidate,
+                    attempt_index=attempt_index,
+                    fetch_result=fetch_result,
+                    error=exc,
+                )
+            )
+            continue
+    return None, attempt_diagnostics
+
+
+def _provider_extracted_selection_allows_direct_artifact_challenge(
+    selection: _CandidateWindowEvaluation,
+) -> bool:
+    candidate = selection.candidate
+    features = _safe_mapping(candidate.get("candidate_selection_features"))
+    artifact_type = _official_artifact_type_from_signals(
+        features=features,
+        content_type=selection.provider_result.get("provider_extracted_content_type"),
+        title=_clean_text(candidate.get("title"), limit=220),
+        url=_clean_text(candidate.get("url"), limit=700),
+    )
+    return not bool(_official_source_survival_features(features) and artifact_type)
+
+
+def _direct_official_artifact_read_support_candidates(
+    candidates: Sequence[Mapping[str, Any]],
+    *,
+    provider_results_by_candidate_id: Mapping[str, Mapping[str, Any]],
+) -> list[Mapping[str, Any]]:
+    out: list[Mapping[str, Any]] = []
+    for candidate in candidates:
+        candidate_id = str(candidate.get("candidate_id") or "")
+        provider_result = provider_results_by_candidate_id.get(candidate_id, {})
+        if _provider_extracted_text(provider_result):
+            continue
+        priority_rank = _bounded_int(candidate.get("fetch_read_priority_rank"))
+        if priority_rank <= 0 or priority_rank > MAX_FETCH_READ_ATTEMPTS:
+            continue
+        if not _is_valid_http_url(candidate.get("url")):
+            continue
+        features = _safe_mapping(candidate.get("candidate_selection_features"))
+        if not _official_source_survival_features(features):
+            continue
+        if not _official_artifact_type_from_signals(
+            features=features,
+            title=_clean_text(candidate.get("title"), limit=220),
+            url=_clean_text(candidate.get("url"), limit=700),
+        ):
+            continue
+        out.append(candidate)
+    return out
+
+
+def _validate_explicit_direct_official_artifact_read_support(
+    fetch_result: GenericLiveFetchReadResult,
+    *,
+    candidate: Mapping[str, Any],
+) -> None:
+    content_type = _content_type_or_unknown(fetch_result.content_type)
+    if _official_artifact_fixture_read_support_allowed(
+        fetch_result,
+        candidate=candidate,
+        content_type=content_type,
+    ):
+        return
+    status_class = (
+        _normalized_status_class(fetch_result.status_class)
+        or _status_class(fetch_result.status_code)
+        or FETCH_READ_UNKNOWN
+    )
+    raise GenericSingleRelationLiveDogfoodRunError(
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
+        (
+            "direct official artifact read support requires explicit "
+            "official_artifact_read_support with a supported PDF/table content type."
+        ),
+        fetch_status_class=status_class,
+        fetch_content_type=content_type,
+        fetch_readable_content_type=False,
+        fetch_readable_text_obtained=False,
+        fetch_failure_category=FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE,
+        fetch_final_url=fetch_result.final_url,
+        fetch_status_code=fetch_result.status_code,
+        fetch_redirect_count=fetch_result.redirect_count,
+        fetch_redirect_chain_digest=fetch_result.redirect_chain_digest,
+    )
+
+
 def _candidate_window_score(
     candidate: Mapping[str, Any],
     selection: BoundedTextSelection,
@@ -10184,6 +10388,9 @@ def _fetch_read_material(
         "search_result_candidate_packet_id": candidate_packet["packet_id"],
         "search_result_candidate_packet_digest": candidate_packet["packet_digest"],
         "fetch_read_status": "readable",
+        "original_source_url": candidate["url"],
+        "original_source_title": candidate.get("title"),
+        "original_source_domain": candidate.get("domain"),
         "attempted_url": candidate["url"],
         "resolved_url": fetch_result.final_url,
         "final_url": fetch_result.final_url,

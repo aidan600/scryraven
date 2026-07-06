@@ -675,6 +675,114 @@ def test_contextual_html_is_not_preferred_over_readable_official_pdf_artifact(
     _assert_workbench_non_authority(packet)
 
 
+def test_contextual_provider_html_does_not_skip_direct_official_pdf_read_support(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    captured_input: dict[str, Any] = {}
+    fetched_urls: list[str] = []
+    readable_text = (
+        "Example County Clerk official fee schedule. The standard paper small "
+        "claims filing fee is $54."
+    )
+    inner_fetch_runner = _official_pdf_read_support_fetch_runner(readable_text)
+
+    def fetch_runner(url: str) -> GenericLiveFetchReadResult:
+        fetched_urls.append(url)
+        return inner_fetch_runner(url)
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        captured_input.update(dict(input_packet))
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper small claims filing fee is $54.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-contextual-html-direct-official-pdf-read-support",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "Example County Online Discount Filing Fee",
+                    "https://example-county.gov/courts/online-discount",
+                    (
+                        "Online filing discount. Eligible filers may pay a "
+                        "reduced online small claims fee of $20."
+                    ),
+                    rank=1,
+                ),
+                _provider_result(
+                    "Example County Official Small Claims Fee Schedule PDF",
+                    "https://example-county.gov/courts/small-claims-fee-schedule.pdf",
+                    rank=2,
+                ),
+            ],
+        ),
+        fetch_read_runner=fetch_runner,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    assert fetched_urls == [
+        "https://example-county.gov/courts/small-claims-fee-schedule.pdf"
+    ]
+    assert packet["source_acquisition_mode"] == (
+        dogfood.SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
+    )
+    assert packet["provider_extracted_content_candidate_count"] == 1
+    assert packet["provider_extracted_content_handoff_created"] is False
+    assert packet["direct_fetch_read_attempts"] == 1
+    assert packet["fetch_read_attempts"] == 1
+    assert packet["fetch_read_completed"] == 1
+    assert packet["fetch_read_cap_preserved"] is True
+    assert packet["fetch_read_cap_value"] == dogfood.MAX_FETCH_READ_ATTEMPTS
+    assert packet["analysis_gap_search_proposal"]["gap_status"] == "not_required"
+    assert packet["dprime_model_review_calls_completed"] == 1
+
+    triage = packet["candidate_evidence_triage_packet"]
+    assert triage["contextual_candidate_refs"]
+    assert triage["overclaim_risk_candidate_refs"]
+    assert triage["contextual_candidate_refs"][0]["url"].endswith("online-discount")
+    dprime_ref = packet["workbench_dprime_dossier"]["dprime_review_candidate_ref"]
+    assert dprime_ref["url"].endswith("small-claims-fee-schedule.pdf")
+    assert dprime_ref["official_pdf_or_table_artifact_candidate"] is True
+    assert dprime_ref["official_artifact_read_support_status"] == (
+        dogfood.OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_READABLE
+    )
+    assert captured_input["workbench_dprime_dossier_ref"]["dossier_digest"] == (
+        packet["workbench_dprime_dossier_ref"]["dossier_digest"]
+    )
+
+    fetch_packet = _retained_fetch_read_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    assert reference["original_source_url"].endswith("small-claims-fee-schedule.pdf")
+    assert reference["content_type"] == "application/pdf"
+    assert reference["bounded_text"] == readable_text
+    assert reference["official_artifact_read_support"] is True
+    assert reference["official_artifact_read_support_raw_content_retained"] is False
+    assert reference["official_artifact_read_support_creates_source_authority"] is False
+    assert reference["official_artifact_read_support_satisfies_source_obligation"] is False
+    assert reference["official_artifact_read_support_citation_eligible"] is False
+    assert reference["official_artifact_read_support_claims_correctness"] is False
+    assert packet["provider_snippets_used_as_evidence"] is False
+    assert packet["candidate_selection_uses_provider_snippet"] is False
+    assert packet["pdf_parsing_opened"] is False
+    assert packet["official_pdf_table_read_support_adds_dependency"] is False
+    assert packet["official_pdf_table_read_support_uses_ocr"] is False
+    assert packet["official_pdf_table_read_support_uses_browser_automation"] is False
+    assert packet["fap_calls"] == 0
+    assert packet["author_calls"] == 0
+    _assert_workbench_non_authority(packet)
+
+
 def test_provider_snippet_text_does_not_create_workbench_strict_support(
     tmp_path: Path,
 ) -> None:
