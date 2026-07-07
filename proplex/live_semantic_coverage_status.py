@@ -136,6 +136,9 @@ BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING = (
 BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH = (
     "BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH"
 )
+BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED = (
+    "BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED"
+)
 
 SEMANTIC_COVERAGE_MACHINERY_FOUND = (
     "core.evidence_relative_analysis_packet.EvidenceRelativeAnalysisPacket / AnalystReport",
@@ -685,6 +688,7 @@ def build_live_semantic_coverage_status(
             dprime_single_lane_answer_path_enabled=(
                 dprime_single_lane_answer_path_enabled
             ),
+            workbench_dprime_dossier=workbench_dprime_dossier,
             workbench_dprime_dossier_ref=workbench_ref,
             candidate_handoff_ref=candidate_handoff,
         )
@@ -1378,6 +1382,7 @@ def _blocked_dprime_model_review_assessment_result(
     dprime_downstream_authority_enabled: bool,
     dprime_source_citation_authority_enabled: bool | None,
     dprime_single_lane_answer_path_enabled: bool | None,
+    workbench_dprime_dossier: Mapping[str, Any] | None = None,
     workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
     candidate_handoff_ref: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
@@ -1412,6 +1417,29 @@ def _blocked_dprime_model_review_assessment_result(
     objects_created = dict(dprime.get("objects_created") or {})
     objects_created.update(model_review_result.objects_created)
     dprime["objects_created"] = objects_created
+    proposal_validated = (
+        dprime.get("proposal_validation_status")
+        == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+    )
+    workbench_gate_ref = _unresolved_workbench_followup_required_gate_ref(
+        workbench_dprime_dossier
+    )
+    if proposal_validated and workbench_gate_ref:
+        return _blocked_workbench_followup_required_result(
+            query=query,
+            readiness_payload=readiness_payload,
+            admission_ref=admission_ref,
+            readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            relation_ref=relation_ref,
+            dprime=dprime,
+            model_review_result=model_review_result,
+            objects_created=objects_created,
+            workbench_gate_ref=workbench_gate_ref,
+            workbench_ref=workbench_ref,
+            candidate_handoff_ref=candidate_handoff,
+        )
     try:
         additional_relation_results = _additional_dprime_relation_results(
             query=query,
@@ -1439,10 +1467,6 @@ def _blocked_dprime_model_review_assessment_result(
         objects_created["multi_source_support_posture"] = False
         objects_created["multi_source_scrutineer_gate"] = False
         dprime["objects_created"] = objects_created
-    proposal_validated = (
-        dprime.get("proposal_validation_status")
-        == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
-    )
     decision = None
     semantic_materialization = None
     support_bundle = None
@@ -2934,6 +2958,248 @@ def _blocked_candidate_handoff_dprime_status(
     }
 
 
+def _blocked_workbench_followup_required_result(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    relation_ref: Mapping[str, Any],
+    dprime: Mapping[str, Any],
+    model_review_result: Any,
+    objects_created: Mapping[str, Any],
+    workbench_gate_ref: Mapping[str, Any],
+    workbench_ref: Mapping[str, Any],
+    candidate_handoff_ref: Mapping[str, Any],
+) -> LiveSemanticCoverageStatusResult:
+    detail = (
+        _clean_text(workbench_gate_ref.get("blocker_detail"), limit=900)
+        or "Workbench follow-up-required gap is unresolved and not licensed."
+    )
+    blocked_objects = dict(objects_created)
+    for key in (
+        "run_kernel_admission_decision",
+        "semantic_observation",
+        "component_coverage",
+        "sufficiency_readiness",
+        "final_answer_packet",
+        "author_answer",
+        "citation_source_display",
+    ):
+        blocked_objects[key] = False
+
+    blocked_dprime = dict(dprime)
+    blocked_dprime.update(
+        {
+            "decision": BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED,
+            "blocker_detail": detail,
+            "workbench_followup_authority_gate_ref": dict(workbench_gate_ref),
+            "workbench_gap_reentry_status": "followup_not_licensed",
+            "run_kernel_decision": "not made",
+            "run_kernel_admission_decision_status": "not_reached",
+            "admitted_support": False,
+            "semantic_observation_admission_status": "not_reached",
+            "component_coverage_status": "not_reached",
+            "source_obligation_authority_consumed": False,
+            "citation_eligibility_or_source_handoff_authority_consumed": False,
+            "dprime_source_citation_stoppoint_status": "not_reached",
+            "dprime_source_citation_stoppoint_blocker": (
+                BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+            ),
+            "sufficiency_readiness_created": False,
+            "final_answer_packet_created": False,
+            "author_answer_created": False,
+            "citation_source_display_created": False,
+            "objects_created": blocked_objects,
+        }
+    )
+    support_ref = {
+        "status": DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED,
+        "proposal_ref": _id_digest_ref(
+            _safe_mapping(blocked_dprime.get("validated_support_proposal_ref")).get(
+                "proposal_id"
+            ),
+            _safe_mapping(blocked_dprime.get("validated_support_proposal_ref")).get(
+                "proposal_digest"
+            ),
+        ),
+        "reasons": [
+            "D-prime proposal candidate validated from assessment lineage",
+            "proposal candidate is not admitted support",
+            "Workbench follow-up-required gap blocks RunKernel admission",
+        ],
+    }
+    semantic_ref = {
+        "status": "unavailable",
+        "observation_ref": "unavailable",
+        "reasons": [
+            "RunKernel support admission decision was not created",
+            detail,
+        ],
+    }
+    coverage_ref = {
+        "status": "unavailable",
+        "coverage_ref": "unavailable",
+        "component_id": _component_id(component_ref),
+        "reasons": [
+            "ComponentCoverage requires admitted SemanticObservation",
+            detail,
+        ],
+    }
+    answer_path_ref = _answer_path_status_ref(
+        answer_path=None,
+        answer_path_error=None,
+        run_kernel=None,
+    )
+    payload = _base_semantic_payload(
+        query=query,
+        readiness_payload=readiness_payload,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        relation_intake_ref=relation_ref,
+        support_ref=support_ref,
+        semantic_ref=semantic_ref,
+        coverage_ref=coverage_ref,
+        decision=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED,
+        blocker_detail=detail,
+        next_blocked_surface="Workbench follow-up-required gap resolution",
+        workbench_dprime_dossier_ref=workbench_ref,
+        candidate_handoff_ref=candidate_handoff_ref,
+    )
+    payload.update(
+        {
+            "dprime_status": blocked_dprime,
+            "workbench_followup_authority_gate_ref": dict(workbench_gate_ref),
+            "semantic_support_source": (
+                "unavailable; unresolved Workbench follow-up-required gap "
+                "blocked RunKernel support admission"
+            ),
+            "source_obligation_authority_ref": {
+                "status": "not reached",
+                "authority_consumed": False,
+            },
+            "citation_eligibility_authority_ref": {
+                "status": "not reached",
+                "authority_consumed": False,
+            },
+            "dprime_answer_path_ref": answer_path_ref,
+            "component_coverage_only_treated_as_pass": False,
+            "detached_posture_status_packet_treated_as_authority": False,
+            "semantic_support_custody_distinction_preserved": True,
+            "dprime_source_citation_stoppoint_status": "not_reached",
+            "dprime_source_citation_stoppoint_blocker": (
+                BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+            ),
+            "analyst_support_proposal_consumer": (
+                "not reached; Workbench follow-up-required gap remains "
+                "unresolved before RunKernel support admission"
+            ),
+            "model_review_result_blocked_before_runkernel_admission": (
+                model_review_result.decision
+            ),
+        }
+    )
+    output = format_live_semantic_coverage_status(payload)
+    if not output_hygiene_passes(output):
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_OUTPUT_HYGIENE,
+            detail="status output contained forbidden material",
+        )
+    return LiveSemanticCoverageStatusResult(
+        decision=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED,
+        output=output,
+        payload=payload,
+    )
+
+
+def _unresolved_workbench_followup_required_gate_ref(
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    gap = _workbench_followup_gap(dossier)
+    gap_status = _clean_text(gap.get("gap_status"), limit=120)
+    followup_required = gap.get("live_followup_required") is True
+    if gap_status != "proposed" or not followup_required:
+        return {}
+    if _workbench_followup_resolution_present(gap):
+        return {}
+    gap_kind = _clean_text(gap.get("gap_kind"), limit=160)
+    detail = _workbench_followup_not_licensed_detail(gap)
+    gap_ref = _safe_mapping(dossier.get("analysis_gap_search_proposal_ref"))
+    return _without_empty(
+        {
+            "schema_version": "workbench_followup_required_authority_gate_v1",
+            "status": "blocked",
+            "blocker": BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED,
+            "blocker_detail": detail,
+            "surface": "current_source_record_workbench_gap_projection_gate",
+            "gap_status": gap_status,
+            "gap_kind": gap_kind,
+            "gap_reason": _clean_text(gap.get("gap_reason"), limit=500),
+            "live_followup_required": True,
+            "live_followup_licensed": gap.get("live_followup_licensed") is True,
+            "followup_execution_licensed": (
+                gap.get("followup_execution_licensed") is True
+            ),
+            "proposed_runkernel_reduction_status": gap.get(
+                "proposed_runkernel_reduction_status"
+            ),
+            "workbench_gap_reentry_status": "followup_not_licensed",
+            "runkernel_followup_authorization_created": False,
+            "followup_provider_calls_attempted": 0,
+            "followup_fetch_read_attempts": 0,
+            "provider_called": False,
+            "fetch_read_executed": False,
+            "workbench_gap_proposal_ref": gap_ref,
+            "run_kernel_support_admission_allowed": False,
+            "semantic_observation_allowed": False,
+            "component_coverage_allowed": False,
+            "sufficiency_readiness_allowed": False,
+            "final_answer_packet_allowed": False,
+            "author_answer_allowed": False,
+            "source_display_allowed": False,
+            "product_correctness_claimed": False,
+        }
+    )
+
+
+def _workbench_followup_resolution_present(gap: Mapping[str, Any]) -> bool:
+    statuses = {
+        _clean_text(gap.get("proposed_runkernel_reduction_status"), limit=160),
+        _clean_text(gap.get("workbench_gap_reentry_status"), limit=160),
+        _clean_text(gap.get("followup_execution_status"), limit=160),
+    }
+    return bool(
+        statuses
+        & {
+            "runkernel_authorized_executed",
+            "runkernel_authorized_exhausted",
+            "executed_ordinary_search_followup",
+            "exhausted",
+            "answer_path_not_reached",
+        }
+    )
+
+
+def _workbench_followup_not_licensed_detail(gap: Mapping[str, Any]) -> str:
+    gap_kind = _clean_text(gap.get("gap_kind"), limit=160)
+    if gap_kind == "unreadable_high_value_candidate":
+        return (
+            "Official source read support is needed. A high-value official "
+            "artifact was found, but bounded PDF/table text support is not "
+            "available in this run."
+        )
+    return (
+        "Official strict support follow-up is needed; the Workbench gap remains "
+        "proposal-only because live follow-up execution is not licensed."
+    )
+
+
 def _workbench_followup_gap(
     workbench_dprime_dossier: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -2958,6 +3224,8 @@ def _workbench_followup_gap(
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED:
+        return "Workbench follow-up-required gap resolution"
     if decision == BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH:
         return "D-prime relation-intake candidate handoff"
     if decision == BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED:
@@ -3710,6 +3978,7 @@ def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
 __all__ = [
     "LIVE_SEMANTIC_COVERAGE_STATUS_FLAG",
     "BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH",
+    "BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED",
     "LiveSemanticCoverageStatusError",
     "LiveSemanticCoverageStatusResult",
     "build_live_semantic_coverage_status",

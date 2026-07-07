@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 
 import pytest
 
+import proplex.live_semantic_coverage_status as semantic_status_runtime
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
 from core import runkernel_followup_search_reentry_ordinary_search_runtime as followup_runtime
 from core.analyst_workbench_runtime import (
@@ -959,6 +960,141 @@ def test_unreadable_high_value_official_candidate_proposes_read_support_gap(
     assert report_json["gap_reentry"]["workbench_gap_reentry_status"] == (
         "followup_not_licensed"
     )
+    _assert_workbench_non_authority(packet)
+
+
+def test_unlicensed_unreadable_workbench_gap_blocks_before_dprime_admission(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    dprime_inputs: list[Mapping[str, Any]] = []
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        dprime_inputs.append(dict(input_packet))
+        return _assessment_payload(
+            plan,
+            "Eligible online filers may pay a reduced small claims filing fee of $20.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-unreadable-gap-blocks-adjacent-dprime-support",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "Example County Online Discount Filing Fee",
+                    "https://example-county.gov/courts/online-discount",
+                    (
+                        "Online filing discount. Eligible filers may pay a "
+                        "reduced online small claims fee of $20."
+                    ),
+                    rank=1,
+                ),
+                _provider_result(
+                    "Example County Official Small Claims Fee Schedule PDF",
+                    "https://example-county.gov/courts/small-claims-fee-schedule.pdf",
+                    rank=2,
+                ),
+            ],
+        ),
+        fetch_read_runner=_http_403_pdf_fetch_runner,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    semantic = packet["semantic_status_payload"]
+    dprime_status = semantic["dprime_status"]
+    dprime_objects = dprime_status["objects_created"]
+    gap = packet["analysis_gap_search_proposal"]
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert result.return_code == 2, json.dumps(
+        {
+            "decision": packet.get("decision"),
+            "semantic_decision": semantic.get("decision"),
+            "gap": gap,
+            "semantic_workbench_ref": semantic.get("workbench_dprime_dossier_ref"),
+            "dprime_status": {
+                "decision": dprime_status.get("decision"),
+                "support_relation": dprime_status.get("support_relation"),
+                "proposal_validation_status": dprime_status.get(
+                    "proposal_validation_status"
+                ),
+                "objects_created": dprime_objects,
+                "workbench_gate": dprime_status.get(
+                    "workbench_followup_authority_gate_ref"
+                ),
+            },
+        },
+        sort_keys=True,
+    )
+    assert packet["decision"] == dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+    assert semantic["decision"] == semantic_status_runtime.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+    assert gap["gap_status"] == "proposed"
+    assert gap["gap_kind"] == "unreadable_high_value_candidate"
+    assert gap["live_followup_required"] is True
+    assert gap["live_followup_licensed"] is False
+    assert reentry["workbench_gap_reentry_status"] == "followup_not_licensed"
+    assert reentry["gap_sources"] == ["workbench"]
+    assert reentry["runkernel_followup_authorization_ref"] == {}
+    assert reentry["runkernel_followup_authorization_created"] is False
+    assert reentry["followup_execution_licensed"] is False
+    assert reentry["provider_called"] is False
+    assert reentry["live_search_called"] is False
+    assert reentry["fetch_read_executed"] is False
+    assert packet["followup_provider_calls_attempted"] == 0
+    assert packet["followup_fetch_read_attempts"] == 0
+    assert len(dprime_inputs) == 1
+    assert dprime_status["support_relation"] == "directly_supports"
+    assert dprime_status["proposal_validation_status"] == (
+        "DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED"
+    )
+    assert dprime_status["run_kernel_admission_decision_status"] == "not_reached"
+    assert dprime_objects["run_kernel_admission_decision"] is False
+    assert dprime_objects["semantic_observation"] is False
+    assert dprime_objects["component_coverage"] is False
+    assert dprime_objects["sufficiency_readiness"] is False
+    assert dprime_objects["final_answer_packet"] is False
+    assert dprime_objects["author_answer"] is False
+    assert dprime_objects["citation_source_display"] is False
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["source_display_entries"] == []
+    assert semantic["workbench_followup_authority_gate_ref"]["status"] == "blocked"
+    assert packet["workbench_reduction_projection_status"] == (
+        WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
+    )
+
+    report_json = json.loads(
+        Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
+    )
+    report_dprime = report_json["stage_lifecycle"]["evidence_and_dprime"][
+        "dprime_status"
+    ]
+    report_answer = report_json["stage_lifecycle"]["answer_path"]
+    report_display = report_json["stage_lifecycle"]["source_obligation_and_display"]
+    assert report_json["decision"] == (
+        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+    )
+    assert report_json["gap_reentry"]["workbench_gap_reentry_status"] == (
+        "followup_not_licensed"
+    )
+    assert report_dprime["objects_created"]["semantic_observation"] is False
+    assert report_dprime["objects_created"]["component_coverage"] is False
+    assert report_answer["final_answer_packet_status"] is None
+    assert report_answer["author_answer_status"] is None
+    assert report_answer["citation_source_display_status"] is None
+    assert report_display["source_display_entry_count"] == 0
     _assert_workbench_non_authority(packet)
 
 

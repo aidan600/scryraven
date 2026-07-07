@@ -1254,10 +1254,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             ),
             workbench_dprime_dossier=_semantic_workbench_dossier_for_dprime(
                 analyst_workbench_bundle,
-                include_gap_proposal=(
-                    product_single_fact_answer_path_enabled
-                    and confirm_current_source_followup_reentry
-                ),
+                include_gap_proposal=product_single_fact_answer_path_enabled,
             ),
             **dprime_kwargs,
         )
