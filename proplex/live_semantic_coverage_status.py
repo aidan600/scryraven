@@ -234,7 +234,9 @@ def build_live_semantic_coverage_status(
         Sequence[Mapping[str, Any]] | Mapping[str, Any] | None
     ) = None,
     dprime_followup_fetch_read_materials: Sequence[Mapping[str, Any]] = (),
-    dprime_followup_materials_builder: Callable[..., Mapping[str, Any]]
+    dprime_followup_plan_builder: Callable[..., Mapping[str, Any]]
+    | None = None,
+    dprime_followup_authorized_execution_callback: Callable[..., Mapping[str, Any]]
     | None = None,
     dprime_followup_second_pass_model_review_callable: (
         Callable[..., Any] | None
@@ -397,10 +399,10 @@ def build_live_semantic_coverage_status(
         ):
             followup_candidate_results = dprime_followup_candidate_results
             followup_fetch_read_materials = dprime_followup_fetch_read_materials
-            followup_metadata: Mapping[str, Any] = {}
-            if dprime_followup_materials_builder is not None:
-                built_followup = _safe_mapping(
-                    dprime_followup_materials_builder(
+            followup_plan_ref: Mapping[str, Any] = {}
+            if dprime_followup_plan_builder is not None:
+                followup_plan_ref = _safe_mapping(
+                    dprime_followup_plan_builder(
                         query=query,
                         readiness_payload=readiness_payload,
                         fetch_read_content_packet=fetch_read_content_packet,
@@ -413,15 +415,6 @@ def build_live_semantic_coverage_status(
                         workbench_dprime_dossier=workbench_dprime_dossier,
                     )
                 )
-                followup_candidate_results = built_followup.get(
-                    "candidate_results"
-                )
-                followup_fetch_read_materials = tuple(
-                    item
-                    for item in built_followup.get("fetch_read_materials", ())
-                    if isinstance(item, Mapping)
-                )
-                followup_metadata = _safe_mapping(built_followup.get("metadata"))
             followup_result = (
                 run_dprime_followup_search_reentry_using_ordinary_search(
                     query=query,
@@ -432,9 +425,13 @@ def build_live_semantic_coverage_status(
                     component_ref=component_ref,
                     source_obligation_ref=source_obligation_ref,
                     first_model_review_result=model_review_result,
+                    followup_plan_ref=followup_plan_ref,
                     followup_candidate_results=followup_candidate_results,
                     followup_fetch_read_materials=(
                         followup_fetch_read_materials
+                    ),
+                    authorized_followup_execution_callback=(
+                        dprime_followup_authorized_execution_callback
                     ),
                     dprime_model_review_license=dprime_model_review_license,
                     second_pass_model_review_callable=(
@@ -461,7 +458,6 @@ def build_live_semantic_coverage_status(
                 source_obligation_ref=source_obligation_ref,
                 relation_ref=generic_relation_ref,
                 followup_result=followup_result,
-                followup_metadata=followup_metadata,
             )
         return _blocked_dprime_model_review_assessment_result(
             query=query,
@@ -1756,7 +1752,6 @@ def _followup_search_reentry_result(
     source_obligation_ref: Mapping[str, Any],
     relation_ref: Mapping[str, Any],
     followup_result: Any,
-    followup_metadata: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     dprime_status = dict(followup_result.dprime_status)
     dprime_status["generic_relation_intake_ref"] = dict(relation_ref)
@@ -1778,18 +1773,7 @@ def _followup_search_reentry_result(
     payload.update(
         {
             "dprime_status": dprime_status,
-            "dprime_followup_search_reentry_ref": dict(
-                {
-                    **dict(followup_result.projection),
-                    **(
-                        _safe_mapping(followup_metadata)
-                        if _safe_mapping(followup_result.projection).get(
-                            "followup_search_authorization_ref"
-                        )
-                        else {}
-                    ),
-                }
-            ),
+            "dprime_followup_search_reentry_ref": dict(followup_result.projection),
             "semantic_support_source": followup_result.semantic_support_source,
             "source_obligation_authority_ref": dict(
                 followup_result.source_obligation_authority_ref

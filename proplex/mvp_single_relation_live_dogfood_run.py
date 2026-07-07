@@ -233,6 +233,9 @@ BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED = (
 BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED = (
     "BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED"
 )
+BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED = (
+    "BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED"
+)
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE"
 )
@@ -1208,8 +1211,19 @@ def build_generic_single_relation_live_dogfood_run_output(
                 product_single_fact_answer_path_enabled
                 and confirm_current_source_followup_reentry
             ),
-            dprime_followup_materials_builder=(
-                _current_source_followup_materials_builder(
+            dprime_followup_plan_builder=(
+                _current_source_followup_plan_builder(
+                    run_id=run_id,
+                    relation_plan=relation_plan,
+                    acquisition_plan=acquisition_plan,
+                    counts=counts,
+                )
+                if product_single_fact_answer_path_enabled
+                and confirm_current_source_followup_reentry
+                else None
+            ),
+            dprime_followup_authorized_execution_callback=(
+                _current_source_authorized_followup_execution_callback(
                     root=root,
                     run_dir=run_dir,
                     retained_root=retained_root,
@@ -1266,22 +1280,17 @@ def build_generic_single_relation_live_dogfood_run_output(
             + _bounded_int(counts.get("followup_dprime_model_review_calls_completed"))
         )
         _enforce_caps(counts)
-        if counts["followup_loop_count"] and confirm_current_source_followup_reentry:
-            source_obligation_authorization = (
-                _current_source_followup_execution_only_authorization()
-            )
-        else:
-            source_obligation_authorization = _build_source_obligation_recovery_authorization(
-                run_kernel=source_obligation_run_kernel,
-                relation_plan=relation_plan,
-                acquisition_plan=acquisition_plan,
-                counts=counts,
-                dprime_status=_safe_mapping(semantic_payload.get("dprime_status")),
-                semantic_payload=semantic_payload,
-                recovery_confirmation_authorized=(
-                    confirm_live_source_challenge_recovery
-                ),
-            )
+        source_obligation_authorization = _build_source_obligation_recovery_authorization(
+            run_kernel=source_obligation_run_kernel,
+            relation_plan=relation_plan,
+            acquisition_plan=acquisition_plan,
+            counts=counts,
+            dprime_status=_safe_mapping(semantic_payload.get("dprime_status")),
+            semantic_payload=semantic_payload,
+            recovery_confirmation_authorized=(
+                confirm_live_source_challenge_recovery
+            ),
+        )
         packet = _packet_from_semantic_status(
             relation_plan=relation_plan,
             run_id=run_id,
@@ -1745,15 +1754,9 @@ def validate_generic_single_relation_live_dogfood_packet(
         _blocked_output_hygiene("generic live packet mode mismatch.")
     _validate_entrypoint_metadata(safe)
     product_entrypoint = safe.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
-    followup_execution_pass = (
-        product_entrypoint
-        and safe.get("decision") == PASS_DECISION
-        and _bounded_int(safe.get("followup_loop_count")) > 0
-    )
     product_answer_pass = (
         product_entrypoint
         and safe.get("decision") == PASS_DECISION
-        and not followup_execution_pass
     )
     product_answer_path_consumed = product_entrypoint and (
         safe.get("fap_author_opened") is True
@@ -1930,7 +1933,13 @@ def _validate_source_readiness_gateway(packet: Mapping[str, Any]) -> None:
     status = gateway.get("status")
     if status not in {"ready", "blocked", "not_reached"}:
         _blocked_output_hygiene("source/readiness gateway status invalid.")
+    product_answer_path_consumed = (
+        packet.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+        and packet.get("fap_author_opened") is True
+    )
     if packet.get("decision") == PASS_DECISION:
+        if product_answer_path_consumed:
+            return
         if status != "ready":
             _blocked_output_hygiene("PASS packet requires a ready source/readiness gateway.")
         if not _clean_text(gateway.get("selected_current_value_text"), limit=700):
@@ -1979,6 +1988,7 @@ def _validate_consumed_dprime_authority_integration(
         BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
         BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING,
         BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE,
+        BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED,
         PASS_DECISION,
         *EXISTING_DPRIME_ANSWER_PATH_BLOCKERS,
     }
@@ -2285,6 +2295,7 @@ def _validate_created_source_citation_display_boundary(
         BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
         BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING,
         BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE,
+        BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED,
         PASS_DECISION,
         *EXISTING_DPRIME_ANSWER_PATH_BLOCKERS,
     }
@@ -2638,6 +2649,7 @@ def _validate_workbench_gap_reentry_ref(packet: Mapping[str, Any]) -> None:
         "followup_not_licensed",
         "runkernel_authorized_not_executed",
         "runkernel_authorized_executed",
+        "runkernel_authorized_exhausted",
     }:
         _blocked_output_hygiene("Workbench gap re-entry status invalid.")
     if packet.get("workbench_gap_reentry_status") != status:
@@ -2656,7 +2668,8 @@ def _validate_workbench_gap_reentry_ref(packet: Mapping[str, Any]) -> None:
         _blocked_output_hygiene("Workbench gap re-entry authorization source invalid.")
     followup_licensed = ref.get("followup_execution_licensed") is True
     followup_executed = status == "runkernel_authorized_executed"
-    if followup_licensed != followup_executed:
+    followup_exhausted = status == "runkernel_authorized_exhausted"
+    if followup_licensed != (followup_executed or followup_exhausted):
         _blocked_output_hygiene("Workbench gap re-entry follow-up license invalid.")
     if ref.get("new_search_subsystem_created") is not False:
         _blocked_output_hygiene("Workbench gap re-entry created a new search subsystem.")
@@ -2677,6 +2690,17 @@ def _validate_workbench_gap_reentry_ref(packet: Mapping[str, Any]) -> None:
         for key in expected_true:
             if ref.get(key) is not True:
                 _blocked_output_hygiene(f"Workbench gap re-entry {key} not consumed.")
+    elif followup_exhausted:
+        if _bounded_int(ref.get("followup_provider_calls_attempted")) < 1:
+            _blocked_output_hygiene("exhausted follow-up provider count missing.")
+        if ref.get("provider_called") is not True:
+            _blocked_output_hygiene("exhausted follow-up did not call provider.")
+        if ref.get("live_search_called") is not True:
+            _blocked_output_hygiene("exhausted follow-up did not call search path.")
+        if not _safe_mapping(ref.get("followup_query_ref")):
+            _blocked_output_hygiene("exhausted follow-up query ref missing.")
+        if not _safe_mapping(ref.get("followup_planning_ref")):
+            _blocked_output_hygiene("exhausted follow-up planning ref missing.")
     else:
         for key in ("provider_called", "live_search_called", "fetch_read_executed"):
             if ref.get(key) is not False:
@@ -2696,7 +2720,9 @@ def _validate_workbench_gap_reentry_ref(packet: Mapping[str, Any]) -> None:
             _blocked_output_hygiene(f"Workbench gap re-entry {key} invalid.")
     if _safe_mapping(ref.get("raw_private_retention_flags")) != RAW_FALSE_FLAGS:
         _blocked_output_hygiene("Workbench gap re-entry raw/private flags invalid.")
-    if (packet.get("followup_execution_licensed") is True) != followup_executed:
+    if (packet.get("followup_execution_licensed") is True) != (
+        followup_executed or followup_exhausted
+    ):
         _blocked_output_hygiene("follow-up execution license alias invalid.")
     if packet.get("new_search_subsystem_created_for_gap_reentry") is not False:
         _blocked_output_hygiene("new search subsystem alias invalid.")
@@ -3295,17 +3321,50 @@ def _workbench_gap_reentry_ref(
     product_followup_licensed = (
         followup.get("product_followup_execution_licensed") is True
     )
-    product_followup_executed = (
-        _bounded_int(followup.get("product_followup_provider_calls_attempted")) == 1
-        and _bounded_int(followup.get("product_followup_fetch_read_completed")) == 1
+    provider_attempted = _bounded_int(
+        followup.get("product_followup_provider_calls_attempted")
+    )
+    fetch_read_attempts = _bounded_int(
+        followup.get("product_followup_fetch_read_attempts")
+    )
+    fetch_read_completed = _bounded_int(
+        followup.get("product_followup_fetch_read_completed")
+    )
+    product_followup_status = _clean_text(
+        followup.get("product_followup_execution_status"),
+        limit=120,
+    )
+    product_followup_executed = bool(
+        provider_attempted == 1
+        and fetch_read_completed == 1
+        and product_followup_status == "executed_ordinary_search_followup"
+    )
+    product_followup_exhausted = bool(
+        product_followup_licensed
+        and authorization_created
+        and (
+            product_followup_status in {"exhausted", "attempted_failed", "unsatisfied"}
+            or (
+                provider_attempted > 0
+                and not product_followup_executed
+                and followup.get("failed_closed") is True
+            )
+        )
     )
     if not gap_required:
         status = "not_required"
         execution_status = "not_required"
         ordinary_status = "not_required"
-    elif authorization_created and product_followup_licensed:
+    elif product_followup_executed:
         status = "runkernel_authorized_executed"
-        execution_status = "executed_ordinary_search_followup"
+        execution_status = product_followup_status or "executed_ordinary_search_followup"
+        ordinary_status = _clean_text(
+            followup.get("ordinary_search_executor_handoff_status"),
+            limit=120,
+        ) or "ordinary_search_reentry_consumed"
+    elif product_followup_exhausted:
+        status = "runkernel_authorized_exhausted"
+        execution_status = product_followup_status or "exhausted"
         ordinary_status = _clean_text(
             followup.get("ordinary_search_executor_handoff_status"),
             limit=120,
@@ -3361,19 +3420,17 @@ def _workbench_gap_reentry_ref(
         "new_search_subsystem_created": False,
         "followup_execution_status": execution_status,
         "followup_execution_licensed": product_followup_licensed,
+        "followup_planning_ref": _safe_mapping(
+            followup.get("product_followup_planning_ref")
+        )
+        or _safe_mapping(followup.get("followup_planning_ref")),
         "followup_query_ref": _safe_mapping(followup.get("product_followup_query_ref")),
-        "followup_provider_calls_attempted": _bounded_int(
-            followup.get("product_followup_provider_calls_attempted")
-        ),
+        "followup_provider_calls_attempted": provider_attempted,
         "followup_provider_calls_completed": _bounded_int(
             followup.get("product_followup_provider_calls_completed")
         ),
-        "followup_fetch_read_attempts": _bounded_int(
-            followup.get("product_followup_fetch_read_attempts")
-        ),
-        "followup_fetch_read_completed": _bounded_int(
-            followup.get("product_followup_fetch_read_completed")
-        ),
+        "followup_fetch_read_attempts": fetch_read_attempts,
+        "followup_fetch_read_completed": fetch_read_completed,
         "followup_selected_source_candidate": _safe_mapping(
             followup.get("product_followup_selected_source_candidate")
         ),
@@ -3392,9 +3449,9 @@ def _workbench_gap_reentry_ref(
         "followup_pdf_text_extraction_char_count": _bounded_int(
             followup.get("product_followup_pdf_text_extraction_char_count")
         ),
-        "provider_called": product_followup_executed,
-        "live_search_called": product_followup_executed,
-        "fetch_read_executed": product_followup_executed,
+        "provider_called": provider_attempted > 0,
+        "live_search_called": provider_attempted > 0,
+        "fetch_read_executed": fetch_read_attempts > 0,
         "dprime_dispatch_owner": bool(followup.get("dprime_dispatch_owner")),
         "workbench_dispatch_owner": False,
         "evidence_admitted": product_followup_executed,
@@ -4114,6 +4171,19 @@ def _packet_from_semantic_status(
     product_entrypoint = (
         entrypoint_metadata.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
     )
+    workbench_reentry_status = packet.get("workbench_gap_reentry_status")
+    followup_exhausted = bool(
+        product_entrypoint
+        and (
+            workbench_reentry_status == "runkernel_authorized_exhausted"
+            or status_decision == BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED
+        )
+    )
+    followup_executed_without_answer = bool(
+        product_entrypoint
+        and workbench_reentry_status == "runkernel_authorized_executed"
+        and not answer_path_passed
+    )
     answer_path_safe_claim_text = _clean_text(
         answer_path_ref.get("safe_answer_claim_text"),
         limit=4_000,
@@ -4138,13 +4208,13 @@ def _packet_from_semantic_status(
             "Existing D-prime source-obligation/citation authority cannot be "
             "safely consumed by generic dogfood yet."
         )
-    elif (
-        product_entrypoint
-        and packet.get("workbench_gap_reentry_status")
-        == "runkernel_authorized_executed"
-    ):
-        decision = PASS_DECISION
-        blocker_detail = None
+    elif followup_exhausted:
+        decision = BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED
+        blocker_detail = (
+            _clean_text(semantic_payload.get("blocker_detail"), limit=900)
+            or "RunKernel-authorized current-source follow-up exhausted before "
+            "bounded strict support could reach the answer path."
+        )
     elif product_entrypoint and answer_path_passed and not answer_path_safe_claim_text:
         decision = BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING
         blocker_detail = (
@@ -4167,6 +4237,15 @@ def _packet_from_semantic_status(
     elif answer_path_passed:
         decision = PASS_DECISION
         blocker_detail = None
+    elif followup_executed_without_answer:
+        decision = BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED
+        blocker_detail = (
+            "RunKernel-authorized current-source follow-up executed through the "
+            "ordinary provider/fetch-read and D-prime second-pass path, but the "
+            "existing SemanticObservation, ComponentCoverage, Sufficiency, FAP, "
+            "Author, and source-display answer path did not produce product "
+            "answer text/source display."
+        )
     elif answer_path_decision in EXISTING_DPRIME_ANSWER_PATH_BLOCKERS:
         decision = answer_path_decision
         blocker_detail = (
@@ -4217,12 +4296,7 @@ def _packet_from_semantic_status(
             source_readiness_gateway.get("blocker_detail"),
             limit=900,
         ) or "Source/readiness gateway required current-path state is missing."
-    followup_execution_only = (
-        product_entrypoint
-        and packet.get("workbench_gap_reentry_status")
-        == "runkernel_authorized_executed"
-    )
-    answer_path_product_opened = answer_path_passed and not followup_execution_only
+    answer_path_product_opened = answer_path_passed
     packet.update(
         {
             "decision": decision,
@@ -4359,9 +4433,6 @@ def _packet_from_semantic_status(
                 _clean_text(answer_path_ref.get("answer_text"), limit=4_000)
             ),
             "answer_or_blocker_text": (
-                _source_readiness_gateway_summary(source_readiness_gateway)
-                if decision == PASS_DECISION and followup_execution_only
-                else
                 (
                     product_answer_text
                     if product_entrypoint and product_answer_text
@@ -4410,14 +4481,18 @@ def _packet_from_semantic_status(
             "author_opened": answer_path_product_opened,
             "fap_author_opened": answer_path_product_opened,
             "decision_made_by_the_run": (
-                "current_source_record_followup_executed"
-                if decision == PASS_DECISION and followup_execution_only
-                else
                 "existing_dprime_single_lane_answer_path_consumed"
                 if decision == PASS_DECISION and answer_path_passed
                 else
                 "existing_dprime_single_lane_answer_path_blocker_recorded"
                 if decision in EXISTING_DPRIME_ANSWER_PATH_BLOCKERS
+                else
+                "current_source_record_followup_answer_path_not_reached"
+                if decision
+                == BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED
+                else
+                "current_source_record_followup_exhausted"
+                if decision == BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED
                 else
                 "product_safe_claim_adapter_missing"
                 if decision == BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING
@@ -4485,8 +4560,14 @@ def _current_source_record_contract_claim_lineage(
     authority_ref = _safe_mapping(
         semantic.get("accepted_current_answer_contract_authority_ref")
     ) or _safe_mapping(dprime.get("accepted_current_answer_contract_authority_ref"))
-    selected_source = _safe_mapping(gateway.get("selected_source_ref"))
-    selected_value = _clean_text(gateway.get("selected_current_value_text"), limit=1_000)
+    selected_source = _safe_mapping(
+        gateway.get("selected_source_ref")
+    ) or _answer_path_selected_source_ref(answer_path)
+    selected_value = (
+        _clean_text(gateway.get("selected_current_value_text"), limit=1_000)
+        or _clean_text(answer_path.get("selected_current_value"), limit=1_000)
+        or _clean_text(answer_path.get("primary_answer_value"), limit=1_000)
+    )
     safe_claim = _clean_text(answer_path.get("safe_answer_claim_text"), limit=1_000)
     plan_component_id = _clean_text(packet.get("component_id"), limit=320)
     plan_source_obligation_id = _clean_text(packet.get("source_obligation_id"), limit=320)
@@ -4632,6 +4713,46 @@ def _lineage_source_obligation_ids(source_obligation: Mapping[str, Any]) -> set[
         if text:
             ids.add(text)
     return {item for item in ids if item}
+
+
+def _answer_path_selected_source_ref(answer_path_ref: Mapping[str, Any]) -> dict[str, Any]:
+    answer_path = _safe_mapping(answer_path_ref)
+    display = _safe_mapping(answer_path.get("citation_source_display"))
+    for item in _safe_sequence(display.get("citation_source_entries")):
+        source = _safe_mapping(item)
+        url = _clean_text(source.get("url") or source.get("source_url"), limit=700)
+        if url:
+            return _without_empty(
+                {
+                    "title": _clean_text(
+                        source.get("title") or source.get("source_title"),
+                        limit=220,
+                    ),
+                    "url": url,
+                    "domain": _clean_domain(source.get("domain"))
+                    or urlparse(url).netloc.lower(),
+                    "candidate_id": _clean_text(
+                        source.get("candidate_id"),
+                        limit=320,
+                    ),
+                }
+            )
+    source_ref = _safe_mapping(answer_path.get("claim_text_source_ref"))
+    url = _clean_text(source_ref.get("url") or source_ref.get("source_url"), limit=700)
+    if not url:
+        return {}
+    return _without_empty(
+        {
+            "title": _clean_text(
+                source_ref.get("title") or source_ref.get("source_title"),
+                limit=220,
+            ),
+            "url": url,
+            "domain": _clean_domain(source_ref.get("domain"))
+            or urlparse(url).netloc.lower(),
+            "candidate_id": _clean_text(source_ref.get("candidate_id"), limit=320),
+        }
+    )
 
 
 def _blocked_packet(
@@ -4903,20 +5024,10 @@ def _dprime_authority_integration_from_gateway(
     citation_handoff_ref = _safe_mapping(
         semantic.get("citation_eligibility_authority_ref")
     )
-    followup_ref = _safe_mapping(semantic.get("dprime_followup_search_reentry_ref"))
-    if followup_ref.get("product_followup_execution_licensed") is True:
-        return _dprime_authority_integration_not_reached(
-            blocker=PASS_DECISION,
-            detail=(
-                "Bounded current-source follow-up ordinary search execution "
-                "completed; source-obligation/citation authority integration was "
-                "not requested by this phase."
-            ),
-            source_readiness_gateway=source_readiness_gateway,
-        )
     answer_path_ref = _dprime_answer_path_ref(semantic)
     answer_path_decision = _dprime_answer_path_decision(answer_path_ref)
     answer_path_passed = answer_path_decision == PASS_DECISION
+    answer_path_reached = answer_path_passed or answer_path_ref.get("status") == "blocked"
     answer_path_blocked = answer_path_decision in EXISTING_DPRIME_ANSWER_PATH_BLOCKERS
     gateway_ready = gateway.get("status") == "ready"
     dprime_pass_slice_present = _dprime_pass_ready_for_gateway(dprime)
@@ -4933,10 +5044,13 @@ def _dprime_authority_integration_from_gateway(
         and citation_handoff_ref.get("status") == "consumed"
     )
     source_citation_consumed = (
-        gateway_ready
-        and dprime_pass_slice_present
-        and source_obligation_consumed
-        and citation_handoff_consumed
+        answer_path_reached
+        or (
+            gateway_ready
+            and dprime_pass_slice_present
+            and source_obligation_consumed
+            and citation_handoff_consumed
+        )
     )
     reached = gateway_ready and dprime_pass_slice_present and not source_citation_consumed
     blocker_code = (
@@ -5030,16 +5144,19 @@ def _dprime_authority_integration_from_gateway(
             "existing_dprime_authority_integration_blocked": reached,
             "dprime_downstream_authority_enabled": downstream_enabled,
             "dprime_source_citation_authority_enabled": (
-                semantic.get("dprime_source_citation_authority_enabled") is True
+                answer_path_reached
+                or semantic.get("dprime_source_citation_authority_enabled") is True
             ),
             "dprime_single_lane_answer_path_enabled": (
-                semantic.get("dprime_single_lane_answer_path_enabled") is True
+                answer_path_reached
+                or semantic.get("dprime_single_lane_answer_path_enabled") is True
             ),
             "generic_dogfood_downstream_authority_kept_disabled": (
                 downstream_enabled is False
             ),
             "generic_dogfood_single_lane_answer_path_kept_disabled": (
-                semantic.get("dprime_single_lane_answer_path_enabled") is not True
+                not answer_path_reached
+                and semantic.get("dprime_single_lane_answer_path_enabled") is not True
             ),
             "dprime_support_slice_present": dprime_pass_slice_present,
             "gateway_display_present": gateway_ready,
@@ -5201,15 +5318,6 @@ def _source_citation_display_boundary_from_authority(
     gateway = _safe_mapping(source_readiness_gateway)
     integration = _safe_mapping(dprime_authority_integration)
     semantic = _safe_mapping(semantic_payload)
-    followup_ref = _safe_mapping(semantic.get("dprime_followup_search_reentry_ref"))
-    if followup_ref.get("product_followup_execution_licensed") is True:
-        return _source_citation_display_boundary_not_reached(
-            blocker=PASS_DECISION,
-            detail=(
-                "Bounded current-source follow-up execution completed without "
-                "requesting source/citation display authority."
-            ),
-        )
     source_ref = _safe_mapping(integration.get("source_obligation_authority_ref"))
     citation_ref = _safe_mapping(
         integration.get("citation_source_handoff_authority_ref")
@@ -6113,6 +6221,7 @@ def _build_source_obligation_recovery_authorization(
     recovery_confirmation_authorized: bool = False,
 ) -> dict[str, Any]:
     semantic = _safe_mapping(semantic_payload)
+    answer_path = _safe_mapping(semantic.get("dprime_answer_path_ref"))
     recovery = _safe_mapping(source_challenge_recovery)
     recovery_result = _safe_mapping(recovery.get("source_challenge_recovery_result"))
     reduction_payload = {
@@ -6175,32 +6284,34 @@ def _build_source_obligation_recovery_authorization(
         payload=reduction_payload,
     )
     run_kernel.reduce(observation)
-    return _safe_mapping(
+    projection = _safe_mapping(
         run_kernel.state.projections.get(
             SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_AUTHORIZATION_STAGE
         )
     )
-
-
-def _current_source_followup_execution_only_authorization() -> dict[str, Any]:
-    return {
-        "authorization_status": "not_requested_followup_execution_only",
-        "authorization_owner": "RunKernel/product",
-        "recovery_required": False,
-        "recovery_confirmation_required": False,
-        "recovery_call_policy_authorized": False,
-        "support_admission_blocked": False,
-        "answer_display_blocked": False,
-        "source_display_blocked": False,
-        "run_kernel_support_admission_decision_status": (
-            DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
-        ),
-        "recovery_reason": (
-            "Bounded current-source follow-up execution proof does not request "
-            "source-obligation recovery, citation eligibility, FAP, Author, or "
-            "product correctness authority."
-        ),
-    }
+    if answer_path.get("status") == "consumed":
+        projection.update(
+            {
+                "authorization_status": "not_required_answer_path_consumed",
+                "recovery_required": False,
+                "recovery_confirmation_required": False,
+                "recovery_call_policy_authorized": False,
+                "source_challenge_recovery_plan": {},
+                "support_admission_blocked": False,
+                "answer_display_blocked": False,
+                "source_display_blocked": False,
+                "run_kernel_support_admission_decision_status": (
+                    DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+                ),
+                "recovery_reason": (
+                    "Existing D-prime single-lane answer path consumed "
+                    "SemanticObservation, ComponentCoverage, SufficiencyReadiness, "
+                    "FinalAnswerPacket, AuthorProse, and D-prime source display; "
+                    "source-challenge recovery is not required."
+                ),
+            }
+        )
+    return projection
 
 
 def _source_obligation_authorization_dict(
@@ -6435,7 +6546,105 @@ def _run_source_challenge_recovery(
     }
 
 
-def _current_source_followup_materials_builder(
+def _current_source_followup_plan_builder(
+    *,
+    run_id: str,
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any],
+    counts: dict[str, Any],
+) -> Callable[..., Mapping[str, Any]]:
+    def build_plan(**kwargs: Any) -> Mapping[str, Any]:
+        first_model_review_result = kwargs.get("first_model_review_result")
+        counts["initial_dprime_model_review_calls_attempted"] = 1
+        counts["initial_dprime_model_review_calls_completed"] = (
+            1
+            if _dprime_result_model_review_completed(first_model_review_result)
+            else 0
+        )
+        workbench_dprime_dossier = _safe_mapping(
+            kwargs.get("workbench_dprime_dossier")
+        )
+        followup_query = _current_source_followup_query(
+            relation_plan=relation_plan,
+            acquisition_plan=acquisition_plan,
+            workbench_dprime_dossier=workbench_dprime_dossier,
+            first_model_review_result=first_model_review_result,
+        )
+        gap = _safe_mapping(
+            workbench_dprime_dossier.get("analysis_gap_search_proposal")
+        )
+        gap_ref = _safe_mapping(
+            workbench_dprime_dossier.get("analysis_gap_search_proposal_ref")
+        )
+        first_overlay = _safe_mapping(
+            first_model_review_result.to_status_overlay()
+            if hasattr(first_model_review_result, "to_status_overlay")
+            else first_model_review_result
+        )
+        support_relation = _dprime_result_support_relation(first_model_review_result)
+        plan = _without_empty(
+            {
+                "schema_version": "current_source_followup_plan_ref_v1",
+                "phase_name": PHASE_NAME,
+                "mode": MODE,
+                "plan_kind": "current_source_record_followup_plan",
+                "parent_run_ref": {
+                    "run_id": _clean_run_id(run_id),
+                    "entrypoint_surface": PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+                },
+                "parent_component_id": _clean_text(
+                    relation_plan.get("component_id"),
+                    limit=320,
+                ),
+                "parent_source_obligation_id": _clean_text(
+                    relation_plan.get("source_obligation_id"),
+                    limit=320,
+                ),
+                "triggering_workbench_gap_ref": gap_ref
+                or {
+                    "gap_status": gap.get("gap_status"),
+                    "gap_kind": gap.get("gap_kind"),
+                    "gap_reason": _clean_text(gap.get("gap_reason"), limit=220),
+                },
+                "triggering_dprime_assessment_ref": _without_empty(
+                    {
+                        **_safe_mapping(first_overlay.get("assessment_ref")),
+                        "support_relation": support_relation,
+                        "proposal_validation_status": first_overlay.get(
+                            "proposal_validation_status"
+                        ),
+                    }
+                ),
+                "followup_purpose": (
+                    "resolve current-source record strict-support gap through "
+                    "one RunKernel-authorized ordinary provider/fetch-read pass"
+                ),
+                "search_requirement_text": followup_query,
+                "provider_query": followup_query,
+                "source_class_intent": "official_source_of_record_strict_support",
+                "query_seeds": [followup_query],
+                "non_authority_posture": {
+                    "plan_is_authorization": False,
+                    "provider_called": False,
+                    "fetch_read_executed": False,
+                    "semantic_support_created": False,
+                    "source_obligation_satisfied": False,
+                    "citation_eligible": False,
+                    "answer_text_created": False,
+                    "product_correctness_claimed": False,
+                },
+                "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
+            }
+        )
+        plan["plan_digest"] = _digest_json(plan)
+        counts["followup_query"] = followup_query
+        counts["followup_plan_created"] = 1
+        return plan
+
+    return build_plan
+
+
+def _current_source_authorized_followup_execution_callback(
     *,
     root: Path,
     run_dir: Path,
@@ -6447,43 +6656,105 @@ def _current_source_followup_materials_builder(
     provider_runner: ProviderProxyRunner,
     fetch_read_runner: FetchReadRunner,
 ) -> Callable[..., Mapping[str, Any]]:
-    def build_materials(**kwargs: Any) -> Mapping[str, Any]:
-        first_model_review_result = kwargs.get("first_model_review_result")
-        counts["initial_dprime_model_review_calls_attempted"] = 1
-        counts["initial_dprime_model_review_calls_completed"] = (
-            1
-            if _dprime_result_model_review_completed(first_model_review_result)
-            else 0
+    def execute_authorized(**kwargs: Any) -> Mapping[str, Any]:
+        followup_plan = _safe_mapping(kwargs.get("followup_planning_ref"))
+        authorization_ref = _safe_mapping(
+            kwargs.get("followup_search_authorization_ref")
         )
-        followup_query = _current_source_followup_query(
-            relation_plan=relation_plan,
-            acquisition_plan=acquisition_plan,
-            workbench_dprime_dossier=_safe_mapping(
-                kwargs.get("workbench_dprime_dossier")
-            ),
-            first_model_review_result=first_model_review_result,
+        authorization_projection_ref = _safe_mapping(
+            kwargs.get("followup_authorization_projection_ref")
         )
+        search_planner_proposal_ref = _safe_mapping(
+            kwargs.get("search_planner_proposal_ref")
+        )
+        search_executor_handoff_ref = _safe_mapping(
+            kwargs.get("search_executor_handoff_ref")
+        )
+        selected_search_task_ids = tuple(
+            text
+            for text in (
+                _clean_text(item, limit=320)
+                for item in _safe_sequence(kwargs.get("selected_search_task_ids"))
+            )
+            if text
+        )
+        followup_query = _current_source_followup_provider_query_from_plan(
+            followup_plan
+        )
+        selected_candidate: Mapping[str, Any] = {}
+        if not authorization_ref.get("authorized"):
+            return _current_source_followup_execution_failure(
+                counts=counts,
+                query=followup_query,
+                selected_candidate=selected_candidate,
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
+                blocker=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
+                detail="RunKernel follow-up authorization ref was missing.",
+                first_failed_seam="current_source_followup_authorization_missing",
+                execution_status="attempted_failed",
+            )
+        if not followup_query:
+            return _current_source_followup_execution_failure(
+                counts=counts,
+                query="",
+                selected_candidate=selected_candidate,
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
+                blocker=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
+                detail="current-source follow-up plan did not provide a provider query.",
+                first_failed_seam="current_source_followup_plan_query_missing",
+                execution_status="attempted_failed",
+            )
         followup_root = retained_root / "current_source_followup_reentry"
         output_path = (
             run_dir / "current-source-followup-reentry-provider-response.json"
         )
-        provider_result = provider_runner(
-            GenericProviderProxyRunRequest(
-                repo_root=root,
-                output_path=output_path,
-                query=followup_query,
-                provider=str(
-                    acquisition_plan.get("extraction_provider")
-                    or DEFAULT_EXTRACTION_PROVIDER
-                ),
-                acquisition_provider_role="current_source_followup_reentry",
-                operation=str(
-                    acquisition_plan.get("provider_operation")
-                    or DEFAULT_OPERATION
-                ),
-                max_results=MAX_PROVIDER_RESULTS,
+        try:
+            provider_result = provider_runner(
+                GenericProviderProxyRunRequest(
+                    repo_root=root,
+                    output_path=output_path,
+                    query=followup_query,
+                    provider=str(
+                        acquisition_plan.get("extraction_provider")
+                        or DEFAULT_EXTRACTION_PROVIDER
+                    ),
+                    acquisition_provider_role="current_source_followup_reentry",
+                    operation=str(
+                        acquisition_plan.get("provider_operation")
+                        or DEFAULT_OPERATION
+                    ),
+                    max_results=MAX_PROVIDER_RESULTS,
+                )
             )
-        )
+        except GenericSingleRelationLiveDogfoodRunError as exc:
+            return _current_source_followup_execution_failure(
+                counts=counts,
+                query=followup_query,
+                selected_candidate=selected_candidate,
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
+                blocker=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
+                detail=exc.detail,
+                first_failed_seam="current_source_followup_provider_acquisition",
+                execution_status="attempted_failed",
+            )
         counts["followup_provider_calls_attempted"] = (
             provider_result.provider_calls_attempted
         )
@@ -6492,15 +6763,27 @@ def _current_source_followup_materials_builder(
         )
         _enforce_caps(counts)
         if provider_result.return_code != 0:
-            raise GenericSingleRelationLiveDogfoodRunError(
-                _provider_result_blocker(
+            return _current_source_followup_execution_failure(
+                counts=counts,
+                query=followup_query,
+                selected_candidate=selected_candidate,
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
+                blocker=_provider_result_blocker(
                     provider_result,
                     default=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
                 ),
-                _provider_result_detail(
+                detail=_provider_result_detail(
                     provider_result,
                     default="current-source follow-up provider acquisition failed closed.",
                 ),
+                first_failed_seam="current_source_followup_provider_acquisition",
+                execution_status="attempted_failed",
             )
 
         provider_payload = _load_sanitized_provider_output(provider_result.output_path)
@@ -6525,24 +6808,54 @@ def _current_source_followup_materials_builder(
             provider_payload=provider_payload,
             candidate_packet=candidate_packet,
         )
-        followup_fetch_packet, followup_fetch_counts = _write_fetch_read_artifacts(
-            retained_root=followup_root,
-            relation_plan=relation_plan,
-            acquisition_plan=acquisition_plan,
-            provider_results=results,
-            fetch_read_runner=fetch_read_runner,
-            retain_failed_fetch_read_packet=True,
-        )
+        try:
+            followup_fetch_packet, followup_fetch_counts = _write_fetch_read_artifacts(
+                retained_root=followup_root,
+                relation_plan=relation_plan,
+                acquisition_plan=acquisition_plan,
+                provider_results=results,
+                fetch_read_runner=fetch_read_runner,
+                retain_failed_fetch_read_packet=True,
+            )
+        except GenericSingleRelationLiveDogfoodRunError as exc:
+            return _current_source_followup_execution_failure(
+                counts=counts,
+                query=followup_query,
+                selected_candidate=selected_candidate,
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
+                blocker=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
+                detail=exc.detail,
+                first_failed_seam="current_source_followup_fetch_read",
+                execution_status="attempted_failed",
+            )
         _record_followup_fetch_counts(counts, followup_fetch_counts)
         _enforce_caps(counts)
         if followup_fetch_packet is None:
-            raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
-                _clean_text(
+            return _current_source_followup_execution_failure(
+                counts=counts,
+                query=followup_query,
+                selected_candidate=selected_candidate,
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
+                blocker=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
+                detail=_clean_text(
                     followup_fetch_counts.get("fetch_read_blocker_detail"),
                     limit=900,
                 )
                 or "current-source follow-up did not produce readable bounded material.",
+                first_failed_seam="current_source_followup_fetch_read_exhausted",
+                execution_status="exhausted",
             )
         materials = _followup_selected_materials_for_reentry(followup_fetch_packet)
         candidate_results = _followup_selected_provider_results(
@@ -6550,9 +6863,21 @@ def _current_source_followup_materials_builder(
             materials=materials,
         )
         if not materials or len(materials) != len(candidate_results):
-            raise GenericSingleRelationLiveDogfoodRunError(
-                BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
-                "current-source follow-up readable material was not candidate-bound.",
+            return _current_source_followup_execution_failure(
+                counts=counts,
+                query=followup_query,
+                selected_candidate=selected_candidate,
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
+                blocker=BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED,
+                detail="current-source follow-up readable material was not candidate-bound.",
+                first_failed_seam="current_source_followup_candidate_binding",
+                execution_status="exhausted",
             )
         counts["followup_fetch_read_packet_created"] = 1
         counts["followup_query"] = followup_query
@@ -6564,10 +6889,17 @@ def _current_source_followup_materials_builder(
                 counts=counts,
                 query=followup_query,
                 selected_candidate=candidate_results[0],
+                followup_plan=followup_plan,
+                authorization_ref=authorization_ref,
+                authorization_projection_ref=authorization_projection_ref,
+                search_planner_proposal_ref=search_planner_proposal_ref,
+                search_executor_handoff_ref=search_executor_handoff_ref,
+                selected_search_task_ids=selected_search_task_ids,
+                provider_authorized=kwargs.get("provider_authorized"),
             ),
         }
 
-    return build_materials
+    return execute_authorized
 
 
 def _current_source_followup_query(
@@ -6672,24 +7004,122 @@ def _followup_selected_provider_results(
     return tuple(selected[: len(materials)])
 
 
+def _current_source_followup_provider_query_from_plan(
+    plan: Mapping[str, Any],
+) -> str:
+    safe = _safe_mapping(plan)
+    for key in (
+        "provider_query",
+        "search_requirement_text",
+        "query_text",
+        "followup_query",
+    ):
+        text = _clean_text(safe.get(key), limit=420)
+        if text:
+            return text
+    for key in ("query_seeds", "search_query_seeds"):
+        seeds = [
+            text
+            for text in (
+                _clean_text(item, limit=420)
+                for item in _safe_sequence(safe.get(key))
+            )
+            if text
+        ]
+        if seeds:
+            return seeds[0]
+    return ""
+
+
+def _current_source_followup_execution_failure(
+    *,
+    counts: Mapping[str, Any],
+    query: str,
+    selected_candidate: Mapping[str, Any],
+    followup_plan: Mapping[str, Any],
+    authorization_ref: Mapping[str, Any],
+    authorization_projection_ref: Mapping[str, Any],
+    search_planner_proposal_ref: Mapping[str, Any],
+    search_executor_handoff_ref: Mapping[str, Any],
+    selected_search_task_ids: Sequence[str],
+    provider_authorized: Any,
+    blocker: str,
+    detail: str,
+    first_failed_seam: str,
+    execution_status: str,
+) -> dict[str, Any]:
+    return {
+        "execution_failed": True,
+        "blocker": blocker,
+        "detail": detail,
+        "first_failed_seam": first_failed_seam,
+        "metadata": _current_source_followup_metadata(
+            counts=counts,
+            query=query,
+            selected_candidate=selected_candidate,
+            execution_status=execution_status,
+            followup_plan=followup_plan,
+            authorization_ref=authorization_ref,
+            authorization_projection_ref=authorization_projection_ref,
+            search_planner_proposal_ref=search_planner_proposal_ref,
+            search_executor_handoff_ref=search_executor_handoff_ref,
+            selected_search_task_ids=selected_search_task_ids,
+            provider_authorized=provider_authorized,
+        ),
+    }
+
+
 def _current_source_followup_metadata(
     *,
     counts: Mapping[str, Any],
     query: str,
     selected_candidate: Mapping[str, Any],
+    execution_status: str = "executed_ordinary_search_followup",
+    followup_plan: Mapping[str, Any] | None = None,
+    authorization_ref: Mapping[str, Any] | None = None,
+    authorization_projection_ref: Mapping[str, Any] | None = None,
+    search_planner_proposal_ref: Mapping[str, Any] | None = None,
+    search_executor_handoff_ref: Mapping[str, Any] | None = None,
+    selected_search_task_ids: Sequence[str] = (),
+    provider_authorized: Any = None,
 ) -> dict[str, Any]:
+    plan = _safe_mapping(followup_plan)
+    auth_ref = _safe_mapping(authorization_ref)
+    selected = _source_ref_from_provider_result(selected_candidate)
     return {
         "product_followup_execution_licensed": True,
-        "product_followup_execution_status": "executed_ordinary_search_followup",
+        "product_followup_execution_status": execution_status,
+        "product_followup_planning_ref": plan,
+        "product_followup_plan_digest": plan.get("plan_digest"),
+        "product_followup_authorization_required": True,
+        "product_followup_authorization_consumed": bool(auth_ref),
+        "product_followup_provider_execution_after_authorization": bool(auth_ref),
+        "product_followup_search_authorization_ref": auth_ref,
+        "product_followup_authorization_projection_ref": _safe_mapping(
+            authorization_projection_ref
+        ),
+        "product_followup_search_planner_proposal_ref": _safe_mapping(
+            search_planner_proposal_ref
+        ),
+        "product_followup_search_executor_handoff_ref": _safe_mapping(
+            search_executor_handoff_ref
+        ),
+        "product_followup_selected_search_task_ids": list(selected_search_task_ids),
+        "product_followup_provider_authorized": _clean_text(
+            provider_authorized,
+            limit=120,
+        ),
         "product_followup_query": query,
         "product_followup_query_ref": {
             "query_text": query,
             "query_digest": _digest_json({"query": query}),
             "derived_from": [
+                "current_source_followup_plan_ref",
                 "relation_plan",
                 "analysis_gap_search_proposal",
                 "dprime_support_relation",
             ],
+            "plan_digest": plan.get("plan_digest"),
             "hardcoded_current_query_branch": False,
         },
         "product_followup_provider_calls_attempted": counts.get(
@@ -6712,9 +7142,7 @@ def _current_source_followup_metadata(
             "followup_source_acquisition_mode",
             SOURCE_ACQUISITION_MODE_NONE,
         ),
-        "product_followup_selected_source_candidate": _source_ref_from_provider_result(
-            selected_candidate
-        ),
+        "product_followup_selected_source_candidate": selected,
         "product_followup_pdf_text_extraction_attempted": _pdf_text_extraction_attempted(
             counts.get("followup_fetch_read_attempt_diagnostics")
         ),

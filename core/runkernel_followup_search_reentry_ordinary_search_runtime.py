@@ -304,8 +304,11 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
     first_model_review_result: Any,
+    followup_plan_ref: Mapping[str, Any] | None = None,
     followup_candidate_results: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
     followup_fetch_read_materials: Sequence[Mapping[str, Any]],
+    authorized_followup_execution_callback: Callable[..., Mapping[str, Any]]
+    | None = None,
     dprime_model_review_license: Mapping[str, Any] | None,
     second_pass_model_review_callable: Callable[..., Any] | None,
     dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
@@ -318,6 +321,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
     """Run one default-off D-prime follow-up loop through ordinary search."""
 
     base = _base_projection()
+    failure_base: Mapping[str, Any] = base
     try:
         if second_pass_model_review_callable is None:
             raise RunKernelFollowupSearchReentryError(
@@ -326,14 +330,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
                 first_failed_seam="second_pass_model_review_callable_missing",
                 next_surface="D-prime second-pass model review",
             )
-        normalized_results = _normalize_candidate_results(followup_candidate_results)
-        if not followup_fetch_read_materials:
-            raise RunKernelFollowupSearchReentryError(
-                BLOCKED_FOLLOWUP_SEARCH_REENTRY_INPUT_MISSING,
-                "follow-up re-entry requires sanitized fetch/read material for candidate re-entry",
-                first_failed_seam="followup_fetch_read_materials_missing",
-                next_surface="fetch/read content packet re-entry",
-            )
+        followup_plan = _safe_mapping(followup_plan_ref)
 
         contract_authority = build_dprime_ordinary_contract_authority(
             fetch_read_content_packet=original_fetch_read_content_packet,
@@ -408,7 +405,24 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
         authorization_projection = _safe_mapping(
             run_kernel.state.projections.get("followup_search_authorization")
         )
-        query_text = _authorized_query_text(authorization_action.inputs)
+        authorization_ref = _authorization_ref(authorization_action.inputs)
+        authorization_projection_ref = _authorization_projection_ref(
+            authorization_projection
+        )
+        query_text = _followup_plan_query_text(
+            followup_plan,
+            fallback=_authorized_query_text(authorization_action.inputs),
+        )
+        failure_base = {
+            **base,
+            "ran": True,
+            "status": "followup_authorized",
+            "followup_planning_ref": followup_plan,
+            "followup_search_authorization_ref": authorization_ref,
+            "followup_search_authorization_status": "consumed",
+            "followup_authorization_projection_ref": authorization_projection_ref,
+            "authorized_followup_query_text": query_text,
+        }
 
         _reduce_followup_search_planner(
             run_kernel=run_kernel,
@@ -416,14 +430,84 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
             component_id=_component_id(component_ref),
             component_label=_component_label(component_ref),
             source_obligation_id=_source_obligation_id(source_obligation_ref),
-            followup_authorization_ref=_authorization_ref(authorization_action.inputs),
+            followup_authorization_ref=authorization_ref,
         )
         _reduce_followup_search_executor_handoff(
             run_kernel=run_kernel,
             provider_authorized=provider_authorized,
-            results_per_task_cap=len(normalized_results),
+            results_per_task_cap=_execution_results_per_task_cap(
+                followup_candidate_results,
+                callback_present=authorized_followup_execution_callback is not None,
+            ),
         )
-        selected_task_ids = _selected_task_ids(run_kernel.state.search_executor_handoff_state)
+        selected_task_ids = _selected_task_ids(
+            run_kernel.state.search_executor_handoff_state
+        )
+        search_planner_proposal_ref = planner_ref_from_search_planner_state(
+            run_kernel.state.search_planner_proposal_state
+        )
+        search_executor_handoff_ref = handoff_ref_from_handoff_state(
+            run_kernel.state.search_executor_handoff_state
+        )
+        failure_base = {
+            **failure_base,
+            "ordinary_search_planner_status": "consumed",
+            "search_planner_proposal_ref": search_planner_proposal_ref,
+            "ordinary_search_executor_handoff_status": "consumed",
+            "search_executor_handoff_ref": search_executor_handoff_ref,
+            "selected_search_task_ids": selected_task_ids,
+        }
+        execution_metadata: Mapping[str, Any] = {}
+        if authorized_followup_execution_callback is not None:
+            execution_result = _safe_mapping(
+                authorized_followup_execution_callback(
+                    followup_planning_ref=followup_plan,
+                    followup_search_authorization_ref=authorization_ref,
+                    followup_authorization_projection_ref=authorization_projection_ref,
+                    search_planner_proposal_ref=search_planner_proposal_ref,
+                    search_executor_handoff_ref=search_executor_handoff_ref,
+                    authorized_query_text=query_text,
+                    selected_search_task_ids=selected_task_ids,
+                    provider_authorized=provider_authorized,
+                )
+            )
+            execution_metadata = _safe_mapping(execution_result.get("metadata"))
+            failure_base = {**failure_base, **execution_metadata}
+            if execution_result.get("execution_failed") is True:
+                raise RunKernelFollowupSearchReentryError(
+                    _clean_text(
+                        execution_result.get("blocker"),
+                        limit=220,
+                    )
+                    or BLOCKED_FOLLOWUP_SEARCH_REENTRY_ORDINARY_SEARCH,
+                    _clean_text(
+                        execution_result.get("detail"),
+                        limit=900,
+                    )
+                    or "authorized follow-up execution failed closed",
+                    first_failed_seam=(
+                        _clean_text(
+                            execution_result.get("first_failed_seam"),
+                            limit=160,
+                        )
+                        or "authorized_followup_execution_failed"
+                    ),
+                    next_surface="authorized follow-up ordinary provider/fetch/read",
+                )
+            followup_candidate_results = execution_result.get("candidate_results")
+            followup_fetch_read_materials = tuple(
+                item
+                for item in execution_result.get("fetch_read_materials", ())
+                if isinstance(item, Mapping)
+            )
+        normalized_results = _normalize_candidate_results(followup_candidate_results)
+        if not followup_fetch_read_materials:
+            raise RunKernelFollowupSearchReentryError(
+                BLOCKED_FOLLOWUP_SEARCH_REENTRY_INPUT_MISSING,
+                "follow-up re-entry requires sanitized fetch/read material for candidate re-entry",
+                first_failed_seam="followup_fetch_read_materials_missing",
+                next_surface="fetch/read content packet re-entry",
+            )
         live_action = run_kernel.authorize_live_search_validation(
             selected_search_task_ids=selected_task_ids,
             provider_authorized=provider_authorized,
@@ -540,6 +624,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
                 "accepted_current_answer_contract_authority_ref": dict(
                     contract_authority.authority_ref
                 ),
+                "followup_planning_ref": followup_plan,
                 "initial_evidence_relative_analysis_packet_ref": (
                     evidence_relative_analysis_packet_ref_from_packet(analysis_packet)
                 ),
@@ -548,21 +633,13 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
                         followup_intent_packet
                     )
                 ),
-                "followup_search_authorization_ref": _authorization_ref(
-                    authorization_action.inputs
-                ),
+                "followup_search_authorization_ref": authorization_ref,
                 "followup_search_authorization_status": "consumed",
-                "followup_authorization_projection_ref": _authorization_projection_ref(
-                    authorization_projection
-                ),
+                "followup_authorization_projection_ref": authorization_projection_ref,
                 "ordinary_search_planner_status": "consumed",
-                "search_planner_proposal_ref": planner_ref_from_search_planner_state(
-                    run_kernel.state.search_planner_proposal_state
-                ),
+                "search_planner_proposal_ref": search_planner_proposal_ref,
                 "ordinary_search_executor_handoff_status": "consumed",
-                "search_executor_handoff_ref": handoff_ref_from_handoff_state(
-                    run_kernel.state.search_executor_handoff_state
-                ),
+                "search_executor_handoff_ref": search_executor_handoff_ref,
                 "ordinary_live_search_validation_status": "consumed",
                 "live_search_validation_ref": _live_search_validation_ref(
                     run_kernel.state.live_search_validation_state
@@ -589,6 +666,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
                 "selected_search_task_ids": selected_task_ids,
                 "provider_authorized": provider_authorized,
                 "structured_candidate_input_count": len(normalized_results),
+                **execution_metadata,
                 **_FALSE_SURFACES,
             },
             second_dprime_status=second_dprime_status.to_dict(),
@@ -607,7 +685,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
             ),
         )
     except RunKernelFollowupSearchReentryError as exc:
-        return _failed_result(base, exc)
+        return _failed_result(failure_base, exc)
     except (
         DPrimeOrdinaryContractAuthorityError,
         DPrimeEvidenceSupportBundleError,
@@ -619,7 +697,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
         KeyError,
     ) as exc:
         return _failed_result(
-            base,
+            failure_base,
             RunKernelFollowupSearchReentryError(
                 BLOCKED_FOLLOWUP_SEARCH_REENTRY_ORDINARY_SEARCH,
                 str(exc),
@@ -823,10 +901,23 @@ def _finish_second_pass(
             support_ref=support_ref,
             semantic_ref=_unavailable_semantic_ref(detail),
             coverage_ref=_unavailable_coverage_ref(component_ref),
-            source_obligation_authority_ref={"status": "not reached"},
-            citation_eligibility_authority_ref={"status": "not reached"},
-            answer_path_ref={"status": "blocked", "blocker": blocker},
-            semantic_support_source="unavailable; D-prime follow-up answer path blocked",
+            source_obligation_authority_ref=(
+                support_bundle.source_obligation_authority_ref
+            ),
+            citation_eligibility_authority_ref=(
+                support_bundle.citation_eligibility_authority_ref
+            ),
+            answer_path_ref={
+                "status": "blocked",
+                "blocker": blocker,
+                "blocker_detail": detail,
+                "next_blocked_surface": next_surface,
+            },
+            semantic_support_source=(
+                "available through D-prime second-pass SemanticObservation, "
+                "ComponentCoverage, and source/citation authority; D-prime "
+                "follow-up answer path blocked before product answer text"
+            ),
             contract_authority_ref=contract_authority_ref,
         )
 
@@ -1499,6 +1590,37 @@ def _selected_task_ids(handoff_state: Mapping[str, Any]) -> list[str]:
         for task in handoff_state.get("search_task_records", [])
         if isinstance(task, Mapping) and task.get("search_task_id")
     ][:1]
+
+
+def _followup_plan_query_text(
+    followup_plan: Mapping[str, Any],
+    *,
+    fallback: str,
+) -> str:
+    for key in (
+        "provider_query",
+        "search_requirement_text",
+        "query_text",
+        "followup_query",
+    ):
+        text = _clean_text(followup_plan.get(key), limit=420)
+        if text:
+            return text
+    for key in ("query_seeds", "search_query_seeds"):
+        seeds = _text_list(followup_plan.get(key), limit=420)
+        if seeds:
+            return seeds[0]
+    return fallback
+
+
+def _execution_results_per_task_cap(
+    followup_candidate_results: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
+    *,
+    callback_present: bool,
+) -> int:
+    if callback_present:
+        return 1
+    return max(1, len(_normalize_candidate_results(followup_candidate_results)))
 
 
 def _authorized_query_text(action_inputs: Mapping[str, Any]) -> str:

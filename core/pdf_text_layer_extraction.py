@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import importlib.util
 import io
-import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -66,9 +65,6 @@ def extract_pdf_text_layer(pdf_bytes: bytes) -> PdfTextLayerExtractionResult:
     """Extract normalized text-layer text from PDF bytes without OCR."""
 
     if importlib.util.find_spec("pypdf") is None:
-        fallback = _extract_pdf_literal_text_layer(pdf_bytes)
-        if fallback.extracted:
-            return fallback
         return PdfTextLayerExtractionResult(
             status=PDF_TEXT_EXTRACTION_STATUS_PARSE_FAILED,
         )
@@ -83,9 +79,6 @@ def extract_pdf_text_layer(pdf_bytes: bytes) -> PdfTextLayerExtractionResult:
             if normalized:
                 page_texts.append(normalized)
     except Exception:
-        fallback = _extract_pdf_literal_text_layer(pdf_bytes)
-        if fallback.extracted:
-            return fallback
         return PdfTextLayerExtractionResult(
             status=PDF_TEXT_EXTRACTION_STATUS_PARSE_FAILED,
         )
@@ -102,74 +95,6 @@ def extract_pdf_text_layer(pdf_bytes: bytes) -> PdfTextLayerExtractionResult:
         char_count=len(sanitized_text),
         page_count=page_count,
     )
-
-
-def _extract_pdf_literal_text_layer(pdf_bytes: bytes) -> PdfTextLayerExtractionResult:
-    """Best-effort text-layer fallback for simple literal-string PDF streams."""
-
-    if not pdf_bytes.startswith(b"%PDF-"):
-        return PdfTextLayerExtractionResult(
-            status=PDF_TEXT_EXTRACTION_STATUS_PARSE_FAILED,
-        )
-    literals = [
-        _decode_pdf_literal_string(match.group(1))
-        for match in re.finditer(rb"\(((?:\\.|[^\\()])*)\)\s*Tj\b", pdf_bytes)
-    ]
-    sanitized_text = " ".join(
-        "\n\n".join(
-            normalize_document_text(item)
-            for item in literals
-            if normalize_document_text(item)
-        ).split()
-    )
-    if not sanitized_text:
-        return PdfTextLayerExtractionResult(
-            status=PDF_TEXT_EXTRACTION_STATUS_PARSE_FAILED,
-        )
-    page_count = len(re.findall(rb"/Type\s*/Page\b", pdf_bytes)) or None
-    return PdfTextLayerExtractionResult(
-        status=PDF_TEXT_EXTRACTION_STATUS_EXTRACTED,
-        sanitized_text=sanitized_text,
-        char_count=len(sanitized_text),
-        page_count=page_count,
-        parser_name="pdf_literal_text_layer",
-    )
-
-
-def _decode_pdf_literal_string(value: bytes) -> str:
-    out = bytearray()
-    index = 0
-    while index < len(value):
-        char = value[index]
-        if char != 0x5C:
-            out.append(char)
-            index += 1
-            continue
-        index += 1
-        if index >= len(value):
-            break
-        escaped = value[index]
-        index += 1
-        if escaped in b"nrtbf":
-            out.extend(
-                {
-                    ord("n"): b"\n",
-                    ord("r"): b"\r",
-                    ord("t"): b"\t",
-                    ord("b"): b"\b",
-                    ord("f"): b"\f",
-                }[escaped]
-            )
-            continue
-        if 48 <= escaped <= 55:
-            digits = bytes([escaped])
-            while index < len(value) and len(digits) < 3 and 48 <= value[index] <= 55:
-                digits += bytes([value[index]])
-                index += 1
-            out.append(int(digits, 8) & 0xFF)
-            continue
-        out.append(escaped)
-    return out.decode("latin-1", errors="ignore")
 
 
 __all__ = [
