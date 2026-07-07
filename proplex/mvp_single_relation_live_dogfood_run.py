@@ -125,7 +125,10 @@ from proplex.live_acquisition_readability_status import (
     SEARCH_CANDIDATE_PACKET_NAME,
     SEARCH_RESULT_CANDIDATE_PACKET_NAME,
 )
-from proplex.live_semantic_coverage_status import build_live_semantic_coverage_status
+from proplex.live_semantic_coverage_status import (
+    BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH,
+    build_live_semantic_coverage_status,
+)
 from proplex.mvp_friend_shareable_output import MvpFriendOutputResult
 
 PHASE_NAME = "GENERIC-SINGLE-RELATION-ANSWER-SOURCE-GATEWAY-01"
@@ -3838,6 +3841,7 @@ def _current_source_record_workbench_report_section(
     gap = _safe_mapping(packet.get("analysis_gap_search_proposal"))
     dossier = _safe_mapping(packet.get("workbench_dprime_dossier"))
     projection = _safe_mapping(packet.get("workbench_reduction_projection"))
+    handoff = _safe_mapping(packet.get("dprime_candidate_handoff_integrity_ref"))
     return {
         "schema_version": "analyst_workbench_review_section_v1",
         "product_path_consumed": bool(
@@ -3873,6 +3877,26 @@ def _current_source_record_workbench_report_section(
             triage.get("dprime_review_candidate_ref")
         )
         or _safe_mapping(dossier.get("dprime_review_candidate_ref")),
+        "dprime_candidate_handoff_integrity": {
+            "match_status": handoff.get("match_status"),
+            "candidate_identity_match": handoff.get("candidate_identity_match"),
+            "comparison_mode": handoff.get("comparison_mode"),
+            "expected_workbench_candidate_ref": _safe_mapping(
+                handoff.get("expected_workbench_candidate_ref")
+            ),
+            "dprime_intake_actual_candidate_ref": _safe_mapping(
+                handoff.get("dprime_intake_actual_candidate_ref")
+            )
+            or _safe_mapping(handoff.get("dprime_relation_intake_candidate_ref")),
+            "selected_source_candidate_ref": _safe_mapping(
+                handoff.get("selected_source_candidate_ref")
+            ),
+            "source_display_candidate_ref": _safe_mapping(
+                handoff.get("source_display_candidate_ref")
+            ),
+            "blocker": handoff.get("blocker"),
+            "mismatch_surface": handoff.get("mismatch_surface"),
+        },
         "strict_answer_support_candidate_refs": [
             _safe_mapping(item)
             for item in _safe_sequence(
@@ -3984,6 +4008,19 @@ def _format_current_source_record_single_fact_review_report(
     analyst_workbench = _safe_mapping(safe.get("analyst_workbench"))
     gap_reentry = _safe_mapping(safe.get("gap_reentry"))
     gap = _safe_mapping(analyst_workbench.get("analysis_gap_search_proposal"))
+    handoff = _safe_mapping(
+        analyst_workbench.get("dprime_candidate_handoff_integrity")
+    )
+    expected_handoff_candidate = _safe_mapping(
+        handoff.get("expected_workbench_candidate_ref")
+    )
+    actual_intake_candidate = _safe_mapping(
+        handoff.get("dprime_intake_actual_candidate_ref")
+    )
+    selected_source_candidate = _safe_mapping(
+        handoff.get("selected_source_candidate_ref")
+    )
+    display_candidate = _safe_mapping(handoff.get("source_display_candidate_ref"))
     scrutineer = _safe_mapping(analyst_workbench.get("scrutineer_lane"))
     specialist = _safe_mapping(analyst_workbench.get("specialist_lane"))
     economist = _safe_mapping(analyst_workbench.get("economist_lane"))
@@ -4021,6 +4058,20 @@ def _format_current_source_record_single_fact_review_report(
         f"{_safe_mapping(analyst_workbench.get('candidate_evidence_triage_ref')).get('packet_digest') or 'not present'}",
         "- D-prime dossier consumed: "
         f"{_bool_text(analyst_workbench.get('workbench_dprime_dossier_consumed_by_dprime'))}",
+        "- D-prime candidate handoff: "
+        f"{handoff.get('match_status') or 'not reached'}",
+        "- Expected Workbench candidate: "
+        f"{expected_handoff_candidate.get('candidate_id') or 'not present'} / "
+        f"{expected_handoff_candidate.get('title') or 'not present'}",
+        "- D-prime intake candidate: "
+        f"{actual_intake_candidate.get('candidate_id') or 'not present'} / "
+        f"{actual_intake_candidate.get('title') or 'not present'}",
+        "- Selected source candidate: "
+        f"{selected_source_candidate.get('candidate_id') or 'not present'} / "
+        f"{selected_source_candidate.get('title') or 'not present'}",
+        "- Source display candidate: "
+        f"{display_candidate.get('candidate_id') or 'not present'} / "
+        f"{display_candidate.get('title') or 'not present'}",
         "- Workbench reduction projection: "
         f"{analyst_workbench.get('workbench_reduction_projection_status') or 'not reached'}",
         "- RunKernel reduction pending: "
@@ -4507,6 +4558,10 @@ def _packet_from_semantic_status(
                 else
                 "current_source_record_followup_not_licensed"
                 if decision == BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+                else
+                "current_source_record_dprime_candidate_handoff_mismatch"
+                if decision
+                == BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH
                 else
                 "generic_single_relation_dprime_authority_integration_blocked"
                 if decision
@@ -5694,6 +5749,18 @@ def _source_citation_display_boundary_entry(
             "source_url": url,
             "source_domain": domain,
             "source_id": source_id,
+            "candidate_id": _clean_text(
+                source.get("candidate_id") or source.get("evidence_id"),
+                limit=320,
+            ),
+            "reference_id": _clean_text(
+                source.get("reference_id") or source.get("content_ref_id"),
+                limit=320,
+            ),
+            "reference_digest": _clean_text(
+                source.get("reference_digest") or source.get("source_digest"),
+                limit=128,
+            ),
             "source_obligation_id": _clean_text(
                 source.get("source_obligation_id"),
                 limit=320,
@@ -5780,6 +5847,18 @@ def _source_citation_display_boundary_answer_path_entry(
             "source_url": url,
             "source_domain": domain,
             "source_id": source_id,
+            "candidate_id": _clean_text(
+                source.get("candidate_id") or source.get("evidence_id"),
+                limit=320,
+            ),
+            "reference_id": _clean_text(
+                source.get("reference_id") or source.get("content_ref_id"),
+                limit=320,
+            ),
+            "reference_digest": _clean_text(
+                source.get("reference_digest") or source.get("source_digest"),
+                limit=128,
+            ),
             "source_obligation_id": _clean_text(
                 source.get("source_obligation_id"),
                 limit=320,
@@ -7448,6 +7527,11 @@ def _base_packet(
         recovery.get("source_challenge_recovery_result")
     )
     relation_ref = _safe_mapping(semantic.get("dprime_relation_intake_ref"))
+    candidate_handoff_ref = _safe_mapping(
+        semantic.get("dprime_candidate_handoff_integrity_ref")
+    ) or _safe_mapping(
+        semantic.get("current_source_record_dprime_candidate_handoff_ref")
+    )
     query_text = (
         _clean_text(plan.get("sanitized_query"), limit=500)
         if query_retained and plan
@@ -7742,6 +7826,34 @@ def _base_packet(
         ),
         "relation_plan_dprime_relation_intake_candidate": dprime_candidate,
         "dprime_relation_intake_ref": relation_ref,
+        "dprime_candidate_handoff_integrity_ref": candidate_handoff_ref,
+        "dprime_candidate_handoff_match_status": candidate_handoff_ref.get(
+            "match_status"
+        ),
+        "dprime_candidate_handoff_identity_match": (
+            candidate_handoff_ref.get("candidate_identity_match") is True
+        ),
+        "workbench_expected_candidate_ref": _safe_mapping(
+            candidate_handoff_ref.get("expected_workbench_candidate_ref")
+        ),
+        "dprime_intake_actual_candidate_ref": _safe_mapping(
+            candidate_handoff_ref.get("dprime_intake_actual_candidate_ref")
+        )
+        or _safe_mapping(
+            candidate_handoff_ref.get("dprime_relation_intake_candidate_ref")
+        ),
+        "selected_source_candidate_ref": _safe_mapping(
+            candidate_handoff_ref.get("selected_source_candidate_ref")
+        ),
+        "source_display_candidate_ref": _safe_mapping(
+            candidate_handoff_ref.get("source_display_candidate_ref")
+        ),
+        "source_display_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                candidate_handoff_ref.get("source_display_candidate_refs")
+            )
+        ],
         "dprime_relation_intake_candidate_consumed_from_plan": bool(
             dprime_candidate
             and relation_ref

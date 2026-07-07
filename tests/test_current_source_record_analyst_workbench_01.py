@@ -1163,8 +1163,22 @@ def test_contextual_html_is_not_preferred_over_readable_official_pdf_artifact(
         dogfood.OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_READABLE
     )
     assert packet["official_pdf_table_read_support_obtained"] is True
-    assert packet["candidate_evidence_triage_packet"]["contextual_candidate_refs"]
-    assert packet["candidate_evidence_triage_packet"]["overclaim_risk_candidate_refs"]
+    triage = packet["candidate_evidence_triage_packet"]
+    contextual_ref = triage["contextual_candidate_refs"][0]
+    assert contextual_ref["candidate_id"] != selected["candidate_id"]
+    assert triage["overclaim_risk_candidate_refs"]
+    handoff = packet["dprime_candidate_handoff_integrity_ref"]
+    assert handoff["expected_workbench_candidate_ref"]["candidate_id"] == (
+        selected["candidate_id"]
+    )
+    assert handoff["dprime_intake_actual_candidate_ref"]["candidate_id"] == (
+        selected["candidate_id"]
+    )
+    assert packet["dprime_candidate_handoff_match_status"] == "match"
+    if packet["source_display_candidate_ref"]:
+        assert packet["source_display_candidate_ref"]["candidate_id"] == (
+            selected["candidate_id"]
+        )
     assert packet["analysis_gap_search_proposal"]["gap_status"] == "not_required"
     assert packet["provider_snippets_used_as_evidence"] is False
     assert packet["candidate_selection_uses_provider_snippet"] is False

@@ -255,6 +255,9 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
     dossier = _safe_mapping(value)
     if not dossier:
         return {"status": "not_provided", "phase": ANALYST_WORKBENCH_PHASE}
+    dprime_candidate_ref = _candidate_identity_ref(
+        dossier.get("dprime_review_candidate_ref")
+    )
     return _without_empty(
         {
             "schema_version": dossier.get("schema_version"),
@@ -272,9 +275,35 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
             "overclaim_risk_candidate_count": _bounded_int(
                 dossier.get("overclaim_risk_candidate_count")
             ),
+            "dprime_review_candidate_ref": dprime_candidate_ref,
             "gap_proposal_status": dossier.get("gap_proposal_status"),
             "raw_private_retention": False,
             "product_correctness_claimed": False,
+        }
+    )
+
+
+def _candidate_identity_ref(value: Any) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    return _without_empty(
+        {
+            "candidate_id": _clean_text(ref.get("candidate_id"), limit=320),
+            "candidate_digest": _clean_text(ref.get("candidate_digest"), limit=128),
+            "title": _clean_text(
+                ref.get("title") or ref.get("candidate_title"),
+                limit=220,
+            ),
+            "url": _clean_text(ref.get("url") or ref.get("candidate_url"), limit=700),
+            "domain": _clean_text(
+                ref.get("domain") or ref.get("candidate_domain"),
+                limit=220,
+            ),
+            "selected_for_dprime_review": ref.get("selected_for_dprime_review")
+            is True,
+            "strict_answer_support_candidate": (
+                ROLE_STRICT_ANSWER_SUPPORT in _safe_sequence(ref.get("roles"))
+                or ref.get("strict_answer_support_candidate") is True
+            ),
         }
     )
 

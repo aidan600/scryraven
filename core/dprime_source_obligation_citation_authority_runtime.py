@@ -437,6 +437,9 @@ def _citation_source_record(
         _blocked("citation-source handoff requires source identity")
     return {
         "source_id": source_id,
+        "candidate_id": content_ref.get("evidence_ref_id"),
+        "reference_id": content_ref.get("content_ref_id"),
+        "reference_digest": content_ref.get("source_digest"),
         "evidence_id": content_ref.get("evidence_ref_id"),
         "content_ref_id": content_ref.get("content_ref_id"),
         "source_obligation_id": source_obligation_id,

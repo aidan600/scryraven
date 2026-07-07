@@ -2085,7 +2085,33 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert result.packet["direct_fetch_read_attempts"] == 0
     assert result.packet["fetch_read_attempts"] == 0
     fetch_packet = _retained_fetch_packet(result)
-    assert fetch_packet["reference_records"][0]["bounded_text"] == extracted_text
+    retained_reference = fetch_packet["reference_records"][0]
+    assert retained_reference["bounded_text"] == extracted_text
+    retained_candidate_id = retained_reference["candidate_id"]
+    retained_title = retained_reference["content_title"]
+    source_entry = result.packet["source_display_entries"][0]
+    assert source_entry["candidate_id"] == retained_candidate_id
+    assert result.packet["source_display_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
+    assert result.packet["source_citation_display_entries"][0]["candidate_id"] == (
+        retained_candidate_id
+    )
+    handoff = result.packet["dprime_candidate_handoff_integrity_ref"]
+    assert handoff["match_status"] == "match"
+    assert handoff["candidate_identity_match"] is True
+    assert handoff["expected_workbench_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
+    assert handoff["dprime_intake_actual_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
+    assert handoff["selected_source_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
+    assert handoff["source_display_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
 
     semantic_payload = result.packet["semantic_status_payload"]
     dprime_status = semantic_payload["dprime_status"]
@@ -2206,10 +2232,31 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert report["claim_propagation_lifecycle"][
         "product_answer_text_present"
     ] is True
-    assert report["stage_lifecycle"]["answer_path"]["safe_claim_available"] is True
-    assert "Current Source Record Single-Fact Review Report" in (
-        report_md_path.read_text(encoding="utf-8")
+    report_handoff = report["analyst_workbench"][
+        "dprime_candidate_handoff_integrity"
+    ]
+    assert report_handoff["match_status"] == "match"
+    assert report_handoff["expected_workbench_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
     )
+    assert report_handoff["dprime_intake_actual_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
+    assert report_handoff["selected_source_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
+    assert report_handoff["source_display_candidate_ref"]["candidate_id"] == (
+        retained_candidate_id
+    )
+    assert report["stage_lifecycle"]["answer_path"]["safe_claim_available"] is True
+    report_md = report_md_path.read_text(encoding="utf-8")
+    assert "Current Source Record Single-Fact Review Report" in report_md
+    assert "- D-prime candidate handoff: match" in report_md
+    assert f"- Expected Workbench candidate: {retained_candidate_id} /" in report_md
+    assert f"- D-prime intake candidate: {retained_candidate_id} /" in report_md
+    assert f"- Selected source candidate: {retained_candidate_id} /" in report_md
+    assert f"- Source display candidate: {retained_candidate_id} /" in report_md
+    assert retained_title in report_md
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
     assert "bounded_text" not in serialized
     assert result.packet["raw_prompt_retained"] is False
@@ -2379,6 +2426,9 @@ def test_product_single_fact_cli_blocks_when_fap_safe_claim_missing(
         return _assessment_payload(plan, answer_claim)
 
     def answer_path_without_safe_claim(*_args: Any, **_kwargs: Any) -> Any:
+        source_record = _kwargs["support_bundle"].citation_eligibility_authority_ref[
+            "citation_source_records"
+        ][0]
         return SimpleNamespace(
             to_status_overlay=lambda: {
                 "dprime_single_lane_answer_path_status": "consumed",
@@ -2411,15 +2461,20 @@ def test_product_single_fact_cli_blocks_when_fap_safe_claim_missing(
                 "citation_source_display": {
                     "status": "created",
                     "citation_source_entries": [
-                        {
-                            "label": "D1",
-                            "title": "USCIS Form N-400 Filing Fee",
-                            "domain": "www.uscis.gov",
-                            "url": "https://www.uscis.gov/forms/filing-fees",
-                            "source_id": "source:n400",
-                        }
-                    ],
-                },
+                            {
+                                "label": "D1",
+                                "title": "USCIS Form N-400 Filing Fee",
+                                "domain": "www.uscis.gov",
+                                "url": "https://www.uscis.gov/forms/filing-fees",
+                                "source_id": "source:n400",
+                                "candidate_id": source_record["candidate_id"],
+                                "reference_id": source_record["reference_id"],
+                                "reference_digest": source_record[
+                                    "reference_digest"
+                                ],
+                            }
+                        ],
+                    },
                 "citation_source_display_created": True,
                 "source_obligation_authority_consumed": True,
                 "citation_source_handoff_authority_consumed": True,
@@ -2485,6 +2540,9 @@ def test_product_single_fact_cli_blocks_when_claim_not_contract_accountable(
         return _assessment_payload(plan, answer_claim)
 
     def answer_path_with_wrong_contract_ref(*_args: Any, **_kwargs: Any) -> Any:
+        source_record = _kwargs["support_bundle"].citation_eligibility_authority_ref[
+            "citation_source_records"
+        ][0]
         return SimpleNamespace(
             to_status_overlay=lambda: {
                 "dprime_single_lane_answer_path_status": "consumed",
@@ -2548,15 +2606,20 @@ def test_product_single_fact_cli_blocks_when_claim_not_contract_accountable(
                 "citation_source_display": {
                     "status": "created",
                     "citation_source_entries": [
-                        {
-                            "label": "D1",
-                            "title": "USCIS Form N-400 Filing Fee",
-                            "domain": "www.uscis.gov",
-                            "url": "https://www.uscis.gov/forms/filing-fees",
-                            "source_id": "source:n400",
-                        }
-                    ],
-                },
+                            {
+                                "label": "D1",
+                                "title": "USCIS Form N-400 Filing Fee",
+                                "domain": "www.uscis.gov",
+                                "url": "https://www.uscis.gov/forms/filing-fees",
+                                "source_id": "source:n400",
+                                "candidate_id": source_record["candidate_id"],
+                                "reference_id": source_record["reference_id"],
+                                "reference_digest": source_record[
+                                    "reference_digest"
+                                ],
+                            }
+                        ],
+                    },
                 "citation_source_display_created": True,
                 "source_obligation_authority_consumed": True,
                 "citation_source_handoff_authority_consumed": True,
