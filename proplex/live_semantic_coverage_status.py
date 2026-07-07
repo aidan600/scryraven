@@ -265,6 +265,107 @@ def build_live_semantic_coverage_status(
         repo_root=root,
     )
     if readiness_status.decision != PASS_DECISION:
+        readiness_payload = _safe_mapping(readiness_status.payload)
+        if (
+            dprime_followup_search_reentry_enabled
+            and readiness_status.decision == BLOCKED_FETCH_READ_ARTIFACT_LINEAGE
+            and _workbench_read_support_followup_required(workbench_dprime_dossier)
+        ):
+            try:
+                fetch_read_content_packet = _read_json(
+                    root / FETCH_READ_ARTIFACT_DIR / FETCH_READ_CONTENT_PACKET_NAME
+                )
+            except (
+                FileNotFoundError,
+                PermissionError,
+                json.JSONDecodeError,
+                OSError,
+            ):
+                return _blocked_from_readiness_status(
+                    query=query,
+                    readiness_decision=readiness_status.decision,
+                )
+            lineage_refs = _workbench_read_support_followup_lineage_refs(
+                fetch_read_content_packet=fetch_read_content_packet,
+                workbench_dprime_dossier=workbench_dprime_dossier,
+            )
+            if lineage_refs:
+                admission_ref = _safe_mapping(lineage_refs.get("admission_ref"))
+                readiness_ref = _safe_mapping(lineage_refs.get("readiness_ref"))
+                component_ref = _safe_mapping(lineage_refs.get("component_ref"))
+                source_obligation_ref = _safe_mapping(
+                    lineage_refs.get("source_obligation_ref")
+                )
+                followup_result = _run_followup_search_reentry_status(
+                    query=query,
+                    readiness_payload={
+                        **readiness_payload,
+                        "source_evidence_admission_ref": admission_ref,
+                        "citation_source_obligation_readiness_ref": readiness_ref,
+                        "component_ref": component_ref,
+                        "source_obligation_ref": source_obligation_ref,
+                    },
+                    fetch_read_content_packet=fetch_read_content_packet,
+                    admission_ref=admission_ref,
+                    readiness_ref=readiness_ref,
+                    component_ref=component_ref,
+                    source_obligation_ref=source_obligation_ref,
+                    relation_ref={},
+                    first_model_review_result=(
+                        _workbench_read_support_followup_trigger_result(
+                            workbench_dprime_dossier=workbench_dprime_dossier,
+                            detail=(
+                                _clean_text(
+                                    readiness_payload.get("blocker_detail"),
+                                    limit=500,
+                                )
+                                or readiness_status.decision
+                            ),
+                        )
+                    ),
+                    dprime_followup_candidate_results=(
+                        dprime_followup_candidate_results
+                    ),
+                    dprime_followup_fetch_read_materials=(
+                        dprime_followup_fetch_read_materials
+                    ),
+                    dprime_followup_plan_builder=dprime_followup_plan_builder,
+                    dprime_followup_authorized_execution_callback=(
+                        dprime_followup_authorized_execution_callback
+                    ),
+                    dprime_model_review_license=dprime_model_review_license,
+                    dprime_followup_second_pass_model_review_callable=(
+                        dprime_followup_second_pass_model_review_callable
+                    ),
+                    dprime_model_review_callable=dprime_model_review_callable,
+                    dprime_one_shot_provider_boundary=(
+                        dprime_one_shot_provider_boundary
+                    ),
+                    dprime_one_shot_model_review_adapter=(
+                        dprime_one_shot_model_review_adapter
+                    ),
+                    dprime_run_kernel_admission_decision_status=(
+                        dprime_run_kernel_admission_decision_status
+                    ),
+                    workbench_dprime_dossier=workbench_dprime_dossier,
+                )
+                return _followup_search_reentry_result(
+                    query=query,
+                    readiness_payload={
+                        **readiness_payload,
+                        "source_evidence_admission_ref": admission_ref,
+                        "citation_source_obligation_readiness_ref": readiness_ref,
+                        "component_ref": component_ref,
+                        "source_obligation_ref": source_obligation_ref,
+                    },
+                    admission_ref=admission_ref,
+                    readiness_ref=readiness_ref,
+                    component_ref=component_ref,
+                    source_obligation_ref=source_obligation_ref,
+                    relation_ref={},
+                    followup_result=followup_result,
+                    workbench_dprime_dossier_ref=workbench_ref,
+                )
         return _blocked_from_readiness_status(
             query=query,
             readiness_decision=readiness_status.decision,
@@ -344,6 +445,60 @@ def build_live_semantic_coverage_status(
             source_obligation_ref=source_obligation_ref,
         )
     except DPrimeAnalystRelationIntakeError as exc:
+        if (
+            dprime_followup_search_reentry_enabled
+            and _workbench_read_support_followup_required(workbench_dprime_dossier)
+        ):
+            followup_result = _run_followup_search_reentry_status(
+                query=query,
+                readiness_payload=readiness_payload,
+                fetch_read_content_packet=fetch_read_content_packet,
+                admission_ref=admission_ref,
+                readiness_ref=readiness_ref,
+                component_ref=component_ref,
+                source_obligation_ref=source_obligation_ref,
+                relation_ref={},
+                first_model_review_result=(
+                    _workbench_read_support_followup_trigger_result(
+                        workbench_dprime_dossier=workbench_dprime_dossier,
+                        detail=str(exc),
+                    )
+                ),
+                dprime_followup_candidate_results=(
+                    dprime_followup_candidate_results
+                ),
+                dprime_followup_fetch_read_materials=(
+                    dprime_followup_fetch_read_materials
+                ),
+                dprime_followup_plan_builder=dprime_followup_plan_builder,
+                dprime_followup_authorized_execution_callback=(
+                    dprime_followup_authorized_execution_callback
+                ),
+                dprime_model_review_license=dprime_model_review_license,
+                dprime_followup_second_pass_model_review_callable=(
+                    dprime_followup_second_pass_model_review_callable
+                ),
+                dprime_model_review_callable=dprime_model_review_callable,
+                dprime_one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+                dprime_one_shot_model_review_adapter=(
+                    dprime_one_shot_model_review_adapter
+                ),
+                dprime_run_kernel_admission_decision_status=(
+                    dprime_run_kernel_admission_decision_status
+                ),
+                workbench_dprime_dossier=workbench_dprime_dossier,
+            )
+            return _followup_search_reentry_result(
+                query=query,
+                readiness_payload=readiness_payload,
+                admission_ref=admission_ref,
+                readiness_ref=readiness_ref,
+                component_ref=component_ref,
+                source_obligation_ref=source_obligation_ref,
+                relation_ref={},
+                followup_result=followup_result,
+                workbench_dprime_dossier_ref=workbench_ref,
+            )
         return _blocked_result(
             query=query,
             blocker=BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING,
@@ -397,57 +552,37 @@ def build_live_semantic_coverage_status(
             and model_review_result.proposal_validation_status
             != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
         ):
-            followup_candidate_results = dprime_followup_candidate_results
-            followup_fetch_read_materials = dprime_followup_fetch_read_materials
-            followup_plan_ref: Mapping[str, Any] = {}
-            if dprime_followup_plan_builder is not None:
-                followup_plan_ref = _safe_mapping(
-                    dprime_followup_plan_builder(
-                        query=query,
-                        readiness_payload=readiness_payload,
-                        fetch_read_content_packet=fetch_read_content_packet,
-                        source_evidence_admission_ref=admission_ref,
-                        citation_source_obligation_readiness_ref=readiness_ref,
-                        component_ref=component_ref,
-                        source_obligation_ref=source_obligation_ref,
-                        relation_ref=generic_relation_ref,
-                        first_model_review_result=model_review_result,
-                        workbench_dprime_dossier=workbench_dprime_dossier,
-                    )
-                )
-            followup_result = (
-                run_dprime_followup_search_reentry_using_ordinary_search(
-                    query=query,
-                    readiness_payload=readiness_payload,
-                    original_fetch_read_content_packet=fetch_read_content_packet,
-                    original_source_evidence_admission_ref=admission_ref,
-                    citation_source_obligation_readiness_ref=readiness_ref,
-                    component_ref=component_ref,
-                    source_obligation_ref=source_obligation_ref,
-                    first_model_review_result=model_review_result,
-                    followup_plan_ref=followup_plan_ref,
-                    followup_candidate_results=followup_candidate_results,
-                    followup_fetch_read_materials=(
-                        followup_fetch_read_materials
-                    ),
-                    authorized_followup_execution_callback=(
-                        dprime_followup_authorized_execution_callback
-                    ),
-                    dprime_model_review_license=dprime_model_review_license,
-                    second_pass_model_review_callable=(
-                        dprime_followup_second_pass_model_review_callable
-                        or dprime_model_review_callable
-                    ),
-                    dprime_one_shot_provider_boundary=(
-                        dprime_one_shot_provider_boundary
-                    ),
-                    dprime_one_shot_model_review_adapter=(
-                        dprime_one_shot_model_review_adapter
-                    ),
-                    run_kernel_admission_decision_status=(
-                        dprime_run_kernel_admission_decision_status
-                    ),
-                )
+            followup_result = _run_followup_search_reentry_status(
+                query=query,
+                readiness_payload=readiness_payload,
+                fetch_read_content_packet=fetch_read_content_packet,
+                admission_ref=admission_ref,
+                readiness_ref=readiness_ref,
+                component_ref=component_ref,
+                source_obligation_ref=source_obligation_ref,
+                relation_ref=generic_relation_ref,
+                first_model_review_result=model_review_result,
+                dprime_followup_candidate_results=dprime_followup_candidate_results,
+                dprime_followup_fetch_read_materials=(
+                    dprime_followup_fetch_read_materials
+                ),
+                dprime_followup_plan_builder=dprime_followup_plan_builder,
+                dprime_followup_authorized_execution_callback=(
+                    dprime_followup_authorized_execution_callback
+                ),
+                dprime_model_review_license=dprime_model_review_license,
+                dprime_followup_second_pass_model_review_callable=(
+                    dprime_followup_second_pass_model_review_callable
+                ),
+                dprime_model_review_callable=dprime_model_review_callable,
+                dprime_one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+                dprime_one_shot_model_review_adapter=(
+                    dprime_one_shot_model_review_adapter
+                ),
+                dprime_run_kernel_admission_decision_status=(
+                    dprime_run_kernel_admission_decision_status
+                ),
+                workbench_dprime_dossier=workbench_dprime_dossier,
             )
             return _followup_search_reentry_result(
                 query=query,
@@ -458,6 +593,7 @@ def build_live_semantic_coverage_status(
                 source_obligation_ref=source_obligation_ref,
                 relation_ref=generic_relation_ref,
                 followup_result=followup_result,
+                workbench_dprime_dossier_ref=workbench_ref,
             )
         return _blocked_dprime_model_review_assessment_result(
             query=query,
@@ -1752,9 +1888,13 @@ def _followup_search_reentry_result(
     source_obligation_ref: Mapping[str, Any],
     relation_ref: Mapping[str, Any],
     followup_result: Any,
+    workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     dprime_status = dict(followup_result.dprime_status)
     dprime_status["generic_relation_intake_ref"] = dict(relation_ref)
+    workbench_ref = _safe_mapping(workbench_dprime_dossier_ref)
+    if workbench_ref:
+        dprime_status["workbench_dprime_dossier_ref"] = dict(workbench_ref)
     payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
@@ -1769,6 +1909,7 @@ def _followup_search_reentry_result(
         decision=followup_result.decision,
         blocker_detail=followup_result.blocker_detail,
         next_blocked_surface=followup_result.next_blocked_surface,
+        workbench_dprime_dossier_ref=workbench_ref,
     )
     payload.update(
         {
@@ -1814,6 +1955,251 @@ def _followup_search_reentry_result(
         output=output,
         payload=payload,
     )
+
+
+def _run_followup_search_reentry_status(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    fetch_read_content_packet: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    relation_ref: Mapping[str, Any],
+    first_model_review_result: Any,
+    dprime_followup_candidate_results: (
+        Sequence[Mapping[str, Any]] | Mapping[str, Any] | None
+    ),
+    dprime_followup_fetch_read_materials: Sequence[Mapping[str, Any]],
+    dprime_followup_plan_builder: Callable[..., Mapping[str, Any]] | None,
+    dprime_followup_authorized_execution_callback: (
+        Callable[..., Mapping[str, Any]] | None
+    ),
+    dprime_model_review_license: Any | None,
+    dprime_followup_second_pass_model_review_callable: Callable[..., Any] | None,
+    dprime_model_review_callable: Callable[..., Any] | None,
+    dprime_one_shot_provider_boundary: Mapping[str, Any] | None,
+    dprime_one_shot_model_review_adapter: Any | None,
+    dprime_run_kernel_admission_decision_status: str,
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> Any:
+    followup_plan_ref: Mapping[str, Any] = {}
+    if dprime_followup_plan_builder is not None:
+        followup_plan_ref = _safe_mapping(
+            dprime_followup_plan_builder(
+                query=query,
+                readiness_payload=readiness_payload,
+                fetch_read_content_packet=fetch_read_content_packet,
+                source_evidence_admission_ref=admission_ref,
+                citation_source_obligation_readiness_ref=readiness_ref,
+                component_ref=component_ref,
+                source_obligation_ref=source_obligation_ref,
+                relation_ref=relation_ref,
+                first_model_review_result=first_model_review_result,
+                workbench_dprime_dossier=workbench_dprime_dossier,
+            )
+        )
+    return run_dprime_followup_search_reentry_using_ordinary_search(
+        query=query,
+        readiness_payload=readiness_payload,
+        original_fetch_read_content_packet=fetch_read_content_packet,
+        original_source_evidence_admission_ref=admission_ref,
+        citation_source_obligation_readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        first_model_review_result=first_model_review_result,
+        followup_plan_ref=followup_plan_ref,
+        followup_candidate_results=dprime_followup_candidate_results,
+        followup_fetch_read_materials=dprime_followup_fetch_read_materials,
+        authorized_followup_execution_callback=(
+            dprime_followup_authorized_execution_callback
+        ),
+        dprime_model_review_license=dprime_model_review_license,
+        second_pass_model_review_callable=(
+            dprime_followup_second_pass_model_review_callable
+            or dprime_model_review_callable
+        ),
+        dprime_one_shot_provider_boundary=dprime_one_shot_provider_boundary,
+        dprime_one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
+        run_kernel_admission_decision_status=(
+            dprime_run_kernel_admission_decision_status
+        ),
+    )
+
+
+def _workbench_read_support_followup_required(
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> bool:
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    gap = _workbench_followup_gap(dossier)
+    gap_kind = _clean_text(gap.get("gap_kind"), limit=120)
+    gap_reason = _clean_text(gap.get("gap_reason"), limit=300) or ""
+    return bool(
+        gap.get("gap_status") == "proposed"
+        and (
+            gap_kind == "unreadable_high_value_candidate"
+            or (
+                "read support" in gap_reason.casefold()
+                and "official" in gap_reason.casefold()
+            )
+        )
+    )
+
+
+def _workbench_read_support_followup_trigger_result(
+    *,
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+    detail: str,
+) -> Mapping[str, Any]:
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    gap = _workbench_followup_gap(dossier)
+    gap_ref = _safe_mapping(dossier.get("analysis_gap_search_proposal_ref"))
+    return {
+        "model_review_status": "not_reached",
+        "assessment_status": "not_reached",
+        "decision": "WORKBENCH_READ_SUPPORT_GAP_FOLLOWUP_REQUIRED",
+        "blocker_detail": (
+            _clean_text(gap.get("gap_reason"), limit=500)
+            or _clean_text(detail, limit=500)
+            or "Workbench official artifact read-support gap requires follow-up."
+        ),
+        "support_relation": "workbench_read_support_gap",
+        "proposal_validation_status": "WORKBENCH_GAP_REQUIRES_FOLLOWUP",
+        "assessment_ref": {
+            "source": "workbench_analysis_gap_search_proposal",
+            "gap_status": gap.get("gap_status"),
+            "gap_kind": gap.get("gap_kind"),
+            "gap_ref": gap_ref,
+        },
+        "objects_created": {},
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "provider_payload_retained": False,
+    }
+
+
+def _workbench_read_support_followup_lineage_refs(
+    *,
+    fetch_read_content_packet: Mapping[str, Any],
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    reference = _first_fetch_read_reference(fetch_read_content_packet)
+    if not reference:
+        return {}
+    gap = _workbench_followup_gap(workbench_dprime_dossier)
+    proposed_query_ref = _safe_mapping(gap.get("proposed_query_ref"))
+    component_id = (
+        _clean_text(reference.get("component_id"), limit=260)
+        or _clean_text(proposed_query_ref.get("component_id"), limit=260)
+    )
+    source_ids = _text_list(reference.get("source_obligation_candidate_ids"))
+    if not source_ids:
+        source_id = _clean_text(
+            proposed_query_ref.get("source_obligation_id"),
+            limit=260,
+        )
+        source_ids = [source_id] if source_id else []
+    contract_digest = _clean_text(
+        reference.get("current_answer_contract_digest"),
+        limit=128,
+    )
+    if not component_id or not source_ids or not contract_digest:
+        return {}
+    behavior_flags = {
+        "candidate_content_custody_is_semantic_support": False,
+        "citation_eligible": False,
+        "source_obligation_satisfied": False,
+        "source_obligation_candidate_ids_satisfy_requirements": False,
+        "component_coverage_created": False,
+        "sufficiency_decided": False,
+        "final_answer_packet_created": False,
+        "author_input_created": False,
+        "partial_answer_ready": False,
+        "product_correctness_claimed": False,
+    }
+    admission_ref = _without_empty(
+        {
+            "status": "lineage_retained_not_semantic_admission",
+            "owner": "WorkbenchReadSupportFollowupLineage",
+            "fetch_read_content_packet_id": fetch_read_content_packet.get("packet_id"),
+            "fetch_read_content_packet_digest": fetch_read_content_packet.get(
+                "packet_digest"
+            ),
+            "candidate_id": reference.get("candidate_id"),
+            "reference_id": reference.get("reference_id"),
+            "reference_digest": reference.get("reference_digest"),
+            **behavior_flags,
+            "behavior_boundary_flags": behavior_flags,
+            "lineage_only_for_followup_authorization": True,
+        }
+    )
+    component_ref = _without_empty(
+        {
+            "component_id": component_id,
+            "current_answer_contract_digest": contract_digest,
+            "component_coverage_bound": False,
+            "lineage_only_for_followup_authorization": True,
+        }
+    )
+    source_obligation_ref = _without_empty(
+        {
+            "source_obligation_candidate_ids": source_ids,
+            "satisfaction_claimed": False,
+            "lineage_only_for_followup_authorization": True,
+        }
+    )
+    readiness_ref = _without_empty(
+        {
+            "posture": "not_yet_semantically_supported",
+            "component_id": component_id,
+            "source_obligation_candidate_ids": source_ids,
+            "lineage_source": "workbench_unreadable_official_gap",
+            "semantic_support_created": False,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
+            "lineage_only_for_followup_authorization": True,
+        }
+    )
+    return {
+        "admission_ref": admission_ref,
+        "component_ref": component_ref,
+        "source_obligation_ref": source_obligation_ref,
+        "readiness_ref": readiness_ref,
+    }
+
+
+def _first_fetch_read_reference(
+    fetch_read_content_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    for item in _safe_sequence(fetch_read_content_packet.get("reference_records")):
+        reference = _safe_mapping(item)
+        if reference.get("candidate_id") and reference.get("reference_id"):
+            return reference
+    return {}
+
+
+def _workbench_followup_gap(
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    gap = _safe_mapping(dossier.get("analysis_gap_search_proposal"))
+    if gap:
+        return gap
+    gap_ref = _safe_mapping(dossier.get("analysis_gap_search_proposal_ref"))
+    if gap_ref:
+        return _without_empty(
+            {
+                "gap_status": gap_ref.get("gap_status"),
+                "gap_kind": gap_ref.get("gap_kind"),
+                "live_followup_required": gap_ref.get("live_followup_required"),
+                "live_followup_licensed": gap_ref.get("live_followup_licensed"),
+                "proposed_runkernel_reduction_status": gap_ref.get(
+                    "proposed_runkernel_reduction_status"
+                ),
+            }
+        )
+    return {}
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
@@ -2536,6 +2922,12 @@ def _bool_text(value: Any) -> str:
 
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _safe_sequence(value: Any) -> list[Any]:
+    if isinstance(value, (bytes, str)) or not isinstance(value, Sequence):
+        return []
+    return list(value)
 
 
 def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
