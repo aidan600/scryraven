@@ -595,11 +595,25 @@ def build_live_semantic_coverage_status(
             one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
             workbench_dprime_dossier=workbench_dprime_dossier,
         )
+        workbench_strict_followup_required = (
+            _workbench_strict_support_followup_required(workbench_dprime_dossier)
+        )
+        dprime_followup_required = (
+            model_review_result.proposal_validation_status
+            != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+        )
         if (
             dprime_followup_search_reentry_enabled
-            and model_review_result.proposal_validation_status
-            != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+            and (dprime_followup_required or workbench_strict_followup_required)
         ):
+            followup_trigger_result: Any = model_review_result
+            if workbench_strict_followup_required and not dprime_followup_required:
+                followup_trigger_result = (
+                    _workbench_strict_support_followup_trigger_result(
+                        workbench_dprime_dossier=workbench_dprime_dossier,
+                        first_model_review_result=model_review_result,
+                    )
+                )
             followup_result = _run_followup_search_reentry_status(
                 query=query,
                 readiness_payload=readiness_payload,
@@ -609,7 +623,7 @@ def build_live_semantic_coverage_status(
                 component_ref=component_ref,
                 source_obligation_ref=source_obligation_ref,
                 relation_ref=generic_relation_ref,
-                first_model_review_result=model_review_result,
+                first_model_review_result=followup_trigger_result,
                 dprime_followup_candidate_results=dprime_followup_candidate_results,
                 dprime_followup_fetch_read_materials=(
                     dprime_followup_fetch_read_materials
@@ -2129,6 +2143,61 @@ def _workbench_read_support_followup_required(
             )
         )
     )
+
+
+def _workbench_strict_support_followup_required(
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> bool:
+    gap = _workbench_followup_gap(workbench_dprime_dossier)
+    gap_kind = _clean_text(gap.get("gap_kind"), limit=120)
+    return bool(
+        gap.get("gap_status") == "proposed"
+        and gap.get("live_followup_required") is True
+        and gap_kind == "strict_support_missing"
+    )
+
+
+def _workbench_strict_support_followup_trigger_result(
+    *,
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+    first_model_review_result: Any,
+) -> Mapping[str, Any]:
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    gap = _workbench_followup_gap(dossier)
+    gap_ref = _safe_mapping(dossier.get("analysis_gap_search_proposal_ref"))
+    first_overlay = (
+        first_model_review_result.to_status_overlay()
+        if hasattr(first_model_review_result, "to_status_overlay")
+        else _safe_mapping(first_model_review_result)
+    )
+    return {
+        "model_review_status": first_overlay.get("model_review_status"),
+        "assessment_status": first_overlay.get("assessment_status"),
+        "decision": "WORKBENCH_STRICT_SUPPORT_GAP_FOLLOWUP_REQUIRED",
+        "blocker_detail": (
+            _clean_text(gap.get("gap_reason"), limit=500)
+            or "Workbench strict-support gap requires follow-up."
+        ),
+        "support_relation": "workbench_strict_support_missing",
+        "proposal_validation_status": "WORKBENCH_GAP_REQUIRES_FOLLOWUP",
+        "assessment_ref": {
+            "source": "workbench_analysis_gap_search_proposal",
+            "gap_status": gap.get("gap_status"),
+            "gap_kind": gap.get("gap_kind"),
+            "gap_ref": gap_ref,
+            "first_dprime_assessment_ref": _safe_mapping(
+                first_overlay.get("assessment_ref")
+            ),
+            "first_dprime_support_relation": first_overlay.get("support_relation"),
+            "first_dprime_proposal_validation_status": first_overlay.get(
+                "proposal_validation_status"
+            ),
+        },
+        "objects_created": _safe_mapping(first_overlay.get("objects_created")),
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "provider_payload_retained": False,
+    }
 
 
 def _workbench_read_support_followup_trigger_result(

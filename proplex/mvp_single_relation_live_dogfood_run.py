@@ -29,6 +29,7 @@ from core.analyst_workbench_runtime import (
     ANALYST_WORKBENCH_SCHEMA_VERSION,
     CANDIDATE_EVIDENCE_TRIAGE_SCHEMA_VERSION,
     WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION,
+    WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED,
     WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION,
     AnalystWorkbenchError,
     build_current_source_record_analyst_workbench,
@@ -3480,6 +3481,147 @@ def _workbench_gap_reentry_ref(
     ref = {key: value for key, value in ref.items() if value not in (None, "")}
     ref["ref_digest"] = _digest_json(ref)
     return ref
+
+
+def _workbench_gap_with_followup_reentry(
+    gap: Mapping[str, Any],
+    reentry: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(gap)
+    if not _workbench_gap_reentry_licensed(reentry) or not _workbench_gap_required(
+        safe
+    ):
+        return safe
+    out = dict(safe)
+    out["live_followup_licensed"] = True
+    out["followup_execution_licensed"] = True
+    out["followup_execution_status"] = reentry.get("followup_execution_status")
+    out["proposed_runkernel_reduction_status"] = (
+        _workbench_gap_reentry_projection_status(reentry)
+    )
+    if "proposal_digest" in out:
+        out.pop("proposal_digest", None)
+        out["proposal_digest"] = _digest_json(out)
+    return _without_empty(out)
+
+
+def _workbench_projection_with_followup_reentry(
+    projection: Mapping[str, Any],
+    reentry: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(projection)
+    if not _workbench_gap_reentry_licensed(reentry):
+        return safe
+    out = dict(safe)
+    out.pop("projection_digest", None)
+    out["status"] = _workbench_gap_reentry_projection_status(reentry)
+    out["blocked_before_answer"] = (
+        reentry.get("workbench_gap_reentry_status")
+        == "runkernel_authorized_exhausted"
+    )
+    out["reduction_reason"] = (
+        "RunKernel-authorized follow-up was licensed by the product entrypoint; "
+        "Workbench remains proposal-only and downstream gates decide answerability."
+    )
+    out["followup_execution_licensed"] = True
+    out["followup_execution_status"] = reentry.get("followup_execution_status")
+    out["projection_digest"] = _digest_json(out)
+    return _without_empty(out)
+
+
+def _workbench_projection_ref_with_followup_reentry(
+    projection_ref: Mapping[str, Any],
+    projection: Mapping[str, Any],
+    reentry: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(projection_ref)
+    if not _workbench_gap_reentry_licensed(reentry):
+        return safe
+    out = dict(safe)
+    out["status"] = projection.get("status")
+    out["projection_digest"] = projection.get("projection_digest")
+    out["blocked_before_answer"] = projection.get("blocked_before_answer")
+    return _without_empty(out)
+
+
+def _workbench_gap_reentry_with_gap_ref(
+    reentry: Mapping[str, Any],
+    gap_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(reentry)
+    if not safe:
+        return {}
+    out = dict(safe)
+    out["workbench_gap_proposal_ref"] = _safe_mapping(gap_ref)
+    if _workbench_gap_reentry_licensed(out):
+        out = _sanitize_licensed_workbench_gap_reentry(out, gap_ref)
+        plan = _safe_mapping(out.get("followup_planning_ref"))
+        if plan:
+            plan = dict(plan)
+            plan.pop("plan_digest", None)
+            plan["plan_digest"] = _digest_json(plan)
+            out["followup_planning_ref"] = plan
+    out.pop("ref_digest", None)
+    out["ref_digest"] = _digest_json(out)
+    return {key: value for key, value in out.items() if value not in (None, "")}
+
+
+def _sanitize_licensed_workbench_gap_reentry(
+    value: Any,
+    gap_ref: Mapping[str, Any],
+) -> Any:
+    projection_status = _workbench_gap_reentry_projection_status(
+        _safe_mapping(value)
+    )
+    execution_status = _safe_mapping(value).get("followup_execution_status")
+    if isinstance(value, Mapping):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            if key == "gap_ref" and isinstance(item, Mapping):
+                out[key] = _safe_mapping(gap_ref)
+            else:
+                out[key] = _sanitize_licensed_workbench_gap_reentry(item, gap_ref)
+        if _workbench_gap_required(out):
+            out["live_followup_licensed"] = True
+            out["followup_execution_licensed"] = True
+            out["followup_execution_status"] = execution_status
+        if out.get("proposed_runkernel_reduction_status") == (
+            WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED
+        ):
+            out["proposed_runkernel_reduction_status"] = projection_status
+        return {key: item for key, item in out.items() if item not in (None, "")}
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        return [
+            _sanitize_licensed_workbench_gap_reentry(item, gap_ref)
+            for item in value
+        ]
+    return value
+
+
+def _workbench_gap_reentry_licensed(reentry: Mapping[str, Any]) -> bool:
+    return _safe_mapping(reentry).get("followup_execution_licensed") is True
+
+
+def _workbench_gap_required(gap: Mapping[str, Any]) -> bool:
+    safe = _safe_mapping(gap)
+    return bool(
+        safe.get("gap_status") == "proposed"
+        and safe.get("live_followup_required") is True
+    )
+
+
+def _workbench_gap_reentry_projection_status(
+    reentry: Mapping[str, Any],
+) -> str:
+    safe = _safe_mapping(reentry)
+    status = _clean_text(safe.get("workbench_gap_reentry_status"), limit=120)
+    if status in {
+        "runkernel_authorized_executed",
+        "runkernel_authorized_exhausted",
+        "runkernel_authorized_not_executed",
+    }:
+        return status
+    return "followup_licensed"
 
 
 def _dprime_gap_posture_ref(semantic_payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -7566,6 +7708,24 @@ def _base_packet(
         gap_proposal=gap_proposal,
         gap_ref=gap_ref,
         semantic_payload=semantic,
+    )
+    gap_proposal = _workbench_gap_with_followup_reentry(
+        gap_proposal,
+        workbench_gap_reentry,
+    )
+    gap_ref = _workbench_gap_with_followup_reentry(gap_ref, workbench_gap_reentry)
+    projection = _workbench_projection_with_followup_reentry(
+        projection,
+        workbench_gap_reentry,
+    )
+    projection_ref = _workbench_projection_ref_with_followup_reentry(
+        projection_ref,
+        projection,
+        workbench_gap_reentry,
+    )
+    workbench_gap_reentry = _workbench_gap_reentry_with_gap_ref(
+        workbench_gap_reentry,
+        gap_ref,
     )
     return {
         "schema_version": SCHEMA_VERSION,

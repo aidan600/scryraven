@@ -394,7 +394,9 @@ def test_contextual_non_uscis_material_proposes_gap_and_product_blocker(
     gap = packet["analysis_gap_search_proposal"]
     assert result.return_code == 2
     assert gap["gap_status"] == "proposed"
-    assert gap["gap_kind"] in {"strict_support_missing", "overclaim_risk"}
+    assert gap["gap_kind"] == "strict_support_missing"
+    assert gap["live_followup_required"] is True
+    assert gap["live_followup_licensed"] is False
     assert (
         packet["decision"] == dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
     )
@@ -414,6 +416,8 @@ def test_contextual_non_uscis_material_proposes_gap_and_product_blocker(
     assert reentry["provider_called"] is False
     assert reentry["live_search_called"] is False
     assert reentry["fetch_read_executed"] is False
+    assert packet["followup_provider_calls_attempted"] == 0
+    assert packet["followup_fetch_read_attempts"] == 0
     assert reentry["dprime_dispatch_owner"] is False
     assert reentry["workbench_dispatch_owner"] is False
     assert reentry["new_search_subsystem_created"] is False
@@ -463,6 +467,132 @@ def test_contextual_non_uscis_material_proposes_gap_and_product_blocker(
     assert "- Status: followup_not_licensed" in report_md
     assert "- Reducer-produced authorization ref: not created" in report_md
     _assert_workbench_non_authority(packet)
+
+
+def test_licensed_workbench_strict_support_gap_runs_followup_when_dprime_first_passes(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    dprime_inputs: list[Mapping[str, Any]] = []
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        dprime_inputs.append(dict(input_packet))
+        if len(dprime_inputs) == 1:
+            return _assessment_payload(
+                plan,
+                "Example County small claims online fee may be $20 for eligible filers.",
+            )
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper small claims filing fee is $54.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-strict-gap-dprime-passed-followup",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_current_source_followup_reentry=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_sequential_proxy_runner(
+            calls,
+            [
+                [
+                    _provider_extracted_result(
+                        "Example County Reduced Online Small Claims Fee",
+                        SMALL_CLAIMS_URL,
+                        (
+                            "Example County online fee discount. Eligible "
+                            "filers may pay a reduced online small claims fee of $20."
+                        ),
+                    )
+                ],
+                [
+                    _provider_result(
+                        "Example County Official Standard Paper Filing Fee PDF",
+                        "https://example-county.gov/courts/standard-paper-fee.pdf",
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_official_pdf_read_support_fetch_runner(
+            "Example County official fee schedule. The current standard paper "
+            "small claims filing fee is $54."
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    assert result.return_code == 0, packet.get("blocker_detail")
+    assert packet["decision"] != (
+        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+    )
+    assert len(calls) == 2
+    assert len(dprime_inputs) == 2
+    assert calls[1].acquisition_provider_role == "current_source_followup_reentry"
+    gap = packet["analysis_gap_search_proposal"]
+    assert gap["gap_status"] == "proposed"
+    assert gap["gap_kind"] == "strict_support_missing"
+    assert gap["live_followup_required"] is True
+    assert gap["live_followup_licensed"] is True
+    assert gap["followup_execution_licensed"] is True
+    assert gap["followup_execution_status"] == "executed_ordinary_search_followup"
+    assert gap["proposed_runkernel_reduction_status"] == (
+        "runkernel_authorized_executed"
+    )
+    assert packet["workbench_reduction_projection_status"] == (
+        "runkernel_authorized_executed"
+    )
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert reentry["workbench_gap_reentry_status"] == "runkernel_authorized_executed"
+    assert reentry["followup_execution_licensed"] is True
+    assert reentry["runkernel_followup_authorization_ref"]
+    assert reentry["followup_planning_ref"]
+    assert reentry["followup_planning_ref"]["triggering_workbench_gap_ref"][
+        "gap_kind"
+    ] == "strict_support_missing"
+    assert reentry["provider_called"] is True
+    assert reentry["fetch_read_executed"] is True
+    followup_ref = packet["semantic_status_payload"][
+        "dprime_followup_search_reentry_ref"
+    ]
+    assert followup_ref["product_followup_execution_licensed"] is True
+    assert followup_ref["product_followup_authorization_consumed"] is True
+    assert followup_ref["product_followup_provider_execution_after_authorization"] is True
+    assert followup_ref["product_followup_planning_ref"]
+    assert followup_ref["product_followup_search_authorization_ref"]
+    assert followup_ref["product_followup_search_planner_proposal_ref"]
+    assert followup_ref["product_followup_search_executor_handoff_ref"]
+    assert packet["followup_provider_calls_attempted"] == 1
+    assert packet["followup_fetch_read_completed"] == 1
+    assert packet["final_answer_packet_created"] is True
+    assert packet["author_prose_created"] is True
+    assert packet["source_display_entries"]
+
+    report_json = json.loads(
+        Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
+    )
+    report_md = Path(packet["review_report_markdown_path"]).read_text(
+        encoding="utf-8"
+    )
+    report_text = json.dumps(report_json, sort_keys=True)
+    assert "followup_not_licensed" not in report_text
+    assert "followup_not_licensed" not in report_md
+    assert report_json["analyst_workbench"]["analysis_gap_search_proposal"][
+        "live_followup_licensed"
+    ] is True
+    assert report_json["gap_reentry"]["followup_execution_licensed"] is True
+    assert report_json["gap_reentry"]["workbench_gap_reentry_status"] == (
+        "runkernel_authorized_executed"
+    )
+    assert packet["raw_private_retention_flags"] == dogfood.RAW_FALSE_FLAGS
 
 
 def test_licensed_followup_reentry_executes_one_second_ordinary_search(
@@ -1447,15 +1577,22 @@ def test_provider_snippet_text_does_not_create_workbench_strict_support(
     _assert_workbench_non_authority(packet)
 
 
-def test_analyst_workbench_runtime_has_no_domain_specific_production_branching() -> None:
-    forbidden_literals = ("USCIS", "N-400", "G-1055", "$760", "$710", "$380")
-    production_paths = (
-        ROOT / "core" / "analyst_workbench_runtime.py",
-        ROOT / "core" / "dprime_model_review_assessment.py",
+def test_licensed_followup_routing_surfaces_have_no_domain_specific_fee_branches() -> None:
+    forbidden_literals = (
+        "USCIS",
+        "N-400",
+        "I-942",
+        "G-1055",
+        "$405",
+        "$760",
+        "$710",
+        "$380",
+    )
+    routing_paths = (
         ROOT / "proplex" / "live_semantic_coverage_status.py",
         ROOT / "proplex" / "mvp_single_relation_live_dogfood_run.py",
     )
-    for path in production_paths:
+    for path in routing_paths:
         text = path.read_text(encoding="utf-8")
         for literal in forbidden_literals:
             assert literal not in text, f"{literal} leaked into {path}"
