@@ -96,6 +96,7 @@ _CONTEXT_MARKERS = frozenset(
         "reduction",
         "special",
         "temporary",
+        "waiver",
     }
 )
 _STRICT_MARKERS = frozenset(

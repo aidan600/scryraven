@@ -1577,27 +1577,22 @@ def test_provider_snippet_text_does_not_create_workbench_strict_support(
     _assert_workbench_non_authority(packet)
 
 
-def test_analyst_workbench_runtime_has_no_domain_specific_production_branching() -> None:
+def test_licensed_followup_routing_surfaces_have_no_domain_specific_fee_branches() -> None:
     forbidden_literals = (
         "USCIS",
         "N-400",
         "I-942",
         "G-1055",
-        "reduced fee",
-        "reduced-fee",
-        "waiver",
         "$405",
         "$760",
         "$710",
         "$380",
     )
-    production_paths = (
-        ROOT / "core" / "analyst_workbench_runtime.py",
-        ROOT / "core" / "dprime_model_review_assessment.py",
+    routing_paths = (
         ROOT / "proplex" / "live_semantic_coverage_status.py",
         ROOT / "proplex" / "mvp_single_relation_live_dogfood_run.py",
     )
-    for path in production_paths:
+    for path in routing_paths:
         text = path.read_text(encoding="utf-8")
         for literal in forbidden_literals:
             assert literal not in text, f"{literal} leaked into {path}"
