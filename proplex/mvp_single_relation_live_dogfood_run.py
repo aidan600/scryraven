@@ -60,11 +60,12 @@ from core.fetch_read_content_reference import (
 from core.generic_product_provider_acquisition import (
     BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_CREDENTIAL_UNAVAILABLE,
     BLOCKED_GENERIC_PRODUCT_PROVIDER_ACQUISITION_ROUTE_UNAVAILABLE,
-    PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS,
     ProductProviderAcquisitionRequest,
     ProductProviderAcquisitionResult,
     ProductProviderAcquisitionRunner,
+    ProviderExtractedTextMetadataError,
     build_generic_product_provider_acquisition_runner,
+    canonical_retained_provider_extracted_text_metadata,
     redact_provider_extracted_source_text,
 )
 from core.generic_query_to_relation_planning import (
@@ -10881,15 +10882,19 @@ def _provider_results_by_candidate_id(
 
 
 def _provider_extracted_text(provider_result: Mapping[str, Any]) -> str | None:
-    text = _clean_provider_extracted_source_text(
-        provider_result.get("provider_extracted_text")
+    text = _provider_extracted_text_metadata(
+        provider_result.get("provider_extracted_text"),
+        bound_over_limit=False,
     )
-    return text or None
+    return text["provider_extracted_text"] or None
 
 
 def _provider_extracted_source_text_digest(
     provider_result: Mapping[str, Any],
 ) -> str | None:
+    text = _provider_extracted_text(provider_result)
+    if text:
+        return _digest_json({"provider_extracted_text": text})
     declared = _clean_text(
         provider_result.get("provider_extracted_source_text_digest")
         or provider_result.get("provider_extracted_text_digest"),
@@ -10897,10 +10902,7 @@ def _provider_extracted_source_text_digest(
     )
     if declared:
         return declared
-    text = _provider_extracted_text(provider_result)
-    if not text:
-        return None
-    return _digest_json({"provider_extracted_text": text})
+    return None
 
 
 def _provider_extracted_candidate_window_evaluations(
@@ -12381,7 +12383,41 @@ def _load_sanitized_provider_output(path: Path) -> dict[str, Any]:
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_EXTRACTION_PROVIDER_ROUTE_UNAVAILABLE,
             "sanitized provider acquisition response was not written.",
         ) from exc
-    return _validate_provider_payload(decoded)
+    canonical = _canonicalize_provider_payload_extracted_text_metadata(decoded)
+    validated = _validate_provider_payload(canonical)
+    if canonical != decoded:
+        _write_json(path, canonical)
+    return validated
+
+
+def _canonicalize_provider_payload_extracted_text_metadata(
+    payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    raw = _safe_mapping(payload)
+    results = raw.get("results")
+    if not isinstance(results, list):
+        return raw
+    canonical = dict(raw)
+    canonical["results"] = [
+        _canonicalize_provider_result_extracted_text_metadata(item)
+        for item in results
+    ]
+    return canonical
+
+
+def _canonicalize_provider_result_extracted_text_metadata(value: Any) -> Any:
+    if not isinstance(value, Mapping):
+        return value
+    raw = dict(value)
+    if "provider_extracted_text" not in raw:
+        return raw
+    raw.update(
+        _provider_extracted_text_metadata(
+            raw.get("provider_extracted_text"),
+            bound_over_limit=True,
+        )
+    )
+    return raw
 
 
 def _validate_provider_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -12449,9 +12485,11 @@ def _provider_results(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
     raw = _safe_mapping(value)
-    provider_extracted_text = _clean_provider_extracted_source_text(
-        raw.get("provider_extracted_text")
+    provider_extracted_metadata = _provider_extracted_text_metadata(
+        raw.get("provider_extracted_text"),
+        bound_over_limit=False,
     )
+    provider_extracted_text = provider_extracted_metadata["provider_extracted_text"]
     result_guard = dict(raw)
     if "provider_extracted_text" in result_guard:
         result_guard["provider_extracted_text"] = provider_extracted_text
@@ -12477,11 +12515,9 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
     domain = _clean_domain(raw.get("domain")) or (
         urlparse(url).netloc.lower() if url and urlparse(url).netloc else None
     )
-    provider_extracted_text_digest = (
-        _digest_json({"provider_extracted_text": provider_extracted_text})
-        if provider_extracted_text
-        else None
-    )
+    provider_extracted_text_digest = provider_extracted_metadata[
+        "provider_extracted_text_digest"
+    ]
     declared_provider_extracted_digests = tuple(
         digest
         for digest in (
@@ -12501,10 +12537,12 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
             )
     declared_provider_extracted_count = _bounded_int(
         raw.get("provider_extracted_text_char_count"),
-        default=len(provider_extracted_text or ""),
+        default=provider_extracted_metadata["provider_extracted_text_char_count"],
     )
-    if provider_extracted_text and declared_provider_extracted_count != len(
+    if (
         provider_extracted_text
+        and declared_provider_extracted_count
+        != provider_extracted_metadata["provider_extracted_text_char_count"]
     ):
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
@@ -12534,21 +12572,19 @@ def _normalize_provider_result(value: Any, *, index: int) -> dict[str, Any]:
             raw.get("provider_call_index") or raw.get("call_index") or 1
         ),
         "provider_extracted_text": provider_extracted_text,
-        "provider_extracted_text_sanitized": (
-            raw.get("provider_extracted_text_sanitized") is True
-            if provider_extracted_text
-            else False
-        ),
-        "provider_extracted_text_bounded": (
-            raw.get("provider_extracted_text_bounded") is True
-            if provider_extracted_text
-            else False
-        ),
-        "provider_extracted_text_char_count": (
-            len(provider_extracted_text) if provider_extracted_text else 0
-        ),
+        "provider_extracted_text_sanitized": provider_extracted_metadata[
+            "provider_extracted_text_sanitized"
+        ],
+        "provider_extracted_text_bounded": provider_extracted_metadata[
+            "provider_extracted_text_bounded"
+        ],
+        "provider_extracted_text_char_count": provider_extracted_metadata[
+            "provider_extracted_text_char_count"
+        ],
         "provider_extracted_text_digest": provider_extracted_text_digest,
-        "provider_extracted_source_text_digest": provider_extracted_text_digest,
+        "provider_extracted_source_text_digest": provider_extracted_metadata[
+            "provider_extracted_source_text_digest"
+        ],
         "provider_extracted_content_type": _content_type_or_unknown(
             raw.get("provider_extracted_content_type")
             or PROVIDER_EXTRACTED_CONTENT_TYPE
@@ -13468,14 +13504,29 @@ def _clean_text(value: Any, *, limit: int = 500) -> str | None:
     return text[:limit] if text else None
 
 
-def _clean_provider_extracted_source_text(value: Any) -> str | None:
-    text = _clean_text(value, limit=PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS + 1)
-    if text and len(text) > PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS:
+def _provider_extracted_text_metadata(
+    value: Any,
+    *,
+    bound_over_limit: bool,
+) -> dict[str, Any]:
+    try:
+        return canonical_retained_provider_extracted_text_metadata(
+            value,
+            bound_over_limit=bound_over_limit,
+            reject_non_scalar=True,
+        )
+    except ProviderExtractedTextMetadataError as exc:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE,
-            "sanitized provider result extracted text exceeds source-text cap.",
-        )
-    return redact_provider_extracted_source_text(text) if text else None
+            str(exc),
+        ) from exc
+
+
+def _clean_provider_extracted_source_text(value: Any) -> str | None:
+    return _provider_extracted_text_metadata(
+        value,
+        bound_over_limit=False,
+    )["provider_extracted_text"]
 
 
 def _clean_domain(value: Any) -> str | None:
