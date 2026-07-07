@@ -19,6 +19,20 @@ D-prime exists to make evidence-relative semantic review inspectable without
 letting custody, bounded content, model agreement, or validation ceremony become
 support-bearing product state.
 
+## Analyst Workbench dossier boundary
+
+The Analyst Workbench may provide proposal-only dossier/context refs to D-prime.
+D-prime remains the evidence-relative support judge; Workbench context does not
+admit support, satisfy source obligations, create citation eligibility, or open
+answer authority.
+
+Candidate identity handoff from Workbench to D-prime is guarded before
+downstream answer authority. The Workbench expected D-prime candidate, D-prime
+relation intake candidate, selected source candidate, and source-display
+candidate must match before FAP, Author, or source display opens. The detailed
+Workbench contract lives in
+`docs/architecture/ANALYST_WORKBENCH_FULL_SLICE.md`.
+
 ## Why D-prime exists
 
 D-prime replaces this unsafe pattern:

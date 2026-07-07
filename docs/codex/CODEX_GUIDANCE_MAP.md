@@ -436,6 +436,19 @@ content is explicitly pasted into the current prompt or committed here.
   single-lane answer path, follow-up re-entry, same-lane multi-source scrutiny,
   FAP, Author, or readiness, perform the capability inventory / reuse-first gate
   before adding a new surface.
+- **Analyst Workbench runtime contract:** read
+  `docs/architecture/ANALYST_WORKBENCH_FULL_SLICE.md` before phases that touch
+  candidate triage, candidate roles, strict support detection,
+  contextual/overclaim/qualifier risk, Workbench gap proposals, Workbench
+  D-prime dossier refs, Workbench reduction projections,
+  `strict_support_missing` follow-up, unreadable official/read-support
+  follow-up, D-prime candidate handoff identity, or the Workbench section of
+  current-source review reports. Reading the contract authorizes understanding
+  the current proposal-only Workbench boundary, follow-up license behavior,
+  product PASS requirements, and candidate identity invariant. It does not
+  authorize runtime changes, live validation, provider/model/search/fetch/read
+  calls, new answer paths, Scrutineer implementation, source-challenge
+  recovery, FAP/Author wording changes, or product-correctness claims.
 - **Previous AG-SEM posture:** AG-SEM-05 through AG-SEM-10 completed the
   canonical reducer and conditional Sufficiency-consumption chain; AG-SEM-11
   and the later semantic atomicity work moved the ordinary semantic producer

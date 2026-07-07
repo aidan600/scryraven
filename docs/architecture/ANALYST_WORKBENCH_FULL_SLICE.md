@@ -1,9 +1,204 @@
 # Analyst Workbench Full Slice
 
-Status: current BUILD phase note for
+Status: canonical current Analyst Workbench runtime contract, promoted from the
+BUILD phase note for
 `CURRENT-SOURCE-RECORD-ANALYST-WORKBENCH-FULL-SLICE-SCAFFOLD-01`.
 
 Mode: BUILD
+
+This document records current merged Workbench behavior for future Codex phases.
+It does not license runtime changes, live validation, provider/model/search/
+fetch/read calls, new answer paths, Scrutineer implementation, source-challenge
+recovery, FAP/Author wording changes, or product correctness claims.
+
+## Canonical Runtime Contract
+
+### Workbench Role
+
+The Analyst Workbench is proposal-only. It is product-consumed between current
+candidate intake/fetch-read and D-prime/model review for current-source
+single-fact runs.
+
+The Workbench packages bounded candidate diagnostics into:
+
+- candidate role proposals;
+- analyst finding proposals;
+- gap proposals;
+- D-prime dossier refs;
+- Workbench reduction projections.
+
+The Workbench may prepare proposal inputs for RunKernel and context/dossier
+inputs for D-prime. Its local reduction projection is not RunKernel authority
+unless RunKernel actually reduces the state.
+
+The Workbench does not:
+
+- admit evidence;
+- satisfy source obligations;
+- create citation eligibility;
+- finalize source authority;
+- create FinalAnswerPacket or Author output;
+- dispatch search directly;
+- create a new search subsystem;
+- decide Sufficiency;
+- open source display;
+- claim product correctness.
+
+### Candidate Role Semantics
+
+Workbench candidate roles are non-authority proposal classifications. They help
+downstream reviewers and reducers see why a candidate is useful, risky, or
+incomplete; they do not make the candidate answer authority.
+
+Current role vocabulary includes:
+
+- `strict_answer_support_candidate`;
+- `answer_adjacent_context`;
+- `qualifier_exception_context`;
+- `overclaim_risk`;
+- `conflict_candidate`;
+- `remediation_needed_candidate`;
+- official-looking/read-support gap roles such as
+  `official_source_of_record_looking_candidate`,
+  `unreadable_high_value_official_artifact`, and the corresponding
+  `unreadable_high_value_candidate` gap posture.
+
+Roles are not necessarily exclusive. A candidate can be official-looking and
+still be only contextual, risky, unreadable, or insufficient for the answer
+claim. A candidate does not become answer authority merely because it is
+official-looking, source-of-record-looking, or contains answer-like tokens.
+
+### Generic Context Vocabulary
+
+Generic qualifier-risk vocabulary is allowed in Analyst detection. This
+includes terms such as:
+
+- `waiver`;
+- `discount`;
+- `reduced`;
+- `online`;
+- `exception`;
+- `exemption`;
+- `eligibility`;
+- `special`;
+- `temporary`.
+
+That vocabulary is generic semantic context, not a domain-specific production
+branch. It must not be removed merely to satisfy static guards that are meant to
+prevent hard-coded live-case literals. Static guards should prevent production
+branches for specific literals such as USCIS, N-400, I-942, or specific fee
+amounts, not generic Analyst qualifier vocabulary.
+
+### Gap States
+
+Workbench gap states are proposal-only. They can block answer output only by
+feeding the existing product blocker and follow-up policy surfaces; they do not
+admit evidence or prove answer correctness.
+
+| Gap state | Meaning | Can block answer output? | Can trigger follow-up when licensed? | Must not infer |
+| --- | --- | --- | --- | --- |
+| `not_required` | A strict-support candidate was proposed and contextual risks are preserved for downstream review. | No, not by itself. | No. | Does not mean D-prime support, source-obligation satisfaction, citation eligibility, Sufficiency, FAP, Author, source display, or PASS already happened. |
+| `strict_support_missing` | No strict answer-support candidate was identified, or contextual material is insufficient for the answer claim. | Yes, through the current-source answer blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not mean provider/search/fetch/read occurred, and does not prove that contextual material is true, false, current, or citable. |
+| `unreadable_high_value_candidate` | An official-looking or high-value candidate needs readable strict support before it can feed D-prime answer authority. | Yes, through the current-source read-support blocker when unresolved. | Yes, through the existing licensed current-source follow-up path. | Does not infer the unreadable source content, citation eligibility, source-obligation satisfaction, or PDF/table read support. |
+| `overclaim_risk` | Contextual or qualifier material could support a narrower claim but risks overstating the answer without stricter support. | It can contribute to a blocker when strict support is missing or downstream review refuses the claim. | Only through an explicitly licensed recovery/follow-up path. | Does not by itself prove contradiction, support, challenge resolution, or answer readiness. |
+
+### Follow-Up License Behavior
+
+Without an explicit current-source follow-up license or flag:
+
+- `strict_support_missing` and `unreadable_high_value_candidate` remain
+  proposal-only blockers.
+- No follow-up provider call occurs.
+- No follow-up search dispatch occurs.
+- No follow-up fetch/read occurs.
+- No FAP, Author, citation/source display, or source-display answer path opens
+  from the gap.
+- Review material may retain proposal/blocker refs only.
+
+With an explicit current-source follow-up license or flag:
+
+- the Workbench gap enters the existing planned and RunKernel-authorized
+  ordinary follow-up path;
+- follow-up planning refs are retained;
+- RunKernel follow-up authorization refs gate execution;
+- ordinary provider acquisition and ordinary fetch/read are reused;
+- Workbench and D-prime remain non-dispatch owners;
+- follow-up execution alone is not product PASS;
+- if follow-up is exhausted, the product reports the licensed/exhausted
+  blocker, not a not-licensed blocker;
+- if material is obtained but the answer path is not reached, the product
+  reports the existing answer-path-not-reached blocker;
+- if candidate identity diverges, the #452 candidate handoff blocker remains
+  authoritative.
+
+### Product PASS Conditions
+
+Workbench proposal, follow-up execution, provider result, readable material, or
+an official-looking source alone is not product PASS.
+
+Product PASS requires the existing downstream answer path to consume:
+
+- D-prime support/admission;
+- admitted `SemanticObservation`;
+- `ComponentCoverage`;
+- `SufficiencyReadiness`;
+- FAP safe claim / hardened FinalAnswerPacket;
+- Author answer output;
+- citation/source display handoff;
+- raw/private retention false posture.
+
+### Candidate Handoff Identity Invariant
+
+The #452 invariant is that all answer-authority candidates must be the same
+candidate before answer authority opens:
+
+- Workbench expected D-prime candidate;
+- D-prime relation intake candidate;
+- selected source candidate;
+- source-display candidate.
+
+If those identities diverge, the product must block before FAP, Author, or
+source display. The blocker is authoritative even when a provider result is
+official-looking, readable, or answer-like.
+
+### Relationship To D-prime, Scrutineer, Sufficiency, FAP, And Author
+
+D-prime is the evidence-relative support judge. It is not the whole Analyst, and
+Workbench context does not substitute for D-prime model review, proposal
+validation, RunKernel admission, or downstream answer-path consumption.
+
+Scrutineer challenge posture is separate. It must not be silently treated as an
+implemented answer blocker or remediation layer unless a phase explicitly
+licenses that surface.
+
+Sufficiency decides answer readiness after the required evidence, support,
+coverage, and challenge/follow-up posture exists.
+
+FAP is the authority manifest / safe-claim packet. Author is constrained
+rendering from that packet. The Workbench does not substitute for D-prime,
+Scrutineer, Sufficiency, FAP, Author, citation eligibility, citation rendering,
+or source display.
+
+### Review Report Expectations
+
+Current-source review reports should expose:
+
+- Workbench gap kind/status;
+- strict, contextual, and overclaim candidate counts;
+- follow-up licensed/executed/exhausted status;
+- RunKernel authorization/ref status;
+- Workbench expected candidate;
+- D-prime intake candidate;
+- selected source candidate;
+- source-display candidate;
+- answer path reached/not reached;
+- raw/private retained false posture.
+
+The report is review material. It must not turn Workbench proposals, candidate
+roles, follow-up refs, provider results, readable material, D-prime dossier
+context, or source-display metadata into product-correctness claims.
+
+## Implementation Provenance
 
 ## Phase Boundary
 
