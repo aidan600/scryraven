@@ -1098,6 +1098,238 @@ def test_unlicensed_unreadable_workbench_gap_blocks_before_dprime_admission(
     _assert_workbench_non_authority(packet)
 
 
+def test_licensed_unreadable_workbench_gap_runs_followup_when_dprime_first_passes(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    dprime_inputs: list[Mapping[str, Any]] = []
+    fetch_attempts: list[str] = []
+    official_pdf_url = (
+        "https://example-county.gov/courts/small-claims-fee-schedule.pdf"
+    )
+    followup_text = (
+        "Example County Clerk official fee schedule. The current standard paper "
+        "small claims filing fee is $54."
+    )
+
+    def staged_fetch(url: str) -> GenericLiveFetchReadResult:
+        fetch_attempts.append(url)
+        if len(fetch_attempts) == 1:
+            return _http_403_pdf_fetch_runner(url)
+        return _official_pdf_read_support_fetch_runner(followup_text)(url)
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        dprime_inputs.append(dict(input_packet))
+        if len(dprime_inputs) == 1:
+            return _assessment_payload(
+                plan,
+                "Eligible online filers may pay a reduced small claims filing fee of $20.",
+            )
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper small claims filing fee is $54.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-unreadable-gap-licensed-adjacent-dprime-support",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_current_source_followup_reentry=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_sequential_proxy_runner(
+            calls,
+            [
+                [
+                    _provider_extracted_result(
+                        "Example County Online Discount Filing Fee",
+                        "https://example-county.gov/courts/online-discount",
+                        (
+                            "Online filing discount. Eligible filers may pay a "
+                            "reduced online small claims fee of $20."
+                        ),
+                        rank=1,
+                    ),
+                    _provider_result(
+                        "Example County Official Small Claims Fee Schedule PDF",
+                        official_pdf_url,
+                        rank=2,
+                    ),
+                ],
+                [
+                    _provider_result(
+                        "Example County Official Small Claims Fee Schedule PDF",
+                        official_pdf_url,
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=staged_fetch,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    semantic = packet["semantic_status_payload"]
+    reentry = packet["workbench_gap_reentry_ref"]
+    followup_ref = semantic["dprime_followup_search_reentry_ref"]
+    gap = packet["analysis_gap_search_proposal"]
+    assert result.return_code == 0, packet.get("blocker_detail")
+    assert packet["decision"] != dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
+    assert len(calls) == 2
+    assert len(dprime_inputs) == 2
+    assert fetch_attempts == [official_pdf_url, official_pdf_url]
+    assert calls[1].acquisition_provider_role == "current_source_followup_reentry"
+    assert gap["gap_status"] == "proposed"
+    assert gap["gap_kind"] == "unreadable_high_value_candidate"
+    assert gap["live_followup_required"] is True
+    assert gap["live_followup_licensed"] is True
+    assert gap["followup_execution_licensed"] is True
+    assert gap["followup_execution_status"] == "executed_ordinary_search_followup"
+    assert gap["proposed_runkernel_reduction_status"] == (
+        "runkernel_authorized_executed"
+    )
+    assert packet["workbench_reduction_projection_status"] == (
+        "runkernel_authorized_executed"
+    )
+    assert reentry["workbench_gap_reentry_status"] == "runkernel_authorized_executed"
+    assert reentry["gap_sources"] == ["workbench"]
+    assert reentry["runkernel_followup_authorization_ref"]
+    assert reentry["runkernel_followup_authorization_status"] == "authorized"
+    assert reentry["followup_planning_ref"]
+    assert reentry["followup_planning_ref"]["triggering_workbench_gap_ref"][
+        "gap_kind"
+    ] == "unreadable_high_value_candidate"
+    assert reentry["followup_execution_licensed"] is True
+    assert reentry["provider_called"] is True
+    assert reentry["fetch_read_executed"] is True
+    assert reentry["workbench_dispatch_owner"] is False
+    assert reentry["dprime_dispatch_owner"] is False
+    assert followup_ref["product_followup_execution_licensed"] is True
+    assert followup_ref["product_followup_authorization_consumed"] is True
+    assert followup_ref["product_followup_provider_execution_after_authorization"] is True
+    assert followup_ref["product_followup_planning_ref"]
+    assert followup_ref["product_followup_search_authorization_ref"]
+    assert followup_ref["product_followup_search_executor_handoff_ref"]
+    assert packet["initial_dprime_model_review_calls_attempted"] == 1
+    assert packet["followup_dprime_model_review_calls_attempted"] == 1
+    assert packet["followup_provider_calls_attempted"] == 1
+    assert packet["followup_fetch_read_completed"] == 1
+    assert packet["final_answer_packet_created"] is True
+    assert packet["author_prose_created"] is True
+    assert packet["source_display_entries"]
+    assert packet["product_answer_text"] == (
+        "The current Example County standard paper small claims filing fee is $54."
+    )
+
+    report_json = json.loads(
+        Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
+    )
+    report_md = Path(packet["review_report_markdown_path"]).read_text(
+        encoding="utf-8"
+    )
+    assert "followup_not_licensed" not in json.dumps(report_json, sort_keys=True)
+    assert "followup_not_licensed" not in report_md
+    assert report_json["gap_reentry"]["workbench_gap_reentry_status"] == (
+        "runkernel_authorized_executed"
+    )
+    _assert_workbench_non_authority(packet)
+
+
+def test_licensed_unreadable_workbench_gap_exhausts_after_dprime_first_pass(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    dprime_inputs: list[Mapping[str, Any]] = []
+    official_pdf_url = (
+        "https://example-county.gov/courts/small-claims-fee-schedule.pdf"
+    )
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        dprime_inputs.append(dict(input_packet))
+        return _assessment_payload(
+            plan,
+            "Eligible online filers may pay a reduced small claims filing fee of $20.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-unreadable-gap-licensed-exhausted-after-dprime",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_current_source_followup_reentry=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_sequential_proxy_runner(
+            calls,
+            [
+                [
+                    _provider_extracted_result(
+                        "Example County Online Discount Filing Fee",
+                        "https://example-county.gov/courts/online-discount",
+                        (
+                            "Online filing discount. Eligible filers may pay a "
+                            "reduced online small claims fee of $20."
+                        ),
+                        rank=1,
+                    ),
+                    _provider_result(
+                        "Example County Official Small Claims Fee Schedule PDF",
+                        official_pdf_url,
+                        rank=2,
+                    ),
+                ],
+                [
+                    _provider_result(
+                        "Example County Official Small Claims Fee Schedule PDF",
+                        official_pdf_url,
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_http_403_pdf_fetch_runner,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert result.return_code == 2
+    assert packet["decision"] == dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED
+    assert len(calls) == 2
+    assert len(dprime_inputs) == 1
+    assert packet["followup_provider_calls_attempted"] == 1
+    assert packet["followup_provider_calls_completed"] == 1
+    assert packet["followup_fetch_read_attempts"] == 1
+    assert packet["followup_fetch_read_completed"] == 0
+    assert packet["followup_execution_licensed"] is True
+    assert reentry["workbench_gap_kind"] == "unreadable_high_value_candidate"
+    assert reentry["workbench_gap_reentry_status"] == "runkernel_authorized_exhausted"
+    assert reentry["followup_execution_status"] == "exhausted"
+    assert reentry["followup_execution_licensed"] is True
+    assert reentry["runkernel_followup_authorization_ref"]
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["source_display_entries"] == []
+    assert packet["product_answer_text"] == ""
+    report_json = json.loads(
+        Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
+    )
+    assert "followup_not_licensed" not in json.dumps(report_json, sort_keys=True)
+    _assert_workbench_non_authority(packet)
+
+
 def test_licensed_workbench_read_support_gap_runs_authorized_followup_pdf_extraction(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

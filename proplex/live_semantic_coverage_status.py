@@ -598,8 +598,8 @@ def build_live_semantic_coverage_status(
             one_shot_model_review_adapter=dprime_one_shot_model_review_adapter,
             workbench_dprime_dossier=workbench_dprime_dossier,
         )
-        workbench_strict_followup_required = (
-            _workbench_strict_support_followup_required(workbench_dprime_dossier)
+        workbench_followup_required = (
+            _workbench_current_source_followup_required(workbench_dprime_dossier)
         )
         dprime_followup_required = (
             model_review_result.proposal_validation_status
@@ -607,12 +607,12 @@ def build_live_semantic_coverage_status(
         )
         if (
             dprime_followup_search_reentry_enabled
-            and (dprime_followup_required or workbench_strict_followup_required)
+            and (dprime_followup_required or workbench_followup_required)
         ):
             followup_trigger_result: Any = model_review_result
-            if workbench_strict_followup_required and not dprime_followup_required:
+            if workbench_followup_required and not dprime_followup_required:
                 followup_trigger_result = (
-                    _workbench_strict_support_followup_trigger_result(
+                    _workbench_current_source_followup_trigger_result(
                         workbench_dprime_dossier=workbench_dprime_dossier,
                         first_model_review_result=model_review_result,
                     )
@@ -2159,6 +2159,7 @@ def _workbench_read_support_followup_required(
     gap_reason = _clean_text(gap.get("gap_reason"), limit=300) or ""
     return bool(
         gap.get("gap_status") == "proposed"
+        and gap.get("live_followup_required") is True
         and (
             gap_kind == "unreadable_high_value_candidate"
             or (
@@ -2178,6 +2179,35 @@ def _workbench_strict_support_followup_required(
         gap.get("gap_status") == "proposed"
         and gap.get("live_followup_required") is True
         and gap_kind == "strict_support_missing"
+    )
+
+
+def _workbench_current_source_followup_required(
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> bool:
+    return bool(
+        _workbench_strict_support_followup_required(workbench_dprime_dossier)
+        or _workbench_read_support_followup_required(workbench_dprime_dossier)
+    )
+
+
+def _workbench_current_source_followup_trigger_result(
+    *,
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+    first_model_review_result: Any,
+) -> Mapping[str, Any]:
+    if _workbench_read_support_followup_required(workbench_dprime_dossier):
+        return _workbench_read_support_followup_trigger_result(
+            workbench_dprime_dossier=workbench_dprime_dossier,
+            detail=(
+                "Workbench official artifact read-support gap remains unresolved "
+                "after the first D-prime pass."
+            ),
+            first_model_review_result=first_model_review_result,
+        )
+    return _workbench_strict_support_followup_trigger_result(
+        workbench_dprime_dossier=workbench_dprime_dossier,
+        first_model_review_result=first_model_review_result,
     )
 
 
@@ -2228,13 +2258,20 @@ def _workbench_read_support_followup_trigger_result(
     *,
     workbench_dprime_dossier: Mapping[str, Any] | None,
     detail: str,
+    first_model_review_result: Any | None = None,
 ) -> Mapping[str, Any]:
     dossier = _safe_mapping(workbench_dprime_dossier)
     gap = _workbench_followup_gap(dossier)
     gap_ref = _safe_mapping(dossier.get("analysis_gap_search_proposal_ref"))
+    first_overlay = (
+        first_model_review_result.to_status_overlay()
+        if hasattr(first_model_review_result, "to_status_overlay")
+        else _safe_mapping(first_model_review_result)
+    )
     return {
-        "model_review_status": "not_reached",
-        "assessment_status": "not_reached",
+        "model_review_status": first_overlay.get("model_review_status")
+        or "not_reached",
+        "assessment_status": first_overlay.get("assessment_status") or "not_reached",
         "decision": "WORKBENCH_READ_SUPPORT_GAP_FOLLOWUP_REQUIRED",
         "blocker_detail": (
             _clean_text(gap.get("gap_reason"), limit=500)
@@ -2248,8 +2285,15 @@ def _workbench_read_support_followup_trigger_result(
             "gap_status": gap.get("gap_status"),
             "gap_kind": gap.get("gap_kind"),
             "gap_ref": gap_ref,
+            "first_dprime_assessment_ref": _safe_mapping(
+                first_overlay.get("assessment_ref")
+            ),
+            "first_dprime_support_relation": first_overlay.get("support_relation"),
+            "first_dprime_proposal_validation_status": first_overlay.get(
+                "proposal_validation_status"
+            ),
         },
-        "objects_created": {},
+        "objects_created": _safe_mapping(first_overlay.get("objects_created")),
         "raw_prompt_retained": False,
         "raw_model_response_retained": False,
         "provider_payload_retained": False,
