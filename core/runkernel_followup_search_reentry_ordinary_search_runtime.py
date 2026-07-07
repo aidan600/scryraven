@@ -1057,7 +1057,7 @@ def _dprime_gap_proposal(
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
-    reference = _first_readable_reference(fetch_read_content_packet)
+    reference = _first_followup_trigger_reference(fetch_read_content_packet)
     relation = _first_pass_support_relation(first_model_review_result)
     gap_kind = _gap_kind_from_relation(relation)
     query_hint = _clean_text(query, limit=300) or (
@@ -1695,6 +1695,17 @@ def _first_readable_reference(fetch_packet: Mapping[str, Any]) -> dict[str, Any]
         "initial fetch/read packet has no readable reference for follow-up trigger",
         first_failed_seam="initial_fetch_read_reference_missing",
     )
+
+
+def _first_followup_trigger_reference(fetch_packet: Mapping[str, Any]) -> dict[str, Any]:
+    try:
+        return _first_readable_reference(fetch_packet)
+    except RunKernelFollowupSearchReentryError:
+        for item in fetch_packet.get("reference_records", []) or []:
+            reference = _safe_mapping(item)
+            if reference.get("reference_id") and reference.get("candidate_id"):
+                return reference
+        raise
 
 
 def _first_pass_support_relation(first_model_review_result: Any) -> str | None:

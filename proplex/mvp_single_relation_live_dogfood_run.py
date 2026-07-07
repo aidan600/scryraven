@@ -1247,8 +1247,12 @@ def build_generic_single_relation_live_dogfood_run_output(
                 )
                 or DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
             ),
-            workbench_dprime_dossier=_safe_mapping(
-                analyst_workbench_bundle.get("workbench_dprime_dossier")
+            workbench_dprime_dossier=_semantic_workbench_dossier_for_dprime(
+                analyst_workbench_bundle,
+                include_gap_proposal=(
+                    product_single_fact_answer_path_enabled
+                    and confirm_current_source_followup_reentry
+                ),
             ),
             **dprime_kwargs,
         )
@@ -6555,10 +6559,16 @@ def _current_source_followup_plan_builder(
 ) -> Callable[..., Mapping[str, Any]]:
     def build_plan(**kwargs: Any) -> Mapping[str, Any]:
         first_model_review_result = kwargs.get("first_model_review_result")
-        counts["initial_dprime_model_review_calls_attempted"] = 1
+        first_review_attempted = _dprime_result_model_review_attempted(
+            first_model_review_result
+        )
+        counts["initial_dprime_model_review_calls_attempted"] = (
+            1 if first_review_attempted else 0
+        )
         counts["initial_dprime_model_review_calls_completed"] = (
             1
-            if _dprime_result_model_review_completed(first_model_review_result)
+            if first_review_attempted
+            and _dprime_result_model_review_completed(first_model_review_result)
             else 0
         )
         workbench_dprime_dossier = _safe_mapping(
@@ -7192,6 +7202,13 @@ def _dprime_result_model_review_completed(value: Any) -> bool:
         return value.model_review_status == "completed"
     overlay = value.to_status_overlay() if hasattr(value, "to_status_overlay") else value
     return _safe_mapping(overlay).get("model_review_status") == "completed"
+
+
+def _dprime_result_model_review_attempted(value: Any) -> bool:
+    if hasattr(value, "model_review_status"):
+        return value.model_review_status in {"completed", "blocked"}
+    overlay = value.to_status_overlay() if hasattr(value, "to_status_overlay") else value
+    return _safe_mapping(overlay).get("model_review_status") in {"completed", "blocked"}
 
 
 def _query_mentions(text: str | None, token: str) -> bool:
@@ -8583,6 +8600,25 @@ def _analyst_workbench_bundle_from_counts(
                 f"Analyst Workbench bundle invalid: {exc}",
             ) from exc
     return empty_current_source_record_analyst_workbench_bundle()
+
+
+def _semantic_workbench_dossier_for_dprime(
+    workbench_bundle: Mapping[str, Any],
+    *,
+    include_gap_proposal: bool,
+) -> dict[str, Any]:
+    dossier = _safe_mapping(workbench_bundle.get("workbench_dprime_dossier"))
+    if not include_gap_proposal:
+        return dossier
+    gap = _safe_mapping(workbench_bundle.get("analysis_gap_search_proposal"))
+    if not dossier or not gap:
+        return dossier
+    enriched = dict(dossier)
+    enriched["analysis_gap_search_proposal"] = gap
+    enriched["analysis_gap_search_proposal_ref"] = _safe_mapping(
+        workbench_bundle.get("analysis_gap_search_proposal_ref")
+    ) or _safe_mapping(dossier.get("analysis_gap_search_proposal_ref"))
+    return _without_empty(enriched)
 
 
 def _workbench_dossier_consumed_by_dprime(
