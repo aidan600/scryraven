@@ -57,6 +57,8 @@ _SAFE_FALSE_RETENTION_KEYS = frozenset(
         "raw_search_response_retained",
         "raw_page_content_retained",
         "raw_page_text_retained",
+        "raw_pdf_bytes_retained",
+        "raw_pdf_text_retained",
         "raw_headers_retained",
         "raw_prompt_retained",
         "evidence_ledger_admitted",
@@ -476,6 +478,12 @@ class SanitizedContentReference:
                 raise FetchReadContentReferenceError(
                     "failed or unreadable fetch/read reference requires failure reason"
                 )
+        pdf_text_extraction_attempted = (
+            material.get("pdf_text_extraction_attempted") is True
+        )
+        official_artifact_read_support = (
+            material.get("official_artifact_read_support") is True
+        )
         reference_base = _without_empty(
             {
                 "schema_version": SANITIZED_CONTENT_REFERENCE_SCHEMA_VERSION,
@@ -597,8 +605,7 @@ class SanitizedContentReference:
                     or None
                 ),
                 "official_artifact_read_support": (
-                    material.get("official_artifact_read_support") is True
-                    or None
+                    official_artifact_read_support or None
                 ),
                 "official_artifact_type": _clean_token(
                     material.get("official_artifact_type"),
@@ -614,40 +621,77 @@ class SanitizedContentReference:
                 ),
                 "official_artifact_read_support_bounded": (
                     material.get("official_artifact_read_support_bounded") is True
-                    if material.get("official_artifact_read_support") is True
+                    if official_artifact_read_support
                     else None
                 ),
                 "official_artifact_read_support_sanitized": (
                     material.get("official_artifact_read_support_sanitized") is True
-                    if material.get("official_artifact_read_support") is True
+                    if official_artifact_read_support
                     else None
                 ),
                 "official_artifact_read_support_raw_content_retained": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support
                 else None,
                 "official_artifact_read_support_creates_source_authority": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support
                 else None,
                 "official_artifact_read_support_satisfies_source_obligation": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support
                 else None,
                 "official_artifact_read_support_citation_eligible": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support
                 else None,
                 "official_artifact_read_support_claims_correctness": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support
                 else None,
-                "pdf_parsing_opened": False
-                if material.get("official_artifact_read_support") is True
+                "pdf_text_extraction_attempted": True
+                if pdf_text_extraction_attempted
+                else None,
+                "pdf_text_extraction_status": _clean_token(
+                    material.get("pdf_text_extraction_status"),
+                    limit=80,
+                )
+                if pdf_text_extraction_attempted
+                else None,
+                "pdf_text_extraction_char_count": _optional_int(
+                    material.get("pdf_text_extraction_char_count")
+                )
+                if pdf_text_extraction_attempted
+                else None,
+                "pdf_text_extraction_page_count": _optional_int(
+                    material.get("pdf_text_extraction_page_count")
+                )
+                if pdf_text_extraction_attempted
+                else None,
+                "raw_pdf_bytes_retained": False
+                if pdf_text_extraction_attempted
+                else None,
+                "raw_pdf_text_retained": False
+                if pdf_text_extraction_attempted
+                else None,
+                "bounded_text_retained": (
+                    material.get("bounded_text_retained") is True
+                )
+                if pdf_text_extraction_attempted
+                else None,
+                "pdf_parsing_opened": (
+                    material.get("pdf_parsing_opened") is True
+                    if pdf_text_extraction_attempted
+                    else False
+                )
+                if official_artifact_read_support or pdf_text_extraction_attempted
                 else None,
                 "ocr_opened": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support or pdf_text_extraction_attempted
                 else None,
                 "browser_automation_opened": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support or pdf_text_extraction_attempted
+                else None,
+                "external_service_used": False
+                if pdf_text_extraction_attempted
                 else None,
                 "heavy_document_parser_dependency_added": False
-                if material.get("official_artifact_read_support") is True
+                if official_artifact_read_support or pdf_text_extraction_attempted
                 else None,
                 "original_source_url": _clean_url(material.get("original_source_url")),
                 "original_source_title": _clean_text(
