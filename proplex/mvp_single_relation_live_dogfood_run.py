@@ -80,6 +80,12 @@ from core.model_assisted_single_relation_planning import (
     build_model_assisted_single_relation_planning_packet,
 )
 from core.mvp_supported_query_class_boundary import MVP_SUPPORTED_QUERY_CLASS_ID
+from core.pdf_text_layer_extraction import (
+    PDF_TEXT_EXTRACTION_STATUS_CAP_EXHAUSTED,
+    PDF_TEXT_EXTRACTION_STATUS_EXTRACTED,
+    PDF_TEXT_EXTRACTION_STATUS_NO_TEXT_LAYER,
+    extract_pdf_text_layer,
+)
 from core.product_model_route_config import (
     CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
@@ -168,6 +174,15 @@ BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OFFICIAL_HTTP_SOURCE_SURVIVAL_4XX = (
 )
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_NO_READABLE_CANDIDATES"
+)
+BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_UNAVAILABLE = (
+    "BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_UNAVAILABLE"
+)
+BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_FAILED = (
+    "BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_FAILED"
+)
+BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED = (
+    "BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED"
 )
 BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED = (
     "BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_NOT_LICENSED"
@@ -324,6 +339,13 @@ FETCH_READ_FAILURE_HTTP_4XX = "HTTP_4XX"
 FETCH_READ_FAILURE_HTTP_5XX = "HTTP_5XX"
 FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE = "UNSUPPORTED_CONTENT_TYPE"
 FETCH_READ_FAILURE_NO_READABLE_TEXT = "NO_READABLE_TEXT"
+FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_UNAVAILABLE = (
+    "PDF_TEXT_EXTRACTION_UNAVAILABLE"
+)
+FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_FAILED = "PDF_TEXT_EXTRACTION_FAILED"
+FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED = (
+    "PDF_TEXT_EXTRACTION_CAP_EXHAUSTED"
+)
 FETCH_READ_FAILURE_EXCEPTION = "FETCH_READ_EXCEPTION"
 FETCH_READ_FAILURE_UNKNOWN = "UNKNOWN"
 FETCH_READ_FAILURE_CATEGORIES = frozenset(
@@ -334,6 +356,9 @@ FETCH_READ_FAILURE_CATEGORIES = frozenset(
         FETCH_READ_FAILURE_HTTP_5XX,
         FETCH_READ_FAILURE_UNSUPPORTED_CONTENT_TYPE,
         FETCH_READ_FAILURE_NO_READABLE_TEXT,
+        FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_UNAVAILABLE,
+        FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_FAILED,
+        FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED,
         FETCH_READ_FAILURE_EXCEPTION,
         FETCH_READ_FAILURE_UNKNOWN,
     }
@@ -618,6 +643,8 @@ _ALLOWED_RAW_FALSE_KEYS = frozenset(
         "raw_model_response_retained",
         "raw_page_content_retained",
         "raw_page_text_retained",
+        "raw_pdf_bytes_retained",
+        "raw_pdf_text_retained",
         "raw_private_retention_flags",
         "raw_private_retention",
         "raw_prompt_retention",
@@ -656,6 +683,16 @@ class GenericSingleRelationLiveDogfoodRunError(ValueError):
         fetch_status_code: int | None = None,
         fetch_redirect_count: int | None = None,
         fetch_redirect_chain_digest: str | None = None,
+        pdf_text_extraction_attempted: bool = False,
+        pdf_text_extraction_status: str | None = None,
+        pdf_text_extraction_char_count: int = 0,
+        pdf_text_extraction_page_count: int | None = None,
+        raw_pdf_bytes_retained: bool = False,
+        raw_pdf_text_retained: bool = False,
+        bounded_text_retained: bool = False,
+        ocr_opened: bool = False,
+        browser_automation_opened: bool = False,
+        external_service_used: bool = False,
     ) -> None:
         super().__init__(detail)
         self.blocker = blocker
@@ -670,6 +707,16 @@ class GenericSingleRelationLiveDogfoodRunError(ValueError):
         self.fetch_status_code = fetch_status_code
         self.fetch_redirect_count = fetch_redirect_count
         self.fetch_redirect_chain_digest = fetch_redirect_chain_digest
+        self.pdf_text_extraction_attempted = pdf_text_extraction_attempted
+        self.pdf_text_extraction_status = pdf_text_extraction_status
+        self.pdf_text_extraction_char_count = pdf_text_extraction_char_count
+        self.pdf_text_extraction_page_count = pdf_text_extraction_page_count
+        self.raw_pdf_bytes_retained = raw_pdf_bytes_retained
+        self.raw_pdf_text_retained = raw_pdf_text_retained
+        self.bounded_text_retained = bounded_text_retained
+        self.ocr_opened = ocr_opened
+        self.browser_automation_opened = browser_automation_opened
+        self.external_service_used = external_service_used
 
 
 @dataclass(frozen=True, slots=True)
@@ -713,6 +760,16 @@ class GenericLiveFetchReadResult:
     retrieved_or_observed_at: str = ""
     official_artifact_read_support: bool = False
     official_artifact_read_support_source: str | None = None
+    pdf_text_extraction_attempted: bool = False
+    pdf_text_extraction_status: str | None = None
+    pdf_text_extraction_char_count: int = 0
+    pdf_text_extraction_page_count: int | None = None
+    raw_pdf_bytes_retained: bool = False
+    raw_pdf_text_retained: bool = False
+    bounded_text_retained: bool = False
+    ocr_opened: bool = False
+    browser_automation_opened: bool = False
+    external_service_used: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -1426,13 +1483,116 @@ def fetch_public_url_once(url: str) -> GenericLiveFetchReadResult:
             fetch_readable_text_obtained=False,
             fetch_failure_category=FETCH_READ_FAILURE_EXCEPTION,
         ) from None
+    content_type, charset = _content_type_and_charset(content_type_header)
     if len(body) > MAX_FETCHED_BYTES:
+        if _pdf_fetch_target(
+            content_type=content_type,
+            attempted_url=url,
+            final_url=final_url,
+        ):
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED,
+                "PDF fetch/read byte cap exhausted before text extraction.",
+                caps_exhausted=True,
+                fetch_status_class=_status_class(status_code),
+                fetch_content_type=content_type,
+                fetch_readable_content_type=False,
+                fetch_readable_text_obtained=False,
+                fetch_failure_category=FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED,
+                fetch_final_url=final_url,
+                fetch_status_code=status_code,
+                fetch_redirect_count=len(redirect_handler.redirects),
+                fetch_redirect_chain_digest=(
+                    _digest_json(redirect_handler.redirects)
+                    if redirect_handler.redirects
+                    else None
+                ),
+                pdf_text_extraction_attempted=True,
+                pdf_text_extraction_status=PDF_TEXT_EXTRACTION_STATUS_CAP_EXHAUSTED,
+            )
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_CAP_EXHAUSTED,
             "fetch/read byte cap exhausted.",
             caps_exhausted=True,
         )
-    content_type, charset = _content_type_and_charset(content_type_header)
+    if _pdf_fetch_target(
+        content_type=content_type,
+        attempted_url=url,
+        final_url=final_url,
+    ):
+        extraction = extract_pdf_text_layer(body)
+        pdf_diagnostics = extraction.to_diagnostics()
+        if extraction.extracted:
+            final_domain = urlparse(final_url).netloc.lower()
+            return GenericLiveFetchReadResult(
+                attempted_url=url,
+                final_url=final_url,
+                final_domain=final_domain,
+                status_code=status_code,
+                status_class=_status_class(status_code),
+                content_type=content_type,
+                fetched_byte_count=len(body),
+                sanitized_text=extraction.sanitized_text,
+                content_title=None,
+                redirect_count=len(redirect_handler.redirects),
+                redirect_chain_digest=(
+                    _digest_json(redirect_handler.redirects)
+                    if redirect_handler.redirects
+                    else None
+                ),
+                retrieved_or_observed_at=datetime.now(UTC)
+                .replace(microsecond=0)
+                .isoformat(),
+                pdf_text_extraction_attempted=True,
+                pdf_text_extraction_status=extraction.status,
+                pdf_text_extraction_char_count=extraction.char_count,
+                pdf_text_extraction_page_count=extraction.page_count,
+                raw_pdf_bytes_retained=False,
+                raw_pdf_text_retained=False,
+                bounded_text_retained=True,
+                ocr_opened=False,
+                browser_automation_opened=False,
+                external_service_used=False,
+            )
+        if extraction.status == PDF_TEXT_EXTRACTION_STATUS_NO_TEXT_LAYER:
+            blocker = BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_UNAVAILABLE
+            failure_category = FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_UNAVAILABLE
+            detail = "PDF had no extractable text layer; OCR is not opened."
+        else:
+            blocker = BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_FAILED
+            failure_category = FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_FAILED
+            detail = "PDF text-layer extraction failed; OCR/browser fallback is not opened."
+        raise GenericSingleRelationLiveDogfoodRunError(
+            blocker,
+            detail,
+            fetch_status_class=_status_class(status_code),
+            fetch_content_type=content_type,
+            fetch_readable_content_type=False,
+            fetch_readable_text_obtained=False,
+            fetch_failure_category=failure_category,
+            fetch_final_url=final_url,
+            fetch_status_code=status_code,
+            fetch_redirect_count=len(redirect_handler.redirects),
+            fetch_redirect_chain_digest=(
+                _digest_json(redirect_handler.redirects)
+                if redirect_handler.redirects
+                else None
+            ),
+            pdf_text_extraction_attempted=True,
+            pdf_text_extraction_status=pdf_diagnostics["pdf_text_extraction_status"],
+            pdf_text_extraction_char_count=pdf_diagnostics[
+                "pdf_text_extraction_char_count"
+            ],
+            pdf_text_extraction_page_count=pdf_diagnostics[
+                "pdf_text_extraction_page_count"
+            ],
+            raw_pdf_bytes_retained=False,
+            raw_pdf_text_retained=False,
+            bounded_text_retained=False,
+            ocr_opened=False,
+            browser_automation_opened=False,
+            external_service_used=False,
+        )
     if content_type not in FETCH_READ_READABLE_CONTENT_TYPES:
         raise GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
@@ -1490,7 +1650,9 @@ def _public_web_fetch_read_request(url: str) -> Request:
 def _public_web_fetch_read_request_headers() -> dict[str, str]:
     return {
         "User-Agent": FETCH_READ_PUBLIC_WEB_USER_AGENT,
-        "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+        "Accept": (
+            "text/html,application/xhtml+xml,text/plain,application/pdf;q=0.9,*/*;q=0.1"
+        ),
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "identity",
     }
@@ -2127,8 +2289,6 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
         "official_pdf_table_read_support_adds_dependency",
         "official_pdf_table_read_support_uses_ocr",
         "official_pdf_table_read_support_uses_browser_automation",
-        "pdf_content_type_support_opened",
-        "pdf_parsing_opened",
         "candidate_ranking_policy_changed",
         "candidate_selection_uses_provider_snippet",
         "candidate_selection_created_source_authority",
@@ -2151,6 +2311,22 @@ def _validate_fetch_read_observability(packet: Mapping[str, Any]) -> None:
     ):
         expected = key == "candidate_diagnostics_observability_only"
         if packet.get(key) is not expected:
+            _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    for key in (
+        "pdf_content_type_support_opened",
+        "pdf_parsing_opened",
+        "pdf_text_extraction_attempted",
+    ):
+        if packet.get(key) not in {True, False}:
+            _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
+    for key in (
+        "raw_pdf_bytes_retained",
+        "raw_pdf_text_retained",
+        "pdf_text_extraction_uses_ocr",
+        "pdf_text_extraction_uses_browser_automation",
+        "pdf_text_extraction_uses_external_service",
+    ):
+        if packet.get(key) is not False:
             _blocked_output_hygiene(f"generic live packet {key} posture invalid.")
     if packet.get("provider_query_generation_changed") not in {True, False}:
         _blocked_output_hygiene(
@@ -2488,13 +2664,18 @@ def _validate_candidate_diagnostic(diagnostic: Mapping[str, Any]) -> None:
         "official_artifact_read_support_satisfies_source_obligation",
         "official_artifact_read_support_citation_eligible",
         "official_artifact_read_support_claims_correctness",
-        "pdf_parsing_opened",
         "ocr_opened",
         "browser_automation_opened",
+        "external_service_used",
         "heavy_document_parser_dependency_added",
+        "raw_pdf_bytes_retained",
+        "raw_pdf_text_retained",
     ):
         if key in diagnostic and diagnostic.get(key) is not False:
             _blocked_output_hygiene(f"candidate diagnostic requires {key}=false.")
+    for key in ("pdf_parsing_opened", "pdf_text_extraction_attempted"):
+        if key in diagnostic and diagnostic.get(key) not in {True, False}:
+            _blocked_output_hygiene(f"candidate diagnostic {key} invalid.")
     if diagnostic.get("attempted") not in {True, False}:
         _blocked_output_hygiene("candidate diagnostic attempted flag invalid.")
     if diagnostic.get("selected_for_fetch_read") not in {True, False}:
@@ -2616,13 +2797,18 @@ def _validate_attempt_diagnostic(diagnostic: Mapping[str, Any]) -> None:
         "official_artifact_read_support_satisfies_source_obligation",
         "official_artifact_read_support_citation_eligible",
         "official_artifact_read_support_claims_correctness",
-        "pdf_parsing_opened",
         "ocr_opened",
         "browser_automation_opened",
+        "external_service_used",
         "heavy_document_parser_dependency_added",
+        "raw_pdf_bytes_retained",
+        "raw_pdf_text_retained",
     ):
         if key in diagnostic and diagnostic.get(key) is not False:
             _blocked_output_hygiene(f"fetch/read diagnostic requires {key}=false.")
+    for key in ("pdf_parsing_opened", "pdf_text_extraction_attempted"):
+        if key in diagnostic and diagnostic.get(key) not in {True, False}:
+            _blocked_output_hygiene(f"fetch/read diagnostic {key} invalid.")
     if not _normalized_status_class(diagnostic.get("http_status_class")):
         _blocked_output_hygiene("fetch/read diagnostic status class invalid.")
     if diagnostic.get("candidate_selection_policy_id") != (
@@ -6921,8 +7107,33 @@ def _base_packet(
         "official_pdf_table_read_support_adds_dependency": False,
         "official_pdf_table_read_support_uses_ocr": False,
         "official_pdf_table_read_support_uses_browser_automation": False,
-        "pdf_content_type_support_opened": False,
-        "pdf_parsing_opened": False,
+        "pdf_text_extraction_attempted": _pdf_text_extraction_attempted(
+            counts.get("fetch_read_attempt_diagnostics")
+        ),
+        "pdf_text_extraction_status_summary": _pdf_text_extraction_status_summary(
+            counts.get("fetch_read_attempt_diagnostics")
+        ),
+        "pdf_text_extraction_char_count": _pdf_text_extraction_char_count(
+            counts.get("fetch_read_attempt_diagnostics")
+        ),
+        "pdf_text_extraction_page_count": _pdf_text_extraction_page_count(
+            counts.get("fetch_read_attempt_diagnostics")
+        ),
+        "raw_pdf_bytes_retained": False,
+        "raw_pdf_text_retained": False,
+        **_pdf_text_extraction_retention_payload(
+            counts.get("fetch_read_attempt_diagnostics"),
+            bounded_text_retained=bool(counts.get("fetch_read_completed")),
+        ),
+        "pdf_text_extraction_uses_ocr": False,
+        "pdf_text_extraction_uses_browser_automation": False,
+        "pdf_text_extraction_uses_external_service": False,
+        "pdf_content_type_support_opened": _pdf_content_type_support_opened(
+            counts.get("fetch_read_attempt_diagnostics")
+        ),
+        "pdf_parsing_opened": _pdf_text_extraction_attempted(
+            counts.get("fetch_read_attempt_diagnostics")
+        ),
         "candidate_ranking_policy_changed": False,
         "candidate_selection_policy_id": FETCH_READ_CANDIDATE_SELECTION_POLICY_ID,
         "candidate_selection_policy_scope": FETCH_READ_CANDIDATE_SELECTION_SCOPE,
@@ -9021,6 +9232,11 @@ def _fetch_read_attempt_diagnostic(
         if selection is not None
         else {}
     )
+    pdf_payload = _pdf_text_extraction_payload(
+        fetch_result=fetch_result,
+        error=error,
+        bounded_text_retained=selection is not None and readable_text_obtained,
+    )
     return {
         "candidate_id": _clean_text(candidate.get("candidate_id"), limit=320),
         "attempt_index": attempt_index,
@@ -9065,6 +9281,7 @@ def _fetch_read_attempt_diagnostic(
             _official_source_survival_features(selection_features)
         ),
         **artifact_payload,
+        **pdf_payload,
         "source_survival_diagnostic_only": True,
         "source_survival_diagnostic_creates_source_authority": False,
         "source_survival_diagnostic_satisfies_source_obligation": False,
@@ -9122,6 +9339,44 @@ def _selected_fetch_read_window_diagnostic_payload(
     }
 
 
+def _pdf_text_extraction_payload(
+    *,
+    fetch_result: GenericLiveFetchReadResult | None = None,
+    error: GenericSingleRelationLiveDogfoodRunError | None = None,
+    bounded_text_retained: bool = False,
+) -> dict[str, Any]:
+    attempted = False
+    status = None
+    char_count = 0
+    page_count = None
+    if fetch_result is not None:
+        attempted = fetch_result.pdf_text_extraction_attempted is True
+        status = _clean_text(fetch_result.pdf_text_extraction_status, limit=80)
+        char_count = _bounded_int(fetch_result.pdf_text_extraction_char_count)
+        page_count = fetch_result.pdf_text_extraction_page_count
+    if error is not None:
+        attempted = error.pdf_text_extraction_attempted is True
+        status = _clean_text(error.pdf_text_extraction_status, limit=80)
+        char_count = _bounded_int(error.pdf_text_extraction_char_count)
+        page_count = error.pdf_text_extraction_page_count
+    if page_count is not None:
+        page_count = _bounded_int(page_count)
+    return {
+        "pdf_text_extraction_attempted": attempted,
+        "pdf_text_extraction_status": status,
+        "pdf_text_extraction_char_count": char_count,
+        "pdf_text_extraction_page_count": page_count,
+        "raw_pdf_bytes_retained": False,
+        "raw_pdf_text_retained": False,
+        "bounded_text_retained": bool(bounded_text_retained),
+        "pdf_parsing_opened": attempted,
+        "ocr_opened": False,
+        "browser_automation_opened": False,
+        "external_service_used": False,
+        "heavy_document_parser_dependency_added": False,
+    }
+
+
 def _apply_attempt_diagnostic(
     candidate_diagnostics: list[dict[str, Any]],
     attempt_diagnostic: Mapping[str, Any],
@@ -9172,9 +9427,17 @@ def _apply_attempt_diagnostic(
             "official_artifact_read_support_satisfies_source_obligation",
             "official_artifact_read_support_citation_eligible",
             "official_artifact_read_support_claims_correctness",
+            "pdf_text_extraction_attempted",
+            "pdf_text_extraction_status",
+            "pdf_text_extraction_char_count",
+            "pdf_text_extraction_page_count",
+            "raw_pdf_bytes_retained",
+            "raw_pdf_text_retained",
+            "bounded_text_retained",
             "pdf_parsing_opened",
             "ocr_opened",
             "browser_automation_opened",
+            "external_service_used",
             "heavy_document_parser_dependency_added",
             "answer_bearing_candidate_window_considered",
             "answer_bearing_candidate_window_selected",
@@ -9252,6 +9515,40 @@ def _fetch_read_blocker_from_attempt_diagnostics(
         return (
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ALL_CANDIDATES_4XX,
             "all bounded fetch/read candidate attempts failed with HTTP 4xx status class.",
+        )
+    if attempts and all(
+        item.get("failure_category")
+        == FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_UNAVAILABLE
+        for item in attempts
+    ):
+        return (
+            BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_UNAVAILABLE,
+            (
+                "bounded fetch/read attempted PDF text-layer extraction, but "
+                "the selected PDF candidate had no extractable text layer; OCR "
+                "was not opened."
+            ),
+        )
+    if attempts and all(
+        item.get("failure_category") == FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_FAILED
+        for item in attempts
+    ):
+        return (
+            BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_FAILED,
+            (
+                "bounded fetch/read attempted PDF text-layer extraction, but "
+                "the selected PDF candidate could not be parsed; OCR/browser/"
+                "external-service fallback was not opened."
+            ),
+        )
+    if attempts and all(
+        item.get("failure_category")
+        == FETCH_READ_FAILURE_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED
+        for item in attempts
+    ):
+        return (
+            BLOCKED_FETCH_READ_PDF_TEXT_EXTRACTION_CAP_EXHAUSTED,
+            "bounded fetch/read exhausted the byte cap before PDF text extraction.",
         )
     if attempts and all(
         item.get("failure_category") == FETCH_READ_FAILURE_UNKNOWN
@@ -9674,6 +9971,20 @@ def _validate_explicit_direct_official_artifact_read_support(
         content_type=content_type,
     ):
         return
+    if (
+        fetch_result.pdf_text_extraction_attempted is True
+        and fetch_result.pdf_text_extraction_status == PDF_TEXT_EXTRACTION_STATUS_EXTRACTED
+        and fetch_result.sanitized_text
+        and content_type == "application/pdf"
+    ):
+        features = _safe_mapping(candidate.get("candidate_selection_features"))
+        if _official_source_survival_features(features) and _official_artifact_type_from_signals(
+            features=features,
+            content_type=content_type,
+            title=_clean_text(candidate.get("title"), limit=220),
+            url=_clean_text(candidate.get("url"), limit=700),
+        ):
+            return
     status_class = (
         _normalized_status_class(fetch_result.status_class)
         or _status_class(fetch_result.status_code)
@@ -10168,6 +10479,7 @@ def _provider_extracted_fetch_read_material(
         "bounded_text_char_count": len(bounded_text),
         "bounded_text_selection": selection.to_metadata(),
         **artifact_payload,
+        **_pdf_text_extraction_payload(),
         "raw_page_content_retained": False,
         "raw_page_text_retained": False,
         "raw_headers_retained": False,
@@ -10412,6 +10724,10 @@ def _fetch_read_material(
         "bounded_text_char_count": len(bounded_text),
         "bounded_text_selection": selection.to_metadata(),
         **artifact_payload,
+        **_pdf_text_extraction_payload(
+            fetch_result=fetch_result,
+            bounded_text_retained=bool(bounded_text),
+        ),
         "raw_page_content_retained": False,
         "raw_page_text_retained": False,
         "raw_headers_retained": False,
@@ -10484,6 +10800,29 @@ def _failed_fetch_read_materials(
                 "redirect_chain_digest": attempt.get("redirect_chain_digest"),
                 "redirect_count": attempt.get("redirect_count"),
                 **artifact_payload,
+                "pdf_text_extraction_attempted": (
+                    attempt.get("pdf_text_extraction_attempted") is True
+                ),
+                "pdf_text_extraction_status": _clean_text(
+                    attempt.get("pdf_text_extraction_status"),
+                    limit=80,
+                ),
+                "pdf_text_extraction_char_count": _bounded_int(
+                    attempt.get("pdf_text_extraction_char_count")
+                ),
+                "pdf_text_extraction_page_count": (
+                    _bounded_int(attempt.get("pdf_text_extraction_page_count"))
+                    if attempt.get("pdf_text_extraction_page_count") is not None
+                    else None
+                ),
+                "raw_pdf_bytes_retained": False,
+                "raw_pdf_text_retained": False,
+                "bounded_text_retained": False,
+                "pdf_parsing_opened": attempt.get("pdf_parsing_opened") is True,
+                "ocr_opened": False,
+                "browser_automation_opened": False,
+                "external_service_used": False,
+                "heavy_document_parser_dependency_added": False,
                 "raw_page_content_retained": False,
                 "raw_page_text_retained": False,
                 "raw_headers_retained": False,
@@ -10588,6 +10927,13 @@ def _validate_fetch_result(
     content_type = _content_type_or_unknown(fetch_result.content_type)
     readable_content_type = _readable_content_type_value(content_type)
     if readable_content_type is False:
+        if (
+            fetch_result.pdf_text_extraction_attempted is True
+            and fetch_result.pdf_text_extraction_status
+            == PDF_TEXT_EXTRACTION_STATUS_EXTRACTED
+            and fetch_result.sanitized_text
+        ):
+            return
         if _official_artifact_fixture_read_support_allowed(
             fetch_result,
             candidate=candidate,
@@ -11887,6 +12233,21 @@ def _readable_content_type_value(value: Any) -> bool | str:
     return content_type in FETCH_READ_READABLE_CONTENT_TYPES
 
 
+def _pdf_fetch_target(
+    *,
+    content_type: str,
+    attempted_url: str,
+    final_url: str | None = None,
+) -> bool:
+    if _content_type_or_unknown(content_type) == "application/pdf":
+        return True
+    for url in (final_url, attempted_url):
+        parsed = urlparse(str(url or ""))
+        if parsed.path.casefold().endswith(".pdf"):
+            return True
+    return False
+
+
 def _extract_readable_text(
     body: bytes,
     *,
@@ -12052,6 +12413,63 @@ def _failure_category_summary(value: Any) -> dict[str, int]:
         category: categories.count(category)
         for category in sorted(set(categories))
     }
+
+
+def _pdf_text_extraction_attempted(value: Any) -> bool:
+    return any(
+        _safe_mapping(item).get("pdf_text_extraction_attempted") is True
+        for item in _safe_sequence(value)
+    )
+
+
+def _pdf_content_type_support_opened(value: Any) -> bool:
+    return any(
+        _content_type_or_unknown(_safe_mapping(item).get("content_type"))
+        == "application/pdf"
+        or _safe_mapping(item).get("pdf_text_extraction_attempted") is True
+        for item in _safe_sequence(value)
+    )
+
+
+def _pdf_text_extraction_status_summary(value: Any) -> dict[str, int]:
+    statuses = [
+        status
+        for status in (
+            _clean_text(
+                _safe_mapping(item).get("pdf_text_extraction_status"),
+                limit=80,
+            )
+            for item in _safe_sequence(value)
+        )
+        if status
+    ]
+    return {status: statuses.count(status) for status in sorted(set(statuses))}
+
+
+def _pdf_text_extraction_retention_payload(
+    value: Any,
+    *,
+    bounded_text_retained: bool,
+) -> dict[str, Any]:
+    if not _pdf_text_extraction_attempted(value):
+        return {}
+    return {"bounded_text_retained": bool(bounded_text_retained)}
+
+
+def _pdf_text_extraction_char_count(value: Any) -> int:
+    return sum(
+        _bounded_int(_safe_mapping(item).get("pdf_text_extraction_char_count"))
+        for item in _safe_sequence(value)
+    )
+
+
+def _pdf_text_extraction_page_count(value: Any) -> int | None:
+    counts = [
+        _bounded_int(_safe_mapping(item).get("pdf_text_extraction_page_count"))
+        for item in _safe_sequence(value)
+        if _safe_mapping(item).get("pdf_text_extraction_page_count") is not None
+    ]
+    return sum(counts) if counts else None
 
 
 def _official_artifact_candidate_count(value: Any) -> int:

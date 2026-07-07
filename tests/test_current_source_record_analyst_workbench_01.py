@@ -27,6 +27,8 @@ from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+import pytest
+
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
 from core.analyst_workbench_runtime import (
     ROLE_ANSWER_ADJACENT_CONTEXT,
@@ -783,6 +785,119 @@ def test_contextual_provider_html_does_not_skip_direct_official_pdf_read_support
     _assert_workbench_non_authority(packet)
 
 
+def test_contextual_html_plus_official_pdf_uses_generic_pdf_text_extraction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    captured_input: dict[str, Any] = {}
+    fetched_urls: list[str] = []
+    pdf_text = (
+        "Example County Clerk official fee schedule. The standard paper small "
+        "claims filing fee is $54."
+    )
+    pdf_url = "https://example-county.gov/courts/small-claims-fee-schedule.pdf"
+    monkeypatch.setattr(
+        dogfood,
+        "build_opener",
+        lambda _redirect_handler: _RecordingPdfOpener(
+            fetched_urls,
+            _PdfResponse(
+                _tiny_text_pdf_bytes(pdf_text),
+                url=pdf_url,
+                content_type="application/pdf",
+            ),
+        ),
+    )
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        captured_input.update(dict(input_packet))
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper small claims filing fee is $54.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-contextual-html-generic-pdf-extraction",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "Example County Online Discount Filing Fee",
+                    "https://example-county.gov/courts/online-discount",
+                    (
+                        "Online filing discount. Eligible filers may pay a "
+                        "reduced online small claims fee of $20."
+                    ),
+                    rank=1,
+                ),
+                _provider_result(
+                    "Example County Official Small Claims Fee Schedule PDF",
+                    pdf_url,
+                    rank=2,
+                ),
+            ],
+        ),
+        fetch_read_runner=dogfood.fetch_public_url_once,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    assert fetched_urls == [pdf_url]
+    assert packet["source_acquisition_mode"] == (
+        dogfood.SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
+    )
+    assert packet["fetch_read_completed"] == 1
+    assert packet["pdf_text_extraction_attempted"] is True
+    assert packet["pdf_text_extraction_status_summary"] == {"extracted": 1}
+    assert packet["pdf_text_extraction_char_count"] == len(pdf_text)
+    assert packet["pdf_text_extraction_page_count"] == 1
+    assert packet["pdf_content_type_support_opened"] is True
+    assert packet["pdf_parsing_opened"] is True
+    assert packet["raw_pdf_bytes_retained"] is False
+    assert packet["raw_pdf_text_retained"] is False
+    assert packet["bounded_text_retained"] is True
+    assert packet["pdf_text_extraction_uses_ocr"] is False
+    assert packet["pdf_text_extraction_uses_browser_automation"] is False
+    assert packet["pdf_text_extraction_uses_external_service"] is False
+    assert packet["official_pdf_table_read_support_obtained"] is True
+
+    triage = packet["candidate_evidence_triage_packet"]
+    assert triage["contextual_candidate_refs"]
+    assert triage["overclaim_risk_candidate_refs"]
+    dprime_ref = packet["workbench_dprime_dossier"]["dprime_review_candidate_ref"]
+    assert dprime_ref["url"].endswith("small-claims-fee-schedule.pdf")
+    assert dprime_ref["official_pdf_or_table_artifact_candidate"] is True
+    assert captured_input["workbench_dprime_dossier_ref"]["dossier_digest"] == (
+        packet["workbench_dprime_dossier_ref"]["dossier_digest"]
+    )
+
+    fetch_packet = _retained_fetch_read_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    assert reference["content_type"] == "application/pdf"
+    assert reference["fetch_read_status"] == "readable"
+    assert reference["bounded_text"] == pdf_text
+    assert reference["pdf_text_extraction_attempted"] is True
+    assert reference["pdf_text_extraction_status"] == "extracted"
+    assert reference["raw_pdf_bytes_retained"] is False
+    assert reference["raw_pdf_text_retained"] is False
+    assert reference["bounded_text_retained"] is True
+    assert reference["official_artifact_read_support"] is True
+    assert reference["official_artifact_read_support_satisfies_source_obligation"] is False
+    assert reference["official_artifact_read_support_citation_eligible"] is False
+    assert reference["source_obligation_satisfied"] is False
+    assert reference["citation_eligible"] is False
+    assert packet["provider_snippets_used_as_evidence"] is False
+    _assert_workbench_non_authority(packet)
+
+
 def test_provider_snippet_text_does_not_create_workbench_strict_support(
     tmp_path: Path,
 ) -> None:
@@ -980,6 +1095,77 @@ def _fake_fetch_runner(text: str) -> Any:
         )
 
     return runner
+
+
+class _PdfHeaders(dict[str, str]):
+    def get(self, key: str, default: str | None = None) -> str:
+        return super().get(key.lower(), default or "")
+
+
+class _PdfResponse:
+    def __init__(self, body: bytes, *, url: str, content_type: str) -> None:
+        self._body = body
+        self._url = url
+        self.status = 200
+        self.headers = _PdfHeaders({"content-type": content_type})
+
+    def __enter__(self) -> "_PdfResponse":
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        return None
+
+    def read(self, _limit: int) -> bytes:
+        return self._body
+
+    def geturl(self) -> str:
+        return self._url
+
+
+class _RecordingPdfOpener:
+    def __init__(self, fetched_urls: list[str], response: _PdfResponse) -> None:
+        self._fetched_urls = fetched_urls
+        self._response = response
+
+    def open(self, request: Any, *, timeout: int) -> _PdfResponse:
+        assert timeout == 20
+        self._fetched_urls.append(request.full_url)
+        return self._response
+
+
+def _tiny_text_pdf_bytes(text: str) -> bytes:
+    safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream = f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("ascii")
+    objects = [
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+        (
+            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
+        ),
+        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+        b"5 0 obj << /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >> stream\n"
+        + stream
+        + b"\nendstream endobj\n",
+    ]
+    output = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj in objects:
+        offsets.append(len(output))
+        output.extend(obj)
+    xref = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
+    for offset in offsets[1:]:
+        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    output.extend(
+        (
+            f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(output)
 
 
 def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str, Any]:

@@ -892,7 +892,9 @@ def test_public_web_fetch_request_uses_generic_non_secret_headers() -> None:
 
     assert request_headers == {
         "User-Agent": dogfood.FETCH_READ_PUBLIC_WEB_USER_AGENT,
-        "Accept": "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.1",
+        "Accept": (
+            "text/html,application/xhtml+xml,text/plain,application/pdf;q=0.9,*/*;q=0.1"
+        ),
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "identity",
     }
@@ -1311,10 +1313,68 @@ def test_pdf_content_type_is_diagnostic_only_unsupported_content_type(
     assert attempt["failure_category"] == "UNSUPPORTED_CONTENT_TYPE"
     assert attempt["readable_content_type"] is False
     assert attempt["readable_text_obtained"] is False
-    assert result.packet["pdf_content_type_support_opened"] is False
+    assert result.packet["pdf_content_type_support_opened"] is True
     assert result.packet["pdf_parsing_opened"] is False
     assert result.packet["evidence_ledger_admissions"] == 0
     assert result.packet["source_display_entries"] == []
+
+
+def test_non_official_pdf_text_extraction_reaches_existing_fetch_packet(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_text = "Independent public fee schedule states small claims filing fee is $54."
+    pdf_url = "https://independent-fees.org/current-fee.pdf"
+    fetched_urls: list[str] = []
+    monkeypatch.setattr(
+        dogfood,
+        "build_opener",
+        lambda _redirect_handler: _RecordingPdfOpener(
+            fetched_urls,
+            _PdfResponse(
+                _tiny_text_pdf_bytes(pdf_text),
+                url=pdf_url,
+                content_type="application/pdf",
+            ),
+        ),
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="generic-non-official-pdf-extraction",
+        confirm_live_dogfood=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_result(
+                    "Independent Small Claims Fee PDF",
+                    pdf_url,
+                )
+            ],
+        ),
+        fetch_read_runner=dogfood.fetch_public_url_once,
+        environ={},
+    )
+
+    assert fetched_urls == [pdf_url]
+    assert result.packet["fetch_read_completed"] == 1
+    assert result.packet["pdf_text_extraction_attempted"] is True
+    assert result.packet["pdf_text_extraction_status_summary"] == {"extracted": 1}
+    assert result.packet["pdf_content_type_support_opened"] is True
+    assert result.packet["pdf_parsing_opened"] is True
+    assert result.packet["raw_pdf_bytes_retained"] is False
+    assert result.packet["raw_pdf_text_retained"] is False
+    assert result.packet["official_pdf_table_artifact_candidate_count"] == 0
+    fetch_packet = _retained_fetch_packet(result)
+    reference = fetch_packet["reference_records"][0]
+    assert reference["content_type"] == "application/pdf"
+    assert reference["bounded_text"] == pdf_text
+    assert reference["pdf_text_extraction_attempted"] is True
+    assert reference.get("official_artifact_read_support") is not True
+    assert reference["source_obligation_satisfied"] is False
+    assert reference["citation_eligible"] is False
 
 
 def test_n400_fetch_read_prioritizes_source_of_record_candidates_under_cap(
@@ -1417,7 +1477,7 @@ def test_n400_fetch_read_prioritizes_source_of_record_candidates_under_cap(
     assert by_rank[4]["content_type"] == "application/pdf"
     assert by_rank[4]["failure_category"] == "UNSUPPORTED_CONTENT_TYPE"
     assert by_rank[4]["readable_text_obtained"] is False
-    assert result.packet["pdf_content_type_support_opened"] is False
+    assert result.packet["pdf_content_type_support_opened"] is True
     assert result.packet["pdf_parsing_opened"] is False
     for diagnostic in result.packet["fetch_read_candidate_diagnostics"]:
         features = diagnostic["candidate_selection_features"]
@@ -3673,6 +3733,77 @@ def _provider_invalid_url_result(title: str, *, rank: int = 1) -> dict[str, Any]
     result = _provider_result(title, "https://example-county.invalid/fees", rank=rank)
     result["url"] = "not-a-valid-url"
     return result
+
+
+class _PdfHeaders(dict[str, str]):
+    def get(self, key: str, default: str | None = None) -> str:
+        return super().get(key.lower(), default or "")
+
+
+class _PdfResponse:
+    def __init__(self, body: bytes, *, url: str, content_type: str) -> None:
+        self._body = body
+        self._url = url
+        self.status = 200
+        self.headers = _PdfHeaders({"content-type": content_type})
+
+    def __enter__(self) -> "_PdfResponse":
+        return self
+
+    def __exit__(self, *_args: Any) -> None:
+        return None
+
+    def read(self, _limit: int) -> bytes:
+        return self._body
+
+    def geturl(self) -> str:
+        return self._url
+
+
+class _RecordingPdfOpener:
+    def __init__(self, fetched_urls: list[str], response: _PdfResponse) -> None:
+        self._fetched_urls = fetched_urls
+        self._response = response
+
+    def open(self, request: Any, *, timeout: int) -> _PdfResponse:
+        assert timeout == 20
+        self._fetched_urls.append(request.full_url)
+        return self._response
+
+
+def _tiny_text_pdf_bytes(text: str) -> bytes:
+    safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+    stream = f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("ascii")
+    objects = [
+        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
+        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
+        (
+            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
+        ),
+        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
+        b"5 0 obj << /Length "
+        + str(len(stream)).encode("ascii")
+        + b" >> stream\n"
+        + stream
+        + b"\nendstream endobj\n",
+    ]
+    output = bytearray(b"%PDF-1.4\n")
+    offsets = [0]
+    for obj in objects:
+        offsets.append(len(output))
+        output.extend(obj)
+    xref = len(output)
+    output.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
+    for offset in offsets[1:]:
+        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
+    output.extend(
+        (
+            f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref}\n%%EOF\n"
+        ).encode("ascii")
+    )
+    return bytes(output)
 
 
 def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str, Any]:
