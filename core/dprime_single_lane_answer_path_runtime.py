@@ -690,6 +690,10 @@ def _source_display_entry(record: Mapping[str, Any], index: int) -> dict[str, An
             "label": label,
             "display_text": display_text,
             "source_id": source_id,
+            "candidate_id": mapped.get("candidate_id") or mapped.get("evidence_id"),
+            "reference_id": mapped.get("reference_id") or mapped.get("content_ref_id"),
+            "reference_digest": mapped.get("reference_digest")
+            or mapped.get("source_digest"),
             "source_obligation_id": mapped.get("source_obligation_id"),
             "evidence_id": mapped.get("evidence_id"),
             "content_ref_id": mapped.get("content_ref_id"),

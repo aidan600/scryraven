@@ -13,6 +13,7 @@ ad hoc text matching.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -131,6 +132,9 @@ BLOCKED_CLOSED_SURFACE_VIOLATION = "BLOCKED_CLOSED_SURFACE_VIOLATION"
 BLOCKED_PRODUCT_IMPORT_BOUNDARY = "BLOCKED_PRODUCT_IMPORT_BOUNDARY"
 BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING = (
     "BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING"
+)
+BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH = (
+    "BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH"
 )
 
 SEMANTIC_COVERAGE_MACHINERY_FOUND = (
@@ -435,6 +439,34 @@ def build_live_semantic_coverage_status(
             detail=f"could not read fetch/read artifact: {exc}",
         )
 
+    candidate_handoff = _dprime_candidate_handoff_inputs(
+        fetch_read_content_packet=fetch_read_content_packet,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        workbench_dprime_dossier=workbench_dprime_dossier,
+    )
+    if candidate_handoff.get("status") == "blocked":
+        return _blocked_candidate_handoff_result(
+            query=query,
+            readiness_payload=readiness_payload,
+            admission_ref=admission_ref,
+            readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            relation_ref={},
+            handoff_ref=candidate_handoff,
+            workbench_dprime_dossier_ref=workbench_ref,
+        )
+    admission_ref = _safe_mapping(candidate_handoff.get("admission_ref")) or admission_ref
+    readiness_ref = _safe_mapping(candidate_handoff.get("readiness_ref")) or readiness_ref
+    component_ref = _safe_mapping(candidate_handoff.get("component_ref")) or component_ref
+    source_obligation_ref = (
+        _safe_mapping(candidate_handoff.get("source_obligation_ref"))
+        or source_obligation_ref
+    )
+
     try:
         relation_intake = build_dprime_analyst_relation_intake(
             query=query,
@@ -505,6 +537,22 @@ def build_live_semantic_coverage_status(
             detail=str(exc),
         )
     generic_relation_ref = relation_intake_ref(relation_intake)
+    candidate_handoff = _candidate_handoff_with_relation_ref(
+        candidate_handoff,
+        generic_relation_ref,
+    )
+    if candidate_handoff.get("status") == "blocked":
+        return _blocked_candidate_handoff_result(
+            query=query,
+            readiness_payload=readiness_payload,
+            admission_ref=admission_ref,
+            readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            relation_ref=generic_relation_ref,
+            handoff_ref=candidate_handoff,
+            workbench_dprime_dossier_ref=workbench_ref,
+        )
     component_ref = component_ref_from_relation_intake(relation_intake)
     source_obligation_ref = source_obligation_ref_from_relation_intake(
         relation_intake
@@ -624,6 +672,7 @@ def build_live_semantic_coverage_status(
                 dprime_single_lane_answer_path_enabled
             ),
             workbench_dprime_dossier_ref=workbench_ref,
+            candidate_handoff_ref=candidate_handoff,
         )
     if dprime_status.decision != PASS_DECISION:
         return _blocked_dprime_status_result(
@@ -636,13 +685,20 @@ def build_live_semantic_coverage_status(
             relation_ref=generic_relation_ref,
             dprime_status=dprime_status,
             workbench_dprime_dossier_ref=workbench_ref,
+            candidate_handoff_ref=candidate_handoff,
         )
 
     try:
         semantic_result = build_retained_custody_semantic_coverage(
             fetch_read_content_packet=fetch_read_content_packet,
-            expected_candidate_id=_clean_text(admission_ref.get("candidate_id"), limit=320),
-            expected_reference_id=_clean_text(admission_ref.get("reference_id"), limit=320),
+            expected_candidate_id=_clean_text(
+                admission_ref.get("candidate_id"),
+                limit=320,
+            ),
+            expected_reference_id=_clean_text(
+                admission_ref.get("reference_id"),
+                limit=320,
+            ),
         )
     except FileNotFoundError as exc:
         return _blocked_result(
@@ -714,6 +770,7 @@ def build_live_semantic_coverage_status(
         component_ref=component_ref,
         source_obligation_ref=source_obligation_ref,
         semantic_result=semantic_result,
+        candidate_handoff_ref=candidate_handoff,
     )
     output = format_live_semantic_coverage_status(payload)
     if not output_hygiene_passes(output):
@@ -1138,6 +1195,7 @@ def _pass_semantic_payload(
     component_ref: Mapping[str, Any],
     source_obligation_ref: Mapping[str, Any],
     semantic_result: RetainedCustodySemanticCoverageResult,
+    candidate_handoff_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     support_ref = _support_proposal_ref(semantic_result)
     semantic_ref = _semantic_observation_ref(semantic_result)
@@ -1158,6 +1216,7 @@ def _pass_semantic_payload(
         decision=PASS_DECISION,
         blocker_detail=None,
         next_blocked_surface=None,
+        candidate_handoff_ref=candidate_handoff_ref,
     )
     payload.update(
         {
@@ -1220,6 +1279,7 @@ def _blocked_dprime_status_result(
     relation_ref: Mapping[str, Any],
     dprime_status: DPrimeStatusPayload,
     workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
+    candidate_handoff_ref: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     dprime = dprime_status.to_dict()
     dprime["generic_relation_intake_ref"] = dict(relation_ref)
@@ -1255,6 +1315,7 @@ def _blocked_dprime_status_result(
         blocker_detail=dprime["blocker_detail"],
         next_blocked_surface=_dprime_next_blocked_surface(dprime),
         workbench_dprime_dossier_ref=workbench_ref,
+        candidate_handoff_ref=candidate_handoff_ref,
     )
     payload.update(
         {
@@ -1304,6 +1365,7 @@ def _blocked_dprime_model_review_assessment_result(
     dprime_source_citation_authority_enabled: bool | None,
     dprime_single_lane_answer_path_enabled: bool | None,
     workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
+    candidate_handoff_ref: Mapping[str, Any] | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     source_citation_authority_enabled = (
         dprime_downstream_authority_enabled
@@ -1320,6 +1382,9 @@ def _blocked_dprime_model_review_assessment_result(
     workbench_ref = _safe_mapping(workbench_dprime_dossier_ref)
     if workbench_ref:
         dprime["workbench_dprime_dossier_ref"] = dict(workbench_ref)
+    candidate_handoff = _safe_mapping(candidate_handoff_ref)
+    if candidate_handoff:
+        dprime["candidate_handoff_integrity_ref"] = dict(candidate_handoff)
     dprime["dprime_downstream_authority_enabled"] = bool(
         dprime_downstream_authority_enabled
     )
@@ -1747,6 +1812,24 @@ def _blocked_dprime_model_review_assessment_result(
         answer_path_error=answer_path_error,
         run_kernel=contract_authority.run_kernel if contract_authority else None,
     )
+    candidate_handoff = _candidate_handoff_with_answer_path_refs(
+        candidate_handoff,
+        answer_path_ref,
+    )
+    if candidate_handoff.get("status") == "blocked":
+        return _blocked_candidate_handoff_result(
+            query=query,
+            readiness_payload=readiness_payload,
+            admission_ref=admission_ref,
+            readiness_ref=readiness_ref,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            relation_ref=relation_ref,
+            handoff_ref=candidate_handoff,
+            workbench_dprime_dossier_ref=workbench_ref,
+        )
+    if candidate_handoff:
+        dprime["candidate_handoff_integrity_ref"] = dict(candidate_handoff)
     payload = _base_semantic_payload(
         query=query,
         readiness_payload=readiness_payload,
@@ -1762,6 +1845,7 @@ def _blocked_dprime_model_review_assessment_result(
         blocker_detail=payload_detail,
         next_blocked_surface=next_surface,
         workbench_dprime_dossier_ref=workbench_ref,
+        candidate_handoff_ref=candidate_handoff,
     )
     payload.update(
         {
@@ -2179,6 +2263,608 @@ def _first_fetch_read_reference(
     return {}
 
 
+def _workbench_expected_dprime_candidate_ref(
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    selected = _candidate_identity_ref(dossier.get("dprime_review_candidate_ref"))
+    if selected:
+        return selected
+    strict_refs = [
+        _candidate_identity_ref(item)
+        for item in _safe_sequence(dossier.get("strict_answer_support_candidate_refs"))
+    ]
+    strict_refs = [item for item in strict_refs if item]
+    if len(strict_refs) == 1:
+        return strict_refs[0]
+    return {}
+
+
+def _candidate_identity_ref(value: Any) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    return _without_empty(
+        {
+            "candidate_id": _clean_text(ref.get("candidate_id"), limit=320),
+            "candidate_digest": _clean_text(ref.get("candidate_digest"), limit=128),
+            "reference_id": _clean_text(ref.get("reference_id"), limit=320),
+            "reference_digest": _clean_text(ref.get("reference_digest"), limit=128),
+            "title": _clean_text(
+                ref.get("title")
+                or ref.get("candidate_title")
+                or ref.get("source_title")
+                or ref.get("content_title"),
+                limit=220,
+            ),
+            "url": _clean_text(
+                ref.get("url")
+                or ref.get("candidate_url")
+                or ref.get("source_url")
+                or ref.get("resolved_url")
+                or ref.get("final_url")
+                or ref.get("canonical_url"),
+                limit=700,
+            ),
+            "domain": _clean_text(
+                ref.get("domain")
+                or ref.get("candidate_domain")
+                or ref.get("source_domain")
+                or ref.get("resolved_domain"),
+                limit=220,
+            ),
+            "bounded_content_digest": _clean_text(
+                ref.get("bounded_content_digest") or ref.get("excerpt_digest"),
+                limit=128,
+            ),
+        }
+    )
+
+
+def _candidate_identity_ref_from_reference(
+    reference: Mapping[str, Any],
+) -> dict[str, Any]:
+    return _candidate_identity_ref(
+        {
+            "candidate_id": reference.get("candidate_id"),
+            "candidate_digest": reference.get("candidate_digest"),
+            "reference_id": reference.get("reference_id"),
+            "reference_digest": reference.get("reference_digest"),
+            "title": reference.get("content_title") or reference.get("candidate_title"),
+            "url": (
+                reference.get("resolved_url")
+                or reference.get("final_url")
+                or reference.get("canonical_url")
+                or reference.get("candidate_url")
+            ),
+            "domain": reference.get("resolved_domain")
+            or reference.get("candidate_domain"),
+            "bounded_content_digest": reference.get("excerpt_digest"),
+        }
+    )
+
+
+def _candidate_identity_comparison_mode(expected_ref: Mapping[str, Any]) -> str:
+    expected = _candidate_identity_ref(expected_ref)
+    if expected.get("candidate_id"):
+        return "candidate_id"
+    if expected.get("candidate_digest"):
+        return "candidate_digest_fallback"
+    if expected.get("reference_digest"):
+        return "reference_digest_fallback"
+    if expected.get("url") and expected.get("bounded_content_digest"):
+        return "source_url_plus_bounded_content_digest_fallback"
+    return "unavailable"
+
+
+def _candidate_identity_matches(
+    expected_ref: Mapping[str, Any],
+    actual_ref: Mapping[str, Any],
+) -> bool:
+    expected = _candidate_identity_ref(expected_ref)
+    actual = _candidate_identity_ref(actual_ref)
+    expected_id = _clean_text(expected.get("candidate_id"), limit=320)
+    if expected_id:
+        return _clean_text(actual.get("candidate_id"), limit=320) == expected_id
+    expected_digest = _clean_text(expected.get("candidate_digest"), limit=128)
+    if expected_digest and actual.get("candidate_digest"):
+        return actual.get("candidate_digest") == expected_digest
+    expected_reference_digest = _clean_text(
+        expected.get("reference_digest"),
+        limit=128,
+    )
+    if expected_reference_digest and actual.get("reference_digest"):
+        return actual.get("reference_digest") == expected_reference_digest
+    expected_url = _clean_text(expected.get("url"), limit=700)
+    expected_bounded_digest = _clean_text(
+        expected.get("bounded_content_digest"),
+        limit=128,
+    )
+    if expected_url and expected_bounded_digest:
+        return (
+            _clean_text(actual.get("url"), limit=700) == expected_url
+            and _clean_text(actual.get("bounded_content_digest"), limit=128)
+            == expected_bounded_digest
+        )
+    return False
+
+
+def _matching_workbench_reference(
+    fetch_read_content_packet: Mapping[str, Any],
+    expected_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    expected = _candidate_identity_ref(expected_ref)
+    if not expected:
+        return {}
+    for item in _safe_sequence(fetch_read_content_packet.get("reference_records")):
+        reference = _safe_mapping(item)
+        if reference.get("fetch_read_status") != "readable":
+            continue
+        if _candidate_identity_matches(
+            expected,
+            _candidate_identity_ref_from_reference(reference),
+        ):
+            return reference
+    return {}
+
+
+def _reference_required_content_blocker(reference: Mapping[str, Any]) -> str | None:
+    if reference.get("fetch_read_status") != "readable":
+        return "Workbench-selected candidate does not have a readable retained reference"
+    if reference.get("bounded_text_sanitized") is not True:
+        return "Workbench-selected candidate retained content is not marked sanitized"
+    if reference.get("bounded_text_bounded") is not True:
+        return "Workbench-selected candidate retained content is not marked bounded"
+    if not _clean_text(reference.get("bounded_text"), limit=20_000):
+        return "Workbench-selected candidate is missing retained bounded content"
+    if not _clean_text(reference.get("excerpt_digest"), limit=128):
+        return "Workbench-selected candidate is missing retained bounded-text digest"
+    return None
+
+
+def _admission_ref_for_reference(
+    admission_ref: Mapping[str, Any],
+    reference: Mapping[str, Any],
+) -> dict[str, Any]:
+    ref = dict(admission_ref)
+    ref.update(
+        _without_empty(
+            {
+                "candidate_id": reference.get("candidate_id"),
+                "candidate_digest": reference.get("candidate_digest"),
+                "reference_id": reference.get("reference_id"),
+                "reference_digest": reference.get("reference_digest"),
+                "dprime_candidate_handoff_route": (
+                    "workbench_dprime_review_candidate_ref"
+                ),
+            }
+        )
+    )
+    ref["ref_digest"] = _digest_json(
+        {key: value for key, value in ref.items() if key != "ref_digest"}
+    )
+    return _without_empty(ref)
+
+
+def _component_ref_for_reference(
+    component_ref: Mapping[str, Any],
+    reference: Mapping[str, Any],
+) -> dict[str, Any]:
+    contract_ref = _safe_mapping(reference.get("current_answer_contract_ref"))
+    return _without_empty(
+        {
+            **dict(component_ref),
+            "component_id": reference.get("component_id")
+            or component_ref.get("component_id"),
+            "current_answer_contract_digest": contract_ref.get("contract_digest")
+            or reference.get("current_answer_contract_digest")
+            or component_ref.get("current_answer_contract_digest"),
+            "component_coverage_bound": False,
+            "lineage_only": True,
+        }
+    )
+
+
+def _source_obligation_ref_for_reference(
+    source_obligation_ref: Mapping[str, Any],
+    reference: Mapping[str, Any],
+) -> dict[str, Any]:
+    source_ids = _text_list(reference.get("source_obligation_candidate_ids"))
+    return _without_empty(
+        {
+            **dict(source_obligation_ref),
+            "source_obligation_candidate_ids": source_ids
+            or _text_list(source_obligation_ref.get("source_obligation_candidate_ids")),
+            "satisfaction_claimed": False,
+            "lineage_only": True,
+        }
+    )
+
+
+def _readiness_ref_for_routed_reference(
+    readiness_ref: Mapping[str, Any],
+    reference: Mapping[str, Any],
+) -> dict[str, Any]:
+    source_ids = _text_list(reference.get("source_obligation_candidate_ids"))
+    return _without_empty(
+        {
+            **dict(readiness_ref),
+            "posture": readiness_ref.get("posture")
+            or "not_yet_semantically_supported",
+            "source_obligation_candidate_ids": source_ids
+            or _text_list(readiness_ref.get("source_obligation_candidate_ids")),
+            "lineage_only": True,
+        }
+    )
+
+
+def _dprime_candidate_handoff_inputs(
+    *,
+    fetch_read_content_packet: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    expected = _workbench_expected_dprime_candidate_ref(workbench_dprime_dossier)
+    if not expected:
+        return {
+            "status": "not_applicable",
+            "match_status": "not_applicable",
+            "candidate_identity_match": True,
+            "comparison_mode": "not_applicable",
+            "expected_workbench_candidate_ref": {},
+            "source_evidence_admission_candidate_ref": _candidate_identity_ref(
+                admission_ref
+            ),
+            "admission_ref": dict(admission_ref),
+            "readiness_ref": dict(readiness_ref),
+            "component_ref": dict(component_ref),
+            "source_obligation_ref": dict(source_obligation_ref),
+            "raw_private_retention": False,
+        }
+    current_reference = _matching_workbench_reference(
+        fetch_read_content_packet,
+        _candidate_identity_ref(admission_ref),
+    )
+    current_ref = (
+        _candidate_identity_ref_from_reference(current_reference)
+        if current_reference
+        else _candidate_identity_ref(admission_ref)
+    )
+    base = {
+        "schema_version": "current_source_record_dprime_candidate_handoff_integrity_v1",
+        "status": "matched",
+        "match_status": "match",
+        "candidate_identity_match": True,
+        "comparison_mode": _candidate_identity_comparison_mode(expected),
+        "id_first_comparison_required": bool(expected.get("candidate_id")),
+        "title_only_match_allowed": False,
+        "url_only_match_allowed": False,
+        "expected_workbench_candidate_ref": expected,
+        "source_evidence_admission_candidate_ref": current_ref,
+        "raw_private_retention": False,
+        "product_correctness_claimed": False,
+    }
+    if _candidate_identity_matches(expected, current_ref):
+        return {
+            **base,
+            "route_status": "already_matched",
+            "admission_ref": dict(admission_ref),
+            "readiness_ref": dict(readiness_ref),
+            "component_ref": dict(component_ref),
+            "source_obligation_ref": dict(source_obligation_ref),
+        }
+
+    routed_reference = _matching_workbench_reference(fetch_read_content_packet, expected)
+    if not routed_reference:
+        return _blocked_candidate_handoff_ref(
+            base=base,
+            surface="D-prime relation intake",
+            detail=(
+                "Workbench selected a D-prime review candidate, but the retained "
+                "fetch/read packet has no readable reference for that candidate."
+            ),
+        )
+    content_blocker = _reference_required_content_blocker(routed_reference)
+    if content_blocker:
+        return _blocked_candidate_handoff_ref(
+            base=base,
+            surface="D-prime relation intake",
+            detail=content_blocker,
+        )
+    routed_candidate_ref = _candidate_identity_ref_from_reference(routed_reference)
+    routed_admission = _admission_ref_for_reference(admission_ref, routed_reference)
+    return {
+        **base,
+        "status": "routed",
+        "match_status": "match",
+        "route_status": "workbench_candidate_routed_to_dprime_intake",
+        "source_evidence_admission_candidate_ref": routed_candidate_ref,
+        "routed_from_candidate_ref": current_ref,
+        "routed_to_candidate_ref": routed_candidate_ref,
+        "admission_ref": routed_admission,
+        "readiness_ref": _readiness_ref_for_routed_reference(
+            readiness_ref,
+            routed_reference,
+        ),
+        "component_ref": _component_ref_for_reference(component_ref, routed_reference),
+        "source_obligation_ref": _source_obligation_ref_for_reference(
+            source_obligation_ref,
+            routed_reference,
+        ),
+    }
+
+
+def _blocked_candidate_handoff_ref(
+    *,
+    base: Mapping[str, Any],
+    surface: str,
+    detail: str,
+) -> dict[str, Any]:
+    expected = _candidate_identity_ref(
+        _safe_mapping(base).get("expected_workbench_candidate_ref")
+    )
+    actual = _candidate_identity_ref(
+        _safe_mapping(base).get("source_evidence_admission_candidate_ref")
+    )
+    return {
+        **dict(base),
+        "status": "blocked",
+        "match_status": "mismatch",
+        "candidate_identity_match": False,
+        "blocker": BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH,
+        "blocker_detail": _candidate_handoff_blocker_detail(
+            expected_ref=expected,
+            actual_ref=actual,
+            surface=surface,
+            detail=detail,
+        ),
+        "mismatch_surface": surface,
+        "admission_ref": {},
+        "readiness_ref": {},
+        "component_ref": {},
+        "source_obligation_ref": {},
+    }
+
+
+def _candidate_handoff_blocker_detail(
+    *,
+    expected_ref: Mapping[str, Any],
+    actual_ref: Mapping[str, Any],
+    surface: str,
+    detail: str,
+) -> str:
+    expected_id = expected_ref.get("candidate_id") or "unavailable"
+    actual_id = actual_ref.get("candidate_id") or "unavailable"
+    expected_title = expected_ref.get("title") or "unavailable"
+    actual_title = actual_ref.get("title") or "unavailable"
+    return (
+        f"{detail} Surface: {surface}. Expected Workbench/D-prime-review "
+        f"candidate id/title: {expected_id} / {expected_title}. Actual D-prime "
+        f"candidate id/title: {actual_id} / {actual_title}."
+    )
+
+
+def _candidate_handoff_with_relation_ref(
+    handoff_ref: Mapping[str, Any],
+    relation_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not handoff_ref:
+        return {}
+    relation_candidate = _candidate_identity_ref(
+        {
+            "candidate_id": relation_ref.get("evidence_candidate_id"),
+            "reference_id": relation_ref.get("evidence_reference_id"),
+            "title": relation_ref.get("source_title"),
+            "url": relation_ref.get("source_url"),
+            "domain": relation_ref.get("source_domain"),
+        }
+    )
+    expected = _candidate_identity_ref(
+        handoff_ref.get("expected_workbench_candidate_ref")
+    )
+    match = (
+        handoff_ref.get("candidate_identity_match") is not False
+        and (
+            not expected
+            or _candidate_identity_matches(expected, relation_candidate)
+        )
+    )
+    updated = {
+        **dict(handoff_ref),
+        "dprime_relation_intake_candidate_ref": relation_candidate,
+        "dprime_intake_actual_candidate_ref": relation_candidate,
+        "candidate_identity_match": match,
+        "match_status": "match" if match else "mismatch",
+    }
+    if not match:
+        updated["status"] = "blocked"
+        updated["blocker"] = (
+            BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH
+        )
+        updated["blocker_detail"] = _candidate_handoff_blocker_detail(
+            expected_ref=expected,
+            actual_ref=relation_candidate,
+            surface="D-prime relation intake",
+            detail="Workbench D-prime candidate identity diverged at relation intake.",
+        )
+        updated["mismatch_surface"] = "D-prime relation intake"
+    return updated
+
+
+def _candidate_handoff_with_answer_path_refs(
+    handoff_ref: Mapping[str, Any],
+    answer_path_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not handoff_ref:
+        return {}
+    answer_path = _safe_mapping(answer_path_ref)
+    display = _safe_mapping(answer_path.get("citation_source_display"))
+    display_refs = [
+        _candidate_identity_ref(item)
+        for item in _safe_sequence(display.get("citation_source_entries"))
+    ]
+    display_refs = [item for item in display_refs if item]
+    selected_source = _candidate_identity_ref(answer_path.get("claim_text_source_ref"))
+    if not selected_source and display_refs:
+        selected_source = display_refs[0]
+    expected = _candidate_identity_ref(
+        handoff_ref.get("expected_workbench_candidate_ref")
+    )
+    refs_to_check = [item for item in (selected_source, *display_refs) if item]
+    if not expected:
+        match = handoff_ref.get("candidate_identity_match") is not False
+    else:
+        match = handoff_ref.get("candidate_identity_match") is not False and all(
+            _candidate_identity_matches(expected, item) for item in refs_to_check
+        )
+    if expected and refs_to_check:
+        status = "match" if match else "mismatch"
+    else:
+        status = handoff_ref.get("match_status")
+    updated = {
+        **dict(handoff_ref),
+        "selected_source_candidate_ref": selected_source,
+        "source_display_candidate_refs": display_refs,
+        "source_display_candidate_ref": display_refs[0] if display_refs else {},
+        "candidate_identity_match": match,
+        "match_status": status,
+    }
+    if not match:
+        updated["status"] = "blocked"
+        updated["blocker"] = (
+            BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH
+        )
+        actual = selected_source or (display_refs[0] if display_refs else {})
+        updated["blocker_detail"] = _candidate_handoff_blocker_detail(
+            expected_ref=expected,
+            actual_ref=actual,
+            surface="D-prime answer/source display",
+            detail=(
+                "Workbench D-prime candidate identity diverged at selected "
+                "source or source display."
+            ),
+        )
+        updated["mismatch_surface"] = "D-prime answer/source display"
+    return updated
+
+
+def _blocked_candidate_handoff_result(
+    *,
+    query: str,
+    readiness_payload: Mapping[str, Any],
+    admission_ref: Mapping[str, Any],
+    readiness_ref: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    relation_ref: Mapping[str, Any] | None,
+    handoff_ref: Mapping[str, Any],
+    workbench_dprime_dossier_ref: Mapping[str, Any] | None,
+) -> LiveSemanticCoverageStatusResult:
+    blocker_detail = (
+        _clean_text(handoff_ref.get("blocker_detail"), limit=900)
+        or "Workbench/D-prime candidate identity handoff mismatch."
+    )
+    payload = _base_semantic_payload(
+        query=query,
+        readiness_payload=readiness_payload,
+        admission_ref=admission_ref,
+        readiness_ref=readiness_ref,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        relation_intake_ref=relation_ref or {},
+        support_ref={
+            "status": "not reached",
+            "proposal_ref": "unavailable",
+            "reasons": [blocker_detail],
+        },
+        semantic_ref={
+            "status": "not reached",
+            "observation_ref": "unavailable",
+            "reasons": [blocker_detail],
+        },
+        coverage_ref={
+            "status": "not reached",
+            "coverage_ref": "unavailable",
+            "component_id": _component_id(component_ref),
+            "reasons": [blocker_detail],
+        },
+        decision=BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH,
+        blocker_detail=blocker_detail,
+        next_blocked_surface="D-prime relation-intake candidate handoff",
+        workbench_dprime_dossier_ref=workbench_dprime_dossier_ref,
+        candidate_handoff_ref=handoff_ref,
+    )
+    payload.update(
+        {
+            "dprime_status": _blocked_candidate_handoff_dprime_status(handoff_ref),
+            "semantic_support_source": "unavailable; D-prime candidate handoff mismatch",
+            "source_obligation_authority_ref": {
+                "status": "not reached",
+                "authority_consumed": False,
+            },
+            "citation_eligibility_authority_ref": {
+                "status": "not reached",
+                "authority_consumed": False,
+            },
+            "dprime_answer_path_ref": {},
+            "component_coverage_only_treated_as_pass": False,
+            "detached_posture_status_packet_treated_as_authority": False,
+            "semantic_support_custody_distinction_preserved": True,
+            "analyst_support_proposal_consumer": f"not reached; {blocker_detail}",
+        }
+    )
+    output = format_live_semantic_coverage_status(payload)
+    if not output_hygiene_passes(output):
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_OUTPUT_HYGIENE,
+            detail="status output contained forbidden material",
+        )
+    return LiveSemanticCoverageStatusResult(
+        decision=BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH,
+        output=output,
+        payload=payload,
+    )
+
+
+def _blocked_candidate_handoff_dprime_status(
+    handoff_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    detail = (
+        _clean_text(handoff_ref.get("blocker_detail"), limit=900)
+        or "Workbench/D-prime candidate identity handoff mismatch."
+    )
+    return {
+        "decision": BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH,
+        "blocker_detail": detail,
+        "candidate_handoff_integrity_ref": dict(handoff_ref),
+        "generic_relation_intake_ref": {},
+        "assessment_status": "not reached",
+        "support_relation": None,
+        "proposal_validation_status": "not reached",
+        "run_kernel_admission_decision_status": "not reached",
+        "semantic_observation_admission_status": "not reached",
+        "component_coverage_status": "not reached",
+        "source_obligation_authority_consumed": False,
+        "citation_eligibility_or_source_handoff_authority_consumed": False,
+        "dprime_single_lane_answer_path_status": "not reached",
+        "objects_created": {
+            "evidence_frame_preflight": False,
+            "evidence_relative_support_assessment": False,
+            "validated_support_proposal": False,
+            "run_kernel_support_proposal_admission_request": False,
+            "run_kernel_admission_decision": False,
+            "semantic_observation": False,
+            "component_coverage": False,
+            "sufficiency_readiness": False,
+            "final_answer_packet": False,
+            "author_answer": False,
+            "citation_source_display": False,
+        },
+    }
+
+
 def _workbench_followup_gap(
     workbench_dprime_dossier: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
@@ -2203,6 +2889,8 @@ def _workbench_followup_gap(
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH:
+        return "D-prime relation-intake candidate handoff"
     if decision == BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED:
         return "SufficiencyReadiness"
     if decision == BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING:
@@ -2563,6 +3251,7 @@ def _base_semantic_payload(
     next_blocked_surface: str | None,
     relation_intake_ref: Mapping[str, Any] | None = None,
     workbench_dprime_dossier_ref: Mapping[str, Any] | None = None,
+    candidate_handoff_ref: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     selected = _safe_mapping(readiness_payload.get("selected_candidate"))
     workbench_ref = _safe_mapping(workbench_dprime_dossier_ref)
@@ -2608,6 +3297,12 @@ def _base_semantic_payload(
         ),
         "workbench_dprime_dossier_ref": dict(workbench_ref),
         "workbench_dprime_dossier_consumed_by_product_status": workbench_consumed,
+        "dprime_candidate_handoff_integrity_ref": dict(
+            _safe_mapping(candidate_handoff_ref)
+        ),
+        "current_source_record_dprime_candidate_handoff_ref": dict(
+            _safe_mapping(candidate_handoff_ref)
+        ),
         "semantic_support_source": "retained bounded sanitized content",
         "semantic_support_custody_distinction_preserved": (
             decision == PASS_DECISION
@@ -2881,6 +3576,11 @@ def _id_digest_ref(identifier: Any, digest: Any) -> str:
     return clean_id or clean_digest or "unavailable"
 
 
+def _digest_json(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 def _clean_query(query: str) -> str:
     return " ".join(str(query or "").strip().split())
 
@@ -2940,6 +3640,7 @@ def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 __all__ = [
     "LIVE_SEMANTIC_COVERAGE_STATUS_FLAG",
+    "BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH",
     "LiveSemanticCoverageStatusError",
     "LiveSemanticCoverageStatusResult",
     "build_live_semantic_coverage_status",
