@@ -376,13 +376,15 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
             ],
             run_id=run_kernel.state.run_id,
             request_id=run_kernel.state.request_id,
-            current_answer_contract_ref=contract_ref,
-            current_answer_contract_digest=contract_ref.get("contract_digest"),
         )
         followup_intent_packet = build_followup_search_intent_packet(
             evidence_relative_analysis_packet=analysis_packet,
-            current_answer_contract_ref=contract_ref,
-            current_answer_contract_digest=contract_ref.get("contract_digest"),
+            current_answer_contract_ref=analysis_packet.get(
+                "current_answer_contract_ref"
+            ),
+            current_answer_contract_digest=analysis_packet.get(
+                "current_answer_contract_digest"
+            ),
             mode_budget_hints={"mode": "Balanced", "max_loops": 1},
         )
         authorization_action = run_kernel.authorize_followup_search(
@@ -1180,7 +1182,30 @@ def _bind_fetch_read_materials(
         )
     out: list[dict[str, Any]] = []
     for material, candidate in zip(materials, candidate_records, strict=True):
-        safe = _safe_mapping(material)
+        safe = {
+            key: value
+            for key, value in _safe_mapping(material).items()
+            if key
+            not in {
+                "run_id",
+                "request_id",
+                "current_answer_contract_ref",
+                "current_answer_contract_digest",
+                "search_executor_handoff_ref",
+                "search_executor_handoff_digest",
+                "search_result_candidate_packet_ref",
+                "search_result_candidate_packet_id",
+                "search_result_candidate_packet_digest",
+                "search_result_candidate_record_digest",
+                "fetch_read_content_packet_ref",
+                "fetch_read_content_packet_id",
+                "fetch_read_content_packet_digest",
+                "reference_id",
+                "reference_digest",
+                "packet_id",
+                "packet_digest",
+            }
+        }
         if not (
             _clean_text(safe.get("bounded_text"), limit=20_000)
             or _clean_text(safe.get("bounded_excerpt"), limit=20_000)
@@ -1493,12 +1518,8 @@ def _authorized_query_text(action_inputs: Mapping[str, Any]) -> str:
 def _authorization_ref(action_inputs: Mapping[str, Any]) -> dict[str, Any]:
     return _without_empty(
         {
-            "authorization_id": action_inputs.get("authorization_id"),
             "authorization_digest": action_inputs.get("authorization_digest"),
             "schema_version": action_inputs.get("schema_version"),
-            "query_bundle_id": _safe_mapping(action_inputs.get("query_bundle")).get(
-                "query_bundle_id"
-            ),
             "query_bundle_digest": _safe_mapping(action_inputs.get("query_bundle")).get(
                 "query_bundle_digest"
             ),
@@ -1513,7 +1534,6 @@ def _authorization_projection_ref(projection: Mapping[str, Any]) -> dict[str, An
     latest = _safe_mapping(projection.get("latest_authorization"))
     return _without_empty(
         {
-            "authorization_id": latest.get("authorization_id"),
             "authorization_digest": latest.get("authorization_digest"),
             "authorized_loop_count": projection.get("authorized_loop_count"),
             "fixture_reentry_only": projection.get("fixture_reentry_only") is True,

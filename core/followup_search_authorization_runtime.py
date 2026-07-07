@@ -199,11 +199,23 @@ def build_followup_search_authorization_action_inputs(
             "follow-up search authorization requires current_answer_contract lineage"
         )
     packet_contract_ref = _safe_mapping(packet.get("current_answer_contract_ref"))
-    if not packet_contract_ref or packet_contract_ref != contract_ref:
+    packet_contract_version = _clean_token(
+        packet_contract_ref.get("contract_version"),
+        limit=160,
+    )
+    packet_contract_digest = _clean_token(
+        packet_contract_ref.get("contract_digest")
+        or packet.get("current_answer_contract_digest"),
+        limit=128,
+    )
+    if (
+        not packet_contract_ref
+        or packet_contract_version != contract_ref.get("contract_version")
+    ):
         raise FollowupSearchAuthorizationRuntimeError(
             "follow-up intent packet current_answer_contract lineage is stale"
         )
-    if packet.get("current_answer_contract_digest") != contract_ref.get("contract_digest"):
+    if packet_contract_digest != contract_ref.get("contract_digest"):
         raise FollowupSearchAuthorizationRuntimeError(
             "follow-up intent packet current_answer_contract digest is stale"
         )

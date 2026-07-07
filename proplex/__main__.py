@@ -41,6 +41,7 @@ if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
 from core.product_model_route_config import (  # noqa: E402
+    CONFIRM_CURRENT_SOURCE_FOLLOWUP_REENTRY_FLAG,
     CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG,
     CONFIRM_LIVE_DPRIME_REVIEW_FLAG,
     LIVE_ACQUISITION_READABILITY_STATUS_FLAG,
@@ -372,6 +373,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         dest="confirm_live_dprime_review",
         help="Confirm one D-prime product-route model-review attempt for live dogfood.",
+    )
+    p.add_argument(
+        CONFIRM_CURRENT_SOURCE_FOLLOWUP_REENTRY_FLAG,
+        action="store_true",
+        dest="confirm_current_source_followup_reentry",
+        help=(
+            "Confirm one bounded current-source follow-up re-entry pass through "
+            "ordinary provider acquisition and fetch/read."
+        ),
     )
     p.add_argument(
         CONFIRM_LIVE_SOURCE_CHALLENGE_RECOVERY_FLAG,
@@ -744,6 +754,9 @@ def _run_mvp_single_relation_live_dogfood_run(
             confirm_live_dprime_review=args.confirm_live_dprime_review,
             confirm_live_source_challenge_recovery=(
                 args.confirm_live_source_challenge_recovery
+            ),
+            confirm_current_source_followup_reentry=(
+                args.confirm_current_source_followup_reentry
             ),
             entrypoint_surface=(
                 PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE
