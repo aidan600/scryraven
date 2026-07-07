@@ -234,6 +234,10 @@ def build_live_semantic_coverage_status(
         Sequence[Mapping[str, Any]] | Mapping[str, Any] | None
     ) = None,
     dprime_followup_fetch_read_materials: Sequence[Mapping[str, Any]] = (),
+    dprime_followup_plan_builder: Callable[..., Mapping[str, Any]]
+    | None = None,
+    dprime_followup_authorized_execution_callback: Callable[..., Mapping[str, Any]]
+    | None = None,
     dprime_followup_second_pass_model_review_callable: (
         Callable[..., Any] | None
     ) = None,
@@ -393,6 +397,24 @@ def build_live_semantic_coverage_status(
             and model_review_result.proposal_validation_status
             != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
         ):
+            followup_candidate_results = dprime_followup_candidate_results
+            followup_fetch_read_materials = dprime_followup_fetch_read_materials
+            followup_plan_ref: Mapping[str, Any] = {}
+            if dprime_followup_plan_builder is not None:
+                followup_plan_ref = _safe_mapping(
+                    dprime_followup_plan_builder(
+                        query=query,
+                        readiness_payload=readiness_payload,
+                        fetch_read_content_packet=fetch_read_content_packet,
+                        source_evidence_admission_ref=admission_ref,
+                        citation_source_obligation_readiness_ref=readiness_ref,
+                        component_ref=component_ref,
+                        source_obligation_ref=source_obligation_ref,
+                        relation_ref=generic_relation_ref,
+                        first_model_review_result=model_review_result,
+                        workbench_dprime_dossier=workbench_dprime_dossier,
+                    )
+                )
             followup_result = (
                 run_dprime_followup_search_reentry_using_ordinary_search(
                     query=query,
@@ -403,9 +425,13 @@ def build_live_semantic_coverage_status(
                     component_ref=component_ref,
                     source_obligation_ref=source_obligation_ref,
                     first_model_review_result=model_review_result,
-                    followup_candidate_results=dprime_followup_candidate_results,
+                    followup_plan_ref=followup_plan_ref,
+                    followup_candidate_results=followup_candidate_results,
                     followup_fetch_read_materials=(
-                        dprime_followup_fetch_read_materials
+                        followup_fetch_read_materials
+                    ),
+                    authorized_followup_execution_callback=(
+                        dprime_followup_authorized_execution_callback
                     ),
                     dprime_model_review_license=dprime_model_review_license,
                     second_pass_model_review_callable=(
@@ -1747,9 +1773,7 @@ def _followup_search_reentry_result(
     payload.update(
         {
             "dprime_status": dprime_status,
-            "dprime_followup_search_reentry_ref": dict(
-                followup_result.projection
-            ),
+            "dprime_followup_search_reentry_ref": dict(followup_result.projection),
             "semantic_support_source": followup_result.semantic_support_source,
             "source_obligation_authority_ref": dict(
                 followup_result.source_obligation_authority_ref

@@ -30,6 +30,7 @@ from urllib.parse import urlparse
 import pytest
 
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
+from core import runkernel_followup_search_reentry_ordinary_search_runtime as followup_runtime
 from core.analyst_workbench_runtime import (
     ROLE_ANSWER_ADJACENT_CONTEXT,
     ROLE_OVERCLAIM_RISK,
@@ -37,6 +38,9 @@ from core.analyst_workbench_runtime import (
     ROLE_STRICT_ANSWER_SUPPORT,
     ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL,
     WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED,
+)
+from core.dprime_single_lane_answer_path_runtime import (
+    DPrimeSingleLaneAnswerPathError,
 )
 from core.generic_query_to_relation_planning import build_generic_query_relation_plan
 from proplex.mvp_single_relation_live_dogfood_run import (
@@ -461,6 +465,307 @@ def test_contextual_non_uscis_material_proposes_gap_and_product_blocker(
     _assert_workbench_non_authority(packet)
 
 
+def test_licensed_followup_reentry_executes_one_second_ordinary_search(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    dprime_inputs: list[Mapping[str, Any]] = []
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        dprime_inputs.append(dict(input_packet))
+        if len(dprime_inputs) == 1:
+            return _assessment_payload(
+                plan,
+                "Example County small claims online fee may be $20 for eligible filers.",
+                support_relation="weak_or_overclaim_risk",
+                missing_qualifiers=[str(plan["component_text"])],
+                non_support_reason=(
+                    "The source is reduced-fee contextual material, not strict support."
+                ),
+            )
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper small claims filing fee is $54.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-small-claims-licensed-followup",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_current_source_followup_reentry=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_sequential_proxy_runner(
+            calls,
+            [
+                [
+                    _provider_extracted_result(
+                        "Example County Reduced Online Small Claims Fee",
+                        SMALL_CLAIMS_URL,
+                        (
+                            "Example County online fee discount. Eligible "
+                            "filers may pay a reduced online small claims fee of $20."
+                        ),
+                    )
+                ],
+                [
+                    _provider_result(
+                        "Example County Official Standard Paper Filing Fee PDF",
+                        "https://example-county.gov/courts/standard-paper-fee.pdf",
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_official_pdf_read_support_fetch_runner(
+            "Example County official fee schedule. The current standard paper "
+            "small claims filing fee is $54."
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    assert result.return_code == 0, packet.get("blocker_detail")
+    assert len(calls) == 2
+    assert calls[0].query != calls[1].query
+    assert calls[1].acquisition_provider_role == "current_source_followup_reentry"
+    assert "official source of record" in calls[1].query
+    assert "strict support" in calls[1].query
+    for forbidden in ("USCIS", "N-400", "G-1055", "$760", "$710", "$380"):
+        assert forbidden not in calls[1].query
+    assert len(dprime_inputs) == 2
+    assert packet["initial_provider_calls_attempted"] == 1
+    assert packet["followup_provider_calls_attempted"] == 1
+    assert packet["followup_provider_calls_completed"] == 1
+    assert packet["initial_fetch_read_completed"] == 1
+    assert packet["followup_fetch_read_completed"] == 1
+    assert packet["initial_dprime_model_review_calls_attempted"] == 1
+    assert packet["followup_dprime_model_review_calls_attempted"] == 1
+    assert packet["dprime_model_review_calls_attempted"] == 2
+    assert packet["followup_loop_count"] == 1
+    reentry = packet["workbench_gap_reentry_ref"]
+    assert reentry["workbench_gap_reentry_status"] == "runkernel_authorized_executed"
+    assert reentry["followup_execution_status"] == "executed_ordinary_search_followup"
+    assert reentry["followup_execution_licensed"] is True
+    assert reentry["runkernel_followup_authorization_status"] == "authorized"
+    assert reentry["runkernel_followup_authorization_ref"]
+    assert reentry["proposal_or_blocker_ref_only"] is False
+    assert reentry["ordinary_search_path_reused"] is True
+    assert reentry["provider_called"] is True
+    assert reentry["fetch_read_executed"] is True
+    assert reentry["new_search_subsystem_created"] is False
+    assert reentry["dprime_dispatch_owner"] is False
+    assert reentry["source_obligation_satisfied"] is False
+    assert reentry["citation_eligible"] is False
+    assert reentry["fap_or_author_created"] is False
+    assert reentry["product_correctness_claimed"] is False
+    plan_ref = reentry["followup_planning_ref"]
+    assert plan_ref["parent_component_id"] == plan["component_id"]
+    assert plan_ref["parent_source_obligation_id"] == plan["source_obligation_id"]
+    assert plan_ref["search_requirement_text"] == calls[1].query
+    assert plan_ref["provider_query"] == calls[1].query
+    assert plan_ref["query_seeds"] == [calls[1].query]
+    assert plan_ref["non_authority_posture"]["provider_called"] is False
+    assert reentry["followup_query_ref"]["query_text"] == calls[1].query
+    followup_ref = packet["semantic_status_payload"][
+        "dprime_followup_search_reentry_ref"
+    ]
+    assert followup_ref["product_followup_provider_execution_after_authorization"] is True
+    assert followup_ref["product_followup_authorization_consumed"] is True
+    assert followup_ref["product_followup_search_authorization_ref"]
+    assert followup_ref["product_followup_search_executor_handoff_ref"]
+    assert packet["final_answer_packet_created"] is True
+    assert packet["author_prose_created"] is True
+    assert packet["author_answer_created"] is True
+    assert packet["citation_source_display_created"] is True
+    assert packet["fap_author_opened"] is True
+    assert packet["answer_text_present"] is True
+    assert packet["product_answer_text"] == (
+        "The current Example County standard paper small claims filing fee is $54."
+    )
+    assert packet["source_display_entries"]
+    assert packet["product_correctness_claimed"] is False
+    assert packet["decision_made_by_the_run"] == (
+        "existing_dprime_single_lane_answer_path_consumed"
+    )
+    assert reentry["followup_provider_calls_attempted"] == 1
+    assert reentry["followup_fetch_read_completed"] == 1
+    assert reentry["followup_selected_source_candidate"]["url"].endswith(
+        "standard-paper-fee.pdf"
+    )
+    assert reentry["followup_pdf_text_extraction_attempted"] is False
+    assert packet["followup_source_acquisition_mode"] == (
+        dogfood.SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
+    )
+    assert packet["source_challenge_recovery_status"] == "not_triggered"
+    assert packet["provider_snippets_used_as_evidence"] is False
+    assert packet["raw_private_retention_flags"] == dogfood.RAW_FALSE_FLAGS
+
+
+def test_licensed_followup_strict_support_blocks_when_answer_path_not_reached(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    dprime_inputs: list[Mapping[str, Any]] = []
+
+    def fake_review(*_args: Any, input_packet: Mapping[str, Any], **_kwargs: Any) -> dict[str, Any]:
+        dprime_inputs.append(dict(input_packet))
+        if len(dprime_inputs) == 1:
+            return _assessment_payload(
+                plan,
+                "Example County small claims online fee may be $20 for eligible filers.",
+                support_relation="weak_or_overclaim_risk",
+                missing_qualifiers=[str(plan["component_text"])],
+                non_support_reason="Strict support was not established.",
+            )
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper small claims filing fee is $54.",
+        )
+
+    def block_answer_path(**_kwargs: Any) -> Any:
+        raise DPrimeSingleLaneAnswerPathError(
+            "BLOCKED_TEST_DPRIME_ANSWER_PATH",
+            "forced answer path block after strict follow-up support",
+            "test answer path",
+        )
+
+    monkeypatch.setattr(
+        followup_runtime,
+        "build_dprime_single_lane_answer_path",
+        block_answer_path,
+    )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-small-claims-followup-answer-path-blocked",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_current_source_followup_reentry=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_sequential_proxy_runner(
+            calls,
+            [
+                [
+                    _provider_extracted_result(
+                        "Example County Reduced Online Small Claims Fee",
+                        SMALL_CLAIMS_URL,
+                        "Reduced online fee context says eligible filers may pay $20.",
+                    )
+                ],
+                [
+                    _provider_result(
+                        "Example County Official Standard Paper Filing Fee PDF",
+                        "https://example-county.gov/courts/standard-paper-fee.pdf",
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_official_pdf_read_support_fetch_runner(
+            "Example County official fee schedule. The current standard paper "
+            "small claims filing fee is $54."
+        ),
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    assert result.return_code == 2
+    assert packet["decision"] == (
+        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED
+    )
+    assert len(calls) == 2
+    assert len(dprime_inputs) == 2
+    assert packet["followup_provider_calls_attempted"] == 1
+    assert packet["followup_fetch_read_completed"] == 1
+    assert packet["workbench_gap_reentry_status"] == "runkernel_authorized_executed"
+    assert packet["followup_execution_licensed"] is True
+    assert packet["dprime_answer_path_ref"]["status"] == "blocked"
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["answer_text_present"] is False
+    assert packet["product_answer_text"] == ""
+
+
+def test_licensed_followup_blocks_with_named_exhausted_blocker_when_fetch_fails(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return _assessment_payload(
+            plan,
+            "Example County small claims online fee may be $20 for eligible filers.",
+            support_relation="weak_or_overclaim_risk",
+            missing_qualifiers=[str(plan["component_text"])],
+            non_support_reason="Strict support was not established.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="workbench-small-claims-followup-exhausted",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_current_source_followup_reentry=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_sequential_proxy_runner(
+            calls,
+            [
+                [
+                    _provider_extracted_result(
+                        "Example County Reduced Online Small Claims Fee",
+                        SMALL_CLAIMS_URL,
+                        "Reduced online fee context says eligible filers may pay $20.",
+                    )
+                ],
+                [
+                    _provider_result(
+                        "Example County Standard Fee",
+                        "https://example-county.gov/courts/standard-fee",
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_empty_fetch_runner,
+        dprime_model_review_callable=fake_review,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    assert result.return_code == 2
+    assert packet["decision"] == dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED
+    assert len(calls) == 2
+    assert packet["followup_provider_calls_attempted"] == 1
+    assert packet["followup_fetch_read_attempts"] == 1
+    assert packet["followup_fetch_read_completed"] == 0
+    assert packet["followup_execution_licensed"] is True
+    assert packet["workbench_gap_reentry_ref"]["workbench_gap_reentry_status"] == (
+        "runkernel_authorized_exhausted"
+    )
+    assert packet["workbench_gap_reentry_ref"]["followup_execution_status"] == (
+        "exhausted"
+    )
+
+
 def test_unreadable_high_value_official_candidate_proposes_read_support_gap(
     tmp_path: Path,
 ) -> None:
@@ -736,9 +1041,6 @@ def test_contextual_provider_html_does_not_skip_direct_official_pdf_read_support
     assert fetched_urls == [
         "https://example-county.gov/courts/small-claims-fee-schedule.pdf"
     ]
-    assert packet["source_acquisition_mode"] == (
-        dogfood.SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
-    )
     assert packet["provider_extracted_content_candidate_count"] == 1
     assert packet["provider_extracted_content_handoff_created"] is False
     assert packet["direct_fetch_read_attempts"] == 1
@@ -851,9 +1153,6 @@ def test_contextual_html_plus_official_pdf_uses_generic_pdf_text_extraction(
 
     packet = result.packet
     assert fetched_urls == [pdf_url]
-    assert packet["source_acquisition_mode"] == (
-        dogfood.SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
-    )
     assert packet["fetch_read_completed"] == 1
     assert packet["pdf_text_extraction_attempted"] is True
     assert packet["pdf_text_extraction_status_summary"] == {"extracted": 1}
@@ -989,6 +1288,38 @@ def _recording_proxy_runner(
     return runner
 
 
+def _sequential_proxy_runner(
+    calls: list[GenericProviderProxyRunRequest],
+    result_batches: list[list[dict[str, Any]]],
+) -> Any:
+    def runner(request: GenericProviderProxyRunRequest) -> GenericProviderProxyRunResult:
+        calls.append(request)
+        index = min(len(calls) - 1, len(result_batches) - 1)
+        results = result_batches[index]
+        payload = {
+            "request_kind": "provider_proxy_search",
+            "provider": request.provider,
+            "operation": request.operation,
+            "result_count": len(results),
+            "results": results,
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+        }
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        request.output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return GenericProviderProxyRunResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+        )
+
+    return runner
+
+
 def _provider_result(title: str, url: str, *, rank: int = 1) -> dict[str, Any]:
     return {
         "title": title,
@@ -1097,6 +1428,23 @@ def _fake_fetch_runner(text: str) -> Any:
     return runner
 
 
+def _empty_fetch_runner(url: str) -> GenericLiveFetchReadResult:
+    parsed = urlparse(url)
+    return GenericLiveFetchReadResult(
+        attempted_url=url,
+        final_url=url,
+        final_domain=parsed.netloc.lower(),
+        status_code=200,
+        status_class="2xx",
+        content_type="text/html",
+        fetched_byte_count=0,
+        sanitized_text="",
+        content_title="Empty Source",
+        redirect_count=0,
+        retrieved_or_observed_at="2026-07-03T00:00:00+00:00",
+    )
+
+
 class _PdfHeaders(dict[str, str]):
     def get(self, key: str, default: str | None = None) -> str:
         return super().get(key.lower(), default or "")
@@ -1134,59 +1482,65 @@ class _RecordingPdfOpener:
 
 
 def _tiny_text_pdf_bytes(text: str) -> bytes:
+    from io import BytesIO
+
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
     safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-    stream = f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("ascii")
-    objects = [
-        b"1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj\n",
-        b"2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj\n",
-        (
-            b"3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-            b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj\n"
-        ),
-        b"4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj\n",
-        b"5 0 obj << /Length "
-        + str(len(stream)).encode("ascii")
-        + b" >> stream\n"
-        + stream
-        + b"\nendstream endobj\n",
-    ]
-    output = bytearray(b"%PDF-1.4\n")
-    offsets = [0]
-    for obj in objects:
-        offsets.append(len(output))
-        output.extend(obj)
-    xref = len(output)
-    output.extend(f"xref\n0 {len(objects) + 1}\n0000000000 65535 f \n".encode("ascii"))
-    for offset in offsets[1:]:
-        output.extend(f"{offset:010d} 00000 n \n".encode("ascii"))
-    output.extend(
-        (
-            f"trailer << /Size {len(objects) + 1} /Root 1 0 R >>\n"
-            f"startxref\n{xref}\n%%EOF\n"
-        ).encode("ascii")
+    writer = PdfWriter()
+    page = writer.add_blank_page(width=612, height=792)
+    font = DictionaryObject(
+        {
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject("/Helvetica"),
+        }
     )
-    return bytes(output)
+    resources = DictionaryObject(
+        {
+            NameObject("/Font"): DictionaryObject(
+                {NameObject("/F1"): writer._add_object(font)}
+            )
+        }
+    )
+    stream = DecodedStreamObject()
+    stream.set_data(f"BT /F1 12 Tf 72 720 Td ({safe_text}) Tj ET".encode("ascii"))
+    page[NameObject("/Resources")] = resources
+    page[NameObject("/Contents")] = writer._add_object(stream)
+    out = BytesIO()
+    writer.write(out)
+    return out.getvalue()
 
 
-def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str, Any]:
+def _assessment_payload(
+    plan: Mapping[str, Any],
+    answer_claim: str,
+    *,
+    support_relation: str = "directly_supports",
+    missing_qualifiers: list[str] | None = None,
+    non_support_reason: str = "",
+) -> dict[str, Any]:
     component_text = str(plan["component_text"])
+    missing = [] if missing_qualifiers is None else list(missing_qualifiers)
+    direct = support_relation == "directly_supports"
     return {
         "source_proposition": f"The retained source states: {answer_claim}",
         "answer_component_claim": {
             "component_id": plan["component_id"],
             "claim": answer_claim,
         },
-        "support_relation": "directly_supports",
+        "support_relation": support_relation,
         "required_qualifiers": [component_text],
-        "observed_qualifiers": [component_text],
-        "missing_qualifiers": [],
-        "scope_check": {"status": "passed"},
+        "observed_qualifiers": [] if missing else [component_text],
+        "missing_qualifiers": missing,
+        "scope_check": {"status": "passed" if direct else "insufficient"},
         "currentness_check": {"status": "current"},
         "contradiction_check": {"status": "absent"},
         "evidential_adequacy_notes": "Fake review maps to the plan component.",
-        "non_support_reason_when_not_direct": "",
+        "non_support_reason_when_not_direct": non_support_reason,
         "producer_abstained": False,
-        "challenge_recommended": False,
+        "challenge_recommended": not direct,
         "closed_surface_flags": {
             "model_review_licensed": False,
             "assessment_created": False,
