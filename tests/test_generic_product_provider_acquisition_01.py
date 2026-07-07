@@ -208,6 +208,63 @@ def test_tavily_provider_extracted_text_redacts_strict_sk_token(
     )
 
 
+def test_provider_extracted_metadata_is_computed_after_retained_text_sanitation(
+    tmp_path: Path,
+) -> None:
+    canary = "sk-synthetic-private-canary-do-not-retain"
+    raw_text = f"  Official   source text before\n{canary}\tand after.  "
+    retained_text = (
+        "Official source text before "
+        f"{PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION} and after."
+    )
+
+    def fake_tavily(**_kwargs: Any) -> tuple[list[dict[str, Any]], list[Any]]:
+        return (
+            [
+                {
+                    "title": "Official Fee Schedule",
+                    "url": "https://fees.agency.gov/current",
+                    "snippet": "Current filing fee table.",
+                    "raw_content": raw_text,
+                }
+            ],
+            [],
+        )
+
+    output_path = tmp_path / "provider-canonical-metadata.json"
+    runner = build_generic_product_provider_acquisition_runner(
+        tavily_product_provider_callable=fake_tavily,
+    )
+
+    result = runner(
+        ProductProviderAcquisitionRequest(
+            repo_root=tmp_path,
+            output_path=output_path,
+            query="official current filing fee",
+            provider="tavily",
+        )
+    )
+    serialized = output_path.read_text(encoding="utf-8")
+    payload = json.loads(serialized)
+    record = payload["results"][0]
+
+    assert result.return_code == 0
+    assert canary not in serialized
+    assert record["provider_extracted_text"] == retained_text
+    assert record["provider_extracted_text_char_count"] == len(retained_text)
+    assert record["provider_extracted_text_digest"] == _provider_text_digest(
+        retained_text
+    )
+    assert record["provider_extracted_source_text_digest"] == _provider_text_digest(
+        retained_text
+    )
+    assert record["provider_extracted_text_digest"] != _provider_text_digest(
+        " ".join(raw_text.strip().split())
+    )
+    assert record["raw_provider_payload_retained"] is False
+    assert record["raw_search_response_retained"] is False
+
+
 def test_linkup_search_results_normalize_as_url_bound_extracted_content(
     tmp_path: Path,
 ) -> None:

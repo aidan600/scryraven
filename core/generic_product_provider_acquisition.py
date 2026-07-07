@@ -93,6 +93,34 @@ ProductProviderAcquisitionRunner = Callable[
 ]
 
 
+class ProviderExtractedTextMetadataError(ValueError):
+    """Raised when retained provider-extracted text cannot be canonicalized."""
+
+
+def canonical_retained_provider_extracted_text_metadata(
+    value: Any,
+    *,
+    bound_over_limit: bool,
+    reject_non_scalar: bool = False,
+) -> dict[str, Any]:
+    """Return metadata bound to the exact retained sanitized provider text."""
+
+    text = _canonical_retained_provider_extracted_text(
+        value,
+        bound_over_limit=bound_over_limit,
+        reject_non_scalar=reject_non_scalar,
+    )
+    digest = _digest_provider_text(text) if text else None
+    return {
+        "provider_extracted_text": text,
+        "provider_extracted_text_sanitized": bool(text),
+        "provider_extracted_text_bounded": bool(text),
+        "provider_extracted_text_char_count": len(text or ""),
+        "provider_extracted_text_digest": digest,
+        "provider_extracted_source_text_digest": digest,
+    }
+
+
 def build_generic_product_provider_acquisition_runner(
     *,
     tavily_product_provider_callable: TavilyProductProviderCallable | None = None,
@@ -356,24 +384,19 @@ def _normalize_extraction_product_provider_results(
             "raw_search_response_retained": False,
         }
         sourced_answer_record = safe.get("_linkup_sourced_answer") is True
-        extracted_text = (
-            _bounded_provider_text(safe.get("raw_content"))
+        extracted_metadata = (
+            canonical_retained_provider_extracted_text_metadata(
+                safe.get("raw_content"),
+                bound_over_limit=True,
+            )
             if allow_provider_extracted_text and not sourced_answer_record
-            else None
+            else {}
         )
+        extracted_text = extracted_metadata.get("provider_extracted_text")
         if extracted_text:
             record.update(
                 {
-                    "provider_extracted_text": extracted_text,
-                    "provider_extracted_text_sanitized": True,
-                    "provider_extracted_text_bounded": True,
-                    "provider_extracted_text_char_count": len(extracted_text),
-                    "provider_extracted_text_digest": _digest_provider_text(
-                        extracted_text
-                    ),
-                    "provider_extracted_source_text_digest": _digest_provider_text(
-                        extracted_text
-                    ),
+                    **extracted_metadata,
                     "provider_extracted_content_type": (
                         PROVIDER_EXTRACTED_CONTENT_TYPE
                     ),
@@ -508,16 +531,36 @@ def _digest_provider_text(text: str) -> str:
     return sha256(encoded.encode("utf-8")).hexdigest()
 
 
-def _bounded_provider_text(value: Any) -> str | None:
-    text = _clean_text(value, limit=PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS)
-    return redact_provider_extracted_source_text(text) if text else None
-
-
 def redact_provider_extracted_source_text(text: str) -> str:
     return _STRICT_SK_CREDENTIAL_TOKEN_RE.sub(
         PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION,
         text,
     )
+
+
+def _canonical_retained_provider_extracted_text(
+    value: Any,
+    *,
+    bound_over_limit: bool,
+    reject_non_scalar: bool,
+) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, Mapping | list | tuple | set | frozenset):
+        if reject_non_scalar:
+            raise ProviderExtractedTextMetadataError("expected scalar text value.")
+        return None
+    normalized = " ".join(str(value).strip().split())
+    if not normalized:
+        return None
+    sanitized = redact_provider_extracted_source_text(normalized)
+    if len(sanitized) <= PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS:
+        return sanitized
+    if not bound_over_limit:
+        raise ProviderExtractedTextMetadataError(
+            "sanitized provider result extracted text exceeds source-text cap."
+        )
+    return sanitized[:PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS]
 
 
 def _clean_provider(value: Any) -> str:
@@ -625,11 +668,13 @@ __all__ = [
     "ProductProviderAcquisitionRequest",
     "ProductProviderAcquisitionResult",
     "ProductProviderAcquisitionRunner",
+    "ProviderExtractedTextMetadataError",
     "PROVIDER_EXTRACTED_SOURCE_TEXT_MAX_CHARS",
     "SCOUT_ONLY_PROVIDERS",
     "SOURCE_OF_RECORD_RECOVERY_EXTRACTION_PROVIDER_ROLE",
     "SOURCE_OF_RECORD_RECOVERY_SCOUT_PROVIDER_ROLE",
     "build_generic_product_provider_acquisition_runner",
+    "canonical_retained_provider_extracted_text_metadata",
     "normalize_exa_product_provider_results",
     "normalize_linkup_product_provider_results",
     "normalize_scout_product_provider_results",

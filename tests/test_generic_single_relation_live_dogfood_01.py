@@ -627,6 +627,154 @@ def test_product_provider_extracted_text_redacts_strict_canary_before_handoff(
     )
 
 
+def test_product_boundary_rewrites_stale_provider_extracted_digest_metadata(
+    tmp_path: Path,
+) -> None:
+    canary = PRIVATE_CANARY
+    marker = product_acquisition.PROVIDER_EXTRACTED_SOURCE_TEXT_REDACTION
+    raw_text = f"  USCIS lists the N-400 paper filing fee as $760. {canary}  "
+    retained_text = f"USCIS lists the N-400 paper filing fee as $760. {marker}"
+    stale_digest = dogfood._digest_json({"provider_extracted_text": "stale upstream"})
+    expected_digest = dogfood._digest_json(
+        {"provider_extracted_text": retained_text}
+    )
+
+    def stale_product_runner(
+        request: product_acquisition.ProductProviderAcquisitionRequest,
+    ) -> product_acquisition.ProductProviderAcquisitionResult:
+        payload = {
+            "request_kind": "generic_product_provider_acquisition_response",
+            "provider": "tavily",
+            "operation": "search",
+            "result_count": 1,
+            "results": [
+                {
+                    "title": "USCIS Form N-400 Filing Fee",
+                    "url": "https://www.uscis.gov/forms/filing-fees",
+                    "domain": "uscis.gov",
+                    "snippet": "Provider snippet is directionality only.",
+                    "published_or_observed_date": "2026-07-03",
+                    "result_rank": 1,
+                    "provider_call_index": 1,
+                    "provider_extracted_text": raw_text,
+                    "provider_extracted_text_sanitized": False,
+                    "provider_extracted_text_bounded": False,
+                    "provider_extracted_text_char_count": len(raw_text) + 100,
+                    "provider_extracted_text_digest": stale_digest,
+                    "provider_extracted_source_text_digest": "stale-source-digest",
+                    "provider_extracted_content_type": "text/html",
+                    "provider_extracted_at": "2026-07-03T00:00:00+00:00",
+                    "raw_provider_payload_retained": False,
+                    "raw_search_response_retained": False,
+                }
+            ],
+            "raw_provider_payload_retained": False,
+            "raw_search_response_retained": False,
+        }
+        request.output_path.parent.mkdir(parents=True, exist_ok=True)
+        request.output_path.write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        return product_acquisition.ProductProviderAcquisitionResult(
+            return_code=0,
+            output_path=request.output_path,
+            provider_calls_attempted=1,
+            provider_calls_completed=1,
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="stale-provider-digest-corrected",
+        confirm_live_dogfood=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        product_provider_acquisition_runner=stale_product_runner,
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        environ={},
+    )
+    provider_output_path = (
+        result.packet_path.parent
+        / dogfood.SANITIZED_PRODUCT_PROVIDER_ACQUISITION_RESPONSE_NAME
+    )
+    provider_payload = json.loads(provider_output_path.read_text(encoding="utf-8"))
+    provider_record = provider_payload["results"][0]
+    retained_provider_payload = json.loads(
+        (
+            Path(result.retained_artifact_root)
+            / dogfood.SEARCH_ARTIFACT_DIR
+            / dogfood.SANITIZED_PROVIDER_RESULTS_NAME
+        ).read_text(encoding="utf-8")
+    )
+    retained_record = retained_provider_payload["results"][0]
+
+    assert result.return_code == 2
+    assert result.decision != dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert result.packet["entrypoint_kind"] == dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
+    assert result.packet["provider_results_returned"] == 1
+    assert result.packet["search_tasks_attempted"] == 1
+    assert result.packet["dprime_model_review_calls_attempted"] == 0
+    assert canary not in provider_output_path.read_text(encoding="utf-8")
+    assert provider_record["provider_extracted_text"] == retained_text
+    assert provider_record["provider_extracted_text_char_count"] == len(retained_text)
+    assert provider_record["provider_extracted_text_digest"] == expected_digest
+    assert provider_record["provider_extracted_source_text_digest"] == expected_digest
+    assert retained_record["provider_extracted_text_char_count"] == len(retained_text)
+    assert retained_record["provider_extracted_text_digest"] == expected_digest
+    assert retained_record["provider_extracted_source_text_digest"] == expected_digest
+    assert provider_record["raw_provider_payload_retained"] is False
+    assert provider_record["raw_search_response_retained"] is False
+    assert retained_record["raw_provider_payload_retained"] is False
+    assert retained_record["raw_search_response_retained"] is False
+
+
+def test_strict_provider_validator_rejects_post_boundary_digest_mismatch() -> None:
+    extracted_text = "Official fee schedule lists the current fee as 42."
+    unsafe_payload = {
+        "request_kind": "generic_product_provider_acquisition_response",
+        "provider": "tavily",
+        "operation": "search",
+        "result_count": 1,
+        "results": [
+            {
+                "title": "Official Fee Schedule",
+                "url": "https://fees.agency.gov/current",
+                "domain": "fees.agency.gov",
+                "snippet": "Current filing fee table.",
+                "published_or_observed_date": "2026-07-03",
+                "result_rank": 1,
+                "provider_call_index": 1,
+                "provider_extracted_text": extracted_text,
+                "provider_extracted_text_sanitized": True,
+                "provider_extracted_text_bounded": True,
+                "provider_extracted_text_char_count": len(extracted_text),
+                "provider_extracted_text_digest": dogfood._digest_json(
+                    {"provider_extracted_text": "corrupt post-boundary text"}
+                ),
+                "provider_extracted_source_text_digest": dogfood._digest_json(
+                    {"provider_extracted_text": extracted_text}
+                ),
+                "provider_extracted_content_type": "text/html",
+                "provider_extracted_at": "2026-07-03T00:00:00+00:00",
+                "raw_provider_payload_retained": False,
+                "raw_search_response_retained": False,
+            }
+        ],
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+
+    with pytest.raises(GenericSingleRelationLiveDogfoodRunError) as excinfo:
+        dogfood._validate_provider_payload(unsafe_payload)
+
+    assert excinfo.value.blocker == dogfood.BLOCKED_GENERIC_SINGLE_RELATION_LIVE_OUTPUT_HYGIENE
+    assert "extracted text digest mismatch" in excinfo.value.detail
+
+
 def test_provider_result_metadata_canary_still_fails_closed_without_value(
     tmp_path: Path,
 ) -> None:
@@ -3475,6 +3623,14 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
         "provider_broker_posture",
         "run_provider_proxy_helper_once",
     }
+    forbidden_provider_fix_literals = {
+        "$380",
+        "$710",
+        "$760",
+        "G-1055",
+        "N-400",
+        "USCIS",
+    }
 
     assert imported.isdisjoint(forbidden_imports)
     assert "core.run_kernel" in imported
@@ -3498,6 +3654,8 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     assert not any(text in module_text for text in forbidden_policy_text)
     assert not any(text in module_text for text in forbidden_product_route_text)
     assert not any(text in adapter_text for text in forbidden_product_route_text)
+    assert not any(text in module_text for text in forbidden_provider_fix_literals)
+    assert not any(text in adapter_text for text in forbidden_provider_fix_literals)
 
 
 def _recording_proxy_runner(
