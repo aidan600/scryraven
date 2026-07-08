@@ -37,6 +37,9 @@ import pytest
 import core.generic_product_provider_acquisition as product_acquisition
 import proplex.live_semantic_coverage_status as semantic_status_runtime
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
+from core.current_source_analyst_finding_proposal import (
+    build_model_assisted_analyst_license,
+)
 from core.dprime_product_smart_one_shot_transport import product_smart_model_route_ref
 from core.dprime_single_lane_answer_path_runtime import DPrimeSingleLaneAnswerPathError
 from core.generic_query_to_relation_planning import (
@@ -2229,6 +2232,164 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert result.packet["raw_provider_payload_retained"] is False
 
 
+def test_product_single_fact_same_component_multi_source_feeds_dprime_runtime(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    fetch_urls: list[str] = []
+    review_calls = 0
+    answer_claim = "The current USCIS Form N-400 paper filing fee is $760."
+    first_text = "USCIS lists the current Form N-400 paper filing fee as $760."
+    second_text = (
+        "USCIS fee schedule reference also lists the current Form N-400 paper "
+        "filing fee as $760."
+    )
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal review_calls
+        review_calls += 1
+        return _assessment_payload(plan, answer_claim)
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-n400-same-component-multi-source",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            calls,
+            [
+                _provider_extracted_result(
+                    "USCIS Form N-400 Filing Fee",
+                    "https://www.uscis.gov/forms/filing-fees",
+                    first_text,
+                ),
+                _provider_extracted_result(
+                    "USCIS Form N-400 Fee Schedule Reference",
+                    "https://www.uscis.gov/g-1055?form=n-400",
+                    second_text,
+                    rank=2,
+                ),
+            ],
+        ),
+        fetch_read_runner=_failing_fetch_runner(fetch_urls),
+        dprime_model_review_callable=fake_review,
+        model_assisted_analyst_license=_model_assisted_license(),
+        model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
+        enable_dprime_same_component_multi_source=True,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    assert len(calls) == 1
+    assert fetch_urls == []
+    assert review_calls == 2
+    assert result.packet["provider_results_returned"] == 2
+    assert result.packet["provider_extracted_content_candidate_count"] == 2
+    assert result.packet["dprime_same_component_multi_source_enabled"] is True
+    assert result.packet["dprime_same_component_multi_source_fetch_input_count"] == 1
+    assert result.packet["dprime_same_component_multi_source_relation_input_count"] == 1
+    semantic = result.packet["semantic_status_payload"]
+    assert result.packet["dprime_multi_source_relation_count"] == 2, semantic
+    assert result.packet["dprime_multi_source_source_count"] == 2
+    assert result.packet["dprime_multi_source_posture_consumed_by_product_status"]
+    assert result.packet["dprime_multi_source_scrutineer_consumed_by_product_status"]
+    assert result.packet["dprime_multi_source_answer_path_allowed"] is True
+
+    dprime = semantic["dprime_status"]
+    additional_ref = dprime["multi_source_relation_review_refs"][0]
+    assert semantic["dprime_multi_source_relation_count"] == 2
+    assert semantic["dprime_multi_source_source_count"] == 2
+    assert additional_ref[
+        "dprime_analyst_finding_validation_required_for_product_path"
+    ] is True
+    assert additional_ref["dprime_analyst_finding_validation_satisfied"] is True
+    assert additional_ref[
+        "legacy_candidate_level_dprime_review_treated_as_answer_authority"
+    ] is False
+    assert dprime["dprime_analyst_finding_validation_satisfied"] is True
+    assert dprime["objects_created"]["multi_source_additional_semantic_observations"]
+    assert dprime["objects_created"]["component_coverage"] is True
+    assert dprime["objects_created"]["final_answer_packet"] is False
+    assert dprime["objects_created"]["author_answer"] is False
+    assert dprime["objects_created"]["citation_source_display"] is False
+    assert result.packet["source_obligation_authority_consumed"] is True
+    assert result.packet["citation_source_handoff_authority_consumed"] is True
+    assert result.packet["final_answer_packet_created"] is False
+    assert result.packet["author_prose_created"] is False
+    assert result.packet["citation_source_display_created"] is False
+    assert result.packet["source_display_opened"] is False
+    assert result.packet["product_correctness_claimed"] is False
+
+
+def test_product_single_fact_same_component_multi_source_blocks_duplicate_source(
+    tmp_path: Path,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    review_calls = 0
+    duplicate_url = "https://www.uscis.gov/forms/filing-fees"
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        nonlocal review_calls
+        review_calls += 1
+        return _assessment_payload(
+            plan,
+            "The current USCIS Form N-400 paper filing fee is $760.",
+        )
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="product-n400-duplicate-multi-source",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [
+                _provider_extracted_result(
+                    "USCIS Form N-400 Filing Fee",
+                    duplicate_url,
+                    "USCIS lists the current Form N-400 paper filing fee as $760.",
+                ),
+                _provider_extracted_result(
+                    "USCIS Duplicate Fee Page",
+                    duplicate_url,
+                    "USCIS also lists the current Form N-400 paper filing fee as $760.",
+                    rank=2,
+                ),
+            ],
+        ),
+        fetch_read_runner=_fake_fetch_runner("unused"),
+        dprime_model_review_callable=fake_review,
+        model_assisted_analyst_license=_model_assisted_license(),
+        model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
+        enable_dprime_same_component_multi_source=True,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    semantic = result.packet["semantic_status_payload"]
+    assert review_calls == 2
+    assert result.packet["dprime_multi_source_relation_count"] == 2, semantic
+    assert result.packet["dprime_multi_source_source_count"] == 1
+    assert result.packet["dprime_multi_source_answer_path_allowed"] is False
+    assert semantic["dprime_scrutineer_challenge_ref"]["challenge_kind"] == (
+        "source_laundering_risk"
+    )
+    assert semantic["dprime_status"]["objects_created"]["component_coverage"] is False
+    assert result.packet["final_answer_packet_created"] is False
+    assert result.packet["source_display_opened"] is False
+
+
 def test_product_single_fact_redacts_live_semantic_model_route_ref_canary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -4052,6 +4213,20 @@ def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str,
             "product_correctness_claimed": False,
         },
     }
+
+
+def _model_assisted_license() -> Mapping[str, Any]:
+    return build_model_assisted_analyst_license(
+        license_id="test-generic-single-relation-analyst",
+    )
+
+
+def _echo_deterministic_analyst_adapter(
+    _input_packet: Mapping[str, Any],
+    *,
+    deterministic_proposal: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {"analyst_finding_proposal": dict(deterministic_proposal)}
 
 
 def _small_claims_url() -> str:

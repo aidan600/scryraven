@@ -131,6 +131,9 @@ from proplex.live_acquisition_readability_status import (
     SEARCH_CANDIDATE_PACKET_NAME,
     SEARCH_RESULT_CANDIDATE_PACKET_NAME,
 )
+from proplex.live_citation_source_obligation_readiness_status import (
+    build_live_citation_source_obligation_readiness_status,
+)
 from proplex.live_semantic_coverage_status import (
     BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH,
     BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
@@ -909,6 +912,7 @@ def build_generic_single_relation_live_dogfood_run_output(
     dprime_one_shot_model_review_adapter: Any | None = None,
     model_assisted_analyst_license: Mapping[str, Any] | None = None,
     model_assisted_analyst_adapter: Any | None = None,
+    enable_dprime_same_component_multi_source: bool = False,
     environ: Mapping[str, str] | None = None,
 ) -> MvpFriendOutputResult:
     """Run one planned generic relation through bounded live dogfood."""
@@ -1152,8 +1156,12 @@ def build_generic_single_relation_live_dogfood_run_output(
             relation_plan=relation_plan,
             acquisition_plan=acquisition_plan,
             provider_results=results,
+            provider_payload=provider_payload,
             fetch_read_runner=fetch_read_runner or fetch_public_url_once,
             retain_failed_fetch_read_packet=product_single_fact_answer_path_enabled,
+            collect_same_component_multi_source=(
+                enable_dprime_same_component_multi_source
+            ),
         )
         counts.update(fetch_counts)
         if fetch_packet is None:
@@ -1171,15 +1179,30 @@ def build_generic_single_relation_live_dogfood_run_output(
             )
         counts["fetch_read_packet_created"] = 1
         _enforce_caps(counts)
+        workbench_candidate_diagnostics = _safe_sequence(
+            counts.get("fetch_read_candidate_diagnostics")
+        )
+        workbench_window_diagnostics = _safe_sequence(
+            counts.get("answer_bearing_candidate_window_diagnostics")
+        )
+        if enable_dprime_same_component_multi_source:
+            workbench_candidate_diagnostics = _candidate_diagnostics_for_fetch_packet(
+                workbench_candidate_diagnostics,
+                fetch_packet=fetch_packet,
+            )
+            workbench_window_diagnostics = _window_diagnostics_for_fetch_packet(
+                workbench_window_diagnostics,
+                fetch_packet=fetch_packet,
+            )
+            workbench_candidate_diagnostics = _candidate_diagnostics_with_selected_window(
+                workbench_candidate_diagnostics,
+                workbench_window_diagnostics,
+            )
         analyst_workbench_bundle = build_current_source_record_analyst_workbench(
             relation_plan=relation_plan,
             acquisition_plan=acquisition_plan,
-            candidate_diagnostics=_safe_sequence(
-                counts.get("fetch_read_candidate_diagnostics")
-            ),
-            answer_bearing_candidate_window_diagnostics=_safe_sequence(
-                counts.get("answer_bearing_candidate_window_diagnostics")
-            ),
+            candidate_diagnostics=workbench_candidate_diagnostics,
+            answer_bearing_candidate_window_diagnostics=workbench_window_diagnostics,
             provider_results=results,
             fetch_read_content_packet=fetch_packet,
             entrypoint_kind=entrypoint_metadata["entrypoint_kind"],
@@ -1211,6 +1234,35 @@ def build_generic_single_relation_live_dogfood_run_output(
                 dprime_one_shot_model_review_adapter=(
                     dprime_one_shot_model_review_adapter
                 ),
+            )
+        dprime_multi_source_relation_inputs: tuple[dict[str, Any], ...] = ()
+        if confirm_live_dprime_review and enable_dprime_same_component_multi_source:
+            dprime_multi_source_relation_inputs = (
+                _dprime_same_component_multi_source_relation_inputs(
+                    retained_root=retained_root,
+                    relation_plan=relation_plan,
+                    acquisition_plan=acquisition_plan,
+                    provider_payload=provider_payload,
+                    provider_results=results,
+                    fetch_relation_inputs=_safe_sequence(
+                        fetch_counts.get(
+                            "dprime_same_component_multi_source_fetch_inputs"
+                        )
+                    ),
+                    candidate_diagnostics=_safe_sequence(
+                        counts.get("fetch_read_candidate_diagnostics")
+                    ),
+                    entrypoint_kind=entrypoint_metadata["entrypoint_kind"],
+                    include_gap_proposal=product_single_fact_answer_path_enabled,
+                    model_assisted_analyst_license=model_assisted_analyst_license,
+                    model_assisted_analyst_adapter=model_assisted_analyst_adapter,
+                    dprime_model_review_license=dprime_model_review_license,
+                    dprime_model_review_callable=dprime_model_review_callable,
+                )
+            )
+            counts["dprime_same_component_multi_source_enabled"] = 1
+            counts["dprime_same_component_multi_source_relation_input_count"] = len(
+                dprime_multi_source_relation_inputs
             )
         semantic_status = build_live_semantic_coverage_status(
             query=str(relation_plan["sanitized_query"]),
@@ -1263,6 +1315,9 @@ def build_generic_single_relation_live_dogfood_run_output(
             workbench_dprime_dossier=_semantic_workbench_dossier_for_dprime(
                 analyst_workbench_bundle,
                 include_gap_proposal=product_single_fact_answer_path_enabled,
+            ),
+            dprime_multi_source_relation_inputs=(
+                dprime_multi_source_relation_inputs
             ),
             model_assisted_analyst_license=model_assisted_analyst_license,
             model_assisted_analyst_adapter=model_assisted_analyst_adapter,
@@ -5059,6 +5114,7 @@ def _packet_from_semantic_status(
             "author_prose_created": answer_path_product_opened,
             "author_answer_created": answer_path_product_opened,
             "citation_source_display_created": answer_path_product_opened,
+            "source_display_opened": False,
             "fap_opened": answer_path_product_opened,
             "author_opened": answer_path_product_opened,
             "fap_author_opened": answer_path_product_opened,
@@ -9005,6 +9061,34 @@ def _base_packet(
         "evidence_ledger_admissions": counts.get("evidence_ledger_admissions", 0),
         "dprime_review_licensed": bool(confirm_live_dprime_review),
         "model_review_licensed": bool(confirm_live_dprime_review),
+        "dprime_same_component_multi_source_enabled": bool(
+            counts.get("dprime_same_component_multi_source_enabled")
+        ),
+        "dprime_same_component_multi_source_fetch_input_count": counts.get(
+            "dprime_same_component_multi_source_fetch_input_count",
+            0,
+        ),
+        "dprime_same_component_multi_source_relation_input_count": counts.get(
+            "dprime_same_component_multi_source_relation_input_count",
+            0,
+        ),
+        "dprime_multi_source_relation_count": semantic.get(
+            "dprime_multi_source_relation_count",
+            0,
+        ),
+        "dprime_multi_source_source_count": semantic.get(
+            "dprime_multi_source_source_count",
+            0,
+        ),
+        "dprime_multi_source_posture_consumed_by_product_status": bool(
+            semantic.get("dprime_multi_source_posture_consumed_by_product_status")
+        ),
+        "dprime_multi_source_scrutineer_consumed_by_product_status": bool(
+            semantic.get("dprime_multi_source_scrutineer_consumed_by_product_status")
+        ),
+        "dprime_multi_source_answer_path_allowed": bool(
+            semantic.get("dprime_multi_source_answer_path_allowed")
+        ),
         "dprime_model_review_call_count": counts.get(
             "dprime_model_review_calls_attempted",
             0,
@@ -9427,6 +9511,293 @@ def _semantic_workbench_dossier_for_dprime(
         workbench_bundle.get("analysis_gap_search_proposal_ref")
     ) or _safe_mapping(dossier.get("analysis_gap_search_proposal_ref"))
     return _without_empty(enriched)
+
+
+def _dprime_same_component_multi_source_relation_inputs(
+    *,
+    retained_root: Path,
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+    provider_payload: Mapping[str, Any],
+    provider_results: Sequence[Mapping[str, Any]],
+    fetch_relation_inputs: Sequence[Mapping[str, Any]],
+    candidate_diagnostics: Sequence[Mapping[str, Any]],
+    entrypoint_kind: str,
+    include_gap_proposal: bool,
+    model_assisted_analyst_license: Mapping[str, Any] | None,
+    model_assisted_analyst_adapter: Any | None,
+    dprime_model_review_license: Mapping[str, Any] | None,
+    dprime_model_review_callable: Callable[..., Any] | None,
+) -> tuple[dict[str, Any], ...]:
+    if not fetch_relation_inputs:
+        return ()
+    if dprime_model_review_callable is None:
+        raise GenericSingleRelationLiveDogfoodRunError(
+            BLOCKED_GENERIC_SINGLE_RELATION_LIVE_DPRIME_REVIEW_CONTRACT_MISSING,
+            (
+                "same-component multi-source D-prime relation inputs require "
+                "the existing injected D-prime model-review callable"
+            ),
+        )
+    search_dir = retained_root / SEARCH_ARTIFACT_DIR
+    candidate_packet = validate_search_result_candidate_packet(
+        _read_json(search_dir / SEARCH_RESULT_CANDIDATE_PACKET_NAME)
+    )
+    relation_inputs: list[dict[str, Any]] = []
+    for ordinal, fetch_input in enumerate(fetch_relation_inputs, start=1):
+        item = _safe_mapping(fetch_input)
+        fetch_packet = validate_fetch_read_content_packet(
+            _safe_mapping(item.get("fetch_read_content_packet"))
+        )
+        candidate_id = (
+            _clean_text(item.get("candidate_id"), limit=320)
+            or _selected_candidate_id_from_fetch_packet(fetch_packet)
+        )
+        if not candidate_id:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
+                "additional multi-source fetch/read packet lacks candidate identity",
+            )
+        extra_retained_root = (
+            retained_root
+            / "dprime_same_component_multi_source"
+            / f"source_{ordinal}"
+        )
+        _write_search_artifacts(
+            retained_root=extra_retained_root,
+            provider_payload=provider_payload,
+            candidate_packet=candidate_packet,
+        )
+        _write_fetch_packet_artifacts(
+            retained_root=extra_retained_root,
+            fetch_packet=fetch_packet,
+        )
+        readiness_status = build_live_citation_source_obligation_readiness_status(
+            query=str(relation_plan["sanitized_query"]),
+            repo_root=extra_retained_root,
+        )
+        if readiness_status.decision != PASS_DECISION:
+            raise GenericSingleRelationLiveDogfoodRunError(
+                BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_STATE_MISSING,
+                (
+                    "additional same-component source did not pass existing "
+                    "citation/source-obligation readiness: "
+                    f"{readiness_status.decision}"
+                ),
+            )
+        readiness_payload = _safe_mapping(readiness_status.payload)
+        extra_candidate_diagnostics = _candidate_diagnostics_for_candidate(
+            candidate_diagnostics,
+            candidate_id=candidate_id,
+        )
+        extra_window_diagnostics = _window_diagnostics_for_candidate(
+            item.get("answer_bearing_candidate_window_diagnostics"),
+            candidate_id=candidate_id,
+        )
+        extra_candidate_diagnostics = _candidate_diagnostics_with_selected_window(
+            extra_candidate_diagnostics,
+            extra_window_diagnostics,
+        )
+        workbench_bundle = build_current_source_record_analyst_workbench(
+            relation_plan=relation_plan,
+            acquisition_plan=acquisition_plan,
+            candidate_diagnostics=extra_candidate_diagnostics,
+            answer_bearing_candidate_window_diagnostics=extra_window_diagnostics,
+            provider_results=provider_results,
+            fetch_read_content_packet=fetch_packet,
+            entrypoint_kind=entrypoint_kind,
+            model_assisted_analyst_license=model_assisted_analyst_license,
+            model_assisted_analyst_adapter=model_assisted_analyst_adapter,
+        )
+        relation_inputs.append(
+            {
+                "fetch_read_content_packet": fetch_packet,
+                "source_evidence_admission_ref": _safe_mapping(
+                    readiness_payload.get("source_evidence_admission_ref")
+                ),
+                "citation_source_obligation_readiness_ref": _safe_mapping(
+                    readiness_payload.get(
+                        "citation_source_obligation_readiness_ref"
+                    )
+                ),
+                "component_ref": _safe_mapping(
+                    readiness_payload.get("component_ref")
+                ),
+                "source_obligation_ref": _safe_mapping(
+                    readiness_payload.get("source_obligation_ref")
+                ),
+                "workbench_dprime_dossier": _semantic_workbench_dossier_for_dprime(
+                    workbench_bundle,
+                    include_gap_proposal=include_gap_proposal,
+                ),
+                "dprime_model_review_license": dprime_model_review_license,
+                "model_review_callable": dprime_model_review_callable,
+            }
+        )
+    return tuple(relation_inputs)
+
+
+def _write_fetch_packet_artifacts(
+    *,
+    retained_root: Path,
+    fetch_packet: Mapping[str, Any],
+) -> None:
+    fetch_dir = retained_root / FETCH_READ_ARTIFACT_DIR
+    fetch_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(fetch_dir / FETCH_READ_CONTENT_PACKET_NAME, fetch_packet)
+    _write_json(
+        fetch_dir / LIVE_SOURCE_SURVIVAL_SUMMARY_NAME,
+        _fetch_summary(fetch_packet),
+    )
+
+
+def _selected_candidate_id_from_fetch_packet(fetch_packet: Mapping[str, Any]) -> str | None:
+    selected = _selected_candidate_ids_from_fetch_packet(fetch_packet)
+    return selected[0] if selected else None
+
+
+def _selected_candidate_ids_from_fetch_packet(
+    fetch_packet: Mapping[str, Any],
+) -> tuple[str, ...]:
+    selected = tuple(
+        _unique_clean_terms(
+            [
+                _clean_text(item, limit=320)
+                for item in _safe_sequence(fetch_packet.get("selected_candidate_ids"))
+            ],
+            limit=MAX_FETCH_READ_ATTEMPTS,
+        )
+    )
+    if selected:
+        return selected
+    return tuple(
+        _unique_clean_terms(
+            [
+                _clean_text(
+                    _safe_mapping(reference).get("candidate_id"),
+                    limit=320,
+                )
+                for reference in _safe_sequence(fetch_packet.get("reference_records"))
+            ],
+            limit=MAX_FETCH_READ_ATTEMPTS,
+        )
+    )
+
+
+def _candidate_diagnostics_for_fetch_packet(
+    diagnostics: Sequence[Mapping[str, Any]],
+    *,
+    fetch_packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    candidate_ids = set(_selected_candidate_ids_from_fetch_packet(fetch_packet))
+    if not candidate_ids:
+        return tuple(_safe_mapping(item) for item in diagnostics)
+    selected = tuple(
+        _safe_mapping(item)
+        for item in diagnostics
+        if _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+        in candidate_ids
+    )
+    if selected:
+        return selected
+    raise GenericSingleRelationLiveDogfoodRunError(
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
+        "selected fetch/read candidate lacks Workbench diagnostics",
+    )
+
+
+def _window_diagnostics_for_fetch_packet(
+    diagnostics: Sequence[Mapping[str, Any]],
+    *,
+    fetch_packet: Mapping[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    candidate_ids = set(_selected_candidate_ids_from_fetch_packet(fetch_packet))
+    if not candidate_ids:
+        return tuple(_safe_mapping(item) for item in diagnostics)
+    return tuple(
+        _safe_mapping(item)
+        for item in diagnostics
+        if _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+        in candidate_ids
+    )
+
+
+def _candidate_diagnostics_for_candidate(
+    diagnostics: Sequence[Mapping[str, Any]],
+    *,
+    candidate_id: str,
+) -> tuple[dict[str, Any], ...]:
+    selected = [
+        _safe_mapping(item)
+        for item in diagnostics
+        if _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+        == candidate_id
+    ]
+    if selected:
+        return tuple(selected)
+    raise GenericSingleRelationLiveDogfoodRunError(
+        BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_OBSERVABILITY_INSUFFICIENT,
+        "additional multi-source candidate lacks fetch/read diagnostics",
+    )
+
+
+def _window_diagnostics_for_candidate(
+    diagnostics: Any,
+    *,
+    candidate_id: str,
+) -> tuple[dict[str, Any], ...]:
+    return tuple(
+        _safe_mapping(item)
+        for item in _safe_sequence(diagnostics)
+        if _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+        == candidate_id
+    )
+
+
+def _candidate_diagnostics_with_selected_window(
+    candidate_diagnostics: Sequence[Mapping[str, Any]],
+    window_diagnostics: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    if not window_diagnostics:
+        return tuple(_safe_mapping(item) for item in candidate_diagnostics)
+    window = _safe_mapping(window_diagnostics[0])
+    merged: list[dict[str, Any]] = []
+    for diagnostic in candidate_diagnostics:
+        item = _safe_mapping(diagnostic)
+        if _clean_text(item.get("candidate_id"), limit=320) != _clean_text(
+            window.get("candidate_id"),
+            limit=320,
+        ):
+            merged.append(item)
+            continue
+        updated = dict(item)
+        for key in (
+            "selected_window_digest",
+            "selected_window_char_count",
+            "bounded_content_digest",
+            "bounded_content_char_count",
+            "required_anchor_count",
+            "matched_anchor_count",
+            "missing_anchor_count",
+            "anchor_match_status",
+            "expected_value_token_kinds",
+            "matched_value_token_kinds",
+            "matched_value_token_kind_count",
+            "missing_value_token_kinds",
+            "value_token_guidance_consumed",
+            "official_pdf_or_table_artifact_candidate",
+            "official_artifact_type",
+            "official_artifact_read_support_status",
+            "official_artifact_read_support_source",
+        ):
+            if key in window:
+                updated[key] = window.get(key)
+        updated["answer_bearing_candidate_window_considered"] = True
+        updated["answer_bearing_candidate_window_selected"] = True
+        updated["candidate_window_selected"] = True
+        updated["skipped_reason"] = None
+        merged.append(updated)
+    return tuple(merged)
 
 
 def _workbench_dossier_consumed_by_dprime(
@@ -10284,7 +10655,9 @@ def _write_fetch_read_artifacts(
     acquisition_plan: Mapping[str, Any] | None,
     provider_results: Sequence[Mapping[str, Any]],
     fetch_read_runner: FetchReadRunner,
+    provider_payload: Mapping[str, Any] | None = None,
     retain_failed_fetch_read_packet: bool = False,
+    collect_same_component_multi_source: bool = False,
 ) -> tuple[dict[str, Any] | None, dict[str, Any]]:
     search_dir = retained_root / SEARCH_ARTIFACT_DIR
     fetch_dir = retained_root / FETCH_READ_ARTIFACT_DIR
@@ -10402,6 +10775,15 @@ def _write_fetch_read_artifacts(
                     selected_candidate_ids=[selected_candidate_id],
                 )
             )
+            additional_fetch_inputs = ()
+            if collect_same_component_multi_source:
+                additional_fetch_inputs = (
+                    _provider_extracted_multi_source_fetch_inputs(
+                        candidate_packet=candidate_packet,
+                        evaluations=evaluations,
+                        selected_candidate_id=selected_candidate_id,
+                    )
+                )
         except FetchReadContentReferenceError as exc:
             return None, {
                 "source_acquisition_mode": SOURCE_ACQUISITION_MODE_PROVIDER_EXTRACTED,
@@ -10491,10 +10873,17 @@ def _write_fetch_read_artifacts(
                 acquisition_plan=acquisition_plan,
                 selection=selection,
             ),
+            "dprime_same_component_multi_source_fetch_inputs": (
+                additional_fetch_inputs
+            ),
+            "dprime_same_component_multi_source_fetch_input_count": len(
+                additional_fetch_inputs
+            ),
         }
     fetch_attempts = 0
     last_error: GenericSingleRelationLiveDogfoodRunError | None = None
     attempt_diagnostics: list[dict[str, Any]] = []
+    successful_fetches: list[dict[str, Any]] = []
     for candidate in candidates:
         if fetch_attempts >= MAX_FETCH_READ_ATTEMPTS:
             _mark_candidate_skipped(
@@ -10526,12 +10915,6 @@ def _write_fetch_read_artifacts(
                     selected_candidate_ids=[str(candidate["candidate_id"])],
                 )
             )
-            fetch_dir.mkdir(parents=True, exist_ok=True)
-            _write_json(fetch_dir / FETCH_READ_CONTENT_PACKET_NAME, fetch_packet)
-            _write_json(
-                fetch_dir / LIVE_SOURCE_SURVIVAL_SUMMARY_NAME,
-                _fetch_summary(fetch_packet),
-            )
             attempt_diagnostic = _fetch_read_attempt_diagnostic(
                 candidate,
                 attempt_index=fetch_attempts,
@@ -10541,6 +10924,26 @@ def _write_fetch_read_artifacts(
             )
             attempt_diagnostics.append(attempt_diagnostic)
             _apply_attempt_diagnostic(candidate_diagnostics, attempt_diagnostic)
+            if collect_same_component_multi_source:
+                successful_fetches.append(
+                    {
+                        "candidate_id": str(candidate["candidate_id"]),
+                        "fetch_read_content_packet": fetch_packet,
+                        "selection": selection,
+                        "answer_bearing_candidate_window_diagnostics": (
+                            _candidate_window_diagnostics_from_attempt_diagnostics(
+                                [attempt_diagnostic]
+                            )
+                        ),
+                    }
+                )
+                continue
+            fetch_dir.mkdir(parents=True, exist_ok=True)
+            _write_json(fetch_dir / FETCH_READ_CONTENT_PACKET_NAME, fetch_packet)
+            _write_json(
+                fetch_dir / LIVE_SOURCE_SURVIVAL_SUMMARY_NAME,
+                _fetch_summary(fetch_packet),
+            )
             _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
             return fetch_packet, {
                 "source_acquisition_mode": SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK,
@@ -10593,6 +10996,76 @@ def _write_fetch_read_artifacts(
             attempt_diagnostics.append(attempt_diagnostic)
             _apply_attempt_diagnostic(candidate_diagnostics, attempt_diagnostic)
             continue
+    if successful_fetches:
+        primary_success = successful_fetches[0]
+        fetch_packet = validate_fetch_read_content_packet(
+            _safe_mapping(primary_success.get("fetch_read_content_packet"))
+        )
+        fetch_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(fetch_dir / FETCH_READ_CONTENT_PACKET_NAME, fetch_packet)
+        _write_json(
+            fetch_dir / LIVE_SOURCE_SURVIVAL_SUMMARY_NAME,
+            _fetch_summary(fetch_packet),
+        )
+        _mark_unattempted_candidates_skipped_after_success(candidate_diagnostics)
+        additional_fetch_inputs = tuple(
+            {
+                key: value
+                for key, value in _safe_mapping(item).items()
+                if key != "selection"
+            }
+            for item in successful_fetches[1:]
+        )
+        primary_selection = primary_success.get("selection")
+        selected_window_diagnostics = (
+            _candidate_window_diagnostics_from_attempt_diagnostics(
+                attempt_diagnostics
+            )
+        )
+        return fetch_packet, {
+            "source_acquisition_mode": SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK,
+            "provider_extracted_content_candidate_count": 0,
+            "provider_extracted_content_handoff_created": 0,
+            "direct_fetch_read_attempts": fetch_attempts,
+            "fetch_read_attempts": fetch_attempts,
+            "fetch_read_completed": len(successful_fetches),
+            "fetch_read_status_classes": tuple(
+                _attempt_status_classes(attempt_diagnostics)
+            ),
+            "fetch_read_content_types": tuple(
+                _attempt_content_types(attempt_diagnostics)
+            ),
+            "fetch_read_failure_categories": tuple(
+                _candidate_failure_categories(candidate_diagnostics)
+                + _attempt_failure_categories(attempt_diagnostics)
+            ),
+            "answer_bearing_candidate_window_status": (
+                _candidate_window_status(primary_selection)
+                if isinstance(primary_selection, BoundedTextSelection)
+                else None
+            ),
+            "answer_bearing_candidate_window_best_effort": False,
+            "answer_bearing_candidate_window_not_established": False,
+            "answer_bearing_candidate_window_diagnostics": (
+                selected_window_diagnostics
+            ),
+            "fetch_read_candidate_diagnostics": tuple(candidate_diagnostics),
+            "fetch_read_attempt_diagnostics": tuple(attempt_diagnostics),
+            "dprime_same_component_multi_source_fetch_inputs": (
+                additional_fetch_inputs
+            ),
+            "dprime_same_component_multi_source_fetch_input_count": len(
+                additional_fetch_inputs
+            ),
+            **_selected_window_guidance_counts(
+                acquisition_plan=acquisition_plan,
+                selection=(
+                    primary_selection
+                    if isinstance(primary_selection, BoundedTextSelection)
+                    else None
+                ),
+            ),
+        }
     if last_error is None:
         last_error = GenericSingleRelationLiveDogfoodRunError(
             BLOCKED_GENERIC_SINGLE_RELATION_LIVE_FETCH_READ_ENTRYPOINT_MISSING,
@@ -10927,7 +11400,7 @@ def _candidate_diagnostics_from_provider_results(
     )
     priority_inputs: list[dict[str, Any]] = []
     for result in sorted_results:
-        candidate_id, _candidate_digest = _provider_result_candidate_identity(
+        candidate_id, candidate_digest = _provider_result_candidate_identity(
             result,
             relation_plan=relation_plan,
             run_id=run_id,
@@ -10978,6 +11451,7 @@ def _candidate_diagnostics_from_provider_results(
         diagnostics.append(
             {
                 "candidate_id": candidate_id,
+                "candidate_digest": candidate_digest,
                 "provider_call_index": _bounded_int(
                     result.get("provider_call_index"),
                     default=1,
@@ -11755,6 +12229,47 @@ def _select_provider_extracted_candidate_window(
             "provider-extracted candidate/window selection had no candidates."
         )
     return max(evaluations, key=lambda item: item.score)
+
+
+def _provider_extracted_multi_source_fetch_inputs(
+    *,
+    candidate_packet: Mapping[str, Any],
+    evaluations: Sequence[_CandidateWindowEvaluation],
+    selected_candidate_id: str,
+) -> tuple[dict[str, Any], ...]:
+    inputs: list[dict[str, Any]] = []
+    for evaluation in sorted(evaluations, key=lambda item: item.score, reverse=True):
+        candidate_id = str(evaluation.candidate["candidate_id"])
+        if candidate_id == selected_candidate_id:
+            continue
+        material = _provider_extracted_fetch_read_material(
+            candidate=evaluation.candidate,
+            candidate_packet=candidate_packet,
+            provider_result=evaluation.provider_result,
+            selection=evaluation.selection,
+        )
+        fetch_packet = validate_fetch_read_content_packet(
+            build_fetch_read_content_packet_from_candidate_packet(
+                candidate_packet,
+                [material],
+                selected_candidate_ids=[candidate_id],
+            )
+        )
+        inputs.append(
+            {
+                "candidate_id": candidate_id,
+                "fetch_read_content_packet": fetch_packet,
+                "answer_bearing_candidate_window_diagnostics": (
+                    _candidate_window_diagnostics(
+                        [evaluation],
+                        selected_candidate_id=candidate_id,
+                    )
+                ),
+            }
+        )
+        if len(inputs) >= max(0, MAX_FETCH_READ_ATTEMPTS - 1):
+            break
+    return tuple(inputs)
 
 
 def _attempt_direct_official_artifact_read_support_challenge(
