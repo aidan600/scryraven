@@ -27,11 +27,16 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from core.current_source_analyst_finding_proposal import (
+    build_model_assisted_analyst_finding_proposal,
+    build_model_assisted_analyst_license,
+)
 from core.dprime_analyst_finding_support_validation import (
     DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION_MODEL_ROLE,
     DPRIME_SUPPORT_VALIDATION_ADJACENT_OVERCLAIM,
     DPRIME_SUPPORT_VALIDATION_INSUFFICIENT,
     DPRIME_SUPPORT_VALIDATION_INVALID_PROPOSAL,
+    DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST,
     DPRIME_SUPPORT_VALIDATION_SUPPORTED,
     DPRIME_SUPPORT_VALIDATION_UNSUPPORTED,
     analyst_finding_support_validation_required,
@@ -58,16 +63,20 @@ from tests.test_dprime_evidence_support_bundle_01 import (
 from tests.test_dprime_model_review_assessment_slice_01 import _assessment_payload
 
 
-def test_supported_analyst_finding_validates_from_bounded_evidence() -> None:
+def test_deterministic_analyst_finding_cannot_recommend_runkernel_admission() -> None:
     bundle = _answer_bearing_bundle()
     finding = _finding(bundle)
 
     validation = _validate_finding(finding, bundle)
 
     assert validation["dprime_validation_status"] == (
+        DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST
+    )
+    assert validation["structural_dprime_validation_status"] == (
         DPRIME_SUPPORT_VALIDATION_SUPPORTED
     )
-    assert support_validation_allows_runkernel_admission(validation) is True
+    assert validation["structural_validation_supported_by_bounded_evidence"] is True
+    assert support_validation_allows_runkernel_admission(validation) is False
     assert validation["dprime_model_role"] == (
         DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION_MODEL_ROLE
     )
@@ -77,15 +86,62 @@ def test_supported_analyst_finding_validates_from_bounded_evidence() -> None:
     assert validation["source_support_map_validation_status"] == (
         DPRIME_SUPPORT_VALIDATION_SUPPORTED
     )
+    assert validation["bounded_evidence_excerpt_available"] is True
+    assert validation["analyst_finding_product_grade_ref"][
+        "blocked_non_product_grade_analyst_finding"
+    ] is True
+    assert validation["model_assisted_analysis_run"] is False
+    assert validation["model_assisted_analyst_requirement_satisfied"] is False
+    assert validation["model_assisted_analyst_product_grade_analysis"] is False
+    assert validation["analyst_finding_proposal_ref"][
+        "requires_runkernel_admission"
+    ] is False
+    assert validation["proposed_answer_claim_ref"][
+        "requires_runkernel_admission"
+    ] is False
+    assert validation["runkernel_support_admission_recommended"] is False
+    assert validation["requires_runkernel_admission"] is False
     assert validation["runkernel_admission_created"] is False
     assert validation["evidence_admitted"] is False
     assert validation["source_obligation_satisfied"] is False
     assert validation["citation_eligibility_created"] is False
     assert validation["product_correctness_claimed"] is False
     serialized = json.dumps(validation, sort_keys=True).casefold()
+    assert '"requires_runkernel_admission": true' not in serialized
     assert "bounded excerpt text" not in serialized
     assert '"dprime_model_role": "fast"' not in serialized
     assert "embed" not in serialized
+
+
+def test_product_grade_model_assisted_analyst_finding_may_recommend_future_admission() -> None:
+    bundle = _answer_bearing_bundle()
+    finding = _product_grade_model_assisted_finding(bundle)
+
+    validation = _validate_finding(finding, bundle)
+
+    assert validation["dprime_validation_status"] == (
+        DPRIME_SUPPORT_VALIDATION_SUPPORTED
+    )
+    assert validation["structural_dprime_validation_status"] == (
+        DPRIME_SUPPORT_VALIDATION_SUPPORTED
+    )
+    assert validation["model_assisted_analysis_run"] is True
+    assert validation["model_assisted_analyst_requirement_satisfied"] is True
+    assert validation["model_assisted_analyst_product_grade_analysis"] is True
+    assert validation["analyst_finding_product_grade_ref"][
+        "product_grade_analyst_finding"
+    ] is True
+    assert validation["runkernel_support_admission_recommended"] is True
+    assert validation["requires_runkernel_admission"] is True
+    assert validation["analyst_finding_proposal_ref"][
+        "requires_runkernel_admission"
+    ] is False
+    assert validation["proposed_answer_claim_ref"][
+        "requires_runkernel_admission"
+    ] is False
+    assert support_validation_allows_runkernel_admission(validation) is True
+    assert validation["runkernel_admission_created"] is False
+    assert validation["product_correctness_claimed"] is False
 
 
 def test_adjacent_source_support_map_edge_rejected_as_answer_support() -> None:
@@ -232,6 +288,57 @@ def test_legacy_candidate_dprime_pass_cannot_open_answer_path_without_validation
     assert result.payload["dprime_answer_path_ref"]["status"] == "not reached"
 
 
+def test_legacy_candidate_dprime_pass_cannot_bypass_deterministic_analyst_finding(
+    tmp_path: Path,
+) -> None:
+    bundle = _answer_bearing_bundle()
+    finding = _finding(bundle)
+    repo_root, candidate = _passport_retained_repo(
+        tmp_path,
+        bounded_text="The current standard paper small claims filing fee is 54 dollars.",
+        title="Official Current Standard Filing Fee",
+        url="https://example-county.gov/courts/current-filing-fee",
+        domain="example-county.gov",
+        candidate_id="direct-candidate-2",
+        candidate_digest="direct-digest-2",
+        snippet="Official current standard small claims filing fee.",
+    )
+    dossier = _workbench_dossier(candidate)
+    dossier["analyst_finding_proposal"] = finding
+
+    result = _run_product_status_with_assessment(
+        repo_root,
+        _assessment_payload(),
+        workbench_dprime_dossier=dossier,
+    )
+
+    assert result.decision == BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+    dprime = result.payload["dprime_status"]
+    validation = dprime["dprime_analyst_finding_support_validation"]
+    assert dprime["proposal_validation_status"] == (
+        "DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED"
+    )
+    assert validation["dprime_validation_status"] == (
+        DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST
+    )
+    assert validation["structural_dprime_validation_status"] == (
+        DPRIME_SUPPORT_VALIDATION_SUPPORTED
+    )
+    assert validation["structural_validation_supported_by_bounded_evidence"] is True
+    assert validation["runkernel_support_admission_recommended"] is False
+    assert validation["requires_runkernel_admission"] is False
+    assert support_validation_allows_runkernel_admission(validation) is False
+    assert dprime["dprime_analyst_finding_validation_satisfied"] is False
+    assert dprime["objects_created"]["run_kernel_admission_decision"] is False
+    assert dprime["objects_created"]["semantic_observation"] is False
+    assert dprime["objects_created"]["component_coverage"] is False
+    assert dprime["objects_created"]["sufficiency_readiness"] is False
+    assert dprime["objects_created"]["final_answer_packet"] is False
+    assert dprime["objects_created"]["author_answer"] is False
+    assert dprime["objects_created"]["citation_source_display"] is False
+    assert result.payload["dprime_answer_path_ref"]["status"] == "not reached"
+
+
 def _validate_finding(
     finding: Mapping[str, Any],
     bundle: Mapping[str, Any],
@@ -253,6 +360,25 @@ def _dossier_with_finding(
         {},
     )
     return dossier
+
+
+def _product_grade_model_assisted_finding(
+    bundle: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    deterministic = _finding(bundle)
+
+    def fake_adapter(_input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"analyst_finding_proposal": deterministic}
+
+    return build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        fetch_read_content_packet=_bounded_fetch_packet(),
+        model_assisted_analyst_license=build_model_assisted_analyst_license(
+            license_id="dprime-product-grade-analyst:test",
+        ),
+        model_assisted_analyst_adapter=fake_adapter,
+    )
 
 
 def _bounded_fetch_packet() -> dict[str, Any]:

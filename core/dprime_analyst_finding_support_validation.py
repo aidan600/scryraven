@@ -69,12 +69,18 @@ DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_ADAPTER = "not_run_missing_adapter"
 DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_BOUNDED_EVIDENCE = (
     "not_run_missing_bounded_evidence"
 )
+DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST = (
+    "not_run_missing_model_assisted_analyst"
+)
 
 PRODUCT_PROOF_BLOCKED_VALIDATION_REQUIRED_BUT_NOT_RUN = (
     "blocked_dprime_validation_required_but_not_run"
 )
 PRODUCT_PROOF_BLOCKED_VALIDATION_UNSUPPORTED = (
     "blocked_dprime_validation_unsupported"
+)
+PRODUCT_PROOF_BLOCKED_MODEL_ASSISTED_ANALYST_REQUIRED_BUT_NOT_RUN = (
+    "blocked_model_assisted_analyst_required_but_not_run"
 )
 PRODUCT_PROOF_NOT_CLAIMED_PENDING_RUNKERNEL_ADMISSION = (
     "not_claimed_pending_runkernel_admission"
@@ -91,6 +97,7 @@ _UNSUPPORTED_STATUSES = frozenset(
         DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_LICENSE,
         DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_ADAPTER,
         DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_BOUNDED_EVIDENCE,
+        DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST,
     }
 )
 _VALIDATION_STATUSES = frozenset(
@@ -282,7 +289,9 @@ def build_dprime_analyst_finding_support_validation_input_packet(
                 DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION_ROUTE_AUTHORITY
             ),
             "component_answer_type_binding_ref": binding_ref,
-            "analyst_finding_proposal_ref": analyst_finding_proposal_ref(proposal),
+            "analyst_finding_proposal_ref": _validation_ref_without_admission(
+                analyst_finding_proposal_ref(proposal)
+            ),
             "analyst_finding_proposal": _proposal_for_validation(proposal),
             "proposed_answer_claim": _safe_mapping(
                 proposal.get("proposed_answer_claim")
@@ -526,9 +535,32 @@ def dprime_analyst_finding_support_validation_ref(
             "bounded_evidence_excerpt_count": _bounded_int(
                 validation.get("bounded_evidence_excerpt_count")
             ),
+            "structural_dprime_validation_status": validation.get(
+                "structural_dprime_validation_status"
+            ),
+            "structural_validation_supported_by_bounded_evidence": (
+                validation.get("structural_validation_supported_by_bounded_evidence")
+                is True
+            ),
+            "analyst_finding_product_grade_ref": _safe_mapping(
+                validation.get("analyst_finding_product_grade_ref")
+            ),
+            "model_assisted_analysis_run": (
+                validation.get("model_assisted_analysis_run") is True
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                validation.get("model_assisted_analyst_requirement_satisfied")
+                is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                validation.get("model_assisted_analyst_product_grade_analysis")
+                is True
+            ),
             "model_assisted_analysis_evidence_depth": validation.get(
                 "model_assisted_analysis_evidence_depth"
             ),
+            "product_proof_status": validation.get("product_proof_status"),
+            "product_proof_blocker": validation.get("product_proof_blocker"),
             "runkernel_support_admission_recommended": (
                 validation.get("runkernel_support_admission_recommended") is True
             ),
@@ -552,12 +584,17 @@ def dprime_analyst_finding_support_validation_ref(
 def support_validation_allows_runkernel_admission(
     value: Mapping[str, Any] | None,
 ) -> bool:
-    """Return true only for bounded-evidence-supported validation artifacts."""
+    """Return true only for product-grade, bounded-supported validation artifacts."""
 
     validation = _safe_mapping(value)
+    product_grade = _safe_mapping(validation.get("analyst_finding_product_grade_ref"))
     return (
         validation.get("dprime_validation_status")
         == DPRIME_SUPPORT_VALIDATION_SUPPORTED
+        and product_grade.get("product_grade_analyst_finding") is True
+        and validation.get("model_assisted_analysis_run") is True
+        and validation.get("model_assisted_analyst_requirement_satisfied") is True
+        and validation.get("model_assisted_analyst_product_grade_analysis") is True
         and validation.get("runkernel_support_admission_recommended") is True
         and validation.get("requires_runkernel_admission") is True
         and validation.get("runkernel_admission_created") is False
@@ -642,6 +679,12 @@ def _deterministic_validation(
         model_calls_completed=model_calls_completed,
         live_model_call_run=live_model_call_run,
         proposal_generation_mode=proposal.get("finding_generation_mode"),
+        model_assisted_analysis_run=(
+            proposal.get("model_assisted_analysis_run") is True
+        ),
+        model_assisted_analyst_requirement_satisfied=(
+            proposal.get("model_assisted_analyst_requirement_satisfied") is True
+        ),
         model_assisted_analyst_product_grade_analysis=(
             proposal.get("model_assisted_analyst_product_grade_analysis") is True
         ),
@@ -679,7 +722,7 @@ def _validation_from_model_output(
     proposed_validation = _safe_mapping(
         output.get("proposed_answer_claim_validation")
     ) or _safe_mapping(base.get("proposed_answer_claim_validation"))
-    status = model_status or base["dprime_validation_status"]
+    status = model_status or base["structural_dprime_validation_status"]
     if status == DPRIME_SUPPORT_VALIDATION_SUPPORTED:
         _require_supported_model_output(
             claim_validations=claim_validations,
@@ -690,6 +733,7 @@ def _validation_from_model_output(
         _text_tuple(output.get("dprime_support_validation_reason_codes"), limit=120)
         or _text_tuple(base.get("dprime_support_validation_reason_codes"), limit=120)
     )
+    product_grade_ref = _safe_mapping(base.get("analyst_finding_product_grade_ref"))
     summary = (
         _clean_text(output.get("validation_summary"), limit=700)
         or _safe_mapping(base.get("dprime_validation_summary_ref")).get(
@@ -697,9 +741,20 @@ def _validation_from_model_output(
         )
         or _summary_text(status=status, reason_codes=reason_codes)
     )
+    structural_status = status
+    status, summary, reason_codes = _apply_product_grade_gate(
+        status=status,
+        summary=summary,
+        reason_codes=reason_codes,
+        product_grade_ref=product_grade_ref,
+    )
     updated = {
         **base,
         "dprime_validation_status": status,
+        "structural_dprime_validation_status": structural_status,
+        "structural_validation_supported_by_bounded_evidence": (
+            structural_status == DPRIME_SUPPORT_VALIDATION_SUPPORTED
+        ),
         "dprime_support_validation_reason_codes": list(reason_codes),
         "proposed_answer_claim_validation": proposed_validation,
         "proposed_answer_claim_validation_ref": _claim_validation_ref(
@@ -722,7 +777,7 @@ def _validation_from_model_output(
         "model_calls_completed": _bounded_int(model_calls_completed),
         "live_model_call_run": bool(live_model_call_run),
     }
-    updated.update(_product_policy(status))
+    updated.update(_product_policy(status, product_grade_ref=product_grade_ref))
     updated["validation_digest"] = _digest_json(_without_digest(updated))
     updated["validation_id"] = (
         "dprime-analyst-finding-support-validation:"
@@ -1213,8 +1268,26 @@ def _validation_artifact(
     model_calls_completed: int,
     live_model_call_run: bool,
     proposal_generation_mode: Any,
+    model_assisted_analysis_run: bool,
+    model_assisted_analyst_requirement_satisfied: bool,
     model_assisted_analyst_product_grade_analysis: bool,
 ) -> dict[str, Any]:
+    product_grade_ref = _analyst_finding_product_grade_ref(
+        model_assisted_analysis_run=model_assisted_analysis_run,
+        model_assisted_analyst_requirement_satisfied=(
+            model_assisted_analyst_requirement_satisfied
+        ),
+        model_assisted_analyst_product_grade_analysis=(
+            model_assisted_analyst_product_grade_analysis
+        ),
+    )
+    structural_status = status
+    status, summary, reason_codes = _apply_product_grade_gate(
+        status=status,
+        summary=summary,
+        reason_codes=reason_codes,
+        product_grade_ref=product_grade_ref,
+    )
     artifact = {
         "schema_version": DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION_SCHEMA_VERSION,
         "phase": DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION_PHASE,
@@ -1284,10 +1357,19 @@ def _validation_artifact(
         "raw_provider_payload_retained": False,
         "input_packet_ref": _safe_mapping(input_packet_ref),
         "proposal_generation_mode": _clean_text(proposal_generation_mode, limit=120),
+        "model_assisted_analysis_run": bool(model_assisted_analysis_run),
+        "model_assisted_analyst_requirement_satisfied": bool(
+            model_assisted_analyst_requirement_satisfied
+        ),
         "model_assisted_analyst_product_grade_analysis": bool(
             model_assisted_analyst_product_grade_analysis
         ),
-        **_product_policy(status),
+        "analyst_finding_product_grade_ref": product_grade_ref,
+        "structural_dprime_validation_status": structural_status,
+        "structural_validation_supported_by_bounded_evidence": (
+            structural_status == DPRIME_SUPPORT_VALIDATION_SUPPORTED
+        ),
+        **_product_policy(status, product_grade_ref=product_grade_ref),
         **_non_authority_posture(),
     }
     artifact["source_support_map_validation_status"] = (
@@ -1365,23 +1447,103 @@ def _blocked_validation(
             model_calls_completed=model_calls_completed,
             live_model_call_run=live_model_call_run,
             proposal_generation_mode=None,
+            model_assisted_analysis_run=False,
+            model_assisted_analyst_requirement_satisfied=False,
             model_assisted_analyst_product_grade_analysis=False,
         )
     )
 
 
-def _product_policy(status: str) -> dict[str, Any]:
-    supported = status in _SUPPORTED_STATUSES
+def _analyst_finding_product_grade_ref(
+    *,
+    model_assisted_analysis_run: bool,
+    model_assisted_analyst_requirement_satisfied: bool,
+    model_assisted_analyst_product_grade_analysis: bool,
+) -> dict[str, Any]:
+    missing: list[str] = []
+    if not model_assisted_analysis_run:
+        missing.append("model_assisted_analysis_run")
+    if not model_assisted_analyst_requirement_satisfied:
+        missing.append("model_assisted_analyst_requirement_satisfied")
+    if not model_assisted_analyst_product_grade_analysis:
+        missing.append("model_assisted_analyst_product_grade_analysis")
+    product_grade = not missing
+    return {
+        "model_assisted_analyst_required_for_product_path": True,
+        "model_assisted_analysis_run": bool(model_assisted_analysis_run),
+        "model_assisted_analyst_requirement_satisfied": bool(
+            model_assisted_analyst_requirement_satisfied
+        ),
+        "model_assisted_analyst_product_grade_analysis": bool(
+            model_assisted_analyst_product_grade_analysis
+        ),
+        "product_grade_analyst_finding": product_grade,
+        "blocked_non_product_grade_analyst_finding": not product_grade,
+        "product_grade_blocker": (
+            None
+            if product_grade
+            else PRODUCT_PROOF_BLOCKED_MODEL_ASSISTED_ANALYST_REQUIRED_BUT_NOT_RUN
+        ),
+        "product_grade_reason_codes": missing,
+    }
+
+
+def _apply_product_grade_gate(
+    *,
+    status: str,
+    summary: str,
+    reason_codes: Sequence[str],
+    product_grade_ref: Mapping[str, Any],
+) -> tuple[str, str, tuple[str, ...]]:
+    if (
+        status != DPRIME_SUPPORT_VALIDATION_SUPPORTED
+        or product_grade_ref.get("product_grade_analyst_finding") is True
+    ):
+        return status, summary, tuple(reason_codes)
+    gated_codes = _unique(
+        [
+            *reason_codes,
+            "model_assisted_analyst_required_but_not_run",
+            *_text_tuple(product_grade_ref.get("product_grade_reason_codes")),
+        ]
+    )
+    gated_summary = (
+        "D-prime structurally inspected AnalystFinding support and bounded "
+        "evidence, but product-grade model-assisted Analyst analysis is "
+        "missing; RunKernel admission recommendation is blocked."
+    )
+    return (
+        DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST,
+        gated_summary,
+        tuple(gated_codes),
+    )
+
+
+def _product_policy(
+    status: str,
+    *,
+    product_grade_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    product_grade = product_grade_ref.get("product_grade_analyst_finding") is True
+    supported = status in _SUPPORTED_STATUSES and product_grade
     not_run = status in {
         DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_LICENSE,
         DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_ADAPTER,
         DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_BOUNDED_EVIDENCE,
+        DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST,
     }
+    product_proof_blocker = _clean_text(
+        product_grade_ref.get("product_grade_blocker"),
+        limit=160,
+    )
     return {
         "dprime_analyst_finding_validation_required_for_product_path": True,
         "dprime_analyst_finding_validation_required_for_product_pass": True,
         "dprime_analyst_finding_validation_satisfied": supported,
-        "dprime_analyst_finding_product_grade_validation": supported,
+        "dprime_analyst_finding_product_grade_validation": product_grade,
+        "dprime_analyst_finding_validation_blocker": (
+            None if supported else product_proof_blocker
+        ),
         "product_proof_status": (
             PRODUCT_PROOF_NOT_CLAIMED_PENDING_RUNKERNEL_ADMISSION
             if supported
@@ -1389,6 +1551,7 @@ def _product_policy(status: str) -> dict[str, Any]:
             if not_run
             else PRODUCT_PROOF_BLOCKED_VALIDATION_UNSUPPORTED
         ),
+        "product_proof_blocker": None if supported else product_proof_blocker,
         "product_correctness_claimed": False,
         "runkernel_support_admission_recommended": supported,
         "requires_runkernel_admission": supported,
@@ -1564,6 +1727,12 @@ def _proposal_for_validation(proposal: Mapping[str, Any]) -> dict[str, Any]:
             "model_assisted_analysis_run": (
                 proposal.get("model_assisted_analysis_run") is True
             ),
+            "model_assisted_analyst_requirement_satisfied": (
+                proposal.get("model_assisted_analyst_requirement_satisfied") is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                proposal.get("model_assisted_analyst_product_grade_analysis") is True
+            ),
             "model_role": proposal.get("model_role"),
             "role_surface": proposal.get("role_surface"),
             "bounded_evidence_excerpt_available": (
@@ -1579,7 +1748,9 @@ def _proposal_for_validation(proposal: Mapping[str, Any]) -> dict[str, Any]:
                 "model_input_evidence_limitation"
             ),
             "proposed_answer_claim_ref": _safe_mapping(
-                proposal.get("proposed_answer_claim_ref")
+                _validation_ref_without_admission(
+                    proposal.get("proposed_answer_claim_ref")
+                )
             ),
             "analysis_claim_refs": _safe_refs(proposal.get("analysis_claim_refs")),
             "source_support_map_ref": _safe_mapping(
@@ -1787,7 +1958,7 @@ def _proposed_answer_claim_ref(input_packet: Mapping[str, Any]) -> dict[str, Any
             "requested_answer_type": claim.get("requested_answer_type"),
             "expected_value_shape": claim.get("expected_value_shape"),
             "requires_dprime_validation": True,
-            "requires_runkernel_admission": True,
+            "requires_runkernel_admission": False,
             "evidence_admitted": False,
             "source_obligation_satisfied": False,
             "citation_eligibility_created": False,
@@ -1796,6 +1967,43 @@ def _proposed_answer_claim_ref(input_packet: Mapping[str, Any]) -> dict[str, Any
             "product_correctness_claimed": False,
         }
     )
+
+
+def _validation_ref_without_admission(value: Mapping[str, Any] | None) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    if not ref:
+        return {}
+    sanitized = _neutralize_admission_markers(ref)
+    if not isinstance(sanitized, dict):
+        return {}
+    return {
+        **sanitized,
+        "requires_runkernel_admission": False,
+        "runkernel_admission_created": False,
+        "evidence_admitted": False,
+        "source_obligation_satisfied": False,
+        "citation_eligibility_created": False,
+        "final_answer_packet_created": False,
+        "author_output_created": False,
+        "product_correctness_claimed": False,
+    }
+
+
+def _neutralize_admission_markers(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized = _normalize_key(key)
+            if normalized == "requires_runkernel_admission":
+                out[str(key)] = False
+            elif normalized in _NON_AUTHORITY_FALSE_FLAGS:
+                out[str(key)] = False
+            else:
+                out[str(key)] = _neutralize_admission_markers(item)
+        return out
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_neutralize_admission_markers(item) for item in value]
+    return value
 
 
 def _claim_validation_ref(value: Mapping[str, Any]) -> dict[str, Any]:
@@ -2121,6 +2329,7 @@ __all__ = [
     "DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_ADAPTER",
     "DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_BOUNDED_EVIDENCE",
     "DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_LICENSE",
+    "DPRIME_SUPPORT_VALIDATION_NOT_RUN_MISSING_MODEL_ASSISTED_ANALYST",
     "DPRIME_SUPPORT_VALIDATION_PARTIAL",
     "DPRIME_SUPPORT_VALIDATION_SUPPORTED",
     "DPRIME_SUPPORT_VALIDATION_UNREADABLE_GAP",

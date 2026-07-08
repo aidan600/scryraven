@@ -113,7 +113,8 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     )
 
     packet = result.packet
-    assert result.return_code == 0, packet.get("blocker_detail")
+    assert result.return_code == 2, packet.get("blocker_detail")
+    _assert_model_assisted_analyst_required_block(packet)
     assert packet["candidate_evidence_triage_consumed_by_product_path"] is True
     assert packet["analyst_workbench_consumed_by_product_path"] is True
     assert packet["workbench_dprime_dossier_consumed_by_product_path"] is True
@@ -2709,6 +2710,37 @@ def _assert_dprime_analyst_validation_blocks_answer_path(
     assert packet["answer_text_present"] is False
     assert packet["product_answer_text"] == ""
     assert packet["source_display_entries"] == []
+
+
+def _assert_model_assisted_analyst_required_block(
+    packet: Mapping[str, Any],
+) -> None:
+    assert packet["decision"] == (
+        semantic_status_runtime.BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+    )
+    assert packet["dprime_analyst_finding_validation_status"] == (
+        "not_run_missing_model_assisted_analyst"
+    )
+    assert packet["dprime_analyst_finding_validation_required_for_product_path"] is True
+    assert packet["dprime_analyst_finding_validation_satisfied"] is False
+    assert packet["dprime_analyst_finding_product_proof_blocker"] == (
+        "blocked_model_assisted_analyst_required_but_not_run"
+    )
+    assert (
+        packet["dprime_analyst_finding_runkernel_support_admission_recommended"]
+        is False
+    )
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["author_answer_created"] is False
+    assert packet["citation_source_display_created"] is False
+    assert packet["fap_author_opened"] is False
+    assert packet["answer_text_present"] is False
+    assert packet["product_answer_text"] == ""
+    assert packet["source_display_entries"] == []
+    assert "product-grade model-assisted Analyst analysis is missing" in (
+        packet["blocker_detail"]
+    )
 
 
 def _assert_workbench_non_authority(packet: Mapping[str, Any]) -> None:
