@@ -4193,6 +4193,68 @@ def _current_source_record_workbench_report_section(
             or workbench.get("live_model_call_run") is True
             or dossier.get("live_model_call_run") is True
         ),
+        "model_assisted_analyst_required_for_product_path": (
+            packet.get("model_assisted_analyst_required_for_product_path") is True
+            or workbench.get("model_assisted_analyst_required_for_product_path")
+            is True
+            or dossier.get("model_assisted_analyst_required_for_product_path") is True
+        ),
+        "model_assisted_analyst_required_for_product_pass": (
+            packet.get("model_assisted_analyst_required_for_product_pass") is True
+            or workbench.get("model_assisted_analyst_required_for_product_pass") is True
+            or dossier.get("model_assisted_analyst_required_for_product_pass") is True
+        ),
+        "analyst_finding_generation_required_mode": (
+            packet.get("analyst_finding_generation_required_mode")
+            or workbench.get("analyst_finding_generation_required_mode")
+            or dossier.get("analyst_finding_generation_required_mode")
+        ),
+        "model_assisted_analyst_requirement_satisfied": (
+            packet.get("model_assisted_analyst_requirement_satisfied") is True
+            or workbench.get("model_assisted_analyst_requirement_satisfied") is True
+            or dossier.get("model_assisted_analyst_requirement_satisfied") is True
+        ),
+        "model_assisted_analyst_product_grade_analysis": (
+            packet.get("model_assisted_analyst_product_grade_analysis") is True
+            or workbench.get("model_assisted_analyst_product_grade_analysis") is True
+            or dossier.get("model_assisted_analyst_product_grade_analysis") is True
+        ),
+        "deterministic_fallback_role": (
+            packet.get("deterministic_analyst_fallback_role")
+            or workbench.get("deterministic_fallback_role")
+            or dossier.get("deterministic_fallback_role")
+        ),
+        "product_proof_status": (
+            packet.get("model_assisted_analyst_product_proof_status")
+            or workbench.get("product_proof_status")
+            or dossier.get("product_proof_status")
+        ),
+        "product_proof_blocker": (
+            packet.get("model_assisted_analyst_product_proof_blocker")
+            or workbench.get("product_proof_blocker")
+            or dossier.get("product_proof_blocker")
+        ),
+        "bounded_evidence_excerpt_available": (
+            packet.get("model_assisted_analyst_bounded_evidence_excerpt_available")
+            is True
+            or workbench.get("bounded_evidence_excerpt_available") is True
+            or dossier.get("bounded_evidence_excerpt_available") is True
+        ),
+        "bounded_evidence_excerpt_count": _bounded_int(
+            packet.get("model_assisted_analyst_bounded_evidence_excerpt_count")
+            or workbench.get("bounded_evidence_excerpt_count")
+            or dossier.get("bounded_evidence_excerpt_count")
+        ),
+        "model_assisted_analysis_evidence_depth": (
+            packet.get("model_assisted_analyst_evidence_depth")
+            or workbench.get("model_assisted_analysis_evidence_depth")
+            or dossier.get("model_assisted_analysis_evidence_depth")
+        ),
+        "model_input_evidence_limitation": (
+            packet.get("model_assisted_analyst_evidence_limitation")
+            or workbench.get("model_input_evidence_limitation")
+            or dossier.get("model_input_evidence_limitation")
+        ),
         "safe_model_input_packet_ref": safe_model_input_ref,
         "model_output_validation_ref": model_output_validation_ref,
         "model_route_diagnostics": model_route_diagnostics,
@@ -4455,6 +4517,25 @@ def _format_current_source_record_single_fact_review_report(
         f"{analyst_workbench.get('model_calls_completed') or 0}",
         "- Analyst live model call run: "
         f"{_bool_text(analyst_workbench.get('live_model_call_run'))}",
+        "- Analyst model assistance required for product pass: "
+        f"{_bool_text(analyst_workbench.get('model_assisted_analyst_required_for_product_pass'))}",
+        "- Analyst model assistance requirement satisfied: "
+        f"{_bool_text(analyst_workbench.get('model_assisted_analyst_requirement_satisfied'))}",
+        "- Analyst product-grade analysis: "
+        f"{_bool_text(analyst_workbench.get('model_assisted_analyst_product_grade_analysis'))}",
+        "- Analyst deterministic fallback role: "
+        f"{analyst_workbench.get('deterministic_fallback_role') or 'none'}",
+        "- Analyst product proof status: "
+        f"{analyst_workbench.get('product_proof_status') or 'not present'}",
+        "- Analyst product proof blocker: "
+        f"{analyst_workbench.get('product_proof_blocker') or 'none'}",
+        "- Analyst bounded evidence excerpts: "
+        f"{_bool_text(analyst_workbench.get('bounded_evidence_excerpt_available'))} "
+        f"({analyst_workbench.get('bounded_evidence_excerpt_count') or 0})",
+        "- Analyst model evidence depth: "
+        f"{analyst_workbench.get('model_assisted_analysis_evidence_depth') or 'not present'}",
+        "- Analyst model evidence limitation: "
+        f"{analyst_workbench.get('model_input_evidence_limitation') or 'none'}",
         "- Analyst safe model input packet: "
         f"{safe_model_input.get('safe_model_input_packet_digest') or 'not present'}",
         "- Analyst model output validation: "
@@ -8465,6 +8546,46 @@ def _base_packet(
         ),
         "model_assisted_analyst_live_model_call_run": (
             analyst_finding.get("live_model_call_run") is True
+        ),
+        "model_assisted_analyst_required_for_product_path": (
+            analyst_finding.get("model_assisted_analyst_required_for_product_path")
+            is True
+        ),
+        "model_assisted_analyst_required_for_product_pass": (
+            analyst_finding.get("model_assisted_analyst_required_for_product_pass")
+            is True
+        ),
+        "analyst_finding_generation_required_mode": analyst_finding.get(
+            "analyst_finding_generation_required_mode"
+        ),
+        "model_assisted_analyst_requirement_satisfied": (
+            analyst_finding.get("model_assisted_analyst_requirement_satisfied")
+            is True
+        ),
+        "model_assisted_analyst_product_grade_analysis": (
+            analyst_finding.get("model_assisted_analyst_product_grade_analysis")
+            is True
+        ),
+        "deterministic_analyst_fallback_role": analyst_finding.get(
+            "deterministic_fallback_role"
+        ),
+        "model_assisted_analyst_product_proof_status": analyst_finding.get(
+            "product_proof_status"
+        ),
+        "model_assisted_analyst_product_proof_blocker": analyst_finding.get(
+            "product_proof_blocker"
+        ),
+        "model_assisted_analyst_bounded_evidence_excerpt_available": (
+            analyst_finding.get("bounded_evidence_excerpt_available") is True
+        ),
+        "model_assisted_analyst_bounded_evidence_excerpt_count": _bounded_int(
+            analyst_finding.get("bounded_evidence_excerpt_count")
+        ),
+        "model_assisted_analyst_evidence_depth": analyst_finding.get(
+            "model_assisted_analysis_evidence_depth"
+        ),
+        "model_assisted_analyst_evidence_limitation": analyst_finding.get(
+            "model_input_evidence_limitation"
         ),
         "model_assisted_analyst_safe_model_input_packet_ref": _safe_mapping(
             analyst_finding.get("safe_model_input_packet_ref")

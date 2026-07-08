@@ -220,6 +220,18 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     assert report_json["analyst_workbench"]["role_surface"] == (
         "analyst_finding_proposal"
     )
+    assert report_json["analyst_workbench"][
+        "model_assisted_analyst_required_for_product_pass"
+    ] is True
+    assert report_json["analyst_workbench"][
+        "model_assisted_analyst_requirement_satisfied"
+    ] is False
+    assert report_json["analyst_workbench"][
+        "model_assisted_analyst_product_grade_analysis"
+    ] is False
+    assert report_json["analyst_workbench"]["product_proof_status"] == (
+        "blocked_model_assisted_analyst_required_but_not_run"
+    )
     assert report_json["analyst_workbench"]["safe_model_input_packet_ref"] == {}
     assert report_json["analyst_workbench"]["model_output_validation_ref"] == {}
     assert "## Analyst Workbench" in report_md
@@ -228,6 +240,11 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     assert "Workbench reduction projection" in report_md
     assert "- Model-assisted Analyst run: false" in report_md
     assert "- Analyst model role/surface: smart / analyst_finding_proposal" in report_md
+    assert "- Analyst model assistance requirement satisfied: false" in report_md
+    assert (
+        "- Analyst product proof status: "
+        "blocked_model_assisted_analyst_required_but_not_run"
+    ) in report_md
     assert "- Analyst safe model input packet: not present" in report_md
     assert "- Requested answer type: fee_amount_current_standard_value" in report_md
     assert "- Expected value shape: currency_amount" in report_md

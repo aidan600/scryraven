@@ -394,6 +394,36 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
                 dossier.get("model_calls_completed")
             ),
             "live_model_call_run": dossier.get("live_model_call_run") is True,
+            "model_assisted_analyst_required_for_product_path": (
+                dossier.get("model_assisted_analyst_required_for_product_path") is True
+            ),
+            "model_assisted_analyst_required_for_product_pass": (
+                dossier.get("model_assisted_analyst_required_for_product_pass") is True
+            ),
+            "analyst_finding_generation_required_mode": dossier.get(
+                "analyst_finding_generation_required_mode"
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                dossier.get("model_assisted_analyst_requirement_satisfied") is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                dossier.get("model_assisted_analyst_product_grade_analysis") is True
+            ),
+            "deterministic_fallback_role": dossier.get("deterministic_fallback_role"),
+            "product_proof_status": dossier.get("product_proof_status"),
+            "product_proof_blocker": dossier.get("product_proof_blocker"),
+            "bounded_evidence_excerpt_available": (
+                dossier.get("bounded_evidence_excerpt_available") is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                dossier.get("bounded_evidence_excerpt_count")
+            ),
+            "model_assisted_analysis_evidence_depth": dossier.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": dossier.get(
+                "model_input_evidence_limitation"
+            ),
             "safe_model_input_packet_ref": _safe_mapping(
                 dossier.get("safe_model_input_packet_ref")
             ),
@@ -1447,6 +1477,36 @@ def _analyst_finding_dprime_refs(
                 finding.get("model_calls_completed")
             ),
             "live_model_call_run": finding.get("live_model_call_run") is True,
+            "model_assisted_analyst_required_for_product_path": (
+                finding.get("model_assisted_analyst_required_for_product_path") is True
+            ),
+            "model_assisted_analyst_required_for_product_pass": (
+                finding.get("model_assisted_analyst_required_for_product_pass") is True
+            ),
+            "analyst_finding_generation_required_mode": finding.get(
+                "analyst_finding_generation_required_mode"
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                finding.get("model_assisted_analyst_requirement_satisfied") is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                finding.get("model_assisted_analyst_product_grade_analysis") is True
+            ),
+            "deterministic_fallback_role": finding.get("deterministic_fallback_role"),
+            "product_proof_status": finding.get("product_proof_status"),
+            "product_proof_blocker": finding.get("product_proof_blocker"),
+            "bounded_evidence_excerpt_available": (
+                finding.get("bounded_evidence_excerpt_available") is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                finding.get("bounded_evidence_excerpt_count")
+            ),
+            "model_assisted_analysis_evidence_depth": finding.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": finding.get(
+                "model_input_evidence_limitation"
+            ),
             "safe_model_input_packet_ref": _safe_mapping(
                 finding.get("safe_model_input_packet_ref")
             ),
@@ -1657,6 +1717,55 @@ def _analyst_workbench_packet(
             ),
             "live_model_call_run": (
                 analyst_finding_refs.get("live_model_call_run") is True
+            ),
+            "model_assisted_analyst_required_for_product_path": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_required_for_product_path"
+                )
+                is True
+            ),
+            "model_assisted_analyst_required_for_product_pass": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_required_for_product_pass"
+                )
+                is True
+            ),
+            "analyst_finding_generation_required_mode": analyst_finding_refs.get(
+                "analyst_finding_generation_required_mode"
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_requirement_satisfied"
+                )
+                is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_product_grade_analysis"
+                )
+                is True
+            ),
+            "deterministic_fallback_role": analyst_finding_refs.get(
+                "deterministic_fallback_role"
+            ),
+            "product_proof_status": analyst_finding_refs.get(
+                "product_proof_status"
+            ),
+            "product_proof_blocker": analyst_finding_refs.get(
+                "product_proof_blocker"
+            ),
+            "bounded_evidence_excerpt_available": (
+                analyst_finding_refs.get("bounded_evidence_excerpt_available")
+                is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                analyst_finding_refs.get("bounded_evidence_excerpt_count")
+            ),
+            "model_assisted_analysis_evidence_depth": analyst_finding_refs.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": analyst_finding_refs.get(
+                "model_input_evidence_limitation"
             ),
             "safe_model_input_packet_ref": _safe_mapping(
                 analyst_finding_refs.get("safe_model_input_packet_ref")
@@ -1897,6 +2006,55 @@ def _workbench_dprime_dossier(
             ),
             "live_model_call_run": (
                 analyst_finding_refs.get("live_model_call_run") is True
+            ),
+            "model_assisted_analyst_required_for_product_path": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_required_for_product_path"
+                )
+                is True
+            ),
+            "model_assisted_analyst_required_for_product_pass": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_required_for_product_pass"
+                )
+                is True
+            ),
+            "analyst_finding_generation_required_mode": analyst_finding_refs.get(
+                "analyst_finding_generation_required_mode"
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_requirement_satisfied"
+                )
+                is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                analyst_finding_refs.get(
+                    "model_assisted_analyst_product_grade_analysis"
+                )
+                is True
+            ),
+            "deterministic_fallback_role": analyst_finding_refs.get(
+                "deterministic_fallback_role"
+            ),
+            "product_proof_status": analyst_finding_refs.get(
+                "product_proof_status"
+            ),
+            "product_proof_blocker": analyst_finding_refs.get(
+                "product_proof_blocker"
+            ),
+            "bounded_evidence_excerpt_available": (
+                analyst_finding_refs.get("bounded_evidence_excerpt_available")
+                is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                analyst_finding_refs.get("bounded_evidence_excerpt_count")
+            ),
+            "model_assisted_analysis_evidence_depth": analyst_finding_refs.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": analyst_finding_refs.get(
+                "model_input_evidence_limitation"
             ),
             "safe_model_input_packet_ref": _safe_mapping(
                 analyst_finding_refs.get("safe_model_input_packet_ref")

@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
 
+from core.fetch_read_content_reference import FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
+
 ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION = "analyst_finding_proposal_v1"
 ANALYST_SOURCE_SUPPORT_MAP_SCHEMA_VERSION = "analyst_source_support_map_v1"
 ANALYST_SAFE_MODEL_INPUT_PACKET_SCHEMA_VERSION = (
@@ -51,21 +53,40 @@ ANALYST_MODEL_ROLE_SMART = "smart"
 ANALYST_ROLE_SURFACE = "analyst_finding_proposal"
 ANALYST_RUNTIME_CONSUMER = "AnalystWorkbench / AnalystFindingProposal"
 ANALYST_ROUTE_AUTHORITY = "licensed model-assisted Analyst call"
+ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS = (
+    FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
+)
 FINDING_GENERATION_MODE_DETERMINISTIC = "deterministic_scaffold"
 FINDING_GENERATION_MODE_MODEL_ASSISTED = "model_assisted_smart"
 MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE = "missing_license"
 MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER = "missing_adapter_or_route"
 MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER = "missing_license_and_adapter"
+MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT = "bounded_excerpt"
+MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT = "limited_no_excerpt"
+MODEL_INPUT_EVIDENCE_DEPTH_REFS_ONLY = "refs_only"
+MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT = (
+    "no_safe_bounded_excerpt_text_available"
+)
+DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC = "offline_test_diagnostic_fallback"
+PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN = (
+    "blocked_model_assisted_analyst_required_but_not_run"
+)
+PRODUCT_PROOF_STATUS_PENDING_DPRIME_VALIDATION = (
+    "not_claimed_pending_dprime_validation"
+)
 
 ANALYST_FINDING_SYSTEM_PROMPT = (
     "You are the ScryRaven Analyst for a proposal-only "
     "AnalystFindingProposal. Use only the provided safe refs, triage roles, "
-    "bounded-content refs, caveats, exclusions, and gaps. Return only one JSON "
-    "object containing analyst_finding_proposal. Do not write final user prose, "
-    "do not cite sources directly, do not make D-prime decisions, do not run "
-    "Scrutineer, and do not claim evidence admission, source-obligation "
-    "satisfaction, citation eligibility, ComponentCoverage, Sufficiency, "
-    "FinalAnswerPacket, Author output, source display, or product correctness."
+    "bounded evidence excerpts, bounded-content refs, caveats, exclusions, and "
+    "gaps. If bounded_evidence_excerpt_available is false, report only limited "
+    "refs-only analysis and do not imply source-grounded model analysis over "
+    "source text. Return only one JSON object containing "
+    "analyst_finding_proposal. Do not write final user prose, do not cite "
+    "sources directly, do not make D-prime decisions, do not run Scrutineer, "
+    "and do not claim evidence admission, source-obligation satisfaction, "
+    "citation eligibility, ComponentCoverage, Sufficiency, FinalAnswerPacket, "
+    "Author output, source display, or product correctness."
 )
 
 _RAW_FALSE_FLAGS = {
@@ -411,9 +432,22 @@ def build_deterministic_analyst_finding_proposal(
     unreadable_refs = _safe_refs(triage.get("unreadable_high_value_candidate_refs"))
     overclaim_refs = _safe_refs(triage.get("overclaim_risk_candidate_refs"))
     triage_summary_ref = _safe_mapping(triage.get("candidate_triage_summary_ref"))
+    model_input_candidate_refs = _model_input_candidate_refs(
+        selected_refs=selected_refs,
+        adjacent_refs=adjacent_refs,
+        excluded_refs=excluded_refs,
+        unreadable_refs=unreadable_refs,
+        overclaim_refs=overclaim_refs,
+    )
+    _reject_unsafe_fetch_read_packet_material(fetch_packet)
     bounded_content_refs = _bounded_content_refs(
         fetch_packet,
         candidate_refs=selected_refs,
+    )
+    evidence_profile = _model_input_evidence_profile(
+        fetch_packet,
+        candidate_refs=model_input_candidate_refs,
+        bounded_content_refs=bounded_content_refs,
     )
     finding_status = _finding_status(
         selected_refs=selected_refs,
@@ -595,6 +629,8 @@ def build_deterministic_analyst_finding_proposal(
             "live_model_call_run": False,
             "safe_model_input_packet_ref": {},
             "model_output_validation_ref": {},
+            **_analyst_product_policy_fields(model_assisted_run=False),
+            **evidence_profile,
             "model_route_diagnostics": _analyst_model_route_diagnostics(
                 license_obj=AnalystFindingModelAssistedLicense(),
                 adapter_ref={},
@@ -665,6 +701,27 @@ def build_analyst_finding_safe_model_input_packet(
     excluded_refs = _safe_refs(triage.get("excluded_scope_candidate_refs"))
     unreadable_refs = _safe_refs(triage.get("unreadable_high_value_candidate_refs"))
     overclaim_refs = _safe_refs(triage.get("overclaim_risk_candidate_refs"))
+    fetch_packet = _safe_mapping(fetch_read_content_packet)
+    model_input_candidate_refs = _model_input_candidate_refs(
+        selected_refs=selected_refs,
+        adjacent_refs=adjacent_refs,
+        excluded_refs=excluded_refs,
+        unreadable_refs=unreadable_refs,
+        overclaim_refs=overclaim_refs,
+    )
+    _reject_unsafe_fetch_read_packet_material(fetch_packet)
+    bounded_content_refs = _bounded_content_refs(
+        fetch_packet,
+        candidate_refs=selected_refs,
+    )
+    bounded_evidence_excerpts = _bounded_evidence_excerpts(
+        fetch_packet,
+        candidate_refs=model_input_candidate_refs,
+    )
+    evidence_profile = _model_input_evidence_profile_from_excerpts(
+        bounded_evidence_excerpts=bounded_evidence_excerpts,
+        bounded_content_refs=bounded_content_refs,
+    )
     packet = _without_empty(
         {
             "schema_version": ANALYST_SAFE_MODEL_INPUT_PACKET_SCHEMA_VERSION,
@@ -692,10 +749,9 @@ def build_analyst_finding_safe_model_input_packet(
             "excluded_scope_candidate_refs": excluded_refs,
             "unreadable_high_value_candidate_refs": unreadable_refs,
             "overclaim_risk_candidate_refs": overclaim_refs,
-            "bounded_content_refs": _bounded_content_refs(
-                _safe_mapping(fetch_read_content_packet),
-                candidate_refs=selected_refs,
-            ),
+            "bounded_content_refs": bounded_content_refs,
+            "bounded_evidence_excerpts": bounded_evidence_excerpts,
+            **evidence_profile,
             "analysis_gap_search_proposal_ref": _gap_proposal_ref(gap),
             "non_authority_posture_flags": _non_authority_posture(),
             "raw_prompt_retained": False,
@@ -713,6 +769,7 @@ def build_analyst_finding_safe_model_input_packet(
         "unreadable_high_value_candidate_refs",
         "overclaim_risk_candidate_refs",
         "bounded_content_refs",
+        "bounded_evidence_excerpts",
         "candidate_triage_records",
     ):
         packet.setdefault(list_key, [])
@@ -741,6 +798,10 @@ def validate_analyst_finding_safe_model_input_packet(
         raise AnalystFindingProposalError(
             "safe model input requires component answer-type binding ref"
         )
+    _validate_bounded_evidence_excerpts(
+        packet.get("bounded_evidence_excerpts"),
+        context="Analyst safe model input bounded evidence excerpts",
+    )
     _reject_forbidden_or_authority(packet, context="Analyst safe model input packet")
     return _json_safe(packet)
 
@@ -759,6 +820,7 @@ def build_analyst_finding_prompt(
             "Use candidate triage roles to separate answer-bearing, adjacent, excluded, unreadable, gap, caveat, and risk material.",
             "Tie every substantive analysis claim to candidate/source refs or mark it as a gap, risk, or exclusion.",
             "Do not produce a proposed answer claim when only adjacent, excluded, or unreadable refs are present.",
+            "Use bounded_evidence_excerpts when present; if they are absent, keep analysis limited to refs and report the limitation.",
             "Preserve analysis custody separately from source custody.",
             "Return only the required structured JSON object.",
         ],
@@ -973,6 +1035,8 @@ def validate_model_assisted_analyst_output(
         "live_model_call_run": bool(live_model_call_run),
         "safe_model_input_packet_ref": _safe_model_input_packet_ref(input_packet),
         "model_output_validation_ref": validation_ref,
+        **_analyst_product_policy_fields(model_assisted_run=True),
+        **_model_input_evidence_profile_from_input(input_packet),
         "model_route_diagnostics": _analyst_model_route_diagnostics(
             license_obj=_coerce_model_assisted_license(license_ref),
             adapter_ref=_safe_mapping(adapter_ref),
@@ -1141,6 +1205,38 @@ def analyst_finding_proposal_ref(value: Mapping[str, Any] | None) -> dict[str, A
                 proposal.get("model_calls_completed")
             ),
             "live_model_call_run": proposal.get("live_model_call_run") is True,
+            "model_assisted_analyst_required_for_product_path": (
+                proposal.get("model_assisted_analyst_required_for_product_path") is True
+            ),
+            "model_assisted_analyst_required_for_product_pass": (
+                proposal.get("model_assisted_analyst_required_for_product_pass") is True
+            ),
+            "analyst_finding_generation_required_mode": proposal.get(
+                "analyst_finding_generation_required_mode"
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                proposal.get("model_assisted_analyst_requirement_satisfied") is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                proposal.get("model_assisted_analyst_product_grade_analysis") is True
+            ),
+            "deterministic_fallback_role": proposal.get(
+                "deterministic_fallback_role"
+            ),
+            "product_proof_status": proposal.get("product_proof_status"),
+            "product_proof_blocker": proposal.get("product_proof_blocker"),
+            "bounded_evidence_excerpt_available": (
+                proposal.get("bounded_evidence_excerpt_available") is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                proposal.get("bounded_evidence_excerpt_count")
+            ),
+            "model_assisted_analysis_evidence_depth": proposal.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": proposal.get(
+                "model_input_evidence_limitation"
+            ),
             "safe_model_input_packet_ref": _safe_mapping(
                 proposal.get("safe_model_input_packet_ref")
             ),
@@ -1713,6 +1809,296 @@ def _analysis_steps(finding_status: str) -> list[str]:
     return steps
 
 
+def _model_input_candidate_refs(
+    *,
+    selected_refs: Sequence[Mapping[str, Any]],
+    adjacent_refs: Sequence[Mapping[str, Any]],
+    excluded_refs: Sequence[Mapping[str, Any]],
+    unreadable_refs: Sequence[Mapping[str, Any]],
+    overclaim_refs: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in (
+        *selected_refs,
+        *adjacent_refs,
+        *excluded_refs,
+        *unreadable_refs,
+        *overclaim_refs,
+    ):
+        ref = _safe_mapping(item)
+        candidate_id = _clean_text(ref.get("candidate_id"), limit=320)
+        if candidate_id and candidate_id not in seen:
+            refs.append(ref)
+            seen.add(candidate_id)
+    return refs
+
+
+def _analyst_product_policy_fields(*, model_assisted_run: bool) -> dict[str, Any]:
+    return {
+        "model_assisted_analyst_required_for_product_path": True,
+        "model_assisted_analyst_required_for_product_pass": True,
+        "analyst_finding_generation_required_mode": (
+            FINDING_GENERATION_MODE_MODEL_ASSISTED
+        ),
+        "model_assisted_analyst_requirement_satisfied": bool(model_assisted_run),
+        "model_assisted_analyst_product_grade_analysis": bool(model_assisted_run),
+        "deterministic_fallback_role": None
+        if model_assisted_run
+        else DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC,
+        "product_proof_status": PRODUCT_PROOF_STATUS_PENDING_DPRIME_VALIDATION
+        if model_assisted_run
+        else PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN,
+        "product_proof_blocker": None
+        if model_assisted_run
+        else PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN,
+        "product_correctness_claimed": False,
+    }
+
+
+def _model_input_evidence_profile(
+    fetch_read_content_packet: Mapping[str, Any],
+    *,
+    candidate_refs: Sequence[Mapping[str, Any]],
+    bounded_content_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return _model_input_evidence_profile_from_excerpts(
+        bounded_evidence_excerpts=_bounded_evidence_excerpts(
+            fetch_read_content_packet,
+            candidate_refs=candidate_refs,
+        ),
+        bounded_content_refs=bounded_content_refs,
+    )
+
+
+def _model_input_evidence_profile_from_input(
+    input_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(input_packet)
+    return {
+        "bounded_evidence_excerpt_available": (
+            safe.get("bounded_evidence_excerpt_available") is True
+        ),
+        "bounded_evidence_excerpt_count": _bounded_int(
+            safe.get("bounded_evidence_excerpt_count")
+        ),
+        "bounded_evidence_excerpt_max_chars": _bounded_int(
+            safe.get("bounded_evidence_excerpt_max_chars"),
+            default=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS,
+        ),
+        "model_assisted_analysis_evidence_depth": safe.get(
+            "model_assisted_analysis_evidence_depth"
+        ),
+        "model_input_evidence_limitation": safe.get(
+            "model_input_evidence_limitation"
+        ),
+    }
+
+
+def _model_input_evidence_profile_from_excerpts(
+    *,
+    bounded_evidence_excerpts: Sequence[Mapping[str, Any]],
+    bounded_content_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    excerpts = [_safe_mapping(item) for item in bounded_evidence_excerpts if item]
+    if excerpts:
+        return {
+            "bounded_evidence_excerpt_available": True,
+            "bounded_evidence_excerpt_count": len(excerpts),
+            "bounded_evidence_excerpt_max_chars": (
+                ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS
+            ),
+            "model_assisted_analysis_evidence_depth": (
+                MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT
+            ),
+            "model_input_evidence_limitation": None,
+        }
+    return {
+        "bounded_evidence_excerpt_available": False,
+        "bounded_evidence_excerpt_count": 0,
+        "bounded_evidence_excerpt_max_chars": (
+            ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS
+        ),
+        "model_assisted_analysis_evidence_depth": (
+            MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT
+            if bounded_content_refs
+            else MODEL_INPUT_EVIDENCE_DEPTH_REFS_ONLY
+        ),
+        "model_input_evidence_limitation": (
+            MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT
+        ),
+    }
+
+
+def _reject_unsafe_fetch_read_packet_material(
+    fetch_read_content_packet: Mapping[str, Any],
+) -> None:
+    packet = _safe_mapping(fetch_read_content_packet)
+    if not packet:
+        return
+    packet_without_references = {
+        key: value for key, value in packet.items() if key != "reference_records"
+    }
+    _reject_forbidden_or_authority(
+        packet_without_references,
+        context="Analyst model fetch/read packet",
+    )
+    _reject_nonfalse_raw_retention_flags(
+        packet_without_references,
+        context="Analyst model fetch/read packet",
+    )
+    allowed_text_keys = {"bounded_text", "bounded_excerpt"}
+    for raw in _safe_sequence(packet.get("reference_records")):
+        ref = _safe_mapping(raw)
+        keys = _collect_keys(ref)
+        forbidden = sorted(keys & (_FORBIDDEN_KEYS - allowed_text_keys))
+        if forbidden:
+            raise AnalystFindingProposalError(
+                "Analyst model fetch/read reference includes forbidden material"
+            )
+        dangerous = sorted(_dangerous_true_claims(ref))
+        if dangerous:
+            raise AnalystFindingProposalError(
+                "Analyst model fetch/read reference attempts authority upgrade"
+            )
+        _reject_nonfalse_raw_retention_flags(
+            ref,
+            context="Analyst model fetch/read reference",
+        )
+        if "bounded_text" in ref or "bounded_excerpt" in ref:
+            _safe_bounded_excerpt_text(ref)
+
+
+def _reject_nonfalse_raw_retention_flags(value: Mapping[str, Any], *, context: str) -> None:
+    for key in _collect_keys(value):
+        if not key.startswith("raw_") or not key.endswith("_retained"):
+            continue
+        for item in _all_normalized_key_values(value, key):
+            if item is not False:
+                raise AnalystFindingProposalError(
+                    f"{context} raw/private retention flag must remain false"
+                )
+
+
+def _bounded_evidence_excerpts(
+    fetch_read_content_packet: Mapping[str, Any],
+    *,
+    candidate_refs: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    packet = _safe_mapping(fetch_read_content_packet)
+    candidate_ids = _candidate_ids(candidate_refs)
+    excerpts: list[dict[str, Any]] = []
+    for raw in _safe_sequence(packet.get("reference_records")):
+        ref = _safe_mapping(raw)
+        if not ref or ref.get("candidate_id") not in candidate_ids:
+            continue
+        bounded_text = _safe_bounded_excerpt_text(ref)
+        if not bounded_text:
+            continue
+        excerpt_digest = _bounded_excerpt_digest(ref, bounded_text)
+        excerpt = _without_empty(
+            {
+                "candidate_id": ref.get("candidate_id"),
+                "candidate_digest": ref.get("candidate_digest"),
+                "reference_id": ref.get("reference_id"),
+                "reference_digest": ref.get("reference_digest"),
+                "excerpt_digest": excerpt_digest,
+                "bounded_content_digest": excerpt_digest,
+                "bounded_excerpt_text": bounded_text,
+                "bounded_character_count": len(bounded_text),
+                "fetch_read_status": ref.get("fetch_read_status"),
+                "content_type": ref.get("content_type"),
+                "bounded_evidence_excerpt_source": (
+                    "existing_fetch_read_content_packet.reference_records.bounded_text"
+                ),
+                "bounded_text_sanitized": True,
+                "bounded_text_bounded": True,
+                "not_semantic_support": True,
+                "not_citation_eligible": True,
+                "not_source_obligation_satisfaction": True,
+                "raw_prompt_retained": False,
+                "raw_model_response_retained": False,
+                "raw_provider_payload_retained": False,
+                "raw_source_content_retained": False,
+            }
+        )
+        _reject_forbidden_or_authority(
+            excerpt,
+            context="Analyst bounded evidence excerpt",
+        )
+        excerpts.append(excerpt)
+    return excerpts
+
+
+def _validate_bounded_evidence_excerpts(value: Any, *, context: str) -> None:
+    for item in _safe_sequence(value):
+        excerpt = _safe_mapping(item)
+        text = _clean_text(
+            excerpt.get("bounded_excerpt_text"),
+            limit=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS + 1,
+        )
+        if not text:
+            raise AnalystFindingProposalError(f"{context} requires bounded text")
+        if len(text) > ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS:
+            raise AnalystFindingProposalError(f"{context} exceeds excerpt cap")
+        if excerpt.get("bounded_character_count") != len(text):
+            raise AnalystFindingProposalError(
+                f"{context} character count mismatch"
+            )
+        declared_digest = _clean_text(excerpt.get("excerpt_digest"), limit=128)
+        if declared_digest and declared_digest != _digest_json({"bounded_text": text}):
+            raise AnalystFindingProposalError(f"{context} digest mismatch")
+        _reject_forbidden_or_authority(excerpt, context=context)
+        _reject_nonfalse_raw_retention_flags(excerpt, context=context)
+
+
+def _safe_bounded_excerpt_text(ref: Mapping[str, Any]) -> str | None:
+    safe = _safe_mapping(ref)
+    has_text = safe.get("bounded_text") not in (None, "")
+    has_excerpt = safe.get("bounded_excerpt") not in (None, "")
+    if not has_text and not has_excerpt:
+        return None
+    if safe.get("bounded_text_sanitized") is not True or safe.get(
+        "bounded_text_bounded"
+    ) is not True:
+        raise AnalystFindingProposalError(
+            "Analyst model bounded excerpt requires sanitized/bounded flags"
+        )
+    text = _clean_text(
+        safe.get("bounded_text") if has_text else safe.get("bounded_excerpt"),
+        limit=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS + 1,
+    )
+    if not text:
+        return None
+    if len(text) > ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS:
+        raise AnalystFindingProposalError(
+            "Analyst model bounded excerpt exceeds cap"
+        )
+    for key in (
+        "bounded_character_count",
+        "bounded_text_char_count",
+        "bounded_excerpt_char_count",
+    ):
+        if key in safe and safe.get(key) not in (None, ""):
+            if _bounded_int(safe.get(key)) != len(text):
+                raise AnalystFindingProposalError(
+                    "Analyst model bounded excerpt character count mismatch"
+                )
+    _bounded_excerpt_digest(safe, text)
+    return text
+
+
+def _bounded_excerpt_digest(ref: Mapping[str, Any], text: str) -> str:
+    digest = _digest_json({"bounded_text": text})
+    for key in ("excerpt_digest", "bounded_content_digest", "bounded_text_digest"):
+        declared = _clean_text(_safe_mapping(ref).get(key), limit=128)
+        if declared and declared != digest:
+            raise AnalystFindingProposalError(
+                "Analyst model bounded excerpt digest mismatch"
+            )
+    return digest
+
+
 def _bounded_content_refs(
     fetch_read_content_packet: Mapping[str, Any],
     *,
@@ -1737,8 +2123,12 @@ def _bounded_content_refs(
                     "candidate_digest": ref.get("candidate_digest"),
                     "reference_id": ref.get("reference_id"),
                     "reference_digest": ref.get("reference_digest"),
-                    "bounded_content_digest": ref.get("excerpt_digest"),
-                    "bounded_character_count": ref.get("bounded_character_count"),
+                    "bounded_content_digest": ref.get("excerpt_digest")
+                    or ref.get("bounded_content_digest")
+                    or ref.get("bounded_text_digest"),
+                    "bounded_character_count": ref.get("bounded_character_count")
+                    or ref.get("bounded_content_char_count")
+                    or ref.get("bounded_text_char_count"),
                     "fetch_read_status": ref.get("fetch_read_status"),
                     "bounded_content_text_retained": False,
                 }
@@ -1900,6 +2290,19 @@ def _collect_keys(value: Any) -> set[str]:
     return set()
 
 
+def _all_normalized_key_values(value: Any, normalized_key: str) -> list[Any]:
+    found: list[Any] = []
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if _normalize_key(key) == normalized_key:
+                found.append(item)
+            found.extend(_all_normalized_key_values(item, normalized_key))
+    elif isinstance(value, list | tuple | set | frozenset):
+        for item in value:
+            found.extend(_all_normalized_key_values(item, normalized_key))
+    return found
+
+
 def _proposed_answer_claim_ref(value: Mapping[str, Any] | None) -> dict[str, Any]:
     claim = _safe_mapping(value)
     if not claim:
@@ -2034,6 +2437,22 @@ def _safe_model_input_packet_ref(input_packet: Mapping[str, Any]) -> dict[str, A
             "raw_prompt_retained": False,
             "raw_model_response_retained": False,
             "raw_provider_payload_retained": False,
+            "bounded_evidence_excerpt_available": (
+                safe.get("bounded_evidence_excerpt_available") is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                safe.get("bounded_evidence_excerpt_count")
+            ),
+            "bounded_evidence_excerpt_max_chars": _bounded_int(
+                safe.get("bounded_evidence_excerpt_max_chars"),
+                default=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS,
+            ),
+            "model_assisted_analysis_evidence_depth": safe.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": safe.get(
+                "model_input_evidence_limitation"
+            ),
             "live_model_call_run": False,
         }
     )
@@ -2056,6 +2475,18 @@ def _model_output_validation_ref(
         "raw_prompt_retained": False,
         "raw_model_response_retained": False,
         "raw_provider_payload_retained": False,
+        "bounded_evidence_excerpt_available": (
+            input_packet.get("bounded_evidence_excerpt_available") is True
+        ),
+        "bounded_evidence_excerpt_count": _bounded_int(
+            input_packet.get("bounded_evidence_excerpt_count")
+        ),
+        "model_assisted_analysis_evidence_depth": input_packet.get(
+            "model_assisted_analysis_evidence_depth"
+        ),
+        "model_input_evidence_limitation": input_packet.get(
+            "model_input_evidence_limitation"
+        ),
         "live_model_call_run": bool(live_model_call_run),
     }
     digest = _digest_json(base)
@@ -2102,6 +2533,7 @@ def _annotated_deterministic_fallback(
         ),
         "safe_model_input_packet_ref": {},
         "model_output_validation_ref": {},
+        **_analyst_product_policy_fields(model_assisted_run=False),
         "raw_prompt_retained": False,
         "raw_model_response_retained": False,
         "raw_provider_payload_retained": False,
@@ -2523,6 +2955,7 @@ __all__ = [
     "ANALYST_ROLE_SURFACE",
     "ANALYST_RUNTIME_CONSUMER",
     "ANALYST_ROUTE_AUTHORITY",
+    "ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS",
     "ANALYSIS_CLAIM_KIND_CAVEAT",
     "ANALYSIS_CLAIM_KIND_CONFLICT_RISK",
     "ANALYSIS_CLAIM_KIND_EVIDENCE_INTERPRETATION",
@@ -2544,6 +2977,13 @@ __all__ = [
     "MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER",
     "MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE",
     "MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER",
+    "MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT",
+    "MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT",
+    "MODEL_INPUT_EVIDENCE_DEPTH_REFS_ONLY",
+    "MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT",
+    "DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC",
+    "PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN",
+    "PRODUCT_PROOF_STATUS_PENDING_DPRIME_VALIDATION",
     "SUPPORT_STATUS_ADJACENT_ONLY",
     "SUPPORT_STATUS_CONFLICT_OR_OVERCLAIM_RISK",
     "SUPPORT_STATUS_INSUFFICIENT_EVIDENCE",
