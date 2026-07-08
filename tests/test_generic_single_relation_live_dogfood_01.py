@@ -2101,7 +2101,7 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
 
     semantic_payload = result.packet["semantic_status_payload"]
     dprime_status = semantic_payload["dprime_status"]
-    assert semantic_payload["dprime_source_citation_authority_enabled"] is True
+    assert semantic_payload["dprime_source_citation_authority_enabled"] is False
     assert semantic_payload["dprime_single_lane_answer_path_enabled"] is True
     assert dprime_status["objects_created"]["final_answer_packet"] is False
     assert dprime_status["objects_created"]["author_answer"] is False
@@ -2773,7 +2773,7 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     semantic_payload = result.packet["semantic_status_payload"]
     dprime_status = semantic_payload["dprime_status"]
     assert semantic_payload["dprime_downstream_authority_enabled"] is False
-    assert semantic_payload["dprime_source_citation_authority_enabled"] is True
+    assert semantic_payload["dprime_source_citation_authority_enabled"] is False
     assert semantic_payload["dprime_single_lane_answer_path_enabled"] is False
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False
@@ -2803,7 +2803,7 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert result.packet["source_obligation_authority_consumed"] is False
     assert result.packet["citation_source_handoff_authority_consumed"] is False
     assert integration["dprime_downstream_authority_enabled"] is False
-    assert integration["dprime_source_citation_authority_enabled"] is True
+    assert integration["dprime_source_citation_authority_enabled"] is False
     assert integration["dprime_single_lane_answer_path_enabled"] is False
     assert integration["component_coverage_created"] is False
     assert integration["semantic_observation_created"] is False
@@ -3482,7 +3482,7 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     assert "authorize_single_relation_source_obligation_recovery" in module_text
     assert "run_kernel.reduce(observation)" in module_text
     assert "dprime_downstream_authority_enabled=False" in module_text
-    assert "dprime_source_citation_authority_enabled=True" in module_text
+    assert "dprime_source_citation_authority_enabled=False" in module_text
     assert "product_single_fact_answer_path_enabled" in module_text
     assert "PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND" in module_text
     assert "DOGFOOD_ENTRYPOINT_KIND" in module_text
