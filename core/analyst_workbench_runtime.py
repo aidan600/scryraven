@@ -13,6 +13,13 @@ import re
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.current_source_analyst_finding_proposal import (
+    ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION,
+    AnalystFindingProposalError,
+    analyst_finding_proposal_ref,
+    build_deterministic_analyst_finding_proposal,
+    validate_analyst_finding_proposal,
+)
 from core.current_source_component_answer_type_binding import (
     current_source_component_answer_type_binding_from_relation_plan,
     current_source_component_answer_type_binding_ref,
@@ -25,7 +32,6 @@ ANALYST_WORKBENCH_PHASE = (
 CANDIDATE_EVIDENCE_TRIAGE_SCHEMA_VERSION = "candidate_evidence_triage_packet_v1"
 EVIDENCE_ROLE_PROPOSAL_SCHEMA_VERSION = "evidence_role_proposal_v1"
 ANALYST_WORKBENCH_SCHEMA_VERSION = "analyst_workbench_packet_v1"
-ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION = "analyst_finding_proposal_v1"
 ANALYSIS_GAP_SEARCH_PROPOSAL_SCHEMA_VERSION = "analysis_gap_search_proposal_v1"
 WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION = "workbench_dprime_dossier_v1"
 WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION = "workbench_reduction_projection_v1"
@@ -223,14 +229,15 @@ def build_current_source_record_analyst_workbench(
         component_answer_type_binding=component_answer_type_binding,
         component_answer_type_binding_ref=component_answer_type_binding_ref,
     )
-    analyst_findings = _analyst_finding_proposals(
-        triage_packet=triage_packet,
-        fetch_read_content_packet=fetch_read_content_packet,
-    )
     gap_proposal = _analysis_gap_search_proposal(
         plan=plan,
         acquisition=acquisition,
         triage_packet=triage_packet,
+    )
+    analyst_findings = _analyst_finding_proposals(
+        triage_packet=triage_packet,
+        analysis_gap_search_proposal=gap_proposal,
+        fetch_read_content_packet=fetch_read_content_packet,
     )
     workbench_packet = _analyst_workbench_packet(
         triage_packet=triage_packet,
@@ -333,12 +340,67 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
             "candidate_triage_summary_ref": _safe_mapping(
                 dossier.get("candidate_triage_summary_ref")
             ),
+            "analyst_finding_proposal_ref": _safe_mapping(
+                dossier.get("analyst_finding_proposal_ref")
+            ),
+            "proposed_answer_claim_ref": _safe_mapping(
+                dossier.get("proposed_answer_claim_ref")
+            ),
+            "analysis_summary_ref": _safe_mapping(
+                dossier.get("analysis_summary_ref")
+            ),
+            "analysis_claim_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("analysis_claim_refs"))
+            ],
+            "source_support_map_ref": _safe_mapping(
+                dossier.get("source_support_map_ref")
+            ),
+            "caveat_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("caveat_refs"))
+            ],
+            "adjacent_claim_exclusion_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("adjacent_claim_exclusion_refs")
+                )
+            ],
+            "unresolved_gap_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("unresolved_gap_refs"))
+            ],
+            "scrutineer_challenge_seed_ref": _safe_mapping(
+                dossier.get("scrutineer_challenge_seed_ref")
+            ),
             "component_answer_type_binding_ref": (
                 maybe_current_source_component_answer_type_binding_ref(
                     dossier.get("component_answer_type_binding")
                 )
                 or _safe_mapping(dossier.get("component_answer_type_binding_ref"))
             ),
+            "selected_answer_bearing_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("selected_answer_bearing_candidate_refs")
+                )
+            ],
+            "adjacent_context_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("adjacent_context_candidate_refs")
+                )
+            ],
+            "excluded_scope_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("excluded_scope_candidate_refs"))
+            ],
+            "unreadable_high_value_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("unreadable_high_value_candidate_refs")
+                )
+            ],
             "gap_proposal_status": dossier.get("gap_proposal_status"),
             "raw_private_retention": False,
             "product_correctness_claimed": False,
@@ -423,6 +485,14 @@ def validate_current_source_record_analyst_workbench_bundle(
     for key, expected in _NON_AUTHORITY_FALSE_FLAGS.items():
         if projection.get(key) is not expected:
             raise AnalystWorkbenchError(f"projection authority flag invalid: {key}")
+    workbench_packet = _safe_mapping(safe.get("analyst_workbench_packet"))
+    for finding in _safe_sequence(workbench_packet.get("analyst_finding_proposals")):
+        try:
+            validate_analyst_finding_proposal(_safe_mapping(finding))
+        except AnalystFindingProposalError as exc:
+            raise AnalystWorkbenchError(
+                f"AnalystFindingProposal invalid: {exc}"
+            ) from exc
     _reject_raw_private_or_authority_claims(safe)
     return _json_safe(safe)
 
@@ -1257,76 +1327,93 @@ def _candidate_evidence_triage_packet(
 def _analyst_finding_proposals(
     *,
     triage_packet: Mapping[str, Any],
+    analysis_gap_search_proposal: Mapping[str, Any],
     fetch_read_content_packet: Mapping[str, Any],
 ) -> list[dict[str, Any]]:
-    strict_refs = [
-        _safe_mapping(item)
-        for item in _safe_sequence(triage_packet.get("strict_answer_support_candidate_refs"))
-    ]
-    contextual_refs = [
-        _safe_mapping(item)
-        for item in _safe_sequence(triage_packet.get("contextual_candidate_refs"))
-    ]
-    overclaim_refs = [
-        _safe_mapping(item)
-        for item in _safe_sequence(triage_packet.get("overclaim_risk_candidate_refs"))
-    ]
-    selected_ref = _safe_mapping(triage_packet.get("selected_candidate_ref"))
-    findings = [
-        _finding_proposal(
-            finding_kind="strict_support_present"
-            if strict_refs
-            else "strict_support_missing",
-            selected_candidate_ref=selected_ref,
-            supporting_candidate_refs=strict_refs,
-            contextual_candidate_refs=contextual_refs,
-            overclaim_risk_candidate_refs=overclaim_refs,
+    try:
+        finding = build_deterministic_analyst_finding_proposal(
+            triage_packet=triage_packet,
+            analysis_gap_search_proposal=analysis_gap_search_proposal,
             fetch_read_content_packet=fetch_read_content_packet,
         )
-    ]
-    if overclaim_refs:
-        findings.append(
-            _finding_proposal(
-                finding_kind="overclaim_risk_present",
-                selected_candidate_ref=selected_ref,
-                supporting_candidate_refs=[],
-                contextual_candidate_refs=contextual_refs,
-                overclaim_risk_candidate_refs=overclaim_refs,
-                fetch_read_content_packet=fetch_read_content_packet,
-            )
-        )
-    return findings
+    except AnalystFindingProposalError as exc:
+        raise AnalystWorkbenchError(
+            f"AnalystFindingProposal invalid: {exc}"
+        ) from exc
+    return [finding]
 
 
-def _finding_proposal(
-    *,
-    finding_kind: str,
-    selected_candidate_ref: Mapping[str, Any],
-    supporting_candidate_refs: Sequence[Mapping[str, Any]],
-    contextual_candidate_refs: Sequence[Mapping[str, Any]],
-    overclaim_risk_candidate_refs: Sequence[Mapping[str, Any]],
-    fetch_read_content_packet: Mapping[str, Any],
+def _primary_analyst_finding(
+    analyst_findings: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    packet_digest = _clean_text(fetch_read_content_packet.get("packet_digest"), limit=128)
-    finding = _without_empty(
+    for finding in analyst_findings:
+        safe = _safe_mapping(finding)
+        if safe:
+            return safe
+    return {}
+
+
+def _analyst_finding_dprime_refs(
+    analyst_findings: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    finding = _primary_analyst_finding(analyst_findings)
+    if not finding:
+        return {}
+    handoff = _safe_mapping(finding.get("dprime_handoff_refs"))
+    ref = _without_empty(
         {
-            "schema_version": ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION,
-            "phase": ANALYST_WORKBENCH_PHASE,
-            "finding_kind": finding_kind,
-            "finding_id": f"analyst-finding-proposal:{finding_kind}",
-            "selected_candidate_ref": dict(selected_candidate_ref),
-            "supporting_candidate_refs": [dict(item) for item in supporting_candidate_refs],
-            "contextual_candidate_refs": [dict(item) for item in contextual_candidate_refs],
-            "overclaim_risk_candidate_refs": [
-                dict(item) for item in overclaim_risk_candidate_refs
+            "analyst_finding_proposal_ref": analyst_finding_proposal_ref(finding),
+            "proposed_answer_claim_ref": _safe_mapping(
+                finding.get("proposed_answer_claim_ref")
+            ),
+            "analysis_summary_ref": _safe_mapping(
+                finding.get("analysis_summary_ref")
+            ),
+            "analysis_claim_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(finding.get("analysis_claim_refs"))
             ],
-            "fetch_read_content_packet_digest": packet_digest,
-            "finding_basis": "candidate role proposals and bounded-window diagnostics",
-            **_non_authority_posture(),
+            "source_support_map_ref": _safe_mapping(
+                finding.get("source_support_map_ref")
+            ),
+            "caveat_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(finding.get("caveat_refs"))
+            ],
+            "adjacent_claim_exclusion_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    finding.get("adjacent_claim_exclusion_refs")
+                )
+            ],
+            "unresolved_gap_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(finding.get("unresolved_gap_refs"))
+            ],
+            "conflict_or_overclaim_risk_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    finding.get("conflict_or_overclaim_risk_refs")
+                )
+            ],
+            "scrutineer_challenge_seed_ref": _safe_mapping(
+                finding.get("scrutineer_challenge_seed_ref")
+            ),
+            "dprime_handoff_refs": handoff,
         }
     )
-    finding["finding_digest"] = _digest_json(finding)
-    return finding
+    for list_key in (
+        "analysis_claim_refs",
+        "caveat_refs",
+        "adjacent_claim_exclusion_refs",
+        "unresolved_gap_refs",
+        "selected_answer_bearing_candidate_refs",
+        "adjacent_context_candidate_refs",
+        "excluded_scope_candidate_refs",
+        "unreadable_high_value_candidate_refs",
+    ):
+        ref.setdefault(list_key, [])
+    return ref
 
 
 def _analysis_gap_search_proposal(
@@ -1428,6 +1515,7 @@ def _analyst_workbench_packet(
     overclaim = bool(_safe_sequence(triage_packet.get("overclaim_risk_candidate_refs")))
     strict_refs = _safe_sequence(triage_packet.get("strict_answer_support_candidate_refs"))
     gap_needed = gap_proposal.get("gap_status") == "proposed"
+    analyst_finding_refs = _analyst_finding_dprime_refs(analyst_findings)
     packet = _without_empty(
         {
             "schema_version": ANALYST_WORKBENCH_SCHEMA_VERSION,
@@ -1449,6 +1537,49 @@ def _analyst_workbench_packet(
             "analyst_finding_proposal_refs": [
                 _finding_ref(item) for item in analyst_findings
             ],
+            "analyst_finding_proposal_ref": _safe_mapping(
+                analyst_finding_refs.get("analyst_finding_proposal_ref")
+            ),
+            "proposed_answer_claim_ref": _safe_mapping(
+                analyst_finding_refs.get("proposed_answer_claim_ref")
+            ),
+            "analysis_summary_ref": _safe_mapping(
+                analyst_finding_refs.get("analysis_summary_ref")
+            ),
+            "analysis_claim_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("analysis_claim_refs")
+                )
+            ],
+            "source_support_map_ref": _safe_mapping(
+                analyst_finding_refs.get("source_support_map_ref")
+            ),
+            "caveat_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(analyst_finding_refs.get("caveat_refs"))
+            ],
+            "adjacent_claim_exclusion_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("adjacent_claim_exclusion_refs")
+                )
+            ],
+            "unresolved_gap_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("unresolved_gap_refs")
+                )
+            ],
+            "conflict_or_overclaim_risk_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("conflict_or_overclaim_risk_refs")
+                )
+            ],
+            "scrutineer_challenge_seed_ref": _safe_mapping(
+                analyst_finding_refs.get("scrutineer_challenge_seed_ref")
+            ),
             "specialist_lane_placeholder": _lane_placeholder("specialist"),
             "economist_lane_placeholder": _lane_placeholder("economist"),
             "scrutineer_lane_placeholder": _scrutineer_lane(
@@ -1514,6 +1645,9 @@ def _workbench_dprime_dossier(
     workbench_packet: Mapping[str, Any],
     gap_proposal: Mapping[str, Any],
 ) -> dict[str, Any]:
+    analyst_finding_refs = _analyst_finding_dprime_refs(
+        _safe_sequence(workbench_packet.get("analyst_finding_proposals"))
+    )
     dossier = _without_empty(
         {
             "schema_version": WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION,
@@ -1613,6 +1747,52 @@ def _workbench_dprime_dossier(
                     workbench_packet.get("analyst_finding_proposals")
                 )
             ],
+            "analyst_finding_proposal_ref": _safe_mapping(
+                analyst_finding_refs.get("analyst_finding_proposal_ref")
+            ),
+            "proposed_answer_claim_ref": _safe_mapping(
+                analyst_finding_refs.get("proposed_answer_claim_ref")
+            ),
+            "analysis_summary_ref": _safe_mapping(
+                analyst_finding_refs.get("analysis_summary_ref")
+            ),
+            "analysis_claim_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("analysis_claim_refs")
+                )
+            ],
+            "source_support_map_ref": _safe_mapping(
+                analyst_finding_refs.get("source_support_map_ref")
+            ),
+            "caveat_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(analyst_finding_refs.get("caveat_refs"))
+            ],
+            "adjacent_claim_exclusion_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("adjacent_claim_exclusion_refs")
+                )
+            ],
+            "unresolved_gap_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("unresolved_gap_refs")
+                )
+            ],
+            "conflict_or_overclaim_risk_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    analyst_finding_refs.get("conflict_or_overclaim_risk_refs")
+                )
+            ],
+            "scrutineer_challenge_seed_ref": _safe_mapping(
+                analyst_finding_refs.get("scrutineer_challenge_seed_ref")
+            ),
+            "analyst_finding_dprime_handoff_refs": _safe_mapping(
+                analyst_finding_refs.get("dprime_handoff_refs")
+            ),
             "scrutineer_lane_ref": _lane_ref(
                 _safe_mapping(workbench_packet.get("scrutineer_lane_placeholder"))
             ),
@@ -2007,13 +2187,18 @@ def _role_proposal_ref(proposal: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _finding_ref(finding: Mapping[str, Any]) -> dict[str, Any]:
-    return _without_empty(
+    try:
+        safe = validate_analyst_finding_proposal(finding)
+    except AnalystFindingProposalError:
+        safe = _safe_mapping(finding)
+    ref = analyst_finding_proposal_ref(safe)
+    return ref or _without_empty(
         {
-            "schema_version": finding.get("schema_version"),
-            "phase": finding.get("phase"),
-            "finding_id": finding.get("finding_id"),
-            "finding_digest": finding.get("finding_digest"),
-            "finding_kind": finding.get("finding_kind"),
+            "schema_version": safe.get("schema_version"),
+            "phase": safe.get("phase"),
+            "finding_id": safe.get("finding_id"),
+            "finding_digest": safe.get("finding_digest"),
+            "finding_kind": safe.get("finding_kind"),
         }
     )
 

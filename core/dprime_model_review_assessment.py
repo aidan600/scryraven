@@ -1481,7 +1481,18 @@ def _support_assessment_safe_workbench_dossier_ref(
         out["component_answer_type_binding_ref"] = binding
     else:
         out.pop("component_answer_type_binding_ref", None)
-    return _without_empty(out)
+    for list_key in (
+        "analysis_claim_refs",
+        "caveat_refs",
+        "adjacent_claim_exclusion_refs",
+        "unresolved_gap_refs",
+        "selected_answer_bearing_candidate_refs",
+        "adjacent_context_candidate_refs",
+        "excluded_scope_candidate_refs",
+        "unreadable_high_value_candidate_refs",
+    ):
+        out.setdefault(list_key, [])
+    return out
 
 
 _SUPPORT_ASSESSMENT_REF_OMIT_KEYS = frozenset(
@@ -1818,6 +1829,39 @@ def _workbench_dprime_dossier_packet(
                     dossier.get("analyst_finding_proposal_refs")
                 )
             ],
+            "analyst_finding_proposal_ref": _safe_mapping(
+                dossier.get("analyst_finding_proposal_ref")
+            ),
+            "proposed_answer_claim_ref": _safe_mapping(
+                dossier.get("proposed_answer_claim_ref")
+            ),
+            "analysis_summary_ref": _safe_mapping(
+                dossier.get("analysis_summary_ref")
+            ),
+            "analysis_claim_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("analysis_claim_refs"))
+            ],
+            "source_support_map_ref": _safe_mapping(
+                dossier.get("source_support_map_ref")
+            ),
+            "caveat_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("caveat_refs"))
+            ],
+            "adjacent_claim_exclusion_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("adjacent_claim_exclusion_refs")
+                )
+            ],
+            "unresolved_gap_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("unresolved_gap_refs"))
+            ],
+            "scrutineer_challenge_seed_ref": _safe_mapping(
+                dossier.get("scrutineer_challenge_seed_ref")
+            ),
             "scrutineer_lane_ref": _safe_mapping(
                 dossier.get("scrutineer_lane_ref")
             ),
