@@ -49,6 +49,31 @@ ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL = "unreadable_high_value_official_artifact"
 ROLE_DISCOVERY_ONLY = "discovery_only_candidate"
 ROLE_REMEDIATION_NEEDED = "remediation_needed_candidate"
 
+TRIAGE_ROLE_ANSWER_BEARING = "answer_bearing_candidate"
+TRIAGE_ROLE_ADJACENT_CONTEXTUAL = "adjacent_contextual_candidate"
+TRIAGE_ROLE_QUALIFIER_EXCEPTION = "qualifier_exception_candidate"
+TRIAGE_ROLE_OVERCLAIM_RISK = "overclaim_risk_candidate"
+TRIAGE_ROLE_UNREADABLE_HIGH_VALUE = "unreadable_high_value_candidate"
+TRIAGE_ROLE_REMEDIATION_NEEDED = "remediation_needed_candidate"
+TRIAGE_ROLE_DISCOVERY_ONLY = "discovery_only_candidate"
+
+DPRIME_SELECTION_ANSWER_BEARING = "answer_bearing_review_candidate"
+DPRIME_SELECTION_CONTEXTUAL_DIAGNOSTIC = "contextual_diagnostic_candidate"
+DPRIME_SELECTION_UNREADABLE_DIAGNOSTIC = (
+    "unreadable_high_value_diagnostic_candidate"
+)
+DPRIME_SELECTION_DISCOVERY_DIAGNOSTIC = "discovery_diagnostic_candidate"
+
+REQUESTED_ANSWER_TYPE_MATCH = "matches_requested_answer_type"
+REQUESTED_ANSWER_TYPE_ADJACENT_ONLY = "excluded_adjacent_scope_only"
+REQUESTED_ANSWER_TYPE_UNREADABLE_UNKNOWN = "unreadable_unknown"
+REQUESTED_ANSWER_TYPE_NOT_ENOUGH_SIGNAL = "not_enough_requested_answer_type_signal"
+EXPECTED_VALUE_SHAPE_MATCH = "matches_expected_value_shape"
+EXPECTED_VALUE_SHAPE_MISSING = "missing_expected_value_shape"
+EXPECTED_VALUE_SHAPE_UNREADABLE_UNKNOWN = "unreadable_unknown"
+ADJACENT_SCOPE_EXCLUDED_HIT = "excluded_adjacent_scope_hit"
+ADJACENT_SCOPE_NO_EXCLUDED_HIT = "no_excluded_adjacent_scope_hit"
+
 WORKBENCH_REDUCTION_ADMITTED = "admitted"
 WORKBENCH_REDUCTION_CHALLENGED = "challenged"
 WORKBENCH_REDUCTION_BLOCKED = "blocked"
@@ -164,6 +189,17 @@ def build_current_source_record_analyst_workbench(
         for item in window_diagnostics
         if _clean_text(item.get("candidate_id"), limit=320)
     }
+    component_answer_type_binding = (
+        current_source_component_answer_type_binding_from_relation_plan(
+            plan,
+            expected_value_token_kinds=_safe_sequence(
+                acquisition.get("expected_value_token_kinds")
+            ),
+        )
+    )
+    component_answer_type_binding_ref = current_source_component_answer_type_binding_ref(
+        component_answer_type_binding
+    )
     candidates = [
         _candidate_workbench_record(
             diagnostic,
@@ -171,6 +207,7 @@ def build_current_source_record_analyst_workbench(
             provider_result=provider_by_url.get(_clean_text(diagnostic.get("url"), limit=700) or ""),
             plan=plan,
             acquisition=acquisition,
+            component_answer_type_binding_ref=component_answer_type_binding_ref,
         )
         for diagnostic in diagnostics
     ]
@@ -183,6 +220,8 @@ def build_current_source_record_analyst_workbench(
         candidates=candidates,
         role_proposals=role_proposals,
         entrypoint_kind=entrypoint_kind,
+        component_answer_type_binding=component_answer_type_binding,
+        component_answer_type_binding_ref=component_answer_type_binding_ref,
     )
     analyst_findings = _analyst_finding_proposals(
         triage_packet=triage_packet,
@@ -282,6 +321,18 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
                 dossier.get("overclaim_risk_candidate_count")
             ),
             "dprime_review_candidate_ref": dprime_candidate_ref,
+            "dprime_review_selection_kind": dossier.get(
+                "dprime_review_selection_kind"
+            ),
+            "dprime_review_candidate_answer_bearing": (
+                dossier.get("dprime_review_candidate_answer_bearing") is True
+            ),
+            "dprime_review_selection_is_diagnostic_only": (
+                dossier.get("dprime_review_selection_is_diagnostic_only") is True
+            ),
+            "candidate_triage_summary_ref": _safe_mapping(
+                dossier.get("candidate_triage_summary_ref")
+            ),
             "component_answer_type_binding_ref": (
                 maybe_current_source_component_answer_type_binding_ref(
                     dossier.get("component_answer_type_binding")
@@ -297,6 +348,26 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
 
 def _candidate_identity_ref(value: Any) -> dict[str, Any]:
     ref = _safe_mapping(value)
+    selected_for_dprime = (
+        ref.get("selected_for_dprime_review") is True
+        if "selected_for_dprime_review" in ref
+        else None
+    )
+    dprime_answer_bearing = (
+        ref.get("dprime_review_candidate_answer_bearing") is True
+        if "dprime_review_candidate_answer_bearing" in ref
+        else None
+    )
+    dprime_diagnostic_only = (
+        ref.get("dprime_review_selection_is_diagnostic_only") is True
+        if "dprime_review_selection_is_diagnostic_only" in ref
+        else None
+    )
+    strict_candidate = (
+        ROLE_STRICT_ANSWER_SUPPORT in _safe_sequence(ref.get("roles"))
+        or ref.get("strict_answer_support_candidate") is True
+        or ref.get("dprime_review_candidate_answer_bearing") is True
+    )
     return _without_empty(
         {
             "candidate_id": _clean_text(ref.get("candidate_id"), limit=320),
@@ -310,12 +381,26 @@ def _candidate_identity_ref(value: Any) -> dict[str, Any]:
                 ref.get("domain") or ref.get("candidate_domain"),
                 limit=220,
             ),
-            "selected_for_dprime_review": ref.get("selected_for_dprime_review")
-            is True,
-            "strict_answer_support_candidate": (
-                ROLE_STRICT_ANSWER_SUPPORT in _safe_sequence(ref.get("roles"))
-                or ref.get("strict_answer_support_candidate") is True
+            "selected_for_dprime_review": selected_for_dprime,
+            "dprime_review_selection_kind": _clean_text(
+                ref.get("dprime_review_selection_kind"),
+                limit=160,
             ),
+            "dprime_review_candidate_answer_bearing": dprime_answer_bearing,
+            "dprime_review_selection_is_diagnostic_only": dprime_diagnostic_only,
+            "proposed_candidate_role": _clean_text(
+                ref.get("proposed_candidate_role"),
+                limit=160,
+            ),
+            "requested_answer_type_match_status": _clean_text(
+                ref.get("requested_answer_type_match_status"),
+                limit=160,
+            ),
+            "expected_value_shape_match_status": _clean_text(
+                ref.get("expected_value_shape_match_status"),
+                limit=160,
+            ),
+            "strict_answer_support_candidate": True if strict_candidate else None,
         }
     )
 
@@ -353,15 +438,17 @@ def _candidate_workbench_record(
     provider_result: Mapping[str, Any] | None,
     plan: Mapping[str, Any],
     acquisition: Mapping[str, Any],
+    component_answer_type_binding_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
     provider = _safe_mapping(provider_result)
     candidate_id = _clean_text(diagnostic.get("candidate_id"), limit=320)
     window = window_by_candidate_id.get(candidate_id or "") or diagnostic
+    provider_text = _clean_text(provider.get("provider_extracted_text"), limit=2_000)
     text_features = _text_features(
         " ".join(
             item
             for item in (
-                _clean_text(provider.get("provider_extracted_text"), limit=2_000),
+                provider_text,
             )
             if item
         )
@@ -414,20 +501,94 @@ def _candidate_workbench_record(
     conflict_markers = sorted(
         marker for marker in _CONFLICT_MARKERS if marker in text_features["lowered"]
     )
+    matched_value_token_kinds = [
+        item
+        for item in (
+            _clean_text(raw, limit=40)
+            for raw in (
+                _safe_sequence(window.get("matched_value_token_kinds"))
+                or _safe_sequence(diagnostic.get("matched_value_token_kinds"))
+            )
+        )
+        if item
+    ]
+    expected_value_shape_match_status = _expected_value_shape_match_status(
+        component_answer_type_binding_ref,
+        text_features=text_features,
+        readable=readable,
+        value_count=value_count,
+        matched_value_token_kinds=matched_value_token_kinds,
+    )
+    excluded_adjacent_scope_hits = _excluded_adjacent_scope_hits(
+        component_answer_type_binding_ref,
+        text_features=text_features,
+        expected_value_shape_match_status=expected_value_shape_match_status,
+    )
+    adjacent_scope_match_status = (
+        ADJACENT_SCOPE_EXCLUDED_HIT
+        if excluded_adjacent_scope_hits
+        else ADJACENT_SCOPE_NO_EXCLUDED_HIT
+    )
+    requested_answer_type_match_status = _requested_answer_type_match_status(
+        component_answer_type_binding_ref,
+        text_features=text_features,
+        readable=readable,
+        query_overlap=query_overlap,
+        anchor_count=anchor_count,
+        strict_marker_terms=strict_markers,
+        context_marker_terms=contextual_markers,
+        excluded_adjacent_scope_hits=excluded_adjacent_scope_hits,
+        expected_value_shape_match_status=expected_value_shape_match_status,
+        official_artifact=official_artifact,
+    )
+    proposed_candidate_role = _proposed_candidate_role(
+        readable=readable,
+        official_artifact=official_artifact,
+        requested_answer_type_match_status=requested_answer_type_match_status,
+        expected_value_shape_match_status=expected_value_shape_match_status,
+        excluded_adjacent_scope_hits=excluded_adjacent_scope_hits,
+        context_marker_terms=contextual_markers,
+        value_count=value_count,
+    )
+    triage_reason_codes = _triage_reason_codes(
+        official=official,
+        readable=readable,
+        value_count=value_count,
+        anchor_count=anchor_count,
+        query_overlap=query_overlap,
+        requested_answer_type_match_status=requested_answer_type_match_status,
+        expected_value_shape_match_status=expected_value_shape_match_status,
+        excluded_adjacent_scope_hits=excluded_adjacent_scope_hits,
+        proposed_candidate_role=proposed_candidate_role,
+    )
     return _without_empty(
         {
             "candidate_ref": _candidate_ref(diagnostic, window),
             "candidate_id": candidate_id,
             "title": _clean_text(diagnostic.get("title"), limit=220),
+            "candidate_title": _clean_text(diagnostic.get("title"), limit=220),
             "domain": _clean_text(diagnostic.get("domain"), limit=260),
             "url": _clean_text(diagnostic.get("url"), limit=700),
+            "candidate_domain": _clean_text(diagnostic.get("domain"), limit=260),
+            "candidate_url": _clean_text(diagnostic.get("url"), limit=700),
             "provider_rank": _bounded_int(diagnostic.get("provider_rank")),
             "fetch_read_priority_rank": _bounded_int(
                 diagnostic.get("fetch_read_priority_rank")
             ),
             "official_or_source_record_looking": official,
+            "official_source_record_looking_posture": (
+                "official_or_source_record_looking"
+                if official
+                else "not_official_or_source_record_looking"
+            ),
             "readable_or_bounded_window_available": readable,
+            "readable_bounded_content_posture": (
+                "readable_bounded_content_available"
+                if readable
+                else "bounded_readable_content_unavailable"
+            ),
             "selected_for_dprime_review": selected,
+            "diagnostic_window_selected_for_dprime_review": selected,
             "selected_window_digest": _clean_text(
                 window.get("selected_window_digest")
                 or diagnostic.get("selected_window_digest"),
@@ -463,6 +624,31 @@ def _candidate_workbench_record(
             "context_marker_terms": contextual_markers,
             "strict_marker_terms": strict_markers,
             "conflict_marker_terms": conflict_markers,
+            "requested_answer_type": _clean_text(
+                component_answer_type_binding_ref.get("requested_answer_type"),
+                limit=160,
+            ),
+            "expected_value_shape": _clean_text(
+                component_answer_type_binding_ref.get("expected_value_shape"),
+                limit=160,
+            ),
+            "requested_answer_type_match_status": (
+                requested_answer_type_match_status
+            ),
+            "expected_value_shape_match_status": (
+                expected_value_shape_match_status
+            ),
+            "adjacent_scope_match_status": adjacent_scope_match_status,
+            "excluded_adjacent_scope_hits": list(excluded_adjacent_scope_hits),
+            "proposed_candidate_role": proposed_candidate_role,
+            "triage_reason_codes": list(triage_reason_codes),
+            "selected_for_analyst_finding_proposal": (
+                _selected_for_analyst_finding_proposal(proposed_candidate_role)
+            ),
+            "evidence_not_admitted": True,
+            "source_obligation_not_satisfied": True,
+            "citation_eligibility_not_created": True,
+            "product_correctness_not_claimed": True,
             "provider_extracted_source_text_digest": _clean_text(
                 provider.get("provider_extracted_source_text_digest")
                 or provider.get("provider_extracted_text_digest")
@@ -479,23 +665,376 @@ def _candidate_workbench_record(
     )
 
 
+def _expected_value_shape_match_status(
+    binding_ref: Mapping[str, Any],
+    *,
+    text_features: Mapping[str, Any],
+    readable: bool,
+    value_count: int,
+    matched_value_token_kinds: Sequence[str],
+) -> str:
+    if not readable:
+        return EXPECTED_VALUE_SHAPE_UNREADABLE_UNKNOWN
+    shape = _normalize_key(binding_ref.get("expected_value_shape"))
+    lowered = _clean_text(text_features.get("lowered"), limit=2_000) or ""
+    token_kinds = {_normalize_key(item) for item in matched_value_token_kinds}
+    if shape == "currency_amount":
+        matched = "currency" in token_kinds or _currency_value_present(lowered)
+    elif shape == "date_or_date_range":
+        matched = "date_like" in token_kinds or _date_value_present(lowered)
+    elif shape == "percentage":
+        matched = "percent" in token_kinds or _percentage_value_present(lowered)
+    elif shape == "numeric_value":
+        matched = "number" in token_kinds or _number_value_present(lowered)
+    elif shape == "numeric_or_currency_rate":
+        matched = (
+            bool({"currency", "number", "percent"} & token_kinds)
+            or _currency_value_present(lowered)
+            or _percentage_value_present(lowered)
+            or _number_value_present(lowered)
+        )
+    elif shape == "requirement_statement":
+        matched = _requirement_action_present(text_features)
+    elif shape == "status_statement":
+        matched = _status_value_present(text_features)
+    else:
+        matched = value_count > 0
+    return EXPECTED_VALUE_SHAPE_MATCH if matched else EXPECTED_VALUE_SHAPE_MISSING
+
+
+def _requested_answer_type_match_status(
+    binding_ref: Mapping[str, Any],
+    *,
+    text_features: Mapping[str, Any],
+    readable: bool,
+    query_overlap: bool,
+    anchor_count: int,
+    strict_marker_terms: Sequence[str],
+    context_marker_terms: Sequence[str],
+    excluded_adjacent_scope_hits: Sequence[str],
+    expected_value_shape_match_status: str,
+    official_artifact: bool,
+) -> str:
+    del official_artifact
+    if not readable:
+        return REQUESTED_ANSWER_TYPE_UNREADABLE_UNKNOWN
+    if expected_value_shape_match_status != EXPECTED_VALUE_SHAPE_MATCH:
+        if excluded_adjacent_scope_hits or context_marker_terms:
+            return REQUESTED_ANSWER_TYPE_ADJACENT_ONLY
+        return REQUESTED_ANSWER_TYPE_NOT_ENOUGH_SIGNAL
+    if _answer_type_strict_signal(
+        binding_ref,
+        text_features=text_features,
+        query_overlap=query_overlap,
+        anchor_count=anchor_count,
+        strict_marker_terms=strict_marker_terms,
+        excluded_adjacent_scope_hits=excluded_adjacent_scope_hits,
+        expected_value_shape_match_status=expected_value_shape_match_status,
+    ):
+        return REQUESTED_ANSWER_TYPE_MATCH
+    if excluded_adjacent_scope_hits or context_marker_terms:
+        return REQUESTED_ANSWER_TYPE_ADJACENT_ONLY
+    return REQUESTED_ANSWER_TYPE_NOT_ENOUGH_SIGNAL
+
+
+def _answer_type_strict_signal(
+    binding_ref: Mapping[str, Any],
+    *,
+    text_features: Mapping[str, Any],
+    query_overlap: bool,
+    anchor_count: int,
+    strict_marker_terms: Sequence[str],
+    excluded_adjacent_scope_hits: Sequence[str],
+    expected_value_shape_match_status: str,
+) -> bool:
+    requested = _normalize_key(binding_ref.get("requested_answer_type"))
+    tokens = set(_safe_sequence(text_features.get("tokens")))
+    lowered = _clean_text(text_features.get("lowered"), limit=2_000) or ""
+    strict_terms = {_normalize_key(item) for item in strict_marker_terms}
+    adjacent_hits = {_normalize_key(item) for item in excluded_adjacent_scope_hits}
+    expected_value_shape_matched = (
+        expected_value_shape_match_status == EXPECTED_VALUE_SHAPE_MATCH
+    )
+    if requested == "fee_amount_current_standard_value":
+        if not (expected_value_shape_matched or _currency_value_present(lowered)):
+            return False
+        if adjacent_hits:
+            return bool(strict_terms & {"base", "regular", "standard"})
+        return bool(query_overlap or anchor_count > 0 or strict_terms or "fee" in tokens)
+    if requested == "deadline_date":
+        return bool(
+            _date_value_present(lowered)
+            and (query_overlap or anchor_count > 0 or strict_terms or "deadline" in tokens)
+        )
+    if requested == "requirement_action":
+        if "fee_amount" in adjacent_hits:
+            return False
+        return _requirement_action_present(text_features)
+    if requested == "status_value":
+        return _status_value_present(text_features)
+    if requested in {"current_standard_value", "current_standard_rate", "current_standard_limit"}:
+        if adjacent_hits and not (strict_terms & {"base", "regular", "standard"}):
+            return False
+        return bool(query_overlap or anchor_count > 0 or strict_terms)
+    return bool(query_overlap or anchor_count > 0 or strict_terms)
+
+
+def _excluded_adjacent_scope_hits(
+    binding_ref: Mapping[str, Any],
+    *,
+    text_features: Mapping[str, Any],
+    expected_value_shape_match_status: str,
+) -> list[str]:
+    hits: list[str] = []
+    seen: set[str] = set()
+    exclusions = [
+        item
+        for item in (
+            _clean_text(raw, limit=120)
+            for raw in _safe_sequence(binding_ref.get("adjacent_claim_exclusions"))
+        )
+        if item
+    ]
+    for exclusion in exclusions:
+        if _adjacent_exclusion_matches(
+            exclusion,
+            text_features=text_features,
+            expected_value_shape_match_status=expected_value_shape_match_status,
+        ):
+            key = _normalize_key(exclusion)
+            if key not in seen:
+                seen.add(key)
+                hits.append(exclusion)
+    return hits
+
+
+def _adjacent_exclusion_matches(
+    exclusion: str,
+    *,
+    text_features: Mapping[str, Any],
+    expected_value_shape_match_status: str,
+) -> bool:
+    key = _normalize_key(exclusion)
+    lowered = _clean_text(text_features.get("lowered"), limit=2_000) or ""
+    tokens = set(_safe_sequence(text_features.get("tokens")))
+    has_expected_value = expected_value_shape_match_status == EXPECTED_VALUE_SHAPE_MATCH
+    if "waiver" in key:
+        return bool(tokens & {"waive", "waived", "waiver"})
+    if "reduced" in key or "reduction" in key:
+        return bool(tokens & {"eligible", "eligibility", "low", "lowincome", "reduced", "reduction"})
+    if "discount" in key:
+        return bool(tokens & {"discount", "discounted", "electronic", "online"})
+    if "non_paper" in key:
+        return bool(tokens & {"electronic", "online"})
+    if "filing_mode" in key:
+        return _filing_mode_context_present(lowered) and not has_expected_value
+    if "process" in key:
+        return _process_instruction_present(lowered, tokens) and not has_expected_value
+    if "eligibility" in key or "conditions" in key:
+        return bool(tokens & {"eligible", "eligibility", "condition", "conditions"})
+    if "contextual_requirements" in key:
+        return _requirement_action_present(text_features) and not has_expected_value
+    if "fee_amount" in key:
+        return _currency_value_present(lowered)
+    if "discount_value" in key:
+        return bool(tokens & {"discount", "discounted", "online"}) and has_expected_value
+    if "reduced_or_exception_value" in key:
+        return bool(tokens & {"exception", "exemption", "reduced", "special"}) and has_expected_value
+    if "cost_or_value" in key or "unrelated_amount" in key:
+        return _currency_value_present(lowered) or _number_value_present(lowered)
+    if "historical" in key:
+        return bool(tokens & {"former", "formerly", "historical", "old", "previous", "prior"})
+    if "adjacent_context" in key:
+        return bool(_CONTEXT_MARKERS & tokens)
+    return False
+
+
+def _proposed_candidate_role(
+    *,
+    readable: bool,
+    official_artifact: bool,
+    requested_answer_type_match_status: str,
+    expected_value_shape_match_status: str,
+    excluded_adjacent_scope_hits: Sequence[str],
+    context_marker_terms: Sequence[str],
+    value_count: int,
+) -> str:
+    if not readable and official_artifact:
+        return TRIAGE_ROLE_UNREADABLE_HIGH_VALUE
+    if requested_answer_type_match_status == REQUESTED_ANSWER_TYPE_MATCH:
+        return TRIAGE_ROLE_ANSWER_BEARING
+    if excluded_adjacent_scope_hits and (
+        expected_value_shape_match_status == EXPECTED_VALUE_SHAPE_MATCH
+        or value_count > 0
+    ):
+        return TRIAGE_ROLE_OVERCLAIM_RISK
+    if excluded_adjacent_scope_hits or context_marker_terms:
+        return TRIAGE_ROLE_QUALIFIER_EXCEPTION
+    if readable:
+        return TRIAGE_ROLE_REMEDIATION_NEEDED
+    return TRIAGE_ROLE_DISCOVERY_ONLY
+
+
+def _triage_reason_codes(
+    *,
+    official: bool,
+    readable: bool,
+    value_count: int,
+    anchor_count: int,
+    query_overlap: bool,
+    requested_answer_type_match_status: str,
+    expected_value_shape_match_status: str,
+    excluded_adjacent_scope_hits: Sequence[str],
+    proposed_candidate_role: str,
+) -> list[str]:
+    reasons = [f"role:{proposed_candidate_role}"]
+    reasons.append(
+        "official_or_source_record_looking" if official else "not_official_or_source_record_looking"
+    )
+    reasons.append(
+        "readable_bounded_content_available" if readable else "bounded_content_unavailable"
+    )
+    reasons.append(f"requested_answer_type:{requested_answer_type_match_status}")
+    reasons.append(f"expected_value_shape:{expected_value_shape_match_status}")
+    if excluded_adjacent_scope_hits:
+        reasons.append("excluded_adjacent_scope_hit")
+    if value_count > 0:
+        reasons.append("value_shape_signal_present")
+    if anchor_count > 0:
+        reasons.append("anchor_signal_present")
+    if query_overlap:
+        reasons.append("query_token_overlap_present")
+    return reasons
+
+
+def _selected_for_analyst_finding_proposal(role: str) -> bool:
+    return role in {
+        TRIAGE_ROLE_ANSWER_BEARING,
+        TRIAGE_ROLE_ADJACENT_CONTEXTUAL,
+        TRIAGE_ROLE_QUALIFIER_EXCEPTION,
+        TRIAGE_ROLE_OVERCLAIM_RISK,
+        TRIAGE_ROLE_UNREADABLE_HIGH_VALUE,
+    }
+
+
+def _currency_value_present(value: str) -> bool:
+    return bool(
+        re.search(
+            r"(?:[$]\s?\d{1,9}(?:,\d{3})*(?:\.\d{2})?)|(?:\b\d+(?:\.\d{2})?\s+dollars?\b)",
+            value,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _date_value_present(value: str) -> bool:
+    return bool(
+        re.search(r"\b(?:19|20)\d{2}(?:-\d{1,2}(?:-\d{1,2})?)?\b", value)
+        or re.search(
+            (
+                r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|"
+                r"jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|"
+                r"nov(?:ember)?|dec(?:ember)?)\s+\d{1,2}\b"
+            ),
+            value,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _percentage_value_present(value: str) -> bool:
+    return bool(re.search(r"\b\d+(?:\.\d+)?\s?%", value))
+
+
+def _number_value_present(value: str) -> bool:
+    return bool(re.search(r"\b\d+(?:\.\d+)?\b", value))
+
+
+def _requirement_action_present(text_features: Mapping[str, Any]) -> bool:
+    tokens = set(_safe_sequence(text_features.get("tokens")))
+    lowered = _clean_text(text_features.get("lowered"), limit=2_000) or ""
+    return bool(
+        tokens
+        & {
+            "complete",
+            "file",
+            "filing",
+            "include",
+            "must",
+            "need",
+            "needs",
+            "provide",
+            "required",
+            "requires",
+            "requirement",
+            "submit",
+        }
+        or re.search(r"\b(required to|must|needs? to|has to)\b", lowered)
+    )
+
+
+def _status_value_present(text_features: Mapping[str, Any]) -> bool:
+    tokens = set(_safe_sequence(text_features.get("tokens")))
+    return bool(
+        tokens
+        & {
+            "active",
+            "available",
+            "closed",
+            "current",
+            "inactive",
+            "open",
+            "suspended",
+            "unavailable",
+        }
+    )
+
+
+def _filing_mode_context_present(value: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(file|filing|submit|submitted)\s+(?:by\s+mail|in\s+person|on\s+paper|online|electronically)\b",
+            value,
+        )
+        or re.search(r"\b(?:paper|online|electronic)\s+filing\s+(?:required|only)\b", value)
+        or "filing mode" in value
+    )
+
+
+def _process_instruction_present(value: str, tokens: set[str]) -> bool:
+    return bool(
+        tokens
+        & {
+            "apply",
+            "complete",
+            "instructions",
+            "mail",
+            "process",
+            "submit",
+        }
+        or re.search(r"\bhow to\b", value)
+    )
+
+
 def _role_proposals_for_candidate(candidate: Mapping[str, Any]) -> list[dict[str, Any]]:
     roles: list[tuple[str, list[str]]] = []
     official = candidate.get("official_or_source_record_looking") is True
     readable = candidate.get("readable_or_bounded_window_available") is True
     selected = candidate.get("selected_for_dprime_review") is True
     value_count = _bounded_int(candidate.get("matched_value_token_kind_count"))
-    anchor_count = _bounded_int(candidate.get("matched_anchor_count"))
-    contextual = bool(_safe_sequence(candidate.get("context_marker_terms")))
+    contextual = bool(
+        _safe_sequence(candidate.get("context_marker_terms"))
+        or _safe_sequence(candidate.get("excluded_adjacent_scope_hits"))
+    )
     conflict = bool(_safe_sequence(candidate.get("conflict_marker_terms")))
-    query_overlap = candidate.get("query_token_overlap") is True
-    strict_terms = set(_safe_sequence(candidate.get("strict_marker_terms")))
-    strict_basis = bool(anchor_count > 0 or query_overlap or strict_terms)
-    contextual_strict_basis = bool(strict_terms & _CONTEXTUAL_STRICT_SUPPORT_MARKERS)
-    strictish = bool(
-        readable
-        and value_count > 0
-        and (contextual_strict_basis if contextual else strict_basis)
+    proposed_role = _clean_text(candidate.get("proposed_candidate_role"), limit=160)
+    answer_bearing = (
+        proposed_role == TRIAGE_ROLE_ANSWER_BEARING
+        and candidate.get("requested_answer_type_match_status")
+        == REQUESTED_ANSWER_TYPE_MATCH
+    )
+    overclaim = proposed_role == TRIAGE_ROLE_OVERCLAIM_RISK or (
+        contextual and value_count > 0
     )
     if official:
         roles.append(
@@ -504,11 +1043,11 @@ def _role_proposals_for_candidate(candidate: Mapping[str, Any]) -> list[dict[str
                 ["safe diagnostics indicate official or source-record-looking identity"],
             )
         )
-    if strictish and not conflict:
+    if answer_bearing and not conflict:
         roles.append(
             (
                 ROLE_STRICT_ANSWER_SUPPORT,
-                ["bounded/readable candidate has strict value signal"],
+                ["candidate matches requested answer type and expected value shape"],
             )
         )
     if contextual:
@@ -524,7 +1063,7 @@ def _role_proposals_for_candidate(candidate: Mapping[str, Any]) -> list[dict[str
                 ["candidate may describe a qualifier rather than the strict requested fact"],
             )
         )
-    if contextual and value_count > 0:
+    if overclaim:
         roles.append(
             (
                 ROLE_OVERCLAIM_RISK,
@@ -567,7 +1106,7 @@ def _role_proposal(
     reasons: Sequence[str],
     selected: bool,
 ) -> dict[str, Any]:
-    candidate_ref = _safe_mapping(candidate.get("candidate_ref"))
+    candidate_ref = _candidate_triage_ref(candidate)
     role_id = (
         "evidence-role-proposal:"
         f"{candidate_ref.get('candidate_id') or 'candidate'}:{role}"
@@ -595,6 +1134,8 @@ def _candidate_evidence_triage_packet(
     candidates: Sequence[Mapping[str, Any]],
     role_proposals: Sequence[Mapping[str, Any]],
     entrypoint_kind: str,
+    component_answer_type_binding: Mapping[str, Any],
+    component_answer_type_binding_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
     roles_by_candidate = _roles_by_candidate(role_proposals)
     strict_refs = _candidate_refs_with_role(role_proposals, ROLE_STRICT_ANSWER_SUPPORT)
@@ -602,22 +1143,36 @@ def _candidate_evidence_triage_packet(
         role_proposals, ROLE_ANSWER_ADJACENT_CONTEXT
     )
     overclaim_refs = _candidate_refs_with_role(role_proposals, ROLE_OVERCLAIM_RISK)
+    unreadable_refs = _candidate_refs_with_role(
+        role_proposals,
+        ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL,
+    )
+    excluded_scope_refs = _excluded_scope_candidate_refs(candidates)
     selected_ref = _dprime_review_candidate_ref(
         candidates,
         strict_refs=strict_refs,
+        contextual_refs=contextual_refs,
+        unreadable_refs=unreadable_refs,
     )
-    component_answer_type_binding = (
-        current_source_component_answer_type_binding_from_relation_plan(
-            plan,
-            expected_value_token_kinds=_safe_sequence(
-                acquisition.get("expected_value_token_kinds")
-            ),
-        )
-    )
-    component_answer_type_binding_ref = current_source_component_answer_type_binding_ref(
-        component_answer_type_binding
+    dprime_answer_bearing = (
+        selected_ref.get("dprime_review_candidate_answer_bearing") is True
     )
     top_ref = _first_candidate_ref(candidates)
+    candidate_triage_records = [
+        _candidate_triage_record(
+            candidate,
+            selected_for_dprime_review=(
+                _clean_text(candidate.get("candidate_id"), limit=320)
+                == _clean_text(selected_ref.get("candidate_id"), limit=320)
+            ),
+            dprime_selection_kind=_clean_text(
+                selected_ref.get("dprime_review_selection_kind"),
+                limit=160,
+            ),
+            dprime_answer_bearing=dprime_answer_bearing,
+        )
+        for candidate in candidates
+    ]
     packet = _without_empty(
         {
             "schema_version": CANDIDATE_EVIDENCE_TRIAGE_SCHEMA_VERSION,
@@ -637,19 +1192,64 @@ def _candidate_evidence_triage_packet(
             "candidate_count": len(candidates),
             "role_proposal_count": len(role_proposals),
             "candidate_refs": [_safe_mapping(item.get("candidate_ref")) for item in candidates],
+            "candidate_triage_records": candidate_triage_records,
+            "candidate_triage_summary_ref": _candidate_triage_summary_ref(
+                candidate_triage_records
+            ),
             "top_candidate_ref": top_ref,
             "selected_candidate_ref": selected_ref,
             "dprime_review_candidate_ref": selected_ref,
+            "dprime_review_selection_policy": _dprime_review_selection_policy_text(),
+            "dprime_review_selection_kind": _clean_text(
+                selected_ref.get("dprime_review_selection_kind"),
+                limit=160,
+            ),
+            "dprime_review_candidate_answer_bearing": dprime_answer_bearing,
+            "dprime_review_selection_is_diagnostic_only": (
+                bool(selected_ref) and not dprime_answer_bearing
+            ),
+            "dprime_diagnostic_candidate_refs": (
+                [] if dprime_answer_bearing or not selected_ref else [selected_ref]
+            ),
+            "selected_for_dprime_review_candidate_refs": (
+                [selected_ref] if selected_ref else []
+            ),
+            "selected_for_dprime_review_answer_bearing_candidate_refs": (
+                [selected_ref] if dprime_answer_bearing else []
+            ),
             "strict_answer_support_candidate_refs": strict_refs,
+            "selected_answer_bearing_candidate_refs": strict_refs,
             "contextual_candidate_refs": contextual_refs,
+            "adjacent_context_candidate_refs": contextual_refs,
             "overclaim_risk_candidate_refs": overclaim_refs,
+            "unreadable_high_value_candidate_refs": unreadable_refs,
+            "excluded_scope_candidate_refs": excluded_scope_refs,
             "roles_by_candidate": roles_by_candidate,
             "evidence_role_proposals": list(role_proposals),
             "generic_role_classification": True,
+            "binding_drives_triage": True,
+            "triage_output_is_proposal_only": True,
+            "evidence_not_admitted": True,
+            "source_obligation_not_satisfied": True,
+            "citation_eligibility_not_created": True,
+            "product_correctness_not_claimed": True,
             "source_text_retained": False,
             **_non_authority_posture(),
         }
     )
+    for list_key in (
+        "selected_answer_bearing_candidate_refs",
+        "dprime_diagnostic_candidate_refs",
+        "selected_for_dprime_review_candidate_refs",
+        "selected_for_dprime_review_answer_bearing_candidate_refs",
+        "strict_answer_support_candidate_refs",
+        "contextual_candidate_refs",
+        "adjacent_context_candidate_refs",
+        "overclaim_risk_candidate_refs",
+        "unreadable_high_value_candidate_refs",
+        "excluded_scope_candidate_refs",
+    ):
+        packet.setdefault(list_key, [])
     packet["packet_digest"] = _digest_json(packet)
     return packet
 
@@ -740,11 +1340,10 @@ def _analysis_gap_search_proposal(
     overclaim_refs = _safe_sequence(triage_packet.get("overclaim_risk_candidate_refs"))
     role_map = _safe_mapping(triage_packet.get("roles_by_candidate"))
     unreadable_refs = [
-        _safe_mapping(item.get("candidate_ref"))
-        for item in _safe_sequence(triage_packet.get("evidence_role_proposals"))
-        if _safe_mapping(item).get("role") == ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL
+        _safe_mapping(item)
+        for item in _safe_sequence(triage_packet.get("unreadable_high_value_candidate_refs"))
     ]
-    gap_needed = bool(unreadable_refs or not strict_refs)
+    gap_needed = not bool(strict_refs)
     if not gap_needed:
         gap_kind = "not_required"
         reason = "strict support candidate proposed; contextual risks preserved"
@@ -794,6 +1393,16 @@ def _analysis_gap_search_proposal(
                 _safe_mapping(item) for item in overclaim_refs
             ],
             "unreadable_candidate_refs": unreadable_refs,
+            "selected_answer_bearing_candidate_refs": [
+                _safe_mapping(item) for item in strict_refs
+            ],
+            "excluded_scope_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("excluded_scope_candidate_refs")
+                )
+            ],
+            "triage_gap_recommendation": gap_kind,
             "roles_by_candidate": role_map,
             "live_followup_required": bool(gap_needed),
             "live_followup_licensed": False,
@@ -848,11 +1457,45 @@ def _analyst_workbench_packet(
             "analysis_gap_search_proposal": dict(gap_proposal),
             "analysis_gap_search_proposal_ref": _gap_ref(gap_proposal),
             "strict_answer_support_candidate_count": len(strict_refs),
+            "selected_answer_bearing_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("selected_answer_bearing_candidate_refs")
+                )
+            ],
+            "adjacent_context_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("adjacent_context_candidate_refs")
+                )
+            ],
+            "unreadable_high_value_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("unreadable_high_value_candidate_refs")
+                )
+            ],
+            "excluded_scope_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("excluded_scope_candidate_refs")
+                )
+            ],
             "contextual_candidate_count": len(
                 _safe_sequence(triage_packet.get("contextual_candidate_refs"))
             ),
             "overclaim_risk_candidate_count": len(
                 _safe_sequence(triage_packet.get("overclaim_risk_candidate_refs"))
+            ),
+            "dprime_review_selection_kind": triage_packet.get(
+                "dprime_review_selection_kind"
+            ),
+            "dprime_review_candidate_answer_bearing": (
+                triage_packet.get("dprime_review_candidate_answer_bearing") is True
+            ),
+            "dprime_review_selection_is_diagnostic_only": (
+                triage_packet.get("dprime_review_selection_is_diagnostic_only")
+                is True
             ),
             "display_candidate_ref_status": "not_authorized_by_workbench",
             "dprime_review_candidate_ref": _safe_mapping(
@@ -898,15 +1541,46 @@ def _workbench_dprime_dossier(
             "dprime_review_candidate_ref": _safe_mapping(
                 triage_packet.get("dprime_review_candidate_ref")
             ),
+            "dprime_review_selection_policy": triage_packet.get(
+                "dprime_review_selection_policy"
+            ),
+            "dprime_review_selection_kind": triage_packet.get(
+                "dprime_review_selection_kind"
+            ),
+            "dprime_review_candidate_answer_bearing": (
+                triage_packet.get("dprime_review_candidate_answer_bearing") is True
+            ),
+            "dprime_review_selection_is_diagnostic_only": (
+                triage_packet.get("dprime_review_selection_is_diagnostic_only")
+                is True
+            ),
+            "dprime_diagnostic_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("dprime_diagnostic_candidate_refs")
+                )
+            ],
             "strict_answer_support_candidate_refs": [
                 _safe_mapping(item)
                 for item in _safe_sequence(
                     triage_packet.get("strict_answer_support_candidate_refs")
                 )
             ],
+            "selected_answer_bearing_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("selected_answer_bearing_candidate_refs")
+                )
+            ],
             "contextual_candidate_refs": [
                 _safe_mapping(item)
                 for item in _safe_sequence(triage_packet.get("contextual_candidate_refs"))
+            ],
+            "adjacent_context_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("adjacent_context_candidate_refs")
+                )
             ],
             "overclaim_risk_candidate_refs": [
                 _safe_mapping(item)
@@ -914,6 +1588,21 @@ def _workbench_dprime_dossier(
                     triage_packet.get("overclaim_risk_candidate_refs")
                 )
             ],
+            "unreadable_high_value_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("unreadable_high_value_candidate_refs")
+                )
+            ],
+            "excluded_scope_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    triage_packet.get("excluded_scope_candidate_refs")
+                )
+            ],
+            "candidate_triage_summary_ref": _safe_mapping(
+                triage_packet.get("candidate_triage_summary_ref")
+            ),
             "role_proposal_refs": [
                 _role_proposal_ref(item)
                 for item in _safe_sequence(triage_packet.get("evidence_role_proposals"))
@@ -934,6 +1623,7 @@ def _workbench_dprime_dossier(
                 _safe_mapping(workbench_packet.get("economist_lane_placeholder"))
             ),
             "analysis_gap_search_proposal_ref": _gap_ref(gap_proposal),
+            "triage_gap_recommendation": gap_proposal.get("gap_kind"),
             "gap_proposal_status": gap_proposal.get("gap_status"),
             "strict_answer_support_candidate_count": len(
                 _safe_sequence(triage_packet.get("strict_answer_support_candidate_refs"))
@@ -1090,6 +1780,150 @@ def _candidate_ref(
             ),
         }
     )
+
+
+def _candidate_triage_ref(candidate: Mapping[str, Any]) -> dict[str, Any]:
+    base = _safe_mapping(candidate.get("candidate_ref"))
+    return _without_empty(
+        {
+            **base,
+            "candidate_title": _clean_text(
+                candidate.get("candidate_title") or candidate.get("title"),
+                limit=220,
+            ),
+            "candidate_domain": _clean_text(
+                candidate.get("candidate_domain") or candidate.get("domain"),
+                limit=260,
+            ),
+            "candidate_url": _clean_text(
+                candidate.get("candidate_url") or candidate.get("url"),
+                limit=700,
+            ),
+            "official_source_record_looking_posture": _clean_text(
+                candidate.get("official_source_record_looking_posture"),
+                limit=120,
+            ),
+            "readable_bounded_content_posture": _clean_text(
+                candidate.get("readable_bounded_content_posture"),
+                limit=120,
+            ),
+            "requested_answer_type_match_status": _clean_text(
+                candidate.get("requested_answer_type_match_status"),
+                limit=160,
+            ),
+            "expected_value_shape_match_status": _clean_text(
+                candidate.get("expected_value_shape_match_status"),
+                limit=160,
+            ),
+            "adjacent_scope_match_status": _clean_text(
+                candidate.get("adjacent_scope_match_status"),
+                limit=160,
+            ),
+            "excluded_adjacent_scope_hits": [
+                item
+                for item in (
+                    _clean_text(raw, limit=120)
+                    for raw in _safe_sequence(
+                        candidate.get("excluded_adjacent_scope_hits")
+                    )
+                )
+                if item
+            ],
+            "proposed_candidate_role": _clean_text(
+                candidate.get("proposed_candidate_role"),
+                limit=160,
+            ),
+            "triage_reason_codes": [
+                item
+                for item in (
+                    _clean_text(raw, limit=160)
+                    for raw in _safe_sequence(candidate.get("triage_reason_codes"))
+                )
+                if item
+            ],
+            "selected_for_analyst_finding_proposal": (
+                candidate.get("selected_for_analyst_finding_proposal") is True
+            ),
+            "selected_for_dprime_review": (
+                candidate.get("selected_for_dprime_review") is True
+            ),
+            "raw_private_retention": False,
+            "evidence_admitted": False,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
+            "citation_eligibility_created": False,
+            "product_correctness_claimed": False,
+            "evidence_not_admitted": True,
+            "source_obligation_not_satisfied": True,
+            "citation_eligibility_not_created": True,
+            "product_correctness_not_claimed": True,
+        }
+    )
+
+
+def _candidate_triage_record(
+    candidate: Mapping[str, Any],
+    *,
+    selected_for_dprime_review: bool,
+    dprime_selection_kind: str | None,
+    dprime_answer_bearing: bool,
+) -> dict[str, Any]:
+    record = _candidate_triage_ref(candidate)
+    is_selected = selected_for_dprime_review and bool(record)
+    record["selected_for_dprime_review"] = is_selected
+    if is_selected:
+        record["dprime_review_selection_kind"] = dprime_selection_kind
+        record["dprime_review_candidate_answer_bearing"] = bool(dprime_answer_bearing)
+        record["dprime_review_selection_is_diagnostic_only"] = (
+            not bool(dprime_answer_bearing)
+        )
+    record["record_digest"] = _digest_json(record)
+    return record
+
+
+def _candidate_triage_summary_ref(
+    candidate_triage_records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    records = [_safe_mapping(item) for item in candidate_triage_records]
+    answer_bearing = [
+        item
+        for item in records
+        if item.get("proposed_candidate_role") == TRIAGE_ROLE_ANSWER_BEARING
+    ]
+    adjacent = [
+        item
+        for item in records
+        if item.get("excluded_adjacent_scope_hits")
+        or item.get("proposed_candidate_role")
+        in {TRIAGE_ROLE_ADJACENT_CONTEXTUAL, TRIAGE_ROLE_QUALIFIER_EXCEPTION}
+    ]
+    unreadable = [
+        item
+        for item in records
+        if item.get("proposed_candidate_role") == TRIAGE_ROLE_UNREADABLE_HIGH_VALUE
+    ]
+    selected_dprime = [
+        item for item in records if item.get("selected_for_dprime_review") is True
+    ]
+    summary = {
+        "candidate_count": len(records),
+        "answer_bearing_candidate_count": len(answer_bearing),
+        "adjacent_or_excluded_candidate_count": len(adjacent),
+        "unreadable_high_value_candidate_count": len(unreadable),
+        "selected_for_dprime_review_count": len(selected_dprime),
+        "dprime_review_candidate_answer_bearing_count": sum(
+            1
+            for item in selected_dprime
+            if item.get("dprime_review_candidate_answer_bearing") is True
+        ),
+        "raw_private_retention": False,
+        "evidence_admitted": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+        "product_correctness_claimed": False,
+    }
+    summary["summary_digest"] = _digest_json(summary)
+    return summary
 
 
 def _plan_ref(plan: Mapping[str, Any]) -> dict[str, Any]:
@@ -1253,6 +2087,23 @@ def _candidate_refs_with_role(
     return refs
 
 
+def _excluded_scope_candidate_refs(
+    candidates: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not _safe_sequence(candidate.get("excluded_adjacent_scope_hits")):
+            continue
+        ref = _candidate_triage_ref(candidate)
+        identity = _clean_text(ref.get("candidate_id"), limit=320) or _digest_json(ref)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        refs.append(ref)
+    return refs
+
+
 def _roles_by_candidate(
     role_proposals: Sequence[Mapping[str, Any]],
 ) -> dict[str, list[str]]:
@@ -1277,7 +2128,7 @@ def _first_candidate_ref(candidates: Sequence[Mapping[str, Any]]) -> dict[str, A
             _bounded_int(item.get("fetch_read_priority_rank"), default=999),
         ),
     )[0]
-    return _safe_mapping(first.get("candidate_ref"))
+    return _candidate_triage_ref(first)
 
 
 def _first_selected_candidate_ref(
@@ -1285,7 +2136,7 @@ def _first_selected_candidate_ref(
 ) -> dict[str, Any]:
     for candidate in candidates:
         if candidate.get("selected_for_dprime_review") is True:
-            return _safe_mapping(candidate.get("candidate_ref"))
+            return _candidate_triage_ref(candidate)
     return _first_candidate_ref(candidates)
 
 
@@ -1293,6 +2144,8 @@ def _dprime_review_candidate_ref(
     candidates: Sequence[Mapping[str, Any]],
     *,
     strict_refs: Sequence[Mapping[str, Any]],
+    contextual_refs: Sequence[Mapping[str, Any]],
+    unreadable_refs: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
     strict_ids = {
         _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
@@ -1306,16 +2159,104 @@ def _dprime_review_candidate_ref(
         and candidate.get("readable_or_bounded_window_available") is True
     ]
     if official_artifact_strict:
-        return _safe_mapping(
+        ref = _candidate_triage_ref(
             sorted(
                 official_artifact_strict,
                 key=lambda item: (
                     _bounded_int(item.get("fetch_read_priority_rank"), default=999),
                     _bounded_int(item.get("provider_rank"), default=999),
                 ),
-            )[0].get("candidate_ref")
+            )[0]
         )
-    return _first_selected_candidate_ref(candidates)
+        return _with_dprime_selection(
+            ref,
+            selection_kind=DPRIME_SELECTION_ANSWER_BEARING,
+            answer_bearing=True,
+        )
+    strict_candidates = [
+        candidate
+        for candidate in candidates
+        if _clean_text(candidate.get("candidate_id"), limit=320) in strict_ids
+    ]
+    if strict_candidates:
+        ref = _candidate_triage_ref(
+            sorted(
+                strict_candidates,
+                key=lambda item: (
+                    _bounded_int(item.get("fetch_read_priority_rank"), default=999),
+                    _bounded_int(item.get("provider_rank"), default=999),
+                ),
+            )[0]
+        )
+        return _with_dprime_selection(
+            ref,
+            selection_kind=DPRIME_SELECTION_ANSWER_BEARING,
+            answer_bearing=True,
+        )
+    contextual_ids = {
+        _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+        for item in contextual_refs
+    }
+    selected_contextual = [
+        candidate
+        for candidate in candidates
+        if _clean_text(candidate.get("candidate_id"), limit=320) in contextual_ids
+        and candidate.get("selected_for_dprime_review") is True
+    ]
+    if selected_contextual:
+        return _with_dprime_selection(
+            _candidate_triage_ref(selected_contextual[0]),
+            selection_kind=DPRIME_SELECTION_CONTEXTUAL_DIAGNOSTIC,
+            answer_bearing=False,
+        )
+    selected = _first_selected_candidate_ref(candidates)
+    if selected:
+        selected_id = _clean_text(selected.get("candidate_id"), limit=320)
+        unreadable_ids = {
+            _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+            for item in unreadable_refs
+        }
+        selection_kind = (
+            DPRIME_SELECTION_UNREADABLE_DIAGNOSTIC
+            if selected_id in unreadable_ids
+            else DPRIME_SELECTION_DISCOVERY_DIAGNOSTIC
+        )
+        return _with_dprime_selection(
+            selected,
+            selection_kind=selection_kind,
+            answer_bearing=False,
+        )
+    return {}
+
+
+def _with_dprime_selection(
+    candidate_ref: Mapping[str, Any],
+    *,
+    selection_kind: str,
+    answer_bearing: bool,
+) -> dict[str, Any]:
+    if not candidate_ref:
+        return {}
+    return {
+        **_safe_mapping(candidate_ref),
+        "selected_for_dprime_review": True,
+        "dprime_review_selection_kind": selection_kind,
+        "dprime_review_candidate_answer_bearing": bool(answer_bearing),
+        "dprime_review_selection_is_diagnostic_only": not bool(answer_bearing),
+        "dprime_review_selection_proposal_only": True,
+        "evidence_admitted": False,
+        "source_obligation_satisfied": False,
+        "citation_eligible": False,
+        "product_correctness_claimed": False,
+    }
+
+
+def _dprime_review_selection_policy_text() -> str:
+    return (
+        "prefer answer-bearing candidates matching the requested answer type; "
+        "otherwise preserve contextual diagnostic continuity without treating "
+        "the diagnostic candidate as answer-bearing authority"
+    )
 
 
 def _query_tokens(plan: Mapping[str, Any], acquisition: Mapping[str, Any]) -> set[str]:
@@ -1448,6 +2389,10 @@ def _bounded_int(value: Any, *, default: int = 0) -> int:
     return max(0, parsed)
 
 
+def _normalize_key(value: Any) -> str:
+    return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
+
+
 def _digest_json(value: Any) -> str:
     encoded = json.dumps(_json_safe(value), sort_keys=True, separators=(",", ":"))
     return sha256(encoded.encode("utf-8")).hexdigest()
@@ -1460,12 +2405,32 @@ __all__ = [
     "ANALYSIS_GAP_SEARCH_PROPOSAL_SCHEMA_VERSION",
     "AnalystWorkbenchError",
     "CANDIDATE_EVIDENCE_TRIAGE_SCHEMA_VERSION",
+    "ADJACENT_SCOPE_EXCLUDED_HIT",
+    "ADJACENT_SCOPE_NO_EXCLUDED_HIT",
+    "DPRIME_SELECTION_ANSWER_BEARING",
+    "DPRIME_SELECTION_CONTEXTUAL_DIAGNOSTIC",
+    "DPRIME_SELECTION_DISCOVERY_DIAGNOSTIC",
+    "DPRIME_SELECTION_UNREADABLE_DIAGNOSTIC",
     "EVIDENCE_ROLE_PROPOSAL_SCHEMA_VERSION",
+    "EXPECTED_VALUE_SHAPE_MATCH",
+    "EXPECTED_VALUE_SHAPE_MISSING",
+    "EXPECTED_VALUE_SHAPE_UNREADABLE_UNKNOWN",
+    "REQUESTED_ANSWER_TYPE_ADJACENT_ONLY",
+    "REQUESTED_ANSWER_TYPE_MATCH",
+    "REQUESTED_ANSWER_TYPE_NOT_ENOUGH_SIGNAL",
+    "REQUESTED_ANSWER_TYPE_UNREADABLE_UNKNOWN",
     "ROLE_ANSWER_ADJACENT_CONTEXT",
     "ROLE_OVERCLAIM_RISK",
     "ROLE_QUALIFIER_EXCEPTION_CONTEXT",
     "ROLE_STRICT_ANSWER_SUPPORT",
     "ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL",
+    "TRIAGE_ROLE_ADJACENT_CONTEXTUAL",
+    "TRIAGE_ROLE_ANSWER_BEARING",
+    "TRIAGE_ROLE_DISCOVERY_ONLY",
+    "TRIAGE_ROLE_OVERCLAIM_RISK",
+    "TRIAGE_ROLE_QUALIFIER_EXCEPTION",
+    "TRIAGE_ROLE_REMEDIATION_NEEDED",
+    "TRIAGE_ROLE_UNREADABLE_HIGH_VALUE",
     "WORKBENCH_DPRIME_DOSSIER_SCHEMA_VERSION",
     "WORKBENCH_REDUCTION_PROJECTION_SCHEMA_VERSION",
     "WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED",

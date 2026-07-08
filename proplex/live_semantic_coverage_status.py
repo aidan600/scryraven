@@ -2432,9 +2432,56 @@ def _component_answer_type_binding_ref_from_workbench(
     workbench_dprime_dossier: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     dossier = _safe_mapping(workbench_dprime_dossier)
-    return maybe_current_source_component_answer_type_binding_ref(
+    binding = maybe_current_source_component_answer_type_binding_ref(
         _safe_mapping(dossier.get("component_answer_type_binding"))
     ) or _safe_mapping(dossier.get("component_answer_type_binding_ref"))
+    return _support_assessment_safe_component_answer_type_binding_ref(binding)
+
+
+def _support_assessment_safe_component_answer_type_binding_ref(
+    binding_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(binding_ref)
+    if not safe:
+        return {}
+    return _without_empty(
+        {
+            "schema_version": safe.get("schema_version"),
+            "binding_kind": safe.get("binding_kind"),
+            "binding_id": safe.get("binding_id"),
+            "binding_digest": safe.get("binding_digest"),
+            "component_id": safe.get("component_id"),
+            "component_digest": safe.get("component_digest"),
+            "current_answer_contract_digest": safe.get(
+                "current_answer_contract_digest"
+            ),
+            "component_text": safe.get("component_text"),
+            "source_obligation_id": safe.get("source_obligation_id"),
+            "source_obligation_text": safe.get("source_obligation_text"),
+            "fact_kind": safe.get("fact_kind"),
+            "requested_answer_type": safe.get("requested_answer_type"),
+            "claim_under_test": safe.get("claim_under_test"),
+            "expected_value_shape": safe.get("expected_value_shape"),
+            "expected_value_token_kinds": list(
+                _safe_sequence(safe.get("expected_value_token_kinds"))
+            ),
+            "adjacent_claim_exclusions": list(
+                _safe_sequence(safe.get("adjacent_claim_exclusions"))
+            ),
+            "adjacent_claims_do_not_satisfy_requested_answer_type": (
+                safe.get("adjacent_claims_do_not_satisfy_requested_answer_type")
+                is True
+            ),
+            "lineage_only": safe.get("lineage_only") is True,
+            "binding_is_contract_lineage": (
+                safe.get("binding_is_contract_lineage") is True
+            ),
+            "binding_is_not_evidence": safe.get("binding_is_not_evidence") is True,
+            "binding_is_not_answer_authority": (
+                safe.get("binding_is_not_answer_authority") is True
+            ),
+        }
+    )
 
 
 def _component_ref_with_binding(
@@ -2478,6 +2525,16 @@ def _source_obligation_ref_with_binding(
 
 def _candidate_identity_ref(value: Any) -> dict[str, Any]:
     ref = _safe_mapping(value)
+    dprime_answer_bearing = (
+        ref.get("dprime_review_candidate_answer_bearing") is True
+        if "dprime_review_candidate_answer_bearing" in ref
+        else None
+    )
+    dprime_diagnostic_only = (
+        ref.get("dprime_review_selection_is_diagnostic_only") is True
+        if "dprime_review_selection_is_diagnostic_only" in ref
+        else None
+    )
     return _without_empty(
         {
             "candidate_id": _clean_text(ref.get("candidate_id"), limit=320),
@@ -2511,6 +2568,24 @@ def _candidate_identity_ref(value: Any) -> dict[str, Any]:
                 ref.get("bounded_content_digest") or ref.get("excerpt_digest"),
                 limit=128,
             ),
+            "proposed_candidate_role": _clean_text(
+                ref.get("proposed_candidate_role"),
+                limit=160,
+            ),
+            "requested_answer_type_match_status": _clean_text(
+                ref.get("requested_answer_type_match_status"),
+                limit=160,
+            ),
+            "expected_value_shape_match_status": _clean_text(
+                ref.get("expected_value_shape_match_status"),
+                limit=160,
+            ),
+            "dprime_review_selection_kind": _clean_text(
+                ref.get("dprime_review_selection_kind"),
+                limit=160,
+            ),
+            "dprime_review_candidate_answer_bearing": dprime_answer_bearing,
+            "dprime_review_selection_is_diagnostic_only": dprime_diagnostic_only,
         }
     )
 

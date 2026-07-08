@@ -4047,6 +4047,42 @@ def _current_source_record_workbench_report_section(
             triage.get("dprime_review_candidate_ref")
         )
         or _safe_mapping(dossier.get("dprime_review_candidate_ref")),
+        "candidate_triage_summary_ref": _safe_mapping(
+            triage.get("candidate_triage_summary_ref")
+        )
+        or _safe_mapping(dossier.get("candidate_triage_summary_ref")),
+        "selected_answer_bearing_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                triage.get("selected_answer_bearing_candidate_refs")
+            )
+        ],
+        "adjacent_context_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(triage.get("adjacent_context_candidate_refs"))
+        ],
+        "unreadable_high_value_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                triage.get("unreadable_high_value_candidate_refs")
+            )
+        ],
+        "excluded_scope_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(triage.get("excluded_scope_candidate_refs"))
+        ],
+        "dprime_review_selection_kind": (
+            triage.get("dprime_review_selection_kind")
+            or dossier.get("dprime_review_selection_kind")
+        ),
+        "dprime_review_candidate_answer_bearing": (
+            triage.get("dprime_review_candidate_answer_bearing") is True
+            or dossier.get("dprime_review_candidate_answer_bearing") is True
+        ),
+        "dprime_review_selection_is_diagnostic_only": (
+            triage.get("dprime_review_selection_is_diagnostic_only") is True
+            or dossier.get("dprime_review_selection_is_diagnostic_only") is True
+        ),
         "dprime_candidate_handoff_integrity": {
             "match_status": handoff.get("match_status"),
             "candidate_identity_match": handoff.get("candidate_identity_match"),
@@ -4244,6 +4280,10 @@ def _format_current_source_record_single_fact_review_report(
         f"{workbench_binding.get('expected_value_shape') or 'not present'}",
         "- D-prime candidate handoff: "
         f"{handoff.get('match_status') or 'not reached'}",
+        "- D-prime candidate selection kind: "
+        f"{analyst_workbench.get('dprime_review_selection_kind') or 'not reached'}",
+        "- D-prime candidate answer-bearing: "
+        f"{_bool_text(analyst_workbench.get('dprime_review_candidate_answer_bearing'))}",
         "- Expected Workbench candidate: "
         f"{expected_handoff_candidate.get('candidate_id') or 'not present'} / "
         f"{expected_handoff_candidate.get('title') or 'not present'}",
@@ -4267,6 +4307,8 @@ def _format_current_source_record_single_fact_review_report(
         f"{gap.get('gap_status') or 'not present'} / {gap.get('gap_kind') or 'none'}",
         "- Strict candidates: "
         f"{len(_safe_sequence(analyst_workbench.get('strict_answer_support_candidate_refs')))}",
+        "- Answer-bearing candidates: "
+        f"{len(_safe_sequence(analyst_workbench.get('selected_answer_bearing_candidate_refs')))}",
         "- Contextual candidates: "
         f"{len(_safe_sequence(analyst_workbench.get('contextual_candidate_refs')))}",
         "- Overclaim-risk candidates: "
@@ -8174,6 +8216,42 @@ def _base_packet(
         ),
         "candidate_evidence_triage_packet": triage_packet,
         "candidate_evidence_triage_ref": triage_ref,
+        "candidate_triage_summary_ref": _safe_mapping(
+            triage_packet.get("candidate_triage_summary_ref")
+        ),
+        "selected_answer_bearing_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                triage_packet.get("selected_answer_bearing_candidate_refs")
+            )
+        ],
+        "adjacent_context_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                triage_packet.get("adjacent_context_candidate_refs")
+            )
+        ],
+        "unreadable_high_value_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                triage_packet.get("unreadable_high_value_candidate_refs")
+            )
+        ],
+        "excluded_scope_candidate_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                triage_packet.get("excluded_scope_candidate_refs")
+            )
+        ],
+        "dprime_review_selection_kind": triage_packet.get(
+            "dprime_review_selection_kind"
+        ),
+        "dprime_review_candidate_answer_bearing": (
+            triage_packet.get("dprime_review_candidate_answer_bearing") is True
+        ),
+        "dprime_review_selection_is_diagnostic_only": (
+            triage_packet.get("dprime_review_selection_is_diagnostic_only") is True
+        ),
         "candidate_evidence_triage_packet_created": counts.get(
             "candidate_evidence_triage_packet_created",
             0,
