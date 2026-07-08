@@ -10,6 +10,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from hashlib import sha256
+from inspect import Parameter, signature
 from typing import Any, Callable, Mapping, Sequence
 
 from core.fetch_read_content_reference import FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
@@ -897,7 +898,11 @@ def build_model_assisted_analyst_finding_proposal(
     completed = 0
     if license_obj.is_fake_test:
         try:
-            structured_output = model_assisted_analyst_adapter(input_packet)
+            structured_output = _invoke_fake_model_assisted_analyst_adapter(
+                model_assisted_analyst_adapter,
+                input_packet=input_packet,
+                deterministic_proposal=deterministic,
+            )
         except Exception as exc:  # noqa: BLE001 - fail closed with safe detail.
             raise AnalystFindingProposalError(
                 "Analyst fake model adapter failed closed: "
@@ -941,6 +946,30 @@ def build_model_assisted_analyst_finding_proposal(
         model_calls_completed=completed,
         live_model_call_run=True,
     )
+
+
+def _invoke_fake_model_assisted_analyst_adapter(
+    adapter: Any,
+    *,
+    input_packet: Mapping[str, Any],
+    deterministic_proposal: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Invoke fake adapters, allowing tests to reuse the product scaffold."""
+
+    try:
+        parameters = signature(adapter).parameters
+    except (TypeError, ValueError):
+        return adapter(input_packet)
+    accepts_kwargs = any(
+        parameter.kind == Parameter.VAR_KEYWORD
+        for parameter in parameters.values()
+    )
+    if accepts_kwargs or "deterministic_proposal" in parameters:
+        return adapter(
+            input_packet,
+            deterministic_proposal=deterministic_proposal,
+        )
+    return adapter(input_packet)
 
 
 def build_fake_model_assisted_analyst_finding_proposal(

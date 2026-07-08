@@ -1264,6 +1264,8 @@ def build_generic_single_relation_live_dogfood_run_output(
                 analyst_workbench_bundle,
                 include_gap_proposal=product_single_fact_answer_path_enabled,
             ),
+            model_assisted_analyst_license=model_assisted_analyst_license,
+            model_assisted_analyst_adapter=model_assisted_analyst_adapter,
             **dprime_kwargs,
         )
         semantic_payload = _safe_mapping(semantic_status.payload)
@@ -5640,8 +5642,7 @@ def _dprime_authority_integration_from_gateway(
     source_citation_consumed = (
         answer_path_reached
         or (
-            gateway_ready
-            and dprime_pass_slice_present
+            dprime_pass_slice_present
             and source_obligation_consumed
             and citation_handoff_consumed
         )
@@ -8519,6 +8520,54 @@ def _base_packet(
         "followup_analyst_finding_refresh_completed": (
             dprime_status.get("followup_analyst_finding_refresh_completed") is True
             or semantic.get("followup_analyst_finding_refresh_completed") is True
+        ),
+        "followup_analyst_finding_proposal_ref": _safe_mapping(
+            dprime_status.get("followup_analyst_finding_proposal_ref")
+            or semantic.get("followup_analyst_finding_proposal_ref")
+        ),
+        "first_pass_analyst_finding_proposal_ref": _safe_mapping(
+            dprime_status.get("first_pass_analyst_finding_proposal_ref")
+            or semantic.get("first_pass_analyst_finding_proposal_ref")
+        ),
+        "followup_analyst_finding_digest_differs_from_first_pass": (
+            dprime_status.get(
+                "followup_analyst_finding_digest_differs_from_first_pass"
+            )
+            is True
+            or semantic.get(
+                "followup_analyst_finding_digest_differs_from_first_pass"
+            )
+            is True
+        ),
+        "followup_analyst_finding_selected_candidate_refs_point_to_followup": (
+            dprime_status.get(
+                "followup_analyst_finding_selected_candidate_refs_point_to_followup"
+            )
+            is True
+            or semantic.get(
+                "followup_analyst_finding_selected_candidate_refs_point_to_followup"
+            )
+            is True
+        ),
+        "followup_analyst_finding_bounded_refs_point_to_followup_packet": (
+            dprime_status.get(
+                "followup_analyst_finding_bounded_refs_point_to_followup_packet"
+            )
+            is True
+            or semantic.get(
+                "followup_analyst_finding_bounded_refs_point_to_followup_packet"
+            )
+            is True
+        ),
+        "stale_first_pass_analyst_finding_reused": (
+            dprime_status.get("stale_first_pass_analyst_finding_reused") is True
+            or semantic.get("stale_first_pass_analyst_finding_reused") is True
+        ),
+        "followup_source_support_map_reused_from_first_pass": (
+            dprime_status.get("followup_source_support_map_reused_from_first_pass")
+            is True
+            or semantic.get("followup_source_support_map_reused_from_first_pass")
+            is True
         ),
         "dprime_analyst_finding_product_proof_status": (
             dprime_analyst_validation_ref.get("product_proof_status")

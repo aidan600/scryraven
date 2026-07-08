@@ -271,6 +271,8 @@ def build_live_semantic_coverage_status(
     dprime_source_citation_authority_enabled: bool | None = None,
     dprime_single_lane_answer_path_enabled: bool | None = None,
     workbench_dprime_dossier: Mapping[str, Any] | None = None,
+    model_assisted_analyst_license: Mapping[str, Any] | None = None,
+    model_assisted_analyst_adapter: Any | None = None,
 ) -> LiveSemanticCoverageStatusResult:
     """Consume retained status chain and return CLI-safe semantic coverage status."""
 
@@ -368,7 +370,12 @@ def build_live_semantic_coverage_status(
                     dprime_run_kernel_admission_decision_status=(
                         dprime_run_kernel_admission_decision_status
                     ),
+                    dprime_single_lane_answer_path_enabled=(
+                        dprime_single_lane_answer_path_enabled
+                    ),
                     workbench_dprime_dossier=workbench_dprime_dossier,
+                    model_assisted_analyst_license=model_assisted_analyst_license,
+                    model_assisted_analyst_adapter=model_assisted_analyst_adapter,
                 )
                 return _followup_search_reentry_result(
                     query=query,
@@ -535,7 +542,12 @@ def build_live_semantic_coverage_status(
                 dprime_run_kernel_admission_decision_status=(
                     dprime_run_kernel_admission_decision_status
                 ),
+                dprime_single_lane_answer_path_enabled=(
+                    dprime_single_lane_answer_path_enabled
+                ),
                 workbench_dprime_dossier=workbench_dprime_dossier,
+                model_assisted_analyst_license=model_assisted_analyst_license,
+                model_assisted_analyst_adapter=model_assisted_analyst_adapter,
             )
             return _followup_search_reentry_result(
                 query=query,
@@ -661,7 +673,12 @@ def build_live_semantic_coverage_status(
                 dprime_run_kernel_admission_decision_status=(
                     dprime_run_kernel_admission_decision_status
                 ),
+                dprime_single_lane_answer_path_enabled=(
+                    dprime_single_lane_answer_path_enabled
+                ),
                 workbench_dprime_dossier=workbench_dprime_dossier,
+                model_assisted_analyst_license=model_assisted_analyst_license,
+                model_assisted_analyst_adapter=model_assisted_analyst_adapter,
             )
             return _followup_search_reentry_result(
                 query=query,
@@ -2414,6 +2431,40 @@ def _followup_search_reentry_result(
                 dprime_status.get("followup_analyst_finding_refresh_completed")
                 is True
             ),
+            "followup_analyst_finding_proposal_ref": _safe_mapping(
+                dprime_status.get("followup_analyst_finding_proposal_ref")
+            ),
+            "first_pass_analyst_finding_proposal_ref": _safe_mapping(
+                dprime_status.get("first_pass_analyst_finding_proposal_ref")
+            ),
+            "followup_analyst_finding_digest_differs_from_first_pass": (
+                dprime_status.get(
+                    "followup_analyst_finding_digest_differs_from_first_pass"
+                )
+                is True
+            ),
+            "followup_analyst_finding_selected_candidate_refs_point_to_followup": (
+                dprime_status.get(
+                    "followup_analyst_finding_selected_candidate_refs_point_to_followup"
+                )
+                is True
+            ),
+            "followup_analyst_finding_bounded_refs_point_to_followup_packet": (
+                dprime_status.get(
+                    "followup_analyst_finding_bounded_refs_point_to_followup_packet"
+                )
+                is True
+            ),
+            "stale_first_pass_analyst_finding_reused": (
+                dprime_status.get("stale_first_pass_analyst_finding_reused")
+                is True
+            ),
+            "followup_source_support_map_reused_from_first_pass": (
+                dprime_status.get(
+                    "followup_source_support_map_reused_from_first_pass"
+                )
+                is True
+            ),
             "dprime_followup_search_reentry_ref": dict(followup_result.projection),
             "semantic_support_source": followup_result.semantic_support_source,
             "source_obligation_authority_ref": dict(
@@ -2423,6 +2474,18 @@ def _followup_search_reentry_result(
                 followup_result.citation_eligibility_authority_ref
             ),
             "dprime_answer_path_ref": dict(followup_result.answer_path_ref),
+            "dprime_source_citation_authority_enabled": (
+                dprime_status.get("dprime_source_citation_authority_enabled") is True
+                or followup_result.source_obligation_authority_ref.get("status")
+                == "consumed"
+            ),
+            "dprime_single_lane_answer_path_enabled": (
+                dprime_status.get("dprime_single_lane_answer_path_enabled") is True
+                or followup_result.answer_path_ref.get("status") in {
+                    "consumed",
+                    "blocked",
+                }
+            ),
             "accepted_current_answer_contract_authority_ref": dict(
                 followup_result.contract_authority_ref
             ),
@@ -2482,7 +2545,10 @@ def _run_followup_search_reentry_status(
     dprime_one_shot_provider_boundary: Mapping[str, Any] | None,
     dprime_one_shot_model_review_adapter: Any | None,
     dprime_run_kernel_admission_decision_status: str,
+    dprime_single_lane_answer_path_enabled: bool | None,
     workbench_dprime_dossier: Mapping[str, Any] | None,
+    model_assisted_analyst_license: Mapping[str, Any] | None,
+    model_assisted_analyst_adapter: Any | None,
 ) -> Any:
     followup_plan_ref: Mapping[str, Any] = {}
     if dprime_followup_plan_builder is not None:
@@ -2525,7 +2591,14 @@ def _run_followup_search_reentry_status(
         run_kernel_admission_decision_status=(
             dprime_run_kernel_admission_decision_status
         ),
+        single_lane_answer_path_enabled=(
+            True
+            if dprime_single_lane_answer_path_enabled is None
+            else bool(dprime_single_lane_answer_path_enabled)
+        ),
         workbench_dprime_dossier=workbench_dprime_dossier,
+        model_assisted_analyst_license=model_assisted_analyst_license,
+        model_assisted_analyst_adapter=model_assisted_analyst_adapter,
     )
 
 
