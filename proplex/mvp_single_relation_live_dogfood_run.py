@@ -1218,10 +1218,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             smart_provider=smart_provider,
             smart_model=smart_model,
             dprime_downstream_authority_enabled=False,
-            dprime_source_citation_authority_enabled=False,
-            dprime_single_lane_answer_path_enabled=(
-                product_single_fact_answer_path_enabled
-            ),
+            dprime_source_citation_authority_enabled=True,
+            dprime_single_lane_answer_path_enabled=False,
             dprime_followup_search_reentry_enabled=(
                 product_single_fact_answer_path_enabled
                 and confirm_current_source_followup_reentry
@@ -2017,22 +2015,13 @@ def _validate_consumed_dprime_authority_integration(
     if integration.get("dprime_source_citation_authority_enabled") is not True:
         _blocked_output_hygiene("source/citation stop point was not requested.")
     product_entrypoint = packet.get("entrypoint_kind") == PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND
-    if product_entrypoint:
-        if integration.get("dprime_single_lane_answer_path_enabled") is not True:
-            _blocked_output_hygiene("product entrypoint did not request answer path.")
-        if (
-            integration.get("generic_dogfood_single_lane_answer_path_kept_disabled")
-            is not False
-        ):
-            _blocked_output_hygiene("product entrypoint marked answer path disabled.")
-    else:
-        if integration.get("dprime_single_lane_answer_path_enabled") is not False:
-            _blocked_output_hygiene("single-lane answer path must remain disabled.")
-        if (
-            integration.get("generic_dogfood_single_lane_answer_path_kept_disabled")
-            is not True
-        ):
-            _blocked_output_hygiene("generic dogfood opened the answer path.")
+    if integration.get("dprime_single_lane_answer_path_enabled") is not False:
+        _blocked_output_hygiene("single-lane answer path must remain disabled.")
+    if (
+        integration.get("generic_dogfood_single_lane_answer_path_kept_disabled")
+        is not True
+    ):
+        _blocked_output_hygiene("source/citation adapter opened the answer path.")
     if integration.get("source_obligation_authority_consumed") is not True:
         _blocked_output_hygiene("source-obligation authority was not consumed.")
     if integration.get("citation_source_handoff_authority_consumed") is not True:
@@ -4836,6 +4825,13 @@ def _packet_from_semantic_status(
             _clean_text(answer_path_ref.get("blocker_detail"), limit=900)
             or "Existing D-prime single-lane answer path stopped at a named surface."
         )
+    elif dprime_authority_integration.get("status") == "consumed":
+        decision = BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+        blocker_detail = (
+            _clean_text(dprime_authority_integration.get("blocker_detail"), limit=900)
+            or "Existing D-prime source-obligation and citation-source handoff "
+            "authority were consumed; source/citation display remains closed."
+        )
     elif (
         product_entrypoint
         and packet.get("workbench_gap_reentry_status") == "followup_not_licensed"
@@ -5958,7 +5954,6 @@ def _source_citation_display_boundary_from_authority(
     citation_ref = _safe_mapping(
         integration.get("citation_source_handoff_authority_ref")
     )
-    source_window = _safe_mapping(gateway.get("selected_window_ref"))
     authority_backed = _source_citation_display_authority_backed(
         integration=integration,
         source_ref=source_ref,
@@ -5988,119 +5983,14 @@ def _source_citation_display_boundary_from_authority(
             blocker=blocker,
             detail=detail,
         )
-
-    entries = [
-        _source_citation_display_boundary_entry(
-            record=record,
-            index=index,
-            selected_value_text=gateway.get("selected_current_value_text"),
-            selected_window=source_window,
-            source_obligation_authority_ref=source_ref,
-            citation_handoff_ref=citation_ref,
-        )
-        for index, record in enumerate(
-            _safe_sequence(citation_ref.get("citation_source_records")),
-            start=1,
-        )
-        if isinstance(record, Mapping)
-    ]
-    if not entries:
-        return _source_citation_display_boundary_not_reached(
-            blocker=BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
-            detail=(
-                "D-prime citation-source handoff authority was consumed but "
-                "provided no safe source records for the generic display boundary."
-            ),
-        )
-
-    boundary = {
-        "schema_version": SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION,
-        "status": "created",
-        "blocker_code": BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
-        "blocker_detail": (
-            "Source/citation display boundary was created from consumed D-prime "
-            "source-obligation and citation-source handoff authority. "
-            "Generic dogfood stops next because SufficiencyReadiness, FAP, "
-            "Author, final citation rendering, and product correctness remain "
-            "closed in this phase."
+    return _source_citation_display_boundary_not_reached(
+        blocker=BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
+        detail=(
+            "Existing D-prime source-obligation and citation-source handoff "
+            "authority were consumed; source/citation display remains closed "
+            "for the next product-path checkpoint."
         ),
-        "boundary_owner": (
-            "proplex.mvp_single_relation_live_dogfood_run."
-            "source_citation_display_boundary"
-        ),
-        "runtime_consumer": (
-            "proplex.mvp_single_relation_live_dogfood_run."
-            "build_generic_single_relation_live_dogfood_run_output"
-        ),
-        "ordinary_product_path_consumed": True,
-        "authority_source": (
-            "core.dprime_source_obligation_citation_authority_runtime"
-        ),
-        "source_citation_display_entries": entries,
-        "source_citation_display_entries_created": True,
-        "entry_count": len(entries),
-        "derived_from_dprime_authority": True,
-        "derived_from_gateway_only": False,
-        "gateway_treated_as_authority": False,
-        "source_obligation_authority_consumed": True,
-        "citation_source_handoff_authority_consumed": True,
-        "source_obligation_authority_ref_owner": source_ref.get("owner"),
-        "citation_source_handoff_authority_ref_owner": citation_ref.get("owner"),
-        "source_citation_authority_refs_are_dprime_runtime_refs": True,
-        "source_obligation_authority_ref": _source_obligation_boundary_ref(source_ref),
-        "citation_source_handoff_authority_ref": _citation_handoff_boundary_ref(
-            citation_ref
-        ),
-        "source_readiness_gateway_ref": {
-            "status": gateway.get("status"),
-            "selected_current_value_display_status": gateway.get(
-                "selected_current_value_display_status"
-            ),
-            "selected_source_ref": gateway.get("selected_source_ref"),
-            "selected_window_digest": source_window.get("selected_window_digest"),
-            "selected_window_char_count": source_window.get(
-                "selected_window_char_count"
-            ),
-        },
-        "dprime_source_citation_stoppoint_status": integration.get(
-            "dprime_source_citation_stoppoint_status"
-        ),
-        "dprime_source_citation_stoppoint_blocker": integration.get(
-            "dprime_source_citation_stoppoint_blocker"
-        ),
-        "semantic_status_decision": semantic.get("decision"),
-        "explicit_non_claims": dict(SOURCE_CITATION_DISPLAY_BOUNDARY_NON_CLAIMS),
-        "raw_private_retention_flags": dict(RAW_FALSE_FLAGS),
-        "sufficiency_readiness_created": False,
-        "final_answer_prose_created": False,
-        "final_answer_packet_created": False,
-        "author_answer_created": False,
-        "author_invoked": False,
-        "citation_rendering_invoked": False,
-        "final_citation_rendering_created": False,
-        "product_correctness_claimed": False,
-        "nonclaim_labels": [
-            "display boundary only",
-            "not final answer prose",
-            "not final citation rendering",
-            "not product correctness",
-        ],
-        "next_product_path_checkpoint": SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE,
-    }
-    boundary["boundary_digest"] = _digest_json(
-        {
-            "schema_version": boundary["schema_version"],
-            "authority_source": boundary["authority_source"],
-            "entries": entries,
-            "source_obligation_authority_digest": source_ref.get(
-                "source_obligation_authority_digest"
-            ),
-            "citation_source_handoff_digest": citation_ref.get(
-                "citation_source_handoff_digest"
-            ),
-        }
     )
-    return _json_safe(boundary)
 
 
 def _source_citation_display_boundary_from_answer_path(
@@ -6293,101 +6183,6 @@ def _source_citation_display_authority_backed(
         and source_ref.get("authority_consumed") is True
         and citation_ref.get("citation_source_handoff_consumed") is True
         and citation_ref.get("authority_consumed") is True
-    )
-
-
-def _source_citation_display_boundary_entry(
-    *,
-    record: Mapping[str, Any],
-    index: int,
-    selected_value_text: Any,
-    selected_window: Mapping[str, Any],
-    source_obligation_authority_ref: Mapping[str, Any],
-    citation_handoff_ref: Mapping[str, Any],
-) -> dict[str, Any]:
-    source = _safe_mapping(record)
-    title = _clean_text(source.get("title"), limit=220)
-    domain = _clean_domain(source.get("domain"))
-    url = _clean_text(source.get("url"), limit=700)
-    source_id = _clean_text(source.get("source_id"), limit=320)
-    label = f"D-prime source {index}"
-    display_name = title or domain or source_id or label
-    display_text = (
-        f"{label}: {display_name} ({domain or 'unknown domain'})"
-        if not url
-        else f"{label}: {display_name} - {url}"
-    )
-    return _without_empty(
-        {
-            "label": label,
-            "display_text": display_text,
-            "source_title": title,
-            "source_url": url,
-            "source_domain": domain,
-            "source_id": source_id,
-            "candidate_id": _clean_text(
-                source.get("candidate_id") or source.get("evidence_id"),
-                limit=320,
-            ),
-            "reference_id": _clean_text(
-                source.get("reference_id") or source.get("content_ref_id"),
-                limit=320,
-            ),
-            "reference_digest": _clean_text(
-                source.get("reference_digest") or source.get("source_digest"),
-                limit=128,
-            ),
-            "source_obligation_id": _clean_text(
-                source.get("source_obligation_id"),
-                limit=320,
-            ),
-            "evidence_id": _clean_text(source.get("evidence_id"), limit=320),
-            "content_ref_id": _clean_text(source.get("content_ref_id"), limit=320),
-            "source_digest": _clean_text(source.get("source_digest"), limit=128),
-            "selected_current_value_display_text": _clean_text(
-                selected_value_text,
-                limit=700,
-            ),
-            "selected_window_digest": _clean_text(
-                selected_window.get("selected_window_digest"),
-                limit=128,
-            ),
-            "selected_window_char_count": _bounded_int(
-                selected_window.get("selected_window_char_count")
-            ),
-            "source_obligation_authority_id": _clean_text(
-                source_obligation_authority_ref.get("source_obligation_authority_id"),
-                limit=320,
-            ),
-            "source_obligation_authority_digest": _clean_text(
-                source_obligation_authority_ref.get(
-                    "source_obligation_authority_digest"
-                ),
-                limit=128,
-            ),
-            "citation_source_handoff_id": _clean_text(
-                citation_handoff_ref.get("citation_source_handoff_id"),
-                limit=320,
-            ),
-            "citation_source_handoff_digest": _clean_text(
-                citation_handoff_ref.get("citation_source_handoff_digest"),
-                limit=128,
-            ),
-            "source_citation_handoff_status": _clean_text(
-                citation_handoff_ref.get("citation_source_handoff_status"),
-                limit=80,
-            ),
-            "derived_from_dprime_authority": True,
-            "derived_from_gateway_only": False,
-            "citation_rendering_created": False,
-            "final_answer_prose_created": False,
-            "product_correctness_claimed": False,
-            "caveat_labels": [
-                "display boundary only",
-                "not final citation rendering",
-                "not product correctness",
-            ],
-        }
     )
 
 

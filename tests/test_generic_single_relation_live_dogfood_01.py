@@ -2101,8 +2101,8 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
 
     semantic_payload = result.packet["semantic_status_payload"]
     dprime_status = semantic_payload["dprime_status"]
-    assert semantic_payload["dprime_source_citation_authority_enabled"] is False
-    assert semantic_payload["dprime_single_lane_answer_path_enabled"] is True
+    assert semantic_payload["dprime_source_citation_authority_enabled"] is True
+    assert semantic_payload["dprime_single_lane_answer_path_enabled"] is False
     assert dprime_status["objects_created"]["final_answer_packet"] is False
     assert dprime_status["objects_created"]["author_answer"] is False
     assert dprime_status["objects_created"]["citation_source_display"] is False
@@ -2118,7 +2118,7 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         result.decision,
         dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
     }
-    assert integration["dprime_single_lane_answer_path_enabled"] is True
+    assert integration["dprime_single_lane_answer_path_enabled"] is False
     assert integration["source_obligation_authority_consumed"] is False
     assert integration["citation_source_handoff_authority_consumed"] is False
     assert integration["final_answer_packet_created"] is False
@@ -2363,7 +2363,7 @@ def test_product_single_fact_cli_reports_exact_dprime_answer_path_blocker(
         result.decision,
         dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
     }
-    assert integration["dprime_single_lane_answer_path_enabled"] is True
+    assert integration["dprime_single_lane_answer_path_enabled"] is False
     assert integration["source_obligation_authority_consumed"] is False
     assert integration["citation_source_handoff_authority_consumed"] is False
     assert integration["author_answer_created"] is False
@@ -2773,7 +2773,7 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     semantic_payload = result.packet["semantic_status_payload"]
     dprime_status = semantic_payload["dprime_status"]
     assert semantic_payload["dprime_downstream_authority_enabled"] is False
-    assert semantic_payload["dprime_source_citation_authority_enabled"] is False
+    assert semantic_payload["dprime_source_citation_authority_enabled"] is True
     assert semantic_payload["dprime_single_lane_answer_path_enabled"] is False
     assert dprime_status["objects_created"]["semantic_observation"] is False
     assert dprime_status["objects_created"]["component_coverage"] is False
@@ -2803,7 +2803,7 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert result.packet["source_obligation_authority_consumed"] is False
     assert result.packet["citation_source_handoff_authority_consumed"] is False
     assert integration["dprime_downstream_authority_enabled"] is False
-    assert integration["dprime_source_citation_authority_enabled"] is False
+    assert integration["dprime_source_citation_authority_enabled"] is True
     assert integration["dprime_single_lane_answer_path_enabled"] is False
     assert integration["component_coverage_created"] is False
     assert integration["semantic_observation_created"] is False
@@ -2979,6 +2979,214 @@ def test_ready_gateway_and_dprime_slice_still_block_without_source_citation_auth
     assert result.packet["source_citation_display_entries_created"] is False
     assert result.packet["source_citation_display_derived_from_dprime_authority"] is False
     assert result.packet["source_citation_display_derived_from_gateway_only"] is False
+
+
+def test_consumed_dprime_source_citation_authority_stops_at_display_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan = build_generic_query_relation_plan(N400_QUERY)
+    source_url = "https://www.uscis.gov/forms/filing-fees"
+    source_title = "USCIS Form N-400 Filing Fee"
+    answer_claim = "USCIS lists the current Form N-400 paper filing fee as $760."
+    semantic_kwargs: dict[str, Any] = {}
+
+    def fake_semantic_status(**_kwargs: Any) -> SimpleNamespace:
+        semantic_kwargs.update(_kwargs)
+        return SimpleNamespace(
+            decision="BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED",
+            payload={
+                "dprime_downstream_authority_enabled": False,
+                "dprime_source_citation_authority_enabled": True,
+                "dprime_single_lane_answer_path_enabled": False,
+                "generic_relation_intake_consumed_by_product_status": True,
+                "dprime_relation_intake_ref": {
+                    "status": "consumed",
+                    "component_id": plan["component_id"],
+                    "source_obligation_candidate_ids": [
+                        plan["source_obligation_id"]
+                    ],
+                    "source_title": source_title,
+                    "source_url": source_url,
+                    "source_domain": "www.uscis.gov",
+                    "candidate_id": "candidate:n400",
+                    "candidate_digest": "candidate-digest:n400",
+                },
+                "source_evidence_admission_ref": {
+                    "status": "custody_created",
+                    "candidate_id": "candidate:n400",
+                    "candidate_digest": "candidate-digest:n400",
+                    "reference_id": "reference:n400",
+                    "reference_digest": "reference-digest:n400",
+                },
+                "source_obligation_authority_ref": {
+                    "status": "consumed",
+                    "authority_consumed": True,
+                    "owner": "RunKernel.DPrimeSourceObligationAuthority",
+                    "runtime_surface": (
+                        "core.dprime_source_obligation_citation_authority_runtime"
+                    ),
+                    "source_obligation_authority_id": (
+                        "dprime-source-obligation-authority:n400"
+                    ),
+                    "source_obligation_authority_digest": (
+                        "source-authority-digest:n400"
+                    ),
+                    "source_obligation_status": "satisfied",
+                },
+                "citation_eligibility_authority_ref": {
+                    "status": "consumed",
+                    "authority_consumed": True,
+                    "owner": "RunKernel.DPrimeCitationSourceHandoffAuthority",
+                    "runtime_surface": (
+                        "core.dprime_source_obligation_citation_authority_runtime"
+                    ),
+                    "citation_source_handoff_id": (
+                        "dprime-citation-source-handoff:n400"
+                    ),
+                    "citation_source_handoff_digest": (
+                        "citation-handoff-digest:n400"
+                    ),
+                    "citation_source_handoff_consumed": True,
+                    "citation_source_handoff_status": "consumed",
+                    "citation_rendering_created": False,
+                    "citations_rendered": False,
+                    "citation_source_records": [
+                        {
+                            "source_id": "source:n400",
+                            "candidate_id": "candidate:n400",
+                            "candidate_digest": "candidate-digest:n400",
+                            "reference_id": "reference:n400",
+                            "reference_digest": "reference-digest:n400",
+                            "title": source_title,
+                            "url": source_url,
+                            "domain": "www.uscis.gov",
+                            "source_obligation_id": plan["source_obligation_id"],
+                            "citation_rendering_created": False,
+                        }
+                    ],
+                },
+                "dprime_status": {
+                    "assessment_status": "assessed",
+                    "support_relation": "directly_supports",
+                    "proposal_validation_status": (
+                        "DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED"
+                    ),
+                    "run_kernel_admission_decision_status": "admitted",
+                    "semantic_observation_admission_status": "materialized",
+                    "source_obligation_authority_consumed": True,
+                    "citation_eligibility_or_source_handoff_authority_consumed": (
+                        True
+                    ),
+                    "dprime_source_citation_stoppoint_status": "consumed",
+                    "support_bundle_completed": True,
+                    "objects_created": {
+                        "semantic_observation": True,
+                        "component_coverage": True,
+                        "sufficiency_readiness": False,
+                        "final_answer_packet": False,
+                        "author_answer": False,
+                        "citation_source_display": False,
+                    },
+                    "assessment_material_ref": {
+                        "assessment_id": "assessment:n400",
+                        "assessment_digest": "assessment-digest:n400",
+                        "answer_component_claim": {
+                            "component_id": plan["component_id"],
+                            "claim": answer_claim,
+                        },
+                    },
+                    "semantic_observation_ref": {
+                        "observation_id": "semantic-observation:n400",
+                        "observation_digest": "semantic-digest:n400",
+                    },
+                    "input_packet_ref": {
+                        "selected_window_diagnostic_ref": {
+                            "bounded_content_digest": "window-digest:n400",
+                            "bounded_character_count": 80,
+                            "value_token_observed": True,
+                        },
+                        "evidence_window_ref": {
+                            "bounded_content_digest": "window-digest:n400",
+                            "bounded_character_count": 80,
+                            "window_text_retained": False,
+                            "window_text_printed": False,
+                        },
+                    },
+                },
+            },
+        )
+
+    monkeypatch.setattr(dogfood, "build_live_semantic_coverage_status", fake_semantic_status)
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=N400_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id="source-citation-authority-display-boundary",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        provider_proxy_runner=_recording_proxy_runner(
+            [],
+            [_provider_result(source_title, source_url)],
+        ),
+        fetch_read_runner=_fake_fetch_runner(
+            "USCIS lists the current Form N-400 paper filing fee as $760."
+        ),
+        dprime_model_review_callable=lambda *_args, **_kwargs: {},
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    assert semantic_kwargs["dprime_source_citation_authority_enabled"] is True
+    assert semantic_kwargs["dprime_single_lane_answer_path_enabled"] is False
+    assert result.return_code == 2
+    assert result.decision == (
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    )
+    integration = result.packet["single_relation_dprime_authority_integration"]
+    assert integration["status"] == "consumed"
+    assert integration["dprime_source_citation_authority_enabled"] is True
+    assert integration["dprime_single_lane_answer_path_enabled"] is False
+    assert integration["generic_dogfood_single_lane_answer_path_kept_disabled"] is True
+    assert integration["source_obligation_authority_consumed"] is True
+    assert integration["citation_source_handoff_authority_consumed"] is True
+    assert integration["single_relation_source_obligation_ready"] is True
+    assert integration["single_relation_citation_handoff_ready"] is True
+    assert result.packet["source_obligation_authority_consumed"] is True
+    assert result.packet["citation_source_handoff_authority_consumed"] is True
+    assert result.packet["single_relation_source_obligation_ready"] is True
+    assert result.packet["single_relation_citation_handoff_ready"] is True
+    assert integration["source_obligation_authority_ref_owner"] == (
+        "RunKernel.DPrimeSourceObligationAuthority"
+    )
+    assert integration["citation_source_handoff_authority_ref_owner"] == (
+        "RunKernel.DPrimeCitationSourceHandoffAuthority"
+    )
+    assert integration["source_citation_authority_refs_are_dprime_runtime_refs"] is True
+    assert integration["source_obligation_satisfied"] is False
+    assert integration["citation_eligible"] is False
+    assert integration["final_answer_packet_created"] is False
+    assert integration["author_answer_created"] is False
+    assert integration["citation_source_display_created"] is False
+    assert integration["product_correctness_claimed"] is False
+    boundary = result.packet["source_citation_display_boundary"]
+    assert boundary["status"] == "not_reached"
+    assert boundary["blocker_code"] == (
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    )
+    assert boundary["source_citation_display_entries"] == []
+    assert boundary["source_citation_display_entries_created"] is False
+    assert boundary["derived_from_gateway_only"] is False
+    assert result.packet["source_citation_display_entries"] == []
+    assert result.packet["source_citation_display_entries_created"] is False
+    assert result.packet["source_display_entries"] == []
+    assert result.packet["citation_source_display_created"] is False
+    assert result.packet["citation_rendering_invoked"] is False
+    assert result.packet["final_citation_rendering_created"] is False
+    assert result.packet["final_answer_packet_created"] is False
+    assert result.packet["author_prose_created"] is False
+    assert result.packet["author_answer_created"] is False
+    assert result.packet["product_correctness_claimed"] is False
 
 
 def test_dprime_pass_without_stable_selected_value_fails_closed_at_gateway(
@@ -3482,7 +3690,7 @@ def test_static_guards_do_not_open_closed_runtime_surfaces() -> None:
     assert "authorize_single_relation_source_obligation_recovery" in module_text
     assert "run_kernel.reduce(observation)" in module_text
     assert "dprime_downstream_authority_enabled=False" in module_text
-    assert "dprime_source_citation_authority_enabled=False" in module_text
+    assert "dprime_source_citation_authority_enabled=True" in module_text
     assert "product_single_fact_answer_path_enabled" in module_text
     assert "PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND" in module_text
     assert "DOGFOOD_ENTRYPOINT_KIND" in module_text

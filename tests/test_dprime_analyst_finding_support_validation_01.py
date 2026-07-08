@@ -46,6 +46,7 @@ from core.dprime_analyst_finding_support_validation import (
 )
 from core.dprime_evidence_support_bundle_runtime import (
     BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED,
+    BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED,
 )
 from proplex.live_semantic_coverage_status import (
     BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
@@ -219,6 +220,78 @@ def test_product_grade_supported_analyst_finding_reaches_runkernel_authority_sto
     assert result.payload["source_obligation_satisfied"] is False
     assert result.payload["citation_eligibility_created"] is False
     assert result.payload["sufficiency_readiness_created"] is False
+    assert result.payload["final_answer_packet_created"] is False
+    assert result.payload["author_output_created"] is False
+    assert result.payload["source_display_opened"] is False
+    assert result.payload["product_correctness_claimed"] is False
+
+
+def test_product_grade_supported_analyst_finding_consumes_source_citation_authority(
+    tmp_path: Path,
+) -> None:
+    bundle = _answer_bearing_bundle()
+    finding = _product_grade_model_assisted_finding(bundle)
+    repo_root, _candidate = _passport_retained_repo(
+        tmp_path,
+        bounded_text="The current standard paper small claims filing fee is 54 dollars.",
+        title="Official Current Standard Filing Fee",
+        url="https://example-county.gov/courts/current-filing-fee",
+        domain="example-county.gov",
+        candidate_id="direct-candidate-2",
+        candidate_digest="direct-digest-2",
+        component_id=SMALL_CLAIMS_COMPONENT_ID,
+        source_obligation_id=SMALL_CLAIMS_OBLIGATION_ID,
+        snippet="Official current standard small claims filing fee.",
+    )
+
+    result = _run_product_status_for_analyst_finding(
+        repo_root=repo_root,
+        finding=finding,
+        bundle=bundle,
+        assessment_payload=_small_claims_assessment_payload(),
+        dprime_source_citation_authority_enabled=True,
+    )
+
+    assert result.decision == BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
+    dprime = result.payload["dprime_status"]
+    assert dprime["dprime_analyst_finding_validation_satisfied"] is True
+    assert dprime["runkernel_analyst_finding_admission_satisfied"] is True
+    assert dprime["objects_created"]["semantic_observation"] is True
+    assert dprime["objects_created"]["component_coverage"] is True
+    assert dprime["support_bundle_completed"] is True
+    assert dprime["dprime_source_citation_stoppoint_status"] == "consumed"
+    assert dprime["source_obligation_authority_consumed"] is True
+    assert (
+        dprime["citation_eligibility_or_source_handoff_authority_consumed"]
+        is True
+    )
+    source_ref = result.payload["source_obligation_authority_ref"]
+    citation_ref = result.payload["citation_eligibility_authority_ref"]
+    assert source_ref["owner"] == "RunKernel.DPrimeSourceObligationAuthority"
+    assert citation_ref["owner"] == "RunKernel.DPrimeCitationSourceHandoffAuthority"
+    assert source_ref["runtime_surface"] == (
+        "core.dprime_source_obligation_citation_authority_runtime"
+    )
+    assert citation_ref["runtime_surface"] == (
+        "core.dprime_source_obligation_citation_authority_runtime"
+    )
+    assert source_ref["authority_consumed"] is True
+    assert source_ref["source_obligation_status"] == "satisfied"
+    assert citation_ref["authority_consumed"] is True
+    assert citation_ref["citation_source_handoff_consumed"] is True
+    assert citation_ref["citation_rendering_created"] is False
+    assert citation_ref["citations_rendered"] is False
+    assert dprime["objects_created"]["sufficiency_readiness"] is False
+    assert dprime["objects_created"]["final_answer_packet"] is False
+    assert dprime["objects_created"]["author_answer"] is False
+    assert dprime["objects_created"]["citation_source_display"] is False
+    assert dprime["sufficiency_readiness_created"] is False
+    assert dprime["final_answer_packet_created"] is False
+    assert dprime["author_output_created"] is False
+    assert dprime["source_display_opened"] is False
+    assert dprime["product_correctness_claimed"] is False
+    assert result.payload["dprime_answer_path_ref"]["status"] == "not reached"
+    assert result.payload["citation_eligibility_created"] is False
     assert result.payload["final_answer_packet_created"] is False
     assert result.payload["author_output_created"] is False
     assert result.payload["source_display_opened"] is False
@@ -513,6 +586,7 @@ def _run_product_status_for_analyst_finding(
     finding: Mapping[str, Any],
     bundle: Mapping[str, Any],
     assessment_payload: dict[str, Any],
+    dprime_source_citation_authority_enabled: bool = False,
 ) -> Any:
     def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
         return assessment_payload
@@ -522,7 +596,9 @@ def _run_product_status_for_analyst_finding(
         repo_root=repo_root,
         dprime_model_review_license=_license(),
         dprime_model_review_callable=fake_review,
-        dprime_source_citation_authority_enabled=False,
+        dprime_source_citation_authority_enabled=(
+            dprime_source_citation_authority_enabled
+        ),
         dprime_single_lane_answer_path_enabled=False,
         workbench_dprime_dossier=_dossier_with_finding(bundle, finding),
     )
