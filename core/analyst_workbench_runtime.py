@@ -17,7 +17,7 @@ from core.current_source_analyst_finding_proposal import (
     ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION,
     AnalystFindingProposalError,
     analyst_finding_proposal_ref,
-    build_deterministic_analyst_finding_proposal,
+    build_model_assisted_analyst_finding_proposal,
     validate_analyst_finding_proposal,
 )
 from core.current_source_component_answer_type_binding import (
@@ -180,6 +180,8 @@ def build_current_source_record_analyst_workbench(
     provider_results: Sequence[Mapping[str, Any]],
     fetch_read_content_packet: Mapping[str, Any],
     entrypoint_kind: str,
+    model_assisted_analyst_license: Mapping[str, Any] | None = None,
+    model_assisted_analyst_adapter: Any | None = None,
 ) -> dict[str, Any]:
     """Build the sanitized proposal-only workbench bundle."""
 
@@ -238,6 +240,8 @@ def build_current_source_record_analyst_workbench(
         triage_packet=triage_packet,
         analysis_gap_search_proposal=gap_proposal,
         fetch_read_content_packet=fetch_read_content_packet,
+        model_assisted_analyst_license=model_assisted_analyst_license,
+        model_assisted_analyst_adapter=model_assisted_analyst_adapter,
     )
     workbench_packet = _analyst_workbench_packet(
         triage_packet=triage_packet,
@@ -372,6 +376,29 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
             ],
             "scrutineer_challenge_seed_ref": _safe_mapping(
                 dossier.get("scrutineer_challenge_seed_ref")
+            ),
+            "finding_generation_mode": dossier.get("finding_generation_mode"),
+            "model_assisted_analysis_run": (
+                dossier.get("model_assisted_analysis_run") is True
+            ),
+            "model_assisted_analysis_not_run_reason": dossier.get(
+                "model_assisted_analysis_not_run_reason"
+            ),
+            "model_adapter_kind": dossier.get("model_adapter_kind"),
+            "model_role": dossier.get("model_role"),
+            "role_surface": dossier.get("role_surface"),
+            "model_calls_attempted": _bounded_int(
+                dossier.get("model_calls_attempted")
+            ),
+            "model_calls_completed": _bounded_int(
+                dossier.get("model_calls_completed")
+            ),
+            "live_model_call_run": dossier.get("live_model_call_run") is True,
+            "safe_model_input_packet_ref": _safe_mapping(
+                dossier.get("safe_model_input_packet_ref")
+            ),
+            "model_output_validation_ref": _safe_mapping(
+                dossier.get("model_output_validation_ref")
             ),
             "component_answer_type_binding_ref": (
                 maybe_current_source_component_answer_type_binding_ref(
@@ -1329,12 +1356,16 @@ def _analyst_finding_proposals(
     triage_packet: Mapping[str, Any],
     analysis_gap_search_proposal: Mapping[str, Any],
     fetch_read_content_packet: Mapping[str, Any],
+    model_assisted_analyst_license: Mapping[str, Any] | None,
+    model_assisted_analyst_adapter: Any | None,
 ) -> list[dict[str, Any]]:
     try:
-        finding = build_deterministic_analyst_finding_proposal(
+        finding = build_model_assisted_analyst_finding_proposal(
             triage_packet=triage_packet,
             analysis_gap_search_proposal=analysis_gap_search_proposal,
             fetch_read_content_packet=fetch_read_content_packet,
+            model_assisted_analyst_license=model_assisted_analyst_license,
+            model_assisted_analyst_adapter=model_assisted_analyst_adapter,
         )
     except AnalystFindingProposalError as exc:
         raise AnalystWorkbenchError(
@@ -1398,6 +1429,32 @@ def _analyst_finding_dprime_refs(
             ],
             "scrutineer_challenge_seed_ref": _safe_mapping(
                 finding.get("scrutineer_challenge_seed_ref")
+            ),
+            "finding_generation_mode": finding.get("finding_generation_mode"),
+            "model_assisted_analysis_run": (
+                finding.get("model_assisted_analysis_run") is True
+            ),
+            "model_assisted_analysis_not_run_reason": finding.get(
+                "model_assisted_analysis_not_run_reason"
+            ),
+            "model_adapter_kind": finding.get("model_adapter_kind"),
+            "model_role": finding.get("model_role"),
+            "role_surface": finding.get("role_surface"),
+            "model_calls_attempted": _bounded_int(
+                finding.get("model_calls_attempted")
+            ),
+            "model_calls_completed": _bounded_int(
+                finding.get("model_calls_completed")
+            ),
+            "live_model_call_run": finding.get("live_model_call_run") is True,
+            "safe_model_input_packet_ref": _safe_mapping(
+                finding.get("safe_model_input_packet_ref")
+            ),
+            "model_output_validation_ref": _safe_mapping(
+                finding.get("model_output_validation_ref")
+            ),
+            "model_route_diagnostics": _safe_mapping(
+                finding.get("model_route_diagnostics")
             ),
             "dprime_handoff_refs": handoff,
         }
@@ -1579,6 +1636,36 @@ def _analyst_workbench_packet(
             ],
             "scrutineer_challenge_seed_ref": _safe_mapping(
                 analyst_finding_refs.get("scrutineer_challenge_seed_ref")
+            ),
+            "finding_generation_mode": analyst_finding_refs.get(
+                "finding_generation_mode"
+            ),
+            "model_assisted_analysis_run": (
+                analyst_finding_refs.get("model_assisted_analysis_run") is True
+            ),
+            "model_assisted_analysis_not_run_reason": analyst_finding_refs.get(
+                "model_assisted_analysis_not_run_reason"
+            ),
+            "model_adapter_kind": analyst_finding_refs.get("model_adapter_kind"),
+            "model_role": analyst_finding_refs.get("model_role"),
+            "role_surface": analyst_finding_refs.get("role_surface"),
+            "model_calls_attempted": _bounded_int(
+                analyst_finding_refs.get("model_calls_attempted")
+            ),
+            "model_calls_completed": _bounded_int(
+                analyst_finding_refs.get("model_calls_completed")
+            ),
+            "live_model_call_run": (
+                analyst_finding_refs.get("live_model_call_run") is True
+            ),
+            "safe_model_input_packet_ref": _safe_mapping(
+                analyst_finding_refs.get("safe_model_input_packet_ref")
+            ),
+            "model_output_validation_ref": _safe_mapping(
+                analyst_finding_refs.get("model_output_validation_ref")
+            ),
+            "model_route_diagnostics": _safe_mapping(
+                analyst_finding_refs.get("model_route_diagnostics")
             ),
             "specialist_lane_placeholder": _lane_placeholder("specialist"),
             "economist_lane_placeholder": _lane_placeholder("economist"),
@@ -1789,6 +1876,36 @@ def _workbench_dprime_dossier(
             ],
             "scrutineer_challenge_seed_ref": _safe_mapping(
                 analyst_finding_refs.get("scrutineer_challenge_seed_ref")
+            ),
+            "finding_generation_mode": analyst_finding_refs.get(
+                "finding_generation_mode"
+            ),
+            "model_assisted_analysis_run": (
+                analyst_finding_refs.get("model_assisted_analysis_run") is True
+            ),
+            "model_assisted_analysis_not_run_reason": analyst_finding_refs.get(
+                "model_assisted_analysis_not_run_reason"
+            ),
+            "model_adapter_kind": analyst_finding_refs.get("model_adapter_kind"),
+            "model_role": analyst_finding_refs.get("model_role"),
+            "role_surface": analyst_finding_refs.get("role_surface"),
+            "model_calls_attempted": _bounded_int(
+                analyst_finding_refs.get("model_calls_attempted")
+            ),
+            "model_calls_completed": _bounded_int(
+                analyst_finding_refs.get("model_calls_completed")
+            ),
+            "live_model_call_run": (
+                analyst_finding_refs.get("live_model_call_run") is True
+            ),
+            "safe_model_input_packet_ref": _safe_mapping(
+                analyst_finding_refs.get("safe_model_input_packet_ref")
+            ),
+            "model_output_validation_ref": _safe_mapping(
+                analyst_finding_refs.get("model_output_validation_ref")
+            ),
+            "model_route_diagnostics": _safe_mapping(
+                analyst_finding_refs.get("model_route_diagnostics")
             ),
             "analyst_finding_dprime_handoff_refs": _safe_mapping(
                 analyst_finding_refs.get("dprime_handoff_refs")

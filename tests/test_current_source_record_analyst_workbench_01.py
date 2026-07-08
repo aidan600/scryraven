@@ -215,10 +215,20 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     assert report_json["analyst_workbench"][
         "component_answer_type_binding_ref"
     ]["binding_digest"] == binding_ref["binding_digest"]
+    assert report_json["analyst_workbench"]["model_assisted_analysis_run"] is False
+    assert report_json["analyst_workbench"]["model_role"] == "smart"
+    assert report_json["analyst_workbench"]["role_surface"] == (
+        "analyst_finding_proposal"
+    )
+    assert report_json["analyst_workbench"]["safe_model_input_packet_ref"] == {}
+    assert report_json["analyst_workbench"]["model_output_validation_ref"] == {}
     assert "## Analyst Workbench" in report_md
     assert "Live validation: not run" not in report_md
     assert "RunKernel reduced" not in report_md
     assert "Workbench reduction projection" in report_md
+    assert "- Model-assisted Analyst run: false" in report_md
+    assert "- Analyst model role/surface: smart / analyst_finding_proposal" in report_md
+    assert "- Analyst safe model input packet: not present" in report_md
     assert "- Requested answer type: fee_amount_current_standard_value" in report_md
     assert "- Expected value shape: currency_amount" in report_md
     assert "- RunKernel reduction pending: true" in report_md
