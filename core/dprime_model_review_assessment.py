@@ -1473,7 +1473,7 @@ def _support_assessment_safe_workbench_dossier_ref(
     safe = _safe_mapping(dossier_ref)
     if not safe:
         return {}
-    out = dict(safe)
+    out = _strip_support_assessment_forbidden_keys(safe)
     binding = _support_assessment_safe_component_answer_type_binding_ref(
         _safe_mapping(out.get("component_answer_type_binding_ref"))
     )
@@ -1482,6 +1482,52 @@ def _support_assessment_safe_workbench_dossier_ref(
     else:
         out.pop("component_answer_type_binding_ref", None)
     return _without_empty(out)
+
+
+_SUPPORT_ASSESSMENT_REF_OMIT_KEYS = frozenset(
+    {
+        "admitted_support",
+        "analysis_gap_search_proposal",
+        "answer",
+        "answer_text",
+        "author",
+        "author_input",
+        "author_prose",
+        "citation_eligibility",
+        "component_coverage",
+        "final_answer",
+        "final_answer_packet",
+        "product_correctness",
+        "run_kernel_admission",
+        "run_kernel_admission_request",
+        "run_kernel_decision",
+        "run_kernel_support_admission_request",
+        "semantic_observation",
+        "source_obligation_satisfaction",
+        "source_obligation_satisfied",
+        "sufficiency_readiness",
+        "validated_support_proposal",
+    }
+)
+
+
+def _strip_support_assessment_forbidden_keys(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        out: dict[str, Any] = {}
+        for key, item in value.items():
+            if _normalize_key(key) in _SUPPORT_ASSESSMENT_REF_OMIT_KEYS:
+                continue
+            out[str(key)] = _strip_support_assessment_forbidden_keys(item)
+        return _without_empty(out)
+    if isinstance(value, list | tuple):
+        return [
+            item
+            for item in (
+                _strip_support_assessment_forbidden_keys(raw) for raw in value
+            )
+            if item not in (None, "", [], {})
+        ]
+    return value
 
 
 def _source_obligation_ref(source_obligation_ref: Mapping[str, Any]) -> dict[str, Any]:
@@ -1705,6 +1751,18 @@ def _workbench_dprime_dossier_packet(
             "dprime_review_candidate_ref": _safe_mapping(
                 dossier.get("dprime_review_candidate_ref")
             ),
+            "dprime_review_selection_kind": dossier.get(
+                "dprime_review_selection_kind"
+            ),
+            "dprime_review_candidate_answer_bearing": (
+                dossier.get("dprime_review_candidate_answer_bearing") is True
+            ),
+            "dprime_review_selection_is_diagnostic_only": (
+                dossier.get("dprime_review_selection_is_diagnostic_only") is True
+            ),
+            "candidate_triage_summary_ref": _safe_mapping(
+                dossier.get("candidate_triage_summary_ref")
+            ),
             "component_answer_type_binding": _safe_mapping(
                 dossier.get("component_answer_type_binding")
             ),
@@ -1720,15 +1778,35 @@ def _workbench_dprime_dossier_packet(
                     dossier.get("strict_answer_support_candidate_refs")
                 )
             ],
+            "selected_answer_bearing_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("selected_answer_bearing_candidate_refs")
+                )
+            ],
             "contextual_candidate_refs": [
                 _safe_mapping(item)
                 for item in _safe_sequence(dossier.get("contextual_candidate_refs"))
+            ],
+            "adjacent_context_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("adjacent_context_candidate_refs"))
             ],
             "overclaim_risk_candidate_refs": [
                 _safe_mapping(item)
                 for item in _safe_sequence(
                     dossier.get("overclaim_risk_candidate_refs")
                 )
+            ],
+            "unreadable_high_value_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(
+                    dossier.get("unreadable_high_value_candidate_refs")
+                )
+            ],
+            "excluded_scope_candidate_refs": [
+                _safe_mapping(item)
+                for item in _safe_sequence(dossier.get("excluded_scope_candidate_refs"))
             ],
             "role_proposal_refs": [
                 _safe_mapping(item)

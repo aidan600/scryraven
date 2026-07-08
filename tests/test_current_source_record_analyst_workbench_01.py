@@ -33,12 +33,21 @@ import proplex.live_semantic_coverage_status as semantic_status_runtime
 import proplex.mvp_single_relation_live_dogfood_run as dogfood
 from core import runkernel_followup_search_reentry_ordinary_search_runtime as followup_runtime
 from core.analyst_workbench_runtime import (
+    EXPECTED_VALUE_SHAPE_MATCH,
+    EXPECTED_VALUE_SHAPE_MISSING,
+    REQUESTED_ANSWER_TYPE_ADJACENT_ONLY,
+    REQUESTED_ANSWER_TYPE_MATCH,
     ROLE_ANSWER_ADJACENT_CONTEXT,
     ROLE_OVERCLAIM_RISK,
     ROLE_QUALIFIER_EXCEPTION_CONTEXT,
     ROLE_STRICT_ANSWER_SUPPORT,
     ROLE_UNREADABLE_HIGH_VALUE_OFFICIAL,
+    TRIAGE_ROLE_ANSWER_BEARING,
+    TRIAGE_ROLE_OVERCLAIM_RISK,
+    TRIAGE_ROLE_QUALIFIER_EXCEPTION,
+    TRIAGE_ROLE_UNREADABLE_HIGH_VALUE,
     WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED,
+    build_current_source_record_analyst_workbench,
 )
 from core.dprime_single_lane_answer_path_runtime import (
     DPrimeSingleLaneAnswerPathError,
@@ -339,6 +348,181 @@ def test_mixed_fee_schedule_keeps_strict_support_and_context_roles(
         binding_ref["binding_digest"]
     )
     _assert_workbench_non_authority(packet)
+
+
+def test_fee_candidate_triage_uses_binding_to_separate_answer_adjacent_and_unreadable() -> None:
+    bundle = _direct_workbench_bundle(
+        SMALL_CLAIMS_QUERY,
+        [
+            _direct_provider_result(
+                "Official Reduced Fee And Waiver Context",
+                "https://example-county.gov/courts/reduced-fee-waiver",
+                (
+                    "Applicants requesting a fee waiver must file on paper. "
+                    "Reduced fee eligibility depends on household income."
+                ),
+                rank=1,
+            ),
+            _direct_provider_result(
+                "Official Current Standard Filing Fee",
+                "https://example-county.gov/courts/current-filing-fee",
+                "The current standard paper small claims filing fee is $54.",
+                rank=2,
+            ),
+            _direct_provider_result(
+                "Official Fee Schedule PDF",
+                "https://example-county.gov/courts/fee-schedule.pdf",
+                None,
+                rank=3,
+                official_artifact=True,
+                unreadable=True,
+            ),
+        ],
+    )
+
+    triage = bundle["candidate_evidence_triage_packet"]
+    records = _triage_records_by_title(triage)
+    adjacent = records["Official Reduced Fee And Waiver Context"]
+    answer = records["Official Current Standard Filing Fee"]
+    unreadable = records["Official Fee Schedule PDF"]
+
+    assert answer["proposed_candidate_role"] == TRIAGE_ROLE_ANSWER_BEARING
+    assert answer["requested_answer_type_match_status"] == REQUESTED_ANSWER_TYPE_MATCH
+    assert answer["expected_value_shape_match_status"] == EXPECTED_VALUE_SHAPE_MATCH
+    assert answer["selected_for_analyst_finding_proposal"] is True
+    assert answer["candidate_id"] in _candidate_ids(
+        triage["selected_answer_bearing_candidate_refs"]
+    )
+
+    assert adjacent["proposed_candidate_role"] == TRIAGE_ROLE_QUALIFIER_EXCEPTION
+    assert adjacent["requested_answer_type_match_status"] == (
+        REQUESTED_ANSWER_TYPE_ADJACENT_ONLY
+    )
+    assert adjacent["expected_value_shape_match_status"] == (
+        EXPECTED_VALUE_SHAPE_MISSING
+    )
+    assert "waiver_eligibility" in adjacent["excluded_adjacent_scope_hits"]
+    assert adjacent["candidate_id"] not in _candidate_ids(
+        triage["selected_answer_bearing_candidate_refs"]
+    )
+
+    assert unreadable["proposed_candidate_role"] == TRIAGE_ROLE_UNREADABLE_HIGH_VALUE
+    assert unreadable["readable_bounded_content_posture"] == (
+        "bounded_readable_content_unavailable"
+    )
+    assert unreadable["candidate_id"] in _candidate_ids(
+        triage["unreadable_high_value_candidate_refs"]
+    )
+
+    dprime_ref = triage["dprime_review_candidate_ref"]
+    assert dprime_ref["candidate_id"] == answer["candidate_id"]
+    assert dprime_ref["dprime_review_candidate_answer_bearing"] is True
+    _assert_direct_workbench_non_authority(bundle)
+
+
+def test_adjacent_only_triage_does_not_promote_context_to_answer_bearing() -> None:
+    bundle = _direct_workbench_bundle(
+        SMALL_CLAIMS_QUERY,
+        [
+            _direct_provider_result(
+                "Official Online Discount Context",
+                "https://example-county.gov/courts/online-discount",
+                (
+                    "Online filing discount. Eligible filers may pay a reduced "
+                    "online small claims fee of $20."
+                ),
+                rank=1,
+                selected=True,
+            ),
+            _direct_provider_result(
+                "Official Process Instructions",
+                "https://example-county.gov/courts/how-to-file",
+                "To file on paper, applicants must submit the form by mail.",
+                rank=2,
+            ),
+            _direct_provider_result(
+                "Official Fee Schedule PDF",
+                "https://example-county.gov/courts/fee-schedule.pdf",
+                None,
+                rank=3,
+                official_artifact=True,
+                unreadable=True,
+            ),
+        ],
+    )
+
+    triage = bundle["candidate_evidence_triage_packet"]
+    gap = bundle["analysis_gap_search_proposal"]
+    dprime_ref = triage["dprime_review_candidate_ref"]
+    records = _triage_records_by_title(triage)
+
+    assert triage["selected_answer_bearing_candidate_refs"] == []
+    assert triage["strict_answer_support_candidate_refs"] == []
+    assert gap["gap_status"] == "proposed"
+    assert gap["gap_kind"] == "unreadable_high_value_candidate"
+    assert dprime_ref["dprime_review_candidate_answer_bearing"] is False
+    assert dprime_ref["dprime_review_selection_is_diagnostic_only"] is True
+    assert dprime_ref["proposed_candidate_role"] == TRIAGE_ROLE_OVERCLAIM_RISK
+    assert records["Official Online Discount Context"]["candidate_id"] in _candidate_ids(
+        triage["excluded_scope_candidate_refs"]
+    )
+    assert records["Official Fee Schedule PDF"]["candidate_id"] in _candidate_ids(
+        triage["unreadable_high_value_candidate_refs"]
+    )
+    _assert_direct_workbench_non_authority(bundle)
+
+
+def test_component_answer_type_binding_drives_same_text_role_change() -> None:
+    candidate_text = "Applicants must file on paper for this current filing."
+    fee_bundle = _direct_workbench_bundle(
+        SMALL_CLAIMS_QUERY,
+        [
+            _direct_provider_result(
+                "Official Filing Requirement Text",
+                SMALL_CLAIMS_URL,
+                candidate_text,
+                rank=1,
+                selected=True,
+            ),
+        ],
+    )
+    requirement_bundle = _direct_workbench_bundle(
+        "What is the current filing requirement for Example County small claims?",
+        [
+            _direct_provider_result(
+                "Official Filing Requirement Text",
+                SMALL_CLAIMS_URL,
+                candidate_text,
+                rank=1,
+                selected=True,
+            ),
+        ],
+    )
+
+    fee_record = _triage_records_by_title(
+        fee_bundle["candidate_evidence_triage_packet"]
+    )["Official Filing Requirement Text"]
+    requirement_record = _triage_records_by_title(
+        requirement_bundle["candidate_evidence_triage_packet"]
+    )["Official Filing Requirement Text"]
+
+    assert fee_record["requested_answer_type_match_status"] == (
+        REQUESTED_ANSWER_TYPE_ADJACENT_ONLY
+    )
+    assert fee_record["proposed_candidate_role"] == TRIAGE_ROLE_QUALIFIER_EXCEPTION
+    assert fee_bundle["candidate_evidence_triage_packet"][
+        "selected_answer_bearing_candidate_refs"
+    ] == []
+
+    assert requirement_record["requested_answer_type_match_status"] == (
+        REQUESTED_ANSWER_TYPE_MATCH
+    )
+    assert requirement_record["proposed_candidate_role"] == TRIAGE_ROLE_ANSWER_BEARING
+    assert requirement_bundle["candidate_evidence_triage_packet"][
+        "selected_answer_bearing_candidate_refs"
+    ]
+    _assert_direct_workbench_non_authority(fee_bundle)
+    _assert_direct_workbench_non_authority(requirement_bundle)
 
 
 def test_mixed_deadline_schedule_keeps_strict_support_and_context_roles(
@@ -2024,6 +2208,147 @@ def test_licensed_followup_routing_surfaces_have_no_domain_specific_fee_branches
         text = path.read_text(encoding="utf-8")
         for literal in forbidden_literals:
             assert literal not in text, f"{literal} leaked into {path}"
+
+
+def _direct_workbench_bundle(
+    query: str,
+    provider_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    plan = build_generic_query_relation_plan(query)
+    diagnostics = [
+        _direct_candidate_diagnostic(result, index=index)
+        for index, result in enumerate(provider_results, 1)
+    ]
+    return build_current_source_record_analyst_workbench(
+        relation_plan=plan,
+        acquisition_plan={
+            "acquisition_query": query,
+            "expected_value_token_kinds": plan.get("expected_value_token_kinds", []),
+        },
+        candidate_diagnostics=diagnostics,
+        answer_bearing_candidate_window_diagnostics=diagnostics,
+        provider_results=provider_results,
+        fetch_read_content_packet={"packet_digest": "direct-fixture-fetch-packet"},
+        entrypoint_kind="offline_direct_workbench_fixture",
+    )
+
+
+def _direct_provider_result(
+    title: str,
+    url: str,
+    extracted_text: str | None,
+    *,
+    rank: int,
+    selected: bool = False,
+    official_artifact: bool = False,
+    unreadable: bool = False,
+) -> dict[str, Any]:
+    result = (
+        _provider_extracted_result(title, url, extracted_text, rank=rank)
+        if extracted_text is not None
+        else _provider_result(title, url, rank=rank)
+    )
+    result["_direct_selected"] = selected
+    result["_direct_official_artifact"] = official_artifact
+    result["_direct_unreadable"] = unreadable
+    return result
+
+
+def _direct_candidate_diagnostic(
+    provider_result: Mapping[str, Any],
+    *,
+    index: int,
+) -> dict[str, Any]:
+    text = str(provider_result.get("provider_extracted_text") or "")
+    has_currency = "$" in text
+    official_artifact = provider_result.get("_direct_official_artifact") is True
+    unreadable = provider_result.get("_direct_unreadable") is True
+    selected = provider_result.get("_direct_selected") is True
+    candidate_id = f"direct-candidate-{index}"
+    read_support_status = None
+    if official_artifact and unreadable:
+        read_support_status = dogfood.OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_UNREADABLE
+    elif official_artifact:
+        read_support_status = dogfood.OFFICIAL_ARTIFACT_READ_SUPPORT_STATUS_READABLE
+    return {
+        "candidate_id": candidate_id,
+        "candidate_digest": f"direct-digest-{index}",
+        "title": provider_result["title"],
+        "domain": urlparse(str(provider_result["url"])).netloc.lower(),
+        "url": provider_result["url"],
+        "provider_rank": index,
+        "result_rank": index,
+        "fetch_read_priority_rank": index,
+        "candidate_selection_features": {
+            "source_of_record_domain_signal": True,
+            "official_domain_signal": True,
+            "public_agency_domain_signal": True,
+            "derivative_domain_signal": False,
+        },
+        "official_or_source_record_looking_http_candidate": True,
+        "source_survival_candidate_signal": "source_of_record_looking",
+        "official_pdf_or_table_artifact_candidate": official_artifact,
+        "official_artifact_type": "pdf_artifact" if official_artifact else None,
+        "official_artifact_read_support_status": read_support_status,
+        "official_artifact_read_support_source": (
+            dogfood.OFFICIAL_ARTIFACT_READ_SUPPORT_SOURCE_FETCH_RUNNER
+            if official_artifact
+            else None
+        ),
+        "official_artifact_read_support_raw_content_retained": False,
+        "provider_extracted_text_obtained": bool(text),
+        "readable_text_obtained": bool(text),
+        "answer_bearing_candidate_window_selected": selected,
+        "candidate_window_selected": selected,
+        "selected_window_digest": f"direct-window-{index}" if text else None,
+        "selected_window_char_count": len(text),
+        "matched_anchor_count": 1 if text else 0,
+        "matched_value_token_kinds": ["currency"] if has_currency else [],
+        "matched_value_token_kind_count": 1 if has_currency else 0,
+        "raw_private_retention_flags": dict(dogfood.RAW_FALSE_FLAGS),
+    }
+
+
+def _triage_records_by_title(
+    triage_packet: Mapping[str, Any],
+) -> dict[str, Mapping[str, Any]]:
+    return {
+        str(item["candidate_title"]): item
+        for item in triage_packet["candidate_triage_records"]
+    }
+
+
+def _candidate_ids(refs: Any) -> set[str]:
+    return {
+        str(_safe_mapping(item).get("candidate_id"))
+        for item in refs
+        if _safe_mapping(item).get("candidate_id")
+    }
+
+
+def _safe_mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
+def _assert_direct_workbench_non_authority(bundle: Mapping[str, Any]) -> None:
+    _assert_workbench_non_authority(bundle)
+    triage = bundle["candidate_evidence_triage_packet"]
+    for record in triage["candidate_triage_records"]:
+        assert record["raw_private_retention"] is False
+        assert record["evidence_admitted"] is False
+        assert record["source_obligation_satisfied"] is False
+        assert record["citation_eligible"] is False
+        assert record["citation_eligibility_created"] is False
+        assert record["product_correctness_claimed"] is False
+        assert record["evidence_not_admitted"] is True
+        assert record["source_obligation_not_satisfied"] is True
+        assert record["citation_eligibility_not_created"] is True
+        assert record["product_correctness_not_claimed"] is True
+    assert triage["binding_drives_triage"] is True
+    assert triage["triage_output_is_proposal_only"] is True
+    assert bundle["analyst_workbench_packet"]["display_candidate_ref_status"] == (
+        "not_authorized_by_workbench"
+    )
 
 
 def _recording_proxy_runner(
