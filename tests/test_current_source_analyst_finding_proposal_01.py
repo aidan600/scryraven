@@ -21,6 +21,7 @@ correctness, or product correctness.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
@@ -36,11 +37,27 @@ from core.analyst_workbench_runtime import (
     build_current_source_record_analyst_workbench,
 )
 from core.current_source_analyst_finding_proposal import (
+    ANALYST_MODEL_ROLE_SMART,
+    ANALYST_ROLE_SURFACE,
+    ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS,
+    DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC,
     FINDING_STATUS_FOLLOWUP_REQUIRED,
     FINDING_STATUS_SOURCE_GROUNDED_PROPOSED,
     MODEL_ADAPTER_KIND_FAKE_TEST,
+    MODEL_ADAPTER_KIND_REAL_SMART,
+    MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER,
+    MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE,
+    MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER,
+    MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT,
+    MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT,
+    MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT,
+    PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN,
     AnalystFindingProposalError,
+    build_analyst_finding_safe_model_input_packet,
     build_fake_model_assisted_analyst_finding_proposal,
+    build_model_assisted_analyst_finding_proposal,
+    build_model_assisted_analyst_license,
+    validate_analyst_finding_safe_model_input_packet,
 )
 from core.generic_query_to_relation_planning import build_generic_query_relation_plan
 
@@ -51,6 +68,7 @@ SMALL_CLAIMS_REQUIREMENT_QUERY = (
     "What is the current filing requirement for Example County small claims?"
 )
 SMALL_CLAIMS_URL = "https://example-county.invalid/civil/small-claims-fees"
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_answer_bearing_evidence_produces_source_grounded_analyst_finding() -> None:
@@ -222,6 +240,213 @@ def test_fake_model_assisted_analyst_output_validates_without_raw_retention() ->
     _assert_finding_non_authority(proposal)
 
 
+def test_default_model_assisted_route_falls_back_to_deterministic_no_model() -> None:
+    bundle = _answer_bearing_bundle()
+
+    proposal = build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+    )
+
+    assert proposal["model_assisted_analysis_run"] is False
+    assert proposal["model_assisted_analysis_not_run_reason"] == (
+        MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER
+    )
+    assert proposal["model_role"] == ANALYST_MODEL_ROLE_SMART
+    assert proposal["role_surface"] == ANALYST_ROLE_SURFACE
+    assert proposal["live_model_call_run"] is False
+    assert proposal["model_calls_attempted"] == 0
+    assert proposal["model_calls_completed"] == 0
+    assert proposal["model_assisted_analyst_required_for_product_pass"] is True
+    assert proposal["model_assisted_analyst_requirement_satisfied"] is False
+    assert proposal["model_assisted_analyst_product_grade_analysis"] is False
+    assert proposal["deterministic_fallback_role"] == (
+        DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC
+    )
+    assert proposal["product_proof_status"] == (
+        PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN
+    )
+    assert proposal["product_correctness_claimed"] is False
+    assert proposal["model_route_diagnostics"][
+        "model_assisted_analyst_license_present"
+    ] is False
+    _assert_finding_non_authority(proposal)
+
+
+def test_license_alone_does_not_execute_analyst_model() -> None:
+    bundle = _answer_bearing_bundle()
+    license_ref = build_model_assisted_analyst_license(
+        license_id="analyst-license-alone:test",
+    )
+
+    proposal = build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        model_assisted_analyst_license=license_ref,
+    )
+
+    assert proposal["model_assisted_analysis_run"] is False
+    assert proposal["model_assisted_analysis_not_run_reason"] == (
+        MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER
+    )
+    assert proposal["model_route_diagnostics"][
+        "model_assisted_analyst_license_present"
+    ] is True
+    assert proposal["model_route_diagnostics"][
+        "model_assisted_analyst_adapter_present"
+    ] is False
+    assert proposal["live_model_call_run"] is False
+    assert proposal["model_assisted_analyst_requirement_satisfied"] is False
+    assert proposal["product_proof_status"] == (
+        PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN
+    )
+
+
+def test_adapter_alone_does_not_execute_analyst_model() -> None:
+    bundle = _answer_bearing_bundle()
+    called = False
+
+    def fake_adapter(_input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        nonlocal called
+        called = True
+        raise AssertionError("adapter must not be called without license")
+
+    proposal = build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        model_assisted_analyst_adapter=fake_adapter,
+    )
+
+    assert called is False
+    assert proposal["model_assisted_analysis_run"] is False
+    assert proposal["model_assisted_analysis_not_run_reason"] == (
+        MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE
+    )
+    assert proposal["model_route_diagnostics"][
+        "model_assisted_analyst_license_present"
+    ] is False
+    assert proposal["model_route_diagnostics"][
+        "model_assisted_analyst_adapter_present"
+    ] is True
+    assert proposal["model_assisted_analyst_requirement_satisfied"] is False
+    assert proposal["product_proof_status"] == (
+        PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN
+    )
+
+
+def test_licensed_fake_smart_model_path_produces_valid_proposal() -> None:
+    bundle = _answer_bearing_bundle()
+    deterministic = _finding(bundle)
+    captured: dict[str, Any] = {}
+    license_ref = build_model_assisted_analyst_license(
+        license_id="analyst-fake-smart:test",
+    )
+
+    def fake_adapter(input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        captured.update(input_packet)
+        assert input_packet["model_role"] == ANALYST_MODEL_ROLE_SMART
+        assert input_packet["role_surface"] == ANALYST_ROLE_SURFACE
+        assert input_packet["candidate_triage_records"]
+        assert "provider_extracted_text" not in json.dumps(input_packet)
+        return {"analyst_finding_proposal": deterministic}
+
+    proposal = build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        model_assisted_analyst_license=license_ref,
+        model_assisted_analyst_adapter=fake_adapter,
+    )
+
+    assert captured["safe_model_input_packet_digest"]
+    assert proposal["model_assisted_analysis_run"] is True
+    assert proposal["model_adapter_kind"] == MODEL_ADAPTER_KIND_FAKE_TEST
+    assert proposal["model_role"] == ANALYST_MODEL_ROLE_SMART
+    assert proposal["role_surface"] == ANALYST_ROLE_SURFACE
+    assert proposal["live_model_call_run"] is False
+    assert proposal["model_calls_attempted"] == 1
+    assert proposal["model_calls_completed"] == 1
+    assert proposal["safe_model_input_packet_ref"]
+    assert proposal["model_output_validation_ref"]
+    assert proposal["dprime_handoff_refs"]["analysis_claim_refs"]
+    _assert_finding_non_authority(proposal)
+
+
+def test_fake_adapter_receives_safe_bounded_evidence_excerpts() -> None:
+    bundle = _answer_bearing_bundle()
+    deterministic = _finding(bundle)
+    captured: dict[str, Any] = {}
+    prefix = "The current standard paper small claims filing fee is $54. "
+    bounded_text = prefix + ("A" * (ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS - len(prefix)))
+    fetch_packet = _safe_fetch_read_packet_for_direct_candidate(
+        candidate_id="direct-candidate-2",
+        candidate_digest="direct-digest-2",
+        bounded_text=bounded_text,
+    )
+
+    def fake_adapter(input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        captured.update(input_packet)
+        excerpt = input_packet["bounded_evidence_excerpts"][0]
+        assert excerpt["candidate_id"] == "direct-candidate-2"
+        assert excerpt["candidate_digest"] == "direct-digest-2"
+        assert excerpt["reference_id"]
+        assert excerpt["reference_digest"]
+        assert excerpt["excerpt_digest"]
+        assert excerpt["bounded_content_digest"] == excerpt["excerpt_digest"]
+        assert excerpt["bounded_excerpt_text"] == bounded_text
+        assert len(excerpt["bounded_excerpt_text"]) <= (
+            ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS
+        )
+        assert excerpt["bounded_character_count"] == len(bounded_text)
+        assert excerpt["fetch_read_status"] == "readable"
+        assert "bounded_text" not in excerpt
+        assert "provider_extracted_text" not in json.dumps(input_packet)
+        assert excerpt["raw_provider_payload_retained"] is False
+        assert excerpt["raw_source_content_retained"] is False
+        return {"analyst_finding_proposal": deterministic}
+
+    proposal = build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        fetch_read_content_packet=fetch_packet,
+        model_assisted_analyst_license=build_model_assisted_analyst_license(
+            license_id="analyst-safe-bounded-excerpt:test",
+        ),
+        model_assisted_analyst_adapter=fake_adapter,
+    )
+
+    assert captured["bounded_evidence_excerpt_available"] is True
+    assert captured["bounded_evidence_excerpt_count"] == 1
+    assert captured["model_assisted_analysis_evidence_depth"] == (
+        MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT
+    )
+    assert proposal["bounded_evidence_excerpt_available"] is True
+    assert proposal["bounded_evidence_excerpt_count"] == 1
+    assert proposal["model_assisted_analyst_product_grade_analysis"] is True
+    _assert_finding_non_authority(proposal)
+
+
+def test_real_smart_model_route_is_gated_without_adapter() -> None:
+    bundle = _answer_bearing_bundle()
+    real_license = build_model_assisted_analyst_license(
+        license_id="analyst-real-smart:test",
+        test_only=False,
+        adapter_kind=MODEL_ADAPTER_KIND_REAL_SMART,
+    )
+
+    proposal = build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        model_assisted_analyst_license=real_license,
+    )
+
+    assert proposal["model_assisted_analysis_run"] is False
+    assert proposal["model_assisted_analysis_not_run_reason"] == (
+        MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER
+    )
+    assert proposal["model_route_diagnostics"]["model_role"] == "smart"
+    assert proposal["live_model_call_run"] is False
+
+
 def test_ungrounded_fake_model_output_is_rejected() -> None:
     bundle = _answer_bearing_bundle()
     ungrounded = json.loads(json.dumps(_finding(bundle)))
@@ -238,6 +463,157 @@ def test_ungrounded_fake_model_output_is_rejected() -> None:
             analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
             fake_model_adapter=fake_adapter,
         )
+
+
+def test_adjacent_as_answer_model_output_is_rejected() -> None:
+    adjacent_bundle = _direct_workbench_bundle(
+        SMALL_CLAIMS_QUERY,
+        [
+            _direct_provider_result(
+                "Official Online Discount Context",
+                "https://example-county.gov/courts/online-discount",
+                "Eligible online filers may pay a reduced small claims fee of $20.",
+                rank=1,
+                selected=True,
+            )
+        ],
+    )
+    answer_bundle = _answer_bearing_bundle()
+    invalid = json.loads(json.dumps(_finding(answer_bundle)))
+    adjacent_ref = adjacent_bundle["candidate_evidence_triage_packet"][
+        "adjacent_context_candidate_refs"
+    ][0]
+    invalid["selected_answer_bearing_candidate_refs"] = [adjacent_ref]
+    invalid["proposed_answer_claim"]["selected_answer_bearing_candidate_refs"] = [
+        adjacent_ref
+    ]
+
+    def fake_adapter(_input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"analyst_finding_proposal": invalid}
+
+    with pytest.raises(AnalystFindingProposalError):
+        build_model_assisted_analyst_finding_proposal(
+            triage_packet=adjacent_bundle["candidate_evidence_triage_packet"],
+            analysis_gap_search_proposal=adjacent_bundle[
+                "analysis_gap_search_proposal"
+            ],
+            model_assisted_analyst_license=build_model_assisted_analyst_license(
+                license_id="analyst-adjacent-as-answer:test",
+            ),
+            model_assisted_analyst_adapter=fake_adapter,
+        )
+
+
+def test_model_output_cannot_upgrade_authority() -> None:
+    bundle = _answer_bearing_bundle()
+    upgraded = json.loads(json.dumps(_finding(bundle)))
+    upgraded["evidence_admitted"] = True
+
+    def fake_adapter(_input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"analyst_finding_proposal": upgraded}
+
+    with pytest.raises(AnalystFindingProposalError):
+        build_model_assisted_analyst_finding_proposal(
+            triage_packet=bundle["candidate_evidence_triage_packet"],
+            analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+            model_assisted_analyst_license=build_model_assisted_analyst_license(
+                license_id="analyst-authority-upgrade:test",
+            ),
+            model_assisted_analyst_adapter=fake_adapter,
+        )
+
+
+def test_safe_model_input_rejects_raw_private_material() -> None:
+    bundle = _answer_bearing_bundle()
+    safe_packet = build_analyst_finding_safe_model_input_packet(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+    )
+    unsafe = {**safe_packet, "raw_prompt": "RAW_PROMPT_SENTINEL"}
+
+    with pytest.raises(AnalystFindingProposalError):
+        validate_analyst_finding_safe_model_input_packet(unsafe)
+
+
+def test_unsafe_fetch_read_packet_material_rejects_before_model_call() -> None:
+    bundle = _answer_bearing_bundle()
+    unsafe_keys = (
+        "raw_source_text",
+        "raw_text",
+        "page_text",
+        "full_text",
+        "raw_provider_payload",
+        "provider_payload",
+        "raw_search_response",
+        "raw_prompt",
+        "raw_model_response",
+        "token",
+    )
+
+    for key in unsafe_keys:
+        called = False
+        fetch_packet = _safe_fetch_read_packet_for_direct_candidate(
+            candidate_id="direct-candidate-2",
+            candidate_digest="direct-digest-2",
+            bounded_text="The current standard paper small claims filing fee is $54.",
+            extra_reference_fields={key: "must not enter model input"},
+        )
+
+        def fake_adapter(_input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+            nonlocal called
+            called = True
+            return {"analyst_finding_proposal": _finding(bundle)}
+
+        with pytest.raises(AnalystFindingProposalError):
+            build_model_assisted_analyst_finding_proposal(
+                triage_packet=bundle["candidate_evidence_triage_packet"],
+                analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+                fetch_read_content_packet=fetch_packet,
+                model_assisted_analyst_license=build_model_assisted_analyst_license(
+                    license_id=f"analyst-unsafe-fetch-{key}:test",
+                ),
+                model_assisted_analyst_adapter=fake_adapter,
+            )
+        assert called is False
+
+
+def test_no_safe_bounded_excerpt_available_is_reported_honestly() -> None:
+    bundle = _answer_bearing_bundle()
+    fetch_packet = _refs_only_fetch_read_packet_for_direct_candidate(
+        candidate_id="direct-candidate-2",
+        candidate_digest="direct-digest-2",
+    )
+
+    safe_input = build_analyst_finding_safe_model_input_packet(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        fetch_read_content_packet=fetch_packet,
+    )
+    proposal = build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        fetch_read_content_packet=fetch_packet,
+    )
+
+    assert safe_input["bounded_evidence_excerpt_available"] is False
+    assert safe_input["bounded_evidence_excerpt_count"] == 0
+    assert safe_input["model_assisted_analysis_evidence_depth"] == (
+        MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT
+    )
+    assert safe_input["model_input_evidence_limitation"] == (
+        MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT
+    )
+    assert proposal["product_correctness_claimed"] is False
+    assert proposal["model_assisted_analyst_product_grade_analysis"] is False
+
+
+def test_analyst_model_route_does_not_use_fast_or_embed_roles() -> None:
+    module_text = (ROOT / "core" / "current_source_analyst_finding_proposal.py").read_text(
+        encoding="utf-8"
+    ).casefold()
+
+    assert "fast_model" not in module_text
+    assert "embed_model" not in module_text
 
 
 def test_analysis_refs_are_forwarded_to_dprime_dossier() -> None:
@@ -406,6 +782,74 @@ def _direct_candidate_diagnostic(
         "matched_value_token_kinds": ["currency"] if has_currency else [],
         "matched_value_token_kind_count": 1 if has_currency else 0,
         "raw_private_retention_flags": dict(dogfood.RAW_FALSE_FLAGS),
+    }
+
+
+def _safe_fetch_read_packet_for_direct_candidate(
+    *,
+    candidate_id: str,
+    candidate_digest: str,
+    bounded_text: str,
+    extra_reference_fields: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    excerpt_digest = dogfood._digest_json({"bounded_text": bounded_text})
+    reference = {
+        "candidate_id": candidate_id,
+        "candidate_digest": candidate_digest,
+        "reference_id": f"sanitized-content-reference:test:{candidate_id}",
+        "reference_digest": f"reference-digest:{candidate_id}",
+        "excerpt_digest": excerpt_digest,
+        "bounded_text": bounded_text,
+        "bounded_text_sanitized": True,
+        "bounded_text_bounded": True,
+        "bounded_character_count": len(bounded_text),
+        "fetch_read_status": "readable",
+        "content_type": "text/html",
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "raw_page_content_retained": False,
+        "raw_page_text_retained": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_source_content_retained": False,
+        "not_semantic_support": True,
+        "not_citation_eligible": True,
+        "not_source_obligation_satisfaction": True,
+    }
+    if extra_reference_fields:
+        reference.update(dict(extra_reference_fields))
+    return {
+        "packet_id": "fetch-read-content-packet:test",
+        "packet_digest": "fetch-read-content-packet-digest:test",
+        "reference_records": [reference],
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+    }
+
+
+def _refs_only_fetch_read_packet_for_direct_candidate(
+    *,
+    candidate_id: str,
+    candidate_digest: str,
+) -> dict[str, Any]:
+    return {
+        "packet_id": "fetch-read-content-packet:refs-only-test",
+        "packet_digest": "fetch-read-content-packet-digest:refs-only-test",
+        "reference_records": [
+            {
+                "candidate_id": candidate_id,
+                "candidate_digest": candidate_digest,
+                "reference_id": f"sanitized-content-reference:refs:{candidate_id}",
+                "reference_digest": f"reference-digest:refs:{candidate_id}",
+                "fetch_read_status": "readable",
+                "raw_provider_payload_retained": False,
+                "raw_search_response_retained": False,
+                "raw_page_content_retained": False,
+                "raw_page_text_retained": False,
+            }
+        ],
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
     }
 
 

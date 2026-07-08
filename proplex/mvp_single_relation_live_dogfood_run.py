@@ -906,6 +906,8 @@ def build_generic_single_relation_live_dogfood_run_output(
     dprime_model_review_callable: Callable[..., Any] | None = None,
     dprime_one_shot_provider_boundary: Mapping[str, Any] | None = None,
     dprime_one_shot_model_review_adapter: Any | None = None,
+    model_assisted_analyst_license: Mapping[str, Any] | None = None,
+    model_assisted_analyst_adapter: Any | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> MvpFriendOutputResult:
     """Run one planned generic relation through bounded live dogfood."""
@@ -1180,6 +1182,8 @@ def build_generic_single_relation_live_dogfood_run_output(
             provider_results=results,
             fetch_read_content_packet=fetch_packet,
             entrypoint_kind=entrypoint_metadata["entrypoint_kind"],
+            model_assisted_analyst_license=model_assisted_analyst_license,
+            model_assisted_analyst_adapter=model_assisted_analyst_adapter,
         )
         _record_analyst_workbench_counts(counts, analyst_workbench_bundle)
 
@@ -4006,6 +4010,21 @@ def _current_source_record_workbench_report_section(
     binding_ref = _safe_mapping(packet.get("component_answer_type_binding_ref")) or (
         _safe_mapping(dossier.get("component_answer_type_binding_ref"))
     )
+    model_route_diagnostics = (
+        _safe_mapping(packet.get("model_assisted_analyst_status_ref"))
+        or _safe_mapping(workbench.get("model_route_diagnostics"))
+        or _safe_mapping(dossier.get("model_route_diagnostics"))
+    )
+    safe_model_input_ref = (
+        _safe_mapping(packet.get("model_assisted_analyst_safe_model_input_packet_ref"))
+        or _safe_mapping(workbench.get("safe_model_input_packet_ref"))
+        or _safe_mapping(dossier.get("safe_model_input_packet_ref"))
+    )
+    model_output_validation_ref = (
+        _safe_mapping(packet.get("model_assisted_analyst_model_output_validation_ref"))
+        or _safe_mapping(workbench.get("model_output_validation_ref"))
+        or _safe_mapping(dossier.get("model_output_validation_ref"))
+    )
     return {
         "schema_version": "analyst_workbench_review_section_v1",
         "product_path_consumed": bool(
@@ -4129,6 +4148,116 @@ def _current_source_record_workbench_report_section(
             workbench.get("analyst_finding_proposal_ref")
             or dossier.get("analyst_finding_proposal_ref")
         ),
+        "finding_generation_mode": (
+            packet.get("model_assisted_analyst_finding_generation_mode")
+            or workbench.get("finding_generation_mode")
+            or dossier.get("finding_generation_mode")
+        ),
+        "model_assisted_analysis_run": (
+            packet.get("model_assisted_analysis_run") is True
+            or workbench.get("model_assisted_analysis_run") is True
+            or dossier.get("model_assisted_analysis_run") is True
+        ),
+        "model_assisted_analysis_not_run_reason": (
+            packet.get("model_assisted_analysis_not_run_reason")
+            or workbench.get("model_assisted_analysis_not_run_reason")
+            or dossier.get("model_assisted_analysis_not_run_reason")
+        ),
+        "model_adapter_kind": (
+            packet.get("model_assisted_analyst_adapter_kind")
+            or workbench.get("model_adapter_kind")
+            or dossier.get("model_adapter_kind")
+        ),
+        "model_role": (
+            packet.get("model_assisted_analyst_model_role")
+            or workbench.get("model_role")
+            or dossier.get("model_role")
+        ),
+        "role_surface": (
+            packet.get("model_assisted_analyst_role_surface")
+            or workbench.get("role_surface")
+            or dossier.get("role_surface")
+        ),
+        "model_calls_attempted": _bounded_int(
+            packet.get("model_assisted_analyst_calls_attempted")
+            or workbench.get("model_calls_attempted")
+            or dossier.get("model_calls_attempted")
+        ),
+        "model_calls_completed": _bounded_int(
+            packet.get("model_assisted_analyst_calls_completed")
+            or workbench.get("model_calls_completed")
+            or dossier.get("model_calls_completed")
+        ),
+        "live_model_call_run": (
+            packet.get("model_assisted_analyst_live_model_call_run") is True
+            or workbench.get("live_model_call_run") is True
+            or dossier.get("live_model_call_run") is True
+        ),
+        "model_assisted_analyst_required_for_product_path": (
+            packet.get("model_assisted_analyst_required_for_product_path") is True
+            or workbench.get("model_assisted_analyst_required_for_product_path")
+            is True
+            or dossier.get("model_assisted_analyst_required_for_product_path") is True
+        ),
+        "model_assisted_analyst_required_for_product_pass": (
+            packet.get("model_assisted_analyst_required_for_product_pass") is True
+            or workbench.get("model_assisted_analyst_required_for_product_pass") is True
+            or dossier.get("model_assisted_analyst_required_for_product_pass") is True
+        ),
+        "analyst_finding_generation_required_mode": (
+            packet.get("analyst_finding_generation_required_mode")
+            or workbench.get("analyst_finding_generation_required_mode")
+            or dossier.get("analyst_finding_generation_required_mode")
+        ),
+        "model_assisted_analyst_requirement_satisfied": (
+            packet.get("model_assisted_analyst_requirement_satisfied") is True
+            or workbench.get("model_assisted_analyst_requirement_satisfied") is True
+            or dossier.get("model_assisted_analyst_requirement_satisfied") is True
+        ),
+        "model_assisted_analyst_product_grade_analysis": (
+            packet.get("model_assisted_analyst_product_grade_analysis") is True
+            or workbench.get("model_assisted_analyst_product_grade_analysis") is True
+            or dossier.get("model_assisted_analyst_product_grade_analysis") is True
+        ),
+        "deterministic_fallback_role": (
+            packet.get("deterministic_analyst_fallback_role")
+            or workbench.get("deterministic_fallback_role")
+            or dossier.get("deterministic_fallback_role")
+        ),
+        "product_proof_status": (
+            packet.get("model_assisted_analyst_product_proof_status")
+            or workbench.get("product_proof_status")
+            or dossier.get("product_proof_status")
+        ),
+        "product_proof_blocker": (
+            packet.get("model_assisted_analyst_product_proof_blocker")
+            or workbench.get("product_proof_blocker")
+            or dossier.get("product_proof_blocker")
+        ),
+        "bounded_evidence_excerpt_available": (
+            packet.get("model_assisted_analyst_bounded_evidence_excerpt_available")
+            is True
+            or workbench.get("bounded_evidence_excerpt_available") is True
+            or dossier.get("bounded_evidence_excerpt_available") is True
+        ),
+        "bounded_evidence_excerpt_count": _bounded_int(
+            packet.get("model_assisted_analyst_bounded_evidence_excerpt_count")
+            or workbench.get("bounded_evidence_excerpt_count")
+            or dossier.get("bounded_evidence_excerpt_count")
+        ),
+        "model_assisted_analysis_evidence_depth": (
+            packet.get("model_assisted_analyst_evidence_depth")
+            or workbench.get("model_assisted_analysis_evidence_depth")
+            or dossier.get("model_assisted_analysis_evidence_depth")
+        ),
+        "model_input_evidence_limitation": (
+            packet.get("model_assisted_analyst_evidence_limitation")
+            or workbench.get("model_input_evidence_limitation")
+            or dossier.get("model_input_evidence_limitation")
+        ),
+        "safe_model_input_packet_ref": safe_model_input_ref,
+        "model_output_validation_ref": model_output_validation_ref,
+        "model_route_diagnostics": model_route_diagnostics,
         "proposed_answer_claim_ref": _safe_mapping(
             workbench.get("proposed_answer_claim_ref")
             or dossier.get("proposed_answer_claim_ref")
@@ -4299,6 +4428,13 @@ def _format_current_source_record_single_fact_review_report(
     scrutineer = _safe_mapping(analyst_workbench.get("scrutineer_lane"))
     specialist = _safe_mapping(analyst_workbench.get("specialist_lane"))
     economist = _safe_mapping(analyst_workbench.get("economist_lane"))
+    model_route = _safe_mapping(analyst_workbench.get("model_route_diagnostics"))
+    safe_model_input = _safe_mapping(
+        analyst_workbench.get("safe_model_input_packet_ref")
+    )
+    model_output_validation = _safe_mapping(
+        analyst_workbench.get("model_output_validation_ref")
+    )
     non_claims = _safe_mapping(safe.get("non_claims"))
     lines = [
         "# Current Source Record Single-Fact Review Report",
@@ -4367,6 +4503,43 @@ def _format_current_source_record_single_fact_review_report(
         f"{_bool_text(analyst_workbench.get('run_kernel_reduction_pending'))}",
         "- Analyst finding proposal: "
         f"{analyst_finding.get('finding_digest') or 'not present'}",
+        "- Model-assisted Analyst run: "
+        f"{_bool_text(analyst_workbench.get('model_assisted_analysis_run'))}",
+        "- Model-assisted Analyst not-run reason: "
+        f"{analyst_workbench.get('model_assisted_analysis_not_run_reason') or 'none'}",
+        "- Analyst model role/surface: "
+        f"{analyst_workbench.get('model_role') or model_route.get('model_role') or 'not present'} / "
+        f"{analyst_workbench.get('role_surface') or model_route.get('role_surface') or 'not present'}",
+        "- Analyst model adapter: "
+        f"{analyst_workbench.get('model_adapter_kind') or model_route.get('model_adapter_kind') or 'not present'}",
+        "- Analyst model calls attempted/completed: "
+        f"{analyst_workbench.get('model_calls_attempted') or 0}/"
+        f"{analyst_workbench.get('model_calls_completed') or 0}",
+        "- Analyst live model call run: "
+        f"{_bool_text(analyst_workbench.get('live_model_call_run'))}",
+        "- Analyst model assistance required for product pass: "
+        f"{_bool_text(analyst_workbench.get('model_assisted_analyst_required_for_product_pass'))}",
+        "- Analyst model assistance requirement satisfied: "
+        f"{_bool_text(analyst_workbench.get('model_assisted_analyst_requirement_satisfied'))}",
+        "- Analyst product-grade analysis: "
+        f"{_bool_text(analyst_workbench.get('model_assisted_analyst_product_grade_analysis'))}",
+        "- Analyst deterministic fallback role: "
+        f"{analyst_workbench.get('deterministic_fallback_role') or 'none'}",
+        "- Analyst product proof status: "
+        f"{analyst_workbench.get('product_proof_status') or 'not present'}",
+        "- Analyst product proof blocker: "
+        f"{analyst_workbench.get('product_proof_blocker') or 'none'}",
+        "- Analyst bounded evidence excerpts: "
+        f"{_bool_text(analyst_workbench.get('bounded_evidence_excerpt_available'))} "
+        f"({analyst_workbench.get('bounded_evidence_excerpt_count') or 0})",
+        "- Analyst model evidence depth: "
+        f"{analyst_workbench.get('model_assisted_analysis_evidence_depth') or 'not present'}",
+        "- Analyst model evidence limitation: "
+        f"{analyst_workbench.get('model_input_evidence_limitation') or 'none'}",
+        "- Analyst safe model input packet: "
+        f"{safe_model_input.get('safe_model_input_packet_digest') or 'not present'}",
+        "- Analyst model output validation: "
+        f"{model_output_validation.get('model_output_validation_digest') or 'not present'}",
         "- Proposed answer claim ref: "
         f"{proposed_answer.get('proposed_answer_claim_digest') or 'not present'}",
         "- Analysis claim refs: "
@@ -7867,6 +8040,9 @@ def _base_packet(
         workbench_bundle.get("candidate_evidence_triage_packet")
     )
     workbench_packet = _safe_mapping(workbench_bundle.get("analyst_workbench_packet"))
+    analyst_finding = _first_mapping(
+        workbench_packet.get("analyst_finding_proposals")
+    )
     gap_proposal = _safe_mapping(workbench_bundle.get("analysis_gap_search_proposal"))
     dprime_dossier = _safe_mapping(workbench_bundle.get("workbench_dprime_dossier"))
     projection = _safe_mapping(workbench_bundle.get("workbench_reduction_projection"))
@@ -8345,6 +8521,78 @@ def _base_packet(
             0,
         ),
         "analyst_workbench_consumed_by_product_path": bool(workbench_packet),
+        "model_assisted_analyst_status_ref": _safe_mapping(
+            analyst_finding.get("model_route_diagnostics")
+        ),
+        "model_assisted_analysis_run": (
+            analyst_finding.get("model_assisted_analysis_run") is True
+        ),
+        "model_assisted_analysis_not_run_reason": analyst_finding.get(
+            "model_assisted_analysis_not_run_reason"
+        ),
+        "model_assisted_analyst_finding_generation_mode": (
+            analyst_finding.get("finding_generation_mode")
+        ),
+        "model_assisted_analyst_model_role": analyst_finding.get("model_role"),
+        "model_assisted_analyst_role_surface": analyst_finding.get("role_surface"),
+        "model_assisted_analyst_adapter_kind": analyst_finding.get(
+            "model_adapter_kind"
+        ),
+        "model_assisted_analyst_calls_attempted": _bounded_int(
+            analyst_finding.get("model_calls_attempted")
+        ),
+        "model_assisted_analyst_calls_completed": _bounded_int(
+            analyst_finding.get("model_calls_completed")
+        ),
+        "model_assisted_analyst_live_model_call_run": (
+            analyst_finding.get("live_model_call_run") is True
+        ),
+        "model_assisted_analyst_required_for_product_path": (
+            analyst_finding.get("model_assisted_analyst_required_for_product_path")
+            is True
+        ),
+        "model_assisted_analyst_required_for_product_pass": (
+            analyst_finding.get("model_assisted_analyst_required_for_product_pass")
+            is True
+        ),
+        "analyst_finding_generation_required_mode": analyst_finding.get(
+            "analyst_finding_generation_required_mode"
+        ),
+        "model_assisted_analyst_requirement_satisfied": (
+            analyst_finding.get("model_assisted_analyst_requirement_satisfied")
+            is True
+        ),
+        "model_assisted_analyst_product_grade_analysis": (
+            analyst_finding.get("model_assisted_analyst_product_grade_analysis")
+            is True
+        ),
+        "deterministic_analyst_fallback_role": analyst_finding.get(
+            "deterministic_fallback_role"
+        ),
+        "model_assisted_analyst_product_proof_status": analyst_finding.get(
+            "product_proof_status"
+        ),
+        "model_assisted_analyst_product_proof_blocker": analyst_finding.get(
+            "product_proof_blocker"
+        ),
+        "model_assisted_analyst_bounded_evidence_excerpt_available": (
+            analyst_finding.get("bounded_evidence_excerpt_available") is True
+        ),
+        "model_assisted_analyst_bounded_evidence_excerpt_count": _bounded_int(
+            analyst_finding.get("bounded_evidence_excerpt_count")
+        ),
+        "model_assisted_analyst_evidence_depth": analyst_finding.get(
+            "model_assisted_analysis_evidence_depth"
+        ),
+        "model_assisted_analyst_evidence_limitation": analyst_finding.get(
+            "model_input_evidence_limitation"
+        ),
+        "model_assisted_analyst_safe_model_input_packet_ref": _safe_mapping(
+            analyst_finding.get("safe_model_input_packet_ref")
+        ),
+        "model_assisted_analyst_model_output_validation_ref": _safe_mapping(
+            analyst_finding.get("model_output_validation_ref")
+        ),
         "analysis_gap_search_proposal": gap_proposal,
         "analysis_gap_search_proposal_ref": gap_ref,
         "analysis_gap_search_proposal_created": counts.get(
@@ -9088,6 +9336,14 @@ def _record_analyst_workbench_counts(
     )
     counts["workbench_reduction_projection_created"] = int(
         bool(_safe_mapping(safe.get("workbench_reduction_projection")))
+    )
+    workbench = _safe_mapping(safe.get("analyst_workbench_packet"))
+    finding = _first_mapping(workbench.get("analyst_finding_proposals"))
+    counts["model_assisted_analyst_calls_attempted"] = _bounded_int(
+        finding.get("model_calls_attempted")
+    )
+    counts["model_assisted_analyst_calls_completed"] = _bounded_int(
+        finding.get("model_calls_completed")
     )
 
 

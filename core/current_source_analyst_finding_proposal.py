@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Callable, Mapping, Sequence
+
+from core.fetch_read_content_reference import FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
 
 ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION = "analyst_finding_proposal_v1"
 ANALYST_SOURCE_SUPPORT_MAP_SCHEMA_VERSION = "analyst_source_support_map_v1"
@@ -19,9 +22,11 @@ ANALYST_SAFE_MODEL_INPUT_PACKET_SCHEMA_VERSION = (
 ANALYST_MODEL_OUTPUT_VALIDATION_SCHEMA_VERSION = (
     "analyst_finding_model_output_validation_v1"
 )
+ANALYST_FINDING_MODEL_ROUTE_SCHEMA_VERSION = "analyst_finding_model_route_v1"
 ANALYST_FINDING_PROPOSAL_PHASE = (
     "CURRENT-SOURCE-ANALYST-FINDING-CONTRACT-CUSTODY-V1-01"
 )
+ANALYST_FINDING_PROMPT_SCHEMA_VERSION = "analyst_finding_prompt_v1"
 
 FINDING_STATUS_SOURCE_GROUNDED_PROPOSED = "source_grounded_proposed"
 FINDING_STATUS_INSUFFICIENT_EVIDENCE = "insufficient_evidence"
@@ -42,6 +47,47 @@ SUPPORT_STATUS_UNREADABLE_SOURCE_NEEDED = "unreadable_source_needed"
 SUPPORT_STATUS_CONFLICT_OR_OVERCLAIM_RISK = "conflict_or_overclaim_risk"
 
 MODEL_ADAPTER_KIND_FAKE_TEST = "fake_test_adapter"
+MODEL_ADAPTER_KIND_REAL_SMART = "real_smart_model_route"
+MODEL_ADAPTER_KIND_DETERMINISTIC = "deterministic_grounded_builder"
+ANALYST_MODEL_ROLE_SMART = "smart"
+ANALYST_ROLE_SURFACE = "analyst_finding_proposal"
+ANALYST_RUNTIME_CONSUMER = "AnalystWorkbench / AnalystFindingProposal"
+ANALYST_ROUTE_AUTHORITY = "licensed model-assisted Analyst call"
+ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS = (
+    FETCH_READ_CONTENT_MAX_BOUNDED_TEXT_CHARS
+)
+FINDING_GENERATION_MODE_DETERMINISTIC = "deterministic_scaffold"
+FINDING_GENERATION_MODE_MODEL_ASSISTED = "model_assisted_smart"
+MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE = "missing_license"
+MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER = "missing_adapter_or_route"
+MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER = "missing_license_and_adapter"
+MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT = "bounded_excerpt"
+MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT = "limited_no_excerpt"
+MODEL_INPUT_EVIDENCE_DEPTH_REFS_ONLY = "refs_only"
+MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT = (
+    "no_safe_bounded_excerpt_text_available"
+)
+DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC = "offline_test_diagnostic_fallback"
+PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN = (
+    "blocked_model_assisted_analyst_required_but_not_run"
+)
+PRODUCT_PROOF_STATUS_PENDING_DPRIME_VALIDATION = (
+    "not_claimed_pending_dprime_validation"
+)
+
+ANALYST_FINDING_SYSTEM_PROMPT = (
+    "You are the ScryRaven Analyst for a proposal-only "
+    "AnalystFindingProposal. Use only the provided safe refs, triage roles, "
+    "bounded evidence excerpts, bounded-content refs, caveats, exclusions, and "
+    "gaps. If bounded_evidence_excerpt_available is false, report only limited "
+    "refs-only analysis and do not imply source-grounded model analysis over "
+    "source text. Return only one JSON object containing "
+    "analyst_finding_proposal. Do not write final user prose, do not cite "
+    "sources directly, do not make D-prime decisions, do not run Scrutineer, "
+    "and do not claim evidence admission, source-obligation satisfaction, "
+    "citation eligibility, ComponentCoverage, Sufficiency, FinalAnswerPacket, "
+    "Author output, source display, or product correctness."
+)
 
 _RAW_FALSE_FLAGS = {
     "raw_provider_payload_retained": False,
@@ -154,6 +200,220 @@ class AnalystFindingProposalError(ValueError):
 FakeAnalystFindingAdapter = Callable[[Mapping[str, Any]], Mapping[str, Any]]
 
 
+@dataclass(frozen=True, slots=True)
+class AnalystFindingModelAssistedLicense:
+    """Explicit license for one model-assisted Analyst attempt."""
+
+    license_id: str = "analyst-finding-proposal-model-assisted-v1:not-enabled"
+    enabled: bool = False
+    test_only: bool = True
+    adapter_kind: str = MODEL_ADAPTER_KIND_FAKE_TEST
+    max_model_calls: int = 1
+    retry_policy: str = "forbidden"
+    timeout_policy: str = "fail_closed"
+    model_role: str = ANALYST_MODEL_ROLE_SMART
+    role_surface: str = ANALYST_ROLE_SURFACE
+    runtime_consumer: str = ANALYST_RUNTIME_CONSUMER
+    route_authority: str = ANALYST_ROUTE_AUTHORITY
+
+    @classmethod
+    def from_mapping(
+        cls,
+        value: Mapping[str, Any] | None,
+    ) -> "AnalystFindingModelAssistedLicense":
+        safe = _safe_mapping(value)
+        if not safe:
+            return cls()
+        test_only = safe.get("test_only", True) is True
+        adapter_kind = (
+            _clean_text(safe.get("adapter_kind") or safe.get("callable_kind"), limit=80)
+            or (MODEL_ADAPTER_KIND_FAKE_TEST if test_only else MODEL_ADAPTER_KIND_REAL_SMART)
+        )
+        return cls(
+            license_id=(
+                _clean_text(safe.get("license_id"), limit=260) or cls().license_id
+            ),
+            enabled=safe.get("enabled") is True,
+            test_only=test_only,
+            adapter_kind=adapter_kind,
+            max_model_calls=_bounded_int(safe.get("max_model_calls"), default=1),
+            retry_policy=_normalize_key(safe.get("retry_policy")) or "forbidden",
+            timeout_policy=_normalize_key(safe.get("timeout_policy")) or "fail_closed",
+            model_role=_normalize_key(safe.get("model_role")) or ANALYST_MODEL_ROLE_SMART,
+            role_surface=(
+                _normalize_key(safe.get("role_surface")) or ANALYST_ROLE_SURFACE
+            ),
+            runtime_consumer=(
+                _clean_text(safe.get("runtime_consumer"), limit=260)
+                or ANALYST_RUNTIME_CONSUMER
+            ),
+            route_authority=(
+                _clean_text(safe.get("route_authority"), limit=260)
+                or ANALYST_ROUTE_AUTHORITY
+            ),
+        )
+
+    @property
+    def is_fake_test(self) -> bool:
+        return (
+            self.test_only is True
+            and _normalize_key(self.adapter_kind) == MODEL_ADAPTER_KIND_FAKE_TEST
+        )
+
+    @property
+    def is_real_smart_route(self) -> bool:
+        return (
+            self.test_only is not True
+            or _normalize_key(self.adapter_kind) == MODEL_ADAPTER_KIND_REAL_SMART
+        )
+
+    def to_ref(self) -> dict[str, Any]:
+        return {
+            "license_id": self.license_id,
+            "phase": ANALYST_FINDING_PROPOSAL_PHASE,
+            "enabled": self.enabled,
+            "test_only": self.test_only,
+            "adapter_kind": self.adapter_kind,
+            "max_model_calls": self.max_model_calls,
+            "retry_policy": self.retry_policy,
+            "timeout_policy": self.timeout_policy,
+            "model_role": self.model_role,
+            "role_surface": self.role_surface,
+            "runtime_consumer": self.runtime_consumer,
+            "route_authority": self.route_authority,
+            "raw_prompt_retained": False,
+            "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+        }
+
+
+@dataclass(slots=True)
+class AnalystFindingSmartModelAdapter:
+    """One-shot adapter for the configured SmartModel Analyst route."""
+
+    transport: Callable[..., Any] = field(repr=False, compare=False)
+    adapter_ref: str = "analyst-finding-smart-model-adapter:configured:v1"
+    configured_smart_provider: str | None = None
+    configured_smart_model: str | None = None
+    configured_endpoint_kind: str | None = None
+    adapter_kind: str = MODEL_ADAPTER_KIND_REAL_SMART
+    model_role: str = ANALYST_MODEL_ROLE_SMART
+    role_surface: str = ANALYST_ROLE_SURFACE
+    runtime_consumer: str = ANALYST_RUNTIME_CONSUMER
+    route_authority: str = ANALYST_ROUTE_AUTHORITY
+    max_model_calls: int = 1
+    retry_policy: str = "forbidden"
+    fallback_policy: str = "forbidden"
+    timeout_policy: str = "fail_closed"
+    provider_switching_allowed: bool = False
+    endpoint_switching_allowed: bool = False
+    raw_prompt_retained: bool = False
+    raw_model_response_retained: bool = False
+    raw_provider_payload_retained: bool = False
+    _call_count: int = field(default=0, init=False, repr=False)
+
+    def to_ref(self) -> dict[str, Any]:
+        return _without_empty(
+            {
+                "schema_version": ANALYST_FINDING_MODEL_ROUTE_SCHEMA_VERSION,
+                "phase": ANALYST_FINDING_PROPOSAL_PHASE,
+                "adapter_ref": self.adapter_ref,
+                "model_adapter_kind": self.adapter_kind,
+                "model_role": self.model_role,
+                "role_surface": self.role_surface,
+                "runtime_consumer": self.runtime_consumer,
+                "route_authority": self.route_authority,
+                "configured_smart_provider": _safe_route_text(
+                    self.configured_smart_provider,
+                    limit=120,
+                ),
+                "configured_smart_model": _safe_route_text(
+                    self.configured_smart_model,
+                    limit=160,
+                ),
+                "configured_endpoint_kind": _clean_text(
+                    self.configured_endpoint_kind,
+                    limit=120,
+                ),
+                "max_model_calls": self.max_model_calls,
+                "retry_policy": self.retry_policy,
+                "fallback_policy": self.fallback_policy,
+                "timeout_policy": self.timeout_policy,
+                "provider_switching_allowed": self.provider_switching_allowed,
+                "endpoint_switching_allowed": self.endpoint_switching_allowed,
+                "call_count": self._call_count,
+                "raw_prompt_retained": False,
+                "raw_model_response_retained": False,
+                "raw_provider_payload_retained": False,
+                "provider_payload_retained": False,
+                "live_model_call_run": False,
+            }
+        )
+
+    def invoke_once(
+        self,
+        *,
+        prompt: str,
+        input_packet: Mapping[str, Any],
+        system_prompt: str,
+        license_ref: Mapping[str, Any],
+        route_ref: Mapping[str, Any],
+    ) -> Any:
+        if self._call_count != 0 or self.max_model_calls != 1:
+            raise AnalystFindingProposalError(
+                "Analyst SmartModel route must execute at most once"
+            )
+        if self.model_role != ANALYST_MODEL_ROLE_SMART:
+            raise AnalystFindingProposalError(
+                "AnalystFindingProposal requires SmartModel role"
+            )
+        if self.role_surface != ANALYST_ROLE_SURFACE:
+            raise AnalystFindingProposalError(
+                "AnalystFindingProposal route surface mismatch"
+            )
+        if self.retry_policy != "forbidden" or self.fallback_policy != "forbidden":
+            raise AnalystFindingProposalError(
+                "Analyst SmartModel route must forbid retry and fallback"
+            )
+        if self.provider_switching_allowed or self.endpoint_switching_allowed:
+            raise AnalystFindingProposalError(
+                "Analyst SmartModel route must not allow provider switching"
+            )
+        if self.raw_prompt_retained or self.raw_model_response_retained:
+            raise AnalystFindingProposalError(
+                "Analyst SmartModel route must not retain raw prompts or responses"
+            )
+        self._call_count += 1
+        return self.transport(
+            prompt,
+            system_prompt=system_prompt,
+            input_packet=input_packet,
+            license_ref=license_ref,
+            route_ref=route_ref,
+            require_json=True,
+        )
+
+
+def build_model_assisted_analyst_license(
+    *,
+    license_id: str,
+    test_only: bool = True,
+    adapter_kind: str | None = None,
+    enabled: bool = True,
+) -> dict[str, Any]:
+    """Return an explicit license packet for a gated Analyst model attempt."""
+
+    return AnalystFindingModelAssistedLicense(
+        license_id=license_id,
+        enabled=enabled,
+        test_only=test_only,
+        adapter_kind=(
+            adapter_kind
+            or (MODEL_ADAPTER_KIND_FAKE_TEST if test_only else MODEL_ADAPTER_KIND_REAL_SMART)
+        ),
+    ).to_ref()
+
+
 def build_deterministic_analyst_finding_proposal(
     *,
     triage_packet: Mapping[str, Any],
@@ -172,9 +432,22 @@ def build_deterministic_analyst_finding_proposal(
     unreadable_refs = _safe_refs(triage.get("unreadable_high_value_candidate_refs"))
     overclaim_refs = _safe_refs(triage.get("overclaim_risk_candidate_refs"))
     triage_summary_ref = _safe_mapping(triage.get("candidate_triage_summary_ref"))
+    model_input_candidate_refs = _model_input_candidate_refs(
+        selected_refs=selected_refs,
+        adjacent_refs=adjacent_refs,
+        excluded_refs=excluded_refs,
+        unreadable_refs=unreadable_refs,
+        overclaim_refs=overclaim_refs,
+    )
+    _reject_unsafe_fetch_read_packet_material(fetch_packet)
     bounded_content_refs = _bounded_content_refs(
         fetch_packet,
         candidate_refs=selected_refs,
+    )
+    evidence_profile = _model_input_evidence_profile(
+        fetch_packet,
+        candidate_refs=model_input_candidate_refs,
+        bounded_content_refs=bounded_content_refs,
     )
     finding_status = _finding_status(
         selected_refs=selected_refs,
@@ -343,10 +616,30 @@ def build_deterministic_analyst_finding_proposal(
                 challenge_seed
             ),
             "model_assisted_analysis_run": False,
-            "model_adapter_kind": "deterministic_grounded_builder",
+            "finding_generation_mode": FINDING_GENERATION_MODE_DETERMINISTIC,
+            "model_adapter_kind": MODEL_ADAPTER_KIND_DETERMINISTIC,
+            "model_role": ANALYST_MODEL_ROLE_SMART,
+            "role_surface": ANALYST_ROLE_SURFACE,
+            "runtime_consumer": ANALYST_RUNTIME_CONSUMER,
+            "route_authority": ANALYST_ROUTE_AUTHORITY,
+            "model_assisted_analysis_license_present": False,
+            "model_assisted_analysis_adapter_present": False,
+            "model_calls_attempted": 0,
+            "model_calls_completed": 0,
             "live_model_call_run": False,
             "safe_model_input_packet_ref": {},
             "model_output_validation_ref": {},
+            **_analyst_product_policy_fields(model_assisted_run=False),
+            **evidence_profile,
+            "model_route_diagnostics": _analyst_model_route_diagnostics(
+                license_obj=AnalystFindingModelAssistedLicense(),
+                adapter_ref={},
+                adapter_present=False,
+                attempted=0,
+                completed=0,
+                live_model_call_run=False,
+                not_run_reason=MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER,
+            ),
             "requires_dprime_validation": True,
             "requires_runkernel_admission": True,
             "source_grounding_required": True,
@@ -396,37 +689,75 @@ def build_analyst_finding_safe_model_input_packet(
     *,
     triage_packet: Mapping[str, Any],
     analysis_gap_search_proposal: Mapping[str, Any],
+    fetch_read_content_packet: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return safe retained refs for a future model-assisted Analyst call."""
 
     triage = _safe_mapping(triage_packet)
     gap = _safe_mapping(analysis_gap_search_proposal)
+    binding_ref = _safe_mapping(triage.get("component_answer_type_binding_ref"))
+    selected_refs = _safe_refs(triage.get("selected_answer_bearing_candidate_refs"))
+    adjacent_refs = _safe_refs(triage.get("adjacent_context_candidate_refs"))
+    excluded_refs = _safe_refs(triage.get("excluded_scope_candidate_refs"))
+    unreadable_refs = _safe_refs(triage.get("unreadable_high_value_candidate_refs"))
+    overclaim_refs = _safe_refs(triage.get("overclaim_risk_candidate_refs"))
+    fetch_packet = _safe_mapping(fetch_read_content_packet)
+    model_input_candidate_refs = _model_input_candidate_refs(
+        selected_refs=selected_refs,
+        adjacent_refs=adjacent_refs,
+        excluded_refs=excluded_refs,
+        unreadable_refs=unreadable_refs,
+        overclaim_refs=overclaim_refs,
+    )
+    _reject_unsafe_fetch_read_packet_material(fetch_packet)
+    bounded_content_refs = _bounded_content_refs(
+        fetch_packet,
+        candidate_refs=selected_refs,
+    )
+    bounded_evidence_excerpts = _bounded_evidence_excerpts(
+        fetch_packet,
+        candidate_refs=model_input_candidate_refs,
+    )
+    evidence_profile = _model_input_evidence_profile_from_excerpts(
+        bounded_evidence_excerpts=bounded_evidence_excerpts,
+        bounded_content_refs=bounded_content_refs,
+    )
     packet = _without_empty(
         {
             "schema_version": ANALYST_SAFE_MODEL_INPUT_PACKET_SCHEMA_VERSION,
             "phase": ANALYST_FINDING_PROPOSAL_PHASE,
             "packet_kind": "AnalystFindingSafeModelInputPacket",
-            "component_answer_type_binding_ref": _safe_mapping(
-                triage.get("component_answer_type_binding_ref")
+            "model_role": ANALYST_MODEL_ROLE_SMART,
+            "role_surface": ANALYST_ROLE_SURFACE,
+            "runtime_consumer": ANALYST_RUNTIME_CONSUMER,
+            "route_authority": ANALYST_ROUTE_AUTHORITY,
+            "component_answer_type_binding_ref": binding_ref,
+            "claim_under_test": binding_ref.get("claim_under_test"),
+            "requested_answer_type": binding_ref.get("requested_answer_type"),
+            "expected_value_shape": binding_ref.get("expected_value_shape"),
+            "adjacent_claim_exclusions": list(
+                _safe_sequence(binding_ref.get("adjacent_claim_exclusions"))
             ),
             "candidate_triage_summary_ref": _safe_mapping(
                 triage.get("candidate_triage_summary_ref")
             ),
-            "selected_answer_bearing_candidate_refs": _safe_refs(
-                triage.get("selected_answer_bearing_candidate_refs")
+            "candidate_triage_records": _safe_candidate_triage_records(
+                triage.get("candidate_triage_records")
             ),
-            "adjacent_context_candidate_refs": _safe_refs(
-                triage.get("adjacent_context_candidate_refs")
-            ),
-            "excluded_scope_candidate_refs": _safe_refs(
-                triage.get("excluded_scope_candidate_refs")
-            ),
-            "unreadable_high_value_candidate_refs": _safe_refs(
-                triage.get("unreadable_high_value_candidate_refs")
-            ),
+            "selected_answer_bearing_candidate_refs": selected_refs,
+            "adjacent_context_candidate_refs": adjacent_refs,
+            "excluded_scope_candidate_refs": excluded_refs,
+            "unreadable_high_value_candidate_refs": unreadable_refs,
+            "overclaim_risk_candidate_refs": overclaim_refs,
+            "bounded_content_refs": bounded_content_refs,
+            "bounded_evidence_excerpts": bounded_evidence_excerpts,
+            **evidence_profile,
             "analysis_gap_search_proposal_ref": _gap_proposal_ref(gap),
+            "non_authority_posture_flags": _non_authority_posture(),
             "raw_prompt_retained": False,
             "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+            "provider_payload_retained": False,
             "live_model_call_run": False,
             **_non_authority_posture(),
         }
@@ -436,15 +767,180 @@ def build_analyst_finding_safe_model_input_packet(
         "adjacent_context_candidate_refs",
         "excluded_scope_candidate_refs",
         "unreadable_high_value_candidate_refs",
+        "overclaim_risk_candidate_refs",
+        "bounded_content_refs",
+        "bounded_evidence_excerpts",
+        "candidate_triage_records",
     ):
         packet.setdefault(list_key, [])
-    _reject_forbidden_or_authority(packet, context="Analyst safe model input packet")
+    validate_analyst_finding_safe_model_input_packet(packet)
     digest = _digest_json(packet)
     return {
         **packet,
         "safe_model_input_packet_id": f"analyst-finding-model-input:{digest[:20]}",
         "safe_model_input_packet_digest": digest,
     }
+
+
+def validate_analyst_finding_safe_model_input_packet(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate the ref-addressable safe packet before any model call."""
+
+    packet = _safe_mapping(value)
+    if packet.get("schema_version") != ANALYST_SAFE_MODEL_INPUT_PACKET_SCHEMA_VERSION:
+        raise AnalystFindingProposalError("safe model input packet schema mismatch")
+    if packet.get("model_role") != ANALYST_MODEL_ROLE_SMART:
+        raise AnalystFindingProposalError("Analyst safe input must use SmartModel role")
+    if packet.get("role_surface") != ANALYST_ROLE_SURFACE:
+        raise AnalystFindingProposalError("Analyst safe input route surface mismatch")
+    if not _safe_mapping(packet.get("component_answer_type_binding_ref")):
+        raise AnalystFindingProposalError(
+            "safe model input requires component answer-type binding ref"
+        )
+    _validate_bounded_evidence_excerpts(
+        packet.get("bounded_evidence_excerpts"),
+        context="Analyst safe model input bounded evidence excerpts",
+    )
+    _reject_forbidden_or_authority(packet, context="Analyst safe model input packet")
+    return _json_safe(packet)
+
+
+def build_analyst_finding_prompt(
+    input_packet: Mapping[str, Any],
+) -> str:
+    """Build a transient prompt from a validated safe packet."""
+
+    safe_input = validate_analyst_finding_safe_model_input_packet(input_packet)
+    prompt_payload = {
+        "schema_version": ANALYST_FINDING_PROMPT_SCHEMA_VERSION,
+        "task": "produce_analyst_finding_proposal",
+        "instructions": [
+            "Stay within the requested answer type and expected value shape.",
+            "Use candidate triage roles to separate answer-bearing, adjacent, excluded, unreadable, gap, caveat, and risk material.",
+            "Tie every substantive analysis claim to candidate/source refs or mark it as a gap, risk, or exclusion.",
+            "Do not produce a proposed answer claim when only adjacent, excluded, or unreadable refs are present.",
+            "Use bounded_evidence_excerpts when present; if they are absent, keep analysis limited to refs and report the limitation.",
+            "Preserve analysis custody separately from source custody.",
+            "Return only the required structured JSON object.",
+        ],
+        "forbidden_claims": [
+            "evidence admission",
+            "source-obligation satisfaction",
+            "citation eligibility",
+            "ComponentCoverage",
+            "SufficiencyReadiness",
+            "FinalAnswerPacket",
+            "Author output",
+            "source display",
+            "product correctness",
+            "D-prime decision",
+            "Scrutineer validation",
+        ],
+        "safe_model_input_packet": safe_input,
+        "required_output": {
+            "analyst_finding_proposal": {
+                "schema_version": ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION,
+                "finding_kind": "analyst_finding_proposal",
+                "analysis_claims": "array",
+                "source_support_map": "AnalystSourceSupportMap",
+                "dprime_handoff_refs": "proposal refs only",
+            }
+        },
+    }
+    return json.dumps(prompt_payload, sort_keys=True, separators=(",", ":"))
+
+
+def build_model_assisted_analyst_finding_proposal(
+    *,
+    triage_packet: Mapping[str, Any],
+    analysis_gap_search_proposal: Mapping[str, Any],
+    fetch_read_content_packet: Mapping[str, Any] | None = None,
+    model_assisted_analyst_license: Mapping[str, Any]
+    | AnalystFindingModelAssistedLicense
+    | None = None,
+    model_assisted_analyst_adapter: Any | None = None,
+) -> dict[str, Any]:
+    """Run a gated Analyst model route, or deterministically fall back."""
+
+    deterministic = build_deterministic_analyst_finding_proposal(
+        triage_packet=triage_packet,
+        analysis_gap_search_proposal=analysis_gap_search_proposal,
+        fetch_read_content_packet=fetch_read_content_packet,
+    )
+    license_obj = _coerce_model_assisted_license(model_assisted_analyst_license)
+    adapter_ref = _model_adapter_ref(model_assisted_analyst_adapter)
+    adapter_present = bool(model_assisted_analyst_adapter)
+    if not license_obj.enabled or not adapter_present:
+        if not license_obj.enabled and not adapter_present:
+            reason = MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER
+        elif not license_obj.enabled:
+            reason = MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE
+        else:
+            reason = MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER
+        return _annotated_deterministic_fallback(
+            deterministic,
+            license_obj=license_obj,
+            adapter_ref=adapter_ref,
+            adapter_present=adapter_present,
+            not_run_reason=reason,
+        )
+
+    input_packet = build_analyst_finding_safe_model_input_packet(
+        triage_packet=triage_packet,
+        analysis_gap_search_proposal=analysis_gap_search_proposal,
+        fetch_read_content_packet=fetch_read_content_packet,
+    )
+    prompt = build_analyst_finding_prompt(input_packet)
+    license_ref = license_obj.to_ref()
+    attempted = 1
+    completed = 0
+    if license_obj.is_fake_test:
+        try:
+            structured_output = model_assisted_analyst_adapter(input_packet)
+        except Exception as exc:  # noqa: BLE001 - fail closed with safe detail.
+            raise AnalystFindingProposalError(
+                "Analyst fake model adapter failed closed: "
+                f"{type(exc).__name__}"
+            ) from None
+        completed = 1
+        return validate_model_assisted_analyst_output(
+            safe_model_input_packet=input_packet,
+            structured_output=structured_output,
+            adapter_kind=MODEL_ADAPTER_KIND_FAKE_TEST,
+            license_ref=license_ref,
+            adapter_ref=adapter_ref,
+            model_calls_attempted=attempted,
+            model_calls_completed=completed,
+            live_model_call_run=False,
+        )
+
+    try:
+        raw_output = _invoke_real_model_adapter(
+            model_assisted_analyst_adapter,
+            prompt=prompt,
+            input_packet=input_packet,
+            system_prompt=ANALYST_FINDING_SYSTEM_PROMPT,
+            license_ref=license_ref,
+            route_ref=adapter_ref,
+        )
+    except Exception as exc:  # noqa: BLE001 - fail closed with safe detail.
+        raise AnalystFindingProposalError(
+            "Analyst SmartModel adapter failed closed: "
+            f"{type(exc).__name__}"
+        ) from None
+    completed = 1
+    structured_output = _parse_structured_output(raw_output)
+    return validate_model_assisted_analyst_output(
+        safe_model_input_packet=input_packet,
+        structured_output=structured_output,
+        adapter_kind=MODEL_ADAPTER_KIND_REAL_SMART,
+        license_ref=license_ref,
+        adapter_ref=adapter_ref,
+        model_calls_attempted=attempted,
+        model_calls_completed=completed,
+        live_model_call_run=True,
+    )
 
 
 def build_fake_model_assisted_analyst_finding_proposal(
@@ -473,32 +969,89 @@ def validate_fake_model_assisted_analyst_output(
 ) -> dict[str, Any]:
     """Validate fake model output without retaining raw prompts or responses."""
 
-    input_packet = _safe_mapping(safe_model_input_packet)
-    if (
-        input_packet.get("schema_version")
-        != ANALYST_SAFE_MODEL_INPUT_PACKET_SCHEMA_VERSION
-    ):
-        raise AnalystFindingProposalError("safe model input packet schema mismatch")
+    return validate_model_assisted_analyst_output(
+        safe_model_input_packet=safe_model_input_packet,
+        structured_output=structured_output,
+        adapter_kind=MODEL_ADAPTER_KIND_FAKE_TEST,
+        license_ref=AnalystFindingModelAssistedLicense(
+            license_id="analyst-finding-fake-adapter-validation:test-only",
+            enabled=True,
+            test_only=True,
+            adapter_kind=MODEL_ADAPTER_KIND_FAKE_TEST,
+        ).to_ref(),
+        adapter_ref={"model_adapter_kind": MODEL_ADAPTER_KIND_FAKE_TEST},
+        model_calls_attempted=1,
+        model_calls_completed=1,
+        live_model_call_run=False,
+    )
+
+
+def validate_model_assisted_analyst_output(
+    *,
+    safe_model_input_packet: Mapping[str, Any],
+    structured_output: Mapping[str, Any],
+    adapter_kind: str,
+    license_ref: Mapping[str, Any],
+    adapter_ref: Mapping[str, Any],
+    model_calls_attempted: int,
+    model_calls_completed: int,
+    live_model_call_run: bool,
+) -> dict[str, Any]:
+    """Validate structured model output into AnalystFindingProposal."""
+
+    input_packet = validate_analyst_finding_safe_model_input_packet(
+        safe_model_input_packet
+    )
+    normalized_adapter_kind = _normalize_key(adapter_kind)
+    if normalized_adapter_kind not in {
+        MODEL_ADAPTER_KIND_FAKE_TEST,
+        MODEL_ADAPTER_KIND_REAL_SMART,
+    }:
+        raise AnalystFindingProposalError("Analyst model adapter kind invalid")
     output = _safe_mapping(structured_output)
     proposal = _safe_mapping(output.get("analyst_finding_proposal")) or output
     _reject_forbidden_or_authority(
         output,
-        context="Analyst fake model structured output",
+        context="Analyst model structured output",
     )
     validation_ref = _model_output_validation_ref(
         input_packet=input_packet,
-        adapter_kind=MODEL_ADAPTER_KIND_FAKE_TEST,
+        adapter_kind=normalized_adapter_kind,
+        live_model_call_run=live_model_call_run,
     )
     proposal = {
         **proposal,
         "model_assisted_analysis_run": True,
-        "model_adapter_kind": MODEL_ADAPTER_KIND_FAKE_TEST,
-        "live_model_call_run": False,
+        "finding_generation_mode": FINDING_GENERATION_MODE_MODEL_ASSISTED,
+        "model_adapter_kind": normalized_adapter_kind,
+        "model_role": ANALYST_MODEL_ROLE_SMART,
+        "role_surface": ANALYST_ROLE_SURFACE,
+        "runtime_consumer": ANALYST_RUNTIME_CONSUMER,
+        "route_authority": ANALYST_ROUTE_AUTHORITY,
+        "model_assisted_analysis_license_present": True,
+        "model_assisted_analysis_adapter_present": True,
+        "model_calls_attempted": _bounded_int(model_calls_attempted),
+        "model_calls_completed": _bounded_int(model_calls_completed),
+        "live_model_call_run": bool(live_model_call_run),
         "safe_model_input_packet_ref": _safe_model_input_packet_ref(input_packet),
         "model_output_validation_ref": validation_ref,
+        **_analyst_product_policy_fields(model_assisted_run=True),
+        **_model_input_evidence_profile_from_input(input_packet),
+        "model_route_diagnostics": _analyst_model_route_diagnostics(
+            license_obj=_coerce_model_assisted_license(license_ref),
+            adapter_ref=_safe_mapping(adapter_ref),
+            adapter_present=True,
+            attempted=_bounded_int(model_calls_attempted),
+            completed=_bounded_int(model_calls_completed),
+            live_model_call_run=bool(live_model_call_run),
+            not_run_reason=None,
+        ),
         "raw_prompt_retained": False,
         "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+        "provider_payload_retained": False,
     }
+    _validate_model_output_against_safe_input(proposal, input_packet)
     proposal["finding_digest"] = _digest_json(_without_digest(proposal))
     return validate_analyst_finding_proposal(proposal)
 
@@ -565,15 +1118,39 @@ def validate_analyst_finding_proposal(value: Mapping[str, Any]) -> dict[str, Any
             raise AnalystFindingProposalError(f"D-prime handoff missing {key}")
     if proposed_answer and not _safe_mapping(handoff.get("proposed_answer_claim_ref")):
         raise AnalystFindingProposalError("D-prime handoff missing answer claim ref")
-    if (
-        proposal.get("model_assisted_analysis_run") is True
-        and proposal.get("model_adapter_kind") != MODEL_ADAPTER_KIND_FAKE_TEST
-    ):
+    model_role = _normalize_key(proposal.get("model_role"))
+    if model_role and model_role != ANALYST_MODEL_ROLE_SMART:
         raise AnalystFindingProposalError(
-            "this phase only permits fake model-assisted Analyst output"
+            "AnalystFindingProposal model role must be smart"
         )
-    if proposal.get("live_model_call_run") is not False:
-        raise AnalystFindingProposalError("Analyst proposal must not run live model")
+    role_surface = _normalize_key(proposal.get("role_surface"))
+    if role_surface and role_surface != ANALYST_ROLE_SURFACE:
+        raise AnalystFindingProposalError(
+            "AnalystFindingProposal role surface mismatch"
+        )
+    adapter_kind = _normalize_key(proposal.get("model_adapter_kind"))
+    if proposal.get("model_assisted_analysis_run") is True:
+        if adapter_kind not in {
+            MODEL_ADAPTER_KIND_FAKE_TEST,
+            MODEL_ADAPTER_KIND_REAL_SMART,
+        }:
+            raise AnalystFindingProposalError(
+                "AnalystFindingProposal model adapter kind invalid"
+            )
+        if adapter_kind == MODEL_ADAPTER_KIND_FAKE_TEST and proposal.get(
+            "live_model_call_run"
+        ) is not False:
+            raise AnalystFindingProposalError("fake Analyst adapter must not run live")
+        if adapter_kind == MODEL_ADAPTER_KIND_REAL_SMART and proposal.get(
+            "live_model_call_run"
+        ) is not True:
+            raise AnalystFindingProposalError(
+                "real Analyst SmartModel route must mark the live model call fact"
+            )
+    elif proposal.get("live_model_call_run") is not False:
+        raise AnalystFindingProposalError(
+            "deterministic Analyst proposal must not run live model"
+        )
     _validate_non_authority_flags(proposal, "AnalystFindingProposal")
     normalized = _json_safe(proposal)
     normalized["finding_digest"] = _digest_json(_without_digest(normalized))
@@ -610,6 +1187,61 @@ def analyst_finding_proposal_ref(value: Mapping[str, Any] | None) -> dict[str, A
             ),
             "scrutineer_challenge_seed_ref": _safe_mapping(
                 proposal.get("scrutineer_challenge_seed_ref")
+            ),
+            "finding_generation_mode": proposal.get("finding_generation_mode"),
+            "model_assisted_analysis_run": (
+                proposal.get("model_assisted_analysis_run") is True
+            ),
+            "model_assisted_analysis_not_run_reason": proposal.get(
+                "model_assisted_analysis_not_run_reason"
+            ),
+            "model_adapter_kind": proposal.get("model_adapter_kind"),
+            "model_role": proposal.get("model_role"),
+            "role_surface": proposal.get("role_surface"),
+            "model_calls_attempted": _bounded_int(
+                proposal.get("model_calls_attempted")
+            ),
+            "model_calls_completed": _bounded_int(
+                proposal.get("model_calls_completed")
+            ),
+            "live_model_call_run": proposal.get("live_model_call_run") is True,
+            "model_assisted_analyst_required_for_product_path": (
+                proposal.get("model_assisted_analyst_required_for_product_path") is True
+            ),
+            "model_assisted_analyst_required_for_product_pass": (
+                proposal.get("model_assisted_analyst_required_for_product_pass") is True
+            ),
+            "analyst_finding_generation_required_mode": proposal.get(
+                "analyst_finding_generation_required_mode"
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                proposal.get("model_assisted_analyst_requirement_satisfied") is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                proposal.get("model_assisted_analyst_product_grade_analysis") is True
+            ),
+            "deterministic_fallback_role": proposal.get(
+                "deterministic_fallback_role"
+            ),
+            "product_proof_status": proposal.get("product_proof_status"),
+            "product_proof_blocker": proposal.get("product_proof_blocker"),
+            "bounded_evidence_excerpt_available": (
+                proposal.get("bounded_evidence_excerpt_available") is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                proposal.get("bounded_evidence_excerpt_count")
+            ),
+            "model_assisted_analysis_evidence_depth": proposal.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": proposal.get(
+                "model_input_evidence_limitation"
+            ),
+            "safe_model_input_packet_ref": _safe_mapping(
+                proposal.get("safe_model_input_packet_ref")
+            ),
+            "model_output_validation_ref": _safe_mapping(
+                proposal.get("model_output_validation_ref")
             ),
             "requires_dprime_validation": True,
             "requires_runkernel_admission": True,
@@ -1177,6 +1809,296 @@ def _analysis_steps(finding_status: str) -> list[str]:
     return steps
 
 
+def _model_input_candidate_refs(
+    *,
+    selected_refs: Sequence[Mapping[str, Any]],
+    adjacent_refs: Sequence[Mapping[str, Any]],
+    excluded_refs: Sequence[Mapping[str, Any]],
+    unreadable_refs: Sequence[Mapping[str, Any]],
+    overclaim_refs: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in (
+        *selected_refs,
+        *adjacent_refs,
+        *excluded_refs,
+        *unreadable_refs,
+        *overclaim_refs,
+    ):
+        ref = _safe_mapping(item)
+        candidate_id = _clean_text(ref.get("candidate_id"), limit=320)
+        if candidate_id and candidate_id not in seen:
+            refs.append(ref)
+            seen.add(candidate_id)
+    return refs
+
+
+def _analyst_product_policy_fields(*, model_assisted_run: bool) -> dict[str, Any]:
+    return {
+        "model_assisted_analyst_required_for_product_path": True,
+        "model_assisted_analyst_required_for_product_pass": True,
+        "analyst_finding_generation_required_mode": (
+            FINDING_GENERATION_MODE_MODEL_ASSISTED
+        ),
+        "model_assisted_analyst_requirement_satisfied": bool(model_assisted_run),
+        "model_assisted_analyst_product_grade_analysis": bool(model_assisted_run),
+        "deterministic_fallback_role": None
+        if model_assisted_run
+        else DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC,
+        "product_proof_status": PRODUCT_PROOF_STATUS_PENDING_DPRIME_VALIDATION
+        if model_assisted_run
+        else PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN,
+        "product_proof_blocker": None
+        if model_assisted_run
+        else PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN,
+        "product_correctness_claimed": False,
+    }
+
+
+def _model_input_evidence_profile(
+    fetch_read_content_packet: Mapping[str, Any],
+    *,
+    candidate_refs: Sequence[Mapping[str, Any]],
+    bounded_content_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    return _model_input_evidence_profile_from_excerpts(
+        bounded_evidence_excerpts=_bounded_evidence_excerpts(
+            fetch_read_content_packet,
+            candidate_refs=candidate_refs,
+        ),
+        bounded_content_refs=bounded_content_refs,
+    )
+
+
+def _model_input_evidence_profile_from_input(
+    input_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(input_packet)
+    return {
+        "bounded_evidence_excerpt_available": (
+            safe.get("bounded_evidence_excerpt_available") is True
+        ),
+        "bounded_evidence_excerpt_count": _bounded_int(
+            safe.get("bounded_evidence_excerpt_count")
+        ),
+        "bounded_evidence_excerpt_max_chars": _bounded_int(
+            safe.get("bounded_evidence_excerpt_max_chars"),
+            default=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS,
+        ),
+        "model_assisted_analysis_evidence_depth": safe.get(
+            "model_assisted_analysis_evidence_depth"
+        ),
+        "model_input_evidence_limitation": safe.get(
+            "model_input_evidence_limitation"
+        ),
+    }
+
+
+def _model_input_evidence_profile_from_excerpts(
+    *,
+    bounded_evidence_excerpts: Sequence[Mapping[str, Any]],
+    bounded_content_refs: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    excerpts = [_safe_mapping(item) for item in bounded_evidence_excerpts if item]
+    if excerpts:
+        return {
+            "bounded_evidence_excerpt_available": True,
+            "bounded_evidence_excerpt_count": len(excerpts),
+            "bounded_evidence_excerpt_max_chars": (
+                ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS
+            ),
+            "model_assisted_analysis_evidence_depth": (
+                MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT
+            ),
+            "model_input_evidence_limitation": None,
+        }
+    return {
+        "bounded_evidence_excerpt_available": False,
+        "bounded_evidence_excerpt_count": 0,
+        "bounded_evidence_excerpt_max_chars": (
+            ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS
+        ),
+        "model_assisted_analysis_evidence_depth": (
+            MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT
+            if bounded_content_refs
+            else MODEL_INPUT_EVIDENCE_DEPTH_REFS_ONLY
+        ),
+        "model_input_evidence_limitation": (
+            MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT
+        ),
+    }
+
+
+def _reject_unsafe_fetch_read_packet_material(
+    fetch_read_content_packet: Mapping[str, Any],
+) -> None:
+    packet = _safe_mapping(fetch_read_content_packet)
+    if not packet:
+        return
+    packet_without_references = {
+        key: value for key, value in packet.items() if key != "reference_records"
+    }
+    _reject_forbidden_or_authority(
+        packet_without_references,
+        context="Analyst model fetch/read packet",
+    )
+    _reject_nonfalse_raw_retention_flags(
+        packet_without_references,
+        context="Analyst model fetch/read packet",
+    )
+    allowed_text_keys = {"bounded_text", "bounded_excerpt"}
+    for raw in _safe_sequence(packet.get("reference_records")):
+        ref = _safe_mapping(raw)
+        keys = _collect_keys(ref)
+        forbidden = sorted(keys & (_FORBIDDEN_KEYS - allowed_text_keys))
+        if forbidden:
+            raise AnalystFindingProposalError(
+                "Analyst model fetch/read reference includes forbidden material"
+            )
+        dangerous = sorted(_dangerous_true_claims(ref))
+        if dangerous:
+            raise AnalystFindingProposalError(
+                "Analyst model fetch/read reference attempts authority upgrade"
+            )
+        _reject_nonfalse_raw_retention_flags(
+            ref,
+            context="Analyst model fetch/read reference",
+        )
+        if "bounded_text" in ref or "bounded_excerpt" in ref:
+            _safe_bounded_excerpt_text(ref)
+
+
+def _reject_nonfalse_raw_retention_flags(value: Mapping[str, Any], *, context: str) -> None:
+    for key in _collect_keys(value):
+        if not key.startswith("raw_") or not key.endswith("_retained"):
+            continue
+        for item in _all_normalized_key_values(value, key):
+            if item is not False:
+                raise AnalystFindingProposalError(
+                    f"{context} raw/private retention flag must remain false"
+                )
+
+
+def _bounded_evidence_excerpts(
+    fetch_read_content_packet: Mapping[str, Any],
+    *,
+    candidate_refs: Sequence[Mapping[str, Any]],
+) -> list[dict[str, Any]]:
+    packet = _safe_mapping(fetch_read_content_packet)
+    candidate_ids = _candidate_ids(candidate_refs)
+    excerpts: list[dict[str, Any]] = []
+    for raw in _safe_sequence(packet.get("reference_records")):
+        ref = _safe_mapping(raw)
+        if not ref or ref.get("candidate_id") not in candidate_ids:
+            continue
+        bounded_text = _safe_bounded_excerpt_text(ref)
+        if not bounded_text:
+            continue
+        excerpt_digest = _bounded_excerpt_digest(ref, bounded_text)
+        excerpt = _without_empty(
+            {
+                "candidate_id": ref.get("candidate_id"),
+                "candidate_digest": ref.get("candidate_digest"),
+                "reference_id": ref.get("reference_id"),
+                "reference_digest": ref.get("reference_digest"),
+                "excerpt_digest": excerpt_digest,
+                "bounded_content_digest": excerpt_digest,
+                "bounded_excerpt_text": bounded_text,
+                "bounded_character_count": len(bounded_text),
+                "fetch_read_status": ref.get("fetch_read_status"),
+                "content_type": ref.get("content_type"),
+                "bounded_evidence_excerpt_source": (
+                    "existing_fetch_read_content_packet.reference_records.bounded_text"
+                ),
+                "bounded_text_sanitized": True,
+                "bounded_text_bounded": True,
+                "not_semantic_support": True,
+                "not_citation_eligible": True,
+                "not_source_obligation_satisfaction": True,
+                "raw_prompt_retained": False,
+                "raw_model_response_retained": False,
+                "raw_provider_payload_retained": False,
+                "raw_source_content_retained": False,
+            }
+        )
+        _reject_forbidden_or_authority(
+            excerpt,
+            context="Analyst bounded evidence excerpt",
+        )
+        excerpts.append(excerpt)
+    return excerpts
+
+
+def _validate_bounded_evidence_excerpts(value: Any, *, context: str) -> None:
+    for item in _safe_sequence(value):
+        excerpt = _safe_mapping(item)
+        text = _clean_text(
+            excerpt.get("bounded_excerpt_text"),
+            limit=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS + 1,
+        )
+        if not text:
+            raise AnalystFindingProposalError(f"{context} requires bounded text")
+        if len(text) > ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS:
+            raise AnalystFindingProposalError(f"{context} exceeds excerpt cap")
+        if excerpt.get("bounded_character_count") != len(text):
+            raise AnalystFindingProposalError(
+                f"{context} character count mismatch"
+            )
+        declared_digest = _clean_text(excerpt.get("excerpt_digest"), limit=128)
+        if declared_digest and declared_digest != _digest_json({"bounded_text": text}):
+            raise AnalystFindingProposalError(f"{context} digest mismatch")
+        _reject_forbidden_or_authority(excerpt, context=context)
+        _reject_nonfalse_raw_retention_flags(excerpt, context=context)
+
+
+def _safe_bounded_excerpt_text(ref: Mapping[str, Any]) -> str | None:
+    safe = _safe_mapping(ref)
+    has_text = safe.get("bounded_text") not in (None, "")
+    has_excerpt = safe.get("bounded_excerpt") not in (None, "")
+    if not has_text and not has_excerpt:
+        return None
+    if safe.get("bounded_text_sanitized") is not True or safe.get(
+        "bounded_text_bounded"
+    ) is not True:
+        raise AnalystFindingProposalError(
+            "Analyst model bounded excerpt requires sanitized/bounded flags"
+        )
+    text = _clean_text(
+        safe.get("bounded_text") if has_text else safe.get("bounded_excerpt"),
+        limit=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS + 1,
+    )
+    if not text:
+        return None
+    if len(text) > ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS:
+        raise AnalystFindingProposalError(
+            "Analyst model bounded excerpt exceeds cap"
+        )
+    for key in (
+        "bounded_character_count",
+        "bounded_text_char_count",
+        "bounded_excerpt_char_count",
+    ):
+        if key in safe and safe.get(key) not in (None, ""):
+            if _bounded_int(safe.get(key)) != len(text):
+                raise AnalystFindingProposalError(
+                    "Analyst model bounded excerpt character count mismatch"
+                )
+    _bounded_excerpt_digest(safe, text)
+    return text
+
+
+def _bounded_excerpt_digest(ref: Mapping[str, Any], text: str) -> str:
+    digest = _digest_json({"bounded_text": text})
+    for key in ("excerpt_digest", "bounded_content_digest", "bounded_text_digest"):
+        declared = _clean_text(_safe_mapping(ref).get(key), limit=128)
+        if declared and declared != digest:
+            raise AnalystFindingProposalError(
+                "Analyst model bounded excerpt digest mismatch"
+            )
+    return digest
+
+
 def _bounded_content_refs(
     fetch_read_content_packet: Mapping[str, Any],
     *,
@@ -1201,8 +2123,12 @@ def _bounded_content_refs(
                     "candidate_digest": ref.get("candidate_digest"),
                     "reference_id": ref.get("reference_id"),
                     "reference_digest": ref.get("reference_digest"),
-                    "bounded_content_digest": ref.get("excerpt_digest"),
-                    "bounded_character_count": ref.get("bounded_character_count"),
+                    "bounded_content_digest": ref.get("excerpt_digest")
+                    or ref.get("bounded_content_digest")
+                    or ref.get("bounded_text_digest"),
+                    "bounded_character_count": ref.get("bounded_character_count")
+                    or ref.get("bounded_content_char_count")
+                    or ref.get("bounded_text_char_count"),
                     "fetch_read_status": ref.get("fetch_read_status"),
                     "bounded_content_text_retained": False,
                 }
@@ -1364,6 +2290,19 @@ def _collect_keys(value: Any) -> set[str]:
     return set()
 
 
+def _all_normalized_key_values(value: Any, normalized_key: str) -> list[Any]:
+    found: list[Any] = []
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if _normalize_key(key) == normalized_key:
+                found.append(item)
+            found.extend(_all_normalized_key_values(item, normalized_key))
+    elif isinstance(value, list | tuple | set | frozenset):
+        for item in value:
+            found.extend(_all_normalized_key_values(item, normalized_key))
+    return found
+
+
 def _proposed_answer_claim_ref(value: Mapping[str, Any] | None) -> dict[str, Any]:
     claim = _safe_mapping(value)
     if not claim:
@@ -1497,6 +2436,23 @@ def _safe_model_input_packet_ref(input_packet: Mapping[str, Any]) -> dict[str, A
             ),
             "raw_prompt_retained": False,
             "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+            "bounded_evidence_excerpt_available": (
+                safe.get("bounded_evidence_excerpt_available") is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                safe.get("bounded_evidence_excerpt_count")
+            ),
+            "bounded_evidence_excerpt_max_chars": _bounded_int(
+                safe.get("bounded_evidence_excerpt_max_chars"),
+                default=ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS,
+            ),
+            "model_assisted_analysis_evidence_depth": safe.get(
+                "model_assisted_analysis_evidence_depth"
+            ),
+            "model_input_evidence_limitation": safe.get(
+                "model_input_evidence_limitation"
+            ),
             "live_model_call_run": False,
         }
     )
@@ -1506,6 +2462,7 @@ def _model_output_validation_ref(
     *,
     input_packet: Mapping[str, Any],
     adapter_kind: str,
+    live_model_call_run: bool = False,
 ) -> dict[str, Any]:
     base = {
         "schema_version": ANALYST_MODEL_OUTPUT_VALIDATION_SCHEMA_VERSION,
@@ -1517,7 +2474,20 @@ def _model_output_validation_ref(
         "output_validated_into_analyst_finding_proposal": True,
         "raw_prompt_retained": False,
         "raw_model_response_retained": False,
-        "live_model_call_run": False,
+        "raw_provider_payload_retained": False,
+        "bounded_evidence_excerpt_available": (
+            input_packet.get("bounded_evidence_excerpt_available") is True
+        ),
+        "bounded_evidence_excerpt_count": _bounded_int(
+            input_packet.get("bounded_evidence_excerpt_count")
+        ),
+        "model_assisted_analysis_evidence_depth": input_packet.get(
+            "model_assisted_analysis_evidence_depth"
+        ),
+        "model_input_evidence_limitation": input_packet.get(
+            "model_input_evidence_limitation"
+        ),
+        "live_model_call_run": bool(live_model_call_run),
     }
     digest = _digest_json(base)
     return {
@@ -1527,6 +2497,328 @@ def _model_output_validation_ref(
         ),
         "model_output_validation_digest": digest,
     }
+
+
+def _annotated_deterministic_fallback(
+    proposal: Mapping[str, Any],
+    *,
+    license_obj: AnalystFindingModelAssistedLicense,
+    adapter_ref: Mapping[str, Any],
+    adapter_present: bool,
+    not_run_reason: str,
+) -> dict[str, Any]:
+    updated = {
+        **_safe_mapping(proposal),
+        "model_assisted_analysis_run": False,
+        "finding_generation_mode": FINDING_GENERATION_MODE_DETERMINISTIC,
+        "model_adapter_kind": MODEL_ADAPTER_KIND_DETERMINISTIC,
+        "model_role": ANALYST_MODEL_ROLE_SMART,
+        "role_surface": ANALYST_ROLE_SURFACE,
+        "runtime_consumer": ANALYST_RUNTIME_CONSUMER,
+        "route_authority": ANALYST_ROUTE_AUTHORITY,
+        "model_assisted_analysis_license_present": license_obj.enabled,
+        "model_assisted_analysis_adapter_present": bool(adapter_present),
+        "model_assisted_analysis_not_run_reason": not_run_reason,
+        "model_calls_attempted": 0,
+        "model_calls_completed": 0,
+        "live_model_call_run": False,
+        "model_route_diagnostics": _analyst_model_route_diagnostics(
+            license_obj=license_obj,
+            adapter_ref=adapter_ref,
+            adapter_present=adapter_present,
+            attempted=0,
+            completed=0,
+            live_model_call_run=False,
+            not_run_reason=not_run_reason,
+        ),
+        "safe_model_input_packet_ref": {},
+        "model_output_validation_ref": {},
+        **_analyst_product_policy_fields(model_assisted_run=False),
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "raw_provider_payload_retained": False,
+        "provider_payload_retained": False,
+    }
+    updated["finding_digest"] = _digest_json(_without_digest(updated))
+    return validate_analyst_finding_proposal(updated)
+
+
+def _analyst_model_route_diagnostics(
+    *,
+    license_obj: AnalystFindingModelAssistedLicense,
+    adapter_ref: Mapping[str, Any],
+    adapter_present: bool,
+    attempted: int,
+    completed: int,
+    live_model_call_run: bool,
+    not_run_reason: str | None,
+) -> dict[str, Any]:
+    ref = _safe_mapping(adapter_ref)
+    diagnostics = _without_empty(
+        {
+            "schema_version": ANALYST_FINDING_MODEL_ROUTE_SCHEMA_VERSION,
+            "phase": ANALYST_FINDING_PROPOSAL_PHASE,
+            "model_role": ANALYST_MODEL_ROLE_SMART,
+            "role_surface": ANALYST_ROLE_SURFACE,
+            "runtime_consumer": ANALYST_RUNTIME_CONSUMER,
+            "route_authority": ANALYST_ROUTE_AUTHORITY,
+            "model_assisted_analyst_license_present": license_obj.enabled,
+            "model_assisted_analyst_adapter_present": bool(adapter_present),
+            "model_assisted_analysis_not_run_reason": not_run_reason,
+            "model_adapter_kind": ref.get("model_adapter_kind")
+            or ref.get("adapter_kind"),
+            "model_calls_attempted": _bounded_int(attempted),
+            "model_calls_completed": _bounded_int(completed),
+            "configured_smart_provider": _safe_route_text(
+                ref.get("configured_smart_provider")
+                or ref.get("configured_provider"),
+                limit=120,
+            ),
+            "configured_smart_model": _safe_route_text(
+                ref.get("configured_smart_model") or ref.get("configured_model"),
+                limit=160,
+            ),
+            "endpoint_kind": _clean_text(
+                ref.get("configured_endpoint_kind") or ref.get("endpoint_kind"),
+                limit=120,
+            ),
+            "retry_policy": _normalize_key(
+                ref.get("retry_policy") or license_obj.retry_policy
+            )
+            or "forbidden",
+            "fallback_policy": _normalize_key(ref.get("fallback_policy"))
+            or "forbidden",
+            "timeout_policy": _normalize_key(
+                ref.get("timeout_policy") or license_obj.timeout_policy
+            )
+            or "fail_closed",
+            "provider_model_switching_allowed": ref.get(
+                "provider_switching_allowed"
+            )
+            is True,
+            "endpoint_switching_allowed": ref.get("endpoint_switching_allowed")
+            is True,
+            "raw_prompt_retained": False,
+            "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+            "live_model_call_run": bool(live_model_call_run),
+        }
+    )
+    diagnostics["route_diagnostics_digest"] = _digest_json(diagnostics)
+    return diagnostics
+
+
+def _coerce_model_assisted_license(
+    value: Mapping[str, Any] | AnalystFindingModelAssistedLicense | None,
+) -> AnalystFindingModelAssistedLicense:
+    if isinstance(value, AnalystFindingModelAssistedLicense):
+        return value
+    return AnalystFindingModelAssistedLicense.from_mapping(value)
+
+
+def _model_adapter_ref(adapter: Any) -> dict[str, Any]:
+    if adapter is None:
+        return {}
+    if hasattr(adapter, "to_ref"):
+        try:
+            ref = _safe_mapping(adapter.to_ref())
+        except Exception as exc:  # noqa: BLE001 - fail closed safely.
+            raise AnalystFindingProposalError(
+                "Analyst model adapter ref failed closed: "
+                f"{type(exc).__name__}"
+            ) from None
+    elif isinstance(adapter, Mapping):
+        ref = _safe_mapping(adapter)
+    else:
+        ref = {
+            "schema_version": ANALYST_FINDING_MODEL_ROUTE_SCHEMA_VERSION,
+            "phase": ANALYST_FINDING_PROPOSAL_PHASE,
+            "model_adapter_kind": MODEL_ADAPTER_KIND_FAKE_TEST,
+            "model_role": ANALYST_MODEL_ROLE_SMART,
+            "role_surface": ANALYST_ROLE_SURFACE,
+            "runtime_consumer": ANALYST_RUNTIME_CONSUMER,
+            "route_authority": ANALYST_ROUTE_AUTHORITY,
+            "retry_policy": "forbidden",
+            "fallback_policy": "forbidden",
+            "timeout_policy": "fail_closed",
+            "provider_switching_allowed": False,
+            "endpoint_switching_allowed": False,
+            "raw_prompt_retained": False,
+            "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+        }
+    _reject_forbidden_or_authority(ref, context="Analyst model adapter ref")
+    return _json_safe(ref)
+
+
+def _invoke_real_model_adapter(
+    adapter: Any,
+    *,
+    prompt: str,
+    input_packet: Mapping[str, Any],
+    system_prompt: str,
+    license_ref: Mapping[str, Any],
+    route_ref: Mapping[str, Any],
+) -> Any:
+    if hasattr(adapter, "invoke_once"):
+        return adapter.invoke_once(
+            prompt=prompt,
+            input_packet=input_packet,
+            system_prompt=system_prompt,
+            license_ref=license_ref,
+            route_ref=route_ref,
+        )
+    if callable(adapter):
+        return adapter(
+            prompt,
+            system_prompt=system_prompt,
+            input_packet=input_packet,
+            license_ref=license_ref,
+            route_ref=route_ref,
+            require_json=True,
+        )
+    raise AnalystFindingProposalError(
+        "Analyst model adapter must be callable or expose invoke_once"
+    )
+
+
+def _parse_structured_output(value: Any) -> dict[str, Any]:
+    if isinstance(value, Mapping):
+        return _safe_mapping(value)
+    if hasattr(value, "output_text"):
+        return _parse_structured_output(getattr(value, "output_text"))
+    if hasattr(value, "to_safe_diagnostic"):
+        diagnostic = _safe_mapping(value.to_safe_diagnostic())
+        if _bounded_int(diagnostic.get("return_code"), default=2) != 0:
+            raise AnalystFindingProposalError("Analyst model route failed closed")
+        return _parse_structured_output(getattr(value, "output_text", ""))
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise AnalystFindingProposalError(
+                "Analyst model output was not structured JSON"
+            ) from exc
+        return _safe_mapping(parsed)
+    raise AnalystFindingProposalError("Analyst model output type invalid")
+
+
+def _validate_model_output_against_safe_input(
+    proposal: Mapping[str, Any],
+    input_packet: Mapping[str, Any],
+) -> None:
+    safe = _safe_mapping(input_packet)
+    selected_ids = _candidate_ids(
+        _safe_refs(safe.get("selected_answer_bearing_candidate_refs"))
+    )
+    adjacent_or_excluded_ids = _candidate_ids(
+        [
+            *_safe_refs(safe.get("adjacent_context_candidate_refs")),
+            *_safe_refs(safe.get("excluded_scope_candidate_refs")),
+            *_safe_refs(safe.get("unreadable_high_value_candidate_refs")),
+            *_safe_refs(safe.get("overclaim_risk_candidate_refs")),
+        ]
+    )
+    proposed_selected_ids = _candidate_ids(
+        _safe_refs(proposal.get("selected_answer_bearing_candidate_refs"))
+    )
+    if proposed_selected_ids - selected_ids:
+        raise AnalystFindingProposalError(
+            "model output treated adjacent/excluded refs as answer-bearing"
+        )
+    proposed_answer = _safe_mapping(proposal.get("proposed_answer_claim"))
+    if proposed_answer:
+        if not selected_ids:
+            raise AnalystFindingProposalError(
+                "model output created answer claim without answer-bearing refs"
+            )
+        claim_ids = _candidate_ids(
+            _safe_refs(proposed_answer.get("selected_answer_bearing_candidate_refs"))
+        )
+        if claim_ids - selected_ids:
+            raise AnalystFindingProposalError(
+                "model output answer claim uses non-answer-bearing refs"
+            )
+        binding_ref = _safe_mapping(safe.get("component_answer_type_binding_ref"))
+        if proposed_answer.get("requested_answer_type") != binding_ref.get(
+            "requested_answer_type"
+        ):
+            raise AnalystFindingProposalError(
+                "model output answer claim changed requested answer type"
+            )
+        if proposed_answer.get("expected_value_shape") != binding_ref.get(
+            "expected_value_shape"
+        ):
+            raise AnalystFindingProposalError(
+                "model output answer claim changed expected value shape"
+            )
+    for claim in _safe_sequence(proposal.get("analysis_claims")):
+        claim_safe = _safe_mapping(claim)
+        kind = _normalize_key(claim_safe.get("analysis_claim_kind"))
+        support_ids = _candidate_ids(
+            _safe_refs(claim_safe.get("supporting_candidate_refs"))
+        )
+        adjacent_ids = _candidate_ids(
+            _safe_refs(claim_safe.get("adjacent_or_excluded_candidate_refs"))
+        )
+        if kind in {
+            ANALYSIS_CLAIM_KIND_PROPOSED_ANSWER,
+            ANALYSIS_CLAIM_KIND_EVIDENCE_INTERPRETATION,
+        } and support_ids - selected_ids:
+            raise AnalystFindingProposalError(
+                "model output source-grounded claim uses non-answer-bearing refs"
+            )
+        if kind in {
+            ANALYSIS_CLAIM_KIND_CAVEAT,
+            ANALYSIS_CLAIM_KIND_EXCLUSION,
+            ANALYSIS_CLAIM_KIND_OVERCLAIM_RISK,
+            ANALYSIS_CLAIM_KIND_CONFLICT_RISK,
+        } and adjacent_ids - adjacent_or_excluded_ids:
+            raise AnalystFindingProposalError(
+                "model output caveat/exclusion/risk refs are outside triage roles"
+            )
+
+
+def _safe_candidate_triage_records(value: Any) -> list[dict[str, Any]]:
+    allowed_keys = {
+        "candidate_id",
+        "candidate_digest",
+        "candidate_title",
+        "candidate_domain",
+        "candidate_url",
+        "official_source_record_looking_posture",
+        "readable_bounded_content_posture",
+        "requested_answer_type_match_status",
+        "expected_value_shape_match_status",
+        "adjacent_scope_match_status",
+        "excluded_adjacent_scope_hits",
+        "proposed_candidate_role",
+        "triage_reason_codes",
+        "selected_for_dprime_review",
+        "dprime_review_selection_kind",
+        "dprime_review_candidate_answer_bearing",
+        "dprime_review_selection_is_diagnostic_only",
+        "selected_window_digest",
+        "selected_window_char_count",
+        "bounded_content_digest",
+        "bounded_content_char_count",
+        "raw_private_retention_flags",
+    }
+    records: list[dict[str, Any]] = []
+    for item in _safe_sequence(value):
+        record = _safe_mapping(item)
+        safe_record = {
+            key: _json_safe(record.get(key))
+            for key in allowed_keys
+            if key in record and record.get(key) not in (None, "", [], {}, ())
+        }
+        if safe_record:
+            _reject_forbidden_or_authority(
+                safe_record,
+                context="Analyst safe candidate triage record",
+            )
+            records.append(safe_record)
+    return records
 
 
 def _non_authority_posture() -> dict[str, Any]:
@@ -1581,6 +2873,36 @@ def _normalize_key(value: Any) -> str:
     return str(value or "").strip().casefold().replace("-", "_").replace(" ", "_")
 
 
+def _bounded_int(value: Any, *, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _safe_route_text(value: Any, *, limit: int) -> str | None:
+    text = _clean_text(value, limit=limit)
+    if not text:
+        return None
+    lowered = text.casefold()
+    private_markers = (
+        "api_key",
+        "authorization:",
+        "bearer ",
+        "private_sentinel",
+        "provider_payload",
+        "raw_prompt",
+        "raw_provider",
+        "secret",
+        "sk-",
+        "token",
+    )
+    if any(marker in lowered for marker in private_markers):
+        return "private_looking_value_not_retained"
+    return text
+
+
 def _stable_id(prefix: str, parts: Sequence[Any]) -> str:
     return f"{prefix}:{_digest_json(list(parts))[:20]}"
 
@@ -1624,9 +2946,16 @@ def _digest_json(value: Any) -> str:
 __all__ = [
     "ANALYST_FINDING_PROPOSAL_SCHEMA_VERSION",
     "ANALYST_FINDING_PROPOSAL_PHASE",
+    "ANALYST_FINDING_PROMPT_SCHEMA_VERSION",
+    "ANALYST_FINDING_MODEL_ROUTE_SCHEMA_VERSION",
     "ANALYST_MODEL_OUTPUT_VALIDATION_SCHEMA_VERSION",
+    "ANALYST_MODEL_ROLE_SMART",
     "ANALYST_SAFE_MODEL_INPUT_PACKET_SCHEMA_VERSION",
     "ANALYST_SOURCE_SUPPORT_MAP_SCHEMA_VERSION",
+    "ANALYST_ROLE_SURFACE",
+    "ANALYST_RUNTIME_CONSUMER",
+    "ANALYST_ROUTE_AUTHORITY",
+    "ANALYST_SAFE_BOUNDED_EVIDENCE_EXCERPT_MAX_CHARS",
     "ANALYSIS_CLAIM_KIND_CAVEAT",
     "ANALYSIS_CLAIM_KIND_CONFLICT_RISK",
     "ANALYSIS_CLAIM_KIND_EVIDENCE_INTERPRETATION",
@@ -1635,10 +2964,26 @@ __all__ = [
     "ANALYSIS_CLAIM_KIND_OVERCLAIM_RISK",
     "ANALYSIS_CLAIM_KIND_PROPOSED_ANSWER",
     "AnalystFindingProposalError",
+    "AnalystFindingModelAssistedLicense",
+    "AnalystFindingSmartModelAdapter",
     "FINDING_STATUS_FOLLOWUP_REQUIRED",
     "FINDING_STATUS_INSUFFICIENT_EVIDENCE",
     "FINDING_STATUS_SOURCE_GROUNDED_PROPOSED",
+    "FINDING_GENERATION_MODE_DETERMINISTIC",
+    "FINDING_GENERATION_MODE_MODEL_ASSISTED",
+    "MODEL_ADAPTER_KIND_DETERMINISTIC",
     "MODEL_ADAPTER_KIND_FAKE_TEST",
+    "MODEL_ADAPTER_KIND_REAL_SMART",
+    "MODEL_ASSISTED_NOT_RUN_MISSING_ADAPTER",
+    "MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE",
+    "MODEL_ASSISTED_NOT_RUN_MISSING_LICENSE_AND_ADAPTER",
+    "MODEL_INPUT_EVIDENCE_DEPTH_BOUNDED_EXCERPT",
+    "MODEL_INPUT_EVIDENCE_DEPTH_LIMITED_NO_EXCERPT",
+    "MODEL_INPUT_EVIDENCE_DEPTH_REFS_ONLY",
+    "MODEL_INPUT_EVIDENCE_LIMITATION_NO_SAFE_BOUNDED_EXCERPT",
+    "DETERMINISTIC_FALLBACK_ROLE_DIAGNOSTIC",
+    "PRODUCT_PROOF_STATUS_BLOCKED_ANALYST_NOT_RUN",
+    "PRODUCT_PROOF_STATUS_PENDING_DPRIME_VALIDATION",
     "SUPPORT_STATUS_ADJACENT_ONLY",
     "SUPPORT_STATUS_CONFLICT_OR_OVERCLAIM_RISK",
     "SUPPORT_STATUS_INSUFFICIENT_EVIDENCE",
@@ -1648,6 +2993,11 @@ __all__ = [
     "build_analyst_finding_safe_model_input_packet",
     "build_deterministic_analyst_finding_proposal",
     "build_fake_model_assisted_analyst_finding_proposal",
+    "build_model_assisted_analyst_finding_proposal",
+    "build_model_assisted_analyst_license",
+    "build_analyst_finding_prompt",
     "validate_analyst_finding_proposal",
+    "validate_analyst_finding_safe_model_input_packet",
     "validate_fake_model_assisted_analyst_output",
+    "validate_model_assisted_analyst_output",
 ]
