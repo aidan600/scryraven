@@ -738,20 +738,25 @@ def _multi_source_shape_ref(
     scrutineer = _safe_mapping(
         semantic.get("dprime_scrutineer_challenge_ref")
     ) or _safe_mapping(dprime.get("multi_source_scrutineer_challenge_ref"))
-    relation_count = _bounded_int(
-        semantic.get("dprime_multi_source_relation_count")
-        or relation_set.get("relation_count"),
-        default=len(relation_refs),
+    relation_ref_count = len(relation_refs)
+    source_ref_count = len(source_refs)
+    candidate_ref_count = len(candidate_refs)
+    relation_count = _first_count(
+        (
+            semantic.get("dprime_multi_source_relation_count"),
+            relation_set.get("relation_count"),
+            support_posture.get("relation_count"),
+        ),
+        default=relation_ref_count,
     )
-    source_count = _bounded_int(
-        semantic.get("dprime_multi_source_source_count")
-        or relation_set.get("source_count")
-        or support_posture.get("source_count"),
-        default=len(source_refs),
+    source_count = _first_count(
+        (
+            semantic.get("dprime_multi_source_source_count"),
+            relation_set.get("source_count"),
+            support_posture.get("source_count"),
+        ),
+        default=source_ref_count,
     )
-    if relation_set or support_posture or scrutineer:
-        relation_count = max(relation_count, len(relation_refs))
-        source_count = max(source_count, len(source_refs))
     return _without_empty(
         {
             "status": (
@@ -764,7 +769,9 @@ def _multi_source_shape_ref(
             "scrutineer_challenge_ref": scrutineer,
             "relation_count": relation_count,
             "source_count": source_count,
-            "candidate_ref_count": len(candidate_refs),
+            "relation_ref_count": relation_ref_count,
+            "source_ref_count": source_ref_count,
+            "candidate_ref_count": candidate_ref_count,
             "relation_refs": [dict(item) for item in relation_refs],
             "source_refs": [dict(item) for item in source_refs],
             "candidate_refs": [dict(item) for item in candidate_refs],
@@ -961,6 +968,14 @@ def _bounded_int(value: Any, *, default: int = 0) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed >= 0 else default
+
+
+def _first_count(values: Sequence[Any], *, default: int = 0) -> int:
+    for value in values:
+        if value is None or value == "":
+            continue
+        return _bounded_int(value, default=default)
+    return default
 
 
 def _without_empty(payload: Mapping[str, Any]) -> dict[str, Any]:

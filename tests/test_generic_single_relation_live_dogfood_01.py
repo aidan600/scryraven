@@ -2410,6 +2410,21 @@ def test_product_single_fact_same_component_multi_source_blocks_duplicate_source
     assert semantic["dprime_status"]["objects_created"]["component_coverage"] is False
     assert result.packet["final_answer_packet_created"] is False
     assert result.packet["source_display_opened"] is False
+    assert result.packet["source_display_entries"] == []
+    assert result.packet["citation_source_display_created"] is False
+    node_output = result.packet["component_work_node_v0_output_ref"]
+    node_shape = node_output["multi_source_shape_ref"]
+    assert node_shape["relation_count"] == 2
+    assert node_shape["source_count"] == 1
+    assert node_shape["relation_ref_count"] >= 2
+    assert node_shape["source_ref_count"] >= 1
+    assert node_shape["challenge_kind"] == "source_laundering_risk"
+    assert node_shape["answer_path_allowed"] is False
+    assert node_output["component_work_node_created_fap"] is False
+    assert node_output["component_work_node_created_author"] is False
+    assert node_output["component_work_node_created_source_display"] is False
+    assert node_output["component_work_node_rendered_citations"] is False
+    assert node_output["component_work_node_claimed_product_correctness"] is False
 
 
 def test_product_single_fact_redacts_live_semantic_model_route_ref_canary(

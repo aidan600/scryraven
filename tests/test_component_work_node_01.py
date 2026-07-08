@@ -206,6 +206,8 @@ def test_component_work_node_preserves_multi_source_shape() -> None:
     assert shape["status"] == "preserved"
     assert shape["relation_count"] >= 2
     assert shape["source_count"] >= 2
+    assert shape["relation_ref_count"] >= 2
+    assert shape["source_ref_count"] >= 2
     assert len(shape["relation_refs"]) >= 2
     assert len(shape["source_refs"]) >= 2
     assert shape["best_source_collapse_created"] is False
@@ -218,6 +220,60 @@ def test_component_work_node_preserves_multi_source_shape() -> None:
     )
     with pytest.raises(ComponentWorkNodeError):
         validate_component_work_node_v0_output_ref(collapsed)
+
+
+def test_component_work_node_preserves_duplicate_source_shape() -> None:
+    packet = _product_packet()
+    shared_source = _source_ref(suffix="duplicate")
+    shared_source["candidate_id"] = "candidate:n400"
+    shared_source["candidate_digest"] = "candidate-digest:n400"
+    shared_source["reference_id"] = "reference:n400"
+    shared_source["reference_digest"] = "reference-digest:n400"
+    shared_source["url"] = "https://www.uscis.gov/forms/filing-fees"
+    shared_source["domain"] = "www.uscis.gov"
+    semantic = deepcopy(packet["semantic_status_payload"])
+    semantic.update(
+        {
+            "dprime_multi_source_relation_count": 2,
+            "dprime_multi_source_source_count": 1,
+            "dprime_multi_source_relation_set_ref": {
+                "status": "created",
+                "relation_count": 2,
+                "source_count": 1,
+                "relation_intake_refs": [
+                    _relation_ref(packet, suffix="primary"),
+                    _relation_ref(packet, suffix="duplicate"),
+                ],
+                "evidence_source_refs": [shared_source, shared_source],
+            },
+            "dprime_multi_source_support_posture_ref": {
+                "status": "blocked",
+                "source_count": 1,
+                "source_display_candidate_refs": [shared_source],
+                "currentness_posture": "current",
+                "conflict_posture": "duplicate_source",
+                "challenge_kind": "source_laundering_risk",
+                "answer_path_allowed": False,
+            },
+            "dprime_scrutineer_challenge_ref": {
+                "status": "created",
+                "challenge_kind": "source_laundering_risk",
+            },
+        }
+    )
+    packet["semantic_status_payload"] = semantic
+
+    refs = component_work_node_v0_refs_from_product_packet(packet)
+    shape = refs["component_work_node_v0_output_ref"]["multi_source_shape_ref"]
+
+    assert shape["relation_count"] == 2
+    assert shape["source_count"] == 1
+    assert shape["relation_ref_count"] >= 2
+    assert shape["source_ref_count"] >= 1
+    assert shape["challenge_kind"] == "source_laundering_risk"
+    assert shape["answer_path_allowed"] is False
+    assert shape["best_source_collapse_created"] is False
+    assert shape["single_undifferentiated_source_output_created"] is False
 
 
 def test_component_work_node_preserves_followup_recovery_refs() -> None:
