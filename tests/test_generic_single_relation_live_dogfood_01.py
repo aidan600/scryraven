@@ -2325,6 +2325,28 @@ def test_product_single_fact_same_component_multi_source_feeds_dprime_runtime(
     assert result.packet["citation_source_display_created"] is False
     assert result.packet["source_display_opened"] is False
     assert result.packet["product_correctness_claimed"] is False
+    node_input = result.packet["component_work_node_v0_input_ref"]
+    node_output = result.packet["component_work_node_v0_output_ref"]
+    node_shape = node_output["multi_source_shape_ref"]
+    assert node_input["component_ids"] == [plan["component_id"]]
+    assert node_input["source_obligation_lane_ids"] == [
+        plan["source_obligation_id"]
+    ]
+    assert node_input["relation_plan_ref"]["relation_plan_id"] == plan["plan_id"]
+    assert node_output["node_status"] == "consumed"
+    assert node_output["source_obligation_authority_consumed"] is True
+    assert node_output["citation_source_handoff_authority_consumed"] is True
+    assert node_shape["status"] == "preserved"
+    assert node_shape["relation_count"] >= 2
+    assert node_shape["source_count"] >= 2
+    assert len(node_shape["relation_refs"]) >= 2
+    assert len(node_shape["source_refs"]) >= 2
+    assert node_shape["best_source_collapse_created"] is False
+    assert node_shape["single_undifferentiated_source_output_created"] is False
+    assert node_output["component_work_node_created_fap"] is False
+    assert node_output["component_work_node_created_author"] is False
+    assert node_output["component_work_node_rendered_citations"] is False
+    assert node_output["component_work_node_claimed_product_correctness"] is False
 
 
 def test_product_single_fact_same_component_multi_source_blocks_duplicate_source(
@@ -2388,6 +2410,21 @@ def test_product_single_fact_same_component_multi_source_blocks_duplicate_source
     assert semantic["dprime_status"]["objects_created"]["component_coverage"] is False
     assert result.packet["final_answer_packet_created"] is False
     assert result.packet["source_display_opened"] is False
+    assert result.packet["source_display_entries"] == []
+    assert result.packet["citation_source_display_created"] is False
+    node_output = result.packet["component_work_node_v0_output_ref"]
+    node_shape = node_output["multi_source_shape_ref"]
+    assert node_shape["relation_count"] == 2
+    assert node_shape["source_count"] == 1
+    assert node_shape["relation_ref_count"] >= 2
+    assert node_shape["source_ref_count"] >= 1
+    assert node_shape["challenge_kind"] == "source_laundering_risk"
+    assert node_shape["answer_path_allowed"] is False
+    assert node_output["component_work_node_created_fap"] is False
+    assert node_output["component_work_node_created_author"] is False
+    assert node_output["component_work_node_created_source_display"] is False
+    assert node_output["component_work_node_rendered_citations"] is False
+    assert node_output["component_work_node_claimed_product_correctness"] is False
 
 
 def test_product_single_fact_redacts_live_semantic_model_route_ref_canary(
@@ -3140,6 +3177,20 @@ def test_ready_gateway_and_dprime_slice_still_block_without_source_citation_auth
     assert result.packet["source_citation_display_entries_created"] is False
     assert result.packet["source_citation_display_derived_from_dprime_authority"] is False
     assert result.packet["source_citation_display_derived_from_gateway_only"] is False
+    node_input = result.packet["component_work_node_v0_input_ref"]
+    node_output = result.packet["component_work_node_v0_output_ref"]
+    assert node_input["component_ids"] == [plan["component_id"]]
+    assert node_input["source_obligation_lane_ids"] == [
+        plan["source_obligation_id"]
+    ]
+    assert node_output["node_status"] == "blocked"
+    assert node_output["source_obligation_authority_consumed"] is False
+    assert node_output["citation_source_handoff_authority_consumed"] is False
+    assert node_output["blocker_refs"]
+    assert node_output["candidate_fetch_read_refs_treated_as_semantic_support"] is False
+    assert node_output[
+        "component_coverage_treated_as_source_obligation_satisfaction"
+    ] is False
 
 
 def test_consumed_dprime_source_citation_authority_stops_at_display_boundary(
@@ -3348,6 +3399,34 @@ def test_consumed_dprime_source_citation_authority_stops_at_display_boundary(
     assert result.packet["author_prose_created"] is False
     assert result.packet["author_answer_created"] is False
     assert result.packet["product_correctness_claimed"] is False
+    node_input = result.packet["component_work_node_v0_input_ref"]
+    node_output = result.packet["component_work_node_v0_output_ref"]
+    assert node_input["component_ids"] == [plan["component_id"]]
+    assert node_input["source_obligation_lane_ids"] == [
+        plan["source_obligation_id"]
+    ]
+    assert node_input["relation_plan_ref"]["relation_plan_id"] == plan["plan_id"]
+    assert node_input["component_answer_type_binding_ref"][
+        "binding_id"
+    ] == plan["component_answer_type_binding_ref"]["binding_id"]
+    assert node_output["node_status"] == "consumed"
+    assert node_output["source_obligation_authority_consumed"] is True
+    assert node_output["citation_source_handoff_authority_consumed"] is True
+    assert node_output["source_obligation_authority_refs"][0]["owner"] == (
+        "RunKernel.DPrimeSourceObligationAuthority"
+    )
+    assert node_output["citation_source_handoff_refs"][0]["owner"] == (
+        "RunKernel.DPrimeCitationSourceHandoffAuthority"
+    )
+    assert node_output["component_work_node_created_source_display"] is False
+    assert node_output["component_work_node_created_fap"] is False
+    assert node_output["component_work_node_created_author"] is False
+    assert node_output["component_work_node_rendered_citations"] is False
+    assert node_output["component_work_node_claimed_product_correctness"] is False
+    assert node_output["candidate_fetch_read_refs_treated_as_semantic_support"] is False
+    assert node_output[
+        "component_coverage_treated_as_source_obligation_satisfaction"
+    ] is False
 
 
 def test_dprime_pass_without_stable_selected_value_fails_closed_at_gateway(
