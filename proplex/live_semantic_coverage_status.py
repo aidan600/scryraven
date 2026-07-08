@@ -40,8 +40,10 @@ from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_evidence_support_bundle_runtime import (
     BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
     BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING,
+    BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED,
     BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED,
     DPrimeEvidenceSupportBundleError,
+    bind_dprime_component_coverage_from_semantic_observation,
     build_dprime_evidence_support_bundle,
 )
 from core.dprime_model_review_assessment import run_dprime_model_review_assessment
@@ -1182,6 +1184,25 @@ def output_hygiene_passes(output: str) -> bool:
     return not any(token in lowered for token in _OUTPUT_FORBIDDEN_TOKENS)
 
 
+def _analyst_finding_validation_output_detail(
+    validation_ref: Mapping[str, Any],
+) -> str:
+    ref = _safe_mapping(validation_ref)
+    status = _clean_text(ref.get("dprime_validation_status"), limit=160)
+    summary = _clean_text(
+        _safe_mapping(ref.get("dprime_validation_summary_ref")).get(
+            "validation_summary"
+        ),
+        limit=900,
+    )
+    if summary and output_hygiene_passes(summary):
+        return summary
+    return (
+        "AnalystFindingProposal D-prime support validation status: "
+        f"{status or 'blocked'}"
+    )
+
+
 def _support_proposal_blocker_ref(*, blocker: str, detail: str) -> dict[str, Any]:
     return {
         "status": blocker,
@@ -1510,6 +1531,36 @@ def _blocked_dprime_model_review_assessment_result(
     dprime["dprime_analyst_finding_validation_satisfied"] = (
         analyst_finding_validation_satisfied
     )
+    analyst_finding_validation_blocker = (
+        _safe_mapping(
+            analyst_finding_validation_ref.get("dprime_validation_summary_ref")
+        ).get("validation_summary")
+        or analyst_finding_validation_ref.get("dprime_validation_status")
+        if analyst_finding_validation_required
+        and not analyst_finding_validation_satisfied
+        else None
+    )
+    dprime["runkernel_analyst_finding_admission_required"] = bool(
+        analyst_finding_validation_required
+    )
+    dprime["runkernel_analyst_finding_admission_attempted"] = False
+    dprime["runkernel_analyst_finding_admission_satisfied"] = False
+    dprime["runkernel_analyst_finding_admission_ref"] = {}
+    dprime["analyst_finding_semantic_observation_ref"] = {}
+    dprime["analyst_finding_component_coverage_ref"] = {}
+    dprime["analyst_finding_admission_blocker"] = (
+        analyst_finding_validation_blocker
+    )
+    dprime["legacy_candidate_level_dprime_review_treated_as_answer_authority"] = (
+        False
+    )
+    dprime["source_obligation_satisfied"] = False
+    dprime["citation_eligibility_created"] = False
+    dprime["sufficiency_readiness_created"] = False
+    dprime["final_answer_packet_created"] = False
+    dprime["author_output_created"] = False
+    dprime["source_display_opened"] = False
+    dprime["product_correctness_claimed"] = False
     objects_created["dprime_analyst_finding_support_validation"] = bool(
         analyst_finding_validation_required
     )
@@ -1563,6 +1614,7 @@ def _blocked_dprime_model_review_assessment_result(
         dprime["objects_created"] = objects_created
     decision = None
     semantic_materialization = None
+    coverage_binding = None
     support_bundle = None
     answer_path = None
     answer_path_error = None
@@ -1576,6 +1628,21 @@ def _blocked_dprime_model_review_assessment_result(
     multi_source_blocker: str | None = None
     multi_source_detail: str | None = None
     if proposal_validated:
+        decision_metadata: dict[str, Any] = {}
+        if analyst_finding_validation_required:
+            decision_metadata = _without_empty(
+                {
+                    "dprime_analyst_finding_support_validation_consumed": True,
+                    "dprime_analyst_finding_support_validation_ref": (
+                        _runkernel_safe_analyst_finding_validation_ref(
+                            analyst_finding_validation_ref
+                        )
+                    ),
+                    "legacy_candidate_level_dprime_review_treated_as_answer_authority": (
+                        False
+                    ),
+                }
+            )
         decision = build_run_kernel_dprime_admission_decision(
             _safe_mapping(dprime.get("run_kernel_support_admission_request_ref")),
             decision_status=run_kernel_admission_decision_status,
@@ -1583,9 +1650,25 @@ def _blocked_dprime_model_review_assessment_result(
                 "product status consumed validator-passed D-prime admission "
                 "request through RunKernel-owned decision runtime"
             ),
+            metadata=decision_metadata,
         )
-        dprime.update(decision.to_status_overlay())
+        decision_overlay = decision.to_status_overlay()
+        dprime.update(decision_overlay)
         objects_created["run_kernel_admission_decision"] = True
+        if analyst_finding_validation_required:
+            dprime["runkernel_analyst_finding_admission_attempted"] = True
+            dprime["runkernel_analyst_finding_admission_satisfied"] = (
+                decision.decision_status
+                == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
+            )
+            dprime["runkernel_analyst_finding_admission_ref"] = dict(
+                decision_overlay.get("run_kernel_admission_decision_ref") or {}
+            )
+            dprime["analyst_finding_admission_blocker"] = (
+                None
+                if dprime["runkernel_analyst_finding_admission_satisfied"]
+                else decision.blocker_detail
+            )
         dprime["objects_created"] = objects_created
         if decision.decision_status == DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED:
             try:
@@ -1620,6 +1703,10 @@ def _blocked_dprime_model_review_assessment_result(
                     )
                 )
                 dprime.update(semantic_materialization.to_status_overlay())
+                if analyst_finding_validation_required:
+                    dprime["analyst_finding_semantic_observation_ref"] = (
+                        semantic_materialization.semantic_status_ref()
+                    )
                 dprime["accepted_current_answer_contract_authority_ref"] = (
                     dict(contract_authority.authority_ref)
                 )
@@ -1716,6 +1803,26 @@ def _blocked_dprime_model_review_assessment_result(
                     dprime["objects_created"] = objects_created
                 try:
                     if not source_citation_authority_enabled:
+                        coverage_binding = (
+                            bind_dprime_component_coverage_from_semantic_observation(
+                                semantic_materialization=semantic_materialization,
+                                run_kernel=contract_authority.run_kernel,
+                                source_obligation_ref=_materialization_ref(
+                                    source_obligation_ref
+                                ),
+                                citation_source_obligation_readiness_ref=(
+                                    _materialization_ref(readiness_ref)
+                                ),
+                                additional_semantic_materializations=(
+                                    additional_semantic_materializations
+                                ),
+                            )
+                        )
+                        dprime.update(coverage_binding.to_status_overlay())
+                        if analyst_finding_validation_required:
+                            dprime["analyst_finding_component_coverage_ref"] = (
+                                coverage_binding.component_coverage_ref
+                            )
                         dprime["downstream_authority_disabled_by_caller"] = True
                         dprime["source_citation_authority_disabled_by_caller"] = True
                         dprime["source_obligation_authority_consumed"] = False
@@ -1723,16 +1830,21 @@ def _blocked_dprime_model_review_assessment_result(
                             "citation_eligibility_or_source_handoff_authority_consumed"
                         ] = False
                         dprime["dprime_source_citation_stoppoint_status"] = (
-                            "not_reached"
+                            "component_coverage_bound"
                         )
                         dprime["dprime_source_citation_stoppoint_blocker"] = (
-                            BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED
+                            coverage_binding.decision
                         )
+                        dprime["source_obligation_satisfied"] = False
+                        dprime["citation_eligibility_created"] = False
                         dprime["sufficiency_readiness_created"] = False
                         dprime["final_answer_packet_created"] = False
                         dprime["author_answer_created"] = False
+                        dprime["author_output_created"] = False
                         dprime["citation_source_display_created"] = False
-                        objects_created["component_coverage"] = False
+                        dprime["source_display_opened"] = False
+                        dprime["product_correctness_claimed"] = False
+                        objects_created["component_coverage"] = True
                         objects_created["sufficiency_readiness"] = False
                         objects_created["final_answer_packet"] = False
                         objects_created["author_answer"] = False
@@ -1760,6 +1872,10 @@ def _blocked_dprime_model_review_assessment_result(
                         )
                         dprime.update(support_bundle.to_status_overlay())
                         objects_created["component_coverage"] = True
+                        if analyst_finding_validation_required:
+                            dprime["analyst_finding_component_coverage_ref"] = (
+                                support_bundle.component_coverage_ref
+                            )
                         dprime["dprime_source_citation_stoppoint_status"] = (
                             "consumed"
                         )
@@ -1826,29 +1942,49 @@ def _blocked_dprime_model_review_assessment_result(
                     "proposal_digest"
                 ),
             ),
+            "dprime_analyst_finding_support_validation_ref": dict(
+                analyst_finding_validation_ref
+            ),
             "reasons": [
                 "D-prime proposal candidate validated from assessment lineage",
+                (
+                    "AnalystFindingProposal support validation was consumed "
+                    "before RunKernel admission"
+                    if analyst_finding_validation_required
+                    else "No AnalystFindingProposal validation was required"
+                ),
                 "proposal candidate is not admitted support",
             ],
         }
         if proposal_validated
         else {
             "status": BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
-            "proposal_ref": _safe_mapping(
-                analyst_finding_validation_ref.get("analyst_finding_proposal_ref")
-            )
-            or "unavailable",
+            "proposal_ref": _id_digest_ref(
+                _safe_mapping(
+                    analyst_finding_validation_ref.get(
+                        "analyst_finding_proposal_ref"
+                    )
+                ).get("finding_id"),
+                _safe_mapping(
+                    analyst_finding_validation_ref.get(
+                        "analyst_finding_proposal_ref"
+                    )
+                ).get("finding_digest"),
+            ),
+            "analyst_finding_proposal_ref": (
+                _runkernel_safe_analyst_finding_validation_ref(
+                    analyst_finding_validation_ref
+                ).get("analyst_finding_proposal_ref")
+                or {}
+            ),
             "dprime_analyst_finding_support_validation_ref": dict(
                 analyst_finding_validation_ref
             ),
             "reasons": [
                 "AnalystFindingProposal D-prime support validation is required before RunKernel admission",
-                _safe_mapping(
-                    analyst_finding_validation_ref.get(
-                        "dprime_validation_summary_ref"
-                    )
-                ).get("validation_summary")
-                or "AnalystFindingProposal validation did not support the proposed answer from bounded evidence",
+                _analyst_finding_validation_output_detail(
+                    analyst_finding_validation_ref
+                ),
             ],
         }
         if analyst_finding_validation_blocked
@@ -1878,6 +2014,11 @@ def _blocked_dprime_model_review_assessment_result(
                     if not single_lane_answer_path_enabled
                     else "SufficiencyReadiness"
                 )
+        elif coverage_binding is not None:
+            coverage_ref = coverage_binding.component_coverage_ref
+            payload_decision = coverage_binding.decision
+            payload_detail = coverage_binding.blocker_detail
+            next_surface = "D-prime source-obligation/citation-source authority adapter"
         elif support_bundle_error is not None:
             if multi_source_blocker is not None:
                 coverage_ref = semantic_materialization.coverage_status_ref(
@@ -1924,11 +2065,9 @@ def _blocked_dprime_model_review_assessment_result(
                     else "D-prime proposal candidate is not admitted support"
                 ),
                 (
-                    _safe_mapping(
-                        analyst_finding_validation_ref.get(
-                            "dprime_validation_summary_ref"
-                        )
-                    ).get("validation_summary")
+                    _analyst_finding_validation_output_detail(
+                        analyst_finding_validation_ref
+                    )
                     if analyst_finding_validation_blocked
                     else
                     materialization_error.detail
@@ -1964,13 +2103,8 @@ def _blocked_dprime_model_review_assessment_result(
             else model_review_result.decision
         )
         payload_detail = (
-            (
-                _safe_mapping(
-                    analyst_finding_validation_ref.get(
-                        "dprime_validation_summary_ref"
-                    )
-                ).get("validation_summary")
-                or "AnalystFindingProposal D-prime support validation failed closed"
+            _analyst_finding_validation_output_detail(
+                analyst_finding_validation_ref
             )
             if analyst_finding_validation_blocked
             else materialization_error.detail
@@ -2050,6 +2184,13 @@ def _blocked_dprime_model_review_assessment_result(
                     "handoff authority consumed"
                 )
                 if support_bundle is not None
+                else (
+                    "available from D-prime AnalystFinding-validated "
+                    "RunKernel admission, SemanticObservation, and bound "
+                    "ComponentCoverage; source-obligation and citation-source "
+                    "authority remain closed"
+                )
+                if coverage_binding is not None
                 else semantic_materialization.to_status_overlay()["semantic_support_source"]
                 if semantic_materialization is not None
                 else decision.semantic_support_source
@@ -2059,6 +2200,12 @@ def _blocked_dprime_model_review_assessment_result(
             "source_obligation_authority_ref": (
                 dict(support_bundle.source_obligation_authority_ref)
                 if support_bundle is not None
+                else dict(
+                    coverage_binding.to_status_overlay()[
+                        "source_obligation_authority_ref"
+                    ]
+                )
+                if coverage_binding is not None
                 else {
                     "status": "not reached",
                     "authority_consumed": False,
@@ -2067,6 +2214,12 @@ def _blocked_dprime_model_review_assessment_result(
             "citation_eligibility_authority_ref": (
                 dict(support_bundle.citation_eligibility_authority_ref)
                 if support_bundle is not None
+                else dict(
+                    coverage_binding.to_status_overlay()[
+                        "citation_eligibility_authority_ref"
+                    ]
+                )
+                if coverage_binding is not None
                 else {
                     "status": "not reached",
                     "authority_consumed": False,
@@ -2088,13 +2241,55 @@ def _blocked_dprime_model_review_assessment_result(
             "dprime_source_citation_stoppoint_status": (
                 "consumed"
                 if support_bundle is not None
+                else "component_coverage_bound"
+                if coverage_binding is not None
                 else "not_reached"
             ),
             "dprime_source_citation_stoppoint_blocker": (
                 support_bundle.decision
                 if support_bundle is not None
+                else coverage_binding.decision
+                if coverage_binding is not None
                 else payload_decision
             ),
+            "runkernel_analyst_finding_admission_required": dprime.get(
+                "runkernel_analyst_finding_admission_required"
+            )
+            is True,
+            "runkernel_analyst_finding_admission_attempted": dprime.get(
+                "runkernel_analyst_finding_admission_attempted"
+            )
+            is True,
+            "runkernel_analyst_finding_admission_satisfied": dprime.get(
+                "runkernel_analyst_finding_admission_satisfied"
+            )
+            is True,
+            "runkernel_analyst_finding_admission_ref": dict(
+                _safe_mapping(
+                    dprime.get("runkernel_analyst_finding_admission_ref")
+                )
+            ),
+            "analyst_finding_semantic_observation_ref": dict(
+                _safe_mapping(
+                    dprime.get("analyst_finding_semantic_observation_ref")
+                )
+            ),
+            "analyst_finding_component_coverage_ref": dict(
+                _safe_mapping(dprime.get("analyst_finding_component_coverage_ref"))
+            ),
+            "analyst_finding_admission_blocker": dprime.get(
+                "analyst_finding_admission_blocker"
+            ),
+            "legacy_candidate_level_dprime_review_treated_as_answer_authority": (
+                False
+            ),
+            "source_obligation_satisfied": False,
+            "citation_eligibility_created": False,
+            "sufficiency_readiness_created": False,
+            "final_answer_packet_created": False,
+            "author_output_created": False,
+            "source_display_opened": False,
+            "product_correctness_claimed": False,
             "analyst_support_proposal_consumer": (
                 (
                     "D-prime proposal candidate validated; RunKernel-owned "
@@ -3601,6 +3796,8 @@ def _model_review_next_blocked_surface(decision: str) -> str:
         return "SufficiencyReadiness"
     if decision == BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING:
         return "D-prime source-obligation authority"
+    if decision == BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED:
+        return "D-prime source-obligation/citation-source authority adapter"
     if decision == BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING:
         return "D-prime ComponentCoverage binding"
     if decision == BLOCKED_DPRIME_COMPONENT_COVERAGE_NOT_LICENSED:
@@ -4312,6 +4509,75 @@ def _text_list(value: Any, *, limit: int = 160) -> list[str]:
             seen.add(text)
             out.append(text)
     return out
+
+
+def _runkernel_safe_analyst_finding_validation_ref(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    ref = _safe_mapping(value)
+    proposal_ref = _safe_mapping(ref.get("analyst_finding_proposal_ref"))
+    claim_ref = _safe_mapping(ref.get("proposed_answer_claim_ref"))
+    summary_ref = _safe_mapping(ref.get("dprime_validation_summary_ref"))
+    product_grade_ref = _safe_mapping(ref.get("analyst_finding_product_grade_ref"))
+    return _without_empty(
+        {
+            "schema_version": ref.get("schema_version"),
+            "phase": ref.get("phase"),
+            "validation_kind": ref.get("validation_kind"),
+            "validation_id": ref.get("validation_id"),
+            "validation_digest": ref.get("validation_digest"),
+            "analyst_finding_proposal_ref": _without_empty(
+                {
+                    "finding_id": proposal_ref.get("finding_id"),
+                    "finding_digest": proposal_ref.get("finding_digest"),
+                    "finding_status": proposal_ref.get("finding_status"),
+                }
+            ),
+            "proposed_answer_claim_ref": _without_empty(
+                {
+                    "claim_id": claim_ref.get("claim_id"),
+                    "claim_digest": claim_ref.get("claim_digest"),
+                    "requested_answer_type": claim_ref.get(
+                        "requested_answer_type"
+                    ),
+                    "expected_value_shape": claim_ref.get("expected_value_shape"),
+                }
+            ),
+            "dprime_validation_status": ref.get("dprime_validation_status"),
+            "dprime_validation_summary_ref": _without_empty(
+                {
+                    "validation_summary": summary_ref.get("validation_summary"),
+                    "validation_reason_code_count": _bounded_int(
+                        summary_ref.get("validation_reason_code_count")
+                    ),
+                }
+            ),
+            "product_grade_analyst_finding": (
+                product_grade_ref.get("product_grade_analyst_finding") is True
+            ),
+            "model_assisted_analysis_run": (
+                ref.get("model_assisted_analysis_run") is True
+            ),
+            "model_assisted_analyst_requirement_satisfied": (
+                ref.get("model_assisted_analyst_requirement_satisfied") is True
+            ),
+            "model_assisted_analyst_product_grade_analysis": (
+                ref.get("model_assisted_analyst_product_grade_analysis") is True
+            ),
+            "bounded_evidence_excerpt_available": (
+                ref.get("bounded_evidence_excerpt_available") is True
+            ),
+            "bounded_evidence_excerpt_count": _bounded_int(
+                ref.get("bounded_evidence_excerpt_count")
+            ),
+            "runkernel_support_admission_recommended": (
+                ref.get("runkernel_support_admission_recommended") is True
+            ),
+            "requires_runkernel_admission": (
+                ref.get("requires_runkernel_admission") is True
+            ),
+        }
+    )
 
 
 def _bounded_int(value: Any) -> int:

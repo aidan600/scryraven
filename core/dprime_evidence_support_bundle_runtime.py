@@ -1,9 +1,10 @@
 """D-prime evidence support-bundle runtime.
 
 This runtime consumes admitted D-prime SemanticObservation and existing D-prime
-authority lineage. It binds ComponentCoverage, then consumes source-obligation
-authority and citation-source handoff authority through RunKernel-owned product
-surfaces in the same phase.
+authority lineage. It can bind ComponentCoverage as a stop point, or bind
+ComponentCoverage and then consume source-obligation authority and
+citation-source handoff authority through RunKernel-owned product surfaces in
+the same phase.
 
 It does not create SufficiencyReadiness, FinalAnswerPacket, Author output,
 answer text, product correctness, live calls, provider/model calls, search,
@@ -71,6 +72,9 @@ BLOCKED_DPRIME_CITATION_ELIGIBILITY_AUTHORITY_MISSING = (
 )
 BLOCKED_DPRIME_CITATION_SOURCE_HANDOFF_MISSING = (
     "BLOCKED_DPRIME_CITATION_SOURCE_HANDOFF_MISSING"
+)
+BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED = (
+    "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED"
 )
 
 
@@ -154,6 +158,111 @@ class DPrimeEvidenceSupportBundleResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class DPrimeComponentCoverageBindingResult:
+    """Outcome for phases that stop after RunKernel ComponentCoverage binding."""
+
+    component_coverage_state: Mapping[str, Any]
+    component_coverage_projection: Mapping[str, Any]
+    decision: str = BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED
+    blocker_detail: str = (
+        "RunKernel admitted D-prime AnalystFinding-derived semantic support and "
+        "bound ComponentCoverage; source-obligation and citation-source authority "
+        "remain closed for the next narrow adapter phase."
+    )
+
+    @property
+    def component_coverage_ref(self) -> dict[str, Any]:
+        projection = self.component_coverage_projection
+        return {
+            "status": "bound",
+            "coverage_ref": _id_digest_ref(
+                projection.get("coverage_record_id"),
+                projection.get("coverage_record_digest"),
+            ),
+            "coverage_record_id": projection.get("coverage_record_id"),
+            "coverage_record_digest": projection.get("coverage_record_digest"),
+            "coverage_reduction_digest": projection.get("coverage_reduction_digest"),
+            "coverage_state": projection.get("coverage_state"),
+            "semantic_support_status": projection.get("semantic_support_status"),
+            "source_obligation_status": projection.get("source_obligation_status"),
+            "owner": "RunKernel.ComponentCoverageReduction",
+            "runtime_surface": DPRIME_EVIDENCE_SUPPORT_BUNDLE_SURFACE,
+            "reasons": [
+                "bound through existing RunKernel ComponentCoverage authority",
+                "coverage is supported_with_caveats, not SufficiencyReadiness",
+                "source-obligation and citation-source authority remain closed",
+            ],
+        }
+
+    def to_status_overlay(self) -> dict[str, Any]:
+        return {
+            "component_coverage_status": "bound",
+            "component_coverage_ref": self.component_coverage_ref,
+            "component_coverage_binding_completed": True,
+            "component_coverage_stop_point_reached": True,
+            "source_obligation_authority_ref": {
+                "status": "not_reached",
+                "authority_consumed": False,
+                "satisfaction_claimed": False,
+                "blocker": self.decision,
+            },
+            "citation_eligibility_authority_ref": {
+                "status": "not_reached",
+                "authority_consumed": False,
+                "citation_source_handoff_consumed": False,
+                "citation_rendering_created": False,
+                "blocker": self.decision,
+            },
+            "source_obligation_authority_status": "not_reached",
+            "citation_eligibility_authority_status": "not_reached",
+            "source_obligation_authority_consumed": False,
+            "citation_eligibility_or_source_handoff_authority_consumed": False,
+            "support_bundle_completed": False,
+            "component_coverage_only_treated_as_pass": False,
+            "detached_posture_status_packet_treated_as_authority": False,
+            "source_obligation_satisfied": False,
+            "citation_eligibility_created": False,
+            "sufficiency_readiness_created": False,
+            "final_answer_packet_created": False,
+            "author_answer_created": False,
+            "author_output_created": False,
+            "citation_source_display_created": False,
+            "source_display_opened": False,
+            "product_correctness_claimed": False,
+            "decision": self.decision,
+            "blocker_detail": self.blocker_detail,
+        }
+
+
+def bind_dprime_component_coverage_from_semantic_observation(
+    *,
+    semantic_materialization: DPrimeSemanticObservationMaterializationResult,
+    run_kernel: RunKernel,
+    source_obligation_ref: Mapping[str, Any],
+    citation_source_obligation_readiness_ref: Mapping[str, Any],
+    additional_semantic_materializations: Sequence[
+        DPrimeSemanticObservationMaterializationResult
+    ] = (),
+) -> DPrimeComponentCoverageBindingResult:
+    """Bind ComponentCoverage and stop before source/citation authority."""
+
+    state, projection = _bind_component_coverage(
+        semantic_materialization=semantic_materialization,
+        run_kernel=run_kernel,
+        source_obligation_ref=source_obligation_ref,
+        citation_source_obligation_readiness_ref=(
+            citation_source_obligation_readiness_ref
+        ),
+        additional_semantic_materializations=additional_semantic_materializations,
+        stop_point=True,
+    )
+    return DPrimeComponentCoverageBindingResult(
+        component_coverage_state=state,
+        component_coverage_projection=projection,
+    )
+
+
 def build_dprime_evidence_support_bundle(
     *,
     semantic_materialization: DPrimeSemanticObservationMaterializationResult,
@@ -166,55 +275,14 @@ def build_dprime_evidence_support_bundle(
 ) -> DPrimeEvidenceSupportBundleResult:
     """Bind D-prime ComponentCoverage, then consume source/citation authority."""
 
-    observation = semantic_materialization.semantic_observation
-    semantic_materializations = (
-        semantic_materialization,
-        *tuple(additional_semantic_materializations or ()),
-    )
-    accepted_contract = _safe_mapping(run_kernel.state.initial_answer_contract)
-    component = _accepted_component(accepted_contract, observation.answer_component_id)
-    _require_admitted_observations(run_kernel, semantic_materializations)
-    coverage_record = _component_coverage_record(
+    _bind_component_coverage(
+        semantic_materialization=semantic_materialization,
         run_kernel=run_kernel,
-        accepted_contract=accepted_contract,
-        component=component,
-        semantic_materializations=semantic_materializations,
         source_obligation_ref=source_obligation_ref,
         citation_source_obligation_readiness_ref=citation_source_obligation_readiness_ref,
+        additional_semantic_materializations=additional_semantic_materializations,
+        stop_point=False,
     )
-    try:
-        action = run_kernel.authorize_component_coverage_reduction(
-            coverage_record_id=coverage_record.record_id,
-            coverage_record_digest=coverage_record.record_digest,
-            answer_component_id=str(component["component_id"]),
-            component_revision=str(component["component_revision"]),
-            component_digest=str(component["component_digest"]),
-            inputs={
-                "dprime_evidence_support_bundle": (
-                    DPRIME_EVIDENCE_SUPPORT_BUNDLE_SURFACE
-                ),
-                "source_obligation_authority_consumed": False,
-                "citation_eligibility_authority_consumed": False,
-                "component_coverage_only_treated_as_pass": False,
-            },
-        )
-        run_kernel.reduce(
-            Observation.from_action(
-                action,
-                observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
-                status=RunStageStatus.COMPLETED,
-                payload={
-                    "component_coverage_record": _reseal_coverage_record(
-                        coverage_record
-                    )
-                },
-            )
-        )
-    except RunKernelTransitionError as exc:
-        raise DPrimeEvidenceSupportBundleError(
-            BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
-            str(exc),
-        ) from exc
 
     try:
         source_citation_authority = (
@@ -248,6 +316,75 @@ def build_dprime_evidence_support_bundle(
         ),
         decision=source_citation_authority.decision,
         blocker_detail=source_citation_authority.blocker_detail,
+    )
+
+
+def _bind_component_coverage(
+    *,
+    semantic_materialization: DPrimeSemanticObservationMaterializationResult,
+    run_kernel: RunKernel,
+    source_obligation_ref: Mapping[str, Any],
+    citation_source_obligation_readiness_ref: Mapping[str, Any],
+    additional_semantic_materializations: Sequence[
+        DPrimeSemanticObservationMaterializationResult
+    ] = (),
+    stop_point: bool,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    observation = semantic_materialization.semantic_observation
+    semantic_materializations = (
+        semantic_materialization,
+        *tuple(additional_semantic_materializations or ()),
+    )
+    accepted_contract = _safe_mapping(run_kernel.state.initial_answer_contract)
+    component = _accepted_component(accepted_contract, observation.answer_component_id)
+    _require_admitted_observations(run_kernel, semantic_materializations)
+    coverage_record = _component_coverage_record(
+        run_kernel=run_kernel,
+        accepted_contract=accepted_contract,
+        component=component,
+        semantic_materializations=semantic_materializations,
+        source_obligation_ref=source_obligation_ref,
+        citation_source_obligation_readiness_ref=(
+            citation_source_obligation_readiness_ref
+        ),
+    )
+    try:
+        action = run_kernel.authorize_component_coverage_reduction(
+            coverage_record_id=coverage_record.record_id,
+            coverage_record_digest=coverage_record.record_digest,
+            answer_component_id=str(component["component_id"]),
+            component_revision=str(component["component_revision"]),
+            component_digest=str(component["component_digest"]),
+            inputs={
+                "dprime_evidence_support_bundle": (
+                    DPRIME_EVIDENCE_SUPPORT_BUNDLE_SURFACE
+                ),
+                "source_obligation_authority_consumed": False,
+                "citation_eligibility_authority_consumed": False,
+                "component_coverage_only_treated_as_pass": False,
+                "dprime_component_coverage_stop_point": bool(stop_point),
+            },
+        )
+        run_kernel.reduce(
+            Observation.from_action(
+                action,
+                observation_type=ObservationType.COMPONENT_COVERAGE_REDUCED,
+                status=RunStageStatus.COMPLETED,
+                payload={
+                    "component_coverage_record": _reseal_coverage_record(
+                        coverage_record
+                    )
+                },
+            )
+        )
+    except RunKernelTransitionError as exc:
+        raise DPrimeEvidenceSupportBundleError(
+            BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING,
+            str(exc),
+        ) from exc
+    return (
+        dict(run_kernel.state.component_coverage_state),
+        dict(run_kernel.state.component_coverage_projection),
     )
 
 
@@ -533,12 +670,15 @@ __all__ = [
     "BLOCKED_DPRIME_CITATION_ELIGIBILITY_AUTHORITY_MISSING",
     "BLOCKED_DPRIME_CITATION_SOURCE_HANDOFF_MISSING",
     "BLOCKED_DPRIME_COMPONENT_COVERAGE_BINDING_MISSING",
+    "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED",
     "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_MISSING",
     "BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED",
     "DPRIME_EVIDENCE_SUPPORT_BUNDLE_OWNER",
     "DPRIME_EVIDENCE_SUPPORT_BUNDLE_SCHEMA_VERSION",
     "DPRIME_EVIDENCE_SUPPORT_BUNDLE_SURFACE",
+    "DPrimeComponentCoverageBindingResult",
     "DPrimeEvidenceSupportBundleError",
     "DPrimeEvidenceSupportBundleResult",
+    "bind_dprime_component_coverage_from_semantic_observation",
     "build_dprime_evidence_support_bundle",
 ]

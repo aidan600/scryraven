@@ -44,8 +44,12 @@ from core.dprime_analyst_finding_support_validation import (
     dprime_analyst_finding_support_validation_ref,
     support_validation_allows_runkernel_admission,
 )
+from core.dprime_evidence_support_bundle_runtime import (
+    BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED,
+)
 from proplex.live_semantic_coverage_status import (
     BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
+    build_live_semantic_coverage_status,
 )
 from tests.test_ag_semantic_coverage_product_consumption_01 import (
     _passport_retained_repo,
@@ -60,7 +64,13 @@ from tests.test_dprime_evidence_support_bundle_01 import (
     _run_product_status_with_assessment,
     _workbench_dossier,
 )
-from tests.test_dprime_model_review_assessment_slice_01 import _assessment_payload
+from tests.test_dprime_model_review_assessment_slice_01 import (
+    _assessment_payload,
+    _license,
+)
+
+SMALL_CLAIMS_COMPONENT_ID = "component:example-county-small-claims-fee"
+SMALL_CLAIMS_OBLIGATION_ID = "obligation:example-county-small-claims-fee-source"
 
 
 def test_deterministic_analyst_finding_cannot_recommend_runkernel_admission() -> None:
@@ -142,6 +152,128 @@ def test_product_grade_model_assisted_analyst_finding_may_recommend_future_admis
     assert support_validation_allows_runkernel_admission(validation) is True
     assert validation["runkernel_admission_created"] is False
     assert validation["product_correctness_claimed"] is False
+
+
+def test_product_grade_supported_analyst_finding_reaches_runkernel_authority_stop_point(
+    tmp_path: Path,
+) -> None:
+    bundle = _answer_bearing_bundle()
+    finding = _product_grade_model_assisted_finding(bundle)
+    repo_root, _candidate = _passport_retained_repo(
+        tmp_path,
+        bounded_text="The current standard paper small claims filing fee is 54 dollars.",
+        title="Official Current Standard Filing Fee",
+        url="https://example-county.gov/courts/current-filing-fee",
+        domain="example-county.gov",
+        candidate_id="direct-candidate-2",
+        candidate_digest="direct-digest-2",
+        component_id=SMALL_CLAIMS_COMPONENT_ID,
+        source_obligation_id=SMALL_CLAIMS_OBLIGATION_ID,
+        snippet="Official current standard small claims filing fee.",
+    )
+
+    result = _run_product_status_for_analyst_finding(
+        repo_root=repo_root,
+        finding=finding,
+        bundle=bundle,
+        assessment_payload=_small_claims_assessment_payload(),
+    )
+
+    assert result.decision == BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED
+    dprime = result.payload["dprime_status"]
+    validation = dprime["dprime_analyst_finding_support_validation"]
+    assert validation["dprime_validation_status"] == DPRIME_SUPPORT_VALIDATION_SUPPORTED
+    assert support_validation_allows_runkernel_admission(validation) is True
+    assert validation["runkernel_admission_created"] is False
+    assert dprime["dprime_analyst_finding_validation_satisfied"] is True
+    assert dprime["runkernel_analyst_finding_admission_required"] is True
+    assert dprime["runkernel_analyst_finding_admission_attempted"] is True
+    assert dprime["runkernel_analyst_finding_admission_satisfied"] is True
+    assert dprime["runkernel_analyst_finding_admission_ref"]
+    assert dprime["analyst_finding_semantic_observation_ref"]["status"] == "admitted"
+    assert dprime["analyst_finding_component_coverage_ref"]["status"] == "bound"
+    assert dprime["objects_created"]["run_kernel_admission_decision"] is True
+    assert dprime["objects_created"]["semantic_observation"] is True
+    assert dprime["objects_created"]["component_coverage"] is True
+    assert dprime["component_coverage_stop_point_reached"] is True
+    assert dprime["support_bundle_completed"] is False
+    assert dprime["legacy_candidate_level_dprime_review_treated_as_answer_authority"] is False
+    assert dprime["source_obligation_authority_consumed"] is False
+    assert (
+        dprime["citation_eligibility_or_source_handoff_authority_consumed"]
+        is False
+    )
+    assert dprime["source_obligation_satisfied"] is False
+    assert dprime["citation_eligibility_created"] is False
+    assert dprime["sufficiency_readiness_created"] is False
+    assert dprime["final_answer_packet_created"] is False
+    assert dprime["author_output_created"] is False
+    assert dprime["source_display_opened"] is False
+    assert dprime["product_correctness_claimed"] is False
+    assert result.payload["component_coverage_ref"]["status"] == "bound"
+    assert result.payload["source_obligation_authority_ref"]["authority_consumed"] is False
+    assert (
+        result.payload["citation_eligibility_authority_ref"]["authority_consumed"]
+        is False
+    )
+    assert result.payload["source_obligation_satisfied"] is False
+    assert result.payload["citation_eligibility_created"] is False
+    assert result.payload["sufficiency_readiness_created"] is False
+    assert result.payload["final_answer_packet_created"] is False
+    assert result.payload["author_output_created"] is False
+    assert result.payload["source_display_opened"] is False
+    assert result.payload["product_correctness_claimed"] is False
+
+
+def test_product_grade_unsupported_analyst_finding_validation_blocks_admission(
+    tmp_path: Path,
+) -> None:
+    bundle = _answer_bearing_bundle()
+    finding = _product_grade_model_assisted_unsupported_edge_finding(bundle)
+    repo_root, _candidate = _passport_retained_repo(
+        tmp_path,
+        bounded_text="This page lists courthouse parking rules and holiday hours.",
+        title="Official Courthouse Hours",
+        url="https://example-county.gov/courts/hours",
+        domain="example-county.gov",
+        candidate_id="direct-candidate-2",
+        candidate_digest="direct-digest-2",
+        component_id=SMALL_CLAIMS_COMPONENT_ID,
+        source_obligation_id=SMALL_CLAIMS_OBLIGATION_ID,
+        snippet="Official courthouse hours information.",
+    )
+
+    result = _run_product_status_for_analyst_finding(
+        repo_root=repo_root,
+        finding=finding,
+        bundle=bundle,
+        assessment_payload=_small_claims_assessment_payload(),
+    )
+
+    assert result.decision == BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+    dprime = result.payload["dprime_status"]
+    validation = dprime["dprime_analyst_finding_support_validation"]
+    assert validation["dprime_validation_status"] in {
+        DPRIME_SUPPORT_VALIDATION_ADJACENT_OVERCLAIM,
+        DPRIME_SUPPORT_VALIDATION_INVALID_PROPOSAL,
+        DPRIME_SUPPORT_VALIDATION_UNSUPPORTED,
+        DPRIME_SUPPORT_VALIDATION_INSUFFICIENT,
+    }
+    assert support_validation_allows_runkernel_admission(validation) is False
+    assert dprime["runkernel_analyst_finding_admission_required"] is True
+    assert dprime["runkernel_analyst_finding_admission_attempted"] is False
+    assert dprime["runkernel_analyst_finding_admission_satisfied"] is False
+    assert dprime["runkernel_analyst_finding_admission_ref"] == {}
+    assert dprime["objects_created"]["run_kernel_admission_decision"] is False
+    assert dprime["objects_created"]["semantic_observation"] is False
+    assert dprime["objects_created"]["component_coverage"] is False
+    assert dprime["source_obligation_satisfied"] is False
+    assert dprime["citation_eligibility_created"] is False
+    assert dprime["sufficiency_readiness_created"] is False
+    assert dprime["final_answer_packet_created"] is False
+    assert dprime["author_output_created"] is False
+    assert dprime["source_display_opened"] is False
+    assert dprime["product_correctness_claimed"] is False
 
 
 def test_adjacent_source_support_map_edge_rejected_as_answer_support() -> None:
@@ -285,6 +417,13 @@ def test_legacy_candidate_dprime_pass_cannot_open_answer_path_without_validation
     assert dprime["objects_created"]["component_coverage"] is False
     assert dprime["objects_created"]["final_answer_packet"] is False
     assert dprime["objects_created"]["author_answer"] is False
+    assert dprime["legacy_candidate_level_dprime_review_treated_as_answer_authority"] is False
+    assert dprime["runkernel_analyst_finding_admission_attempted"] is False
+    assert dprime["source_obligation_satisfied"] is False
+    assert dprime["citation_eligibility_created"] is False
+    assert dprime["author_output_created"] is False
+    assert dprime["source_display_opened"] is False
+    assert dprime["product_correctness_claimed"] is False
     assert result.payload["dprime_answer_path_ref"]["status"] == "not reached"
 
 
@@ -336,7 +475,106 @@ def test_legacy_candidate_dprime_pass_cannot_bypass_deterministic_analyst_findin
     assert dprime["objects_created"]["final_answer_packet"] is False
     assert dprime["objects_created"]["author_answer"] is False
     assert dprime["objects_created"]["citation_source_display"] is False
+    assert dprime["legacy_candidate_level_dprime_review_treated_as_answer_authority"] is False
+    assert dprime["source_obligation_satisfied"] is False
+    assert dprime["citation_eligibility_created"] is False
+    assert dprime["author_output_created"] is False
+    assert dprime["source_display_opened"] is False
+    assert dprime["product_correctness_claimed"] is False
     assert result.payload["dprime_answer_path_ref"]["status"] == "not reached"
+
+
+def test_analyst_finding_admission_reuses_existing_authority_surfaces() -> None:
+    root = Path(__file__).resolve().parents[1]
+    assert not (root / "core" / "runkernel_analyst_finding_admission_bridge.py").exists()
+    status_runtime = (root / "proplex" / "live_semantic_coverage_status.py").read_text(
+        encoding="utf-8"
+    )
+    bundle_runtime = (
+        root / "core" / "dprime_evidence_support_bundle_runtime.py"
+    ).read_text(encoding="utf-8")
+
+    assert "build_run_kernel_dprime_admission_decision(" in status_runtime
+    assert (
+        "materialize_dprime_semantic_observation_from_admitted_decision("
+        in status_runtime
+    )
+    assert "bind_dprime_component_coverage_from_semantic_observation(" in (
+        status_runtime
+    )
+    assert "class RunKernelAnalystFinding" not in status_runtime
+    assert "DPrimeComponentCoverageBindingResult" in bundle_runtime
+    assert "RunKernel.ComponentCoverageReduction" in bundle_runtime
+
+
+def _run_product_status_for_analyst_finding(
+    *,
+    repo_root: Path,
+    finding: Mapping[str, Any],
+    bundle: Mapping[str, Any],
+    assessment_payload: dict[str, Any],
+) -> Any:
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return assessment_payload
+
+    return build_live_semantic_coverage_status(
+        query="What is the current filing fee for small claims in Example County?",
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=fake_review,
+        dprime_source_citation_authority_enabled=False,
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_dossier_with_finding(bundle, finding),
+    )
+
+
+def _small_claims_assessment_payload() -> dict[str, Any]:
+    return {
+        "source_proposition": (
+            "The retained source states the current standard paper small "
+            "claims filing fee is 54 dollars."
+        ),
+        "answer_component_claim": {
+            "component_id": SMALL_CLAIMS_COMPONENT_ID,
+            "claim": "The current standard paper small claims filing fee is $54.",
+        },
+        "support_relation": "directly_supports",
+        "required_qualifiers": [
+            "current",
+            "standard",
+            "paper",
+            "small claims filing fee",
+        ],
+        "observed_qualifiers": [
+            "current",
+            "standard",
+            "paper",
+            "small claims filing fee",
+        ],
+        "missing_qualifiers": [],
+        "scope_check": {"status": "passed"},
+        "currentness_check": {"status": "current"},
+        "contradiction_check": {"status": "absent"},
+        "evidential_adequacy_notes": (
+            "The fake review maps the retained proposition to the same "
+            "small-claims fee component."
+        ),
+        "non_support_reason_when_not_direct": "",
+        "producer_abstained": False,
+        "challenge_recommended": False,
+        "closed_surface_flags": {
+            "model_review_licensed": False,
+            "assessment_created": False,
+            "validated_support_proposal_created": False,
+            "run_kernel_support_admission_request_created": False,
+            "semantic_observation_created": False,
+            "component_coverage_bound": False,
+            "citation_eligibility_claimed": False,
+            "source_obligation_satisfaction_claimed": False,
+            "answer_text_created": False,
+            "product_correctness_claimed": False,
+        },
+    }
 
 
 def _validate_finding(
@@ -376,6 +614,32 @@ def _product_grade_model_assisted_finding(
         fetch_read_content_packet=_bounded_fetch_packet(),
         model_assisted_analyst_license=build_model_assisted_analyst_license(
             license_id="dprime-product-grade-analyst:test",
+        ),
+        model_assisted_analyst_adapter=fake_adapter,
+    )
+
+
+def _product_grade_model_assisted_unsupported_edge_finding(
+    bundle: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    deterministic = copy.deepcopy(_finding(bundle))
+    for edge in deterministic["source_support_map"]["analysis_claim_support_edges"]:
+        if edge.get("edge_kind") == "candidate_supports_analysis_claim":
+            edge["candidate_ref"] = {
+                "candidate_id": "unknown-nonselected-candidate",
+                "candidate_digest": "unknown-nonselected-digest",
+            }
+            break
+
+    def fake_adapter(_input_packet: Mapping[str, Any]) -> Mapping[str, Any]:
+        return {"analyst_finding_proposal": deterministic}
+
+    return build_model_assisted_analyst_finding_proposal(
+        triage_packet=bundle["candidate_evidence_triage_packet"],
+        analysis_gap_search_proposal=bundle["analysis_gap_search_proposal"],
+        fetch_read_content_packet=_bounded_fetch_packet(),
+        model_assisted_analyst_license=build_model_assisted_analyst_license(
+            license_id="dprime-product-grade-unsupported-edge:test",
         ),
         model_assisted_analyst_adapter=fake_adapter,
     )

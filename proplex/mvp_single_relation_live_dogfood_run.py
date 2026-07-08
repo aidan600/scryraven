@@ -293,7 +293,7 @@ SOURCE_CITATION_DISPLAY_BOUNDARY_SCHEMA_VERSION = (
 )
 WORKBENCH_GAP_REENTRY_REF_SCHEMA_VERSION = "workbench_gap_reentry_ref_v1"
 DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE = (
-    "GENERIC-DOGFOOD-DPRIME-AUTHORITY-ADAPTER-01"
+    "NARROW-DPRIME-ANALYST-FINDING-SOURCE-OBLIGATION-CITATION-ADAPTER-01"
 )
 SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE = (
     "GENERIC-SINGLE-RELATION-QUICK-SUFFICIENCY-READINESS-01"
@@ -1218,7 +1218,7 @@ def build_generic_single_relation_live_dogfood_run_output(
             smart_provider=smart_provider,
             smart_model=smart_model,
             dprime_downstream_authority_enabled=False,
-            dprime_source_citation_authority_enabled=True,
+            dprime_source_citation_authority_enabled=False,
             dprime_single_lane_answer_path_enabled=(
                 product_single_fact_answer_path_enabled
             ),
@@ -5627,6 +5627,8 @@ def _dprime_authority_integration_from_gateway(
     answer_path_blocked = answer_path_decision in EXISTING_DPRIME_ANSWER_PATH_BLOCKERS
     gateway_ready = gateway.get("status") == "ready"
     dprime_pass_slice_present = _dprime_pass_ready_for_gateway(dprime)
+    semantic_decision = _clean_text(semantic.get("decision"), limit=220)
+    component_coverage_created = dprime_objects.get("component_coverage") is True
     source_obligation_consumed = (
         dprime.get("source_obligation_authority_consumed") is True
         and source_authority_ref.get("authority_consumed") is True
@@ -5658,6 +5660,9 @@ def _dprime_authority_integration_from_gateway(
         BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
         if source_citation_consumed
         else
+        semantic_decision
+        if reached and component_coverage_created and semantic_decision
+        else
         BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD
         if reached
         else _clean_text(gateway.get("blocker_code"), limit=220)
@@ -5685,6 +5690,13 @@ def _dprime_authority_integration_from_gateway(
         "citation handoff readiness, and enabling the current downstream "
         "single-lane path would also open SufficiencyReadiness, FAP, Author, "
         "and citation/source display surfaces."
+        if reached and not component_coverage_created
+        else _clean_text(semantic.get("blocker_detail"), limit=900)
+        or (
+            "RunKernel admission, SemanticObservation, and ComponentCoverage "
+            "were consumed; source-obligation and citation-source authority "
+            "remain closed for the next narrow adapter phase."
+        )
         if reached
         else _clean_text(gateway.get("blocker_detail"), limit=900)
         or "D-prime authority integration was not reached."
@@ -5726,7 +5738,9 @@ def _dprime_authority_integration_from_gateway(
             ),
             "ordinary_product_path_consumed": True,
             "existing_dprime_authority_referenced": True,
-            "existing_dprime_authority_reused": source_citation_consumed,
+            "existing_dprime_authority_reused": (
+                source_citation_consumed or component_coverage_created
+            ),
             "existing_dprime_authority_modules": list(
                 EXISTING_DPRIME_DOWNSTREAM_AUTHORITY_MODULE_REFS
             ),
@@ -5798,11 +5812,35 @@ def _dprime_authority_integration_from_gateway(
                 == "core.dprime_source_obligation_citation_authority_runtime"
             ),
             "source_readiness_gateway_is_authority": False,
-            "component_coverage_created": dprime_objects.get("component_coverage")
-            is True,
+            "component_coverage_created": component_coverage_created,
             "semantic_observation_created": dprime_objects.get("semantic_observation")
             is True,
+            "runkernel_analyst_finding_admission_required": dprime.get(
+                "runkernel_analyst_finding_admission_required"
+            )
+            is True,
+            "runkernel_analyst_finding_admission_attempted": dprime.get(
+                "runkernel_analyst_finding_admission_attempted"
+            )
+            is True,
+            "runkernel_analyst_finding_admission_satisfied": dprime.get(
+                "runkernel_analyst_finding_admission_satisfied"
+            )
+            is True,
+            "runkernel_analyst_finding_admission_ref": dict(
+                _safe_mapping(dprime.get("runkernel_analyst_finding_admission_ref"))
+            ),
+            "analyst_finding_semantic_observation_ref": dict(
+                _safe_mapping(dprime.get("analyst_finding_semantic_observation_ref"))
+            ),
+            "analyst_finding_component_coverage_ref": dict(
+                _safe_mapping(dprime.get("analyst_finding_component_coverage_ref"))
+            ),
+            "legacy_candidate_level_dprime_review_treated_as_answer_authority": (
+                False
+            ),
             "source_obligation_satisfied": False,
+            "citation_eligibility_created": False,
             "citation_eligible": False,
             "source_authority_finalized": False,
             "single_relation_source_obligation_ready": source_obligation_consumed,
@@ -5810,7 +5848,9 @@ def _dprime_authority_integration_from_gateway(
             "final_answer_packet_created": answer_path_passed,
             "author_prose_created": answer_path_passed,
             "author_answer_created": answer_path_passed,
+            "author_output_created": answer_path_passed,
             "citation_source_display_created": answer_path_passed,
+            "source_display_opened": False,
             "final_answer_prose_created": answer_path_passed,
             "fap_invoked": answer_path_passed,
             "author_invoked": answer_path_passed,
@@ -6823,6 +6863,8 @@ def _failure_attribution_bucket(packet: Mapping[str, Any]) -> str:
         return "source_readiness_gateway"
     if decision == BLOCKED_SINGLE_RELATION_DPRIME_AUTHORITY_INTEGRATION_TOO_BROAD:
         return "dprime_authority_integration"
+    if decision == "BLOCKED_DPRIME_SOURCE_OBLIGATION_AUTHORITY_NOT_LICENSED":
+        return "dprime_source_obligation_citation_adapter"
     if decision == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED:
         return "source_citation_display_boundary"
     if decision == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED:
@@ -8694,6 +8736,43 @@ def _base_packet(
                 "runkernel_support_admission_recommended"
             )
             is True
+        ),
+        "runkernel_analyst_finding_admission_required": (
+            dprime_status.get("runkernel_analyst_finding_admission_required")
+            is True
+            or semantic.get("runkernel_analyst_finding_admission_required")
+            is True
+        ),
+        "runkernel_analyst_finding_admission_attempted": (
+            dprime_status.get("runkernel_analyst_finding_admission_attempted")
+            is True
+            or semantic.get("runkernel_analyst_finding_admission_attempted")
+            is True
+        ),
+        "runkernel_analyst_finding_admission_satisfied": (
+            dprime_status.get("runkernel_analyst_finding_admission_satisfied")
+            is True
+            or semantic.get("runkernel_analyst_finding_admission_satisfied")
+            is True
+        ),
+        "runkernel_analyst_finding_admission_ref": _safe_mapping(
+            dprime_status.get("runkernel_analyst_finding_admission_ref")
+            or semantic.get("runkernel_analyst_finding_admission_ref")
+        ),
+        "analyst_finding_semantic_observation_ref": _safe_mapping(
+            dprime_status.get("analyst_finding_semantic_observation_ref")
+            or semantic.get("analyst_finding_semantic_observation_ref")
+        ),
+        "analyst_finding_component_coverage_ref": _safe_mapping(
+            dprime_status.get("analyst_finding_component_coverage_ref")
+            or semantic.get("analyst_finding_component_coverage_ref")
+        ),
+        "analyst_finding_admission_blocker": (
+            dprime_status.get("analyst_finding_admission_blocker")
+            or semantic.get("analyst_finding_admission_blocker")
+        ),
+        "legacy_candidate_level_dprime_review_treated_as_answer_authority": (
+            False
         ),
         "legacy_candidate_level_dprime_review_status": (
             dprime_status.get("model_review_status")
