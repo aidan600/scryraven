@@ -165,6 +165,18 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     assert input_ref["workbench_dprime_dossier_ref"]["dossier_digest"] == (
         dossier_ref["dossier_digest"]
     )
+    for key in (
+        "analyst_finding_proposal_ref",
+        "proposed_answer_claim_ref",
+        "analysis_claim_refs",
+        "source_support_map_ref",
+        "caveat_refs",
+        "adjacent_claim_exclusion_refs",
+        "unresolved_gap_refs",
+        "candidate_triage_summary_ref",
+    ):
+        assert key in captured_input["workbench_dprime_dossier_ref"]
+        assert key in input_ref["workbench_dprime_dossier_ref"]
     assert input_ref["component_answer_type_binding_ref"]["binding_digest"] == (
         binding_ref["binding_digest"]
     )
@@ -2196,6 +2208,7 @@ def test_licensed_followup_routing_surfaces_have_no_domain_specific_fee_branches
     )
     routing_paths = (
         ROOT / "core" / "current_source_component_answer_type_binding.py",
+        ROOT / "core" / "current_source_analyst_finding_proposal.py",
         ROOT / "core" / "analyst_workbench_runtime.py",
         ROOT / "core" / "dprime_analyst_relation_intake_runtime.py",
         ROOT / "core" / "dprime_model_review_assessment.py",
@@ -2693,6 +2706,17 @@ def _assert_workbench_non_authority(packet: Mapping[str, Any]) -> None:
     assert projection["run_kernel_reduced"] is False
     assert projection["run_kernel_reduction_pending"] is True
     assert projection["proposed_for_runkernel_reduction"] is True
+    for finding in packet["analyst_workbench_packet"].get(
+        "analyst_finding_proposals",
+        [],
+    ):
+        assert finding["evidence_admitted"] is False
+        assert finding["source_obligation_satisfied"] is False
+        assert finding["citation_eligibility_created"] is False
+        assert finding["final_answer_packet_created"] is False
+        assert finding["author_output_created"] is False
+        assert finding["product_correctness_claimed"] is False
+        assert finding["source_support_map_ref"]
     binding = packet.get("component_answer_type_binding")
     if binding:
         assert binding["evidence_admitted"] is False

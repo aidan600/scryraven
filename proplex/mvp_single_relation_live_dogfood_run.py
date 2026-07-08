@@ -4125,6 +4125,59 @@ def _current_source_record_workbench_report_section(
             _safe_mapping(item)
             for item in _safe_sequence(workbench.get("analyst_finding_proposal_refs"))
         ],
+        "analyst_finding_proposal_ref": _safe_mapping(
+            workbench.get("analyst_finding_proposal_ref")
+            or dossier.get("analyst_finding_proposal_ref")
+        ),
+        "proposed_answer_claim_ref": _safe_mapping(
+            workbench.get("proposed_answer_claim_ref")
+            or dossier.get("proposed_answer_claim_ref")
+        ),
+        "analysis_summary_ref": _safe_mapping(
+            workbench.get("analysis_summary_ref") or dossier.get("analysis_summary_ref")
+        ),
+        "analysis_claim_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                workbench.get("analysis_claim_refs")
+                or dossier.get("analysis_claim_refs")
+            )
+        ],
+        "source_support_map_ref": _safe_mapping(
+            workbench.get("source_support_map_ref")
+            or dossier.get("source_support_map_ref")
+        ),
+        "caveat_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                workbench.get("caveat_refs") or dossier.get("caveat_refs")
+            )
+        ],
+        "adjacent_claim_exclusion_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                workbench.get("adjacent_claim_exclusion_refs")
+                or dossier.get("adjacent_claim_exclusion_refs")
+            )
+        ],
+        "unresolved_gap_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                workbench.get("unresolved_gap_refs")
+                or dossier.get("unresolved_gap_refs")
+            )
+        ],
+        "conflict_or_overclaim_risk_refs": [
+            _safe_mapping(item)
+            for item in _safe_sequence(
+                workbench.get("conflict_or_overclaim_risk_refs")
+                or dossier.get("conflict_or_overclaim_risk_refs")
+            )
+        ],
+        "scrutineer_challenge_seed_ref": _safe_mapping(
+            workbench.get("scrutineer_challenge_seed_ref")
+            or dossier.get("scrutineer_challenge_seed_ref")
+        ),
         "specialist_lane": _safe_mapping(workbench.get("specialist_lane_placeholder")),
         "economist_lane": _safe_mapping(workbench.get("economist_lane_placeholder")),
         "scrutineer_lane": _safe_mapping(workbench.get("scrutineer_lane_placeholder")),
@@ -4216,6 +4269,18 @@ def _format_current_source_record_single_fact_review_report(
     workbench_binding = _safe_mapping(
         analyst_workbench.get("component_answer_type_binding_ref")
     )
+    analyst_finding = _safe_mapping(
+        analyst_workbench.get("analyst_finding_proposal_ref")
+    )
+    proposed_answer = _safe_mapping(
+        analyst_workbench.get("proposed_answer_claim_ref")
+    )
+    source_support_map = _safe_mapping(
+        analyst_workbench.get("source_support_map_ref")
+    )
+    challenge_seed = _safe_mapping(
+        analyst_workbench.get("scrutineer_challenge_seed_ref")
+    )
     gap_reentry = _safe_mapping(safe.get("gap_reentry"))
     gap = _safe_mapping(analyst_workbench.get("analysis_gap_search_proposal"))
     handoff = _safe_mapping(
@@ -4300,6 +4365,22 @@ def _format_current_source_record_single_fact_review_report(
         f"{analyst_workbench.get('workbench_reduction_projection_status') or 'not reached'}",
         "- RunKernel reduction pending: "
         f"{_bool_text(analyst_workbench.get('run_kernel_reduction_pending'))}",
+        "- Analyst finding proposal: "
+        f"{analyst_finding.get('finding_digest') or 'not present'}",
+        "- Proposed answer claim ref: "
+        f"{proposed_answer.get('proposed_answer_claim_digest') or 'not present'}",
+        "- Analysis claim refs: "
+        f"{len(_safe_sequence(analyst_workbench.get('analysis_claim_refs')))}",
+        "- Source support map ref: "
+        f"{source_support_map.get('source_support_map_digest') or 'not present'}",
+        "- Caveat refs: "
+        f"{len(_safe_sequence(analyst_workbench.get('caveat_refs')))}",
+        "- Adjacent/exclusion refs: "
+        f"{len(_safe_sequence(analyst_workbench.get('adjacent_claim_exclusion_refs')))}",
+        "- Unresolved gap refs: "
+        f"{len(_safe_sequence(analyst_workbench.get('unresolved_gap_refs')))}",
+        "- Scrutineer challenge seed: "
+        f"{challenge_seed.get('scrutineer_challenge_seed_digest') or 'not present'}",
         f"- Scrutineer lane: {scrutineer.get('status') or 'not reached'}",
         f"- Specialist lane: {specialist.get('status') or 'not reached'}",
         f"- Economist lane: {economist.get('status') or 'not reached'}",
