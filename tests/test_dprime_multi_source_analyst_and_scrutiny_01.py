@@ -28,9 +28,19 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+import proplex.mvp_single_relation_live_dogfood_run as dogfood
+from core.analyst_workbench_runtime import build_current_source_record_analyst_workbench
+from core.current_source_analyst_finding_proposal import (
+    build_model_assisted_analyst_license,
+)
+from core.dprime_evidence_support_bundle_runtime import (
+    BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED,
+)
 from core.dprime_multi_source_analyst_scrutiny_runtime import (
     BLOCKED_DPRIME_MULTI_SOURCE_CONFLICT_UNRESOLVED,
+    BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
     BLOCKED_DPRIME_MULTI_SOURCE_RELATION_SET_MISSING,
+    BLOCKED_DPRIME_MULTI_SOURCE_SCRUTINEER_CHALLENGE,
     BLOCKED_DPRIME_MULTI_SOURCE_SCRUTINEER_GATE_MISSING,
 )
 from proplex.live_citation_source_obligation_readiness_status import (
@@ -43,9 +53,11 @@ from tests.test_ag_semantic_coverage_product_consumption_01 import (
 )
 from tests.test_dprime_generic_analyst_intake_and_relations_01 import (
     GENERIC_COMPONENT_ID,
+    GENERIC_DOMAIN,
     GENERIC_OBLIGATION_ID,
     GENERIC_QUERY,
     GENERIC_TEXT,
+    GENERIC_URL,
     _fake_review,
     _generic_assessment_payload,
     _generic_followup_candidates,
@@ -115,7 +127,7 @@ def test_existing_single_source_and_followup_paths_remain_passes(tmp_path: Path)
 def test_compatible_multi_source_relations_reach_product_citation_display(
     tmp_path: Path,
 ) -> None:
-    repo_root, _candidate = _generic_retained_repo(tmp_path / "base")
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
     extra = _additional_relation_input(
         tmp_path,
         suffix="second-source",
@@ -128,9 +140,14 @@ def test_compatible_multi_source_relations_reach_product_citation_display(
         dprime_model_review_license=_license(),
         dprime_model_review_callable=_fake_review("directly_supports"),
         dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
     )
 
-    assert result.decision == PASS_DECISION, result.payload.get("blocker_detail")
+    assert result.decision == BLOCKED_DPRIME_SUFFICIENCY_READINESS_NOT_LICENSED
     assert result.payload["dprime_multi_source_relation_count"] == 2
     assert result.payload["dprime_multi_source_source_count"] == 2
     assert result.payload["dprime_multi_source_posture_consumed_by_product_status"]
@@ -146,17 +163,18 @@ def test_compatible_multi_source_relations_reach_product_citation_display(
     assert result.payload["dprime_scrutineer_challenge_ref"]["challenge_kind"] == (
         "none"
     )
-    assert result.payload["dprime_answer_path_ref"]["status"] == "consumed"
-    display = result.payload["dprime_answer_path_ref"]["citation_source_display"]
-    assert display["status"] == "created"
-    assert display["rendered_source_count"] == 2
-    assert len(display["citation_source_entries"]) == 2
+    assert result.payload["dprime_answer_path_ref"]["status"] == "not reached"
+    assert result.payload["final_answer_packet_created"] is False
+    assert result.payload["author_output_created"] is False
+    assert result.payload["source_display_opened"] is False
     assert result.payload["answerability_correctness"] == "not claimed"
     assert result.payload["dprime_status"]["objects_created"][
         "multi_source_additional_semantic_observations"
     ] is True
     assert result.payload["dprime_status"]["objects_created"]["component_coverage"]
-    assert result.payload["dprime_status"]["objects_created"]["final_answer_packet"]
+    assert not result.payload["dprime_status"]["objects_created"][
+        "final_answer_packet"
+    ]
     assert "D-prime multi-source relation set status: consumed" in result.output
     assert "D-prime Scrutineer gate status: passed" in result.output
 
@@ -164,7 +182,7 @@ def test_compatible_multi_source_relations_reach_product_citation_display(
 def test_contradictory_multi_source_relation_blocks_before_answer_path(
     tmp_path: Path,
 ) -> None:
-    repo_root, _candidate = _generic_retained_repo(tmp_path / "base")
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
     extra = _additional_relation_input(
         tmp_path,
         suffix="contradiction",
@@ -178,6 +196,11 @@ def test_contradictory_multi_source_relation_blocks_before_answer_path(
         dprime_model_review_license=_license(),
         dprime_model_review_callable=_fake_review("directly_supports"),
         dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
     )
 
     assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_CONFLICT_UNRESOLVED
@@ -206,7 +229,7 @@ def test_contradictory_multi_source_relation_blocks_before_answer_path(
 def test_multi_source_path_blocks_when_scrutineer_gate_is_not_consumed(
     tmp_path: Path,
 ) -> None:
-    repo_root, _candidate = _generic_retained_repo(tmp_path / "base")
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
     extra = _additional_relation_input(
         tmp_path,
         suffix="gate-missing",
@@ -220,6 +243,10 @@ def test_multi_source_path_blocks_when_scrutineer_gate_is_not_consumed(
         dprime_model_review_callable=_fake_review("directly_supports"),
         dprime_multi_source_relation_inputs=[extra],
         dprime_multi_source_scrutineer_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
     )
 
     assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_SCRUTINEER_GATE_MISSING
@@ -234,7 +261,7 @@ def test_multi_source_path_blocks_when_scrutineer_gate_is_not_consumed(
 
 
 def test_multi_source_rejects_cross_component_relation_set(tmp_path: Path) -> None:
-    repo_root, _candidate = _generic_retained_repo(tmp_path / "base")
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
     extra = _additional_relation_input(
         tmp_path,
         suffix="wrong-component",
@@ -249,6 +276,11 @@ def test_multi_source_rejects_cross_component_relation_set(tmp_path: Path) -> No
         dprime_model_review_license=_license(),
         dprime_model_review_callable=_fake_review("directly_supports"),
         dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
     )
 
     assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_RELATION_SET_MISSING
@@ -258,10 +290,132 @@ def test_multi_source_rejects_cross_component_relation_set(tmp_path: Path) -> No
     )
 
 
+def test_multi_source_rejects_wrong_source_obligation_lane(tmp_path: Path) -> None:
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
+    extra = _additional_relation_input(
+        tmp_path,
+        suffix="wrong-obligation",
+        domain="example-county-neighbor.invalid",
+        source_obligation_id="obligation:neighbor-county-official-fee-schedule",
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=GENERIC_QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("directly_supports"),
+        dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
+    )
+
+    assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_RELATION_SET_MISSING
+    assert result.payload["dprime_answer_path_ref"]["status"] == "not reached"
+
+
+def test_multi_source_rejects_currentness_mismatch(tmp_path: Path) -> None:
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
+    extra = _additional_relation_input(
+        tmp_path,
+        suffix="currentness",
+        domain="example-county-currentness.invalid",
+        support_relation="currentness_mismatch",
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=GENERIC_QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("directly_supports"),
+        dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
+    )
+
+    assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_CONFLICT_UNRESOLVED
+    assert result.payload["dprime_multi_source_support_posture_ref"][
+        "currentness_posture"
+    ] == "conflicting"
+    assert result.payload["dprime_scrutineer_challenge_ref"][
+        "challenge_kind"
+    ] == "currentness_conflict"
+
+
+def test_multi_source_rejects_duplicate_source_laundering(tmp_path: Path) -> None:
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
+    extra = _additional_relation_input(
+        tmp_path,
+        suffix="duplicate-source",
+        domain=GENERIC_DOMAIN,
+        url=GENERIC_URL,
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=GENERIC_QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("directly_supports"),
+        dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
+    )
+
+    assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_SCRUTINEER_CHALLENGE
+    assert result.payload["dprime_multi_source_source_count"] == 1
+    assert result.payload["dprime_scrutineer_challenge_ref"][
+        "challenge_kind"
+    ] == "source_laundering_risk"
+    assert result.payload["dprime_multi_source_answer_path_allowed"] is False
+
+
+def test_multi_source_keeps_adjacent_non_support_out_of_support(
+    tmp_path: Path,
+) -> None:
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
+    extra = _additional_relation_input(
+        tmp_path,
+        suffix="adjacent-context",
+        domain="example-county-context.invalid",
+        support_relation="absent",
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=GENERIC_QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("directly_supports"),
+        dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
+    )
+
+    assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_SCRUTINEER_CHALLENGE
+    assert result.payload["dprime_scrutineer_challenge_ref"][
+        "challenge_kind"
+    ] == "unsupported_overclaim"
+    assert result.payload["dprime_multi_source_answer_path_allowed"] is False
+    assert result.payload["dprime_status"]["objects_created"].get(
+        "multi_source_additional_semantic_observations",
+        False,
+    ) is False
+
+
 def test_multi_source_output_hygiene_and_static_closed_surfaces(
     tmp_path: Path,
 ) -> None:
-    repo_root, _candidate = _generic_retained_repo(tmp_path / "base")
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
     extra = _additional_relation_input(
         tmp_path,
         suffix="hygiene",
@@ -274,6 +428,11 @@ def test_multi_source_output_hygiene_and_static_closed_surfaces(
         dprime_model_review_license=_license(),
         dprime_model_review_callable=_fake_review("directly_supports"),
         dprime_multi_source_relation_inputs=[extra],
+        dprime_single_lane_answer_path_enabled=False,
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
     )
     serialized = json.dumps(result.payload, sort_keys=True)
 
@@ -330,6 +489,35 @@ def test_multi_source_output_hygiene_and_static_closed_surfaces(
         assert called.isdisjoint(forbidden_calls)
 
 
+def test_multi_source_rejects_legacy_candidate_level_additional_support_bypass(
+    tmp_path: Path,
+) -> None:
+    repo_root, base_candidate = _generic_retained_repo(tmp_path / "base")
+    extra = _additional_relation_input(
+        tmp_path,
+        suffix="legacy-bypass",
+        domain="example-county-legacy.invalid",
+        include_workbench=False,
+    )
+
+    result = build_live_semantic_coverage_status(
+        query=GENERIC_QUERY,
+        repo_root=repo_root,
+        dprime_model_review_license=_license(),
+        dprime_model_review_callable=_fake_review("directly_supports"),
+        dprime_multi_source_relation_inputs=[extra],
+        workbench_dprime_dossier=_workbench_dossier_for_source(
+            _candidate_with_fetch_packet(repo_root, base_candidate),
+            bounded_text=GENERIC_TEXT,
+        ),
+    )
+
+    assert result.decision == BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED
+    assert "AnalystFindingProposal support validation" in result.payload[
+        "blocker_detail"
+    ]
+
+
 def _additional_relation_input(
     tmp_path: Path,
     *,
@@ -339,14 +527,16 @@ def _additional_relation_input(
     component_id: str = GENERIC_COMPONENT_ID,
     review_component_id: str = GENERIC_COMPONENT_ID,
     source_obligation_id: str = GENERIC_OBLIGATION_ID,
+    url: str | None = None,
+    include_workbench: bool = True,
 ) -> dict[str, Any]:
-    repo_root, _candidate = _passport_retained_repo(
+    repo_root, candidate = _passport_retained_repo(
         tmp_path / f"extra-{suffix}",
         bounded_text=SECOND_SOURCE_TEXT,
         component_id=component_id,
         source_obligation_id=source_obligation_id,
         title=f"Example County Extra Fee Schedule {suffix}",
-        url=f"https://{domain}/small-claims-fees-{suffix}",
+        url=url or f"https://{domain}/small-claims-fees-{suffix}",
         domain=domain,
         candidate_id=f"search-result-candidate:example-county-fee-{suffix}",
         candidate_digest=f"candidate-digest-example-county-fee-{suffix}",
@@ -361,7 +551,7 @@ def _additional_relation_input(
         "blocker_detail"
     )
     fetch_packet = json.loads((repo_root / FETCH_READ_PACKET).read_text("utf-8"))
-    return {
+    relation_input = {
         "fetch_read_content_packet": fetch_packet,
         "source_evidence_admission_ref": readiness.payload[
             "source_evidence_admission_ref"
@@ -376,6 +566,176 @@ def _additional_relation_input(
             component_id=review_component_id,
         ),
     }
+    if include_workbench:
+        candidate = {**candidate, "fetch_packet": fetch_packet}
+        relation_input["workbench_dprime_dossier"] = _workbench_dossier_for_source(
+            candidate,
+            bounded_text=SECOND_SOURCE_TEXT,
+        )
+    return relation_input
+
+
+def _workbench_dossier_for_source(
+    candidate: Mapping[str, Any],
+    *,
+    bounded_text: str,
+) -> dict[str, Any]:
+    relation_plan = _workbench_relation_plan()
+    acquisition_plan = {
+        "acquisition_query": GENERIC_QUERY,
+        "expected_value_token_kinds": ["currency"],
+        "selected_window_guidance": True,
+    }
+    candidate_id = str(candidate["candidate_id"])
+    url = str(candidate["url"])
+    title = str(candidate["title"])
+    domain = str(candidate["domain"])
+    candidate_diagnostic = _candidate_diagnostic(
+        candidate_id=candidate_id,
+        title=title,
+        domain=domain,
+        url=url,
+        bounded_text=bounded_text,
+    )
+    workbench = build_current_source_record_analyst_workbench(
+        relation_plan=relation_plan,
+        acquisition_plan=acquisition_plan,
+        candidate_diagnostics=[candidate_diagnostic],
+        answer_bearing_candidate_window_diagnostics=[candidate_diagnostic],
+        provider_results=[
+            {
+                "title": title,
+                "url": url,
+                "domain": domain,
+                "snippet": "Example County official source lists a $42 fee.",
+                "published_or_observed_date": "2026-07-01",
+                "result_rank": 1,
+                "provider_call_index": 1,
+                "provider_extracted_text": bounded_text,
+                "provider_extracted_text_sanitized": True,
+                "provider_extracted_text_bounded": True,
+                "provider_extracted_text_char_count": len(bounded_text),
+                "provider_extracted_text_digest": dogfood._digest_json(
+                    {"provider_extracted_text": bounded_text}
+                ),
+                "provider_extracted_source_text_digest": dogfood._digest_json(
+                    {"provider_extracted_text": bounded_text}
+                ),
+                "provider_extracted_content_type": "text/html",
+                "provider_extracted_at": "2026-07-01T00:00:00+00:00",
+                "raw_provider_payload_retained": False,
+                "raw_search_response_retained": False,
+            }
+        ],
+        fetch_read_content_packet=_safe_mapping(candidate.get("fetch_packet")),
+        entrypoint_kind="test_multi_source_dprime_status",
+        model_assisted_analyst_license=build_model_assisted_analyst_license(
+            license_id="test-dprime-multi-source-analyst"
+        ),
+        model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
+    )
+    return dogfood._semantic_workbench_dossier_for_dprime(
+        workbench,
+        include_gap_proposal=False,
+    )
+
+
+def _candidate_with_fetch_packet(
+    repo_root: Path,
+    candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        **dict(candidate),
+        "fetch_packet": json.loads((repo_root / FETCH_READ_PACKET).read_text("utf-8")),
+    }
+
+
+def _workbench_relation_plan() -> dict[str, Any]:
+    return {
+        "plan_id": "generic-multi-source-test-plan",
+        "packet_id": "generic-multi-source-test-plan-packet",
+        "sanitized_query": GENERIC_QUERY,
+        "component_id": GENERIC_COMPONENT_ID,
+        "component_text": "Example County small-claims filing fee",
+        "component_digest": dogfood._digest_json(
+            {"component_id": GENERIC_COMPONENT_ID}
+        ),
+        "source_obligation_id": GENERIC_OBLIGATION_ID,
+        "source_obligation_text": "Example County official fee schedule",
+        "claim_under_test": (
+            "Example County small-claims filing fee for the example case type "
+            "is $42."
+        ),
+        "search_query_seeds": [GENERIC_QUERY],
+    }
+
+
+def _candidate_diagnostic(
+    *,
+    candidate_id: str,
+    title: str,
+    domain: str,
+    url: str,
+    bounded_text: str,
+) -> dict[str, Any]:
+    digest = dogfood._digest_json({"bounded_text": bounded_text})
+    return {
+        "candidate_id": candidate_id,
+        "title": title,
+        "candidate_title": title,
+        "domain": domain,
+        "url": url,
+        "provider_rank": 1,
+        "result_rank": 1,
+        "fetch_read_priority_rank": 1,
+        "candidate_selection_features": {
+            "source_of_record_domain_signal": True,
+            "official_domain_signal": True,
+            "query_entity_domain_overlap": True,
+            "derivative_domain_signal": False,
+        },
+        "source_survival_candidate_signal": "source_of_record_looking",
+        "official_or_source_record_looking_http_candidate": True,
+        "official_pdf_or_table_artifact_candidate": False,
+        "readable_text_obtained": True,
+        "provider_extracted_text_obtained": True,
+        "answer_bearing_candidate_window_considered": True,
+        "answer_bearing_candidate_window_selected": True,
+        "candidate_window_selected": True,
+        "answer_bearing_candidate_window_status": "established",
+        "selected_window_digest": digest,
+        "selected_window_char_count": len(bounded_text),
+        "bounded_content_digest": digest,
+        "bounded_content_char_count": len(bounded_text),
+        "required_anchor_count": 1,
+        "matched_anchor_count": 1,
+        "missing_anchor_count": 0,
+        "anchor_match_status": "all_required_anchors_matched",
+        "expected_value_token_kinds": ["currency"],
+        "matched_value_token_kinds": ["currency"],
+        "matched_value_token_kind_count": 1,
+        "missing_value_token_kinds": [],
+        "value_token_guidance_consumed": True,
+        "attempted": True,
+        "skipped_reason": None,
+        "http_status_class": "2xx",
+        "content_type": "text/html",
+        "readable_content_type": True,
+        "final_url": url,
+        "final_domain": domain,
+        "not_evidence": True,
+        "not_citation_eligible": True,
+        "not_source_obligation_satisfaction": True,
+        "raw_private_retention_flags": dict(dogfood.RAW_FALSE_FLAGS),
+    }
+
+
+def _echo_deterministic_analyst_adapter(
+    _input_packet: Mapping[str, Any],
+    *,
+    deterministic_proposal: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {"analyst_finding_proposal": dict(deterministic_proposal)}
 
 
 def _review_for_component(

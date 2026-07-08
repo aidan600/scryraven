@@ -110,6 +110,9 @@ PHASE = DPRIME_PHASE
 MODE = "BUILD"
 USABLE_ANSWER_VERDICT_TARGET = "YES"
 LIVE_SEMANTIC_COVERAGE_STATUS_FLAG = "--live-semantic-coverage-status-dry-run"
+_DPRIME_SUPPORT_BEARING_RELATIONS = frozenset(
+    {"directly_supports", "partially_supports"}
+)
 
 BLOCKED_ENTRYPOINT_MISSING = "BLOCKED_ENTRYPOINT_MISSING"
 BLOCKED_RETAINED_ARTIFACT_PREFLIGHT = "BLOCKED_RETAINED_ARTIFACT_PREFLIGHT"
@@ -1506,9 +1509,27 @@ def _blocked_dprime_model_review_assessment_result(
             workbench_ref=workbench_ref,
             candidate_handoff_ref=candidate_handoff,
         )
+    primary_support_bearing = _dprime_model_review_result_support_bearing(
+        model_review_result
+    )
     analyst_finding_validation_required = analyst_finding_support_validation_required(
         workbench_dprime_dossier
     )
+    if (
+        legacy_proposal_validated
+        and primary_support_bearing
+        and dprime_multi_source_relation_inputs
+        and not analyst_finding_validation_required
+    ):
+        return _blocked_result(
+            query=query,
+            blocker=BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+            detail=(
+                "primary answer-bearing multi-source relation requires "
+                "AnalystFindingProposal support validation before support "
+                "authority"
+            ),
+        )
     analyst_finding_validation: dict[str, Any] = {}
     analyst_finding_validation_ref: dict[str, Any] = {}
     analyst_finding_validation_satisfied = True
@@ -3968,6 +3989,51 @@ def _additional_dprime_relation_results(
         assessment_material_ref = _safe_mapping(
             model_review_result.assessment_material_ref
         )
+        support_bearing = _dprime_model_review_result_support_bearing(
+            model_review_result
+        )
+        workbench_dprime_dossier = _safe_mapping(
+            item.get("workbench_dprime_dossier")
+        )
+        analyst_finding_validation_required = (
+            analyst_finding_support_validation_required(workbench_dprime_dossier)
+        )
+        analyst_finding_validation: dict[str, Any] = {}
+        analyst_finding_validation_ref: dict[str, Any] = {}
+        analyst_finding_validation_satisfied = True
+        if analyst_finding_validation_required:
+            analyst_finding_validation = build_dprime_analyst_finding_support_validation(
+                workbench_dprime_dossier=workbench_dprime_dossier,
+                fetch_read_content_packet=fetch_packet,
+            )
+            analyst_finding_validation_ref = (
+                dprime_analyst_finding_support_validation_ref(
+                    analyst_finding_validation
+                )
+            )
+            analyst_finding_validation_satisfied = (
+                support_validation_allows_runkernel_admission(
+                    analyst_finding_validation
+                )
+            )
+        if support_bearing and not analyst_finding_validation_required:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                (
+                    "additional answer-bearing multi-source relation requires "
+                    "AnalystFindingProposal support validation before support "
+                    "authority"
+                ),
+            )
+        if support_bearing and not analyst_finding_validation_satisfied:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                (
+                    "additional answer-bearing multi-source relation failed "
+                    "AnalystFindingProposal support validation before "
+                    "RunKernel admission"
+                ),
+            )
         results.append(
             {
                 "ordinal": index,
@@ -3979,10 +4045,31 @@ def _additional_dprime_relation_results(
                 "relation_ref": relation_ref,
                 "assessment_material_ref": assessment_material_ref,
                 "model_review_result": model_review_result,
+                "dprime_analyst_finding_support_validation": (
+                    analyst_finding_validation
+                ),
+                "dprime_analyst_finding_support_validation_ref": (
+                    analyst_finding_validation_ref
+                ),
+                "dprime_analyst_finding_validation_required": (
+                    analyst_finding_validation_required
+                ),
+                "dprime_analyst_finding_validation_satisfied": (
+                    analyst_finding_validation_satisfied
+                ),
                 "status_ref": _additional_relation_status_ref(
                     ordinal=index,
                     relation_ref=relation_ref,
                     model_review_result=model_review_result,
+                    analyst_finding_validation_ref=(
+                        analyst_finding_validation_ref
+                    ),
+                    analyst_finding_validation_required=(
+                        analyst_finding_validation_required
+                    ),
+                    analyst_finding_validation_satisfied=(
+                        analyst_finding_validation_satisfied
+                    ),
                 ),
             }
         )
@@ -3998,6 +4085,9 @@ def _additional_semantic_materializations(
     materializations: list[Any] = []
     for item in relation_results:
         result = item["model_review_result"]
+        support_bearing = _dprime_model_review_result_support_bearing(result)
+        if not support_bearing:
+            continue
         if (
             result.proposal_validation_status
             != DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
@@ -4006,12 +4096,48 @@ def _additional_semantic_materializations(
                 BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
                 "support-bearing multi-source relation was not proposal-validated",
             )
+        validation_ref = _safe_mapping(
+            item.get("dprime_analyst_finding_support_validation_ref")
+        )
+        if support_bearing and not validation_ref:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                (
+                    "support-bearing multi-source relation lacked "
+                    "AnalystFindingProposal validation at RunKernel admission"
+                ),
+            )
+        if support_bearing and item.get(
+            "dprime_analyst_finding_validation_satisfied"
+        ) is not True:
+            raise DPrimeMultiSourceAnalystScrutinyError(
+                BLOCKED_DPRIME_MULTI_SOURCE_PRODUCT_STATUS_NOT_WIRED,
+                (
+                    "support-bearing multi-source relation failed "
+                    "AnalystFindingProposal validation at RunKernel admission"
+                ),
+            )
         decision = build_run_kernel_dprime_admission_decision(
             _safe_mapping(result.run_kernel_support_admission_request_ref),
             decision_status=run_kernel_admission_decision_status,
             rationale=(
                 "product status consumed additional multi-source D-prime "
                 "admission request through RunKernel-owned decision runtime"
+            ),
+            metadata=_without_empty(
+                {
+                    "dprime_analyst_finding_support_validation_consumed": (
+                        bool(validation_ref)
+                    ),
+                    "dprime_analyst_finding_support_validation_ref": (
+                        _runkernel_safe_analyst_finding_validation_ref(
+                            validation_ref
+                        )
+                    ),
+                    "legacy_candidate_level_dprime_review_treated_as_answer_authority": (
+                        False
+                    ),
+                }
             ),
         )
         materializations.append(
@@ -4044,6 +4170,9 @@ def _additional_relation_status_ref(
     ordinal: int,
     relation_ref: Mapping[str, Any],
     model_review_result: Any,
+    analyst_finding_validation_ref: Mapping[str, Any] | None = None,
+    analyst_finding_validation_required: bool = False,
+    analyst_finding_validation_satisfied: bool = True,
 ) -> dict[str, Any]:
     return _without_empty(
         {
@@ -4062,9 +4191,28 @@ def _additional_relation_status_ref(
             "run_kernel_support_admission_status": (
                 model_review_result.run_kernel_support_admission_status
             ),
+            "dprime_analyst_finding_support_validation_ref": dict(
+                _safe_mapping(analyst_finding_validation_ref)
+            ),
+            "dprime_analyst_finding_validation_required_for_product_path": (
+                bool(analyst_finding_validation_required)
+            ),
+            "dprime_analyst_finding_validation_satisfied": bool(
+                analyst_finding_validation_satisfied
+            ),
+            "legacy_candidate_level_dprime_review_treated_as_answer_authority": (
+                False
+            ),
             "product_correctness_claimed": False,
             "live_calls_run": False,
         }
+    )
+
+
+def _dprime_model_review_result_support_bearing(result: Any) -> bool:
+    return (
+        _clean_text(getattr(result, "support_relation", None), limit=160)
+        in _DPRIME_SUPPORT_BEARING_RELATIONS
     )
 
 
