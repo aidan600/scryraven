@@ -22,6 +22,11 @@ from core.analysis_gap_followup_search_packet import (
     build_followup_search_intent_packet,
     followup_search_intent_packet_ref_from_packet,
 )
+from core.current_source_analyst_finding_proposal import (
+    AnalystFindingProposalError,
+    analyst_finding_proposal_ref,
+    build_model_assisted_analyst_finding_proposal,
+)
 from core.dprime_analyst_finding_support_validation import (
     analyst_finding_support_validation_required,
     build_dprime_analyst_finding_support_validation,
@@ -325,7 +330,10 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
     run_kernel_admission_decision_status: str = (
         DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
     ),
+    single_lane_answer_path_enabled: bool = True,
     workbench_dprime_dossier: Mapping[str, Any] | None = None,
+    model_assisted_analyst_license: Mapping[str, Any] | None = None,
+    model_assisted_analyst_adapter: Any | None = None,
     provider_authorized: str = DEFAULT_PROVIDER_AUTHORIZED,
 ) -> RunKernelFollowupSearchReentryResult:
     """Run one default-off D-prime follow-up loop through ordinary search."""
@@ -693,7 +701,10 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
             run_kernel_admission_decision_status=(
                 run_kernel_admission_decision_status
             ),
+            single_lane_answer_path_enabled=single_lane_answer_path_enabled,
             workbench_dprime_dossier=workbench_dprime_dossier,
+            model_assisted_analyst_license=model_assisted_analyst_license,
+            model_assisted_analyst_adapter=model_assisted_analyst_adapter,
         )
     except RunKernelFollowupSearchReentryError as exc:
         return _failed_result(failure_base, exc)
@@ -730,7 +741,10 @@ def _finish_second_pass(
     run_kernel: Any,
     contract_authority_ref: Mapping[str, Any],
     run_kernel_admission_decision_status: str,
+    single_lane_answer_path_enabled: bool,
     workbench_dprime_dossier: Mapping[str, Any] | None,
+    model_assisted_analyst_license: Mapping[str, Any] | None,
+    model_assisted_analyst_adapter: Any | None,
 ) -> RunKernelFollowupSearchReentryResult:
     dprime = dict(second_dprime_status)
     dprime.update(second_model_review_result.to_status_overlay())
@@ -746,9 +760,27 @@ def _finish_second_pass(
     )
     analyst_validation_ref: dict[str, Any] = {}
     analyst_validation_satisfied = True
+    followup_dossier: dict[str, Any] = {}
+    followup_proposal_ref: dict[str, Any] = {}
+    followup_first_pass_ref: dict[str, Any] = {}
     if analyst_validation_required:
-        analyst_validation = build_dprime_analyst_finding_support_validation(
+        followup_dossier = _followup_analyst_finding_dossier(
             workbench_dprime_dossier=workbench_dprime_dossier,
+            followup_fetch_packet=followup_fetch_packet,
+            component_ref=component_ref,
+            source_obligation_ref=source_obligation_ref,
+            second_model_review_result=second_model_review_result,
+            model_assisted_analyst_license=model_assisted_analyst_license,
+            model_assisted_analyst_adapter=model_assisted_analyst_adapter,
+        )
+        followup_proposal_ref = _safe_mapping(
+            followup_dossier.get("analyst_finding_proposal_ref")
+        )
+        followup_first_pass_ref = _safe_mapping(
+            followup_dossier.get("first_pass_analyst_finding_proposal_ref")
+        )
+        analyst_validation = build_dprime_analyst_finding_support_validation(
+            workbench_dprime_dossier=followup_dossier,
             fetch_read_content_packet=followup_fetch_packet,
         )
         analyst_validation_ref = dprime_analyst_finding_support_validation_ref(
@@ -770,6 +802,34 @@ def _finish_second_pass(
         dprime["dprime_analyst_finding_validation_product_proof_blocker"] = (
             analyst_validation_ref.get("product_proof_blocker")
         )
+        dprime["followup_analyst_finding_proposal_ref"] = dict(
+            followup_proposal_ref
+        )
+        dprime["first_pass_analyst_finding_proposal_ref"] = dict(
+            followup_first_pass_ref
+        )
+        dprime["followup_analyst_finding_refresh_required"] = True
+        dprime["followup_analyst_finding_refresh_completed"] = True
+        dprime["followup_analyst_finding_digest_differs_from_first_pass"] = (
+            followup_dossier.get(
+                "followup_analyst_finding_digest_differs_from_first_pass"
+            )
+            is True
+        )
+        dprime["followup_analyst_finding_selected_candidate_refs_point_to_followup"] = (
+            followup_dossier.get(
+                "followup_analyst_finding_selected_candidate_refs_point_to_followup"
+            )
+            is True
+        )
+        dprime["followup_analyst_finding_bounded_refs_point_to_followup_packet"] = (
+            followup_dossier.get(
+                "followup_analyst_finding_bounded_refs_point_to_followup_packet"
+            )
+            is True
+        )
+        dprime["stale_first_pass_analyst_finding_reused"] = False
+        dprime["followup_source_support_map_reused_from_first_pass"] = False
     dprime["dprime_analyst_finding_validation_required_for_product_path"] = (
         analyst_validation_required
     )
@@ -806,14 +866,14 @@ def _finish_second_pass(
         )
         summary = (
             "D-prime AnalystFinding validation required before second-pass "
-            "RunKernel admission; follow-up AnalystFinding refresh required "
+            "RunKernel admission; fresh follow-up AnalystFinding validation ran "
             f"over follow-up evidence. {validation_summary}"
         )
         dprime["dprime_analyst_finding_validation_blocker"] = (
-            "followup_analyst_finding_refresh_required"
+            "followup_analyst_finding_support_validation_failed"
         )
         dprime["followup_analyst_finding_refresh_required"] = True
-        dprime["followup_analyst_finding_refresh_completed"] = False
+        dprime["followup_analyst_finding_refresh_completed"] = True
         dprime["legacy_candidate_level_dprime_review_treated_as_answer_authority"] = (
             False
         )
@@ -825,7 +885,13 @@ def _finish_second_pass(
             "second_dprime_pass_status": "blocked",
             "dprime_analyst_finding_validation_required": True,
             "followup_analyst_finding_refresh_required": True,
-            "followup_analyst_finding_refresh_completed": False,
+            "followup_analyst_finding_refresh_completed": True,
+            "followup_analyst_finding_proposal_ref": dict(
+                followup_proposal_ref
+            ),
+            "first_pass_analyst_finding_proposal_ref": dict(
+                followup_first_pass_ref
+            ),
             "dprime_analyst_finding_support_validation_ref": dict(
                 analyst_validation_ref
             ),
@@ -845,7 +911,7 @@ def _finish_second_pass(
                 ),
                 "reasons": [
                     "AnalystFindingProposal support validation is required before second-pass RunKernel admission",
-                    "follow-up AnalystFinding refresh is required before downstream answer authority can open",
+                    "fresh follow-up AnalystFinding support validation failed before downstream authority could open",
                     summary,
                 ],
             },
@@ -954,6 +1020,78 @@ def _finish_second_pass(
         )
         dprime.update(support_bundle.to_status_overlay())
         objects_created["component_coverage"] = True
+        if not single_lane_answer_path_enabled:
+            dprime["single_lane_answer_path_disabled_by_caller"] = True
+            dprime["sufficiency_readiness_created"] = False
+            dprime["final_answer_packet_created"] = False
+            dprime["author_answer_created"] = False
+            dprime["citation_source_display_created"] = False
+            objects_created["sufficiency_readiness"] = False
+            objects_created["final_answer_packet"] = False
+            objects_created["author_answer"] = False
+            objects_created["citation_source_display"] = False
+            dprime["objects_created"] = objects_created
+            return RunKernelFollowupSearchReentryResult(
+                decision=support_bundle.decision,
+                blocker_detail=support_bundle.blocker_detail,
+                next_blocked_surface="D-prime source/citation stop point",
+                projection=_without_empty(
+                    {
+                        **dict(base),
+                        "status": (
+                            "ordinary_search_reentry_to_source_citation_handoff_consumed"
+                        ),
+                        "second_pass_answer_path_status": "closed_by_caller",
+                        "semantic_observation_status": "consumed",
+                        "component_coverage_status": "consumed",
+                        "source_obligation_authority_status": (
+                            support_bundle.source_obligation_authority_ref.get(
+                                "status"
+                            )
+                        ),
+                        "citation_eligibility_authority_status": (
+                            support_bundle.citation_eligibility_authority_ref.get(
+                                "status"
+                            )
+                        ),
+                        "dprime_analyst_finding_support_validation_consumed": (
+                            analyst_validation_required
+                        ),
+                        "dprime_analyst_finding_support_validation_ref": dict(
+                            analyst_validation_ref
+                        ),
+                        "followup_analyst_finding_refresh_required": (
+                            analyst_validation_required
+                        ),
+                        "followup_analyst_finding_refresh_completed": (
+                            analyst_validation_required
+                        ),
+                    }
+                ),
+                dprime_status=dprime,
+                support_ref=support_ref,
+                semantic_ref=semantic_materialization.semantic_status_ref(),
+                coverage_ref=support_bundle.component_coverage_ref,
+                source_obligation_authority_ref=(
+                    support_bundle.source_obligation_authority_ref
+                ),
+                citation_eligibility_authority_ref=(
+                    support_bundle.citation_eligibility_authority_ref
+                ),
+                answer_path_ref={
+                    "status": "not reached",
+                    "blocker": support_bundle.decision,
+                    "blocker_detail": support_bundle.blocker_detail,
+                    "next_blocked_surface": "D-prime source/citation stop point",
+                },
+                semantic_support_source=(
+                    "available through D-prime second-pass SemanticObservation, "
+                    "ComponentCoverage, and source/citation authority after "
+                    "RunKernel-owned follow-up ordinary search re-entry; "
+                    "single-lane FAP/Author/source-display path is closed by caller"
+                ),
+                contract_authority_ref=contract_authority_ref,
+            )
         answer_path = build_dprime_single_lane_answer_path(
             support_bundle=support_bundle,
             run_kernel=run_kernel,
@@ -1050,6 +1188,565 @@ def _finish_second_pass(
             ),
             contract_authority_ref=contract_authority_ref,
         )
+
+
+def _followup_analyst_finding_dossier(
+    *,
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+    followup_fetch_packet: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    second_model_review_result: Any,
+    model_assisted_analyst_license: Mapping[str, Any] | None,
+    model_assisted_analyst_adapter: Any | None,
+) -> dict[str, Any]:
+    original = _safe_mapping(workbench_dprime_dossier)
+    first_proposal = _safe_mapping(original.get("analyst_finding_proposal"))
+    first_proposal_ref = _safe_mapping(
+        original.get("analyst_finding_proposal_ref")
+    ) or analyst_finding_proposal_ref(first_proposal)
+    first_support_map_ref = (
+        _safe_mapping(original.get("source_support_map_ref"))
+        or _source_support_map_ref_from_proposal(first_proposal)
+    )
+    triage_packet = _followup_analyst_triage_packet(
+        workbench_dprime_dossier=original,
+        followup_fetch_packet=followup_fetch_packet,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+        second_model_review_result=second_model_review_result,
+    )
+    gap_proposal = _followup_analysis_gap_search_proposal(
+        workbench_dprime_dossier=original,
+        followup_fetch_packet=followup_fetch_packet,
+        component_ref=component_ref,
+        source_obligation_ref=source_obligation_ref,
+    )
+    try:
+        proposal = build_model_assisted_analyst_finding_proposal(
+            triage_packet=triage_packet,
+            analysis_gap_search_proposal=gap_proposal,
+            fetch_read_content_packet=followup_fetch_packet,
+            model_assisted_analyst_license=model_assisted_analyst_license,
+            model_assisted_analyst_adapter=model_assisted_analyst_adapter,
+        )
+    except AnalystFindingProposalError as exc:
+        raise RunKernelFollowupSearchReentryError(
+            BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
+            f"fresh follow-up AnalystFindingProposal failed closed: {exc}",
+            first_failed_seam="followup_analyst_finding_refresh",
+            next_surface="follow-up AnalystFindingProposal refresh",
+        ) from None
+    proposal_ref = analyst_finding_proposal_ref(proposal)
+    _validate_fresh_followup_analyst_finding(
+        proposal=proposal,
+        proposal_ref=proposal_ref,
+        first_proposal_ref=first_proposal_ref,
+        first_support_map_ref=first_support_map_ref,
+        followup_fetch_packet=followup_fetch_packet,
+    )
+    return _without_empty(
+        {
+            **original,
+            "analyst_finding_proposal": proposal,
+            "analyst_finding_proposal_ref": proposal_ref,
+            "source_support_map_ref": _source_support_map_ref_from_proposal(
+                proposal
+            ),
+            "candidate_triage_summary_ref": _safe_mapping(
+                triage_packet.get("candidate_triage_summary_ref")
+            ),
+            "selected_answer_bearing_candidate_refs": _safe_refs_from_runtime(
+                proposal.get("selected_answer_bearing_candidate_refs")
+            ),
+            "adjacent_context_candidate_refs": _safe_refs_from_runtime(
+                proposal.get("adjacent_context_candidate_refs")
+            ),
+            "excluded_scope_candidate_refs": _safe_refs_from_runtime(
+                proposal.get("excluded_scope_candidate_refs")
+            ),
+            "unreadable_high_value_candidate_refs": _safe_refs_from_runtime(
+                proposal.get("unreadable_high_value_candidate_refs")
+            ),
+            "analysis_gap_search_proposal": gap_proposal,
+            "analysis_gap_search_proposal_ref": _analysis_gap_ref(gap_proposal),
+            "followup_analyst_finding_refresh_required": True,
+            "followup_analyst_finding_refresh_completed": True,
+            "followup_analyst_finding_proposal_ref": proposal_ref,
+            "first_pass_analyst_finding_proposal_ref": first_proposal_ref,
+            "first_pass_source_support_map_ref": first_support_map_ref,
+            "followup_fetch_read_content_packet_ref": (
+                fetch_read_content_packet_ref_from_packet(followup_fetch_packet)
+            ),
+            "followup_analyst_finding_digest_differs_from_first_pass": (
+                not _ref_overlaps(proposal_ref, first_proposal_ref)
+            ),
+            "followup_analyst_finding_selected_candidate_refs_point_to_followup": True,
+            "followup_analyst_finding_bounded_refs_point_to_followup_packet": True,
+            "stale_first_pass_analyst_finding_reused": False,
+            "followup_source_support_map_reused_from_first_pass": False,
+            "legacy_candidate_level_dprime_review_treated_as_answer_authority": False,
+        }
+    )
+
+
+def _followup_analyst_triage_packet(
+    *,
+    workbench_dprime_dossier: Mapping[str, Any],
+    followup_fetch_packet: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    second_model_review_result: Any,
+) -> dict[str, Any]:
+    selected_refs = _followup_candidate_refs(
+        followup_fetch_packet,
+        source_obligation_ref=source_obligation_ref,
+        second_model_review_result=second_model_review_result,
+    )
+    summary = _followup_candidate_triage_summary_ref(
+        selected_refs=selected_refs,
+        followup_fetch_packet=followup_fetch_packet,
+    )
+    return _without_empty(
+        {
+            "schema_version": "followup_analyst_triage_packet_v1",
+            "triage_kind": "followup_analyst_finding_triage",
+            "component_answer_type_binding_ref": (
+                _followup_component_answer_type_binding_ref(
+                    workbench_dprime_dossier=workbench_dprime_dossier,
+                    component_ref=component_ref,
+                    source_obligation_ref=source_obligation_ref,
+                    second_model_review_result=second_model_review_result,
+                )
+            ),
+            "candidate_triage_summary_ref": summary,
+            "candidate_triage_records": [
+                _followup_candidate_triage_record(item) for item in selected_refs
+            ],
+            "selected_answer_bearing_candidate_refs": selected_refs,
+            "adjacent_context_candidate_refs": [],
+            "excluded_scope_candidate_refs": [],
+            "unreadable_high_value_candidate_refs": [],
+            "overclaim_risk_candidate_refs": [],
+            "followup_fetch_read_content_packet_ref": (
+                fetch_read_content_packet_ref_from_packet(followup_fetch_packet)
+            ),
+            "proposal_only": True,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
+            "product_correctness_claimed": False,
+        }
+    )
+
+
+def _followup_candidate_refs(
+    followup_fetch_packet: Mapping[str, Any],
+    *,
+    source_obligation_ref: Mapping[str, Any],
+    second_model_review_result: Any,
+) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    answer_value = _second_pass_answer_value_candidate(second_model_review_result)
+    for raw in followup_fetch_packet.get("reference_records", []) or []:
+        reference = _safe_mapping(raw)
+        if reference.get("fetch_read_status") != "readable":
+            continue
+        candidate_id = _clean_text(reference.get("candidate_id"), limit=320)
+        if not candidate_id or candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        ref = _without_empty(
+            {
+                "candidate_id": candidate_id,
+                "candidate_digest": reference.get("candidate_digest"),
+                "reference_id": reference.get("reference_id"),
+                "reference_digest": reference.get("reference_digest"),
+                "candidate_title": reference.get("content_title")
+                or reference.get("title"),
+                "candidate_domain": reference.get("resolved_domain")
+                or reference.get("domain"),
+                "candidate_url": reference.get("canonical_url")
+                or reference.get("final_url")
+                or reference.get("resolved_url")
+                or reference.get("attempted_url"),
+                "source_obligation_candidate_ids": (
+                    _text_list(reference.get("source_obligation_candidate_ids"))
+                    or _source_obligation_ids(source_obligation_ref)
+                ),
+                "answer_value_candidate": answer_value,
+                "candidate_triage_role": "answer_bearing",
+                "followup_fetch_read_status": "readable",
+            }
+        )
+        refs.append(ref)
+    if refs:
+        return refs
+    raise RunKernelFollowupSearchReentryError(
+        BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
+        "fresh follow-up AnalystFindingProposal requires a readable follow-up candidate",
+        first_failed_seam="followup_analyst_finding_readable_candidate_missing",
+        next_surface="follow-up AnalystFindingProposal refresh",
+    )
+
+
+def _followup_component_answer_type_binding_ref(
+    *,
+    workbench_dprime_dossier: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+    second_model_review_result: Any,
+) -> dict[str, Any]:
+    binding = _safe_mapping(
+        workbench_dprime_dossier.get("component_answer_type_binding_ref")
+    )
+    if binding:
+        return binding
+    overlay = _model_review_overlay(second_model_review_result)
+    answer_component = _safe_mapping(overlay.get("answer_component_claim"))
+    component_id = _component_id(component_ref)
+    base = _without_empty(
+        {
+            "component_id": component_id,
+            "component_label": _component_label(component_ref),
+            "source_obligation_candidate_ids": _source_obligation_ids(
+                source_obligation_ref
+            ),
+            "claim_under_test": answer_component.get("claim")
+            or component_ref.get("claim")
+            or _component_label(component_ref),
+            "requested_answer_type": component_ref.get("requested_answer_type")
+            or "single_current_value",
+            "expected_value_shape": component_ref.get("expected_value_shape")
+            or "current_value",
+        }
+    )
+    digest = _digest_json(base)
+    return {
+        **base,
+        "component_answer_type_binding_id": (
+            f"followup-component-answer-type-binding:{digest[:20]}"
+        ),
+        "component_answer_type_binding_digest": digest,
+    }
+
+
+def _followup_analysis_gap_search_proposal(
+    *,
+    workbench_dprime_dossier: Mapping[str, Any],
+    followup_fetch_packet: Mapping[str, Any],
+    component_ref: Mapping[str, Any],
+    source_obligation_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    parent_gap_ref = _safe_mapping(
+        workbench_dprime_dossier.get("analysis_gap_search_proposal_ref")
+    )
+    packet_ref = fetch_read_content_packet_ref_from_packet(followup_fetch_packet)
+    base = _without_empty(
+        {
+            "proposal_kind": "analysis_gap",
+            "gap_status": "resolved_by_followup_candidate",
+            "gap_kind": "followup_strict_support_refresh",
+            "component_id": _component_id(component_ref),
+            "source_obligation_candidate_ids": _source_obligation_ids(
+                source_obligation_ref
+            ),
+            "parent_analysis_gap_search_proposal_ref": parent_gap_ref,
+            "followup_fetch_read_content_packet_ref": packet_ref,
+            "live_followup_required": False,
+            "live_followup_licensed": True,
+            "followup_execution_status": "executed_ordinary_search_followup",
+            "reason": (
+                "RunKernel-authorized follow-up evidence is available for a "
+                "fresh AnalystFindingProposal."
+            ),
+            "proposal_only": True,
+            "source_obligation_satisfied": False,
+            "citation_eligible": False,
+            "product_correctness_claimed": False,
+        }
+    )
+    digest = _digest_json(base)
+    return {
+        **base,
+        "proposal_id": f"analysis-gap-followup-refresh:{digest[:20]}",
+        "proposal_digest": digest,
+    }
+
+
+def _followup_candidate_triage_summary_ref(
+    *,
+    selected_refs: Sequence[Mapping[str, Any]],
+    followup_fetch_packet: Mapping[str, Any],
+) -> dict[str, Any]:
+    base = {
+        "summary_kind": "followup_candidate_triage_summary",
+        "selected_answer_bearing_candidate_count": len(selected_refs),
+        "fetch_read_content_packet_id": followup_fetch_packet.get("packet_id"),
+        "fetch_read_content_packet_digest": followup_fetch_packet.get(
+            "packet_digest"
+        ),
+    }
+    digest = _digest_json(base)
+    return {
+        **base,
+        "candidate_triage_summary_id": (
+            f"followup-candidate-triage-summary:{digest[:20]}"
+        ),
+        "candidate_triage_summary_digest": digest,
+    }
+
+
+def _followup_candidate_triage_record(
+    candidate_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(candidate_ref)
+    return _without_empty(
+        {
+            "candidate_id": safe.get("candidate_id"),
+            "candidate_digest": safe.get("candidate_digest"),
+            "candidate_title": safe.get("candidate_title"),
+            "candidate_domain": safe.get("candidate_domain"),
+            "candidate_url": safe.get("candidate_url"),
+            "proposed_candidate_role": "answer_bearing",
+            "selected_for_dprime_review": True,
+            "dprime_review_candidate_answer_bearing": True,
+            "readable_bounded_content_posture": "readable",
+        }
+    )
+
+
+def _second_pass_answer_value_candidate(second_model_review_result: Any) -> str | None:
+    overlay = _model_review_overlay(second_model_review_result)
+    for key in ("answer_value_candidate", "selected_current_value_text"):
+        text = _clean_text(overlay.get(key), limit=160)
+        if text:
+            return text
+    answer_component = _safe_mapping(overlay.get("answer_component_claim"))
+    claim = _clean_text(answer_component.get("claim"), limit=700)
+    if not claim:
+        return None
+    for token in claim.split():
+        clean = token.strip(".,;:()[]")
+        if any(char.isdigit() for char in clean):
+            return clean[:160]
+    return None
+
+
+def _validate_fresh_followup_analyst_finding(
+    *,
+    proposal: Mapping[str, Any],
+    proposal_ref: Mapping[str, Any],
+    first_proposal_ref: Mapping[str, Any],
+    first_support_map_ref: Mapping[str, Any],
+    followup_fetch_packet: Mapping[str, Any],
+) -> None:
+    if _ref_overlaps(proposal_ref, first_proposal_ref):
+        _raise_followup_freshness_blocker(
+            "stale_first_pass_analyst_finding_reused"
+        )
+    if _source_support_map_reuses_first_pass(
+        proposal=proposal,
+        first_support_map_ref=first_support_map_ref,
+    ):
+        _raise_followup_freshness_blocker(
+            "stale_first_pass_source_support_map_reused"
+        )
+    followup_candidate_ids = _candidate_ids_from_fetch_packet(followup_fetch_packet)
+    proposal_candidate_ids = _candidate_ids_from_refs(
+        proposal.get("selected_answer_bearing_candidate_refs")
+    )
+    if not proposal_candidate_ids:
+        _raise_followup_freshness_blocker(
+            "followup_analyst_finding_selected_candidate_missing"
+        )
+    if proposal_candidate_ids - followup_candidate_ids:
+        _raise_followup_freshness_blocker(
+            "followup_analyst_finding_candidate_mismatch"
+        )
+    packet_refs = _collect_fetch_packet_refs(proposal)
+    if not packet_refs:
+        _raise_followup_freshness_blocker(
+            "followup_analyst_finding_bounded_refs_missing"
+        )
+    packet_id = _clean_text(followup_fetch_packet.get("packet_id"), limit=320)
+    packet_digest = _clean_text(
+        followup_fetch_packet.get("packet_digest"),
+        limit=128,
+    )
+    for ref in packet_refs:
+        if (
+            _clean_text(ref.get("fetch_read_content_packet_id"), limit=320)
+            != packet_id
+            or _clean_text(
+                ref.get("fetch_read_content_packet_digest"),
+                limit=128,
+            )
+            != packet_digest
+        ):
+            _raise_followup_freshness_blocker(
+                "followup_analyst_finding_bounded_ref_packet_mismatch"
+            )
+
+
+def _source_support_map_reuses_first_pass(
+    *,
+    proposal: Mapping[str, Any],
+    first_support_map_ref: Mapping[str, Any],
+) -> bool:
+    if not first_support_map_ref:
+        return False
+    support_map = _safe_mapping(proposal.get("source_support_map"))
+    refs = [
+        _safe_mapping(proposal.get("source_support_map_ref")),
+        _safe_mapping(support_map),
+        _safe_mapping(_safe_mapping(proposal.get("analysis_body")).get("support_map_ref")),
+        _safe_mapping(
+            _safe_mapping(proposal.get("dprime_handoff_refs")).get(
+                "source_support_map_ref"
+            )
+        ),
+    ]
+    return any(_ref_overlaps(ref, first_support_map_ref) for ref in refs if ref)
+
+
+def _raise_followup_freshness_blocker(reason: str) -> None:
+    raise RunKernelFollowupSearchReentryError(
+        BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
+        f"fresh follow-up AnalystFindingProposal rejected: {reason}",
+        first_failed_seam="followup_analyst_finding_refresh",
+        next_surface="follow-up AnalystFindingProposal refresh",
+    )
+
+
+def _source_support_map_ref_from_proposal(proposal: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(proposal)
+    support_map = _safe_mapping(safe.get("source_support_map"))
+    return _without_empty(
+        {
+            "schema_version": (
+                _safe_mapping(safe.get("source_support_map_ref")).get(
+                    "schema_version"
+                )
+                or support_map.get("schema_version")
+            ),
+            "source_support_map_id": (
+                _safe_mapping(safe.get("source_support_map_ref")).get(
+                    "source_support_map_id"
+                )
+                or support_map.get("source_support_map_id")
+            ),
+            "source_support_map_digest": (
+                _safe_mapping(safe.get("source_support_map_ref")).get(
+                    "source_support_map_digest"
+                )
+                or support_map.get("source_support_map_digest")
+            ),
+            "safe_to_forward_to_dprime": (
+                _safe_mapping(safe.get("source_support_map_ref")).get(
+                    "safe_to_forward_to_dprime"
+                )
+                is True
+                or support_map.get("safe_to_forward_to_dprime") is True
+            ),
+            "evidence_admitted": False,
+            "source_obligation_satisfied": False,
+            "citation_eligibility_created": False,
+            "final_answer_packet_created": False,
+            "author_output_created": False,
+            "product_correctness_claimed": False,
+        }
+    )
+
+
+def _analysis_gap_ref(gap: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(gap)
+    return _without_empty(
+        {
+            "proposal_id": safe.get("proposal_id"),
+            "proposal_digest": safe.get("proposal_digest"),
+            "gap_status": safe.get("gap_status"),
+            "gap_kind": safe.get("gap_kind"),
+            "live_followup_required": safe.get("live_followup_required") is True,
+            "live_followup_licensed": safe.get("live_followup_licensed") is True,
+        }
+    )
+
+
+def _ref_overlaps(left: Mapping[str, Any], right: Mapping[str, Any]) -> bool:
+    left_safe = _safe_mapping(left)
+    right_safe = _safe_mapping(right)
+    for key in (
+        "finding_id",
+        "finding_digest",
+        "source_support_map_id",
+        "source_support_map_digest",
+    ):
+        if left_safe.get(key) and left_safe.get(key) == right_safe.get(key):
+            return True
+    return False
+
+
+def _candidate_ids_from_fetch_packet(fetch_packet: Mapping[str, Any]) -> set[str]:
+    return {
+        candidate_id
+        for candidate_id in (
+            _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+            for item in fetch_packet.get("reference_records", []) or []
+        )
+        if candidate_id
+    }
+
+
+def _candidate_ids_from_refs(value: Any) -> set[str]:
+    if isinstance(value, bytes | str) or not isinstance(value, Sequence):
+        return set()
+    return {
+        candidate_id
+        for candidate_id in (
+            _clean_text(_safe_mapping(item).get("candidate_id"), limit=320)
+            for item in value
+        )
+        if candidate_id
+    }
+
+
+def _collect_fetch_packet_refs(value: Any) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    if isinstance(value, Mapping):
+        safe = _safe_mapping(value)
+        if (
+            safe.get("fetch_read_content_packet_id")
+            or safe.get("fetch_read_content_packet_digest")
+        ):
+            refs.append(
+                {
+                    "fetch_read_content_packet_id": safe.get(
+                        "fetch_read_content_packet_id"
+                    ),
+                    "fetch_read_content_packet_digest": safe.get(
+                        "fetch_read_content_packet_digest"
+                    ),
+                }
+            )
+        for item in safe.values():
+            refs.extend(_collect_fetch_packet_refs(item))
+    elif isinstance(value, list | tuple):
+        for item in value:
+            refs.extend(_collect_fetch_packet_refs(item))
+    return refs
+
+
+def _safe_refs_from_runtime(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, bytes | str) or not isinstance(value, Sequence):
+        return []
+    return [_safe_mapping(item) for item in value if isinstance(item, Mapping)]
+
+
+def _model_review_overlay(value: Any) -> dict[str, Any]:
+    if hasattr(value, "to_status_overlay"):
+        return _safe_mapping(value.to_status_overlay())
+    return _safe_mapping(value)
 
 
 def _reduce_followup_search_planner(

@@ -22,6 +22,7 @@ answer prose, live validation correctness, or arbitrary-query support.
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -48,6 +49,9 @@ from core.analyst_workbench_runtime import (
     TRIAGE_ROLE_UNREADABLE_HIGH_VALUE,
     WORKBENCH_REDUCTION_FOLLOWUP_NOT_LICENSED,
     build_current_source_record_analyst_workbench,
+)
+from core.current_source_analyst_finding_proposal import (
+    build_model_assisted_analyst_license,
 )
 from core.dprime_single_lane_answer_path_runtime import (
     DPrimeSingleLaneAnswerPathError,
@@ -805,12 +809,31 @@ def test_licensed_workbench_strict_support_gap_runs_followup_when_dprime_first_p
             "small claims filing fee is $54."
         ),
         dprime_model_review_callable=fake_review,
+        model_assisted_analyst_license=_model_assisted_license(),
+        model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
     packet = result.packet
     assert result.return_code == 2
-    _assert_dprime_analyst_validation_blocks_answer_path(packet)
+    assert packet["decision"] == (
+        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED
+    )
+    _assert_followup_analyst_refresh_completed(
+        packet,
+        validation_satisfied=True,
+    )
+    assert packet["dprime_analyst_finding_validation_status"] == (
+        "supported_by_bounded_evidence"
+    )
+    assert (
+        packet["dprime_analyst_finding_runkernel_support_admission_recommended"]
+        is True
+    )
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["citation_source_display_created"] is False
+    assert packet["dprime_answer_path_ref"]["status"] == "not reached"
     assert packet["decision"] != (
         dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
     )
@@ -934,12 +957,26 @@ def test_licensed_followup_reentry_executes_one_second_ordinary_search(
             "small claims filing fee is $54."
         ),
         dprime_model_review_callable=fake_review,
+        model_assisted_analyst_license=_model_assisted_license(),
+        model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
     packet = result.packet
     assert result.return_code == 2
-    _assert_dprime_analyst_validation_blocks_answer_path(packet)
+    assert packet["decision"] == (
+        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED
+    )
+    _assert_followup_analyst_refresh_completed(
+        packet,
+        validation_satisfied=True,
+    )
+    assert packet["dprime_analyst_finding_validation_status"] == (
+        "supported_by_bounded_evidence"
+    )
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["citation_source_display_created"] is False
     assert len(calls) == 2
     assert calls[0].query != calls[1].query
     assert calls[1].acquisition_provider_role == "current_source_followup_reentry"
@@ -990,7 +1027,7 @@ def test_licensed_followup_reentry_executes_one_second_ordinary_search(
     assert followup_ref["product_followup_search_executor_handoff_ref"]
     assert packet["product_correctness_claimed"] is False
     assert packet["decision_made_by_the_run"] == (
-        "dprime_analyst_finding_support_validation_blocked"
+        "current_source_record_followup_answer_path_not_reached"
     )
     assert reentry["followup_provider_calls_attempted"] == 1
     assert reentry["followup_fetch_read_completed"] == 1
@@ -1006,6 +1043,127 @@ def test_licensed_followup_reentry_executes_one_second_ordinary_search(
     )
     assert packet["provider_snippets_used_as_evidence"] is False
     assert packet["raw_private_retention_flags"] == dogfood.RAW_FALSE_FLAGS
+
+
+@pytest.mark.parametrize(
+    ("stale_mode", "expected_detail"),
+    [
+        ("proposal_ref", "stale_first_pass_analyst_finding_reused"),
+        ("source_support_map", "stale_first_pass_source_support_map_reused"),
+        ("candidate_ref", "fresh follow-up AnalystFindingProposal failed closed"),
+    ],
+)
+def test_followup_analyst_refresh_rejects_stale_or_mismatched_refs(
+    tmp_path: Path,
+    stale_mode: str,
+    expected_detail: str,
+) -> None:
+    plan = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+    calls: list[GenericProviderProxyRunRequest] = []
+    first_proposal: dict[str, Any] = {}
+
+    def fake_review(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        if len(calls) <= 1:
+            return _assessment_payload(
+                plan,
+                "Example County small claims online fee may be $20 for eligible filers.",
+                support_relation="weak_or_overclaim_risk",
+                missing_qualifiers=[str(plan["component_text"])],
+                non_support_reason="Strict support was not established.",
+            )
+        return _assessment_payload(
+            plan,
+            "The current Example County standard paper small claims filing fee is $54.",
+        )
+
+    def stale_adapter(
+        _input_packet: Mapping[str, Any],
+        *,
+        deterministic_proposal: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        nonlocal first_proposal
+        proposal = copy.deepcopy(dict(deterministic_proposal))
+        if not first_proposal:
+            first_proposal = copy.deepcopy(proposal)
+            return {"analyst_finding_proposal": proposal}
+        if stale_mode == "proposal_ref":
+            proposal["finding_id"] = first_proposal["finding_id"]
+        elif stale_mode == "source_support_map":
+            proposal["source_support_map_ref"] = copy.deepcopy(
+                first_proposal["source_support_map_ref"]
+            )
+            proposal["source_support_map"]["source_support_map_id"] = (
+                first_proposal["source_support_map"]["source_support_map_id"]
+            )
+            proposal["source_support_map"]["source_support_map_digest"] = (
+                first_proposal["source_support_map"][
+                    "source_support_map_digest"
+                ]
+            )
+        elif stale_mode == "candidate_ref":
+            proposal["selected_answer_bearing_candidate_refs"] = copy.deepcopy(
+                first_proposal["selected_answer_bearing_candidate_refs"]
+            )
+            proposal["proposed_answer_claim"][
+                "selected_answer_bearing_candidate_refs"
+            ] = copy.deepcopy(
+                first_proposal["selected_answer_bearing_candidate_refs"]
+            )
+        return {"analyst_finding_proposal": proposal}
+
+    result = build_generic_single_relation_live_dogfood_run_output(
+        query=SMALL_CLAIMS_QUERY,
+        repo_root=tmp_path,
+        output_dir=tmp_path / DEFAULT_OUTPUT_DIR,
+        run_id=f"workbench-followup-stale-{stale_mode}",
+        confirm_live_dogfood=True,
+        confirm_live_dprime_review=True,
+        confirm_current_source_followup_reentry=True,
+        entrypoint_surface=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_SURFACE,
+        entrypoint_kind=dogfood.PRODUCT_SINGLE_FACT_ENTRYPOINT_KIND,
+        diagnostic_dogfood_alias=False,
+        supported_query_class=dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS,
+        provider_proxy_runner=_sequential_proxy_runner(
+            calls,
+            [
+                [
+                    _provider_extracted_result(
+                        "Example County Reduced Online Small Claims Fee",
+                        SMALL_CLAIMS_URL,
+                        (
+                            "Example County online fee discount. Eligible "
+                            "filers may pay a reduced online small claims fee of $20."
+                        ),
+                    )
+                ],
+                [
+                    _provider_result(
+                        "Example County Official Standard Paper Filing Fee PDF",
+                        "https://example-county.gov/courts/standard-paper-fee.pdf",
+                    )
+                ],
+            ],
+        ),
+        fetch_read_runner=_official_pdf_read_support_fetch_runner(
+            "Example County official fee schedule. The current standard paper "
+            "small claims filing fee is $54."
+        ),
+        dprime_model_review_callable=fake_review,
+        model_assisted_analyst_license=_model_assisted_license(),
+        model_assisted_analyst_adapter=stale_adapter,
+        environ={"PYTEST_CURRENT_TEST": "test"},
+    )
+
+    packet = result.packet
+    assert result.return_code == 2
+    assert packet["decision"] == (
+        semantic_status_runtime.BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+    )
+    assert expected_detail in packet["blocker_detail"]
+    assert packet["dprime_analyst_finding_validation_satisfied"] is False
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["citation_source_display_created"] is False
 
 
 def test_licensed_followup_strict_support_blocks_when_answer_path_not_reached(
@@ -1079,12 +1237,20 @@ def test_licensed_followup_strict_support_blocks_when_answer_path_not_reached(
             "small claims filing fee is $54."
         ),
         dprime_model_review_callable=fake_review,
+        model_assisted_analyst_license=_model_assisted_license(),
+        model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
     packet = result.packet
     assert result.return_code == 2
-    _assert_dprime_analyst_validation_blocks_answer_path(packet)
+    assert packet["decision"] == (
+        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED
+    )
+    _assert_followup_analyst_refresh_completed(
+        packet,
+        validation_satisfied=True,
+    )
     assert len(calls) == 2
     assert len(dprime_inputs) == 2
     assert packet["followup_provider_calls_attempted"] == 1
@@ -1092,6 +1258,8 @@ def test_licensed_followup_strict_support_blocks_when_answer_path_not_reached(
     assert packet["workbench_gap_reentry_status"] == "runkernel_authorized_executed"
     assert packet["followup_execution_licensed"] is True
     assert packet["dprime_answer_path_ref"]["status"] == "not reached"
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_answer_created"] is False
 
 
 def test_licensed_followup_blocks_with_named_exhausted_blocker_when_fetch_fails(
@@ -2342,6 +2510,20 @@ def _candidate_ids(refs: Any) -> set[str]:
     }
 
 
+def _model_assisted_license() -> Mapping[str, Any]:
+    return build_model_assisted_analyst_license(
+        license_id="test-current-source-followup-analyst",
+    )
+
+
+def _echo_deterministic_analyst_adapter(
+    _input_packet: Mapping[str, Any],
+    *,
+    deterministic_proposal: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {"analyst_finding_proposal": dict(deterministic_proposal)}
+
+
 def _safe_mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
 
@@ -2696,11 +2878,13 @@ def _assert_dprime_analyst_validation_blocks_answer_path(
     assert packet["dprime_analyst_finding_validation_required_for_product_path"] is True
     assert packet["dprime_analyst_finding_validation_satisfied"] is False
     assert packet["dprime_analyst_finding_validation_blocker"] == (
-        "followup_analyst_finding_refresh_required"
+        "followup_analyst_finding_support_validation_failed"
     )
     assert packet["followup_analyst_finding_refresh_required"] is True
-    assert packet["followup_analyst_finding_refresh_completed"] is False
-    assert "follow-up AnalystFinding refresh required" in packet["blocker_detail"]
+    assert packet["followup_analyst_finding_refresh_completed"] is True
+    assert packet["followup_analyst_finding_proposal_ref"]
+    assert packet["followup_analyst_finding_digest_differs_from_first_pass"] is True
+    assert "fresh follow-up AnalystFinding validation ran" in packet["blocker_detail"]
     assert packet["dprime_analyst_finding_support_validation_ref"]
     assert packet["final_answer_packet_created"] is False
     assert packet["author_prose_created"] is False
@@ -2710,6 +2894,34 @@ def _assert_dprime_analyst_validation_blocks_answer_path(
     assert packet["answer_text_present"] is False
     assert packet["product_answer_text"] == ""
     assert packet["source_display_entries"] == []
+
+
+def _assert_followup_analyst_refresh_completed(
+    packet: Mapping[str, Any],
+    *,
+    validation_satisfied: bool,
+) -> None:
+    assert packet["dprime_analyst_finding_validation_required_for_product_path"] is True
+    assert packet["dprime_analyst_finding_validation_satisfied"] is validation_satisfied
+    assert packet["followup_analyst_finding_refresh_required"] is True
+    assert packet["followup_analyst_finding_refresh_completed"] is True
+    assert packet["followup_analyst_finding_proposal_ref"]
+    assert packet["first_pass_analyst_finding_proposal_ref"]
+    assert packet["followup_analyst_finding_digest_differs_from_first_pass"] is True
+    assert (
+        packet["followup_analyst_finding_selected_candidate_refs_point_to_followup"]
+        is True
+    )
+    assert (
+        packet["followup_analyst_finding_bounded_refs_point_to_followup_packet"]
+        is True
+    )
+    assert packet["stale_first_pass_analyst_finding_reused"] is False
+    assert packet["followup_source_support_map_reused_from_first_pass"] is False
+    assert (
+        packet["followup_analyst_finding_proposal_ref"]["finding_digest"]
+        != packet["first_pass_analyst_finding_proposal_ref"]["finding_digest"]
+    )
 
 
 def _assert_model_assisted_analyst_required_block(

@@ -29,12 +29,14 @@ from typing import Any, Mapping
 import pytest
 
 import core.dprime_support_proposal_schema as dprime
+from core.current_source_analyst_finding_proposal import (
+    build_model_assisted_analyst_license,
+)
 from core.dprime_model_review_assessment import (
     DPrimeModelReviewAssessmentError,
     build_dprime_model_review_input_packet,
 )
 from proplex.mvp_single_relation_live_dogfood_run import (
-    BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CHALLENGE_RECOVERY_NOT_CONFIRMED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
     BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_OBLIGATION_RECOVERY_NOT_CONFIRMED,
@@ -92,11 +94,15 @@ def test_answer_bearing_provider_extracted_content_reaches_dprime_window_ref(
             ],
         ),
         dprime_model_review_callable=fake_review,
+        model_assisted_analyst_license=_model_assisted_license(),
+        model_assisted_analyst_adapter=_echo_deterministic_analyst_adapter,
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
     assert result.return_code == 2
-    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+    assert result.decision == (
+        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
+    )
     assert result.packet["source_readiness_gateway_status"] == "ready"
     integration = result.packet["single_relation_dprime_authority_integration"]
     assert integration["status"] == "consumed"
@@ -126,25 +132,16 @@ def test_answer_bearing_provider_extracted_content_reaches_dprime_window_ref(
     assert result.packet["single_relation_citation_handoff_ready"] is True
     boundary = result.packet["source_citation_display_boundary"]
     entries = result.packet["source_citation_display_entries"]
-    assert boundary["status"] == "created"
+    assert boundary["status"] == "not_reached"
     assert (
         boundary["blocker_code"]
-        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
+        == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
     )
-    assert boundary["derived_from_dprime_authority"] is True
+    assert boundary["derived_from_dprime_authority"] is False
     assert boundary["derived_from_gateway_only"] is False
     assert boundary["gateway_treated_as_authority"] is False
-    assert result.packet["source_citation_display_entries_created"] is True
-    assert len(entries) == 1
-    assert entries[0]["selected_current_value_display_text"] == (
-        "USCIS Form N-400 paper filing fee is $760."
-    )
-    assert entries[0]["derived_from_dprime_authority"] is True
-    assert entries[0]["derived_from_gateway_only"] is False
-    assert entries[0]["citation_rendering_created"] is False
-    assert boundary["final_answer_packet_created"] is False
-    assert boundary["author_answer_created"] is False
-    assert boundary["final_citation_rendering_created"] is False
+    assert result.packet["source_citation_display_entries_created"] is False
+    assert entries == []
     assert len(review_input_packets) == 1
     dprime_status = result.packet["semantic_status_payload"]["dprime_status"]
     input_ref = dprime_status["input_packet_ref"]
@@ -462,3 +459,17 @@ def _assessment_payload(
     if support_relation != "directly_supports":
         payload["required_qualifiers"] = [claim]
     return payload
+
+
+def _model_assisted_license() -> Mapping[str, Any]:
+    return build_model_assisted_analyst_license(
+        license_id="test-generic-dprime-non-support-analyst",
+    )
+
+
+def _echo_deterministic_analyst_adapter(
+    _input_packet: Mapping[str, Any],
+    *,
+    deterministic_proposal: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {"analyst_finding_proposal": dict(deterministic_proposal)}
