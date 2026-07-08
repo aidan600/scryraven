@@ -13,6 +13,12 @@ import re
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.current_source_component_answer_type_binding import (
+    current_source_component_answer_type_binding_from_relation_plan,
+    current_source_component_answer_type_binding_ref,
+    maybe_current_source_component_answer_type_binding_ref,
+)
+
 ANALYST_WORKBENCH_PHASE = (
     "CURRENT-SOURCE-RECORD-ANALYST-WORKBENCH-FULL-SLICE-SCAFFOLD-01"
 )
@@ -276,6 +282,12 @@ def workbench_dprime_dossier_ref(value: Mapping[str, Any] | None) -> dict[str, A
                 dossier.get("overclaim_risk_candidate_count")
             ),
             "dprime_review_candidate_ref": dprime_candidate_ref,
+            "component_answer_type_binding_ref": (
+                maybe_current_source_component_answer_type_binding_ref(
+                    dossier.get("component_answer_type_binding")
+                )
+                or _safe_mapping(dossier.get("component_answer_type_binding_ref"))
+            ),
             "gap_proposal_status": dossier.get("gap_proposal_status"),
             "raw_private_retention": False,
             "product_correctness_claimed": False,
@@ -594,6 +606,17 @@ def _candidate_evidence_triage_packet(
         candidates,
         strict_refs=strict_refs,
     )
+    component_answer_type_binding = (
+        current_source_component_answer_type_binding_from_relation_plan(
+            plan,
+            expected_value_token_kinds=_safe_sequence(
+                acquisition.get("expected_value_token_kinds")
+            ),
+        )
+    )
+    component_answer_type_binding_ref = current_source_component_answer_type_binding_ref(
+        component_answer_type_binding
+    )
     top_ref = _first_candidate_ref(candidates)
     packet = _without_empty(
         {
@@ -608,6 +631,8 @@ def _candidate_evidence_triage_packet(
             "entrypoint_kind": _clean_text(entrypoint_kind, limit=120),
             "ordinary_product_path_consumed": True,
             "relation_plan_ref": _plan_ref(plan),
+            "component_answer_type_binding": component_answer_type_binding,
+            "component_answer_type_binding_ref": component_answer_type_binding_ref,
             "acquisition_plan_ref": _acquisition_ref(acquisition),
             "candidate_count": len(candidates),
             "role_proposal_count": len(role_proposals),
@@ -860,6 +885,12 @@ def _workbench_dprime_dossier(
             "ordinary_product_path_consumed": True,
             "candidate_evidence_triage_ref": _triage_ref(triage_packet),
             "analyst_workbench_ref": _workbench_ref(workbench_packet),
+            "component_answer_type_binding": _safe_mapping(
+                triage_packet.get("component_answer_type_binding")
+            ),
+            "component_answer_type_binding_ref": _safe_mapping(
+                triage_packet.get("component_answer_type_binding_ref")
+            ),
             "selected_candidate_ref": _safe_mapping(
                 triage_packet.get("selected_candidate_ref")
             ),
@@ -1067,9 +1098,18 @@ def _plan_ref(plan: Mapping[str, Any]) -> dict[str, Any]:
             "plan_id": plan.get("plan_id"),
             "packet_digest": plan.get("packet_digest"),
             "component_id": plan.get("component_id"),
+            "component_text": plan.get("component_text"),
+            "fact_kind": plan.get("fact_kind"),
+            "claim_under_test": plan.get("claim_under_test"),
+            "requested_answer_type": plan.get("requested_answer_type"),
+            "expected_value_shape": plan.get("expected_value_shape"),
             "source_obligation_id": plan.get("source_obligation_id"),
+            "source_obligation_text": plan.get("source_obligation_text"),
             "search_requirement_id": plan.get("search_requirement_id"),
             "supported_query_class_id": plan.get("supported_query_class_id"),
+            "component_answer_type_binding_ref": _safe_mapping(
+                plan.get("component_answer_type_binding_ref")
+            ),
         }
     )
 

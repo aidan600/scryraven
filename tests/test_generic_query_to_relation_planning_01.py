@@ -135,6 +135,7 @@ def test_supported_non_passport_query_proves_passport_is_not_architecture(
 def test_relation_plan_emits_dprime_and_future_component_node_candidates() -> None:
     packet = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
 
+    binding = packet["component_answer_type_binding_ref"]
     dprime = packet["dprime_relation_intake_candidate"]
     assert dprime["target_runtime_surface"] == (
         "core.dprime_analyst_relation_intake_runtime"
@@ -147,6 +148,9 @@ def test_relation_plan_emits_dprime_and_future_component_node_candidates() -> No
     assert dprime["answer_created"] is False
     assert dprime["evidence_acquired"] is False
     assert dprime["support_claimed"] is False
+    assert dprime["component_answer_type_binding_ref"]["binding_digest"] == (
+        binding["binding_digest"]
+    )
 
     future = packet["future_component_work_node_candidate"]
     assert future["node_id"].startswith("component-work-node-candidate:")
@@ -162,6 +166,81 @@ def test_relation_plan_emits_dprime_and_future_component_node_candidates() -> No
     assert future["runkernel_scheduler_authorized"] is False
     assert future["component_work_node_implemented"] is False
     assert future["component_work_graph_implemented"] is False
+
+
+def test_fee_query_creates_non_authority_component_answer_type_binding() -> None:
+    packet = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)
+
+    binding = packet["component_answer_type_binding"]
+    binding_ref = packet["component_answer_type_binding_ref"]
+    assert binding["component_id"] == packet["component_id"]
+    assert binding["component_digest"] == packet["components"][0]["component_digest"]
+    assert binding["component_text"] == packet["component_text"]
+    assert binding["source_obligation_id"] == packet["source_obligation_id"]
+    assert binding["source_obligation_text"] == packet["source_obligation_text"]
+    assert binding["fact_kind"] == "fee"
+    assert binding["requested_answer_type"] == "fee_amount_current_standard_value"
+    assert binding["claim_under_test"] == packet["claim_under_test"]
+    assert binding["expected_value_shape"] == "currency_amount"
+    assert binding["expected_value_token_kinds"] == ["currency"]
+    assert binding_ref["binding_digest"] == binding["binding_digest"]
+    assert packet["components"][0]["component_answer_type_binding_ref"] == binding_ref
+    assert packet["source_obligations"][0]["component_answer_type_binding_ref"] == (
+        binding_ref
+    )
+    for adjacent in (
+        "filing_mode",
+        "waiver_eligibility",
+        "reduced_fee_eligibility",
+        "online_discount",
+        "process_instructions",
+    ):
+        assert adjacent in binding["adjacent_claim_exclusions"]
+    assert binding["adjacent_claims_do_not_satisfy_requested_answer_type"] is True
+    assert binding["raw_private_retention_flags"] == {
+        "raw_provider_payload_retained": False,
+        "raw_search_response_retained": False,
+        "raw_source_content_retained": False,
+        "raw_prompt_retained": False,
+        "raw_model_response_retained": False,
+        "private_logs_retained": False,
+        "db_cache_rows_retained": False,
+        "full_trace_retained": False,
+    }
+    assert binding["evidence_admitted"] is False
+    assert binding["source_obligation_satisfied"] is False
+    assert binding["citation_eligibility_created"] is False
+    assert binding["sufficiency_readiness_created"] is False
+    assert binding["final_answer_packet_created"] is False
+    assert binding["author_output_created"] is False
+    assert binding["product_correctness_claimed"] is False
+
+
+def test_answer_type_binding_keeps_adjacent_fact_kinds_distinguishable() -> None:
+    fee = build_generic_query_relation_plan(SMALL_CLAIMS_QUERY)[
+        "component_answer_type_binding"
+    ]
+    deadline = build_generic_query_relation_plan(
+        "What is the current filing deadline for Example County license renewal?"
+    )["component_answer_type_binding"]
+    requirement = build_generic_query_relation_plan(
+        "What is the current filing requirement for Example County small claims?"
+    )["component_answer_type_binding"]
+
+    assert fee["requested_answer_type"] == "fee_amount_current_standard_value"
+    assert fee["expected_value_shape"] == "currency_amount"
+    assert "filing_mode" in fee["adjacent_claim_exclusions"]
+    assert "waiver_eligibility" in fee["adjacent_claim_exclusions"]
+    assert "reduced_fee_eligibility" in fee["adjacent_claim_exclusions"]
+    assert "online_discount" in fee["adjacent_claim_exclusions"]
+    assert deadline["requested_answer_type"] == "deadline_date"
+    assert deadline["expected_value_shape"] == "date_or_date_range"
+    assert "eligibility_description" in deadline["adjacent_claim_exclusions"]
+    assert "historical_dates" in deadline["adjacent_claim_exclusions"]
+    assert requirement["requested_answer_type"] == "requirement_action"
+    assert requirement["expected_value_shape"] == "requirement_statement"
+    assert "fee_amount" in requirement["adjacent_claim_exclusions"]
+    assert "unrelated_eligibility" in requirement["adjacent_claim_exclusions"]
 
 
 @pytest.mark.parametrize(

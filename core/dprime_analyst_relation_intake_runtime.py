@@ -17,6 +17,10 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, Mapping, Sequence
 
+from core.current_source_component_answer_type_binding import (
+    maybe_current_source_component_answer_type_binding_ref,
+)
+
 DPRIME_ANALYST_RELATION_INTAKE_SCHEMA_VERSION = (
     "dprime_analyst_relation_intake_runtime_v1"
 )
@@ -106,6 +110,14 @@ class DPrimeAnalystRelationIntake:
                 "component_label": component_ref.get("component_label"),
                 "component_revision": component_ref.get("component_revision"),
                 "component_digest": component_ref.get("component_digest"),
+                "component_text": component_ref.get("component_text"),
+                "fact_kind": component_ref.get("fact_kind"),
+                "requested_answer_type": component_ref.get("requested_answer_type"),
+                "expected_value_shape": component_ref.get("expected_value_shape"),
+                "claim_under_test": component_ref.get("claim_under_test"),
+                "component_answer_type_binding_ref": _safe_mapping(
+                    component_ref.get("component_answer_type_binding_ref")
+                ),
                 "source_obligation_candidate_ids": list(
                     _text_tuple(source_ref.get("source_obligation_candidate_ids"))
                 ),
@@ -235,6 +247,14 @@ def component_ref_from_relation_intake(
             "current_answer_contract_digest": component.get(
                 "current_answer_contract_digest"
             ),
+            "component_text": component.get("component_text"),
+            "fact_kind": component.get("fact_kind"),
+            "requested_answer_type": component.get("requested_answer_type"),
+            "expected_value_shape": component.get("expected_value_shape"),
+            "claim_under_test": component.get("claim_under_test"),
+            "component_answer_type_binding_ref": _safe_mapping(
+                component.get("component_answer_type_binding_ref")
+            ),
             "component_coverage_bound": False,
             "source_obligation_candidate_ids": list(
                 _text_tuple(component.get("source_obligation_candidate_ids"))
@@ -297,6 +317,14 @@ def relation_intake_ref(
             "component_label": component.get("component_label"),
             "component_revision": component.get("component_revision"),
             "component_digest": component.get("component_digest"),
+            "component_text": component.get("component_text"),
+            "fact_kind": component.get("fact_kind"),
+            "requested_answer_type": component.get("requested_answer_type"),
+            "expected_value_shape": component.get("expected_value_shape"),
+            "claim_under_test": component.get("claim_under_test"),
+            "component_answer_type_binding_ref": _safe_mapping(
+                component.get("component_answer_type_binding_ref")
+            ),
             "source_obligation_candidate_ids": list(
                 _text_tuple(source.get("source_obligation_candidate_ids"))
             ),
@@ -343,6 +371,7 @@ def _component_lineage_ref(
             }
         )
     )
+    binding_ref = _component_answer_type_binding_ref(component)
     return _without_empty(
         {
             "component_id": component_id,
@@ -357,6 +386,27 @@ def _component_lineage_ref(
             ),
             "component_digest": component_digest,
             "current_answer_contract_digest": contract_digest,
+            "component_text": (
+                _clean_text(component.get("component_text"), limit=500)
+                or _clean_text(component.get("component_label"), limit=500)
+            ),
+            "fact_kind": _clean_text(component.get("fact_kind"), limit=80),
+            "requested_answer_type": _clean_text(
+                component.get("requested_answer_type")
+                or binding_ref.get("requested_answer_type"),
+                limit=160,
+            ),
+            "expected_value_shape": _clean_text(
+                component.get("expected_value_shape")
+                or binding_ref.get("expected_value_shape"),
+                limit=160,
+            ),
+            "claim_under_test": _clean_text(
+                component.get("claim_under_test")
+                or binding_ref.get("claim_under_test"),
+                limit=700,
+            ),
+            "component_answer_type_binding_ref": binding_ref,
             "source_obligation_candidate_ids": list(source_ids),
             "component_coverage_bound": False,
             "lineage_only": True,
@@ -422,6 +472,15 @@ def _readiness_ref(readiness: Mapping[str, Any]) -> dict[str, Any]:
             "lineage_only": True,
         }
     )
+
+
+def _component_answer_type_binding_ref(component: Mapping[str, Any]) -> dict[str, Any]:
+    binding_ref = maybe_current_source_component_answer_type_binding_ref(
+        _safe_mapping(component.get("component_answer_type_binding"))
+    )
+    if binding_ref:
+        return binding_ref
+    return _safe_mapping(component.get("component_answer_type_binding_ref"))
 
 
 def _matching_readable_reference(

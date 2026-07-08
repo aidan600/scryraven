@@ -21,6 +21,9 @@ from typing import Any, Callable, Mapping, Sequence
 import core.dprime_assessment_validation as assessment_validation
 import core.dprime_negative_control_profile as negative_controls
 from core.analyst_workbench_runtime import workbench_dprime_dossier_ref
+from core.current_source_component_answer_type_binding import (
+    maybe_current_source_component_answer_type_binding_ref,
+)
 from core.dprime_model_review_prompt import (
     DPRIME_MODEL_REVIEW_PROMPT_SCHEMA_VERSION,
     DPRIME_MODEL_REVIEW_SYSTEM_PROMPT,
@@ -279,8 +282,14 @@ class DPrimeModelReviewInputPacket:
         workbench_ref = _safe_mapping(
             self.safe_packet.get("workbench_dprime_dossier_ref")
         )
+        workbench_ref = _support_assessment_safe_workbench_dossier_ref(workbench_ref)
         if workbench_ref:
             ref["workbench_dprime_dossier_ref"] = workbench_ref
+        binding_ref = _safe_mapping(
+            self.safe_packet.get("component_answer_type_binding_ref")
+        )
+        if binding_ref:
+            ref["component_answer_type_binding_ref"] = binding_ref
         return ref
 
 
@@ -668,9 +677,16 @@ def build_dprime_model_review_input_packet(
     selector_ref = _selector_ref(reference, frame_ref=frame_ref)
     workbench_dossier = _workbench_dprime_dossier_packet(workbench_dprime_dossier)
     workbench_ref = (
-        workbench_dprime_dossier_ref(workbench_dossier)
+        _support_assessment_safe_workbench_dossier_ref(
+            workbench_dprime_dossier_ref(workbench_dossier)
+        )
         if workbench_dossier
         else {}
+    )
+    component_lineage_ref = _component_ref(component_ref, reference)
+    binding_ref = _component_answer_type_binding_ref(
+        component_ref=component_lineage_ref,
+        workbench_dprime_dossier=workbench_dossier,
     )
     safe_packet = _without_empty(
         {
@@ -693,8 +709,12 @@ def build_dprime_model_review_input_packet(
             "source_evidence_custody_ref": _source_evidence_custody_ref(admission),
             "content_reference_ref": _content_reference_ref(reference),
             "selector_ref": selector_ref,
-            "component_ref": _component_ref(component_ref, reference),
+            "component_ref": _component_ref_with_binding(
+                component_lineage_ref,
+                binding_ref,
+            ),
             "source_obligation_ref": _source_obligation_ref(source_obligation_ref),
+            "component_answer_type_binding_ref": binding_ref,
             "current_answer_contract_ref": _safe_mapping(
                 reference.get("current_answer_contract_ref")
             ),
@@ -1328,17 +1348,140 @@ def _component_ref(
     reference: Mapping[str, Any],
 ) -> dict[str, Any]:
     safe = _safe_mapping(component_ref)
+    binding_ref = _support_assessment_safe_component_answer_type_binding_ref(
+        maybe_current_source_component_answer_type_binding_ref(
+            _safe_mapping(safe.get("component_answer_type_binding"))
+        )
+        or _safe_mapping(safe.get("component_answer_type_binding_ref"))
+    )
     return _without_empty(
         {
             "component_id": safe.get("component_id") or reference.get("component_id"),
+            "component_digest": safe.get("component_digest")
+            or binding_ref.get("component_digest"),
             "current_answer_contract_digest": safe.get(
                 "current_answer_contract_digest"
             )
             or reference.get("current_answer_contract_digest"),
+            "component_text": safe.get("component_text")
+            or binding_ref.get("component_text"),
+            "fact_kind": safe.get("fact_kind") or binding_ref.get("fact_kind"),
+            "requested_answer_type": safe.get("requested_answer_type")
+            or binding_ref.get("requested_answer_type"),
+            "expected_value_shape": safe.get("expected_value_shape")
+            or binding_ref.get("expected_value_shape"),
+            "claim_under_test": safe.get("claim_under_test")
+            or binding_ref.get("claim_under_test"),
+            "component_answer_type_binding_ref": binding_ref,
             "component_coverage_bound": False,
             "lineage_only": True,
         }
     )
+
+
+def _component_answer_type_binding_ref(
+    *,
+    component_ref: Mapping[str, Any],
+    workbench_dprime_dossier: Mapping[str, Any],
+) -> dict[str, Any]:
+    component = _safe_mapping(component_ref)
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    return _support_assessment_safe_component_answer_type_binding_ref(
+        maybe_current_source_component_answer_type_binding_ref(
+            _safe_mapping(component.get("component_answer_type_binding"))
+        )
+        or _safe_mapping(component.get("component_answer_type_binding_ref"))
+        or maybe_current_source_component_answer_type_binding_ref(
+            _safe_mapping(dossier.get("component_answer_type_binding"))
+        )
+        or _safe_mapping(dossier.get("component_answer_type_binding_ref"))
+    )
+
+
+def _component_ref_with_binding(
+    component_ref: Mapping[str, Any],
+    binding_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    component = dict(component_ref)
+    binding = _support_assessment_safe_component_answer_type_binding_ref(binding_ref)
+    if not binding:
+        return component
+    component["component_answer_type_binding_ref"] = binding
+    for target_key in (
+        "component_text",
+        "fact_kind",
+        "requested_answer_type",
+        "expected_value_shape",
+        "claim_under_test",
+    ):
+        if component.get(target_key) in (None, "", [], {}):
+            component[target_key] = binding.get(target_key)
+    if not component.get("component_digest"):
+        component["component_digest"] = binding.get("component_digest")
+    return _without_empty(component)
+
+
+def _support_assessment_safe_component_answer_type_binding_ref(
+    binding_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(binding_ref)
+    if not safe:
+        return {}
+    return _without_empty(
+        {
+            "schema_version": safe.get("schema_version"),
+            "binding_kind": safe.get("binding_kind"),
+            "binding_id": safe.get("binding_id"),
+            "binding_digest": safe.get("binding_digest"),
+            "component_id": safe.get("component_id"),
+            "component_digest": safe.get("component_digest"),
+            "current_answer_contract_digest": safe.get(
+                "current_answer_contract_digest"
+            ),
+            "component_text": safe.get("component_text"),
+            "source_obligation_id": safe.get("source_obligation_id"),
+            "source_obligation_text": safe.get("source_obligation_text"),
+            "fact_kind": safe.get("fact_kind"),
+            "requested_answer_type": safe.get("requested_answer_type"),
+            "claim_under_test": safe.get("claim_under_test"),
+            "expected_value_shape": safe.get("expected_value_shape"),
+            "expected_value_token_kinds": list(
+                _safe_sequence(safe.get("expected_value_token_kinds"))
+            ),
+            "adjacent_claim_exclusions": list(
+                _safe_sequence(safe.get("adjacent_claim_exclusions"))
+            ),
+            "adjacent_claims_do_not_satisfy_requested_answer_type": (
+                safe.get("adjacent_claims_do_not_satisfy_requested_answer_type")
+                is True
+            ),
+            "lineage_only": safe.get("lineage_only") is True,
+            "binding_is_contract_lineage": (
+                safe.get("binding_is_contract_lineage") is True
+            ),
+            "binding_is_not_evidence": safe.get("binding_is_not_evidence") is True,
+            "binding_is_not_answer_authority": (
+                safe.get("binding_is_not_answer_authority") is True
+            ),
+        }
+    )
+
+
+def _support_assessment_safe_workbench_dossier_ref(
+    dossier_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    safe = _safe_mapping(dossier_ref)
+    if not safe:
+        return {}
+    out = dict(safe)
+    binding = _support_assessment_safe_component_answer_type_binding_ref(
+        _safe_mapping(out.get("component_answer_type_binding_ref"))
+    )
+    if binding:
+        out["component_answer_type_binding_ref"] = binding
+    else:
+        out.pop("component_answer_type_binding_ref", None)
+    return _without_empty(out)
 
 
 def _source_obligation_ref(source_obligation_ref: Mapping[str, Any]) -> dict[str, Any]:
@@ -1561,6 +1704,15 @@ def _workbench_dprime_dossier_packet(
             "top_candidate_ref": _safe_mapping(dossier.get("top_candidate_ref")),
             "dprime_review_candidate_ref": _safe_mapping(
                 dossier.get("dprime_review_candidate_ref")
+            ),
+            "component_answer_type_binding": _safe_mapping(
+                dossier.get("component_answer_type_binding")
+            ),
+            "component_answer_type_binding_ref": (
+                maybe_current_source_component_answer_type_binding_ref(
+                    _safe_mapping(dossier.get("component_answer_type_binding"))
+                )
+                or _safe_mapping(dossier.get("component_answer_type_binding_ref"))
             ),
             "strict_answer_support_candidate_refs": [
                 _safe_mapping(item)

@@ -132,6 +132,22 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     ] in {"cleared", "challenge_recommended"}
     _assert_workbench_non_authority(packet)
 
+    binding_ref = packet["component_answer_type_binding_ref"]
+    assert packet["component_answer_type_binding"]["binding_digest"] == (
+        binding_ref["binding_digest"]
+    )
+    assert packet["workbench_dprime_dossier"][
+        "component_answer_type_binding_ref"
+    ]["binding_digest"] == binding_ref["binding_digest"]
+    assert packet["workbench_dprime_dossier_ref"][
+        "component_answer_type_binding_ref"
+    ]["binding_digest"] == binding_ref["binding_digest"]
+    assert captured_input["component_answer_type_binding_ref"][
+        "binding_digest"
+    ] == binding_ref["binding_digest"]
+    assert captured_input["component_ref"]["component_answer_type_binding_ref"][
+        "binding_digest"
+    ] == binding_ref["binding_digest"]
     dossier_ref = packet["workbench_dprime_dossier_ref"]
     assert captured_input["workbench_dprime_dossier_ref"]["dossier_digest"] == (
         dossier_ref["dossier_digest"]
@@ -139,6 +155,13 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     input_ref = packet["semantic_status_payload"]["dprime_status"]["input_packet_ref"]
     assert input_ref["workbench_dprime_dossier_ref"]["dossier_digest"] == (
         dossier_ref["dossier_digest"]
+    )
+    assert input_ref["component_answer_type_binding_ref"]["binding_digest"] == (
+        binding_ref["binding_digest"]
+    )
+    relation_ref = packet["semantic_status_payload"]["dprime_relation_intake_ref"]
+    assert relation_ref["component_answer_type_binding_ref"]["binding_digest"] == (
+        binding_ref["binding_digest"]
     )
     assert "CandidateEvidenceTriagePacket" not in result.output
     assert "AnalystWorkbenchPacket" not in result.output
@@ -162,10 +185,21 @@ def test_product_cli_consumes_workbench_and_dprime_dossier(
     assert report_json["stage_lifecycle"]["retention"][
         "live_validation_correctness_claimed"
     ] is False
+    assert report_json["answer_contract_lifecycle"][
+        "component_answer_type_binding_ref"
+    ]["binding_digest"] == binding_ref["binding_digest"]
+    assert report_json["answer_contract_lifecycle"]["requested_answer_type"] == (
+        "fee_amount_current_standard_value"
+    )
+    assert report_json["analyst_workbench"][
+        "component_answer_type_binding_ref"
+    ]["binding_digest"] == binding_ref["binding_digest"]
     assert "## Analyst Workbench" in report_md
     assert "Live validation: not run" not in report_md
     assert "RunKernel reduced" not in report_md
     assert "Workbench reduction projection" in report_md
+    assert "- Requested answer type: fee_amount_current_standard_value" in report_md
+    assert "- Expected value shape: currency_amount" in report_md
     assert "- RunKernel reduction pending: true" in report_md
     assert "- Live product run executed: true" in report_md
     assert "- Live validation correctness claimed: false" in report_md
@@ -284,6 +318,26 @@ def test_mixed_fee_schedule_keeps_strict_support_and_context_roles(
     assert packet["analyst_workbench_packet"]["scrutineer_lane_placeholder"][
         "status"
     ] == "challenge_recommended"
+    binding_ref = packet["component_answer_type_binding_ref"]
+    assert binding_ref["requested_answer_type"] == (
+        "fee_amount_current_standard_value"
+    )
+    assert binding_ref["expected_value_shape"] == "currency_amount"
+    for adjacent in (
+        "filing_mode",
+        "waiver_eligibility",
+        "reduced_fee_eligibility",
+        "online_discount",
+        "process_instructions",
+    ):
+        assert adjacent in binding_ref["adjacent_claim_exclusions"]
+    assert packet["workbench_dprime_dossier"][
+        "component_answer_type_binding_ref"
+    ]["binding_digest"] == binding_ref["binding_digest"]
+    input_ref = packet["semantic_status_payload"]["dprime_status"]["input_packet_ref"]
+    assert input_ref["component_answer_type_binding_ref"]["binding_digest"] == (
+        binding_ref["binding_digest"]
+    )
     _assert_workbench_non_authority(packet)
 
 
@@ -1957,6 +2011,12 @@ def test_licensed_followup_routing_surfaces_have_no_domain_specific_fee_branches
         "$380",
     )
     routing_paths = (
+        ROOT / "core" / "current_source_component_answer_type_binding.py",
+        ROOT / "core" / "analyst_workbench_runtime.py",
+        ROOT / "core" / "dprime_analyst_relation_intake_runtime.py",
+        ROOT / "core" / "dprime_model_review_assessment.py",
+        ROOT / "core" / "generic_query_to_relation_planning.py",
+        ROOT / "core" / "single_relation_source_obligation_recovery_authorization.py",
         ROOT / "proplex" / "live_semantic_coverage_status.py",
         ROOT / "proplex" / "mvp_single_relation_live_dogfood_run.py",
     )
@@ -2308,3 +2368,13 @@ def _assert_workbench_non_authority(packet: Mapping[str, Any]) -> None:
     assert projection["run_kernel_reduced"] is False
     assert projection["run_kernel_reduction_pending"] is True
     assert projection["proposed_for_runkernel_reduction"] is True
+    binding = packet.get("component_answer_type_binding")
+    if binding:
+        assert binding["evidence_admitted"] is False
+        assert binding["source_obligation_satisfied"] is False
+        assert binding["citation_eligibility_created"] is False
+        assert binding["final_answer_packet_created"] is False
+        assert binding["author_output_created"] is False
+        assert binding["product_correctness_claimed"] is False
+        for raw_value in binding["raw_private_retention_flags"].values():
+            assert raw_value is False

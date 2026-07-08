@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from core.analyst_workbench_runtime import workbench_dprime_dossier_ref
+from core.current_source_component_answer_type_binding import (
+    maybe_current_source_component_answer_type_binding_ref,
+)
 from core.dprime_analyst_relation_intake_runtime import (
     DPrimeAnalystRelationIntakeError,
     build_dprime_analyst_relation_intake,
@@ -809,6 +812,9 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
 
     selected = _safe_mapping(payload.get("selected_candidate"))
     relation = _safe_mapping(payload.get("dprime_relation_intake_ref"))
+    relation_binding = _safe_mapping(
+        relation.get("component_answer_type_binding_ref")
+    )
     admission = _safe_mapping(payload.get("source_evidence_admission_ref"))
     readiness = _safe_mapping(payload.get("citation_source_obligation_readiness_ref"))
     support = _safe_mapping(payload.get("analyst_support_proposal_ref"))
@@ -902,6 +908,11 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
         (
             "D-prime generic relation source obligations: "
             f"{', '.join(_source_obligation_ids(relation)) or 'unavailable'}"
+        ),
+        (
+            "D-prime component answer-type binding: "
+            f"{relation_binding.get('requested_answer_type') or 'unavailable'} / "
+            f"{relation_binding.get('expected_value_shape') or 'unavailable'}"
         ),
         (
             "D-prime generic relation single-lane only: "
@@ -2417,6 +2428,54 @@ def _workbench_expected_dprime_candidate_ref(
     return {}
 
 
+def _component_answer_type_binding_ref_from_workbench(
+    workbench_dprime_dossier: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    dossier = _safe_mapping(workbench_dprime_dossier)
+    return maybe_current_source_component_answer_type_binding_ref(
+        _safe_mapping(dossier.get("component_answer_type_binding"))
+    ) or _safe_mapping(dossier.get("component_answer_type_binding_ref"))
+
+
+def _component_ref_with_binding(
+    component_ref: Mapping[str, Any],
+    binding_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    component = dict(component_ref)
+    binding = _safe_mapping(binding_ref)
+    if not binding:
+        return component
+    component["component_answer_type_binding_ref"] = binding
+    for target_key, binding_key in (
+        ("component_text", "component_text"),
+        ("fact_kind", "fact_kind"),
+        ("requested_answer_type", "requested_answer_type"),
+        ("expected_value_shape", "expected_value_shape"),
+        ("claim_under_test", "claim_under_test"),
+    ):
+        if component.get(target_key) in (None, "", [], {}):
+            component[target_key] = binding.get(binding_key)
+    if not component.get("component_digest"):
+        component["component_digest"] = binding.get("component_digest")
+    return _without_empty(component)
+
+
+def _source_obligation_ref_with_binding(
+    source_obligation_ref: Mapping[str, Any],
+    binding_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    source = dict(source_obligation_ref)
+    binding = _safe_mapping(binding_ref)
+    if not binding:
+        return source
+    source["component_answer_type_binding_ref"] = binding
+    if source.get("source_obligation_text") in (None, "", [], {}):
+        source["source_obligation_text"] = binding.get("source_obligation_text")
+    if source.get("source_obligation_id") in (None, "", [], {}):
+        source["source_obligation_id"] = binding.get("source_obligation_id")
+    return _without_empty(source)
+
+
 def _candidate_identity_ref(value: Any) -> dict[str, Any]:
     ref = _safe_mapping(value)
     return _without_empty(
@@ -2643,6 +2702,14 @@ def _dprime_candidate_handoff_inputs(
     workbench_dprime_dossier: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     expected = _workbench_expected_dprime_candidate_ref(workbench_dprime_dossier)
+    binding_ref = _component_answer_type_binding_ref_from_workbench(
+        workbench_dprime_dossier
+    )
+    bound_component_ref = _component_ref_with_binding(component_ref, binding_ref)
+    bound_source_obligation_ref = _source_obligation_ref_with_binding(
+        source_obligation_ref,
+        binding_ref,
+    )
     if not expected:
         return {
             "status": "not_applicable",
@@ -2655,8 +2722,9 @@ def _dprime_candidate_handoff_inputs(
             ),
             "admission_ref": dict(admission_ref),
             "readiness_ref": dict(readiness_ref),
-            "component_ref": dict(component_ref),
-            "source_obligation_ref": dict(source_obligation_ref),
+            "component_ref": bound_component_ref,
+            "source_obligation_ref": bound_source_obligation_ref,
+            "component_answer_type_binding_ref": binding_ref,
             "raw_private_retention": False,
         }
     current_reference = _matching_workbench_reference(
@@ -2679,6 +2747,7 @@ def _dprime_candidate_handoff_inputs(
         "url_only_match_allowed": False,
         "expected_workbench_candidate_ref": expected,
         "source_evidence_admission_candidate_ref": current_ref,
+        "component_answer_type_binding_ref": binding_ref,
         "raw_private_retention": False,
         "product_correctness_claimed": False,
     }
@@ -2688,8 +2757,8 @@ def _dprime_candidate_handoff_inputs(
             "route_status": "already_matched",
             "admission_ref": dict(admission_ref),
             "readiness_ref": dict(readiness_ref),
-            "component_ref": dict(component_ref),
-            "source_obligation_ref": dict(source_obligation_ref),
+            "component_ref": bound_component_ref,
+            "source_obligation_ref": bound_source_obligation_ref,
         }
 
     routed_reference = _matching_workbench_reference(fetch_read_content_packet, expected)
@@ -2724,10 +2793,16 @@ def _dprime_candidate_handoff_inputs(
             readiness_ref,
             routed_reference,
         ),
-        "component_ref": _component_ref_for_reference(component_ref, routed_reference),
-        "source_obligation_ref": _source_obligation_ref_for_reference(
-            source_obligation_ref,
-            routed_reference,
+        "component_ref": _component_ref_with_binding(
+            _component_ref_for_reference(component_ref, routed_reference),
+            binding_ref,
+        ),
+        "source_obligation_ref": _source_obligation_ref_with_binding(
+            _source_obligation_ref_for_reference(
+                source_obligation_ref,
+                routed_reference,
+            ),
+            binding_ref,
         ),
     }
 
