@@ -36,6 +36,10 @@ from core.analyst_workbench_runtime import (
     empty_current_source_record_analyst_workbench_bundle,
     validate_current_source_record_analyst_workbench_bundle,
 )
+from core.component_work_node import (
+    component_work_node_v0_refs_from_product_packet,
+    validate_component_work_node_v0_refs,
+)
 from core.current_source_component_answer_type_binding import (
     ComponentAnswerTypeBindingError,
     current_source_component_answer_type_binding_from_relation_plan,
@@ -1972,8 +1976,51 @@ def validate_generic_single_relation_live_dogfood_packet(
     _validate_fetch_read_observability(safe)
     _validate_analyst_workbench_surface(safe)
     _validate_workbench_gap_reentry_ref(safe)
+    _validate_component_work_node_v0_surface(safe)
     _reject_forbidden_material(safe, context="generic live dogfood packet")
     return safe
+
+
+def _validate_component_work_node_v0_surface(packet: Mapping[str, Any]) -> None:
+    if packet.get("relation_plan_consumed") is not True:
+        if _safe_mapping(packet.get("component_work_node_v0")):
+            _blocked_output_hygiene(
+                "ComponentWorkNode V0 must not exist without a consumed relation plan."
+            )
+        return
+    refs = _safe_mapping(packet.get("component_work_node_v0"))
+    if not refs:
+        _blocked_output_hygiene("ComponentWorkNode V0 refs missing.")
+    validated = validate_component_work_node_v0_refs(refs)
+    input_ref = _safe_mapping(validated.get("component_work_node_v0_input_ref"))
+    output_ref = _safe_mapping(validated.get("component_work_node_v0_output_ref"))
+    if input_ref != _safe_mapping(packet.get("component_work_node_v0_input_ref")):
+        _blocked_output_hygiene("ComponentWorkNode V0 input alias mismatch.")
+    if output_ref != _safe_mapping(packet.get("component_work_node_v0_output_ref")):
+        _blocked_output_hygiene("ComponentWorkNode V0 output alias mismatch.")
+    if packet.get("component_work_node_v0_status") != output_ref.get("node_status"):
+        _blocked_output_hygiene("ComponentWorkNode V0 status alias mismatch.")
+    if output_ref.get("component_id") != packet.get("component_id"):
+        _blocked_output_hygiene("ComponentWorkNode V0 component mismatch.")
+    if output_ref.get("source_obligation_id") != packet.get("source_obligation_id"):
+        _blocked_output_hygiene("ComponentWorkNode V0 source-obligation mismatch.")
+    consumed = (
+        packet.get("source_obligation_authority_consumed") is True
+        or packet.get("citation_source_handoff_authority_consumed") is True
+    )
+    if consumed and output_ref.get("node_status") != "consumed":
+        _blocked_output_hygiene("ComponentWorkNode V0 did not reflect consumed authority.")
+    if not consumed and output_ref.get("node_status") == "consumed":
+        _blocked_output_hygiene("ComponentWorkNode V0 claimed authority consumption.")
+    for key in (
+        "component_work_node_created_source_display",
+        "component_work_node_created_fap",
+        "component_work_node_created_author",
+        "component_work_node_rendered_citations",
+        "component_work_node_claimed_product_correctness",
+    ):
+        if output_ref.get(key) is not False:
+            _blocked_output_hygiene(f"ComponentWorkNode V0 opened {key}.")
 
 
 def _validate_source_readiness_gateway(packet: Mapping[str, Any]) -> None:
@@ -5166,7 +5213,7 @@ def _packet_from_semantic_status(
         }
     )
     packet["failure_attribution_bucket"] = _failure_attribution_bucket(packet)
-    return packet
+    return _with_component_work_node_refs(packet)
 
 
 def _dprime_answer_path_ref(semantic_payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -5516,7 +5563,27 @@ def _blocked_packet(
         }
     )
     packet["failure_attribution_bucket"] = _failure_attribution_bucket(packet)
-    return packet
+    return _with_component_work_node_refs(packet)
+
+
+def _with_component_work_node_refs(packet: Mapping[str, Any]) -> dict[str, Any]:
+    safe = _safe_mapping(packet)
+    if safe.get("relation_plan_consumed") is not True:
+        return safe
+    refs = component_work_node_v0_refs_from_product_packet(safe)
+    updated = {
+        **safe,
+        "component_work_node_v0": refs,
+        "component_work_node_v0_input_ref": refs[
+            "component_work_node_v0_input_ref"
+        ],
+        "component_work_node_v0_output_ref": refs[
+            "component_work_node_v0_output_ref"
+        ],
+        "component_work_node_v0_status": refs["component_work_node_v0_status"],
+        "component_work_node_v0_digest": refs["component_work_node_v0_digest"],
+    }
+    return updated
 
 
 def _source_readiness_gateway_from_packet(
