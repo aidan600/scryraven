@@ -36,6 +36,11 @@ from core.analyst_workbench_runtime import (
     empty_current_source_record_analyst_workbench_bundle,
     validate_current_source_record_analyst_workbench_bundle,
 )
+from core.current_source_component_answer_type_binding import (
+    ComponentAnswerTypeBindingError,
+    current_source_component_answer_type_binding_from_relation_plan,
+    current_source_component_answer_type_binding_ref,
+)
 from core.dprime_product_smart_one_shot_transport import (
     build_dprime_product_smart_model_review_adapter,
     build_dprime_product_smart_model_review_license,
@@ -3727,6 +3732,9 @@ def _build_current_source_record_single_fact_review_report(
     boundary = _safe_mapping(safe.get("source_citation_display_boundary"))
     semantic = _safe_mapping(safe.get("semantic_status_payload"))
     dprime = _safe_mapping(semantic.get("dprime_status"))
+    component_answer_type_binding_ref = _safe_mapping(
+        safe.get("component_answer_type_binding_ref")
+    ) or _safe_mapping(contract_projection.get("component_answer_type_binding_ref"))
     analyst_workbench = _current_source_record_workbench_report_section(safe)
     gap_reentry = _current_source_record_gap_reentry_report_section(safe)
     live_product_run_executed = bool(safe.get("live_runs_attempted"))
@@ -3754,6 +3762,20 @@ def _build_current_source_record_single_fact_review_report(
             "projection_digest": contract_projection.get("projection_digest"),
             "contract_owner": contract_projection.get("contract_owner"),
             "component_ref": _safe_mapping(contract_projection.get("component_ref")),
+            "component_answer_type_binding_ref": component_answer_type_binding_ref,
+            "requested_answer_type": component_answer_type_binding_ref.get(
+                "requested_answer_type"
+            ),
+            "expected_value_shape": component_answer_type_binding_ref.get(
+                "expected_value_shape"
+            ),
+            "adjacent_claim_exclusions": list(
+                _safe_sequence(
+                    component_answer_type_binding_ref.get(
+                        "adjacent_claim_exclusions"
+                    )
+                )
+            ),
             "active_components": [
                 _safe_mapping(contract_projection.get("component_ref"))
             ]
@@ -3981,6 +4003,9 @@ def _current_source_record_workbench_report_section(
     dossier = _safe_mapping(packet.get("workbench_dprime_dossier"))
     projection = _safe_mapping(packet.get("workbench_reduction_projection"))
     handoff = _safe_mapping(packet.get("dprime_candidate_handoff_integrity_ref"))
+    binding_ref = _safe_mapping(packet.get("component_answer_type_binding_ref")) or (
+        _safe_mapping(dossier.get("component_answer_type_binding_ref"))
+    )
     return {
         "schema_version": "analyst_workbench_review_section_v1",
         "product_path_consumed": bool(
@@ -3995,6 +4020,12 @@ def _current_source_record_workbench_report_section(
         ),
         "workbench_dprime_dossier_ref": _safe_mapping(
             packet.get("workbench_dprime_dossier_ref")
+        ),
+        "component_answer_type_binding_ref": binding_ref,
+        "requested_answer_type": binding_ref.get("requested_answer_type"),
+        "expected_value_shape": binding_ref.get("expected_value_shape"),
+        "adjacent_claim_exclusions": list(
+            _safe_sequence(binding_ref.get("adjacent_claim_exclusions"))
         ),
         "workbench_dprime_dossier_consumed_by_dprime": bool(
             packet.get("workbench_dprime_dossier_consumed_by_dprime")
@@ -4141,10 +4172,14 @@ def _format_current_source_record_single_fact_review_report(
 ) -> str:
     safe = _safe_mapping(report)
     contract = _safe_mapping(safe.get("answer_contract_lifecycle"))
+    contract_binding = _safe_mapping(contract.get("component_answer_type_binding_ref"))
     propagation = _safe_mapping(safe.get("claim_propagation_lifecycle"))
     stages = _safe_mapping(safe.get("stage_lifecycle"))
     answer_path = _safe_mapping(stages.get("answer_path"))
     analyst_workbench = _safe_mapping(safe.get("analyst_workbench"))
+    workbench_binding = _safe_mapping(
+        analyst_workbench.get("component_answer_type_binding_ref")
+    )
     gap_reentry = _safe_mapping(safe.get("gap_reentry"))
     gap = _safe_mapping(analyst_workbench.get("analysis_gap_search_proposal"))
     handoff = _safe_mapping(
@@ -4181,6 +4216,12 @@ def _format_current_source_record_single_fact_review_report(
         f"- Component: {_safe_mapping(contract.get('component_ref')).get('component_id') or 'not present'}",
         "- Source obligation: "
         f"{_safe_mapping(contract.get('source_obligation_ref')).get('source_obligation_id') or 'not present'}",
+        "- Requested answer type: "
+        f"{contract_binding.get('requested_answer_type') or 'not present'}",
+        "- Expected value shape: "
+        f"{contract_binding.get('expected_value_shape') or 'not present'}",
+        "- Adjacent exclusions: "
+        f"{', '.join(_safe_sequence(contract_binding.get('adjacent_claim_exclusions'))) or 'not present'}",
         f"- Missing lineage checks: {', '.join(_safe_sequence(contract.get('lineage_missing'))) or 'none'}",
         "",
         "## Claim Propagation",
@@ -4197,6 +4238,10 @@ def _format_current_source_record_single_fact_review_report(
         f"{_safe_mapping(analyst_workbench.get('candidate_evidence_triage_ref')).get('packet_digest') or 'not present'}",
         "- D-prime dossier consumed: "
         f"{_bool_text(analyst_workbench.get('workbench_dprime_dossier_consumed_by_dprime'))}",
+        "- D-prime requested answer type: "
+        f"{workbench_binding.get('requested_answer_type') or 'not present'}",
+        "- D-prime expected value shape: "
+        f"{workbench_binding.get('expected_value_shape') or 'not present'}",
         "- D-prime candidate handoff: "
         f"{handoff.get('match_status') or 'not reached'}",
         "- Expected Workbench candidate: "
@@ -4756,6 +4801,9 @@ def _current_source_record_contract_claim_lineage(
     contract_source_obligation = _safe_mapping(
         contract_projection.get("source_obligation_ref")
     )
+    component_answer_type_binding_ref = _safe_mapping(
+        contract_projection.get("component_answer_type_binding_ref")
+    ) or _safe_mapping(packet.get("component_answer_type_binding_ref"))
     authority_ref = _safe_mapping(
         semantic.get("accepted_current_answer_contract_authority_ref")
     ) or _safe_mapping(dprime.get("accepted_current_answer_contract_authority_ref"))
@@ -4878,6 +4926,9 @@ def _current_source_record_contract_claim_lineage(
                     "component_id": contract_component.get("component_id"),
                     "source_obligation_id": contract_source_obligation.get(
                         "source_obligation_id"
+                    ),
+                    "component_answer_type_binding_ref": (
+                        component_answer_type_binding_ref
                     ),
                 },
                 "accepted_current_answer_contract_authority_ref": authority_ref,
@@ -7676,6 +7727,17 @@ def _base_packet(
         if query_retained and plan
         else "unsupported query (not retained)"
     )
+    component_answer_type_binding = _component_answer_type_binding_from_plan(
+        plan,
+        acquisition,
+    )
+    component_answer_type_binding_ref = (
+        current_source_component_answer_type_binding_ref(
+            component_answer_type_binding
+        )
+        if component_answer_type_binding
+        else {}
+    )
     entrypoint = _entrypoint_metadata_from_mapping(entrypoint_metadata)
     workbench_bundle = _analyst_workbench_bundle_from_counts(counts)
     triage_packet = _safe_mapping(
@@ -7920,6 +7982,19 @@ def _base_packet(
         "fast_planner_output": acquisition,
         "component_id": plan.get("component_id"),
         "component_text": plan.get("component_text"),
+        "requested_answer_type": (
+            component_answer_type_binding_ref.get("requested_answer_type")
+        ),
+        "expected_value_shape": (
+            component_answer_type_binding_ref.get("expected_value_shape")
+        ),
+        "adjacent_claim_exclusions": list(
+            _safe_sequence(
+                component_answer_type_binding_ref.get("adjacent_claim_exclusions")
+            )
+        ),
+        "component_answer_type_binding": component_answer_type_binding,
+        "component_answer_type_binding_ref": component_answer_type_binding_ref,
         "source_obligation_id": plan.get("source_obligation_id"),
         "source_obligation_text": plan.get("source_obligation_text"),
         "source_obligation_ref": source_obligation,
@@ -12483,6 +12558,23 @@ def _expected_value_token_kinds_from_plan(
         )
         if item
     ]
+
+
+def _component_answer_type_binding_from_plan(
+    relation_plan: Mapping[str, Any],
+    acquisition_plan: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    if not relation_plan:
+        return {}
+    try:
+        return current_source_component_answer_type_binding_from_relation_plan(
+            relation_plan,
+            expected_value_token_kinds=_expected_value_token_kinds_from_plan(
+                acquisition_plan
+            ),
+        )
+    except ComponentAnswerTypeBindingError:
+        return {}
 
 
 def _guard_dprime_review_route(

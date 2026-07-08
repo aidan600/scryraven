@@ -15,6 +15,10 @@ from hashlib import sha256
 from typing import Any, Mapping, Sequence
 from urllib.parse import urlparse
 
+from core.current_source_component_answer_type_binding import (
+    current_source_component_answer_type_binding_from_relation_plan,
+    current_source_component_answer_type_binding_ref,
+)
 from core.source_of_record_recovery_provider_config import (
     get_source_of_record_recovery_extraction_provider_config,
 )
@@ -539,6 +543,17 @@ def _current_answer_contract_projection(
 ) -> dict[str, Any]:
     provider_counts = _safe_mapping(provider_acquisition_attempt_counts)
     recovery_counts = _safe_mapping(recovery_attempt_counts)
+    component_answer_type_binding = (
+        current_source_component_answer_type_binding_from_relation_plan(
+            relation_plan,
+            expected_value_token_kinds=_safe_sequence(
+                acquisition_plan.get("expected_value_token_kinds")
+            ),
+        )
+    )
+    component_answer_type_binding_ref = current_source_component_answer_type_binding_ref(
+        component_answer_type_binding
+    )
     payload = {
         "projection_kind": "single_relation_answer_contract_projection",
         "contract_owner": "RunKernel",
@@ -554,11 +569,23 @@ def _current_answer_contract_projection(
             "component_id": relation_plan.get("component_id"),
             "component_text": relation_plan.get("component_text"),
             "fact_kind": relation_plan.get("fact_kind"),
+            "requested_answer_type": component_answer_type_binding[
+                "requested_answer_type"
+            ],
+            "expected_value_shape": component_answer_type_binding[
+                "expected_value_shape"
+            ],
+            "adjacent_claim_exclusions": list(
+                component_answer_type_binding["adjacent_claim_exclusions"]
+            ),
+            "component_answer_type_binding_ref": component_answer_type_binding_ref,
         },
         "search_requirement_ref": _first_mapping(
             relation_plan.get("search_requirements")
         ),
         "source_obligation_ref": dict(source_obligation),
+        "component_answer_type_binding": component_answer_type_binding,
+        "component_answer_type_binding_ref": component_answer_type_binding_ref,
         "source_authority_posture_requirement_ref": dict(
             source_authority_requirement_ref
         ),

@@ -16,6 +16,12 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from core.current_source_component_answer_type_binding import (
+    ComponentAnswerTypeBindingError,
+    build_current_source_component_answer_type_binding,
+    current_source_component_answer_type_binding_ref,
+    validate_current_source_component_answer_type_binding,
+)
 from core.dprime_analyst_relation_intake_runtime import (
     DPRIME_ANALYST_RELATION_INTAKE_SCHEMA_VERSION,
     DPRIME_ANALYST_RELATION_INTAKE_SURFACE,
@@ -275,12 +281,38 @@ def build_generic_query_relation_plan(
         f"Search for official current source-of-record material for the {component_text}."
     )
     source_authority_requirement = _source_authority_posture_requirement()
+    component_answer_type_binding = build_current_source_component_answer_type_binding(
+        component_id=component_id,
+        component_digest=identity_digest,
+        component_text=component_text,
+        source_obligation_id=source_obligation_id,
+        source_obligation_text=source_obligation_text,
+        fact_kind=fact_kind,
+        claim_under_test=claim_under_test,
+        expected_value_token_kinds=_expected_value_token_kinds(
+            fact_kind,
+            component_text,
+        ),
+    )
+    component_answer_type_binding_ref = current_source_component_answer_type_binding_ref(
+        component_answer_type_binding
+    )
     component = {
         "component_id": component_id,
         "component_text": component_text,
         "component_type": "single_source_of_record_fact_lookup",
         "fact_kind": fact_kind,
         "claim_under_test": claim_under_test,
+        "requested_answer_type": component_answer_type_binding[
+            "requested_answer_type"
+        ],
+        "expected_value_shape": component_answer_type_binding[
+            "expected_value_shape"
+        ],
+        "adjacent_claim_exclusions": list(
+            component_answer_type_binding["adjacent_claim_exclusions"]
+        ),
+        "component_answer_type_binding_ref": component_answer_type_binding_ref,
         "source_obligation_ids": [source_obligation_id],
         "search_requirement_ids": [search_requirement_id],
         "source_authority_posture_requirement_ids": [
@@ -297,6 +329,7 @@ def build_generic_query_relation_plan(
         "source_authority_posture_requirement_id": (
             SOURCE_AUTHORITY_POSTURE_REQUIREMENT_ID
         ),
+        "component_answer_type_binding_ref": component_answer_type_binding_ref,
         "satisfaction_claimed": False,
     }
     search_requirement = {
@@ -344,6 +377,17 @@ def build_generic_query_relation_plan(
         "component_text": component_text,
         "fact_kind": fact_kind,
         "claim_under_test": claim_under_test,
+        "requested_answer_type": component_answer_type_binding[
+            "requested_answer_type"
+        ],
+        "expected_value_shape": component_answer_type_binding[
+            "expected_value_shape"
+        ],
+        "adjacent_claim_exclusions": list(
+            component_answer_type_binding["adjacent_claim_exclusions"]
+        ),
+        "component_answer_type_binding": component_answer_type_binding,
+        "component_answer_type_binding_ref": component_answer_type_binding_ref,
         "components": [component],
         "source_obligation_count": 1,
         "source_obligation_id": source_obligation_id,
@@ -364,6 +408,7 @@ def build_generic_query_relation_plan(
             search_requirement_text=search_requirement_text,
             source_authority_requirement=source_authority_requirement,
             relation_plan_id=plan_id,
+            component_answer_type_binding_ref=component_answer_type_binding_ref,
         ),
         "future_component_work_node_candidate": _future_component_work_node_candidate(
             node_digest=identity_digest,
@@ -445,9 +490,41 @@ def validate_generic_query_relation_plan(plan: Mapping[str, Any]) -> dict[str, A
         _blocked(BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE, "obligation count")
     if _bounded_int(safe.get("search_requirement_count")) != 1:
         _blocked(BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE, "search count")
+    try:
+        binding = validate_current_source_component_answer_type_binding(
+            _safe_mapping(safe.get("component_answer_type_binding"))
+        )
+    except ComponentAnswerTypeBindingError as exc:
+        _blocked(
+            BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE,
+            f"component answer-type binding invalid: {exc}",
+        )
+    binding_ref = current_source_component_answer_type_binding_ref(binding)
+    if _safe_mapping(safe.get("component_answer_type_binding_ref")) != binding_ref:
+        _blocked(
+            BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE,
+            "component answer-type binding ref mismatch",
+        )
+    component = _first_mapping(safe.get("components"))
+    if _safe_mapping(component.get("component_answer_type_binding_ref")) != binding_ref:
+        _blocked(
+            BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE,
+            "component answer-type binding not bound to component",
+        )
+    obligation = _first_mapping(safe.get("source_obligations"))
+    if _safe_mapping(obligation.get("component_answer_type_binding_ref")) != binding_ref:
+        _blocked(
+            BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE,
+            "component answer-type binding not bound to source obligation",
+        )
     dprime = _safe_mapping(safe.get("dprime_relation_intake_candidate"))
     if dprime.get("answer_created") is not False or dprime.get("evidence_acquired") is not False:
         _blocked(BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE, "D-prime closed flag")
+    if _safe_mapping(dprime.get("component_answer_type_binding_ref")) != binding_ref:
+        _blocked(
+            BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE,
+            "D-prime candidate missing component answer-type binding",
+        )
     future = _safe_mapping(safe.get("future_component_work_node_candidate"))
     if future.get("budget_lease_created") is not False:
         _blocked(BLOCKED_GENERIC_QUERY_PLANNING_OUTPUT_HYGIENE, "budget lease opened")
@@ -812,6 +889,23 @@ def _search_query_seeds(
     return out
 
 
+def _expected_value_token_kinds(fact_kind: str, component_text: str) -> list[str]:
+    lowered = component_text.casefold()
+    if fact_kind == "fee":
+        return ["currency"]
+    if fact_kind == "deadline":
+        return ["date_like"]
+    if fact_kind == "current_value":
+        if "rate" in lowered or "mileage" in lowered:
+            return ["currency", "number"]
+        return ["number"]
+    if fact_kind == "status":
+        return []
+    if fact_kind == "requirement":
+        return []
+    return []
+
+
 def _source_authority_posture_requirement() -> dict[str, Any]:
     return {
         "requirement_id": SOURCE_AUTHORITY_POSTURE_REQUIREMENT_ID,
@@ -841,6 +935,7 @@ def _dprime_relation_intake_candidate(
     search_requirement_text: str,
     source_authority_requirement: Mapping[str, Any],
     relation_plan_id: str,
+    component_answer_type_binding_ref: Mapping[str, Any],
 ) -> dict[str, Any]:
     return {
         "candidate_kind": "dprime_relation_intake_candidate",
@@ -852,6 +947,7 @@ def _dprime_relation_intake_candidate(
         "claim_under_test": claim_under_test,
         "source_obligation_id": source_obligation_id,
         "source_obligation_text": source_obligation_text,
+        "component_answer_type_binding_ref": dict(component_answer_type_binding_ref),
         "search_requirement_id": search_requirement_id,
         "search_requirement_text": search_requirement_text,
         "source_authority_posture_requirement_ref": source_authority_requirement[
@@ -1126,6 +1222,11 @@ def _safe_sequence(value: Any) -> list[Any]:
     if isinstance(value, str | bytes) or not isinstance(value, Sequence):
         return []
     return list(value)
+
+
+def _first_mapping(value: Any) -> dict[str, Any]:
+    seq = _safe_sequence(value)
+    return _safe_mapping(seq[0]) if seq else {}
 
 
 def _bounded_int(value: Any) -> int:
