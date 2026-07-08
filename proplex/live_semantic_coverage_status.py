@@ -23,6 +23,12 @@ from core.analyst_workbench_runtime import workbench_dprime_dossier_ref
 from core.current_source_component_answer_type_binding import (
     maybe_current_source_component_answer_type_binding_ref,
 )
+from core.dprime_analyst_finding_support_validation import (
+    analyst_finding_support_validation_required,
+    build_dprime_analyst_finding_support_validation,
+    dprime_analyst_finding_support_validation_ref,
+    support_validation_allows_runkernel_admission,
+)
 from core.dprime_analyst_relation_intake_runtime import (
     DPrimeAnalystRelationIntakeError,
     build_dprime_analyst_relation_intake,
@@ -135,6 +141,9 @@ BLOCKED_CLOSED_SURFACE_VIOLATION = "BLOCKED_CLOSED_SURFACE_VIOLATION"
 BLOCKED_PRODUCT_IMPORT_BOUNDARY = "BLOCKED_PRODUCT_IMPORT_BOUNDARY"
 BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING = (
     "BLOCKED_DPRIME_GENERIC_RELATION_INTAKE_MISSING"
+)
+BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION = (
+    "BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION"
 )
 BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH = (
     "BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH"
@@ -966,6 +975,14 @@ def format_live_semantic_coverage_status(payload: Mapping[str, Any]) -> str:
             f"{dprime.get('proposal_validation_status')}"
         ),
         (
+            "D-prime AnalystFinding validation required: "
+            f"{_bool_text(dprime.get('dprime_analyst_finding_validation_required_for_product_path'))}"
+        ),
+        (
+            "D-prime AnalystFinding validation status: "
+            f"{dprime.get('dprime_analyst_finding_validation_status', 'not reached')}"
+        ),
+        (
             "D-prime validated proposal ref/digest: "
             f"{_format_dprime_validated_support_proposal_ref(dprime.get('validated_support_proposal_ref'))}"
         ),
@@ -1428,14 +1445,14 @@ def _blocked_dprime_model_review_assessment_result(
     objects_created = dict(dprime.get("objects_created") or {})
     objects_created.update(model_review_result.objects_created)
     dprime["objects_created"] = objects_created
-    proposal_validated = (
+    legacy_proposal_validated = (
         dprime.get("proposal_validation_status")
         == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
     )
     workbench_gate_ref = _unresolved_workbench_followup_required_gate_ref(
         workbench_dprime_dossier
     )
-    if proposal_validated and workbench_gate_ref:
+    if legacy_proposal_validated and workbench_gate_ref:
         return _blocked_workbench_followup_required_result(
             query=query,
             readiness_payload=readiness_payload,
@@ -1451,6 +1468,72 @@ def _blocked_dprime_model_review_assessment_result(
             workbench_ref=workbench_ref,
             candidate_handoff_ref=candidate_handoff,
         )
+    analyst_finding_validation_required = analyst_finding_support_validation_required(
+        workbench_dprime_dossier
+    )
+    analyst_finding_validation: dict[str, Any] = {}
+    analyst_finding_validation_ref: dict[str, Any] = {}
+    analyst_finding_validation_satisfied = True
+    if analyst_finding_validation_required:
+        analyst_finding_validation = build_dprime_analyst_finding_support_validation(
+            workbench_dprime_dossier=workbench_dprime_dossier,
+            fetch_read_content_packet=fetch_read_content_packet,
+        )
+        analyst_finding_validation_ref = (
+            dprime_analyst_finding_support_validation_ref(
+                analyst_finding_validation
+            )
+        )
+        analyst_finding_validation_satisfied = (
+            support_validation_allows_runkernel_admission(
+                analyst_finding_validation
+            )
+        )
+        dprime["dprime_analyst_finding_support_validation"] = (
+            analyst_finding_validation
+        )
+        dprime["dprime_analyst_finding_support_validation_ref"] = (
+            analyst_finding_validation_ref
+        )
+        dprime["dprime_analyst_finding_validation_status"] = (
+            analyst_finding_validation_ref.get("dprime_validation_status")
+        )
+        dprime["dprime_analyst_finding_validation_product_proof_status"] = (
+            analyst_finding_validation_ref.get("product_proof_status")
+        )
+        dprime["dprime_analyst_finding_validation_product_proof_blocker"] = (
+            analyst_finding_validation_ref.get("product_proof_blocker")
+        )
+    dprime["dprime_analyst_finding_validation_required_for_product_path"] = (
+        analyst_finding_validation_required
+    )
+    dprime["dprime_analyst_finding_validation_satisfied"] = (
+        analyst_finding_validation_satisfied
+    )
+    objects_created["dprime_analyst_finding_support_validation"] = bool(
+        analyst_finding_validation_required
+    )
+    dprime["objects_created"] = objects_created
+    proposal_validated = (
+        legacy_proposal_validated and analyst_finding_validation_satisfied
+    )
+    analyst_finding_validation_blocked = (
+        legacy_proposal_validated
+        and analyst_finding_validation_required
+        and not analyst_finding_validation_satisfied
+    )
+    if analyst_finding_validation_blocked:
+        for key in (
+            "run_kernel_admission_decision",
+            "semantic_observation",
+            "component_coverage",
+            "sufficiency_readiness",
+            "final_answer_packet",
+            "author_answer",
+            "citation_source_display",
+        ):
+            objects_created[key] = False
+        dprime["objects_created"] = objects_created
     try:
         additional_relation_results = _additional_dprime_relation_results(
             query=query,
@@ -1750,6 +1833,26 @@ def _blocked_dprime_model_review_assessment_result(
         }
         if proposal_validated
         else {
+            "status": BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
+            "proposal_ref": _safe_mapping(
+                analyst_finding_validation_ref.get("analyst_finding_proposal_ref")
+            )
+            or "unavailable",
+            "dprime_analyst_finding_support_validation_ref": dict(
+                analyst_finding_validation_ref
+            ),
+            "reasons": [
+                "AnalystFindingProposal D-prime support validation is required before RunKernel admission",
+                _safe_mapping(
+                    analyst_finding_validation_ref.get(
+                        "dprime_validation_summary_ref"
+                    )
+                ).get("validation_summary")
+                or "AnalystFindingProposal validation did not support the proposed answer from bounded evidence",
+            ],
+        }
+        if analyst_finding_validation_blocked
+        else {
             "status": "not reached",
             "proposal_ref": "unavailable",
             "reasons": [model_review_result.blocker_detail],
@@ -1815,8 +1918,19 @@ def _blocked_dprime_model_review_assessment_result(
             "status": "unavailable",
             "observation_ref": "unavailable",
             "reasons": [
-                "D-prime proposal candidate is not admitted support",
                 (
+                    "AnalystFindingProposal D-prime support validation blocked RunKernel admission"
+                    if analyst_finding_validation_blocked
+                    else "D-prime proposal candidate is not admitted support"
+                ),
+                (
+                    _safe_mapping(
+                        analyst_finding_validation_ref.get(
+                            "dprime_validation_summary_ref"
+                        )
+                    ).get("validation_summary")
+                    if analyst_finding_validation_blocked
+                    else
                     materialization_error.detail
                     if materialization_error is not None
                     else (
@@ -1841,14 +1955,25 @@ def _blocked_dprime_model_review_assessment_result(
             ],
         }
         payload_decision = (
-            materialization_error.blocker
+            BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+            if analyst_finding_validation_blocked
+            else materialization_error.blocker
             if materialization_error is not None
             else decision.blocker
             if decision is not None
             else model_review_result.decision
         )
         payload_detail = (
-            materialization_error.detail
+            (
+                _safe_mapping(
+                    analyst_finding_validation_ref.get(
+                        "dprime_validation_summary_ref"
+                    )
+                ).get("validation_summary")
+                or "AnalystFindingProposal D-prime support validation failed closed"
+            )
+            if analyst_finding_validation_blocked
+            else materialization_error.detail
             if materialization_error is not None
             else decision.blocker_detail
             if decision is not None
@@ -1899,6 +2024,18 @@ def _blocked_dprime_model_review_assessment_result(
     payload.update(
         {
             "dprime_status": dprime,
+            "dprime_analyst_finding_support_validation_ref": dict(
+                analyst_finding_validation_ref
+            ),
+            "dprime_analyst_finding_validation_status": (
+                analyst_finding_validation_ref.get("dprime_validation_status")
+            ),
+            "dprime_analyst_finding_validation_required_for_product_path": (
+                analyst_finding_validation_required
+            ),
+            "dprime_analyst_finding_validation_satisfied": (
+                analyst_finding_validation_satisfied
+            ),
             "semantic_support_source": (
                 (
                     "available from D-prime SemanticObservation and bound "
@@ -1964,6 +2101,11 @@ def _blocked_dprime_model_review_assessment_result(
                     "admission decision made"
                 )
                 if proposal_validated
+                else (
+                    "not reached; AnalystFindingProposal D-prime support "
+                    "validation blocked RunKernel admission"
+                )
+                if analyst_finding_validation_blocked
                 else f"not reached; {model_review_result.blocker_detail}"
             ),
         }
@@ -2025,6 +2167,9 @@ def _followup_search_reentry_result(
 ) -> LiveSemanticCoverageStatusResult:
     dprime_status = dict(followup_result.dprime_status)
     dprime_status["generic_relation_intake_ref"] = dict(relation_ref)
+    analyst_validation_ref = _safe_mapping(
+        dprime_status.get("dprime_analyst_finding_support_validation_ref")
+    )
     workbench_ref = _safe_mapping(workbench_dprime_dossier_ref)
     if workbench_ref:
         dprime_status["workbench_dprime_dossier_ref"] = dict(workbench_ref)
@@ -2047,6 +2192,33 @@ def _followup_search_reentry_result(
     payload.update(
         {
             "dprime_status": dprime_status,
+            "dprime_analyst_finding_support_validation_ref": dict(
+                analyst_validation_ref
+            ),
+            "dprime_analyst_finding_validation_status": (
+                dprime_status.get("dprime_analyst_finding_validation_status")
+            ),
+            "dprime_analyst_finding_validation_required_for_product_path": (
+                dprime_status.get(
+                    "dprime_analyst_finding_validation_required_for_product_path"
+                )
+                is True
+            ),
+            "dprime_analyst_finding_validation_satisfied": (
+                dprime_status.get("dprime_analyst_finding_validation_satisfied")
+                is True
+            ),
+            "dprime_analyst_finding_validation_blocker": dprime_status.get(
+                "dprime_analyst_finding_validation_blocker"
+            ),
+            "followup_analyst_finding_refresh_required": (
+                dprime_status.get("followup_analyst_finding_refresh_required")
+                is True
+            ),
+            "followup_analyst_finding_refresh_completed": (
+                dprime_status.get("followup_analyst_finding_refresh_completed")
+                is True
+            ),
             "dprime_followup_search_reentry_ref": dict(followup_result.projection),
             "semantic_support_source": followup_result.semantic_support_source,
             "source_obligation_authority_ref": dict(
@@ -2158,6 +2330,7 @@ def _run_followup_search_reentry_status(
         run_kernel_admission_decision_status=(
             dprime_run_kernel_admission_decision_status
         ),
+        workbench_dprime_dossier=workbench_dprime_dossier,
     )
 
 
@@ -3418,6 +3591,8 @@ def _workbench_followup_gap(
 
 
 def _model_review_next_blocked_surface(decision: str) -> str:
+    if decision == BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION:
+        return "D-prime AnalystFindingProposal support validation"
     if decision == BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED:
         return "Workbench follow-up-required gap resolution"
     if decision == BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH:

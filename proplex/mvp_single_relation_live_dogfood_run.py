@@ -133,6 +133,7 @@ from proplex.live_acquisition_readability_status import (
 )
 from proplex.live_semantic_coverage_status import (
     BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH,
+    BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
     build_live_semantic_coverage_status,
 )
 from proplex.mvp_friend_shareable_output import MvpFriendOutputResult
@@ -2166,6 +2167,15 @@ def _validate_dprime_authority_integration(packet: Mapping[str, Any]) -> None:
     product_answer_path_consumed = product_entrypoint and (
         packet.get("fap_author_opened") is True
     )
+    if (
+        product_answer_path_consumed
+        and packet.get("dprime_analyst_finding_validation_required_for_product_path")
+        is True
+        and packet.get("dprime_analyst_finding_validation_satisfied") is not True
+    ):
+        _blocked_output_hygiene(
+            "product answer path opened without AnalystFinding D-prime validation."
+        )
     false_unless_consumed = (
         "single_relation_source_obligation_ready",
         "single_relation_citation_handoff_ready",
@@ -2628,6 +2638,22 @@ def _validate_analyst_workbench_surface(packet: Mapping[str, Any]) -> None:
             _blocked_output_hygiene("D-prime did not consume Workbench dossier ref.")
         if _bounded_int(packet.get("followup_loop_count")) == 0:
             _validate_workbench_dprime_input_ref(packet)
+        if (
+            _safe_mapping(dossier.get("analyst_finding_proposal_ref"))
+            and _safe_mapping(
+                _safe_mapping(packet.get("semantic_status_payload")).get(
+                    "dprime_status"
+                )
+            ).get("proposal_validation_status")
+            == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+            and packet.get("workbench_gap_reentry_status") != "followup_not_licensed"
+            and not _safe_mapping(
+                packet.get("dprime_analyst_finding_support_validation_ref")
+            )
+        ):
+            _blocked_output_hygiene(
+                "D-prime AnalystFinding support validation ref missing."
+            )
 
 
 def _semantic_payload_supports_workbench_dossier(packet: Mapping[str, Any]) -> bool:
@@ -4720,6 +4746,21 @@ def _packet_from_semantic_status(
         and workbench_reentry_status == "runkernel_authorized_executed"
         and not answer_path_passed
     )
+    dprime_status = _safe_mapping(semantic_payload.get("dprime_status"))
+    analyst_validation_blocked = bool(
+        semantic_payload.get("decision")
+        == BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+        or (
+            dprime_status.get("proposal_validation_status")
+            == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+            and dprime_status.get(
+                "dprime_analyst_finding_validation_required_for_product_path"
+            )
+            is True
+            and dprime_status.get("dprime_analyst_finding_validation_satisfied")
+            is not True
+        )
+    )
     answer_path_safe_claim_text = _clean_text(
         answer_path_ref.get("safe_answer_claim_text"),
         limit=4_000,
@@ -4743,6 +4784,13 @@ def _packet_from_semantic_status(
         ) or (
             "Existing D-prime source-obligation/citation authority cannot be "
             "safely consumed by generic dogfood yet."
+        )
+    elif analyst_validation_blocked:
+        decision = BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+        blocker_detail = (
+            _clean_text(semantic_payload.get("blocker_detail"), limit=900)
+            or "AnalystFindingProposal support validation blocked D-prime "
+            "RunKernel admission."
         )
     elif followup_exhausted:
         decision = BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_EXHAUSTED
@@ -5042,6 +5090,8 @@ def _packet_from_semantic_status(
                 "current_source_record_dprime_candidate_handoff_mismatch"
                 if decision
                 == BLOCKED_CURRENT_SOURCE_RECORD_DPRIME_CANDIDATE_HANDOFF_MISMATCH
+                else "dprime_analyst_finding_support_validation_blocked"
+                if decision == BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
                 else
                 "generic_single_relation_dprime_authority_integration_blocked"
                 if decision
@@ -6517,6 +6567,11 @@ def _dprime_pass_ready_for_gateway(dprime: Mapping[str, Any]) -> bool:
         and dprime.get("support_relation") == "directly_supports"
         and dprime.get("proposal_validation_status")
         == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
+        and (
+            dprime.get("dprime_analyst_finding_validation_required_for_product_path")
+            is not True
+            or dprime.get("dprime_analyst_finding_validation_satisfied") is True
+        )
         and dprime.get("run_kernel_admission_decision_status") == "admitted"
         and (
             dprime.get("semantic_observation_admission_status") == "materialized"
@@ -7992,6 +8047,12 @@ def _base_packet(
     dprime_candidate = _safe_mapping(plan.get("dprime_relation_intake_candidate"))
     future_node = _safe_mapping(plan.get("future_component_work_node_candidate"))
     semantic = _safe_mapping(semantic_payload)
+    dprime_status = _safe_mapping(semantic.get("dprime_status"))
+    dprime_analyst_validation_ref = _safe_mapping(
+        semantic.get("dprime_analyst_finding_support_validation_ref")
+    ) or _safe_mapping(
+        dprime_status.get("dprime_analyst_finding_support_validation_ref")
+    )
     source_obligation_authorization = (
         _source_obligation_authorization_dict(
             source_obligation_recovery_authorization
@@ -8592,6 +8653,53 @@ def _base_packet(
         ),
         "model_assisted_analyst_model_output_validation_ref": _safe_mapping(
             analyst_finding.get("model_output_validation_ref")
+        ),
+        "dprime_analyst_finding_support_validation_ref": (
+            dprime_analyst_validation_ref
+        ),
+        "dprime_analyst_finding_validation_status": (
+            dprime_status.get("dprime_analyst_finding_validation_status")
+            or dprime_analyst_validation_ref.get("dprime_validation_status")
+        ),
+        "dprime_analyst_finding_validation_required_for_product_path": (
+            dprime_status.get(
+                "dprime_analyst_finding_validation_required_for_product_path"
+            )
+            is True
+        ),
+        "dprime_analyst_finding_validation_satisfied": (
+            dprime_status.get("dprime_analyst_finding_validation_satisfied")
+            is True
+        ),
+        "dprime_analyst_finding_validation_blocker": (
+            dprime_status.get("dprime_analyst_finding_validation_blocker")
+            or semantic.get("dprime_analyst_finding_validation_blocker")
+        ),
+        "followup_analyst_finding_refresh_required": (
+            dprime_status.get("followup_analyst_finding_refresh_required") is True
+            or semantic.get("followup_analyst_finding_refresh_required") is True
+        ),
+        "followup_analyst_finding_refresh_completed": (
+            dprime_status.get("followup_analyst_finding_refresh_completed") is True
+            or semantic.get("followup_analyst_finding_refresh_completed") is True
+        ),
+        "dprime_analyst_finding_product_proof_status": (
+            dprime_analyst_validation_ref.get("product_proof_status")
+        ),
+        "dprime_analyst_finding_product_proof_blocker": (
+            dprime_analyst_validation_ref.get("product_proof_blocker")
+        ),
+        "dprime_analyst_finding_runkernel_support_admission_recommended": (
+            dprime_analyst_validation_ref.get(
+                "runkernel_support_admission_recommended"
+            )
+            is True
+        ),
+        "legacy_candidate_level_dprime_review_status": (
+            dprime_status.get("model_review_status")
+        ),
+        "legacy_candidate_level_dprime_review_ref": _safe_mapping(
+            dprime_status.get("model_review_ref")
         ),
         "analysis_gap_search_proposal": gap_proposal,
         "analysis_gap_search_proposal_ref": gap_ref,
@@ -9368,6 +9476,23 @@ def _semantic_workbench_dossier_for_dprime(
     include_gap_proposal: bool,
 ) -> dict[str, Any]:
     dossier = _safe_mapping(workbench_bundle.get("workbench_dprime_dossier"))
+    if dossier:
+        enriched = dict(dossier)
+        workbench_packet = _safe_mapping(
+            workbench_bundle.get("analyst_workbench_packet")
+        )
+        analyst_finding = _first_mapping(
+            workbench_packet.get("analyst_finding_proposals")
+        )
+        if analyst_finding:
+            enriched["analyst_finding_proposal"] = analyst_finding
+            enriched["analyst_finding_proposal_ref"] = (
+                _safe_mapping(dossier.get("analyst_finding_proposal_ref"))
+                or _safe_mapping(
+                    analyst_finding.get("analyst_finding_proposal_ref")
+                )
+            )
+        dossier = _without_empty(enriched)
     if not include_gap_proposal:
         return dossier
     gap = _safe_mapping(workbench_bundle.get("analysis_gap_search_proposal"))

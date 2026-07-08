@@ -808,7 +808,8 @@ def test_licensed_workbench_strict_support_gap_runs_followup_when_dprime_first_p
     )
 
     packet = result.packet
-    assert result.return_code == 0, packet.get("blocker_detail")
+    assert result.return_code == 2
+    _assert_dprime_analyst_validation_blocks_answer_path(packet)
     assert packet["decision"] != (
         dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
     )
@@ -850,9 +851,6 @@ def test_licensed_workbench_strict_support_gap_runs_followup_when_dprime_first_p
     assert followup_ref["product_followup_search_executor_handoff_ref"]
     assert packet["followup_provider_calls_attempted"] == 1
     assert packet["followup_fetch_read_completed"] == 1
-    assert packet["final_answer_packet_created"] is True
-    assert packet["author_prose_created"] is True
-    assert packet["source_display_entries"]
 
     report_json = json.loads(
         Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
@@ -939,7 +937,8 @@ def test_licensed_followup_reentry_executes_one_second_ordinary_search(
     )
 
     packet = result.packet
-    assert result.return_code == 0, packet.get("blocker_detail")
+    assert result.return_code == 2
+    _assert_dprime_analyst_validation_blocks_answer_path(packet)
     assert len(calls) == 2
     assert calls[0].query != calls[1].query
     assert calls[1].acquisition_provider_role == "current_source_followup_reentry"
@@ -988,19 +987,9 @@ def test_licensed_followup_reentry_executes_one_second_ordinary_search(
     assert followup_ref["product_followup_authorization_consumed"] is True
     assert followup_ref["product_followup_search_authorization_ref"]
     assert followup_ref["product_followup_search_executor_handoff_ref"]
-    assert packet["final_answer_packet_created"] is True
-    assert packet["author_prose_created"] is True
-    assert packet["author_answer_created"] is True
-    assert packet["citation_source_display_created"] is True
-    assert packet["fap_author_opened"] is True
-    assert packet["answer_text_present"] is True
-    assert packet["product_answer_text"] == (
-        "The current Example County standard paper small claims filing fee is $54."
-    )
-    assert packet["source_display_entries"]
     assert packet["product_correctness_claimed"] is False
     assert packet["decision_made_by_the_run"] == (
-        "existing_dprime_single_lane_answer_path_consumed"
+        "dprime_analyst_finding_support_validation_blocked"
     )
     assert reentry["followup_provider_calls_attempted"] == 1
     assert reentry["followup_fetch_read_completed"] == 1
@@ -1011,7 +1000,9 @@ def test_licensed_followup_reentry_executes_one_second_ordinary_search(
     assert packet["followup_source_acquisition_mode"] == (
         dogfood.SOURCE_ACQUISITION_MODE_DIRECT_FETCH_FALLBACK
     )
-    assert packet["source_challenge_recovery_status"] == "not_triggered"
+    assert packet["source_challenge_recovery_status"] == (
+        "not_executed_confirmation_required"
+    )
     assert packet["provider_snippets_used_as_evidence"] is False
     assert packet["raw_private_retention_flags"] == dogfood.RAW_FALSE_FLAGS
 
@@ -1092,20 +1083,14 @@ def test_licensed_followup_strict_support_blocks_when_answer_path_not_reached(
 
     packet = result.packet
     assert result.return_code == 2
-    assert packet["decision"] == (
-        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_ANSWER_PATH_NOT_REACHED
-    )
+    _assert_dprime_analyst_validation_blocks_answer_path(packet)
     assert len(calls) == 2
     assert len(dprime_inputs) == 2
     assert packet["followup_provider_calls_attempted"] == 1
     assert packet["followup_fetch_read_completed"] == 1
     assert packet["workbench_gap_reentry_status"] == "runkernel_authorized_executed"
     assert packet["followup_execution_licensed"] is True
-    assert packet["dprime_answer_path_ref"]["status"] == "blocked"
-    assert packet["final_answer_packet_created"] is False
-    assert packet["author_prose_created"] is False
-    assert packet["answer_text_present"] is False
-    assert packet["product_answer_text"] == ""
+    assert packet["dprime_answer_path_ref"]["status"] == "not reached"
 
 
 def test_licensed_followup_blocks_with_named_exhausted_blocker_when_fetch_fails(
@@ -1457,7 +1442,8 @@ def test_licensed_unreadable_workbench_gap_runs_followup_when_dprime_first_passe
     reentry = packet["workbench_gap_reentry_ref"]
     followup_ref = semantic["dprime_followup_search_reentry_ref"]
     gap = packet["analysis_gap_search_proposal"]
-    assert result.return_code == 0, packet.get("blocker_detail")
+    assert result.return_code == 2
+    _assert_dprime_analyst_validation_blocks_answer_path(packet)
     assert packet["decision"] != dogfood.BLOCKED_CURRENT_SOURCE_RECORD_FOLLOWUP_NOT_LICENSED
     assert len(calls) == 2
     assert len(dprime_inputs) == 2
@@ -1498,12 +1484,6 @@ def test_licensed_unreadable_workbench_gap_runs_followup_when_dprime_first_passe
     assert packet["followup_dprime_model_review_calls_attempted"] == 1
     assert packet["followup_provider_calls_attempted"] == 1
     assert packet["followup_fetch_read_completed"] == 1
-    assert packet["final_answer_packet_created"] is True
-    assert packet["author_prose_created"] is True
-    assert packet["source_display_entries"]
-    assert packet["product_answer_text"] == (
-        "The current Example County standard paper small claims filing fee is $54."
-    )
 
     report_json = json.loads(
         Path(packet["review_report_json_path"]).read_text(encoding="utf-8")
@@ -1686,7 +1666,8 @@ def test_licensed_workbench_read_support_gap_runs_authorized_followup_pdf_extrac
     followup_ref = packet["semantic_status_payload"][
         "dprime_followup_search_reentry_ref"
     ]
-    assert result.return_code == 0, packet.get("blocker_detail")
+    assert result.return_code == 2
+    _assert_dprime_analyst_validation_blocks_answer_path(packet)
     assert len(calls) == 2
     assert calls[1].acquisition_provider_role == "current_source_followup_reentry"
     assert fetch_attempts == [pdf_url, pdf_url]
@@ -1713,12 +1694,6 @@ def test_licensed_workbench_read_support_gap_runs_authorized_followup_pdf_extrac
     assert followup_ref["product_followup_search_executor_handoff_ref"]
     assert reentry["followup_pdf_text_extraction_attempted"] is True
     assert reentry["followup_pdf_text_extraction_status_summary"] == {"extracted": 1}
-    assert packet["final_answer_packet_created"] is True
-    assert packet["author_prose_created"] is True
-    assert packet["source_display_entries"]
-    assert packet["product_answer_text"] == (
-        "The current Example County standard paper small claims filing fee is $54."
-    )
     assert packet["product_correctness_claimed"] is False
     followup_fetch_packet = _retained_followup_fetch_read_packet(result)
     reference = followup_fetch_packet["reference_records"][0]
@@ -2709,6 +2684,31 @@ def _retained_followup_fetch_read_packet(result: Any) -> Mapping[str, Any]:
         / dogfood.FETCH_READ_CONTENT_PACKET_NAME
     )
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _assert_dprime_analyst_validation_blocks_answer_path(
+    packet: Mapping[str, Any],
+) -> None:
+    assert packet["decision"] == (
+        semantic_status_runtime.BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+    )
+    assert packet["dprime_analyst_finding_validation_required_for_product_path"] is True
+    assert packet["dprime_analyst_finding_validation_satisfied"] is False
+    assert packet["dprime_analyst_finding_validation_blocker"] == (
+        "followup_analyst_finding_refresh_required"
+    )
+    assert packet["followup_analyst_finding_refresh_required"] is True
+    assert packet["followup_analyst_finding_refresh_completed"] is False
+    assert "follow-up AnalystFinding refresh required" in packet["blocker_detail"]
+    assert packet["dprime_analyst_finding_support_validation_ref"]
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["author_answer_created"] is False
+    assert packet["citation_source_display_created"] is False
+    assert packet["fap_author_opened"] is False
+    assert packet["answer_text_present"] is False
+    assert packet["product_answer_text"] == ""
+    assert packet["source_display_entries"] == []
 
 
 def _assert_workbench_non_authority(packet: Mapping[str, Any]) -> None:
