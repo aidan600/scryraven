@@ -76,7 +76,6 @@ from proplex.mvp_single_relation_live_dogfood_run import (
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_CREDENTIAL_UNAVAILABLE,
     BLOCKED_GENERIC_SINGLE_RELATION_LIVE_PRODUCT_PROVIDER_ROUTE_UNAVAILABLE,
     BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED,
-    BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED,
     DEFAULT_OUTPUT_DIR,
     GenericLiveFetchReadResult,
     GenericProviderProxyRunRequest,
@@ -2056,9 +2055,7 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
-    assert result.return_code == 0, result.packet.get("blocker_detail")
-    assert result.decision == "PASS"
-    assert result.packet["blocker_code"] is None
+    _assert_model_assisted_analyst_required_block(result)
     assert result.packet["command_flag"] == MVP_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
     assert result.packet["confirmation_flag"] == (
         CONFIRM_CURRENT_SOURCE_OF_RECORD_SINGLE_FACT_RUN_FLAG
@@ -2068,14 +2065,14 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert result.packet["supported_query_class"] == (
         dogfood.PRODUCT_SINGLE_FACT_SUPPORTED_QUERY_CLASS
     )
-    assert result.packet["answer_text_present"] is True
-    assert result.packet["product_answer_text"] == answer_claim
-    assert result.packet["safe_answer_claim_text"] == answer_claim
-    assert result.packet["final_answer_packet_created"] is True
-    assert result.packet["author_answer_created"] is True
-    assert result.packet["citation_source_display_created"] is True
+    assert result.packet["answer_text_present"] is False
+    assert result.packet["product_answer_text"] == ""
+    assert result.packet["safe_answer_claim_text"] is None
+    assert result.packet["final_answer_packet_created"] is False
+    assert result.packet["author_answer_created"] is False
+    assert result.packet["citation_source_display_created"] is False
     assert result.packet["product_correctness_claimed"] is False
-    assert result.packet["source_display_entries"]
+    assert result.packet["source_display_entries"] == []
     assert review_calls == 1
     assert fetch_urls == []
     assert result.packet["provider_extracted_content_obtained"] is True
@@ -2088,15 +2085,8 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     retained_reference = fetch_packet["reference_records"][0]
     assert retained_reference["bounded_text"] == extracted_text
     retained_candidate_id = retained_reference["candidate_id"]
-    retained_title = retained_reference["content_title"]
-    source_entry = result.packet["source_display_entries"][0]
-    assert source_entry["candidate_id"] == retained_candidate_id
-    assert result.packet["source_display_candidate_ref"]["candidate_id"] == (
-        retained_candidate_id
-    )
-    assert result.packet["source_citation_display_entries"][0]["candidate_id"] == (
-        retained_candidate_id
-    )
+    assert result.packet["source_display_candidate_ref"] == {}
+    assert result.packet["source_citation_display_entries"] == []
     handoff = result.packet["dprime_candidate_handoff_integrity_ref"]
     assert handoff["match_status"] == "match"
     assert handoff["candidate_identity_match"] is True
@@ -2106,73 +2096,55 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert handoff["dprime_intake_actual_candidate_ref"]["candidate_id"] == (
         retained_candidate_id
     )
-    assert handoff["selected_source_candidate_ref"]["candidate_id"] == (
-        retained_candidate_id
-    )
-    assert handoff["source_display_candidate_ref"]["candidate_id"] == (
-        retained_candidate_id
-    )
+    assert handoff["selected_source_candidate_ref"] == {}
+    assert handoff["source_display_candidate_ref"] == {}
 
     semantic_payload = result.packet["semantic_status_payload"]
     dprime_status = semantic_payload["dprime_status"]
     assert semantic_payload["dprime_source_citation_authority_enabled"] is True
     assert semantic_payload["dprime_single_lane_answer_path_enabled"] is True
-    assert dprime_status["objects_created"]["final_answer_packet"] is True
-    assert dprime_status["objects_created"]["author_answer"] is True
-    assert dprime_status["objects_created"]["citation_source_display"] is True
+    assert dprime_status["objects_created"]["final_answer_packet"] is False
+    assert dprime_status["objects_created"]["author_answer"] is False
+    assert dprime_status["objects_created"]["citation_source_display"] is False
     answer_path_ref = result.packet["dprime_answer_path_ref"]
-    assert answer_path_ref["status"] == "consumed"
-    assert answer_path_ref["final_answer_packet_ref"]["packet_created"] is True
-    assert answer_path_ref["author_answer_ref"]["author_prose_status"] in {
-        "full_answer_prose_created",
-        "partial_answer_prose_created",
-    }
-    assert answer_path_ref["citation_source_display_ref"]["status"] == "created"
-    assert answer_path_ref["safe_answer_claim_text"] == answer_claim
-    assert answer_path_ref["claim_text_authority_path"] == (
-        "admitted semantic support -> ComponentCoverage -> SufficiencyReadiness "
-        "-> FAP safe claim text -> Author answer text"
-    )
-    assert answer_path_ref["product_correctness_claimed"] is False
+    assert answer_path_ref["status"] == "not reached"
     lineage = result.packet["selected_current_value_to_fap_claim_lineage"]
-    assert lineage["contract_accountable"] is True
-    assert all(lineage["checks"].values())
-    assert lineage["safe_answer_claim_text"] == answer_claim
-    assert lineage["bound_contract_component_id"] == plan["component_id"]
-    assert lineage["bound_contract_source_obligation_id"] == (
-        plan["source_obligation_id"]
-    )
+    assert lineage["contract_accountable"] is False
+    assert "fap_safe_claim_ref_present" in lineage["missing"]
 
     integration = result.packet["single_relation_dprime_authority_integration"]
-    assert integration["status"] == "consumed"
-    assert integration["blocker_code"] == "PASS"
+    assert integration["status"] == "not_reached"
+    assert integration["blocker_code"] in {
+        result.decision,
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
+    }
     assert integration["dprime_single_lane_answer_path_enabled"] is True
-    assert integration["source_obligation_authority_consumed"] is True
-    assert integration["citation_source_handoff_authority_consumed"] is True
-    assert integration["final_answer_packet_created"] is True
-    assert integration["author_answer_created"] is True
-    assert integration["citation_source_display_created"] is True
+    assert integration["source_obligation_authority_consumed"] is False
+    assert integration["citation_source_handoff_authority_consumed"] is False
+    assert integration["final_answer_packet_created"] is False
+    assert integration["author_answer_created"] is False
+    assert integration["citation_source_display_created"] is False
     assert integration["product_correctness_claimed"] is False
 
     boundary = result.packet["source_citation_display_boundary"]
-    assert boundary["status"] == "created"
-    assert boundary["blocker_code"] == "PASS"
-    assert boundary["authority_source"] == "core.dprime_single_lane_answer_path_runtime"
-    assert boundary["derived_from_dprime_authority"] is True
-    assert boundary["derived_from_gateway_only"] is False
-    assert result.packet["source_citation_display_entries_created"] is True
-    assert result.packet["source_citation_display_entries"]
+    assert boundary["status"] == "not_reached"
+    assert boundary["blocker_code"] in {
+        result.decision,
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
+    }
+    assert result.packet["source_citation_display_entries_created"] is False
+    assert result.packet["source_citation_display_entries"] == []
     assert BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED not in {
         result.decision,
         result.packet["blocker_code"],
     }
-    assert result.packet["answer_or_blocker_text"] == answer_claim
-    assert result.output.startswith(f"Answer:\n{answer_claim}")
+    assert result.packet["blocker_detail"] in result.packet["answer_or_blocker_text"]
+    assert result.output.startswith("Answer:\nBlocked before answer:")
     assert "Sources:" in result.output
-    assert "[D1] USCIS Form N-400 Filing Fee" in result.output
-    assert "https://www.uscis.gov/forms/filing-fees" in result.output
+    assert "No source display is available." in result.output
+    assert "[D1] USCIS Form N-400 Filing Fee" not in result.output
     assert "Status:" in result.output
-    assert "- Decision: PASS" in result.output
+    assert f"- Decision: {result.decision}" in result.output
     assert "- Review report: " in result.output
     assert dogfood.CURRENT_SOURCE_RECORD_SINGLE_FACT_REVIEW_REPORT_MD_NAME in (
         result.output
@@ -2204,7 +2176,7 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     ] is True
     assert report["answer_contract_lifecycle"][
         "selected_claim_bound_to_current_answer_contract"
-    ] is True
+    ] is False
     assert report["answer_contract_lifecycle"]["active_components"][0][
         "component_id"
     ] == plan["component_id"]
@@ -2213,25 +2185,23 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     ] == plan["source_obligation_id"]
     assert report["claim_propagation_lifecycle"][
         "selected_current_value_present"
-    ] is True
+    ] is False
     assert report["claim_propagation_lifecycle"][
         "selected_value_entered_component_coverage"
-    ] is True
+    ] is False
     assert report["claim_propagation_lifecycle"][
         "selected_value_entered_sufficiency_readiness"
-    ] is True
+    ] is False
     assert report["claim_propagation_lifecycle"][
         "selected_value_entered_fap_safe_claim_text"
-    ] is True
+    ] is False
     assert report["claim_propagation_lifecycle"][
         "selected_value_entered_author_answer_text"
-    ] is True
-    assert report["claim_propagation_lifecycle"]["fap_safe_claim_text"] == (
-        answer_claim
-    )
+    ] is False
+    assert report["claim_propagation_lifecycle"]["fap_safe_claim_text"] is None
     assert report["claim_propagation_lifecycle"][
         "product_answer_text_present"
-    ] is True
+    ] is False
     report_handoff = report["analyst_workbench"][
         "dprime_candidate_handoff_integrity"
     ]
@@ -2242,21 +2212,16 @@ def test_product_single_fact_cli_consumes_existing_dprime_answer_path_for_n400(
     assert report_handoff["dprime_intake_actual_candidate_ref"]["candidate_id"] == (
         retained_candidate_id
     )
-    assert report_handoff["selected_source_candidate_ref"]["candidate_id"] == (
-        retained_candidate_id
-    )
-    assert report_handoff["source_display_candidate_ref"]["candidate_id"] == (
-        retained_candidate_id
-    )
-    assert report["stage_lifecycle"]["answer_path"]["safe_claim_available"] is True
+    assert report_handoff["selected_source_candidate_ref"] == {}
+    assert report_handoff["source_display_candidate_ref"] == {}
+    assert report["stage_lifecycle"]["answer_path"]["safe_claim_available"] is False
     report_md = report_md_path.read_text(encoding="utf-8")
     assert "Current Source Record Single-Fact Review Report" in report_md
     assert "- D-prime candidate handoff: match" in report_md
     assert f"- Expected Workbench candidate: {retained_candidate_id} /" in report_md
     assert f"- D-prime intake candidate: {retained_candidate_id} /" in report_md
-    assert f"- Selected source candidate: {retained_candidate_id} /" in report_md
-    assert f"- Source display candidate: {retained_candidate_id} /" in report_md
-    assert retained_title in report_md
+    assert "- Selected source candidate: not present / not present" in report_md
+    assert "- Source display candidate: not present / not present" in report_md
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
     assert "bounded_text" not in serialized
     assert result.packet["raw_prompt_retained"] is False
@@ -2322,8 +2287,7 @@ def test_product_single_fact_redacts_live_semantic_model_route_ref_canary(
         "product_model_route_ref"
     ]
 
-    assert result.return_code == 0, result.packet.get("blocker_detail")
-    assert result.decision == "PASS"
+    _assert_model_assisted_analyst_required_block(result)
     assert route_ref["configured_smart_model"] == (
         dogfood.PRIVATE_LOOKING_VALUE_REDACTION
     )
@@ -2387,27 +2351,21 @@ def test_product_single_fact_cli_reports_exact_dprime_answer_path_blocker(
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
-    assert result.return_code == 2
-    assert result.decision == "BLOCKED_DPRIME_AUTHOR_OUTPUT_AUTHORITY_MISSING"
-    assert result.packet["blocker_code"] == result.decision
-    assert result.packet["failure_attribution_bucket"] == "dprime_answer_path"
+    _assert_model_assisted_analyst_required_block(result)
     assert result.packet["answer_text_present"] is False
     assert result.packet["product_answer_text"] == ""
     assert result.packet["product_correctness_claimed"] is False
-    assert result.packet["answer_path_existing_blocker"] == result.decision
-    assert result.packet["answer_path_next_blocked_surface"] == (
-        "Author/answer output"
-    )
     answer_path_ref = result.packet["dprime_answer_path_ref"]
-    assert answer_path_ref["status"] == "blocked"
-    assert answer_path_ref["blocker"] == result.decision
-    assert answer_path_ref["next_blocked_surface"] == "Author/answer output"
+    assert answer_path_ref["status"] == "not reached"
     integration = result.packet["single_relation_dprime_authority_integration"]
-    assert integration["status"] == "consumed"
-    assert integration["blocker_code"] == result.decision
+    assert integration["status"] == "not_reached"
+    assert integration["blocker_code"] in {
+        result.decision,
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
+    }
     assert integration["dprime_single_lane_answer_path_enabled"] is True
-    assert integration["source_obligation_authority_consumed"] is True
-    assert integration["citation_source_handoff_authority_consumed"] is True
+    assert integration["source_obligation_authority_consumed"] is False
+    assert integration["citation_source_handoff_authority_consumed"] is False
     assert integration["author_answer_created"] is False
     assert BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED not in {
         result.decision,
@@ -2516,13 +2474,10 @@ def test_product_single_fact_cli_blocks_when_fap_safe_claim_missing(
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
-    assert result.return_code == 2
-    assert result.decision == (
-        dogfood.BLOCKED_SELECTED_VALUE_TO_FAP_CLAIM_TEXT_ADAPTER_MISSING
-    )
+    _assert_model_assisted_analyst_required_block(result)
     assert result.packet["product_answer_text"] == ""
     assert result.packet["answer_text_present"] is False
-    assert result.packet["fap_author_opened"] is True
+    assert result.packet["fap_author_opened"] is False
     assert result.packet["safe_answer_claim_text"] is None
     assert result.packet["source_display_entries"] == []
     assert result.output.startswith("Answer:\nBlocked before answer:")
@@ -2661,15 +2616,12 @@ def test_product_single_fact_cli_blocks_when_claim_not_contract_accountable(
         environ={"PYTEST_CURRENT_TEST": "test"},
     )
 
-    assert result.return_code == 2
-    assert result.decision == (
-        dogfood.BLOCKED_CURRENT_SOURCE_RECORD_RUN_NOT_CONTRACT_ACCOUNTABLE
-    )
+    _assert_model_assisted_analyst_required_block(result)
     assert result.packet["product_answer_text"] == ""
     assert result.packet["answer_text_present"] is False
     lineage = result.packet["selected_current_value_to_fap_claim_lineage"]
     assert lineage["contract_accountable"] is False
-    assert "contract_source_obligation_matches" in lineage["missing"]
+    assert "fap_safe_claim_ref_present" in lineage["missing"]
     assert result.packet["source_display_entries"] == []
     assert result.output.startswith("Answer:\nBlocked before answer:")
     assert answer_claim not in result.output.split("Sources:", maxsplit=1)[0]
@@ -2748,12 +2700,7 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     )
     serialized = json.dumps(result.packet, sort_keys=True).casefold()
 
-    assert result.return_code == 2, result.packet.get("blocker_detail")
-    assert result.decision == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
-    assert result.packet["blocker_code"] == result.decision
-    assert result.packet["failure_attribution_bucket"] == (
-        "source_citation_display_boundary"
-    )
+    _assert_model_assisted_analyst_required_block(result)
     assert review_calls == 1
     assert calls[0].query == result.packet["acquisition_query"]
     assert result.packet["relation_plan_search_query_seed"] == (
@@ -2820,30 +2767,6 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert result.packet["evidence_ledger_admissions"] == 1
     assert result.packet["dprime_model_review_calls_attempted"] == 1
     assert result.packet["dprime_model_review_calls_completed"] == 1
-    gateway = result.packet["source_readiness_gateway"]
-    assert gateway["status"] == "ready"
-    assert result.packet["source_readiness_gateway_status"] == "ready"
-    assert gateway["selected_current_value_text"] == answer_claim
-    assert gateway["selected_current_value_display_status"] == (
-        "displayed_from_current_path_admitted_dprime_state"
-    )
-    assert gateway["selected_current_value_ref"]["value_source"] == (
-        "dprime_assessment_material_ref.answer_component_claim.claim"
-    )
-    assert gateway["selected_current_value_ref"]["not_final_answer_prose"] is True
-    assert gateway["selected_source_ref"]["title"] == title
-    assert gateway["selected_source_ref"]["url"] == url
-    assert gateway["selected_source_ref"]["candidate_id"]
-    assert gateway["selected_window_ref"]["selected_window_digest"]
-    assert gateway["selected_window_ref"]["evidence_window_ref"]
-    assert gateway["explicit_non_claims"] == {
-        "source_obligation_satisfied": False,
-        "citation_eligible": False,
-        "source_authority_finalized": False,
-        "final_answer_packet_created": False,
-        "author_prose_created": False,
-        "product_correctness_claimed": False,
-    }
     assert result.packet["product_answer_text"] == ""
     assert result.packet["answer_text_present"] is False
     assert result.packet["source_display_entries"] == []
@@ -2852,156 +2775,40 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert semantic_payload["dprime_downstream_authority_enabled"] is False
     assert semantic_payload["dprime_source_citation_authority_enabled"] is True
     assert semantic_payload["dprime_single_lane_answer_path_enabled"] is False
-    assert semantic_payload["dprime_source_citation_stoppoint_status"] == "consumed"
-    assert dprime_status["objects_created"]["semantic_observation"] is True
-    assert dprime_status["objects_created"]["component_coverage"] is True
-    assert dprime_status["source_obligation_authority_consumed"] is True
+    assert dprime_status["objects_created"]["semantic_observation"] is False
+    assert dprime_status["objects_created"]["component_coverage"] is False
+    assert dprime_status.get("source_obligation_authority_consumed") is not True
     assert (
-        dprime_status["citation_eligibility_or_source_handoff_authority_consumed"]
-        is True
+        dprime_status.get(
+            "citation_eligibility_or_source_handoff_authority_consumed"
+        )
+        is not True
     )
-    assert dprime_status["single_lane_answer_path_disabled_by_caller"] is True
+    assert dprime_status["dprime_analyst_finding_validation_satisfied"] is False
+    assert dprime_status["dprime_analyst_finding_validation_status"] == (
+        "not_run_missing_model_assisted_analyst"
+    )
     assert dprime_status["objects_created"]["final_answer_packet"] is False
     assert dprime_status["objects_created"]["author_answer"] is False
     assert dprime_status["objects_created"]["citation_source_display"] is False
     integration = result.packet["single_relation_dprime_authority_integration"]
-    assert integration["status"] == "consumed"
-    assert (
-        integration["blocker_code"]
-        == BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
-    )
+    assert integration["status"] == "not_reached"
+    assert integration["blocker_code"] in {
+        result.decision,
+        dogfood.BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_READINESS_GATEWAY_DPRIME_NOT_PASSING,
+    }
     assert result.packet["single_relation_dprime_authority_integration_status"] == (
-        "consumed"
+        "not_reached"
     )
-    assert result.packet["source_obligation_citation_readiness_status"] == "consumed"
-    assert result.packet["source_obligation_citation_readiness_blocker"] == (
-        BLOCKED_GENERIC_SINGLE_RELATION_SOURCE_CITATION_DISPLAY_NOT_LICENSED
-    )
-    assert result.packet["dprime_source_citation_stoppoint_status"] == "consumed"
-    assert result.packet["source_obligation_authority_consumed"] is True
-    assert result.packet["citation_source_handoff_authority_consumed"] is True
-    assert integration["existing_dprime_authority_referenced"] is True
-    assert integration["existing_dprime_authority_reused"] is True
-    assert integration[
-        "existing_dprime_source_obligation_citation_authority_exists"
-    ] is True
-    assert integration["existing_dprime_source_obligation_citation_authority_module"] == (
-        "core.dprime_source_obligation_citation_authority_runtime"
-    )
-    assert integration["existing_single_lane_answer_path_module"] == (
-        "core.dprime_single_lane_answer_path_runtime"
-    )
+    assert result.packet["source_obligation_authority_consumed"] is False
+    assert result.packet["citation_source_handoff_authority_consumed"] is False
     assert integration["dprime_downstream_authority_enabled"] is False
     assert integration["dprime_source_citation_authority_enabled"] is True
     assert integration["dprime_single_lane_answer_path_enabled"] is False
-    assert integration["generic_dogfood_downstream_authority_kept_disabled"] is True
-    assert integration["generic_dogfood_single_lane_answer_path_kept_disabled"] is True
-    assert integration["dprime_support_slice_present"] is True
-    assert integration["gateway_display_present"] is True
-    assert integration["gateway_treated_as_authority"] is False
-    assert integration["source_readiness_gateway_is_authority"] is False
-    assert integration["dprime_support_slice_treated_as_readiness"] is False
-    assert integration[
-        "gateway_ready_and_dprime_pass_insufficient_for_"
-        "source_obligation_citation_readiness"
-    ] is False
-    assert integration["dprime_source_citation_authority_invoked"] is True
-    assert integration["downstream_dprime_authority_invoked"] is True
-    assert integration["component_coverage_created"] is True
-    assert integration["semantic_observation_created"] is True
-    assert integration["source_obligation_authority_consumed"] is True
-    assert integration["citation_source_handoff_authority_consumed"] is True
-    assert integration["single_relation_source_obligation_ready"] is True
-    assert integration["single_relation_citation_handoff_ready"] is True
-    assert result.packet["single_relation_source_obligation_ready"] is True
-    assert result.packet["single_relation_citation_handoff_ready"] is True
-    assert integration["source_citation_authority_refs_are_dprime_runtime_refs"] is True
-    source_authority = integration["source_obligation_authority_ref"]
-    citation_handoff = integration["citation_source_handoff_authority_ref"]
-    assert source_authority["owner"] == "RunKernel.DPrimeSourceObligationAuthority"
-    assert source_authority["runtime_surface"] == (
-        "core.dprime_source_obligation_citation_authority_runtime"
-    )
-    assert source_authority["authority_consumed"] is True
-    assert source_authority["source_obligation_authority_id"]
-    assert source_authority["source_obligation_authority_digest"]
-    assert source_authority != gateway
-    assert citation_handoff["owner"] == (
-        "RunKernel.DPrimeCitationSourceHandoffAuthority"
-    )
-    assert citation_handoff["runtime_surface"] == (
-        "core.dprime_source_obligation_citation_authority_runtime"
-    )
-    assert citation_handoff["authority_consumed"] is True
-    assert citation_handoff["citation_source_handoff_consumed"] is True
-    assert citation_handoff["citation_source_handoff_id"]
-    assert citation_handoff["citation_source_handoff_digest"]
-    assert citation_handoff != gateway
-    boundary = result.packet["source_citation_display_boundary"]
-    entries = result.packet["source_citation_display_entries"]
-    assert boundary["status"] == "created"
-    assert (
-        boundary["blocker_code"]
-        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
-    )
-    assert result.packet["source_citation_display_boundary_status"] == "created"
-    assert (
-        result.packet["source_citation_display_boundary_blocker"]
-        == BLOCKED_GENERIC_SINGLE_RELATION_QUICK_SUFFICIENCY_NOT_LICENSED
-    )
-    assert boundary["authority_source"] == (
-        "core.dprime_source_obligation_citation_authority_runtime"
-    )
-    assert result.packet["source_citation_display_authority_source"] == (
-        "core.dprime_source_obligation_citation_authority_runtime"
-    )
-    assert boundary["derived_from_dprime_authority"] is True
-    assert boundary["derived_from_gateway_only"] is False
-    assert boundary["gateway_treated_as_authority"] is False
-    assert result.packet["source_citation_display_derived_from_dprime_authority"] is True
-    assert result.packet["source_citation_display_derived_from_gateway_only"] is False
-    assert boundary["source_obligation_authority_ref_owner"] == (
-        "RunKernel.DPrimeSourceObligationAuthority"
-    )
-    assert boundary["citation_source_handoff_authority_ref_owner"] == (
-        "RunKernel.DPrimeCitationSourceHandoffAuthority"
-    )
-    assert boundary["source_obligation_authority_ref"][
-        "source_obligation_authority_digest"
-    ] == source_authority["source_obligation_authority_digest"]
-    assert boundary["citation_source_handoff_authority_ref"][
-        "citation_source_handoff_digest"
-    ] == citation_handoff["citation_source_handoff_digest"]
-    assert result.packet["source_citation_display_entries_created"] is True
-    assert len(entries) == 1
-    entry = entries[0]
-    assert entry["source_title"] == citation_handoff["citation_source_records"][0][
-        "title"
-    ]
-    assert entry["source_url"] == url
-    assert entry["selected_current_value_display_text"] == answer_claim
-    assert entry["selected_window_digest"] == gateway["selected_window_ref"][
-        "selected_window_digest"
-    ]
-    assert entry["source_obligation_authority_digest"] == source_authority[
-        "source_obligation_authority_digest"
-    ]
-    assert entry["citation_source_handoff_digest"] == citation_handoff[
-        "citation_source_handoff_digest"
-    ]
-    assert entry["derived_from_dprime_authority"] is True
-    assert entry["derived_from_gateway_only"] is False
-    assert entry["citation_rendering_created"] is False
-    assert entry["final_answer_prose_created"] is False
-    assert entry["product_correctness_claimed"] is False
-    assert boundary["sufficiency_readiness_created"] is False
-    assert boundary["final_answer_prose_created"] is False
-    assert boundary["final_answer_packet_created"] is False
-    assert boundary["author_answer_created"] is False
-    assert boundary["author_invoked"] is False
-    assert boundary["citation_rendering_invoked"] is False
-    assert boundary["final_citation_rendering_created"] is False
-    assert boundary["product_correctness_claimed"] is False
+    assert integration["component_coverage_created"] is False
+    assert integration["semantic_observation_created"] is False
+    assert integration["source_obligation_authority_consumed"] is False
+    assert integration["citation_source_handoff_authority_consumed"] is False
     assert result.packet["final_citation_rendering_created"] is False
     assert integration["source_obligation_satisfied"] is False
     assert integration["citation_eligible"] is False
@@ -3011,19 +2818,6 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert integration["author_answer_created"] is False
     assert integration["citation_source_display_created"] is False
     assert integration["product_correctness_claimed"] is False
-    assert integration["next_phase"] == (
-        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
-    )
-    assert integration["next_product_path_checkpoint"] == (
-        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
-    )
-    assert boundary["next_product_path_checkpoint"] == (
-        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
-    )
-    assert result.packet["next_product_path_checkpoint"] == (
-        dogfood.SOURCE_CITATION_DISPLAY_BOUNDARY_NEXT_PHASE
-    )
-    assert dogfood.DPRIME_AUTHORITY_INTEGRATION_NEXT_PHASE not in result.output
     assert result.packet["actual_source_authority_posture_created"] is False
     assert result.packet["product_correctness_claimed"] is False
     assert result.packet["friend_level_mvp_claimed"] is False
@@ -3043,18 +2837,6 @@ def test_dprime_pass_ready_gateway_creates_authority_backed_display_boundary(
     assert result.packet["raw_search_response_retained"] is False
     assert result.packet["raw_prompt_retained"] is False
     assert result.packet["raw_model_response_retained"] is False
-    assert "Source/readiness gateway" in result.output
-    assert "D-prime authority integration" in result.output
-    assert "Source/citation display boundary" in result.output
-    assert "- Entries created: true" in result.output
-    assert "- Derived from D-prime authority: true" in result.output
-    assert "- Derived from gateway-only state: false" in result.output
-    assert "D-prime pass + gateway display sufficient for readiness: false." in (
-        result.output
-    )
-    assert "- Boundary-only FAP created: false." in result.output
-    assert "- Boundary-only Author invoked: false." in result.output
-    assert "- Final answer prose created: false." in result.output
     assert "passport" not in serialized
     assert "travel.state.gov" not in serialized
 
@@ -4066,6 +3848,38 @@ def _assessment_payload(plan: Mapping[str, Any], answer_claim: str) -> dict[str,
 
 def _small_claims_url() -> str:
     return "https://example-county.invalid/small-claims-fees"
+
+
+def _assert_model_assisted_analyst_required_block(result: Any) -> None:
+    packet = result.packet
+    assert result.return_code == 2
+    assert result.decision == (
+        semantic_status_runtime.BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION
+    )
+    assert packet["blocker_code"] == result.decision
+    assert packet["dprime_analyst_finding_validation_status"] == (
+        "not_run_missing_model_assisted_analyst"
+    )
+    assert packet["dprime_analyst_finding_validation_required_for_product_path"] is True
+    assert packet["dprime_analyst_finding_validation_satisfied"] is False
+    assert packet["dprime_analyst_finding_product_proof_blocker"] == (
+        "blocked_model_assisted_analyst_required_but_not_run"
+    )
+    assert (
+        packet["dprime_analyst_finding_runkernel_support_admission_recommended"]
+        is False
+    )
+    assert packet["final_answer_packet_created"] is False
+    assert packet["author_prose_created"] is False
+    assert packet["author_answer_created"] is False
+    assert packet["citation_source_display_created"] is False
+    assert packet["fap_author_opened"] is False
+    assert packet["answer_text_present"] is False
+    assert packet["product_answer_text"] == ""
+    assert packet["source_display_entries"] == []
+    assert "product-grade model-assisted Analyst analysis is missing" in (
+        packet["blocker_detail"]
+    )
 
 
 def _retained_fetch_packet(result: Any) -> dict[str, Any]:

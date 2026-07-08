@@ -22,6 +22,12 @@ from core.analysis_gap_followup_search_packet import (
     build_followup_search_intent_packet,
     followup_search_intent_packet_ref_from_packet,
 )
+from core.dprime_analyst_finding_support_validation import (
+    analyst_finding_support_validation_required,
+    build_dprime_analyst_finding_support_validation,
+    dprime_analyst_finding_support_validation_ref,
+    support_validation_allows_runkernel_admission,
+)
 from core.dprime_evidence_frame_preflight import build_evidence_frame_preflight
 from core.dprime_evidence_support_bundle_runtime import (
     DPrimeEvidenceSupportBundleError,
@@ -122,6 +128,9 @@ BLOCKED_FOLLOWUP_FETCH_READ_LEDGER_REENTRY_MISSING = (
 )
 BLOCKED_DPRIME_SECOND_PASS_REEVALUATION = "BLOCKED_DPRIME_SECOND_PASS_REEVALUATION"
 BLOCKED_DPRIME_FOLLOWUP_ANSWER_PATH = "BLOCKED_DPRIME_FOLLOWUP_ANSWER_PATH"
+BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION = (
+    "BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION"
+)
 
 DEFAULT_PROVIDER_AUTHORIZED = "fixture_followup_search"
 _MAX_RESULTS_PER_TASK = 5
@@ -316,6 +325,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
     run_kernel_admission_decision_status: str = (
         DPRIME_RUN_KERNEL_ADMISSION_DECISION_ADMITTED
     ),
+    workbench_dprime_dossier: Mapping[str, Any] | None = None,
     provider_authorized: str = DEFAULT_PROVIDER_AUTHORIZED,
 ) -> RunKernelFollowupSearchReentryResult:
     """Run one default-off D-prime follow-up loop through ordinary search."""
@@ -683,6 +693,7 @@ def run_dprime_followup_search_reentry_using_ordinary_search(
             run_kernel_admission_decision_status=(
                 run_kernel_admission_decision_status
             ),
+            workbench_dprime_dossier=workbench_dprime_dossier,
         )
     except RunKernelFollowupSearchReentryError as exc:
         return _failed_result(failure_base, exc)
@@ -719,6 +730,7 @@ def _finish_second_pass(
     run_kernel: Any,
     contract_authority_ref: Mapping[str, Any],
     run_kernel_admission_decision_status: str,
+    workbench_dprime_dossier: Mapping[str, Any] | None,
 ) -> RunKernelFollowupSearchReentryResult:
     dprime = dict(second_dprime_status)
     dprime.update(second_model_review_result.to_status_overlay())
@@ -729,7 +741,125 @@ def _finish_second_pass(
         dprime.get("proposal_validation_status")
         == DPRIME_SUPPORT_PROPOSAL_VALIDATION_PASSED
     )
+    analyst_validation_required = analyst_finding_support_validation_required(
+        workbench_dprime_dossier
+    )
+    analyst_validation_ref: dict[str, Any] = {}
+    analyst_validation_satisfied = True
+    if analyst_validation_required:
+        analyst_validation = build_dprime_analyst_finding_support_validation(
+            workbench_dprime_dossier=workbench_dprime_dossier,
+            fetch_read_content_packet=followup_fetch_packet,
+        )
+        analyst_validation_ref = dprime_analyst_finding_support_validation_ref(
+            analyst_validation
+        )
+        analyst_validation_satisfied = support_validation_allows_runkernel_admission(
+            analyst_validation
+        )
+        dprime["dprime_analyst_finding_support_validation"] = analyst_validation
+        dprime["dprime_analyst_finding_support_validation_ref"] = (
+            analyst_validation_ref
+        )
+        dprime["dprime_analyst_finding_validation_status"] = (
+            analyst_validation_ref.get("dprime_validation_status")
+        )
+        dprime["dprime_analyst_finding_validation_product_proof_status"] = (
+            analyst_validation_ref.get("product_proof_status")
+        )
+        dprime["dprime_analyst_finding_validation_product_proof_blocker"] = (
+            analyst_validation_ref.get("product_proof_blocker")
+        )
+    dprime["dprime_analyst_finding_validation_required_for_product_path"] = (
+        analyst_validation_required
+    )
+    dprime["dprime_analyst_finding_validation_satisfied"] = (
+        analyst_validation_satisfied
+    )
+    objects_created["dprime_analyst_finding_support_validation"] = bool(
+        analyst_validation_required
+    )
+    dprime["objects_created"] = objects_created
+    analyst_validation_blocked = (
+        proposal_validated
+        and analyst_validation_required
+        and not analyst_validation_satisfied
+    )
+    proposal_validated = proposal_validated and analyst_validation_satisfied
     support_ref = _support_ref(dprime, proposal_validated)
+    if analyst_validation_blocked:
+        for key in (
+            "run_kernel_admission_decision",
+            "semantic_observation",
+            "component_coverage",
+            "sufficiency_readiness",
+            "final_answer_packet",
+            "author_answer",
+            "citation_source_display",
+        ):
+            objects_created[key] = False
+        dprime["objects_created"] = objects_created
+        validation_summary = _safe_mapping(
+            analyst_validation_ref.get("dprime_validation_summary_ref")
+        ).get("validation_summary") or (
+            "AnalystFindingProposal D-prime support validation failed closed"
+        )
+        summary = (
+            "D-prime AnalystFinding validation required before second-pass "
+            "RunKernel admission; follow-up AnalystFinding refresh required "
+            f"over follow-up evidence. {validation_summary}"
+        )
+        dprime["dprime_analyst_finding_validation_blocker"] = (
+            "followup_analyst_finding_refresh_required"
+        )
+        dprime["followup_analyst_finding_refresh_required"] = True
+        dprime["followup_analyst_finding_refresh_completed"] = False
+        dprime["legacy_candidate_level_dprime_review_treated_as_answer_authority"] = (
+            False
+        )
+        projection = {
+            **dict(base),
+            "status": "second_dprime_analyst_validation_blocked",
+            "failed_closed": True,
+            "first_failed_seam": "dprime_analyst_finding_support_validation",
+            "second_dprime_pass_status": "blocked",
+            "dprime_analyst_finding_validation_required": True,
+            "followup_analyst_finding_refresh_required": True,
+            "followup_analyst_finding_refresh_completed": False,
+            "dprime_analyst_finding_support_validation_ref": dict(
+                analyst_validation_ref
+            ),
+        }
+        return RunKernelFollowupSearchReentryResult(
+            decision=BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
+            blocker_detail=summary,
+            next_blocked_surface=(
+                "D-prime AnalystFindingProposal support validation"
+            ),
+            projection=_without_empty(projection),
+            dprime_status=dprime,
+            support_ref={
+                "status": BLOCKED_DPRIME_ANALYST_FINDING_SUPPORT_VALIDATION,
+                "dprime_analyst_finding_support_validation_ref": dict(
+                    analyst_validation_ref
+                ),
+                "reasons": [
+                    "AnalystFindingProposal support validation is required before second-pass RunKernel admission",
+                    "follow-up AnalystFinding refresh is required before downstream answer authority can open",
+                    summary,
+                ],
+            },
+            semantic_ref=_unavailable_semantic_ref(summary),
+            coverage_ref=_unavailable_coverage_ref(component_ref),
+            source_obligation_authority_ref={"status": "not reached"},
+            citation_eligibility_authority_ref={"status": "not reached"},
+            answer_path_ref={"status": "not reached"},
+            semantic_support_source=(
+                "unavailable; AnalystFindingProposal support validation blocked "
+                "D-prime second-pass admission"
+            ),
+            contract_authority_ref=contract_authority_ref,
+        )
     if not proposal_validated:
         projection = {
             **dict(base),
