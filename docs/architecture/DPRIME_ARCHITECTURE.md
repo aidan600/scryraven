@@ -1,10 +1,11 @@
 # D-prime architecture
 
-Status: Updated through DPRIME-MULTI-SOURCE-ANALYST-AND-SCRUTINY-01.
+Status: Updated through DPRIME-SYNTHESIS-VALIDATION-V0-01.
 Mode: BUILD.
-This overview documents implemented product-consumed D-prime authority. It does
-not license live/model/provider/search/fetch/read/retrieval calls,
-multi-component support aggregation, full Scrutineer remediation,
+This overview documents implemented product-consumed D-prime authority and the
+repo-visible synthesis validation contract. It does not license
+live/model/provider/search/fetch/read/retrieval calls, multi-component support
+aggregation, RunKernel graph/synthesis admission, full Scrutineer remediation,
 Economist/Specialist expansion, or product correctness.
 
 ## Purpose
@@ -45,6 +46,14 @@ synthesis claim S without inventing evidence, dropping caveats, erasing
 blockers, or changing component scope. It must not become the Cross-Component
 Analyst, choose the synthesis claim, authorize retrieval, admit support, reduce
 contract state, package FAP, or write Author prose.
+
+`DPRIME-SYNTHESIS-VALIDATION-V0-01` introduces
+`core.dprime_synthesis_validation` as a typed validation-only contract over
+Cross-Component Analyst Workbench V0 synthesis proposal refs. It emits
+validation, challenge, caveat-preservation, follow-up-need, and RunKernel
+consideration refs for the future `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01`
+checkpoint. It is not product-consumed graph admission and does not mutate
+AnswerContract, ComponentWorkGraph, or Workbench state.
 
 Candidate identity handoff from Workbench to D-prime is guarded before
 downstream answer authority. The Workbench expected D-prime candidate, D-prime
@@ -246,6 +255,11 @@ Implemented and consumed by the ordinary dry-run status path:
 - Product-status consumed one-component multi-source Analyst posture and narrow
   deterministic Scrutineer challenge gate in
   `core.dprime_multi_source_analyst_scrutiny_runtime`.
+- Validation-only cross-component synthesis contract in
+  `core.dprime_synthesis_validation`, which consumes
+  Cross-Component Analyst Workbench V0 proposal refs and emits validation,
+  challenge, follow-up-need, and RunKernel consideration refs for future graph
+  admission without becoming product support authority.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -492,8 +506,9 @@ single-relation fixture.
 Still not implemented or closed:
 
 - product correctness;
-- multi-component analyst intake;
-- multi-component support aggregation;
+- multi-component analyst intake by the ordinary product path;
+- RunKernel graph/synthesis admission;
+- multi-component support aggregation by the ordinary product path;
 - full Scrutineer remediation;
 - Economist/Specialist expansion;
 - live/model/provider/search/fetch/read/retrieval execution inside this status
