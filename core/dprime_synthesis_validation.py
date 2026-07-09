@@ -659,9 +659,9 @@ def validate_dprime_synthesis_validation_v0(
 def dprime_synthesis_validation_v0_ref(value: Mapping[str, Any] | None) -> dict[str, Any]:
     """Return a compact safe validation ref for future graph/admission phases."""
 
-    validation = _safe_mapping(value)
-    if not validation:
+    if not _safe_mapping(value):
         return {}
+    validation = validate_dprime_synthesis_validation_v0(value)
     return _without_empty(
         {
             "schema_version": validation.get("schema_version"),

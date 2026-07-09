@@ -43,6 +43,7 @@ from core.dprime_synthesis_validation import (
     VALIDATION_STATUS_SUPPORTED_WITH_CAVEATS,
     DPrimeSynthesisValidationError,
     dprime_synthesis_validation_v0_from_workbench,
+    dprime_synthesis_validation_v0_ref,
     validate_dprime_synthesis_validation_v0,
 )
 
@@ -72,6 +73,54 @@ def test_happy_path_accepts_two_component_synthesis_support_ref() -> None:
     assert validation["dprime_synthesis_created_author_output"] is False
     assert validation["dprime_synthesis_rendered_citations"] is False
     assert validation["dprime_synthesis_claimed_product_correctness"] is False
+
+
+def test_compact_ref_is_built_from_validated_artifact() -> None:
+    workbench = _workbench()
+    validation = _validation(workbench)
+
+    ref = dprime_synthesis_validation_v0_ref(validation)
+
+    assert ref["schema_version"] == "dprime_synthesis_validation_v0"
+    assert ref["phase"] == "DPRIME-SYNTHESIS-VALIDATION-V0-01"
+    assert ref["dprime_synthesis_validation_id"] == (
+        validation["dprime_synthesis_validation_id"]
+    )
+    assert ref["dprime_synthesis_validation_digest"] == (
+        validation["dprime_synthesis_validation_digest"]
+    )
+    assert ref["parent_run_id"] == validation["parent_run_id"]
+    assert ref["validation_status"] == validation["validation_status"]
+    assert ref["synthesis_proposal_refs"] == [
+        {
+            "schema_version": "synthesis_proposal_ref_v0",
+            "synthesis_proposal_id": _synthesis_identity(workbench)[0],
+            "synthesis_proposal_digest": _synthesis_identity(workbench)[1],
+            "proposal_only": True,
+        }
+    ]
+    assert ref["support_validation_ref_count"] == 1
+    assert ref["challenge_ref_count"] == 0
+    assert ref["runkernel_admission_created"] is False
+    assert ref["answer_contract_mutated"] is False
+    assert ref["retrieval_authorized"] is False
+    assert ref["product_correctness_claimed"] is False
+
+
+def test_compact_ref_rejects_runkernel_admission_tampering() -> None:
+    validation = _validation(_workbench())
+    validation["runkernel_admitted"] = True
+
+    with pytest.raises(DPrimeSynthesisValidationError):
+        dprime_synthesis_validation_v0_ref(validation)
+
+
+def test_compact_ref_rejects_raw_private_material() -> None:
+    validation = _validation(_workbench())
+    validation["support_validation_refs"][0]["raw_source_text"] = "private source text"
+
+    with pytest.raises(DPrimeSynthesisValidationError):
+        dprime_synthesis_validation_v0_ref(validation)
 
 
 def test_preserves_parent_graph_and_workbench_refs_without_mutation() -> None:
