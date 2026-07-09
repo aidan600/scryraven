@@ -1422,13 +1422,13 @@ def _validate_runkernel_output_ref_boundary(
         for key, raw in item.items():
             normalized_key = _normalize_key(key)
             normalized_value = _normalize_key(raw)
-            if (
-                normalized_key in _RUNKERNEL_OUTPUT_FORBIDDEN_TRUE_KEYS
-                and raw is True
-            ):
-                raise RunKernelComponentGraphAdmissionError(
-                    f"{field_name} RunKernel output ref attempts forbidden claim: {normalized_key}"
-                )
+            if normalized_key in _RUNKERNEL_OUTPUT_FORBIDDEN_TRUE_KEYS:
+                if raw is not False:
+                    raise RunKernelComponentGraphAdmissionError(
+                        f"{field_name} RunKernel output ref must keep "
+                        f"{normalized_key}=false"
+                    )
+                continue
             if not _is_status_key(normalized_key):
                 continue
             if normalized_key in _RUNKERNEL_OUTPUT_ALLOWED_STATUS_FIELDS:

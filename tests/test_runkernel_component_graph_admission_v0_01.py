@@ -365,12 +365,40 @@ def test_rejects_tampered_admission_decision_ref_dispatch_claim() -> None:
         validate_runkernel_component_graph_admission_v0(admission)
 
 
+def test_rejects_tampered_admission_decision_ref_non_false_dispatch_claim() -> None:
+    admission = _admission(_workbench())
+    admission["admission_decision_refs"][0]["search_dispatched"] = "true"
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
 @pytest.mark.parametrize("flag", ["called_provider", "retrieval_dispatched"])
 def test_rejects_tampered_admitted_synthesis_ref_provider_or_retrieval_claim(
     flag: str,
 ) -> None:
     admission = _admission(_workbench())
     admission["admitted_synthesis_refs"][0][flag] = True
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
+@pytest.mark.parametrize(
+    "flag, value",
+    [
+        ("graph_executed", "yes"),
+        ("retrieval_dispatched", 1),
+    ],
+)
+def test_rejects_tampered_admitted_synthesis_ref_non_false_claim(
+    flag: str,
+    value: Any,
+) -> None:
+    admission = _admission(_workbench())
+    admission["admitted_synthesis_refs"][0][flag] = value
     admission["runkernel_graph_admission_digest"] = None
 
     with pytest.raises(RunKernelComponentGraphAdmissionError):
@@ -386,6 +414,21 @@ def test_rejects_tampered_accepted_state_ref_contract_mutation_claim(
 ) -> None:
     admission = _admission(_workbench())
     admission[field_name][0]["answer_contract_mutated"] = True
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["accepted_graph_state_refs", "accepted_synthesis_state_refs"],
+)
+def test_rejects_tampered_accepted_state_ref_non_boolean_false_mutation_claim(
+    field_name: str,
+) -> None:
+    admission = _admission(_workbench())
+    admission[field_name][0]["answer_contract_mutated"] = "false"
     admission["runkernel_graph_admission_digest"] = None
 
     with pytest.raises(RunKernelComponentGraphAdmissionError):
@@ -409,6 +452,36 @@ def test_rejects_tampered_runkernel_output_ref_downstream_claims(flag: str) -> N
 
     with pytest.raises(RunKernelComponentGraphAdmissionError):
         validate_runkernel_component_graph_admission_v0(admission)
+
+
+def test_default_runkernel_output_refs_keep_identity_and_false_flags() -> None:
+    admission = _admission(_workbench())
+
+    validated = validate_runkernel_component_graph_admission_v0(admission)
+
+    output_refs = [
+        *validated["admission_decision_refs"],
+        *validated["admitted_synthesis_refs"],
+        *validated["accepted_graph_state_refs"],
+        *validated["accepted_synthesis_state_refs"],
+    ]
+    assert output_refs
+    for ref in output_refs:
+        assert ref["runkernel_owned_output_ref"] is True
+        assert ref["created_by_runkernel_component_graph_admission_v0"] is True
+        assert ref.get("admission_status", ADMISSION_STATUS_ADMITTED) in {
+            ADMISSION_STATUS_ADMITTED,
+            ADMISSION_STATUS_ADMITTED_WITH_CAVEATS,
+        }
+        for flag in (
+            "answer_contract_mutated",
+            "graph_executed",
+            "search_dispatched",
+            "retrieval_dispatched",
+            "product_correctness_claimed",
+        ):
+            if flag in ref:
+                assert ref[flag] is False
 
 
 @pytest.mark.parametrize(
