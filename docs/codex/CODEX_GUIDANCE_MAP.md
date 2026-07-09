@@ -445,8 +445,11 @@ content is explicitly pasted into the current prompt or committed here.
   ComponentWorkGraph V0 no-execution contract, proposal-only synthesis,
   synthesis D-prime validation, then RunKernel graph admission. Synthesis
   D-prime validation now routes through `core/dprime_synthesis_validation.py`
-  and `tests/test_dprime_synthesis_validation_v0_01.py`; it remains
-  validation-only until RunKernel graph/synthesis admission consumes it. Do not
+  and `tests/test_dprime_synthesis_validation_v0_01.py`; RunKernel
+  graph/synthesis admission now routes through
+  `core/runkernel_component_graph_admission.py` and
+  `tests/test_runkernel_component_graph_admission_v0_01.py`. Both remain
+  ref-only until a later product-consumed multi-component path opens. Do not
   build a fake graph, scheduler, parallel Analyst, D-prime-as-Analyst, FAP
   synthesis, Author glue, or direct retrieval dispatch path.
 - **Analyst Workbench runtime contract:** read
