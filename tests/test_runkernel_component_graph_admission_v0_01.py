@@ -356,6 +356,80 @@ def test_rejects_contract_amendment_refs_that_mutate_answer_contract() -> None:
         )
 
 
+def test_rejects_tampered_admission_decision_ref_dispatch_claim() -> None:
+    admission = _admission(_workbench())
+    admission["admission_decision_refs"][0]["search_dispatched"] = True
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
+@pytest.mark.parametrize("flag", ["called_provider", "retrieval_dispatched"])
+def test_rejects_tampered_admitted_synthesis_ref_provider_or_retrieval_claim(
+    flag: str,
+) -> None:
+    admission = _admission(_workbench())
+    admission["admitted_synthesis_refs"][0][flag] = True
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
+@pytest.mark.parametrize(
+    "field_name",
+    ["accepted_graph_state_refs", "accepted_synthesis_state_refs"],
+)
+def test_rejects_tampered_accepted_state_ref_contract_mutation_claim(
+    field_name: str,
+) -> None:
+    admission = _admission(_workbench())
+    admission[field_name][0]["answer_contract_mutated"] = True
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
+@pytest.mark.parametrize(
+    "flag",
+    [
+        "created_fap",
+        "created_author_output",
+        "created_source_display",
+        "rendered_citations",
+        "product_correctness_claimed",
+    ],
+)
+def test_rejects_tampered_runkernel_output_ref_downstream_claims(flag: str) -> None:
+    admission = _admission(_workbench())
+    admission["admission_decision_refs"][0][flag] = True
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
+@pytest.mark.parametrize(
+    "field_name, value",
+    [
+        ("status", "executed"),
+        ("authorization_status", "authorized"),
+    ],
+)
+def test_rejects_tampered_runkernel_output_ref_unapproved_status_values(
+    field_name: str,
+    value: str,
+) -> None:
+    admission = _admission(_workbench())
+    admission["admission_decision_refs"][0][field_name] = value
+    admission["runkernel_graph_admission_digest"] = None
+
+    with pytest.raises(RunKernelComponentGraphAdmissionError):
+        validate_runkernel_component_graph_admission_v0(admission)
+
+
 @pytest.mark.parametrize(
     "flag",
     [

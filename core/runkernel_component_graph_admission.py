@@ -299,6 +299,26 @@ _DANGEROUS_STATUS_VALUES = frozenset(
     }
 )
 
+_RUNKERNEL_OUTPUT_ALLOWED_STATUS_FIELDS = frozenset(
+    {
+        "admission_status",
+        "challenge_status",
+    }
+)
+
+_RUNKERNEL_OUTPUT_FORBIDDEN_TRUE_KEYS = frozenset(
+    {
+        *_DANGEROUS_TRUE_KEYS,
+        "evidence_admitted",
+        "fetch_read_called",
+        "graph_executed",
+        "model_called",
+        "retrieval_called",
+        "runtime_parallelism_created",
+        "support_admitted",
+    }
+)
+
 
 class RunKernelComponentGraphAdmissionError(ValueError):
     """Raised when RunKernel graph/synthesis admission V0 validation fails."""
@@ -1056,6 +1076,7 @@ def _validate_bound_output_refs(
             raise RunKernelComponentGraphAdmissionError(
                 f"{field_name} must be typed RunKernel-owned output refs"
             )
+        _validate_runkernel_output_ref_boundary(ref, field_name=field_name)
         if ref.get("runkernel_graph_admission_id") != admission_id:
             raise RunKernelComponentGraphAdmissionError(
                 f"{field_name} must bind to this admission id"
@@ -1386,6 +1407,43 @@ def _reject_status_laundering(value: Any, *, context: str, depth: int = 0) -> No
             _reject_status_laundering(item, context=context, depth=depth + 1)
 
 
+def _validate_runkernel_output_ref_boundary(
+    value: Any,
+    *,
+    field_name: str,
+) -> None:
+    forbidden = sorted(_collect_keys(value) & _FORBIDDEN_NORMALIZED_KEYS)
+    if forbidden:
+        raise RunKernelComponentGraphAdmissionError(
+            f"{field_name} RunKernel output ref includes forbidden raw/private material: "
+            + ", ".join(forbidden)
+        )
+    for item in _walk_mappings(value):
+        for key, raw in item.items():
+            normalized_key = _normalize_key(key)
+            normalized_value = _normalize_key(raw)
+            if (
+                normalized_key in _RUNKERNEL_OUTPUT_FORBIDDEN_TRUE_KEYS
+                and raw is True
+            ):
+                raise RunKernelComponentGraphAdmissionError(
+                    f"{field_name} RunKernel output ref attempts forbidden claim: {normalized_key}"
+                )
+            if not _is_status_key(normalized_key):
+                continue
+            if normalized_key in _RUNKERNEL_OUTPUT_ALLOWED_STATUS_FIELDS:
+                if normalized_value not in ALLOWED_ADMISSION_STATUSES:
+                    raise RunKernelComponentGraphAdmissionError(
+                        f"{field_name} RunKernel output ref carries invalid module-owned status: {normalized_key}"
+                    )
+                continue
+            if normalized_value in _DANGEROUS_STATUS_VALUES:
+                raise RunKernelComponentGraphAdmissionError(
+                    f"{field_name} RunKernel output ref carries forbidden status claim: "
+                    f"{normalized_key}={normalized_value}"
+                )
+
+
 def _dangerous_true_claims(value: Any) -> set[str]:
     found: set[str] = set()
     if isinstance(value, Mapping):
@@ -1426,6 +1484,23 @@ def _is_runkernel_output_ref(value: Mapping[str, Any]) -> bool:
         and value.get("runkernel_owned_output_ref") is True
         and value.get("created_by_runkernel_component_graph_admission_v0") is True
     )
+
+
+def _is_status_key(normalized_key: str) -> bool:
+    return normalized_key in _STATUS_KEYS or normalized_key.endswith("_status")
+
+
+def _walk_mappings(value: Any) -> list[dict[str, Any]]:
+    mappings: list[dict[str, Any]] = []
+    if isinstance(value, Mapping):
+        safe = _safe_mapping(value)
+        mappings.append(safe)
+        for item in safe.values():
+            mappings.extend(_walk_mappings(item))
+    elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
+        for item in value:
+            mappings.extend(_walk_mappings(item))
+    return mappings
 
 
 def _typed_ref(ref: Mapping[str, Any]) -> bool:
