@@ -171,7 +171,8 @@ or budget leases, and it must remain single-relation only.
 
 ## Future Roadmap Pointer
 
-These are future doctrine items, not active implementation in this phase:
+These are future doctrine items, with the currently introduced contract noted
+where it exists:
 
 - `COMPONENT-MODEL-ROLE-ROUTING-MATRIX-01`
 - `FAP-AUTHOR-BOUNDARY-INSPECTION-01`
@@ -179,7 +180,8 @@ These are future doctrine items, not active implementation in this phase:
 - `MULTI-COMPONENT-QUERY-PLANNING-01`
 - `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`
 - `CROSS-COMPONENT-SYNTHESIS-PROPOSAL-V0-01`
-- `DPRIME-SYNTHESIS-VALIDATION-V0-01`
+- `DPRIME-SYNTHESIS-VALIDATION-V0-01` - introduced as a validation-only
+  `core.dprime_synthesis_validation` contract over Workbench proposal refs.
 - `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01`
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 

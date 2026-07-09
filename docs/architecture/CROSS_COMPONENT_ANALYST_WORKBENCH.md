@@ -414,6 +414,11 @@ RunKernel admission, or downstream packaging.
 
 Mode: BUILD.
 
+Status: Introduced as `core.dprime_synthesis_validation` plus focused
+validation guards. It remains validation-only and is not RunKernel admission,
+AnswerContract mutation, graph execution, retrieval authorization, FAP, Author,
+source display, citation rendering, or product correctness.
+
 Purpose: Add synthesis D-prime validation over Cross-Component Analyst synthesis
 proposal refs, component refs, dependency refs, caveats, contradictions, and
 missing-evidence posture.
@@ -435,8 +440,9 @@ Fail/stop condition: D-prime has to choose the synthesis claim, perform
 Workbench analysis, authorize search, admit support, mutate contract state, or
 render prose.
 
-Likely files: D-prime architecture docs, possible synthesis validation contract
-if licensed, and narrow validation tests.
+Files: `core/dprime_synthesis_validation.py`,
+`tests/test_dprime_synthesis_validation_v0_01.py`, D-prime architecture docs,
+and narrow cross-component posture docs.
 
 Tests/checks: validation-shape guards, no Analyst replacement, no admission, no
 dispatch, no FAP/Author/source-display flags.
