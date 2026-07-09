@@ -491,6 +491,38 @@ Why this avoids fake graph, parallel Analyst, or Author glue: RunKernel admits
 typed refs and blockers only. Execution, scheduling, readiness, packaging, and
 rendering remain separate future phases.
 
+### 6. MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01
+
+Mode: BUILD.
+
+Status: Introduced as `core.multicomponent_serial_dry_run_checkpoint` plus
+focused serial-checkpoint guards. It is a review-only serial dry-run artifact
+over existing ComponentWorkNode, ComponentWorkGraph, Cross-Component Analyst
+Workbench, synthesis D-prime validation, and RunKernel graph/synthesis
+admission refs. It is not graph execution, scheduling, runtime parallelism,
+retrieval authorization, SufficiencyReadiness, FAP, Author, source display,
+citation rendering, source-obligation satisfaction, friend-level MVP, or
+product correctness.
+
+Purpose: Show that a small multi-component scenario can be represented
+serially, preserve component/dependency/caveat/blocker/nonclaim refs, and end in
+RunKernel-admitted or honestly blocked graph/synthesis state without opening
+runtime behavior.
+
+Files: `core/multicomponent_serial_dry_run_checkpoint.py`,
+`tests/test_multicomponent_serial_dry_run_planning_checkpoint_01.py`, and narrow
+crosslinks in this doctrine set.
+
+Tests/checks: serial checkpoint guards, no graph execution/scheduling/runtime
+parallelism, no provider/model/search/fetch/read/retrieval calls, no
+Sufficiency/FAP/Author/source-display/citation-rendering/source-obligation/
+product-correctness claims, and no raw/private retention.
+
+Why this avoids fake graph, parallel Analyst, or Author glue: the checkpoint
+consumes typed refs already created by the graph, Workbench, D-prime, and
+RunKernel admission contracts. It produces serial trace and review packet refs
+only, and those refs are explicitly non-answer and non-rendering artifacts.
+
 ## Non-Proofs
 
 This doctrine does not prove:

@@ -185,15 +185,22 @@ where it exists:
 - `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01` - introduced as a ref-only
   `core.runkernel_component_graph_admission` contract over ComponentWorkGraph,
   Workbench, and synthesis D-prime validation refs.
+- `MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` - introduced as a
+  review-only serial dry-run checkpoint in
+  `core.multicomponent_serial_dry_run_checkpoint` over graph, Workbench,
+  synthesis D-prime validation, and RunKernel admission refs.
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 
 ## Current Status
 
-Current implemented contract work through `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01`
-is still no-execution and ref-only. It does not open query-to-relation planning,
-multi-component planning, RunKernel DAG scheduling, budget lease implementation,
-model routing, FAP redesign, Author behavior, live dogfood behavior, or product
-correctness claims.
+Current implemented contract work through
+`MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` is still no-execution and
+ref-only. The checkpoint composes existing graph, Workbench, synthesis D-prime,
+and RunKernel admission refs into a reviewable serial artifact; it does not open
+query-to-relation planning, multi-component planning, RunKernel DAG scheduling,
+budget lease implementation, model routing, FAP redesign, Author behavior, live
+dogfood behavior, source display, citation rendering, source-obligation
+satisfaction, or product correctness claims.
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP.
 

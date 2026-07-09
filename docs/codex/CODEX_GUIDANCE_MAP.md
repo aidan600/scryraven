@@ -443,15 +443,20 @@ content is explicitly pasted into the current prompt or committed here.
   missing-component proposals, or cross-component recovery. The next safe
   sequence is Cross-Component Analyst Workbench doctrine/contract first,
   ComponentWorkGraph V0 no-execution contract, proposal-only synthesis,
-  synthesis D-prime validation, then RunKernel graph admission. Synthesis
+  synthesis D-prime validation, RunKernel graph admission, then the serial
+  dry-run checkpoint. Synthesis
   D-prime validation now routes through `core/dprime_synthesis_validation.py`
   and `tests/test_dprime_synthesis_validation_v0_01.py`; RunKernel
   graph/synthesis admission now routes through
   `core/runkernel_component_graph_admission.py` and
-  `tests/test_runkernel_component_graph_admission_v0_01.py`. Both remain
-  ref-only until a later product-consumed multi-component path opens. Do not
-  build a fake graph, scheduler, parallel Analyst, D-prime-as-Analyst, FAP
-  synthesis, Author glue, or direct retrieval dispatch path.
+  `tests/test_runkernel_component_graph_admission_v0_01.py`; the serial
+  dry-run checkpoint now routes through
+  `core/multicomponent_serial_dry_run_checkpoint.py` and
+  `tests/test_multicomponent_serial_dry_run_planning_checkpoint_01.py`. These
+  remain ref-only/review-only until a later product-consumed multi-component
+  path opens. Do not build a fake graph, scheduler, parallel Analyst,
+  D-prime-as-Analyst, FAP synthesis, Author glue, or direct retrieval dispatch
+  path.
 - **Analyst Workbench runtime contract:** read
   `docs/architecture/ANALYST_WORKBENCH_FULL_SLICE.md` before phases that touch
   candidate triage, candidate roles, strict support detection,
