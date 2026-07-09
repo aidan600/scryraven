@@ -57,12 +57,14 @@ def test_cross_component_doctrine_inventory_and_verdict_are_visible() -> None:
         "Follow-up / recovery re-entry",
         "RunKernel / AnswerContract / contract mutation",
         "SufficiencyReadiness / FAP / Author",
+        "Verdict target: NO-BUT-JUSTIFIED.",
         "Cross-Component Analyst Workbench doctrine/docs first.",
         "No graph code yet.",
         "No two-node proof yet.",
         "No FAP / Author / source display yet.",
     ):
         assert phrase in text
+    assert "YES-for-docs" not in text
 
 
 def test_cross_component_doctrine_blocks_wrong_authority_paths() -> None:

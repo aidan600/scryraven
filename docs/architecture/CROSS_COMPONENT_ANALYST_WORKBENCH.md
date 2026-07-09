@@ -6,7 +6,12 @@ Mode: REPAIR.
 
 Phase: `MULTICOMPONENT-CROSS-COMPONENT-ANALYST-DOCTRINE-01`.
 
-Verdict target: YES-for-docs.
+Verdict target: NO-BUT-JUSTIFIED.
+
+This is a docs/process REPAIR with no app delta. It is justified because it
+prevents fake graph scheduling, parallel Analyst drift, D-prime-as-Analyst,
+direct retrieval dispatch, FAP synthesis, and Author glue before the next Build
+checkpoint: `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`.
 
 This document defines the smallest safe next architecture step from the current
 same-component multi-source, `ComponentWorkNode`-shaped lane toward future
