@@ -97,6 +97,10 @@ def test_compact_ref_is_built_from_validated_artifact() -> None:
             "synthesis_proposal_id": _synthesis_identity(workbench)[0],
             "synthesis_proposal_digest": _synthesis_identity(workbench)[1],
             "proposal_only": True,
+            "synthesis_claim_ref": {
+                "claim_id": "claim:fee-applies-if-eligible",
+                "claim_digest": "claim-digest:fee-applies-if-eligible",
+            },
         }
     ]
     assert ref["support_validation_ref_count"] == 1
@@ -243,6 +247,46 @@ def test_rejects_synthesis_proposal_with_wrong_node_for_known_component() -> Non
         "schema_version": "component_work_node_v0",
         "node_id": "node:fee",
         "component_id": "component:eligibility",
+    }
+
+    with pytest.raises(DPrimeSynthesisValidationError):
+        validate_dprime_synthesis_validation_v0(artifact)
+
+
+def test_rejects_changed_nested_synthesis_claim_id() -> None:
+    artifact = _validation(_workbench())
+    artifact["synthesis_proposal_refs"][0]["synthesis_claim_ref"]["claim_id"] = (
+        "claim:changed"
+    )
+
+    with pytest.raises(DPrimeSynthesisValidationError):
+        validate_dprime_synthesis_validation_v0(artifact)
+
+
+def test_rejects_changed_nested_synthesis_claim_digest() -> None:
+    artifact = _validation(_workbench())
+    artifact["synthesis_proposal_refs"][0]["synthesis_claim_ref"]["claim_digest"] = (
+        "claim-digest:changed"
+    )
+
+    with pytest.raises(DPrimeSynthesisValidationError):
+        validate_dprime_synthesis_validation_v0(artifact)
+
+
+def test_rejects_removed_input_synthesis_claim_ref() -> None:
+    artifact = _validation(_workbench())
+    artifact["synthesis_proposal_refs"][0].pop("synthesis_claim_ref")
+
+    with pytest.raises(DPrimeSynthesisValidationError):
+        validate_dprime_synthesis_validation_v0(artifact)
+
+
+def test_rejects_added_synthesis_claim_ref_when_input_had_none() -> None:
+    workbench = _workbench(synthesis_proposal_refs=[_synthesis_ref_without_claim()])
+    artifact = _validation(workbench)
+    artifact["synthesis_proposal_refs"][0]["synthesis_claim_ref"] = {
+        "claim_id": "claim:added",
+        "claim_digest": "claim-digest:added",
     }
 
     with pytest.raises(DPrimeSynthesisValidationError):
@@ -675,6 +719,12 @@ def _synthesis_ref(**extra: Any) -> dict[str, Any]:
         support_posture="candidate_support_only",
         **extra,
     )
+
+
+def _synthesis_ref_without_claim() -> dict[str, Any]:
+    ref = _synthesis_ref()
+    ref.pop("synthesis_claim_ref", None)
+    return ref
 
 
 def _support_ref(workbench: Mapping[str, Any]) -> dict[str, Any]:

@@ -839,6 +839,9 @@ def _validate_synthesis_proposal_refs(
 ) -> list[dict[str, Any]]:
     refs = _safe_refs(value)
     expected = _proposal_identity_set(workbench_ref.get("synthesis_proposal_refs"))
+    expected_claims = _proposal_claim_identity_map(
+        workbench_ref.get("synthesis_proposal_refs")
+    )
     actual = _proposal_identity_set(refs)
     if expected and actual != expected:
         raise DPrimeSynthesisValidationError(
@@ -864,13 +867,28 @@ def _validate_synthesis_proposal_refs(
             raise DPrimeSynthesisValidationError(
                 "synthesis proposal refs must reference at least two known components"
             )
-        normalized.append(
-            {
-                **_json_safe(ref),
-                "component_node_refs": component_refs,
-                "proposal_only": True,
-            }
-        )
+        expected_claim = expected_claims.get(identity, {})
+        actual_claim = _synthesis_claim_identity_ref(ref.get("synthesis_claim_ref"))
+        if expected_claim and not actual_claim:
+            raise DPrimeSynthesisValidationError(
+                "D-prime synthesis validation cannot remove synthesis_claim_ref"
+            )
+        if not expected_claim and actual_claim:
+            raise DPrimeSynthesisValidationError(
+                "D-prime synthesis validation cannot add synthesis_claim_ref"
+            )
+        if expected_claim != actual_claim:
+            raise DPrimeSynthesisValidationError(
+                "D-prime synthesis validation cannot change synthesis_claim_ref"
+            )
+        normalized_ref = {
+            **_json_safe(ref),
+            "component_node_refs": component_refs,
+            "proposal_only": True,
+        }
+        if expected_claim:
+            normalized_ref["synthesis_claim_ref"] = dict(expected_claim)
+        normalized.append(normalized_ref)
     return normalized
 
 
@@ -1426,12 +1444,17 @@ def _synthesis_proposal_identity_refs(value: Any) -> list[dict[str, Any]]:
             continue
         seen.add(identity)
         refs.append(
-            {
-                "schema_version": ref.get("schema_version"),
-                "synthesis_proposal_id": proposal_id,
-                "synthesis_proposal_digest": proposal_digest,
-                "proposal_only": ref.get("proposal_only") is True,
-            }
+            _without_empty(
+                {
+                    "schema_version": ref.get("schema_version"),
+                    "synthesis_proposal_id": proposal_id,
+                    "synthesis_proposal_digest": proposal_digest,
+                    "proposal_only": ref.get("proposal_only") is True,
+                    "synthesis_claim_ref": _synthesis_claim_identity_ref(
+                        ref.get("synthesis_claim_ref")
+                    ),
+                }
+            )
         )
     return refs
 
@@ -1473,6 +1496,45 @@ def _proposal_identity_set(value: Any) -> set[tuple[str, str]]:
         if proposal_id and proposal_digest:
             identities.add((proposal_id, proposal_digest))
     return identities
+
+
+def _proposal_claim_identity_map(value: Any) -> dict[tuple[str, str], dict[str, str]]:
+    claims: dict[tuple[str, str], dict[str, str]] = {}
+    for item in _safe_sequence(value):
+        ref = _safe_mapping(item)
+        proposal_id = _clean_text(ref.get("synthesis_proposal_id"), limit=320)
+        proposal_digest = _clean_text(
+            ref.get("synthesis_proposal_digest"),
+            limit=128,
+        )
+        if proposal_id and proposal_digest:
+            claims[(proposal_id, proposal_digest)] = _synthesis_claim_identity_ref(
+                ref.get("synthesis_claim_ref")
+            )
+    return claims
+
+
+def _synthesis_claim_identity_ref(value: Any) -> dict[str, str]:
+    ref = _safe_mapping(value)
+    if not ref:
+        return {}
+    _reject_forbidden_material(ref, context="synthesis_claim_ref")
+    claim_id = _clean_text(
+        ref.get("claim_id") or ref.get("synthesis_claim_id"),
+        limit=320,
+    )
+    claim_digest = _clean_text(
+        ref.get("claim_digest") or ref.get("synthesis_claim_digest"),
+        limit=128,
+    )
+    if not claim_id or not claim_digest:
+        raise DPrimeSynthesisValidationError(
+            "synthesis_claim_ref requires claim id and digest"
+        )
+    return {
+        "claim_id": claim_id,
+        "claim_digest": claim_digest,
+    }
 
 
 def _component_node_index(
