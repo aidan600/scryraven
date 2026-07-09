@@ -83,6 +83,22 @@ def test_graph_counts_component_nodes_not_same_component_multi_source_counts() -
         validate_component_work_graph_v0(tampered)
 
 
+def test_graph_rejects_component_node_with_multiple_source_obligation_lanes() -> None:
+    node = _node_ref("component:fee", "node:fee")
+    node["source_obligation_lane_ids"].append("source-obligation:second")
+
+    with pytest.raises(ComponentWorkGraphError):
+        _graph(component_node_refs=[node], dependency_edges=[])
+
+
+def test_graph_rejects_component_node_with_mismatched_source_obligation_id() -> None:
+    node = _node_ref("component:fee", "node:fee")
+    node["source_obligation_id"] = "source-obligation:other"
+
+    with pytest.raises(ComponentWorkGraphError):
+        _graph(component_node_refs=[node], dependency_edges=[])
+
+
 def test_graph_preserves_dependency_edge_refs() -> None:
     graph = _graph()
     edge = graph["dependency_edges"][0]

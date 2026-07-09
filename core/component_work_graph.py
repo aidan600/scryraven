@@ -491,9 +491,16 @@ def _compact_component_node_ref(value: Any) -> dict[str, Any]:
             "ComponentWorkGraph component node refs must remain one component each"
         )
     source_lane_ids = _text_tuple(node.get("source_obligation_lane_ids"), limit=320)
-    if not source_lane_ids:
+    if len(source_lane_ids) != 1:
         raise ComponentWorkGraphError(
-            "ComponentWorkGraph component node ref missing source-obligation lane refs"
+            "ComponentWorkGraph component node ref must carry exactly one "
+            "source-obligation lane ref"
+        )
+    source_obligation_id = _clean_text(node.get("source_obligation_id"), limit=320)
+    if source_obligation_id and source_obligation_id != source_lane_ids[0]:
+        raise ComponentWorkGraphError(
+            "ComponentWorkGraph component node source_obligation_id must match "
+            "its single source-obligation lane ref"
         )
     compact = _without_empty(
         {
@@ -503,7 +510,7 @@ def _compact_component_node_ref(value: Any) -> dict[str, Any]:
             "component_id": component_id,
             "component_ids": [component_id],
             "source_obligation_lane_ids": list(source_lane_ids),
-            "source_obligation_id": node.get("source_obligation_id"),
+            "source_obligation_id": source_obligation_id,
             "node_status": node.get("node_status")
             or ref.get("component_work_node_v0_status"),
             "component_work_node_v0_digest": combined_digest,
