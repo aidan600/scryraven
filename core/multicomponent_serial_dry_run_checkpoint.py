@@ -509,7 +509,11 @@ def validate_multicomponent_serial_dry_run_checkpoint_v0(
                 f"serial dry-run checkpoint requires {key}"
             )
     _reject_forbidden_material(artifact, context="serial dry-run checkpoint V0")
-    _reject_status_laundering(artifact, context="serial dry-run checkpoint V0")
+    _reject_status_laundering(
+        artifact,
+        context="serial dry-run checkpoint V0",
+        allowed_status_context="serial_checkpoint",
+    )
     if artifact.get("schema_version") != (
         MULTICOMPONENT_SERIAL_DRY_RUN_CHECKPOINT_V0_SCHEMA_VERSION
     ):
@@ -670,7 +674,11 @@ def validate_multicomponent_serial_dry_run_checkpoint_v0(
         )
     normalized["checkpoint_digest"] = digest
     _reject_forbidden_material(normalized, context="serial dry-run checkpoint V0")
-    _reject_status_laundering(normalized, context="serial dry-run checkpoint V0")
+    _reject_status_laundering(
+        normalized,
+        context="serial dry-run checkpoint V0",
+        allowed_status_context="serial_checkpoint",
+    )
     return normalized
 
 
@@ -959,7 +967,11 @@ def _validate_admission_ref(value: Any) -> dict[str, Any]:
                 f"runkernel_graph_admission_ref must keep {key}=false"
             )
     _reject_forbidden_material(normalized, context="runkernel_graph_admission_ref")
-    _reject_status_laundering(normalized, context="runkernel_graph_admission_ref")
+    _reject_status_laundering(
+        normalized,
+        context="runkernel_graph_admission_ref",
+        allowed_status_context="runkernel_admission_ref",
+    )
     return normalized
 
 
@@ -1634,7 +1646,13 @@ def _reject_forbidden_material(value: Any, *, context: str) -> None:
         )
 
 
-def _reject_status_laundering(value: Any, *, context: str, depth: int = 0) -> None:
+def _reject_status_laundering(
+    value: Any,
+    *,
+    context: str,
+    depth: int = 0,
+    allowed_status_context: str | None = None,
+) -> None:
     if isinstance(value, Mapping):
         safe = _safe_mapping(value)
         if _is_runkernel_output_ref(safe):
@@ -1644,20 +1662,31 @@ def _reject_status_laundering(value: Any, *, context: str, depth: int = 0) -> No
             normalized_key = _normalize_key(key)
             normalized_value = _normalize_key(item)
             if (
-                normalized_key in _STATUS_KEYS
-                and normalized_value in _DANGEROUS_STATUS_VALUES
+                allowed_status_context == "serial_checkpoint"
+                and depth == 0
+                and normalized_key == "runkernel_graph_admission_ref"
             ):
-                if depth == 0 and normalized_key == "serial_dry_run_status":
-                    pass
-                elif normalized_key == "admission_status" and normalized_value in (
-                    ALLOWED_ADMISSION_STATUSES
+                _validate_admission_ref(item)
+                continue
+            if normalized_key == "admission_status":
+                if not (
+                    allowed_status_context == "runkernel_admission_ref"
+                    and depth == 0
+                    and normalized_value in ALLOWED_ADMISSION_STATUSES
                 ):
-                    pass
-                else:
                     raise MulticomponentSerialDryRunCheckpointError(
                         f"{context} carries forbidden status claim: "
                         f"{normalized_key}={normalized_value}"
                     )
+            elif (
+                normalized_key in _STATUS_KEYS
+                and normalized_value in _DANGEROUS_STATUS_VALUES
+                and not (depth == 0 and normalized_key == "serial_dry_run_status")
+            ):
+                raise MulticomponentSerialDryRunCheckpointError(
+                    f"{context} carries forbidden status claim: "
+                    f"{normalized_key}={normalized_value}"
+                )
             _reject_status_laundering(item, context=context, depth=depth + 1)
     elif isinstance(value, Sequence) and not isinstance(value, str | bytes):
         for item in value:

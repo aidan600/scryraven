@@ -67,8 +67,10 @@ from core.multicomponent_serial_dry_run_checkpoint import (
     validate_multicomponent_serial_dry_run_checkpoint_v0,
 )
 from core.runkernel_component_graph_admission import (
+    ADMISSION_STATUS_ADMITTED,
     ADMISSION_STATUS_ADMITTED_WITH_CAVEATS,
     ADMISSION_STATUS_BLOCKED,
+    ADMISSION_STATUS_CHALLENGED,
     ADMISSION_STATUS_RECOVERY_AUTHORIZED,
     runkernel_component_graph_admission_v0_from_refs,
 )
@@ -86,6 +88,12 @@ def test_happy_path_builds_reviewable_serial_checkpoint_packet() -> None:
     assert checkpoint["schema_version"] == "multicomponent_serial_dry_run_checkpoint_v0"
     assert checkpoint["phase"] == "MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01"
     assert checkpoint["serial_dry_run_status"] == SERIAL_DRY_RUN_STATUS_REPRESENTED
+    assert checkpoint["runkernel_graph_admission_ref"]["admission_status"] == (
+        ADMISSION_STATUS_ADMITTED
+    )
+    assert checkpoint["admitted_synthesis_refs"][0]["admission_status"] == (
+        ADMISSION_STATUS_ADMITTED
+    )
     assert checkpoint["parent_run_id"] == graph["parent_run_id"]
     assert checkpoint["user_query_ref"]["query_id"] == "query:n400-fee-and-eligibility"
     assert checkpoint["review_packet_refs"]
@@ -233,8 +241,14 @@ def test_blocked_checkpoint_preserves_blockers_without_admitted_synthesis() -> N
     checkpoint = _checkpoint(graph, workbench, validation, admission)
 
     assert checkpoint["serial_dry_run_status"] == SERIAL_DRY_RUN_STATUS_BLOCKED
+    assert checkpoint["runkernel_graph_admission_ref"]["admission_status"] == (
+        ADMISSION_STATUS_BLOCKED
+    )
     assert checkpoint["admitted_synthesis_refs"] == []
     assert checkpoint["blocked_synthesis_refs"]
+    assert checkpoint["blocked_synthesis_refs"][0]["admission_status"] == (
+        ADMISSION_STATUS_BLOCKED
+    )
     assert checkpoint["blocker_refs"] == [_blocker_ref()]
 
 
@@ -253,6 +267,9 @@ def test_accepts_challenged_state_without_admitted_synthesis() -> None:
     assert checkpoint["serial_dry_run_status"] == SERIAL_DRY_RUN_STATUS_CHALLENGED
     assert checkpoint["admitted_synthesis_refs"] == []
     assert checkpoint["challenge_refs"]
+    assert checkpoint["challenge_refs"][0]["challenge_status"] == (
+        ADMISSION_STATUS_CHALLENGED
+    )
 
 
 def test_accepts_bounded_recovery_authorized_state_without_dispatching() -> None:
@@ -279,7 +296,12 @@ def test_accepts_bounded_recovery_authorized_state_without_dispatching() -> None
     assert checkpoint["serial_dry_run_status"] == (
         SERIAL_DRY_RUN_STATUS_RECOVERY_AUTHORIZED
     )
+    assert checkpoint["runkernel_graph_admission_ref"]["admission_status"] == (
+        ADMISSION_STATUS_RECOVERY_AUTHORIZED
+    )
     recovery = checkpoint["recovery_authorization_refs"][0]
+    assert recovery["runkernel_owned_output_ref"] is True
+    assert recovery["created_by_runkernel_component_graph_admission_v0"] is True
     assert recovery["no_dispatch"] is True
     assert recovery["not_executed"] is True
     assert recovery["search_dispatched"] is False
@@ -427,6 +449,15 @@ def test_rejects_serial_trace_refs_that_claim_scheduling_execution_or_budget(
         validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
 
 
+def test_rejects_serial_trace_ref_with_admission_status() -> None:
+    checkpoint = _checkpoint(*_admitted_chain())
+    checkpoint["serial_trace_refs"][0]["admission_status"] = ADMISSION_STATUS_ADMITTED
+    checkpoint["checkpoint_digest"] = None
+
+    with pytest.raises(MulticomponentSerialDryRunCheckpointError):
+        validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
+
+
 @pytest.mark.parametrize(
     "flag",
     [
@@ -442,6 +473,28 @@ def test_rejects_serial_trace_refs_that_claim_scheduling_execution_or_budget(
 def test_rejects_review_packet_refs_that_claim_downstream_output(flag: str) -> None:
     checkpoint = _checkpoint(*_admitted_chain())
     checkpoint["review_packet_refs"][0][flag] = True
+    checkpoint["checkpoint_digest"] = None
+
+    with pytest.raises(MulticomponentSerialDryRunCheckpointError):
+        validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
+
+
+def test_rejects_review_packet_ref_with_admission_status() -> None:
+    checkpoint = _checkpoint(*_admitted_chain())
+    checkpoint["review_packet_refs"][0]["admission_status"] = (
+        ADMISSION_STATUS_ADMITTED
+    )
+    checkpoint["checkpoint_digest"] = None
+
+    with pytest.raises(MulticomponentSerialDryRunCheckpointError):
+        validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
+
+
+def test_rejects_blocker_ref_with_admission_status() -> None:
+    checkpoint = _checkpoint(*_admitted_chain())
+    blocker_ref = _blocker_ref()
+    blocker_ref["admission_status"] = ADMISSION_STATUS_ADMITTED
+    checkpoint["blocker_refs"] = [blocker_ref]
     checkpoint["checkpoint_digest"] = None
 
     with pytest.raises(MulticomponentSerialDryRunCheckpointError):
