@@ -26,6 +26,26 @@ D-prime remains the evidence-relative support judge; Workbench context does not
 admit support, satisfy source obligations, create citation eligibility, or open
 answer authority.
 
+Future cross-component synthesis doctrine is defined in
+[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
+It keeps D-prime at two levels:
+
+```text
+per-component evidence-relative support validation
+```
+
+and
+
+```text
+cross-component synthesis validation over component refs and dependency refs
+```
+
+Synthesis D-prime validates whether component A plus component B support
+synthesis claim S without inventing evidence, dropping caveats, erasing
+blockers, or changing component scope. It must not become the Cross-Component
+Analyst, choose the synthesis claim, authorize retrieval, admit support, reduce
+contract state, package FAP, or write Author prose.
+
 Candidate identity handoff from Workbench to D-prime is guarded before
 downstream answer authority. The Workbench expected D-prime candidate, D-prime
 relation intake candidate, selected source candidate, and source-display

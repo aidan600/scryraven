@@ -11,6 +11,12 @@ It does not license runtime changes, live validation, provider/model/search/
 fetch/read calls, new answer paths, Scrutineer implementation, source-challenge
 recovery, FAP/Author wording changes, or product correctness claims.
 
+Future cross-component doctrine lives in
+[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
+That doctrine adapts the same proposal-only Workbench posture for synthesis over
+compact component refs; it does not create a second Analyst authority path or
+open graph execution.
+
 ## Canonical Runtime Contract
 
 ### Workbench Role
@@ -43,6 +49,24 @@ The Workbench does not:
 - decide Sufficiency;
 - open source display;
 - claim product correctness.
+
+### Future Cross-Component Adaptation Boundary
+
+The future Cross-Component Analyst Workbench must inherit this proposal-only
+boundary. It may propose consistency, dependency, missing-component,
+contradiction, caveat, recovery, and synthesis refs over compact
+`ComponentWorkNode` outputs. It must hand those refs to synthesis D-prime and
+RunKernel rather than validating, admitting, searching, packaging, or rendering
+by itself.
+
+It must not become:
+
+- a parallel Analyst system beside this Workbench;
+- a ComponentWorkGraph executor or scheduler;
+- a retrieval dispatch path;
+- a D-prime substitute;
+- a Sufficiency/FAP/Author shortcut;
+- an Author glue layer over component finals.
 
 ### Candidate Role Semantics
 

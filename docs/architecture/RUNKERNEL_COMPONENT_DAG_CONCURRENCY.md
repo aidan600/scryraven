@@ -4,11 +4,14 @@ Status: architecture doctrine only for future multi-component work.
 
 Mode: BUILD.
 
+Current cross-component doctrine:
+[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
+
 ## Purpose
 
 Future multi-component and multi-hop work should be represented as a
-RunKernel-owned component dependency graph with budget leases, not a sequential
-checklist.
+RunKernel-owned component dependency graph with compact component refs and
+explicit admission boundaries, not a sequential checklist.
 
 This document does not implement component DAG scheduling, budget leases, model
 routing, query planning, or multi-component planning.
@@ -38,10 +41,10 @@ user question
 -> RunKernel authorizes graph/scheduling/budget leases
 -> independent nodes may run concurrently when dependencies are satisfied
 -> dependent nodes wait for inputs
--> final Analyst aggregation reviews component packets
--> RunKernel admits / blocks / challenges
--> FAP packages authorized output
--> Author renders
+-> Cross-Component Analyst Workbench proposes synthesis/dependency/gap posture
+-> synthesis D-prime validates synthesis support over component refs
+-> RunKernel admits / blocks / challenges / authorizes bounded recovery
+-> later Sufficiency/FAP/Author phases consume only admitted refs
 ```
 
 Planner and Analyst surfaces may propose decomposition. RunKernel owns
@@ -49,10 +52,23 @@ scheduling, budget leases, caps, custody, cancellation, and admission. Analyst
 must not directly launch parallel work. Concurrency must preserve authority, not
 bypass it.
 
+The unsafe path remains closed:
+
+```text
+component A final
++ component B final
++ component C final
+-> Author glues
+```
+
 ## Future ComponentWorkNode Contract Shape
 
-`ComponentWorkNode` is a future contract shape, not a current implementation.
-A future node may include:
+`ComponentWorkNode` V0 now exists as a typed projection over one current product
+component lane. It is not graph execution, scheduler authorization,
+multi-component planning, budget leasing, FAP, Author, citation rendering, or
+product correctness.
+
+A future graph-level node shape may include:
 
 - `node_id`
 - `parent_run_id`
@@ -100,11 +116,12 @@ Deep / Pro uses a larger graph, more specialist lanes/source classes,
 aggregation, recovery, and higher budgets. Larger budget does not change
 semantic authority.
 
-## Final Analyst Aggregation
+## Cross-Component Analyst Workbench
 
 Component success is not final answer authority.
 
-Final Analyst aggregation must review:
+Cross-Component Analyst Workbench is the proposal-only synthesis layer between
+per-component lanes and synthesis D-prime validation. It must review:
 
 - all component outputs;
 - conflicts;
@@ -116,8 +133,14 @@ Final Analyst aggregation must review:
 - whether synthesis is allowed;
 - whether answer should block.
 
-Only after final aggregation and RunKernel admission may FAP package authorized
-multi-component output for Author rendering.
+It may propose synthesis, dependency, missing-component, contradiction, caveat,
+and recovery refs. It must not validate its own synthesis, admit evidence,
+dispatch search, collapse component refs into untraceable summary, create a
+parallel Analyst system, or feed Author directly.
+
+Only after Cross-Component Analyst proposal, synthesis D-prime validation, and
+RunKernel admission may later phases consider Sufficiency/FAP/Author
+consumption.
 
 ## Model-Role Routing Pointer
 
@@ -154,7 +177,10 @@ These are future doctrine items, not active implementation in this phase:
 - `FAP-AUTHOR-BOUNDARY-INSPECTION-01`
 - `RUN-KERNEL-COMPONENT-DAG-AND-CONCURRENCY-BUDGET-01`
 - `MULTI-COMPONENT-QUERY-PLANNING-01`
-- `FINAL-ANALYST-AGGREGATION-PACKET-01`
+- `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`
+- `CROSS-COMPONENT-SYNTHESIS-PROPOSAL-V0-01`
+- `DPRIME-SYNTHESIS-VALIDATION-V0-01`
+- `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01`
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 
 ## Current Status
@@ -168,6 +194,7 @@ ScryRaven is not friend-level MVP and is not a general supported-query MVP.
 
 Related current posture docs:
 
+- [CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md)
 - [MVP_SUPPORTED_QUERY_CLASS_BOUNDARY.md](MVP_SUPPORTED_QUERY_CLASS_BOUNDARY.md)
 - [SOURCE_AUTHORITY_POSTURE.md](SOURCE_AUTHORITY_POSTURE.md)
 - [AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md](AG96C0_MODE_CONTRACT_COMPONENT_BUDGET_DOCTRINE.md)

@@ -91,6 +91,21 @@ The deterministic contract is not a substitute for semantic understanding.
 Semantic understanding is not a substitute for contract authority. RunKernel is
 not the LLM reasoner; it is the authority hub and reducer owner.
 
+Future multi-component doctrine is defined in
+[CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
+That path must remain:
+
+```text
+compact per-component refs
+-> Cross-Component Analyst Workbench proposal
+-> synthesis D-prime validation
+-> RunKernel admission / challenge / recovery authorization
+```
+
+It must not become component finals glued by FAP or Author, direct retrieval
+dispatch by Analyst/D-prime/ComponentWorkGraph, or graph execution hidden inside
+proposal/validation surfaces.
+
 ## 2. First Live Validation Boundary
 
 `AG-LIVE-XAXIS-VALIDATION-01A` PR1 introduced the RunKernel-owned
@@ -272,6 +287,10 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | ScrutineerReview | RunKernel-reduced supervisory review/sign-off layer for Analyst work product, not product authority. It can require remediation and reference FollowupSearchIntent proposal refs, but it does not authorize search or run remediation. Fast has no Scrutineer in MVP, Balanced uses Scrutineer on red flags and should preserve remediation budget when invoked, and Deep requires Scrutineer later without full Deep orchestration in this phase. |
 | AnalysisGapSearchProposal | Current reviewable proposal record inside `FollowupSearchIntentPacket`. It carries gap lineage, hints, and structural review readiness only; it is a proposal, not a dispatch. |
 | ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations and custody bindings exist. |
+| ComponentWorkNode | Current one-component typed projection over product-path refs. It does not create graph execution, scheduler authority, budget leases, FAP/Author/source-display output, citation rendering, or product-correctness claims. |
+| ComponentWorkGraph | Future no-execution graph ref surface only until separately licensed. It must not schedule runtime work, dispatch search, create budget leases, or feed Author directly. |
+| Cross-Component Analyst Workbench | Future proposal-only synthesis/dependency/gap layer over compact component refs. It proposes only; synthesis D-prime validates and RunKernel admits or authorizes recovery. |
+| Synthesis D-prime validation | Future validation layer over Cross-Component Analyst synthesis proposal refs, component refs, dependency refs, caveats, and blockers. It validates only and must not become Analyst, RunKernel, FAP, Author, or retrieval dispatch. |
 | ContractAmendmentRecord / admission / application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
 | AnswerContractAuthorityMap | Passive authority map over components, custody, binding, readiness, and FAP state. It does not mutate the contract. |
 | SufficiencyReadiness | RunKernel-owned pre-FAP readiness reducer. It produces component-level and answer-level readiness (`full_answer_ready`, `partial_answer_ready`, `blocked`, `followup_required`, `contested`, `insufficient_evidence`, `not_applicable`) plus safe FAP handoff preview refs and caveats. It does not create FinalAnswerPacket, Author input, citation eligibility, source-obligation satisfaction, current_answer_contract mutation, live calls, or product correctness. |
