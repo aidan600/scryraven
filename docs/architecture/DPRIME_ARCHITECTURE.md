@@ -1,6 +1,6 @@
 # D-prime architecture
 
-Status: Updated through RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01.
+Status: Updated through MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01.
 Mode: BUILD.
 This overview documents implemented product-consumed D-prime authority and the
 repo-visible synthesis validation and RunKernel graph/synthesis admission
@@ -272,6 +272,13 @@ status path:
   refs to emit admission, block, challenge, bounded recovery authorization, and
   graph/synthesis state refs without executing graph work or opening downstream
   product rendering.
+- Review-only serial dry-run checkpoint contract in
+  `core.multicomponent_serial_dry_run_checkpoint`, which consumes existing
+  graph, Workbench, synthesis D-prime validation, and RunKernel graph admission
+  refs to produce serial trace and review packet refs without executing graph
+  work, dispatching retrieval, performing validation/admission, opening
+  Sufficiency/FAP/Author/source display/citation rendering, satisfying source
+  obligations, or claiming product correctness.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
