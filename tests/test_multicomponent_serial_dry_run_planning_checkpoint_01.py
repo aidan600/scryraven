@@ -273,25 +273,7 @@ def test_accepts_challenged_state_without_admitted_synthesis() -> None:
 
 
 def test_accepts_bounded_recovery_authorized_state_without_dispatching() -> None:
-    graph = _graph()
-    workbench = _workbench(parent_graph_ref=graph)
-    validation = _validation_for_status(
-        workbench,
-        validation_status=VALIDATION_STATUS_FOLLOWUP_NEEDED,
-        followup_need_refs=True,
-    )
-    admission_id = "runkernel-component-graph-admission:test-recovery"
-    recovery_ref = _recovery_authorization_ref(workbench, validation, admission_id)
-    admission = _admission(
-        graph,
-        workbench,
-        validation,
-        runkernel_graph_admission_id=admission_id,
-        admission_status=ADMISSION_STATUS_RECOVERY_AUTHORIZED,
-        recovery_authorization_refs=[recovery_ref],
-    )
-
-    checkpoint = _checkpoint(graph, workbench, validation, admission)
+    checkpoint = _recovery_authorized_checkpoint()
 
     assert checkpoint["serial_dry_run_status"] == (
         SERIAL_DRY_RUN_STATUS_RECOVERY_AUTHORIZED
@@ -459,6 +441,25 @@ def test_rejects_serial_trace_ref_with_admission_status() -> None:
 
 
 @pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("provider_called", "true"),
+        ("model_called", 1),
+    ],
+)
+def test_rejects_serial_trace_reverse_call_aliases(
+    flag: str,
+    value: Any,
+) -> None:
+    checkpoint = _checkpoint(*_admitted_chain())
+    checkpoint["serial_trace_refs"][0][flag] = value
+    checkpoint["checkpoint_digest"] = None
+
+    with pytest.raises(MulticomponentSerialDryRunCheckpointError):
+        validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
+
+
+@pytest.mark.parametrize(
     "flag",
     [
         "created_fap",
@@ -490,10 +491,42 @@ def test_rejects_review_packet_ref_with_admission_status() -> None:
         validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
 
 
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("provider_called", "yes"),
+        ("model_called", 1),
+        ("fetch_read_called", "false"),
+        ("retrieval_called", "true"),
+    ],
+)
+def test_rejects_review_packet_reverse_call_aliases(
+    flag: str,
+    value: Any,
+) -> None:
+    checkpoint = _checkpoint(*_admitted_chain())
+    checkpoint["review_packet_refs"][0][flag] = value
+    checkpoint["checkpoint_digest"] = None
+
+    with pytest.raises(MulticomponentSerialDryRunCheckpointError):
+        validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
+
+
 def test_rejects_blocker_ref_with_admission_status() -> None:
     checkpoint = _checkpoint(*_admitted_chain())
     blocker_ref = _blocker_ref()
     blocker_ref["admission_status"] = ADMISSION_STATUS_ADMITTED
+    checkpoint["blocker_refs"] = [blocker_ref]
+    checkpoint["checkpoint_digest"] = None
+
+    with pytest.raises(MulticomponentSerialDryRunCheckpointError):
+        validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
+
+
+def test_rejects_typed_review_ref_with_reverse_call_alias() -> None:
+    checkpoint = _checkpoint(*_admitted_chain())
+    blocker_ref = _blocker_ref()
+    blocker_ref["retrieval_called"] = "false"
     checkpoint["blocker_refs"] = [blocker_ref]
     checkpoint["checkpoint_digest"] = None
 
@@ -575,6 +608,26 @@ def test_rejects_bounded_recovery_authorization_that_dispatches_retrieval() -> N
         )
 
 
+@pytest.mark.parametrize(
+    ("flag", "value"),
+    [
+        ("model_called", "yes"),
+        ("fetch_read_called", 1),
+        ("retrieval_called", "false"),
+    ],
+)
+def test_rejects_recovery_authorization_reverse_call_aliases(
+    flag: str,
+    value: Any,
+) -> None:
+    checkpoint = _recovery_authorized_checkpoint()
+    checkpoint["recovery_authorization_refs"][0][flag] = value
+    checkpoint["checkpoint_digest"] = None
+
+    with pytest.raises(MulticomponentSerialDryRunCheckpointError):
+        validate_multicomponent_serial_dry_run_checkpoint_v0(checkpoint)
+
+
 def test_runtime_imports_do_not_open_live_or_product_surfaces() -> None:
     imported, called = _imports_and_calls(CHECKPOINT_RUNTIME)
 
@@ -623,6 +676,27 @@ def _admitted_chain() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], d
     validation = _validation(workbench)
     admission = _admission(graph, workbench, validation)
     return graph, workbench, validation, admission
+
+
+def _recovery_authorized_checkpoint() -> dict[str, Any]:
+    graph = _graph()
+    workbench = _workbench(parent_graph_ref=graph)
+    validation = _validation_for_status(
+        workbench,
+        validation_status=VALIDATION_STATUS_FOLLOWUP_NEEDED,
+        followup_need_refs=True,
+    )
+    admission_id = "runkernel-component-graph-admission:test-recovery"
+    recovery_ref = _recovery_authorization_ref(workbench, validation, admission_id)
+    admission = _admission(
+        graph,
+        workbench,
+        validation,
+        runkernel_graph_admission_id=admission_id,
+        admission_status=ADMISSION_STATUS_RECOVERY_AUTHORIZED,
+        recovery_authorization_refs=[recovery_ref],
+    )
+    return _checkpoint(graph, workbench, validation, admission)
 
 
 def _admission(

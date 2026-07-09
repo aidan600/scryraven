@@ -212,12 +212,28 @@ _FORBIDDEN_NORMALIZED_KEYS = frozenset(
     }
 )
 
+_CLOSED_CALL_DISPATCH_FALSE_KEYS = frozenset(
+    {
+        "search_dispatched",
+        "retrieval_dispatched",
+        "called_provider",
+        "called_model",
+        "called_fetch_read",
+        "called_retrieval",
+        "provider_called",
+        "model_called",
+        "fetch_read_called",
+        "retrieval_called",
+    }
+)
+
 _ALLOWED_FALSE_KEYS = frozenset(
     {
         *SERIAL_CHECKPOINT_CLOSED_DOWNSTREAM_FLAGS,
         *SERIAL_CHECKPOINT_RAW_PRIVATE_RETENTION_FALSE_FLAGS,
         *GRAPH_CLOSED_DOWNSTREAM_FLAGS,
         *GRAPH_RAW_PRIVATE_RETENTION_FALSE_FLAGS,
+        *_CLOSED_CALL_DISPATCH_FALSE_KEYS,
         "admitted",
         "admitted_support",
         "answer_contract_mutated",
@@ -225,10 +241,6 @@ _ALLOWED_FALSE_KEYS = frozenset(
         "author_output_created",
         "author_ready",
         "budget_lease_created",
-        "called_fetch_read",
-        "called_model",
-        "called_provider",
-        "called_retrieval",
         "citation_eligible",
         "citation_rendered",
         "citation_rendering_created",
@@ -257,10 +269,8 @@ _ALLOWED_FALSE_KEYS = frozenset(
         "performed_runkernel_admission",
         "product_correctness_claimed",
         "rendered_citations",
-        "retrieval_dispatched",
         "runkernel_admitted",
         "scheduled_graph",
-        "search_dispatched",
         "source_display_created",
         "source_obligation_satisfaction_claimed",
         "source_obligation_satisfied",
@@ -272,6 +282,7 @@ _ALLOWED_FALSE_KEYS = frozenset(
 _DANGEROUS_TRUE_KEYS = frozenset(
     {
         *SERIAL_CHECKPOINT_CLOSED_DOWNSTREAM_FLAGS,
+        *_CLOSED_CALL_DISPATCH_FALSE_KEYS,
         "admitted_support",
         "answer_contract_mutated",
         "answer_created",
@@ -279,10 +290,6 @@ _DANGEROUS_TRUE_KEYS = frozenset(
         "author_output_created",
         "author_ready",
         "budget_lease_created",
-        "called_fetch_read",
-        "called_model",
-        "called_provider",
-        "called_retrieval",
         "citation_eligible",
         "citation_rendered",
         "citation_rendering_created",
@@ -307,12 +314,9 @@ _DANGEROUS_TRUE_KEYS = frozenset(
         "performed_dprime_validation",
         "performed_runkernel_admission",
         "product_correctness_claimed",
-        "provider_called",
         "rendered_citations",
         "retrieval_authorized",
-        "retrieval_dispatched",
         "scheduled_graph",
-        "search_dispatched",
         "source_display_created",
         "source_obligation_satisfaction_claimed",
         "source_obligation_satisfied",
@@ -1298,22 +1302,10 @@ def _validate_recovery_authorization_refs(
                 raise MulticomponentSerialDryRunCheckpointError(
                     "recovery authorization component refs must be known components"
                 )
-        for key in (
-            "search_dispatched",
-            "retrieval_dispatched",
-            "called_provider",
-            "called_model",
-            "called_fetch_read",
-            "called_retrieval",
-            "provider_called",
-            "model_called",
-            "fetch_read_called",
-            "retrieval_called",
-        ):
-            if ref.get(key) is True:
-                raise MulticomponentSerialDryRunCheckpointError(
-                    "recovery authorization refs must remain non-dispatching"
-                )
+        _reject_non_false_closed_call_dispatch_flags(
+            ref,
+            context="recovery authorization refs",
+        )
     return refs
 
 
@@ -1386,17 +1378,15 @@ def _validate_serial_trace_refs(
             "graph_executed",
             "runtime_parallelism_created",
             "budget_lease_created",
-            "search_dispatched",
-            "retrieval_dispatched",
-            "called_provider",
-            "called_model",
-            "called_fetch_read",
-            "called_retrieval",
         ):
             if ref.get(key) is not False:
                 raise MulticomponentSerialDryRunCheckpointError(
                     "serial_trace_refs must not claim scheduling, execution, parallelism, budget, or calls"
                 )
+        _reject_non_false_closed_call_dispatch_flags(
+            ref,
+            context="serial_trace_refs",
+        )
         refs.append(_json_safe(ref))
     if not refs:
         raise MulticomponentSerialDryRunCheckpointError(
@@ -1431,6 +1421,10 @@ def _validate_review_packet_refs(
             raise MulticomponentSerialDryRunCheckpointError(
                 "review_packet_refs must remain review artifacts only"
             )
+        _reject_non_false_closed_call_dispatch_flags(
+            ref,
+            context="review_packet_refs",
+        )
         for key in (
             "created_fap",
             "created_author_output",
@@ -1622,6 +1616,23 @@ def _validate_runkernel_output_ref_boundary(
                     f"{field_name} RunKernel output ref carries forbidden status claim: "
                     f"{normalized_key}={normalized_value}"
                 )
+
+
+def _reject_non_false_closed_call_dispatch_flags(
+    value: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    invalid = sorted(
+        key
+        for key in _CLOSED_CALL_DISPATCH_FALSE_KEYS
+        if key in value and value.get(key) is not False
+    )
+    if invalid:
+        raise MulticomponentSerialDryRunCheckpointError(
+            f"{context} call/dispatch flags must be absent or exactly false: "
+            + ", ".join(invalid)
+        )
 
 
 def _reject_forbidden_material(value: Any, *, context: str) -> None:
