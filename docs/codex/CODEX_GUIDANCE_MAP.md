@@ -436,6 +436,16 @@ content is explicitly pasted into the current prompt or committed here.
   single-lane answer path, follow-up re-entry, same-lane multi-source scrutiny,
   FAP, Author, or readiness, perform the capability inventory / reuse-first gate
   before adding a new surface.
+- **Cross-component Analyst Workbench doctrine:** read
+  `docs/architecture/CROSS_COMPONENT_ANALYST_WORKBENCH.md` before phases that
+  touch multi-component reasoning, ComponentWorkGraph, ComponentWorkNode lift,
+  synthesis proposals, synthesis D-prime, graph admission, dependency gaps,
+  missing-component proposals, or cross-component recovery. The next safe
+  sequence is Cross-Component Analyst Workbench doctrine/contract first,
+  ComponentWorkGraph V0 no-execution contract, proposal-only synthesis,
+  synthesis D-prime validation, then RunKernel graph admission. Do not build a
+  fake graph, scheduler, parallel Analyst, D-prime-as-Analyst, FAP synthesis,
+  Author glue, or direct retrieval dispatch path.
 - **Analyst Workbench runtime contract:** read
   `docs/architecture/ANALYST_WORKBENCH_FULL_SLICE.md` before phases that touch
   candidate triage, candidate roles, strict support detection,
