@@ -147,6 +147,20 @@ def test_missing_component_proposals_do_not_mutate_answer_contract() -> None:
         )
 
 
+@pytest.mark.parametrize("status", ["approved", "accepted"])
+def test_missing_component_proposals_reject_authority_status_values(
+    status: str,
+) -> None:
+    bad = _missing_component_ref("missing-component:effective-date")
+    bad["status"] = status
+
+    with pytest.raises(CrossComponentAnalystWorkbenchError):
+        _workbench(
+            analysis_status=ANALYSIS_STATUS_BLOCKED_MISSING_COMPONENT,
+            missing_component_proposal_refs=[bad],
+        )
+
+
 def test_recovery_requests_do_not_dispatch_or_claim_authorization() -> None:
     artifact = _workbench(
         analysis_status=ANALYSIS_STATUS_RECOVERY_PROPOSED,
@@ -177,6 +191,14 @@ def test_synthesis_proposals_require_two_distinct_known_component_refs() -> None
     assert synthesis["proposal_only"] is True
     assert len(artifact["component_refs_supporting_synthesis"]) == 2
     assert artifact["cross_component_analyst_validated_synthesis"] is False
+
+
+def test_synthesis_proposal_rejects_authorized_status_value() -> None:
+    with pytest.raises(CrossComponentAnalystWorkbenchError):
+        _workbench(
+            analysis_status=ANALYSIS_STATUS_SYNTHESIS_PROPOSED,
+            synthesis_proposal_refs=[_synthesis_ref(status="authorized")],
+        )
 
 
 def test_synthesis_proposal_rejects_single_component_ref() -> None:
@@ -397,6 +419,47 @@ def test_workbench_does_not_mutate_parent_graph_ref() -> None:
     assert artifact["parent_graph_ref"]["graph_id"] == original["graph_id"]
     assert artifact["parent_graph_ref"]["graph_status"] == original["graph_status"]
     assert artifact["parent_graph_mutated"] is False
+
+
+@pytest.mark.parametrize(
+    "status_key",
+    ["authorization_status", "runkernel_authorization_status"],
+)
+def test_non_recovery_proposal_refs_reject_authorization_status_values(
+    status_key: str,
+) -> None:
+    bad = _proposal(
+        "required_caveat",
+        "caveat:authority-status",
+        component_refs=[_fee_ref()],
+    )
+    bad[status_key] = "authorized"
+
+    with pytest.raises(CrossComponentAnalystWorkbenchError):
+        _workbench(required_caveat_refs=[bad])
+
+
+def test_proposal_only_happy_path_still_passes_after_status_hardening() -> None:
+    artifact = _workbench(
+        consistency_matrix_ref=_proposal(
+            "consistency_matrix",
+            "consistency:happy-path",
+            component_refs=[_fee_ref(), _elig_ref()],
+            status="proposed",
+        ),
+        required_caveat_refs=[
+            _proposal(
+                "required_caveat",
+                "caveat:proposal-only",
+                component_refs=[_fee_ref()],
+                status="proposed",
+            )
+        ],
+    )
+
+    assert validate_cross_component_analyst_workbench_v0(artifact) == artifact
+    assert artifact["consistency_matrix_ref"]["proposal_only"] is True
+    assert artifact["required_caveat_refs"][0]["status"] == "proposed"
 
 
 def test_workbench_does_not_populate_graph_future_refs() -> None:
