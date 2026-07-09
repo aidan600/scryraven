@@ -1,12 +1,14 @@
 # D-prime architecture
 
-Status: Updated through DPRIME-SYNTHESIS-VALIDATION-V0-01.
+Status: Updated through RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01.
 Mode: BUILD.
 This overview documents implemented product-consumed D-prime authority and the
-repo-visible synthesis validation contract. It does not license
+repo-visible synthesis validation and RunKernel graph/synthesis admission
+contracts. It does not license
 live/model/provider/search/fetch/read/retrieval calls, multi-component support
-aggregation, RunKernel graph/synthesis admission, full Scrutineer remediation,
-Economist/Specialist expansion, or product correctness.
+aggregation by the ordinary product path, full Scrutineer remediation,
+Economist/Specialist expansion, graph execution/scheduling, FAP/Author
+multi-component rendering, or product correctness.
 
 ## Purpose
 
@@ -255,11 +257,21 @@ Implemented and consumed by the ordinary dry-run status path:
 - Product-status consumed one-component multi-source Analyst posture and narrow
   deterministic Scrutineer challenge gate in
   `core.dprime_multi_source_analyst_scrutiny_runtime`.
+
+Repo-visible cross-component contracts not consumed by the ordinary product
+status path:
+
 - Validation-only cross-component synthesis contract in
   `core.dprime_synthesis_validation`, which consumes
   Cross-Component Analyst Workbench V0 proposal refs and emits validation,
-  challenge, follow-up-need, and RunKernel consideration refs for future graph
-  admission without becoming product support authority.
+  challenge, follow-up-need, and RunKernel consideration refs without becoming
+  product support authority.
+- Ref-only RunKernel graph/synthesis admission contract in
+  `core.runkernel_component_graph_admission`, which consumes ComponentWorkGraph
+  V0, Cross-Component Analyst Workbench V0, and synthesis D-prime validation
+  refs to emit admission, block, challenge, bounded recovery authorization, and
+  graph/synthesis state refs without executing graph work or opening downstream
+  product rendering.
 
 The real model-review route is strict one-shot product smart transport when
 licensed. Tests also exercise injected/fake callables for offline product-path
@@ -507,7 +519,8 @@ Still not implemented or closed:
 
 - product correctness;
 - multi-component analyst intake by the ordinary product path;
-- RunKernel graph/synthesis admission;
+- product-consumed RunKernel graph/synthesis admission beyond the deterministic
+  ref contract;
 - multi-component support aggregation by the ordinary product path;
 - full Scrutineer remediation;
 - Economist/Specialist expansion;

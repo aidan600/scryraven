@@ -182,12 +182,15 @@ where it exists:
 - `CROSS-COMPONENT-SYNTHESIS-PROPOSAL-V0-01`
 - `DPRIME-SYNTHESIS-VALIDATION-V0-01` - introduced as a validation-only
   `core.dprime_synthesis_validation` contract over Workbench proposal refs.
-- `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01`
+- `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01` - introduced as a ref-only
+  `core.runkernel_component_graph_admission` contract over ComponentWorkGraph,
+  Workbench, and synthesis D-prime validation refs.
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 
 ## Current Status
 
-This phase is documentation-only. It does not open query-to-relation planning,
+Current implemented contract work through `RUNKERNEL-COMPONENT-GRAPH-ADMISSION-V0-01`
+is still no-execution and ref-only. It does not open query-to-relation planning,
 multi-component planning, RunKernel DAG scheduling, budget lease implementation,
 model routing, FAP redesign, Author behavior, live dogfood behavior, or product
 correctness claims.

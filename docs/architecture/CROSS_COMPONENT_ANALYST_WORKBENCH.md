@@ -454,12 +454,18 @@ a Workbench proposal and remains non-authority until RunKernel admission.
 
 Mode: BUILD.
 
+Status: Introduced as `core.runkernel_component_graph_admission` plus focused
+validation guards. It is a RunKernel-owned ref admission contract only and is
+not graph execution, scheduling, runtime parallelism, retrieval authorization,
+SufficiencyReadiness, FAP, Author, source display, citation rendering, or
+product correctness.
+
 Purpose: Define RunKernel admission for no-execution ComponentWorkGraph and
 synthesis validation refs.
 
-Opened surfaces: RunKernel admission docs/contract/runtime only if licensed,
-admission request refs, admission decision refs, blocker/challenge refs, and
-contract mutation refs for accepted graph/synthesis state.
+Opened surfaces: RunKernel admission contract/runtime, admission decision refs,
+blocker/challenge refs, bounded recovery authorization refs, and candidate or
+accepted graph/synthesis state refs.
 
 Closed surfaces: scheduler, runtime parallelism, budget lease implementation,
 provider/model/search/fetch/read/retrieval execution, live validation,
@@ -474,8 +480,9 @@ Fail/stop condition: admission requires runtime graph scheduling, direct
 retrieval dispatch, live calls, FAP/Author changes, source display, citation
 rendering, or product-correctness claims.
 
-Likely files: RunKernel semantic-loop docs, possible admission contract/runtime
-if licensed, ComponentWorkGraph docs, and narrow tests.
+Files: `core/runkernel_component_graph_admission.py`,
+`tests/test_runkernel_component_graph_admission_v0_01.py`, RunKernel
+semantic-loop docs, ComponentWorkGraph docs, and narrow tests.
 
 Tests/checks: admission-shape guards, no execution/scheduling, no direct
 dispatch, no FAP/Author/source-display flags, and no raw/private retention.
@@ -495,7 +502,8 @@ This doctrine does not prove:
 - budget lease behavior;
 - Cross-Component Analyst runtime behavior;
 - synthesis D-prime runtime behavior;
-- RunKernel graph admission behavior;
+- product-consumed RunKernel graph admission behavior beyond this deterministic
+  ref contract;
 - retrieval quality;
 - live provider/model/search/fetch/read/retrieval behavior;
 - source-obligation satisfaction;
