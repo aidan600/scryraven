@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 
 import pytest
@@ -1016,7 +1017,85 @@ def test_scrutineer_material_caveats_invalidate_prior_validation() -> None:
         )
 
 
-def test_scrutineer_cannot_mutate_already_admitted_upstream_synthesis() -> None:
+def test_scrutineer_challenge_against_admitted_upstream_is_governed() -> None:
+    kernel, graph = _structured_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    graph = admit_synthesis_node_via_runkernel(run_kernel=kernel, synthesis_key="E")
+    graph = _validate_synthesis(kernel, graph, "S")
+    e_before = next(
+        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "E"
+    )
+    s_before = next(
+        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "S"
+    )
+    assert e_before["status"] == "admitted"
+    assert s_before["status"] == "validated"
+    assert e_before.get("runkernel_admission_ref")
+    assert s_before.get("dprime_validation_ref")
+
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "challenged",
+            "reasons": ["Upstream E is not supported by the admitted inputs."],
+            "challenged_synthesis_keys": ["E"],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        scrutineer_input_packet(graph),
+        logical_evaluation_key="full-case",
+    )
+    _seed_role_artifact(kernel, scrutiny, logical_evaluation_key="full-case")
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="scrutiny",
+        graph_candidate=graph_with_scrutineer(
+            graph,
+            scrutineer_artifact=scrutiny,
+        ),
+    )
+    e_node = next(
+        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "E"
+    )
+    s_node = next(
+        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "S"
+    )
+    assert e_node["status"] == "challenged"
+    assert not e_node.get("runkernel_admission_ref")
+    assert not e_node.get("dprime_validation_ref")
+    assert e_node.get("dprime_validated_node_revision") is None
+    assert e_node.get("dprime_validated_node_digest") is None
+    assert int(e_node["node_revision"]) > int(e_before["node_revision"])
+    assert s_node["status"] == "blocked_dependency"
+    assert not s_node.get("dprime_validation_ref")
+    assert not s_node.get("runkernel_admission_ref")
+    assert any(
+        ref.get("synthesis_key") == "E" for ref in graph.get("challenge_refs") or ()
+    )
+
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
+    )
+    assert graph["graph_status"] == "challenged_synthesis"
+
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 5},
+            multicomponent_graph_state=graph,
+        )
+    )
+    assert judgment.final_packet_inputs["admitted_synthesis_entries"] == []
+    assert len(judgment.final_packet_inputs["direct_component_entries"]) == 5
+    assert judgment.multicomponent_graph_consumption[
+        "graph_readiness_status"
+    ] == "challenged_synthesis"
+
+
+def test_scrutineer_material_caveat_against_admitted_upstream_is_governed() -> None:
     kernel, graph = _structured_graph()
     graph = _validate_synthesis(kernel, graph, "E")
     graph = admit_synthesis_node_via_runkernel(run_kernel=kernel, synthesis_key="E")
@@ -1025,19 +1104,138 @@ def test_scrutineer_cannot_mutate_already_admitted_upstream_synthesis() -> None:
         ROLE_SCRUTINEER,
         {
             "challenge_status": "passed_with_caveats",
-            "reasons": ["Late caveat."],
+            "reasons": ["Late material caveat against admitted E."],
             "challenged_synthesis_keys": [],
-            "caveats": ["Late caveat."],
-            "nonclaims": [],
+            "caveats": ["Late material caveat against admitted E."],
+            "nonclaims": ["Do not treat E as unconditionally settled."],
         },
         scrutineer_input_packet(graph),
         logical_evaluation_key="full-case",
     )
-    with pytest.raises(
-        ComponentWorkGraphV1Error,
-        match="already admitted synthesis",
-    ):
-        graph_with_scrutineer(graph, scrutineer_artifact=scrutiny)
+    _seed_role_artifact(kernel, scrutiny, logical_evaluation_key="full-case")
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="scrutiny",
+        graph_candidate=graph_with_scrutineer(
+            graph,
+            scrutineer_artifact=scrutiny,
+        ),
+    )
+    e_node = next(
+        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "E"
+    )
+    s_node = next(
+        item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "S"
+    )
+    assert e_node["status"] == "proposed"
+    assert not e_node.get("runkernel_admission_ref")
+    assert not e_node.get("dprime_validation_ref")
+    assert "Late material caveat against admitted E." in e_node["required_caveats"]
+    assert s_node["status"] in {"proposed", "blocked_dependency"}
+    assert not s_node.get("dprime_validation_ref")
+    assert not s_node.get("runkernel_admission_ref")
+
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
+    )
+    assert graph["graph_status"] in {
+        "missing_component_or_dependency",
+        "partial_independent_direct_output",
+        "unsupported_graph_posture",
+        "blocked_synthesis",
+    }
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 5},
+            multicomponent_graph_state=graph,
+        )
+    )
+    assert judgment.final_packet_inputs["admitted_synthesis_entries"] == []
+    assert len(judgment.final_packet_inputs["direct_component_entries"]) == 5
+
+
+def test_synthesis_dprime_and_scrutineer_packets_carry_bounded_admitted_claims() -> None:
+    kernel, graph = _structured_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    graph = admit_synthesis_node_via_runkernel(run_kernel=kernel, synthesis_key="E")
+
+    s_packet = synthesis_dprime_input_packet(graph, synthesis_key="S")
+    admitted_by_kind = {
+        item["node_kind"]: item for item in s_packet["current_admitted_inputs"]
+    }
+    component_input = next(
+        item
+        for item in s_packet["current_admitted_inputs"]
+        if item["node_kind"] == "component"
+    )
+    synthesis_input = admitted_by_kind["synthesis"]
+    assert component_input["claim_text"] == "Fact 5 is supported."
+    assert component_input["claim_id"] == "claim:5"
+    assert component_input["claim_digest"]
+    assert synthesis_input["claim_text"] == "E combines component 3 and component 4."
+    assert synthesis_input["synthesis_key"] == "E"
+    assert synthesis_input["claim_id"]
+    assert synthesis_input["claim_digest"]
+    assert synthesis_input["node_revision"]
+    assert synthesis_input["node_digest"]
+
+    scrutiny_packet = scrutineer_input_packet(graph)
+    component_claims = {
+        item["component_id"]: item["claim_text"]
+        for item in scrutiny_packet["component_refs"]
+    }
+    assert component_claims["component:component-3"] == "Fact 3 is supported."
+    assert component_claims["component:component-4"] == "Fact 4 is supported."
+    assert component_claims["component:component-5"] == "Fact 5 is supported."
+    synthesis_claims = {
+        item["synthesis_key"]: item["claim_text"]
+        for item in scrutiny_packet["synthesis_refs"]
+    }
+    assert synthesis_claims["E"] == "E combines component 3 and component 4."
+    assert synthesis_claims["S"] == "S combines E and component 5."
+
+    forbidden_markers = (
+        "raw_prompt",
+        "raw_model_response",
+        "provider_payload",
+        "OPENAI_API_KEY",
+        "https://northstar.example",
+        "system_prompt",
+    )
+    encoded = json.dumps(scrutiny_packet) + json.dumps(s_packet)
+    assert not any(marker in encoded for marker in forbidden_markers)
+
+    intact_digest = safe_packet_digest(s_packet)
+    tampered = deepcopy(s_packet)
+    tampered["current_admitted_inputs"][0]["claim_text"] = "Tampered claim text."
+    assert safe_packet_digest(tampered) != intact_digest
+
+    stale_artifact = _role_artifact(
+        ROLE_SYNTHESIS_DPRIME,
+        {
+            "validation_status": "supported",
+            "reasons": ["Stale packet must not apply."],
+            "caveats": [],
+            "nonclaims": [],
+            "blockers": [],
+        },
+        tampered,
+        logical_evaluation_key="S",
+    )
+    with pytest.raises(ComponentWorkGraphV1Error, match="input binding mismatch"):
+        graph_with_synthesis_validation(
+            graph,
+            synthesis_key="S",
+            dprime_artifact=stale_artifact,
+        )
+
+    removed = deepcopy(s_packet)
+    removed["current_admitted_inputs"] = removed["current_admitted_inputs"][1:]
+    assert safe_packet_digest(removed) != intact_digest
 
 
 def test_graph_validation_rejects_unrelated_synthesis_mutation() -> None:

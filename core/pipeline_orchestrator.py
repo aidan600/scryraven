@@ -3555,10 +3555,14 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         analyst_quant_packet_handoff_telemetry.update(assembly.quant_packet_handoff)
         return assembly.prefix
 
-    execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
-        run_kernel,
-        locals(),
-    )
+    # Qualifying selected 2-5-component requests execute the typed lane here so
+    # legacy Analyst/review are bypassed. Nonqualifying requests must not invoke
+    # the direct semantic producer before legacy review finalizes evidence.
+    if ordinary_multicomponent_path_selected(run_kernel):
+        execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+            run_kernel,
+            locals(),
+        )
     analyst_cached_prefix = _build_analyst_cached_prefix()
 
     _record_analyst_model_call = analyst_runtime_stage.build_analyst_model_call_recorder(

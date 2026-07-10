@@ -145,6 +145,66 @@ def _input_ref_from_node(node: Mapping[str, Any]) -> dict[str, Any]:
     return ref
 
 
+def _bounded_blocker_projection(blockers: Sequence[Any]) -> list[Any]:
+    projected: list[Any] = []
+    for item in blockers or ():
+        if isinstance(item, Mapping):
+            projected.append(
+                {
+                    key: item.get(key)
+                    for key in (
+                        "blocker_id",
+                        "blocker_kind",
+                        "reason",
+                        "blocker_reason",
+                        "status",
+                    )
+                    if item.get(key) is not None
+                }
+            )
+        elif isinstance(item, str):
+            cleaned = _clean_text(item, limit=240)
+            if cleaned:
+                projected.append(cleaned)
+    return projected
+
+
+def _bounded_semantic_role_input_from_node(node: Mapping[str, Any]) -> dict[str, Any]:
+    """Authority-bound identity plus bounded admitted semantic meaning for roles."""
+
+    projection = _input_ref_from_node(node)
+    projection["required_caveats"] = list(node.get("required_caveats") or ())
+    projection["preserved_nonclaims"] = list(node.get("preserved_nonclaims") or ())
+    projection["blocker_refs"] = _bounded_blocker_projection(
+        list(node.get("blocker_refs") or ())
+    )
+    if node.get("node_kind") == "component":
+        claim = _safe_mapping(node.get("admitted_claim_ref"))
+        projection["claim_text"] = claim.get("claim_text")
+        projection["claim_id"] = claim.get("claim_id")
+        projection["claim_digest"] = claim.get("claim_digest")
+        projection["admitted_claim_ref"] = {
+            key: claim.get(key)
+            for key in ("claim_id", "claim_text", "claim_digest")
+            if claim.get(key) is not None
+        }
+    else:
+        claim = _safe_mapping(node.get("synthesis_claim_ref"))
+        projection["claim_text"] = node.get("claim_text")
+        projection["claim_id"] = claim.get("claim_id")
+        projection["claim_digest"] = claim.get("claim_digest")
+        projection["synthesis_claim_ref"] = {
+            key: claim.get(key)
+            for key in ("claim_id", "claim_digest", "claim_text")
+            if claim.get(key) is not None
+        }
+        if "claim_text" not in projection["synthesis_claim_ref"] and node.get(
+            "claim_text"
+        ):
+            projection["synthesis_claim_ref"]["claim_text"] = node.get("claim_text")
+    return projection
+
+
 def cross_component_input_packet(
     *,
     component_nodes: Sequence[Mapping[str, Any]],
@@ -221,7 +281,9 @@ def synthesis_dprime_input_packet(
                 node.get("preserved_nonclaims") or ()
             ),
         },
-        "current_admitted_inputs": [_input_ref_from_node(item) for item in input_nodes],
+        "current_admitted_inputs": [
+            _bounded_semantic_role_input_from_node(item) for item in input_nodes
+        ],
     }
 
 
@@ -237,18 +299,16 @@ def scrutineer_input_packet(graph: Mapping[str, Any]) -> dict[str, Any]:
             "request_id": validated["request_id"],
         },
         "trigger_reasons": list(validated.get("scrutineer_trigger_reasons") or ()),
-        "component_refs": [_input_ref_from_node(item) for item in validated["component_nodes"]],
+        "component_refs": [
+            _bounded_semantic_role_input_from_node(item)
+            for item in validated["component_nodes"]
+        ],
         "synthesis_refs": [
             {
-                **_input_ref_from_node(item),
-                "claim_text": item.get("claim_text"),
+                **_bounded_semantic_role_input_from_node(item),
                 "input_node_refs": list(item.get("input_node_refs") or ()),
                 "dprime_validation_ref": _safe_mapping(
                     item.get("dprime_validation_ref")
-                ),
-                "required_caveats": list(item.get("required_caveats") or ()),
-                "preserved_nonclaims": list(
-                    item.get("preserved_nonclaims") or ()
                 ),
             }
             for item in validated["synthesis_nodes"]
@@ -618,10 +678,8 @@ def graph_with_scrutineer(
             # Clean / metadata-only attachment stays at graph scope so the
             # D-prime-validated node revision and digest remain exact.
             continue
-        if node.get("status") == "admitted":
-            raise ComponentWorkGraphV1Error(
-                "Scrutineer cannot silently mutate an already admitted synthesis"
-            )
+        # Material findings against admitted synthesis become governed
+        # challenge/invalidation posture rather than an unhandled exception.
         if challenged_here:
             node["status"] = "challenged"
             current["challenge_refs"].append(
@@ -632,15 +690,12 @@ def graph_with_scrutineer(
                 }
             )
         else:
-            # Material caveat/nonclaim drift invalidates prior validation.
+            # Material caveat/nonclaim drift requires revision before readiness.
             node["status"] = "proposed"
         node["required_caveats"] = merged_caveats
         node["preserved_nonclaims"] = merged_nonclaims
         node["scrutineer_ref"] = role_artifact_ref(artifact)
-        node["dprime_validation_ref"] = {}
-        node.pop("dprime_validated_node_revision", None)
-        node.pop("dprime_validated_node_digest", None)
-        node["runkernel_admission_ref"] = {}
+        _clear_synthesis_validation_and_admission(node)
         _refresh_node_digest(node)
     _invalidate_challenged_dependents(current)
     return _next_revision(current)
@@ -1243,11 +1298,20 @@ def _next_revision(graph: dict[str, Any]) -> dict[str, Any]:
     return validate_component_work_graph_v1(graph)
 
 
+def _clear_synthesis_validation_and_admission(node: dict[str, Any]) -> None:
+    node["dprime_validation_ref"] = {}
+    node.pop("dprime_validated_node_revision", None)
+    node.pop("dprime_validated_node_digest", None)
+    node["runkernel_admission_ref"] = {}
+
+
 def _invalidate_challenged_dependents(graph: dict[str, Any]) -> None:
-    challenged_ids = {
+    # Upstream nodes that lost readiness (challenge or material caveat/nonclaim
+    # drift) invalidate every dependent synthesis transitively.
+    invalidated_ids = {
         item["node_id"]
         for item in graph["synthesis_nodes"]
-        if item["status"] == "challenged"
+        if item["status"] in {"challenged", "proposed", "blocked", "blocked_dependency"}
     }
     changed = True
     while changed:
@@ -1255,10 +1319,11 @@ def _invalidate_challenged_dependents(graph: dict[str, Any]) -> None:
         for node in graph["synthesis_nodes"]:
             if node["status"] in {"challenged", "blocked_dependency"}:
                 continue
-            if any(ref["node_id"] in challenged_ids for ref in node["input_node_refs"]):
+            if any(ref["node_id"] in invalidated_ids for ref in node["input_node_refs"]):
                 node["status"] = "blocked_dependency"
+                _clear_synthesis_validation_and_admission(node)
                 _refresh_node_digest(node)
-                challenged_ids.add(node["node_id"])
+                invalidated_ids.add(node["node_id"])
                 changed = True
 
 
