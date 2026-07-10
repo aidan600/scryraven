@@ -12,7 +12,6 @@ PRIMARY_FIXTURES = [
 ]
 
 CURRENT_GUIDANCE = [
-    ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
     ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
     ROOT / "docs" / "codex" / "CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md",
 ]

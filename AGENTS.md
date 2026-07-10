@@ -1,229 +1,134 @@
-# Root AGENTS.md for ScryRaven
+# ScryRaven Coding Agent Contract
 
-Status: Active standing guidance for Codex tasks in this repository. This file is
-always loaded; use `docs/codex/CODEX_GUIDANCE_MAP.md` to route to
-task-specific guidance.
+Status: Active vendor-neutral standing guidance for every repository task.
+Use `docs/codex/CODEX_GUIDANCE_MAP.md` to route to task-specific procedures.
 
-## Project identity
+## Project and repository boundary
 
-ScryRaven is the public project name. Historical/internal compatibility names may
-remain where already supported: `proplex`, `python -m proplex`, `PROPLEX_*`,
-`proplex.db`, and `proplex_*` state keys.
+ScryRaven is the public project name. Existing compatibility names such as
+`proplex`, `python -m proplex`, `PROPLEX_*`, `proplex.db`, and `proplex_*` state
+keys remain supported unless a phase explicitly changes them.
 
-## Repo-doc boundary
+Use repository-visible files and the current task prompt. Do not treat external
+project sources or private workspace material as repository files unless their
+content is supplied in the prompt or committed here.
 
-Use repo-visible files and the current task prompt. Do not assume ChatGPT Project
-Sources are files in this repository unless their content is explicitly provided
-or committed here.
+## Safety and human authority
 
-## Default safety rules
+No live ScryRaven/proplex provider, model, search, fetch/read, or retrieval call
+is authorized by default. Do not access secrets, `.env`, API keys, raw provider
+or model payloads, raw prompts, database rows, private logs, caches, full raw
+traces, local output packets, or private artifacts unless a phase explicitly
+licenses safe, bounded, redacted access.
 
-No live ScryRaven/proplex provider, model, search, or retrieval calls by default.
-Do not access secrets, `.env`, API keys, raw provider payloads, raw prompts, DB
-rows, private logs, caches, full raw traces, local output packets, or private
-artifacts unless a phase explicitly scopes safe redacted access.
+Proceed autonomously through repository inspection, scoped implementation,
+focused offline validation, in-scope fixes, caused cross-link or formatting
+repairs, complete-diff review, and final reporting. Stop for a product decision,
+unresolved architecture fork, unlicensed or closed surface, live-call authority,
+private data, destructive Git, merge/rebase/force-push, broad scope expansion,
+or a failing check whose repair would change the phase's meaning.
 
-## Surface vocabulary
+The human operator selects the actual model and reasoning or intelligence level.
+Repository recommendations are advisory and must not force or silently escalate
+that selection. Reasoning level never expands scope, permissions, publication
+authority, live-call authority, or private-data access.
 
-Use current phase-boundary words precisely:
+## Product-path rule
 
-- **target surface** = the thing this phase is meant to inspect, change, reduce,
-  move, simplify, retire, or strangle.
-- **high-custody surface** = important/risky behavior that may be changed only
-  with narrow scope, named tests, and stop conditions.
-- **closed-this-phase surface** = do not touch in this phase.
-- **historical surface** = retained as record, not current doctrine or product
-  path.
-- **strangler target** = a surface to reduce, bypass, demote, subordinate, or
-  delete over time.
-- **licensed surface** = explicitly opened by the phase brief.
+Prefer reuse and ordinary product-path consumption over new parallel machinery.
+Before changing a mature capability or authority surface, inventory the current
+owner and consumer and classify the intended action as `REUSE`, `ADAPT`,
+`UPGRADE`, `RETIRE`, or `REPLACE`. Do not add a shadow answer path, authority,
+harness, proof, packet, projection, or registry without a named ordinary
+consumer or a named blocker it removes.
 
-"Protected" is retired as active phase-control vocabulary because it can imply
-"do not touch." When a surface is important and risky but intended to be changed,
-call it a high-custody target or strangler target, not protected.
+Product-facing work must reach the ordinary consumer named by the phase. New
+authority is incomplete until that consumer uses it and the old authority is
+deleted, demoted, bypassed, subordinated, or explicitly scheduled for
+retirement. Trace-, storage-, wrapper-, prompt-, or test-only adoption is not
+runtime consumption.
 
-## Bounded autonomy and escalation
+Detailed proof classes, harness requirements, and exception leashes are owned by
+`docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` and
+`docs/codex/PHASE_BRIEF_ADDENDA.md`.
 
-Proceed autonomously for relevant repo inspection, scoped implementation,
-in-scope tests, in-scope failure fixes, docs cross-link fixes caused by the
-phase, formatting/pre-commit fixes, self-review, final-bundle preparation, and PR
-creation when explicitly authorized.
+## Build / Proof / Repair gate
 
-Stop and ask for product choices, unresolved architecture forks, unlicensed or
-closed-this-phase surface changes, live validation, secrets/private data,
-destructive git, merge/rebase/force-push, broad scope expansion, or unresolved
-failing tests that imply a design decision.
-
-## Product-facing progress default
-
-Default to converting existing machinery into product-path output rather than
-adding new fixture/proof/projection layers. Every phase brief and final bundle
-should state the product-facing progress type, the actual user-facing or
-reviewable output delta, the actual consumer seam, existing machinery reused,
-new machinery introduced, old path treatment, and why the work is not
-reinventing an existing surface.
-
-Non-product phases are allowed only with an explicit non-product exception
-leash. The non-product exception leash must state proof class, reason
-product-path work is not licensed or safe in this phase, named blocker or
-current-path consumer, mandatory next product-path checkpoint, and explicit
-non-proofs. For the current post-#352 through #355 sequence, the mandatory next
-product checkpoint is tightly scoped limited live validation, not another proof
-layer or fixture dogfood checkpoint.
-
-Stop if actual app delta is vague, if a new harness/proof/packet/projection is
-proposed without a named current-path consumer or blocker removal, or if fixture
-or offline proof is being described as product correctness, live product
-validation, citation rendering, source-obligation satisfaction, or
-AuthorProse product proof.
-
-Skeptical outside-reviewer question:
-
-```text
-Is this finally building the app, or is it building convincing apparatus around the app?
-```
-
-A phase brief is invalid if a skeptical reviewer could fairly describe the
-deliverable as "a nice collection of harnesses" and the ordinary product path
-still cannot demonstrate the claimed behavior.
-
-## Phase mode gate
-
-Build / Proof / Repair is the active phase operating system. Every phase must
-declare exactly one mode:
+Every phase declares exactly one mode:
 
 ```text
 Mode: BUILD | PROOF | REPAIR
 ```
 
-"Prove Mode" is retired as a global workflow label. Proof is only a phase mode
-under Build / Proof / Repair, and it is an exception with a leash, non-claims, a
-named blocker, and a mandatory next Build/product checkpoint.
+BUILD is the default and delivers a coherent product-moving outcome through an
+ordinary user, CLI, API, or app consumer. PROOF is a bounded exception that
+answers one named blocker, states nonproofs, and names the mandatory next Build
+checkpoint. REPAIR removes a named integrity defect in product behavior or the
+repo-visible operating system and adds a practical regression guard when useful.
+Repo-doc Repair may target `NO-BUT-JUSTIFIED` only when it identifies the
+product-moving failure prevented and the next product checkpoint protected.
 
-BUILD is the default. A Build phase must move ScryRaven closer to answering real
-user questions, target a usable-answer verdict of YES, and produce a user-style
-input, local command, API path, app path, reviewable answer artifact, answer
-output behavior, product-path repair, or legacy-path deletion/quarantine that
-affects the user-answer flow. A Build PR may cross multiple internal seams when
-that is the smallest useful vertical slice.
+## Outcome-based phase sizing
 
-PROOF is an explicit exception. It must target NO-BUT-JUSTIFIED, answer a named
-technical question that blocks Build work, carry the non-product exception leash,
-state what cannot be claimed, identify throwaway/fixture/proof-only code, and
-name a mandatory next Build checkpoint. No second Proof phase for the same
-blocker is allowed without explicit user approval.
+A PR may be large when it implements one coherent product outcome through its
+ordinary consumer. Do not split solely because the outcome crosses several
+files, modules, authority seams, or internal implementation milestones.
 
-REPAIR fixes a named integrity defect in a product-moving path or in this
-repo-doc operating system. Product-path repair should target YES. Repo-doc or
-process repair may target NO-BUT-JUSTIFIED only when it names the
-product-moving failure it prevents and the next Build/product checkpoint it
-protects. Repair work should remove the defect, add a practical regression
-guard, make the path or operating system more honest, and avoid broad cleanup or
-new architecture.
+Split when work contains independent product decisions, unrelated consumers,
+materially different risk classes, or incompatible rollback boundaries. Small
+PRs remain valid and desirable when they are the natural coherent unit.
 
-## Harness labels and expiration
+## Substantial-task contract
 
-Every new harness, proof-only script, replay path, packet-only demo, or
-non-product scaffold must carry exactly one label:
-
-- **PRODUCT-PATH-REGRESSION:** a harness/test guarding behavior already consumed
-  by the ordinary product path. Healthy and durable.
-- **SEAM-DIAGNOSTIC:** a temporary harness to isolate a failure or uncertainty at
-  one seam. Must name the product seam and exit condition.
-- **INTEGRATION-STAGING:** a temporary scaffold used while wiring a real product
-  path. Must name the ordinary runtime consumer and integration deadline.
-- **EXPLORATORY-PROOF-ONLY:** non-product learning/proof. Must not be named like
-  product behavior and must have an integrate/reject/delete decision.
-- **SHADOW-PRODUCT-HARNESS:** a product-shaped alternate path beside the product.
-  This is failure unless explicitly authorized for review-only diagnosis.
-
-Required fields for any new harness/proof-only script/replay path:
+Express substantial work as:
 
 ```text
-Harness label:
-Ordinary product path guarded or fed:
-Runtime consumer:
-Why ordinary product-path work cannot be done directly:
-Integration deadline:
-Exit condition:
-Why this is not a shadow product path:
-Forbidden interpretation:
+Outcome:
+Constraints:
+Verification:
 ```
 
-A harness created in phase N should be consumed, converted to a product-path
-regression guard, deleted, or marked historical/proof-only debt by phase N+1. It
-may survive to N+2 only if N+1 exposed a specific blocker and N+2 is explicitly
-the integration/retirement phase. After N+2, unconsumed harness/proof scaffolding
-is historical/proof-only debt by default and must not be cited as product
-progress.
+Inspect the repository, form a compact internal plan, and proceed through related
+milestones without waiting for approval. Use checkpoint commits when useful,
+run focused checks during implementation, complete the ordinary consumer
+endpoint, review the entire diff against the base, fix in-scope findings, rerun
+affected validation, and return one final bundle. Stop only at the authority and
+decision boundaries above.
 
-## Local Codex publication model
+The default final bundle is: outcome and scope; material changes; verification
+evidence; self-review findings and fixes; risks and nonproofs; Git/PR status; and
+recommended next action. Add specialized appendices only when applicable.
 
-The normal sandbox may keep `.git/` and GitHub authentication protected. Do
-implementation, tests, formatting, and self-review inside the normal sandbox.
+## Validation and review
 
-When a phase explicitly authorizes publication, request at most one final
-escalation for `git add`, `git commit`, `git push`, and `gh pr create`. If Git or
-GitHub authentication is blocked, stop and report the exact blocker plus the
-commands the user can run to clear it.
+Use the smallest valid offline validation bucket and classify new tests before
+adding them to permanent manifests. Do not run live or secrets-backed checks
+unless explicitly licensed. Review the complete branch diff for correctness,
+authority boundaries, regressions, unnecessary machinery, stale-path retirement,
+security, and private-data exposure. Substantial BUILD phases also require the
+full implementation and skeptical-maintainer loop in the playbook.
 
-## Long-phase and goal-mode workflow
+## Git and publication
 
-For multi-step phases, prefer `/goal` or maintain an explicit checklist. Continue
-until the phase goal is complete, tests hit a real blocker, or a stop condition
-is reached.
+Preserve user changes and avoid destructive operations. Do not merge, rebase,
+force-push, delete branches, destructively clean, or mutate `main`. Commit,
+push, or create a pull request only when the phase or user explicitly authorizes
+publication. If the known publication path fails, report the exact failure; do
+not repair authentication, ACLs, SSH, OAuth, or sandbox configuration during an
+implementation phase.
 
-Do not ask for permission for ordinary scoped repo inspection, in-scope edits,
-targeted tests, formatting fixes, or self-review. Ask for product choices,
-unlicensed surfaces, live calls, secrets/private data, destructive Git,
-merge/rebase/force-push, or final Git publication if escalation is required.
+The canonical Windows sandbox and GitHub publication compatibility contract is
+`docs/codex/CODEX_LOCAL_WINDOWS_SANDBOX_PUBLICATION_RULE.md`.
 
-## Clean as you cook
+## Guidance routes
 
-Every implementation phase should attempt one adjacent cleanup near the touched
-surface. Acceptable cleanup includes deleting, demoting, or consolidating stale
-helpers, obsolete imports, misleading comments, duplicate fixtures, or superseded
-docs.
-
-Unacceptable cleanup includes adding a new abstraction, projection, lifecycle, or
-guard; broad unrelated refactors; or behavior changes outside scope. Final
-bundles should report whether cleanup was attempted, what changed, the net line
-impact when practical, and the blocker if no safe cleanup was available.
-
-## AG-89+ authority-collapse rule
-
-For AG-89+ work, authority-collapse success requires the intended runtime
-consumer to consume the new authority and the old authority path to be deleted,
-demoted, bypassed, subordinated, or scheduled for retirement. Trace-only,
-storage-only, wrapper-only, prompt-visible-only, or test-only authority is failure
-unless the phase is explicitly passive, docs-only, or instrumentation-only.
-
-## Orchestrator containment
-
-Do not add an orchestrator brain. The orchestrator may coordinate lifecycle flow
-and call bounded executors, but governing decisions should live in the accountable
-RunAuthority / RunKernel or canonical state path named by the phase.
-
-## Testing and final bundle
-
-Run focused offline checks appropriate to the phase. Do not run live/integration
-checks unless explicitly scoped. Final responses should summarize changed files,
-checks and results, licensed/closed-this-phase/target surfaces, live-validation
-status, PR status, and recommended final action.
-
-## Reasoning posture
-
-Use high diligence. If a Codex Cloud reasoning-effort setting is not visible, do
-not claim it was changed; proceed carefully.
-
-## Guidance entry points
-
-- `docs/codex/CODEX_GUIDANCE_MAP.md`
-- `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md`
-- `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md`
-- `docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md`
-- `docs/codex/EXECUTION_PLAN_TEMPLATE.md`
-- `docs/codex/PHASE_BRIEF_TEMPLATE.md`
-- `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md`
-- `docs/codex/CONTROLLER_AUTHORITY_IMPLEMENTATION_PLAYBOOK.md` only for legacy
-  Controller-handoff maintenance when explicitly selected
+- `docs/codex/CODEX_GUIDANCE_MAP.md` — task-to-owner routing
+- `docs/codex/ARCHITECTURE_GROOVE_PLAYBOOK.md` — phase workflow and review loop
+- `docs/codex/AGENTIC_CODING_OPERATING_PROFILE.md` — advisory execution profiles
+- `docs/codex/PHASE_BRIEF_TEMPLATE.md` — compact phase contract
+- `docs/codex/PHASE_BRIEF_ADDENDA.md` — conditional proof/live/harness/migration/delegation fields
+- `docs/codex/EXECUTION_PLAN_TEMPLATE.md` — optional multi-milestone plan
+- `docs/codex/PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md` — proof/product claims
+- `docs/codex/TEST_CLASSIFICATION_LIBRARY.md` and `docs/codex/VALIDATION_BUCKETS.md` — test scope
+- `docs/codex/RUNAUTHORITY_IMPLEMENTATION_GUIDE.md` — RunAuthority migrations
+- `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md` — current multi-component architecture

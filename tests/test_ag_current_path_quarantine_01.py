@@ -15,6 +15,7 @@ CODEX_GUIDANCE_DOC = DOCS / "codex" / "CODEX_GUIDANCE_MAP.md"
 PROOF_CLASS_DOC = DOCS / "codex" / "PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md"
 VALIDATION_BUCKETS_DOC = DOCS / "codex" / "VALIDATION_BUCKETS.md"
 PHASE_TEMPLATE_DOC = DOCS / "codex" / "PHASE_BRIEF_TEMPLATE.md"
+PHASE_ADDENDA_DOC = DOCS / "codex" / "PHASE_BRIEF_ADDENDA.md"
 PLAYBOOK_DOC = DOCS / "codex" / "ARCHITECTURE_GROOVE_PLAYBOOK.md"
 TEST_CLASSIFICATION_DOC = DOCS / "codex" / "TEST_CLASSIFICATION_LIBRARY.md"
 
@@ -28,6 +29,7 @@ CURRENT_GUIDANCE_DOCS = (
     PROOF_CLASS_DOC,
     VALIDATION_BUCKETS_DOC,
     PHASE_TEMPLATE_DOC,
+    PHASE_ADDENDA_DOC,
     PLAYBOOK_DOC,
     TEST_CLASSIFICATION_DOC,
 )
@@ -110,6 +112,7 @@ def test_surface_vocabulary_retires_protected_as_active_control_term() -> None:
 
 def test_current_authority_is_distinguished_from_product_consumed_path() -> None:
     combined = "\n".join(_source(path) for path in CURRENT_GUIDANCE_DOCS)
+    collapsed = _collapsed(combined)
     registry = _source(QUARANTINE_DOC)
 
     required = (
@@ -124,7 +127,7 @@ def test_current_authority_is_distinguished_from_product_consumed_path() -> None
         "Use current product-consumed path only when ordinary product/CLI/app flow actually consumes the behavior",
     )
     for phrase in required:
-        assert phrase in combined
+        assert phrase in combined or phrase in collapsed
 
     assert "SearchResultCandidatePacket" in registry
     assert "FetchReadContentPacket / SanitizedContentReference" in registry
@@ -136,6 +139,7 @@ def test_current_authority_is_distinguished_from_product_consumed_path() -> None
 
 def test_harness_labels_deadlines_and_forbidden_substitutes_are_required() -> None:
     combined = "\n".join(_source(path) for path in CURRENT_GUIDANCE_DOCS)
+    collapsed = _collapsed(combined)
 
     required = (
         "Harness label:",
@@ -167,7 +171,7 @@ def test_harness_labels_deadlines_and_forbidden_substitutes_are_required() -> No
         "Product-path fail condition:",
     )
     for phrase in required:
-        assert phrase in combined
+        assert phrase in combined or phrase in collapsed
 
 
 def test_current_path_registry_classifies_required_surfaces() -> None:

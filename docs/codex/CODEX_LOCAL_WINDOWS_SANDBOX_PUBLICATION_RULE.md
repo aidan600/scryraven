@@ -4,8 +4,11 @@ Status: Codex-visible publication guidance for local Windows ScryRaven phases.
 
 ## Preferred Local Codex Config
 
+The publication compatibility contract is the sandbox and approval posture
+below. Model and reasoning/intelligence selection is a separate human choice and
+is intentionally absent from this example.
+
 ```toml
-model_reasoning_effort = "xhigh"
 approval_policy = "on-request"
 approvals_reviewer = "auto_review"
 sandbox_mode = "workspace-write"
@@ -31,12 +34,19 @@ PR, passed CI, merged, and cleaned locally.
 
 This still is not Full Access. Prompt-level hard stops still apply.
 
+Reasoning/intelligence selection is independent from sandbox and publication
+permissions. A task-profile or reasoning recommendation does not alter access,
+scope, live-call authority, private-data access, or publication authority. The
+human operator selects the actual setting; the repository does not force or
+silently escalate it.
+
 ## Operating Rule
 
 Use the workspace sandbox for implementation, tests, inspection, and file edits.
 
 Git metadata and publication commands should use exact approved commands or
-whatever the current UI auto-review safely permits. Exact-command approvals may
+whatever the current UI auto-review safely permits. Phase-end push and draft-PR
+creation require explicit phase authorization. Exact-command approvals may
 include:
 
 ```text
@@ -47,7 +57,6 @@ git add <specific paths>
 git commit -m "<message>"
 git push origin HEAD:<branch>
 gh pr create ...
-git branch -D <temporary-branch>
 ```
 
 Do not request Full Access for ordinary ScryRaven implementation phases.
@@ -61,5 +70,7 @@ command, exit code, and output.
 Do not start auth repair, ACL repair, SSH-key setup, OAuth/device-flow
 scripting, or sandbox surgery during implementation phases.
 
-Do not merge, rebase, force-push, destructively clean, or repair
-auth/ACL/sandbox during implementation.
+Do not merge, rebase, force-push, delete branches, destructively clean, mutate
+`main`, or repair auth/ACL/sandbox during implementation. If the existing
+publication path fails, report the exact failure rather than attempting
+authentication, ACL, SSH, OAuth, or sandbox repair.

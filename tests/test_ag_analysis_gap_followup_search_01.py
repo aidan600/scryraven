@@ -34,7 +34,6 @@ ANALYST_MODULE = ROOT / "core" / "evidence_relative_analysis_packet.py"
 PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 DOCS = (
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
-    ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
     ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
 )
 LEGACY_AUDIT_DOC = (

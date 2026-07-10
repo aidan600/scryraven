@@ -394,7 +394,6 @@ def test_static_closed_surface_guard_for_answer_contract_binding_update() -> Non
 
 def test_docs_name_binding_complete_and_next_sufficiency_fap_gate() -> None:
     doc_paths = [
-        ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
         ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
         ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
         ROOT
@@ -410,7 +409,7 @@ def test_docs_name_binding_complete_and_next_sufficiency_fap_gate() -> None:
     assert "candidate links remain non-evidence" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
     assert "answercontractauthoritymap" in normalized
-    assert "component evidence/citation binding" in normalized
+    assert "per-component binding status consumes" in normalized
     assert "ag-sufficiency-fap-component-readiness-01" in normalized
     assert "sufficiencyjudgment and finalanswerpacket" in normalized
     assert "pr #322" in normalized
