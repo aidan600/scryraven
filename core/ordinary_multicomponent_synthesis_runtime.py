@@ -606,15 +606,22 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
 ) -> OrdinaryMulticomponentResult:
     """Select the typed lane before canonical semantic production."""
 
-    def direct_or_deferred() -> OrdinaryMulticomponentResult:
-        direct = execute_ordinary_semantic_producer_handoff_from_scope(
-            run_kernel,
-            runtime_scope,
-        )
+def direct_or_deferred() -> OrdinaryMulticomponentResult:
+    # The early scout-continuation call is selection-only.  It must not
+    # move the legacy direct semantic producer ahead of its established
+    # later ordinary handoff for nonqualifying requests.
+    if not execute_selected_lane:
         return OrdinaryMulticomponentResult(
             status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
-            direct_handoff=direct,
         )
+    direct = execute_ordinary_semantic_producer_handoff_from_scope(
+        run_kernel,
+        runtime_scope,
+    )
+    return OrdinaryMulticomponentResult(
+        status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
+        direct_handoff=direct,
+    )
 
     if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
         return OrdinaryMulticomponentResult(
