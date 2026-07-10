@@ -159,8 +159,9 @@ from core.ordinary_live_source_custody_runtime import (
     ORDINARY_LIVE_SOURCE_CUSTODY_TRACE_KEY,
     execute_ordinary_live_source_custody,
 )
-from core.ordinary_semantic_producer_runtime import (
-    execute_ordinary_semantic_producer_handoff_from_scope,
+from core.ordinary_multicomponent_synthesis_runtime import (
+    execute_ordinary_semantic_or_multicomponent_handoff_from_scope,
+    ordinary_multicomponent_path_completed,
 )
 from core.persistence_side_effects import execute_persistence_side_effects
 from core.pipeline import (
@@ -3062,7 +3063,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         answer_contract_projection = dict(_pre_recovery_answer_contract_projection)
         if not run_kernel.state.initial_answer_contract:
             final_top_evidence = list(all_passages)
-            execute_ordinary_semantic_producer_handoff_from_scope(
+            execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 run_kernel,
                 locals(),
             )
@@ -3553,6 +3554,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         analyst_quant_packet_handoff_telemetry.update(assembly.quant_packet_handoff)
         return assembly.prefix
 
+    execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+        run_kernel,
+        locals(),
+    )
     analyst_cached_prefix = _build_analyst_cached_prefix()
 
     _record_analyst_model_call = analyst_runtime_stage.build_analyst_model_call_recorder(
@@ -3575,11 +3580,18 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         pre_analyst_retrieval_gate=_pre_analyst_retrieval_gate,
         post_economist_analyst_gate=_post_economist_analyst_gate,
     )
-    analyst_runtime_outcome = (
-        analyst_runtime_stage.execute_analyst_runtime_stage_from_scope(
-            locals(), deps=analyst_runtime_deps
+    if ordinary_multicomponent_path_completed(run_kernel):
+        analyst_runtime_outcome = (
+            analyst_runtime_stage.multicomponent_analyst_bypass_outcome_from_scope(
+                locals()
+            )
         )
-    )
+    else:
+        analyst_runtime_outcome = (
+            analyst_runtime_stage.execute_analyst_runtime_stage_from_scope(
+                locals(), deps=analyst_runtime_deps
+            )
+        )
     (
         analysis,
         author_notes,
@@ -3623,9 +3635,16 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         select_providers=select_providers,
         choose_supplemental_search_depth=choose_supplemental_search_depth,
     )
-    legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(
-        locals(), deps=legacy_review_deps, default_system=DEFAULT_SYSTEM
-    )
+    if ordinary_multicomponent_path_completed(run_kernel):
+        legacy_review_outcome = (
+            legacy_review_runtime_stage.multicomponent_legacy_review_bypass_outcome_from_scope(
+                locals()
+            )
+        )
+    else:
+        legacy_review_outcome = legacy_review_runtime_stage.execute_legacy_review_runtime_stage_from_scope(
+            locals(), deps=legacy_review_deps, default_system=DEFAULT_SYSTEM
+        )
     analysis, author_notes, first_synth_sufficient, synth_was_insufficient, synth_deficiency, supplemental_ran, delta_urls_supplemental, synth_evaluator_seconds, analyst_seconds, scrutineer_ran, scrutineer_seconds, scrutineer_flags, scrutineer_high_count, scrutineer_remediation_queries, scrutineer_remediation_dispatch_authorized, scrutineer_remediation_dispatch_posture, scrutineer_remediation_provider_role, scrutineer_remediation_providers, scrutineer_remediation_linkup_depth_override, scrutineer_remediation_evidence, scrutineer_remediation_resynthesis_triggered, scrutineer_pass_flags_directly_to_author, final_top_evidence, unique_source_urls = legacy_review_outcome.orchestrator_values()
     final_evidence_handoff = final_evidence_handoff_from_legacy_review(
         final_evidence_handoff,
@@ -3678,7 +3697,10 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
     author_notes = author_prompt_assembly.author_notes
 
     status.step("Judging final answer sufficiency...")
-    execute_ordinary_semantic_producer_handoff_from_scope(run_kernel, locals())
+    execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+        run_kernel,
+        locals(),
+    )
     _semantic_gap_search_judgment_input = build_search_judgment_input_from_runtime(
         contract_projection=run_contract_projection,
         evidence_ledger_projection=evidence_ledger_projection,

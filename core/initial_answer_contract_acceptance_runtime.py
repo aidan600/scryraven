@@ -176,6 +176,12 @@ def _accepted_component_ref(component: Mapping[str, Any]) -> dict[str, Any]:
         "component_id": _clean_token(component.get("component_id")),
         "component_revision": _clean_token(component.get("component_revision")),
         "component_digest": _clean_token(component.get("component_digest"), limit=128),
+        "user_facing_label": _clean_text(
+            component.get("user_facing_label"), limit=220
+        ),
+        "user_facing_question": _clean_text(
+            component.get("user_facing_question"), limit=500
+        ),
         "requirement_posture": _clean_token(component.get("requirement_posture")),
         "materiality": _clean_token(component.get("materiality")),
         "allowed_support_kinds": _text_tuple(component.get("allowed_support_kinds")),
@@ -217,6 +223,7 @@ def _contract_content_digest_payload(state_core: Mapping[str, Any]) -> dict[str,
         "accepted_answer_component_refs": state_core.get("accepted_answer_component_refs"),
         "accepted_semantic_slot_refs": state_core.get("accepted_semantic_slot_refs"),
         "materiality_policy": state_core.get("materiality_policy"),
+        "question_meaning_metadata": state_core.get("question_meaning_metadata", {}),
         "lineage": lineage,
     }
 
@@ -396,6 +403,12 @@ def build_initial_answer_contract_acceptance_state(
 
     materiality_policy = record.get("materiality_policy")
     materiality_policy = _json_safe(materiality_policy) if isinstance(materiality_policy, Mapping) else {}
+    question_meaning_metadata = record.get("metadata")
+    question_meaning_metadata = (
+        _json_safe(question_meaning_metadata)
+        if isinstance(question_meaning_metadata, Mapping)
+        else {}
+    )
 
     lineage = {
         "created_by": INITIAL_ANSWER_CONTRACT_ACCEPTANCE_OWNER,
@@ -425,6 +438,7 @@ def build_initial_answer_contract_acceptance_state(
         "material_ambiguity_count": material_ambiguity_count,
         "material_ambiguity_preserved": True,
         "materiality_policy": materiality_policy,
+        "question_meaning_metadata": question_meaning_metadata,
         "lineage": lineage,
         # Closed surfaces remain closed for this acceptance bridge.
         "question_interpreted": False,
@@ -499,6 +513,9 @@ def build_initial_answer_contract_acceptance_projection(
         "accepted_semantic_slot_count": len(slot_refs),
         "material_ambiguity_count": acceptance_state.get("material_ambiguity_count", 0),
         "material_ambiguity_preserved": acceptance_state.get("material_ambiguity_preserved", True),
+        "question_meaning_metadata": acceptance_state.get(
+            "question_meaning_metadata", {}
+        ),
         "lineage": acceptance_state.get("lineage", {}),
         "coverage_created": False,
         "amendment_created": False,

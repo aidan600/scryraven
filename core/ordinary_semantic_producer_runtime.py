@@ -371,6 +371,17 @@ def build_question_meaning_record_from_search_work_plan(
             "phase": "AG-SEM-MULTI-01",
             "ordinary_semantic_producer": True,
             "bounded_component_cap": ORDINARY_SEMANTIC_PRODUCER_COMPONENT_CAP,
+            "explicit_factual_component_list": bool(
+                _safe_mapping(assessment.metadata).get(
+                    "explicit_factual_component_list"
+                )
+            ),
+            "requested_synthesis_directive": _clean_text(
+                _safe_mapping(assessment.metadata).get(
+                    "requested_synthesis_directive"
+                ),
+                limit=360,
+            ),
         },
     ).require_valid()
 

@@ -197,6 +197,47 @@ class AnalystRuntimeOutcome(_AnalystRuntimeOutcomeBase):
         return tuple(self)
 
 
+def multicomponent_analyst_bypass_outcome_from_scope(
+    scope: Mapping[str, Any],
+) -> AnalystRuntimeOutcome:
+    """Keep the legacy Analyst lane closed after Graph V1 has completed."""
+
+    reason = "ordinary_multicomponent_graph_v1_completed"
+    return AnalystRuntimeOutcome(
+        analysis="",
+        author_notes=str(scope.get("author_notes") or ""),
+        analyst_seconds=float(scope.get("analyst_seconds") or 0.0),
+        pre_analyst_gate={"analyst_skipped": True, "analyst_skip_reason": reason},
+        post_economist_gate={
+            "analyst_skipped_after_economist": True,
+            "analyst_after_economist_skip_reason": reason,
+            "economist_output_used_as_analysis": False,
+        },
+        pre_gate_failure_card_show=False,
+        pre_gate_failure_card_reason=None,
+        pre_analyst_gate_contract={},
+        pre_analyst_gate_handoff={},
+        analyst_skipped=True,
+        analyst_skip_reason=reason,
+        post_retrieval_fast_path_used=True,
+        pre_analyst_gate_signals=[reason],
+        estimate_from_priors_blocked_by_pre_analyst_gate=False,
+        economist_ran=bool(scope.get("economist_ran")),
+        economist_preflight_allowed=bool(
+            scope.get("economist_preflight_allowed")
+        ),
+        economist_preflight_block_reason=scope.get(
+            "economist_preflight_block_reason"
+        ),
+        economist_preflight_missing_entities=list(
+            scope.get("economist_preflight_missing_entities") or ()
+        ),
+        analyst_skipped_after_economist=True,
+        analyst_after_economist_skip_reason=reason,
+        economist_output_used_as_analysis=False,
+    )
+
+
 def build_analyst_model_call_recorder(telemetry: MutableMapping[str, Any]) -> Callable[[str], None]:
     """Create the legacy Analyst model-call telemetry mutator."""
     def _record_analyst_model_call(prompt: str) -> None:

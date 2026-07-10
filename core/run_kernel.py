@@ -714,6 +714,23 @@ class ActionType(str, Enum):
         "component_gap_recovery_semantic_delta_commit"
     )
     SEMANTIC_PRODUCER_BUNDLE_COMMIT = "semantic_producer_bundle_commit"
+    MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE = (
+        "multicomponent_component_analyst_execute"
+    )
+    MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE = (
+        "multicomponent_component_dprime_execute"
+    )
+    MULTICOMPONENT_CROSS_ANALYST_EXECUTE = (
+        "multicomponent_cross_analyst_execute"
+    )
+    MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE = (
+        "multicomponent_synthesis_dprime_execute"
+    )
+    MULTICOMPONENT_SCRUTINEER_EXECUTE = "multicomponent_scrutineer_execute"
+    MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE = (
+        "multicomponent_component_admission_reduce"
+    )
+    MULTICOMPONENT_GRAPH_REDUCE = "multicomponent_graph_reduce"
     CONTRACT_AMENDMENT_ADMIT = "contract_amendment_admit"
     CONTRACT_AMENDMENT_APPLY = "contract_amendment_apply"
     DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORITY = (
@@ -807,6 +824,23 @@ class ObservationType(str, Enum):
         "component_gap_recovery_semantic_delta_committed"
     )
     SEMANTIC_PRODUCER_BUNDLE_COMMITTED = "semantic_producer_bundle_committed"
+    MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED = (
+        "multicomponent_component_analyst_completed"
+    )
+    MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED = (
+        "multicomponent_component_dprime_completed"
+    )
+    MULTICOMPONENT_CROSS_ANALYST_COMPLETED = (
+        "multicomponent_cross_analyst_completed"
+    )
+    MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED = (
+        "multicomponent_synthesis_dprime_completed"
+    )
+    MULTICOMPONENT_SCRUTINEER_COMPLETED = "multicomponent_scrutineer_completed"
+    MULTICOMPONENT_COMPONENT_ADMISSION_REDUCED = (
+        "multicomponent_component_admission_reduced"
+    )
+    MULTICOMPONENT_GRAPH_REDUCED = "multicomponent_graph_reduced"
     CONTRACT_AMENDMENT_ADMITTED = "contract_amendment_admitted"
     CONTRACT_AMENDMENT_APPLIED = "contract_amendment_applied"
     DPRIME_CURRENT_ANSWER_CONTRACT_AUTHORIZED = (
@@ -3401,6 +3435,143 @@ class RunKernel:
             expected_observation_type=(
                 ObservationType.SEMANTIC_OBSERVATION_ADMITTED
             ),
+        )
+
+    def authorize_multicomponent_role_call(
+        self,
+        *,
+        role: str,
+        input_packet_digest: str,
+        logical_evaluation_key: str,
+    ) -> AuthorizedAction:
+        """Authorize one exact semantic-role evaluation for the V1 lane."""
+
+        from core.multicomponent_role_runtime import ROLE_SYSTEM_PROMPTS
+
+        role_name = _clean_text(role, limit=80)
+        input_digest = _clean_text(input_packet_digest, limit=128)
+        evaluation_key = _clean_text(logical_evaluation_key, limit=180)
+        if role_name not in ROLE_SYSTEM_PROMPTS:
+            raise RunKernelTransitionError("unknown multi-component semantic role")
+        if not input_digest or not evaluation_key:
+            raise RunKernelTransitionError(
+                "multi-component role execution requires exact input and logical bindings"
+            )
+        role_types = {
+            "component_analyst": (
+                ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
+                ObservationType.MULTICOMPONENT_COMPONENT_ANALYST_COMPLETED,
+            ),
+            "component_dprime": (
+                ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+                ObservationType.MULTICOMPONENT_COMPONENT_DPRIME_COMPLETED,
+            ),
+            "cross_component_analyst": (
+                ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
+                ObservationType.MULTICOMPONENT_CROSS_ANALYST_COMPLETED,
+            ),
+            "synthesis_dprime": (
+                ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
+                ObservationType.MULTICOMPONENT_SYNTHESIS_DPRIME_COMPLETED,
+            ),
+            "scrutineer": (
+                ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
+                ObservationType.MULTICOMPONENT_SCRUTINEER_COMPLETED,
+            ),
+        }
+        action_type, observation_type = role_types[role_name]
+        return self.authorize(
+            stage=f"multicomponent_role:{role_name}:{evaluation_key}",
+            action_type=action_type,
+            reason="ordinary_multicomponent_semantic_role_execution",
+            inputs={
+                "role": role_name,
+                "input_packet_digest": input_digest,
+                "logical_evaluation_key": evaluation_key,
+                "supported_query_class": (
+                    "ordinary-bounded-multicomponent-factual-synthesis-v1"
+                ),
+            },
+            expected_observation_type=observation_type,
+        )
+
+    def authorize_multicomponent_component_admission(
+        self,
+        *,
+        component_id: str,
+        analyst_artifact_digest: str,
+        dprime_artifact_digest: str,
+    ) -> AuthorizedAction:
+        if not self.state.initial_answer_contract_projection:
+            raise RunKernelTransitionError(
+                "multi-component admission requires an accepted answer contract"
+            )
+        component = _clean_text(component_id, limit=180)
+        analyst_digest = _clean_text(analyst_artifact_digest, limit=128)
+        dprime_digest = _clean_text(dprime_artifact_digest, limit=128)
+        if not component or not analyst_digest or not dprime_digest:
+            raise RunKernelTransitionError(
+                "multi-component admission requires component and role bindings"
+            )
+        return self.authorize(
+            stage="multicomponent_component_admission",
+            action_type=ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE,
+            reason="component_analyst_then_dprime_admission",
+            inputs={
+                "component_id": component,
+                "analyst_artifact_digest": analyst_digest,
+                "dprime_artifact_digest": dprime_digest,
+                "accepted_contract_digest": self.state.initial_answer_contract.get(
+                    "accepted_contract_digest"
+                ),
+            },
+            expected_observation_type=(
+                ObservationType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCED
+            ),
+        )
+
+    def authorize_multicomponent_graph_reduction(
+        self,
+        *,
+        operation: str,
+        prior_graph_digest: str | None,
+        synthesis_key: str | None = None,
+    ) -> AuthorizedAction:
+        operation_name = _clean_text(operation, limit=80)
+        if operation_name not in {
+            "structure",
+            "synthesis_validation",
+            "scrutiny",
+            "synthesis_admission",
+            "accounting",
+            "finalize",
+        }:
+            raise RunKernelTransitionError("unknown Graph V1 reduction operation")
+        current_graph = _safe_mapping(
+            self.state.projections.get("multicomponent_component_work_graph_v1")
+        )
+        current_digest = current_graph.get("graph_digest")
+        if operation_name == "structure":
+            if current_graph:
+                raise RunKernelTransitionError("Graph V1 is already structured")
+            if prior_graph_digest:
+                raise RunKernelTransitionError(
+                    "initial Graph V1 structure cannot claim a prior graph"
+                )
+        elif not current_graph or prior_graph_digest != current_digest:
+            raise RunKernelTransitionError(
+                "Graph V1 reduction requires the current canonical graph digest"
+            )
+        return self.authorize(
+            stage="multicomponent_component_work_graph_v1",
+            action_type=ActionType.MULTICOMPONENT_GRAPH_REDUCE,
+            reason=f"ordinary_multicomponent_graph_{operation_name}",
+            inputs={
+                "operation": operation_name,
+                "prior_graph_digest": prior_graph_digest,
+                "synthesis_key": _clean_text(synthesis_key, limit=80),
+            },
+            expected_observation_type=ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
         )
 
     def authorize_dprime_current_answer_contract_authority(
@@ -15099,6 +15270,252 @@ class RunKernel:
             self.state.projections[action.stage] = deepcopy(
                 self.state.followup_author_observation_projection
             )
+        elif action.action_type in {
+            ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE,
+            ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE,
+            ActionType.MULTICOMPONENT_CROSS_ANALYST_EXECUTE,
+            ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE,
+            ActionType.MULTICOMPONENT_SCRUTINEER_EXECUTE,
+        }:
+            from core.multicomponent_role_runtime import (
+                validate_multicomponent_role_artifact,
+            )
+
+            artifact = validate_multicomponent_role_artifact(
+                _safe_mapping(observation.payload.get("semantic_role_artifact")),
+                expected_role=str(action.inputs.get("role") or ""),
+            )
+            if artifact.get("run_id") != self.state.run_id:
+                raise RunKernelTransitionError(
+                    "multi-component semantic role cross-run observation"
+                )
+            if artifact.get("input_packet_digest") != action.inputs.get(
+                "input_packet_digest"
+            ):
+                raise RunKernelTransitionError(
+                    "multi-component semantic role input binding mismatch"
+                )
+            action_ref = _safe_mapping(artifact.get("authorized_action_ref"))
+            if action_ref.get("action_id") != action.action_id:
+                raise RunKernelTransitionError(
+                    "multi-component semantic role action binding mismatch"
+                )
+            self.state.projections[action.stage] = deepcopy(artifact)
+        elif action.action_type is ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE:
+            from core.multicomponent_component_admission import (
+                MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,
+            )
+
+            aggregate = _safe_mapping(
+                observation.payload.get("component_admission_projection")
+            )
+            component_ref = _safe_mapping(
+                observation.payload.get("component_admission_ref")
+            )
+            if (
+                aggregate.get("owner") != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
+                or aggregate.get("canonical_state") is not True
+                or aggregate.get("run_id") != self.state.run_id
+            ):
+                raise RunKernelTransitionError(
+                    "multi-component admission requires canonical RunKernel projection"
+                )
+            if (
+                component_ref.get("component_id") != action.inputs.get("component_id")
+                or _safe_mapping(component_ref.get("analyst_finding_ref")).get(
+                    "artifact_digest"
+                )
+                != action.inputs.get("analyst_artifact_digest")
+                or _safe_mapping(component_ref.get("dprime_validation_ref")).get(
+                    "artifact_digest"
+                )
+                != action.inputs.get("dprime_artifact_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "multi-component admission role/component binding mismatch"
+                )
+            refs = [
+                _safe_mapping(item)
+                for item in aggregate.get("component_admission_refs") or ()
+            ]
+            if not refs or refs[-1] != component_ref:
+                raise RunKernelTransitionError(
+                    "multi-component admission aggregate is not append-only"
+                )
+            admission_state = _safe_mapping(
+                observation.payload.get("semantic_observation_admission_state")
+            )
+            admission_projection = _safe_mapping(
+                observation.payload.get("semantic_observation_admission_projection")
+            )
+            coverage_state = _safe_mapping(
+                observation.payload.get("component_coverage_state")
+            )
+            coverage_projection = _safe_mapping(
+                observation.payload.get("component_coverage_projection")
+            )
+            admitted = component_ref.get("admission_status") in {
+                "admitted",
+                "admitted_with_caveats",
+            }
+            if admitted and not all(
+                (admission_state, admission_projection, coverage_state, coverage_projection)
+            ):
+                raise RunKernelTransitionError(
+                    "admitted multi-component state requires semantic and coverage reductions"
+                )
+            if not admitted and any(
+                (admission_state, admission_projection, coverage_state, coverage_projection)
+            ):
+                raise RunKernelTransitionError(
+                    "blocked multi-component state cannot manufacture canonical semantics"
+                )
+            if admitted:
+                if (
+                    admission_projection.get("answer_component_id")
+                    != component_ref.get("component_id")
+                    or coverage_projection.get("answer_component_id")
+                    != component_ref.get("component_id")
+                ):
+                    raise RunKernelTransitionError(
+                        "multi-component semantic/coverage component mismatch"
+                    )
+                self.state.semantic_observation_admission_state = admission_state
+                self.state.semantic_observation_admission_projection = (
+                    admission_projection
+                )
+                self.state.semantic_observation_admission_history.append(
+                    deepcopy(admission_projection)
+                )
+                self.state.component_coverage_state = coverage_state
+                self.state.component_coverage_projection = coverage_projection
+                self.state.component_coverage_history.append(
+                    deepcopy(coverage_projection)
+                )
+                self.state.projections[SEMANTIC_OBSERVATION_ADMISSION_STAGE] = (
+                    deepcopy(admission_projection)
+                )
+                self.state.projections[COMPONENT_COVERAGE_REDUCTION_STAGE] = (
+                    deepcopy(coverage_projection)
+                )
+            self.state.projections[action.stage] = deepcopy(aggregate)
+        elif action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE:
+            from core.component_work_graph_v1 import (
+                COMPONENT_WORK_GRAPH_V1_OWNER,
+                validate_component_work_graph_v1,
+            )
+
+            graph = validate_component_work_graph_v1(
+                _safe_mapping(observation.payload.get("component_work_graph_v1"))
+            )
+            if (
+                graph.get("owner") != COMPONENT_WORK_GRAPH_V1_OWNER
+                or graph.get("canonical_state") is not True
+                or graph.get("run_id") != self.state.run_id
+            ):
+                raise RunKernelTransitionError(
+                    "Graph V1 reduction requires canonical RunKernel-owned state"
+                )
+            action_ref = _safe_mapping(graph.get("runkernel_graph_action_ref"))
+            if action_ref.get("action_id") != action.action_id:
+                raise RunKernelTransitionError("Graph V1 action binding mismatch")
+            operation = action.inputs.get("operation")
+            current_graph = _safe_mapping(self.state.projections.get(action.stage))
+            if operation == "structure":
+                if current_graph or int(graph.get("graph_revision") or 0) != 1:
+                    raise RunKernelTransitionError(
+                        "Graph V1 structure must create revision one exactly once"
+                    )
+            else:
+                if (
+                    not current_graph
+                    or graph.get("previous_graph_digest")
+                    != current_graph.get("graph_digest")
+                    or int(graph.get("graph_revision") or 0)
+                    != int(current_graph.get("graph_revision") or 0) + 1
+                    or graph.get("graph_id") != current_graph.get("graph_id")
+                ):
+                    raise RunKernelTransitionError(
+                        "Graph V1 reducer received a stale or non-sequential transition"
+                    )
+                current_components = [
+                    (
+                        _safe_mapping(item).get("component_id"),
+                        _safe_mapping(item).get("component_revision"),
+                        _safe_mapping(item).get("component_digest"),
+                    )
+                    for item in current_graph.get("component_nodes") or ()
+                ]
+                next_components = [
+                    (
+                        _safe_mapping(item).get("component_id"),
+                        _safe_mapping(item).get("component_revision"),
+                        _safe_mapping(item).get("component_digest"),
+                    )
+                    for item in graph.get("component_nodes") or ()
+                ]
+                if current_components != next_components:
+                    raise RunKernelTransitionError(
+                        "Graph V1 transition cannot rewrite canonical component lineage"
+                    )
+                synthesis_key = action.inputs.get("synthesis_key")
+                current_nodes = {
+                    _safe_mapping(item).get("synthesis_key"): _safe_mapping(item)
+                    for item in current_graph.get("synthesis_nodes") or ()
+                }
+                next_nodes = {
+                    _safe_mapping(item).get("synthesis_key"): _safe_mapping(item)
+                    for item in graph.get("synthesis_nodes") or ()
+                }
+                if set(current_nodes) != set(next_nodes):
+                    raise RunKernelTransitionError(
+                        "Graph V1 transition cannot add or remove synthesis nodes"
+                    )
+                if operation == "synthesis_validation":
+                    if (
+                        synthesis_key not in current_nodes
+                        or current_nodes[synthesis_key].get("status") != "proposed"
+                        or next_nodes[synthesis_key].get("status")
+                        not in {"validated", "challenged", "blocked"}
+                        or not _safe_mapping(
+                            next_nodes[synthesis_key].get("dprime_validation_ref")
+                        )
+                    ):
+                        raise RunKernelTransitionError(
+                            "Graph V1 synthesis validation transition invalid"
+                        )
+                elif operation == "synthesis_admission":
+                    if (
+                        synthesis_key not in current_nodes
+                        or current_nodes[synthesis_key].get("status") != "validated"
+                        or next_nodes[synthesis_key].get("status") != "admitted"
+                        or _safe_mapping(
+                            next_nodes[synthesis_key].get("runkernel_admission_ref")
+                        ).get("action_id")
+                        != action.action_id
+                    ):
+                        raise RunKernelTransitionError(
+                            "Graph V1 synthesis admission transition invalid"
+                        )
+                elif operation == "scrutiny":
+                    if not _safe_mapping(graph.get("scrutineer_ref")):
+                        raise RunKernelTransitionError(
+                            "Graph V1 scrutiny transition lacks Scrutineer ref"
+                        )
+                elif operation == "accounting":
+                    if not graph.get("logical_accounting") or not graph.get(
+                        "physical_call_accounting"
+                    ):
+                        raise RunKernelTransitionError(
+                            "Graph V1 accounting transition lacks explicit counts"
+                        )
+                elif operation == "finalize" and graph.get("graph_status") == (
+                    "synthesis_validation_required"
+                ):
+                    raise RunKernelTransitionError(
+                        "Graph V1 finalization did not decide graph readiness"
+                    )
+            self.state.projections[action.stage] = deepcopy(graph)
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)
         self.state.observations.append(observation)

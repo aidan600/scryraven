@@ -8,6 +8,7 @@ QueryPlan behavior.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping, Sequence
@@ -191,7 +192,7 @@ def build_deterministic_search_work_runtime_records(
 
     contract = _safe_mapping(runtime_input.run_contract_projection)
     route_facts = _safe_mapping(runtime_input.route_facts)
-    safe_preview = _clean_text(runtime_input.safe_query_preview, limit=360)
+    safe_preview = _clean_text(runtime_input.safe_query_preview, limit=1000)
     text = _text_blob(
         safe_preview,
         route_facts.get("intent"),
@@ -277,6 +278,12 @@ def build_deterministic_search_work_runtime_records(
             "behavior_changed": False,
             "query_plan_behavior_changed": False,
             "provider_search_behavior_changed": False,
+            "explicit_factual_component_list": _has_explicit_question_list(
+                safe_preview or ""
+            ),
+            "requested_synthesis_directive": _requested_synthesis_directive(
+                safe_preview or ""
+            ),
         },
     ).require_valid()
     resolution = _contract_resolution(
@@ -322,9 +329,12 @@ def _component_specs(
 
 
 def _split_multipart(preview: str) -> tuple[str, ...]:
-    text = _clean_text(preview, limit=420) or ""
+    text = _clean_text(preview, limit=1000) or ""
     if not text:
         return ()
+    explicit_questions = _explicit_question_list(text)
+    if 2 <= len(explicit_questions) <= 6:
+        return explicit_questions
     lower = text.casefold()
     if lower.startswith("compare ") and " and " in lower:
         body = text[8:]
@@ -347,6 +357,47 @@ def _split_multipart(preview: str) -> tuple[str, ...]:
     if len(cleaned) > 1:
         return cleaned[:6]
     return ()
+
+
+def _explicit_question_list(text: str) -> tuple[str, ...]:
+    """Return explicit question-list items from the existing safe query preview.
+
+    This extends the accepted deterministic query-shape planner; it is not a
+    second decomposition authority.  Only independently punctuated questions
+    are admitted as components, while a trailing explanation directive remains
+    request-level synthesis posture.
+    """
+
+    matches = re.findall(
+        r"(?:^|\s[-*]\s+)((?:what|who|when|where|which|must|can|does|do|is|are|how)\b[^?]{2,240}\?)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return tuple(
+        item
+        for item in (_clean_question(match) for match in matches)
+        if item and len(item.split()) >= 2
+    )[:6]
+
+
+def _has_explicit_question_list(text: str) -> bool:
+    return len(_explicit_question_list(text)) >= 2
+
+
+def _requested_synthesis_directive(text: str) -> str | None:
+    lowered = text.casefold()
+    markers = (
+        "then explain ",
+        "explain how ",
+        "explain whether ",
+        "compare how ",
+        "show how ",
+    )
+    positions = [lowered.find(marker) for marker in markers if marker in lowered]
+    if not positions:
+        return None
+    start = min(position for position in positions if position >= 0)
+    return _clean_text(text[start:], limit=360)
 
 
 def _split_once_and(text: str) -> tuple[str, ...]:
