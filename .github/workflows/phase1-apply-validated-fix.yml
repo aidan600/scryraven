@@ -1,0 +1,299 @@
+name: Apply validated Phase 1 early-selection fix
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'chatgpt/phase1-early-selection-fix'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+      PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: codex/multicomponent-ordinary-end-to-end-synthesis-01
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install pre-commit pytest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (Test-Path requirements-dev.txt) {
+            python -m pip install -r requirements-dev.txt
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (Test-Path requirements.txt) {
+            python -m pip install -r requirements.txt
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          if (Test-Path pyproject.toml) {
+            python -m pip install -e .
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - name: Apply validated source and regression patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          @'
+          from pathlib import Path
+          from textwrap import dedent
+
+          runtime_path = Path("core/ordinary_multicomponent_synthesis_runtime.py")
+          text = runtime_path.read_text(encoding="utf-8")
+          start_marker = "def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(\n"
+          end_marker = "\ndef ordinary_multicomponent_path_completed("
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          replacement = dedent(
+              '''
+              def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+                  run_kernel: Any,
+                  runtime_scope: Mapping[str, Any],
+                  *,
+                  execute_selected_lane: bool = True,
+              ) -> OrdinaryMulticomponentResult:
+                  """Select the typed lane before canonical semantic production."""
+
+                  def direct_or_deferred() -> OrdinaryMulticomponentResult:
+                      # The early scout-continuation call is selection-only. It must not
+                      # move the legacy direct semantic producer ahead of its established
+                      # later ordinary handoff for nonqualifying requests.
+                      if not execute_selected_lane:
+                          return OrdinaryMulticomponentResult(
+                              status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
+                          )
+                      direct = execute_ordinary_semantic_producer_handoff_from_scope(
+                          run_kernel,
+                          runtime_scope,
+                      )
+                      return OrdinaryMulticomponentResult(
+                          status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
+                          direct_handoff=direct,
+                      )
+
+                  if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
+                      return OrdinaryMulticomponentResult(
+                          status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
+                      )
+                  if run_kernel.state.initial_answer_contract:
+                      accepted = run_kernel.state.initial_answer_contract
+                      metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
+                      if _selected_multicomponent_contract(accepted):
+                          if not execute_selected_lane:
+                              return OrdinaryMulticomponentResult(
+                                  status=OrdinaryMulticomponentStatus.SELECTED_PENDING
+                              )
+                          requested_synthesis_directive = _clean_text(
+                              metadata.get("requested_synthesis_directive"),
+                              limit=360,
+                          )
+                          assert requested_synthesis_directive is not None
+                          _execute_selected_lane(
+                              run_kernel=run_kernel,
+                              runtime_scope=runtime_scope,
+                              requested_synthesis_directive=requested_synthesis_directive,
+                          )
+                          return OrdinaryMulticomponentResult(
+                              status=OrdinaryMulticomponentStatus.COMPLETED
+                          )
+                      return direct_or_deferred()
+
+                  search_work_plan = _safe_mapping(run_kernel.state.search_work_plan)
+                  if not search_work_plan or not _real_query_shape_plan(search_work_plan):
+                      return direct_or_deferred()
+                  run_contract = _safe_mapping(runtime_scope.get("run_contract_projection"))
+                  route = _safe_mapping(run_kernel.state.projections.get("route_request"))
+                  query = str(runtime_scope.get("query") or "")
+                  mode = str(runtime_scope.get("strategy") or runtime_scope.get("mode") or "")
+                  records = build_deterministic_search_work_runtime_records(
+                      DeterministicSearchWorkRuntimeInput(
+                          contract_id=str(
+                              run_contract.get("contract_id") or run_kernel.state.run_id
+                          ),
+                          run_contract_projection=run_contract,
+                          route_facts=route,
+                          requested_mode=mode,
+                          selected_depth=run_contract.get("selected_depth"),
+                          safe_query_preview=query,
+                      )
+                  )
+                  assessment = records.query_shape_assessment
+                  assessment_metadata = _safe_mapping(assessment.metadata)
+                  requested_synthesis_directive = _clean_text(
+                      assessment_metadata.get("requested_synthesis_directive"),
+                      limit=360,
+                  )
+                  component_count = len(assessment.component_candidates)
+                  qualifying = (
+                      assessment_metadata.get("explicit_factual_component_list") is True
+                      and requested_synthesis_directive is not None
+                      and 2 <= component_count <= 5
+                  )
+                  if not qualifying:
+                      return direct_or_deferred()
+                  qmr = build_question_meaning_record_from_search_work_plan(
+                      assessment=assessment,
+                      route_facts=route,
+                      run_contract_projection=run_contract,
+                      run_id=run_kernel.state.run_id,
+                      request_id=run_kernel.state.request_id,
+                      query=query,
+                      requested_mode=mode,
+                  )
+                  if qmr is None:
+                      raise OrdinaryMulticomponentRuntimeError(
+                          "typed multi-component qualification could not build its answer contract"
+                      )
+                  _accept_question_meaning_record(run_kernel, qmr)
+                  return OrdinaryMulticomponentResult(
+                      status=OrdinaryMulticomponentStatus.SELECTED_PENDING
+                  )
+              '''
+          ).lstrip("\n")
+          runtime_path.write_text(text[:start] + replacement + text[end:], encoding="utf-8")
+
+          test_source = dedent(
+              '''
+              """Regression guards for selection-only multicomponent timing."""
+
+              from __future__ import annotations
+
+              from typing import Any
+
+              import pytest
+
+              import core.ordinary_multicomponent_synthesis_runtime as runtime
+              from core.run_kernel import RunKernel
+
+
+              def _accepted_contract(
+                  *,
+                  run_id: str,
+                  request_id: str,
+                  component_count: int,
+              ) -> dict[str, Any]:
+                  return {
+                      "owner": "RunKernel.InitialAnswerContract",
+                      "canonical_state": True,
+                      "run_id": run_id,
+                      "request_id": request_id,
+                      "accepted_contract_version": "0.1-passive",
+                      "accepted_contract_digest": f"digest:{component_count}",
+                      "question_meaning_metadata": {
+                          "explicit_factual_component_list": True,
+                          "requested_synthesis_directive": "Explain how these facts relate.",
+                      },
+                      "accepted_answer_component_refs": [
+                          {
+                              "component_id": f"component:{index}",
+                              "component_revision": "1",
+                              "component_digest": f"component-digest:{index}",
+                              "user_facing_label": f"Fact {index}",
+                              "user_facing_question": f"What is fact {index}?",
+                          }
+                          for index in range(1, component_count + 1)
+                      ],
+                  }
+
+
+              @pytest.mark.parametrize("component_count", [1, 6])
+              def test_selection_only_near_miss_defers_direct_semantic_producer(
+                  monkeypatch: pytest.MonkeyPatch,
+                  component_count: int,
+              ) -> None:
+                  kernel = RunKernel.start(
+                      run_id=f"run:selection-only:{component_count}",
+                      request_id=f"request:selection-only:{component_count}",
+                  )
+                  kernel.state.initial_answer_contract = _accepted_contract(
+                      run_id=kernel.state.run_id,
+                      request_id=kernel.state.request_id,
+                      component_count=component_count,
+                  )
+                  calls: list[tuple[Any, Any]] = []
+                  sentinel = object()
+
+                  def _direct(run_kernel: Any, runtime_scope: Any) -> object:
+                      calls.append((run_kernel, runtime_scope))
+                      return sentinel
+
+                  monkeypatch.setattr(
+                      runtime,
+                      "execute_ordinary_semantic_producer_handoff_from_scope",
+                      _direct,
+                  )
+                  early = runtime.execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+                      kernel,
+                      {"query": "near miss"},
+                      execute_selected_lane=False,
+                  )
+                  assert early.status is runtime.OrdinaryMulticomponentStatus.NOT_QUALIFIED
+                  assert early.direct_handoff is None
+                  assert calls == []
+
+                  later = runtime.execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
+                      kernel,
+                      {"query": "near miss"},
+                  )
+                  assert later.status is runtime.OrdinaryMulticomponentStatus.NOT_QUALIFIED
+                  assert later.direct_handoff is sentinel
+                  assert len(calls) == 1
+              '''
+          ).lstrip("\n")
+          Path("tests/test_multicomponent_selection_only_timing_01.py").write_text(
+              test_source,
+              encoding="utf-8",
+          )
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run focused validation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          python -m pytest -q `
+            tests/test_multicomponent_selection_only_timing_01.py `
+            tests/test_multicomponent_ordinary_end_to_end_synthesis_01.py `
+            tests/test_multicomponent_component_work_graph_v1.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m ruff check `
+            core/ordinary_multicomponent_synthesis_runtime.py `
+            tests/test_multicomponent_selection_only_timing_01.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts/validation/run_bucket.py fast_pr
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Commit and push clean production-branch update
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          git config user.name "chatgpt-repair-bot"
+          git config user.email "chatgpt-repair-bot@users.noreply.github.com"
+          git add core/ordinary_multicomponent_synthesis_runtime.py tests/test_multicomponent_selection_only_timing_01.py
+          git diff --cached --check
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git commit -m "Defer direct semantic production during early lane selection"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git push origin HEAD:codex/multicomponent-ordinary-end-to-end-synthesis-01
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
