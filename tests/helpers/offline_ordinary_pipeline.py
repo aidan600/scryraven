@@ -259,11 +259,15 @@ def install_handoff_capture(
             orchestrator.execute_ordinary_semantic_or_multicomponent_handoff_from_scope
         )
 
-        def semantic_wrapper(run_kernel: Any, runtime_scope: dict[str, Any]) -> Any:
+        def semantic_wrapper(
+            run_kernel: Any,
+            runtime_scope: dict[str, Any],
+            **kwargs: Any,
+        ) -> Any:
             captured["semantic_handoff_called"] = True
             captured["semantic_run_kernel"] = run_kernel
             captured["semantic_runtime_scope"] = dict(runtime_scope)
-            result = original_semantic(run_kernel, runtime_scope)
+            result = original_semantic(run_kernel, runtime_scope, **kwargs)
             captured["multicomponent_or_semantic_handoff_result"] = result
             compatibility_result = getattr(result, "direct_handoff", None) or result
             prior = captured.get("semantic_handoff_result")

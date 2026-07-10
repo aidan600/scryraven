@@ -463,6 +463,26 @@ def _execute_selected_lane(
         requested_synthesis_directive=requested_synthesis_directive,
         component_nodes=component_nodes,
         cross_component_artifact=cross_artifact,
+        additional_scrutineer_trigger_reasons=(
+            *(
+                ("deep_mode",)
+                if str(
+                    runtime_scope.get("strategy")
+                    or runtime_scope.get("mode")
+                    or ""
+                ).casefold()
+                == "deep"
+                else ()
+            ),
+            *(
+                ("high_stakes_quantitative_posture",)
+                if _safe_mapping(
+                    runtime_scope.get("economist_safety_telemetry")
+                ).get("high_stakes_quant_detected")
+                is True
+                else ()
+            ),
+        ),
     )
     graph = reduce_component_work_graph_v1(
         run_kernel=run_kernel,
@@ -471,6 +491,8 @@ def _execute_selected_lane(
     )
 
     scrutineer_ran = False
+    deferred_admission_keys: list[str] = []
+    synthesis_dprime_evaluations = 0
     for synthesis_key in list(graph["synthesis_topological_order"]):
         dprime_input = synthesis_dprime_input_packet(
             graph,
@@ -483,6 +505,7 @@ def _execute_selected_lane(
             logical_evaluation_key=synthesis_key,
             **role_kwargs,
         )
+        synthesis_dprime_evaluations += 1
         graph = reduce_component_work_graph_v1(
             run_kernel=run_kernel,
             operation="synthesis_validation",
@@ -498,37 +521,52 @@ def _execute_selected_lane(
             for item in graph["synthesis_nodes"]
             if item["synthesis_key"] == synthesis_key
         )
-        has_synthesis_input = any(
-            item.get("node_kind") == "synthesis"
-            for item in node.get("input_node_refs") or ()
+        if node.get("status") != "validated":
+            break
+        node_is_upstream = any(
+            ref.get("node_id") == node.get("node_id")
+            for candidate in graph["synthesis_nodes"]
+            if candidate.get("synthesis_key") != synthesis_key
+            for ref in candidate.get("input_node_refs") or ()
         )
-        if has_synthesis_input and graph.get("scrutineer_required") is True:
-            if scrutineer_ran:
-                raise OrdinaryMulticomponentRuntimeError(
-                    "Phase 1 permits exactly one full-case Scrutineer evaluation"
-                )
-            scrutineer_artifact = execute_multicomponent_role_call(
+        if node_is_upstream:
+            graph = admit_synthesis_node_via_runkernel(
                 run_kernel=run_kernel,
-                role=ROLE_SCRUTINEER,
-                input_packet=scrutineer_input_packet(graph),
-                logical_evaluation_key="full-case",
-                **role_kwargs,
+                synthesis_key=synthesis_key,
             )
-            graph = reduce_component_work_graph_v1(
-                run_kernel=run_kernel,
-                operation="scrutiny",
-                graph_candidate=graph_with_scrutineer(
-                    graph,
-                    scrutineer_artifact=scrutineer_artifact,
-                ),
-            )
-            scrutineer_ran = True
+        else:
+            deferred_admission_keys.append(synthesis_key)
+
+    if graph.get("scrutineer_required") is True:
+        scrutineer_artifact = execute_multicomponent_role_call(
+            run_kernel=run_kernel,
+            role=ROLE_SCRUTINEER,
+            input_packet=scrutineer_input_packet(graph),
+            logical_evaluation_key="full-case",
+            **role_kwargs,
+        )
+        graph = reduce_component_work_graph_v1(
+            run_kernel=run_kernel,
+            operation="scrutiny",
+            graph_candidate=graph_with_scrutineer(
+                graph,
+                scrutineer_artifact=scrutineer_artifact,
+            ),
+        )
+        scrutineer_ran = True
+
+    for synthesis_key in deferred_admission_keys:
         node = next(
             item
             for item in graph["synthesis_nodes"]
             if item["synthesis_key"] == synthesis_key
         )
-        if node.get("status") == "validated":
+        scrutiny_allows_admission = (
+            graph.get("scrutineer_required") is not True
+            or graph.get("scrutineer_status")
+            in {"passed", "passed_with_caveats"}
+        )
+        if node.get("status") == "validated" and scrutiny_allows_admission:
             graph = admit_synthesis_node_via_runkernel(
                 run_kernel=run_kernel,
                 synthesis_key=synthesis_key,
@@ -538,14 +576,14 @@ def _execute_selected_lane(
         "component_analyst_evaluations": len(component_refs),
         "component_dprime_evaluations": len(component_refs),
         "cross_component_analyst_evaluations": 1,
-        "synthesis_dprime_evaluations": len(graph["synthesis_nodes"]),
+        "synthesis_dprime_evaluations": synthesis_dprime_evaluations,
         "scrutineer_evaluations": 1 if scrutineer_ran else 0,
     }
     physical = {
         "component_analyst_calls": len(component_refs),
         "component_dprime_calls": len(component_refs),
         "cross_component_analyst_calls": 1,
-        "synthesis_dprime_calls": len(graph["synthesis_nodes"]),
+        "synthesis_dprime_calls": synthesis_dprime_evaluations,
         "scrutineer_calls": 1 if scrutineer_ran else 0,
     }
     graph = reduce_component_work_graph_v1(
@@ -567,6 +605,8 @@ def _execute_selected_lane(
 def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
+    *,
+    execute_selected_lane: bool = True,
 ) -> OrdinaryMulticomponentResult:
     """Select the typed lane before canonical semantic production."""
 
@@ -588,6 +628,10 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
         accepted = run_kernel.state.initial_answer_contract
         metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
         if _selected_multicomponent_contract(accepted):
+            if not execute_selected_lane:
+                return OrdinaryMulticomponentResult(
+                    status=OrdinaryMulticomponentStatus.SELECTED_PENDING
+                )
             requested_synthesis_directive = _clean_text(
                 metadata.get("requested_synthesis_directive"),
                 limit=360,

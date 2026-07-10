@@ -234,6 +234,7 @@ def component_work_graph_v1_from_cross_component_artifact(
     requested_synthesis_directive: str,
     component_nodes: Sequence[Mapping[str, Any]],
     cross_component_artifact: Mapping[str, Any],
+    additional_scrutineer_trigger_reasons: Sequence[str] = (),
 ) -> dict[str, Any]:
     components = [validate_component_work_node_v1(item) for item in component_nodes]
     if not MIN_COMPONENT_NODES <= len(components) <= MAX_COMPONENT_NODES:
@@ -269,6 +270,11 @@ def component_work_graph_v1_from_cross_component_artifact(
             if component_id not in component_by_id:
                 raise ComponentWorkGraphV1Error(
                     f"unknown synthesis component dependency: {component_id}"
+                )
+            if component_by_id[component_id].get("direct_output_eligible") is not True:
+                raise ComponentWorkGraphV1Error(
+                    "synthesis proposal depends on an unadmitted component: "
+                    f"{component_id}"
                 )
         for synthesis_key in proposal["synthesis_inputs"]:
             if synthesis_key not in proposal_by_key:
@@ -372,8 +378,43 @@ def component_work_graph_v1_from_cross_component_artifact(
         for node in synthesis_nodes
         for ref in node["input_node_refs"]
     )
-    trigger_reasons = (
-        ["synthesis_depends_on_synthesis"] if synthesis_depends_on_synthesis else []
+    trigger_reasons = list(
+        dict.fromkeys(
+            [
+                *(
+                    ["synthesis_depends_on_synthesis"]
+                    if synthesis_depends_on_synthesis
+                    else []
+                ),
+                *(
+                    ["material_synthesis_caveat"]
+                    if any(item.get("caveats") for item in proposals)
+                    else []
+                ),
+                *(
+                    ["unresolved_synthesis_dependency_or_blocker"]
+                    if any(item.get("blockers") for item in proposals)
+                    else []
+                ),
+                *(
+                    ["cross_component_contradiction"]
+                    if any(
+                        item.get("relationship_type")
+                        in {"contradiction", "contradicts", "conflict"}
+                        for item in proposals
+                    )
+                    else []
+                ),
+                *[
+                    reason
+                    for reason in (
+                        _clean_text(item, limit=120)
+                        for item in additional_scrutineer_trigger_reasons
+                    )
+                    if reason
+                ],
+            ]
+        )
     )
     graph = {
         "schema_version": COMPONENT_WORK_GRAPH_V1_SCHEMA_VERSION,
@@ -464,6 +505,39 @@ def graph_with_synthesis_validation(
         node["status"] = "challenged"
     else:
         node["status"] = "blocked"
+    new_scrutineer_reasons = [
+        *(
+            ["synthesis_dprime_challenge"]
+            if validation_status == "challenged"
+            else []
+        ),
+        *(
+            ["synthesis_dprime_ambiguity"]
+            if validation_status == "ambiguous"
+            else []
+        ),
+        *(
+            ["synthesis_dprime_follow_up_need"]
+            if artifact["semantic_output"].get("blockers")
+            else []
+        ),
+        *(
+            ["material_synthesis_dprime_caveat"]
+            if artifact["semantic_output"].get("caveats")
+            else []
+        ),
+    ]
+    if new_scrutineer_reasons:
+        current["scrutineer_required"] = True
+        current["scrutineer_status"] = "required"
+        current["scrutineer_trigger_reasons"] = list(
+            dict.fromkeys(
+                [
+                    *current.get("scrutineer_trigger_reasons", ()),
+                    *new_scrutineer_reasons,
+                ]
+            )
+        )
     _refresh_node_digest(node)
     return _next_revision(current)
 
@@ -529,13 +603,16 @@ def graph_with_synthesis_admission(
         raise ComponentWorkGraphV1Error(
             "RunKernel can admit only a synthesis-D-prime validated node"
         )
-    has_synthesis_input = any(
-        ref.get("node_kind") == "synthesis" for ref in node["input_node_refs"]
+    node_is_upstream = any(
+        ref.get("node_id") == node.get("node_id")
+        for candidate in current["synthesis_nodes"]
+        if candidate.get("synthesis_key") != synthesis_key
+        for ref in candidate.get("input_node_refs") or ()
     )
-    if has_synthesis_input and current.get("scrutineer_required") is True:
+    if not node_is_upstream and current.get("scrutineer_required") is True:
         if current.get("scrutineer_status") not in {"passed", "passed_with_caveats"}:
             raise ComponentWorkGraphV1Error(
-                "required Scrutineer posture missing before downstream synthesis admission"
+                "required Scrutineer posture missing before terminal synthesis admission"
             )
     node["status"] = "admitted"
     node["runkernel_admission_ref"] = _safe_mapping(action_ref)
@@ -574,13 +651,13 @@ def finalize_component_work_graph_v1(graph: Mapping[str, Any]) -> dict[str, Any]
         "scrutineer_status"
     ) not in {"passed", "passed_with_caveats"}:
         status = GRAPH_STATUS_MISSING_SCRUTINY
+    elif direct_count < component_count:
+        status = GRAPH_STATUS_PARTIAL
     elif synth_statuses and synth_statuses == {"admitted"}:
         caveated = any(
             item.get("required_caveats") for item in current["synthesis_nodes"]
         )
         status = GRAPH_STATUS_READY_WITH_CAVEATS if caveated else GRAPH_STATUS_READY
-    elif direct_count and direct_count < component_count:
-        status = GRAPH_STATUS_PARTIAL
     else:
         status = GRAPH_STATUS_UNSUPPORTED
     current["graph_status"] = status

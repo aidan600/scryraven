@@ -3480,6 +3480,29 @@ class RunKernel:
             ),
         }
         action_type, observation_type = role_types[role_name]
+        phase_caps = {
+            "component_analyst": 5,
+            "component_dprime": 5,
+            "cross_component_analyst": 1,
+            "synthesis_dprime": 4,
+            "scrutineer": 1,
+        }
+        prior_role_actions = [
+            prior
+            for prior in self.state.issued_actions.values()
+            if prior.action_type is action_type
+        ]
+        if any(
+            prior.inputs.get("logical_evaluation_key") == evaluation_key
+            for prior in prior_role_actions
+        ):
+            raise RunKernelTransitionError(
+                "multi-component role logical evaluation key is duplicate"
+            )
+        if len(prior_role_actions) >= phase_caps[role_name]:
+            raise RunKernelTransitionError(
+                "multi-component role call exceeds the Phase 1 cap"
+            )
         return self.authorize(
             stage=f"multicomponent_role:{role_name}:{evaluation_key}",
             action_type=action_type,
@@ -15374,6 +15397,7 @@ class RunKernel:
             from core.multicomponent_component_admission import (
                 MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,
             )
+            from core.multicomponent_role_runtime import safe_packet_digest
 
             aggregate = _safe_mapping(
                 observation.payload.get("component_admission_projection")
@@ -15381,10 +15405,30 @@ class RunKernel:
             component_ref = _safe_mapping(
                 observation.payload.get("component_admission_ref")
             )
+            accepted_contract = _safe_mapping(self.state.initial_answer_contract)
+            accepted_contract_digest = accepted_contract.get(
+                "accepted_contract_digest"
+            )
+            accepted_contract_version = accepted_contract.get(
+                "accepted_contract_version"
+            )
             if (
                 aggregate.get("owner") != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
                 or aggregate.get("canonical_state") is not True
                 or aggregate.get("run_id") != self.state.run_id
+                or aggregate.get("request_id") != self.state.request_id
+                or aggregate.get("accepted_contract_digest")
+                != accepted_contract_digest
+                or aggregate.get("accepted_contract_version")
+                != accepted_contract_version
+                or component_ref.get("run_id") != self.state.run_id
+                or component_ref.get("request_id") != self.state.request_id
+                or component_ref.get("accepted_contract_digest")
+                != accepted_contract_digest
+                or component_ref.get("accepted_contract_version")
+                != accepted_contract_version
+                or action.inputs.get("accepted_contract_digest")
+                != accepted_contract_digest
             ):
                 raise RunKernelTransitionError(
                     "multi-component admission requires canonical RunKernel projection"
@@ -15407,9 +15451,30 @@ class RunKernel:
                 _safe_mapping(item)
                 for item in aggregate.get("component_admission_refs") or ()
             ]
-            if not refs or refs[-1] != component_ref:
+            prior_aggregate = _safe_mapping(self.state.projections.get(action.stage))
+            prior_refs = [
+                _safe_mapping(item)
+                for item in prior_aggregate.get("component_admission_refs") or ()
+            ]
+            aggregate_core = dict(aggregate)
+            declared_projection_digest = aggregate_core.pop(
+                "projection_digest",
+                None,
+            )
+            if (
+                component_ref.get("owner")
+                != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
+                or component_ref.get("canonical_state") is not True
+                or component_ref.get("action_id") != action.action_id
+                or aggregate.get("latest_action_id") != action.action_id
+                or refs[:-1] != prior_refs
+                or not refs
+                or refs[-1] != component_ref
+                or int(aggregate.get("component_count") or 0) != len(refs)
+                or declared_projection_digest != safe_packet_digest(aggregate_core)
+            ):
                 raise RunKernelTransitionError(
-                    "multi-component admission aggregate is not append-only"
+                    "multi-component admission aggregate/action is not canonical append-only state"
                 )
             admission_state = _safe_mapping(
                 observation.payload.get("semantic_observation_admission_state")
@@ -15473,6 +15538,17 @@ class RunKernel:
                 COMPONENT_WORK_GRAPH_V1_OWNER,
                 validate_component_work_graph_v1,
             )
+            from core.component_work_node import (
+                component_work_node_v1_from_admitted_component,
+            )
+            from core.multicomponent_component_admission import (
+                MULTICOMPONENT_COMPONENT_ADMISSION_OWNER,
+                MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+            )
+            from core.multicomponent_role_runtime import (
+                ROLE_CROSS_COMPONENT_ANALYST,
+                role_artifact_ref,
+            )
 
             graph = validate_component_work_graph_v1(
                 _safe_mapping(observation.payload.get("component_work_graph_v1"))
@@ -15494,6 +15570,95 @@ class RunKernel:
                 if current_graph or int(graph.get("graph_revision") or 0) != 1:
                     raise RunKernelTransitionError(
                         "Graph V1 structure must create revision one exactly once"
+                    )
+                component_admission = _safe_mapping(
+                    self.state.projections.get(
+                        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+                    )
+                )
+                accepted_contract = _safe_mapping(
+                    self.state.initial_answer_contract
+                )
+                contract_ref = _safe_mapping(graph.get("accepted_contract_ref"))
+                expected_contract_fields = {
+                    "owner": accepted_contract.get("owner"),
+                    "canonical_state": accepted_contract.get("canonical_state"),
+                    "run_id": self.state.run_id,
+                    "request_id": self.state.request_id,
+                    "accepted_contract_version": accepted_contract.get(
+                        "accepted_contract_version"
+                    ),
+                    "accepted_contract_digest": accepted_contract.get(
+                        "accepted_contract_digest"
+                    ),
+                }
+                current_cross_artifact = _safe_mapping(
+                    self.state.projections.get(
+                        f"multicomponent_role:{ROLE_CROSS_COMPONENT_ANALYST}:graph-v1"
+                    )
+                )
+                expected_cross_ref = (
+                    role_artifact_ref(current_cross_artifact)
+                    if current_cross_artifact
+                    else {}
+                )
+                accepted_components = {
+                    _safe_mapping(item).get("component_id"): _safe_mapping(item)
+                    for item in self.state.initial_answer_contract.get(
+                        "accepted_answer_component_refs",
+                        [],
+                    )
+                }
+                admission_refs = [
+                    _safe_mapping(item)
+                    for item in component_admission.get(
+                        "component_admission_refs",
+                        [],
+                    )
+                ]
+                try:
+                    expected_component_nodes = [
+                        component_work_node_v1_from_admitted_component(
+                            run_id=self.state.run_id,
+                            request_id=self.state.request_id,
+                            accepted_component_ref=accepted_components[
+                                item.get("component_id")
+                            ],
+                            component_admission_ref=item,
+                        )
+                        for item in admission_refs
+                    ]
+                except (KeyError, ValueError) as exc:
+                    raise RunKernelTransitionError(
+                        "Graph V1 structure cannot project current canonical component admission"
+                    ) from exc
+                if (
+                    component_admission.get("owner")
+                    != MULTICOMPONENT_COMPONENT_ADMISSION_OWNER
+                    or component_admission.get("canonical_state") is not True
+                    or component_admission.get("run_id") != self.state.run_id
+                    or component_admission.get("request_id")
+                    != self.state.request_id
+                    or component_admission.get("accepted_contract_digest")
+                    != accepted_contract.get("accepted_contract_digest")
+                    or component_admission.get("accepted_contract_version")
+                    != accepted_contract.get("accepted_contract_version")
+                    or any(
+                        contract_ref.get(key) != value
+                        for key, value in expected_contract_fields.items()
+                    )
+                    or not expected_cross_ref
+                    or any(
+                        _safe_mapping(node.get("proposal_ref")).get(
+                            "cross_component_analyst_ref"
+                        )
+                        != expected_cross_ref
+                        for node in graph.get("synthesis_nodes") or ()
+                    )
+                    or expected_component_nodes != graph.get("component_nodes")
+                ):
+                    raise RunKernelTransitionError(
+                        "Graph V1 structure must exactly consume current RunKernel component admission"
                     )
             else:
                 if (

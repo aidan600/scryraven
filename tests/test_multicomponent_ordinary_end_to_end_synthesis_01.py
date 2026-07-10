@@ -66,7 +66,7 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
             tmp_path=tmp_path,
             query=NORTHSTAR_QUERY,
             core_topic="Northstar Home-Energy Rebate",
-            primary_entity="Northstar Home-Energy Rebate",
+            primary_entity="Northstar",
             researcher_queries=(
                 "Northstar base rebate amount",
                 "Northstar application deadline",
@@ -241,6 +241,20 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "primary_source_documents",
                 "Northstar ordinary applicant online filing",
             ),
+            (
+                106,
+                "Northstar program primary literature record",
+                "The Northstar program record documents the rebate design.",
+                "academic_primary_literature",
+                "Northstar academic primary literature",
+            ),
+            (
+                107,
+                "Northstar primary legal program record",
+                "The current Northstar primary legal record establishes the program.",
+                "legal_or_regulatory_text",
+                "Northstar legal primary source",
+            ),
         )
         return [
             {
@@ -250,7 +264,13 @@ class NorthstarHarness(OfflineOrdinaryPipelineHarness):
                 "text": text,
                 "score": 1.0 - (index * 0.01),
                 "credibility": 4,
-                "source_tier": "official",
+                "source_tier": (
+                    "primary"
+                    if source_id == 107
+                    else "academic"
+                    if source_id == 106
+                    else "official"
+                ),
                 "source_class": source_class,
                 "currentness_signal": "current",
                 "readable_status": "readable",
@@ -414,11 +434,27 @@ def _assert_northstar_product_state(
     sufficiency = captured["sufficiency_projection"]
     packet = captured["packet_handoff"].packet
     payload = captured["packet_handoff"].author_payload
+    assert sufficiency["final_answer_allowed"] is True
     assert sufficiency["multicomponent_graph_consumption"][
         "graph_digest"
     ] == graph["graph_digest"]
     assert len(packet.direct_component_entries) == 5
-    assert len(packet.admitted_synthesis_entries) == 2
+    assert len(packet.admitted_synthesis_entries) == 2, json.dumps(
+        {
+            key: sufficiency.get(key)
+            for key in (
+                "decision",
+                "final_answer_posture",
+                "missing_required_obligations",
+                "partial_obligations",
+                "unresolved_conflicts",
+                "source_bound_numeric_unknowns",
+                "weak_or_thin_evidence",
+                "readiness_reasons",
+            )
+        },
+        sort_keys=True,
+    )
     assert payload is not None
     assert "Approved admitted synthesis" in payload.prompt
     assert "A qualifying applicant seeking the bonus should file on paper" in payload.prompt

@@ -39,10 +39,12 @@ from core.run_authority_sufficiency import RunSufficiencyJudgmentInput
 from core.run_authority_sufficiency_validation import (
     build_deterministic_sufficiency_judgment,
 )
-from core.run_kernel import RunKernel
+from core.run_kernel import RunKernel, RunKernelTransitionError
 
 RUN_ID = "run:multicomponent-graph-v1-test"
 REQUEST_ID = "request:multicomponent-graph-v1-test"
+COMPONENT_ADMISSION_STAGE = "multicomponent_component_admission"
+COMPONENT_ADMISSION_OWNER = "RunKernel.MulticomponentComponentAdmission"
 
 
 def _role_artifact(role: str, semantic_output: dict, input_packet: dict) -> dict:
@@ -144,6 +146,75 @@ def _component_node(
     )
 
 
+def _seed_component_admission(
+    kernel: RunKernel,
+    nodes: list[dict],
+    *,
+    cross_artifact: dict | None = None,
+) -> None:
+    accepted_refs = []
+    admission_refs = []
+    for node in nodes:
+        accepted_refs.append(
+            {
+                "component_id": node["component_id"],
+                "component_revision": node["component_revision"],
+                "component_digest": node["component_digest"],
+                "user_facing_label": node["component_label"],
+                "user_facing_question": node["component_question"],
+            }
+        )
+        admission_refs.append(
+            {
+                "schema_version": "multicomponent_component_admission_ref_v1",
+                "owner": COMPONENT_ADMISSION_OWNER,
+                "canonical_state": True,
+                "run_id": RUN_ID,
+                "request_id": REQUEST_ID,
+                "action_id": node["component_admission_action_ref"]["action_id"],
+                "accepted_contract_version": "0.1-passive",
+                "accepted_contract_digest": "accepted-contract-digest",
+                "component_id": node["component_id"],
+                "component_revision": node["component_revision"],
+                "component_digest": node["component_digest"],
+                "admission_status": node["admission_status"],
+                "current": node["current"],
+                "stale": node["stale"],
+                "analyst_finding_ref": node["analyst_finding_ref"],
+                "dprime_validation_ref": node["dprime_validation_ref"],
+                "admitted_claim_ref": node["admitted_claim_ref"],
+                "semantic_observation_ref": node["semantic_observation_ref"],
+                "component_coverage_ref": node["component_coverage_ref"],
+                "evidence_refs": node["evidence_refs"],
+                "required_caveats": node["required_caveats"],
+                "preserved_nonclaims": node["preserved_nonclaims"],
+                "blocker_refs": node["blocker_refs"],
+            }
+        )
+    kernel.state.initial_answer_contract = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
+        "accepted_answer_component_refs": accepted_refs,
+    }
+    kernel.state.projections[COMPONENT_ADMISSION_STAGE] = {
+        "owner": COMPONENT_ADMISSION_OWNER,
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
+        "component_admission_refs": admission_refs,
+    }
+    if cross_artifact is not None:
+        kernel.state.projections[
+            f"multicomponent_role:{ROLE_CROSS_COMPONENT_ANALYST}:graph-v1"
+        ] = cross_artifact
+
+
 def _structured_graph() -> tuple[RunKernel, dict]:
     nodes = [_component_node(index) for index in range(1, 6)]
     accepted_ref = {
@@ -200,12 +271,121 @@ def _structured_graph() -> tuple[RunKernel, dict]:
         cross_component_artifact=cross,
     )
     kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(kernel, nodes, cross_artifact=cross)
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="structure",
         graph_candidate=candidate,
     )
     return kernel, graph
+
+
+def _flat_graph(*, caveats: tuple[str, ...] = ()) -> tuple[RunKernel, dict]:
+    nodes = [_component_node(1), _component_node(2)]
+    accepted_ref = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
+    }
+    directive = "Explain the combined result."
+    cross_input = cross_component_input_packet(
+        component_nodes=nodes,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+    )
+    cross = _role_artifact(
+        ROLE_CROSS_COMPONENT_ANALYST,
+        {
+            "synthesis_proposals": [
+                {
+                    "synthesis_key": "E",
+                    "claim_text": "E combines component 1 and component 2.",
+                    "relationship_type": "conjunction",
+                    "component_inputs": [
+                        "component:component-1",
+                        "component:component-2",
+                    ],
+                    "synthesis_inputs": [],
+                    "caveats": list(caveats),
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            ]
+        },
+        cross_input,
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="structure",
+        graph_candidate=candidate,
+    )
+    return kernel, graph
+
+
+def _blocked_component_node(index: int) -> dict:
+    return _component_node(
+        index,
+        admission_overrides={
+            "admission_status": "blocked",
+            "admitted_claim_ref": {},
+            "semantic_observation_ref": {},
+            "component_coverage_ref": {},
+            "blocker_refs": [{"reason": "component evidence was not admitted"}],
+        },
+    )
+
+
+def _single_synthesis_candidate(
+    nodes: list[dict],
+    *,
+    component_inputs: list[str],
+) -> tuple[dict, dict, str]:
+    accepted_ref = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": RUN_ID,
+        "request_id": REQUEST_ID,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
+    }
+    directive = "Explain the combined result."
+    cross_input = cross_component_input_packet(
+        component_nodes=nodes,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+    )
+    cross = _role_artifact(
+        ROLE_CROSS_COMPONENT_ANALYST,
+        {
+            "synthesis_proposals": [
+                {
+                    "synthesis_key": "E",
+                    "claim_text": "E combines the admitted component facts.",
+                    "relationship_type": "conjunction",
+                    "component_inputs": component_inputs,
+                    "synthesis_inputs": [],
+                    "caveats": [],
+                    "nonclaims": [],
+                    "blockers": [],
+                }
+            ]
+        },
+        cross_input,
+    )
+    return accepted_ref, cross, directive
 
 
 def _validate_synthesis(kernel: RunKernel, graph: dict, key: str) -> dict:
@@ -297,12 +477,118 @@ def test_graph_v1_enforces_topological_admission_and_full_scrutiny() -> None:
     ]
 
 
+def test_material_caveat_requires_scrutiny_before_flat_terminal_admission() -> None:
+    kernel, graph = _flat_graph(caveats=("Material qualification remains.",))
+    graph = _validate_synthesis(kernel, graph, "E")
+
+    assert graph["scrutineer_required"] is True
+    assert "material_synthesis_caveat" in graph["scrutineer_trigger_reasons"]
+    with pytest.raises(ComponentWorkGraphV1Error, match="Scrutineer posture"):
+        graph_with_synthesis_admission(
+            graph,
+            synthesis_key="E",
+            action_ref={"action_id": "forbidden-pre-scrutiny-admission"},
+        )
+
+
+def test_synthesis_dprime_ambiguity_adds_required_scrutiny_trigger() -> None:
+    _kernel, graph = _flat_graph()
+    input_packet = synthesis_dprime_input_packet(graph, synthesis_key="E")
+    artifact = _role_artifact(
+        ROLE_SYNTHESIS_DPRIME,
+        {
+            "validation_status": "ambiguous",
+            "reasons": ["The nominated relationship remains ambiguous."],
+            "caveats": [],
+            "nonclaims": [],
+            "blockers": [],
+        },
+        input_packet,
+    )
+    graph = graph_with_synthesis_validation(
+        graph,
+        synthesis_key="E",
+        dprime_artifact=artifact,
+    )
+
+    assert graph["scrutineer_required"] is True
+    assert "synthesis_dprime_ambiguity" in graph["scrutineer_trigger_reasons"]
+
+
 def test_component_node_v1_rejects_noncanonical_admission_projection() -> None:
     with pytest.raises(
         ValueError,
         match="canonical RunKernel component admission",
     ):
         _component_node(1, admission_overrides={"canonical_state": False})
+
+
+def test_graph_rejects_synthesis_proposal_over_blocked_component() -> None:
+    nodes = [_component_node(1), _blocked_component_node(2)]
+    accepted_ref, cross, directive = _single_synthesis_candidate(
+        nodes,
+        component_inputs=[node["component_id"] for node in nodes],
+    )
+
+    with pytest.raises(ComponentWorkGraphV1Error, match="unadmitted component"):
+        component_work_graph_v1_from_cross_component_artifact(
+            run_id=RUN_ID,
+            request_id=REQUEST_ID,
+            accepted_contract_ref=accepted_ref,
+            requested_synthesis_directive=directive,
+            component_nodes=nodes,
+            cross_component_artifact=cross,
+        )
+
+
+def test_graph_with_admitted_synthesis_but_blocked_component_is_partial() -> None:
+    nodes = [_component_node(1), _component_node(2), _blocked_component_node(3)]
+    accepted_ref, cross, directive = _single_synthesis_candidate(
+        nodes,
+        component_inputs=[node["component_id"] for node in nodes[:2]],
+    )
+    candidate = component_work_graph_v1_from_cross_component_artifact(
+        run_id=RUN_ID,
+        request_id=REQUEST_ID,
+        accepted_contract_ref=accepted_ref,
+        requested_synthesis_directive=directive,
+        component_nodes=nodes,
+        cross_component_artifact=cross,
+    )
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    _seed_component_admission(kernel, nodes, cross_artifact=cross)
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="structure",
+        graph_candidate=candidate,
+    )
+    graph = _validate_synthesis(kernel, graph, "E")
+    graph = admit_synthesis_node_via_runkernel(
+        run_kernel=kernel,
+        synthesis_key="E",
+    )
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
+    )
+
+    assert graph["graph_status"] == "partial_independent_direct_output"
+
+
+def test_runkernel_rejects_graph_without_current_component_admission() -> None:
+    _seeded_kernel, graph = _structured_graph()
+    unadmitted_kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+
+    with pytest.raises(
+        ValueError,
+        match="current RunKernel component admission",
+    ):
+        reduce_component_work_graph_v1(
+            run_kernel=unadmitted_kernel,
+            operation="structure",
+            graph_candidate=graph,
+        )
 
 
 def test_role_transport_rejects_authority_claims_before_reduction() -> None:
@@ -335,6 +621,35 @@ def test_role_transport_rejects_authority_claims_before_reduction() -> None:
 
     assert kernel.state.reduced_action_ids == set()
     assert kernel.state.observations == []
+
+
+def test_runkernel_enforces_role_logical_key_uniqueness_and_phase_cap() -> None:
+    duplicate_kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    duplicate_kernel.authorize_multicomponent_role_call(
+        role=ROLE_COMPONENT_ANALYST,
+        input_packet_digest="digest-1",
+        logical_evaluation_key="component:1",
+    )
+    with pytest.raises(RunKernelTransitionError, match="duplicate"):
+        duplicate_kernel.authorize_multicomponent_role_call(
+            role=ROLE_COMPONENT_ANALYST,
+            input_packet_digest="digest-2",
+            logical_evaluation_key="component:1",
+        )
+
+    capped_kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+    for index in range(5):
+        capped_kernel.authorize_multicomponent_role_call(
+            role=ROLE_COMPONENT_ANALYST,
+            input_packet_digest=f"digest-{index}",
+            logical_evaluation_key=f"component:{index}",
+        )
+    with pytest.raises(RunKernelTransitionError, match="Phase 1 cap"):
+        capped_kernel.authorize_multicomponent_role_call(
+            role=ROLE_COMPONENT_ANALYST,
+            input_packet_digest="digest-over-cap",
+            logical_evaluation_key="component:over-cap",
+        )
 
 
 def test_component_dprime_transport_cannot_replace_analyst_claim() -> None:

@@ -3066,6 +3066,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
             execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                 run_kernel,
                 locals(),
+                execute_selected_lane=False,
             )
         _search_judgment_started = True
         _search_judgment_input = build_search_judgment_input_from_runtime(

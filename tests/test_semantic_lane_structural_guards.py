@@ -179,6 +179,8 @@ def test_orchestrator_semantic_producer_callsites_are_bounded() -> None:
         f"            {selector}"
         in source
     )
+    early_selector = source.index(selector)
+    assert "execute_selected_lane=False" in source[early_selector : early_selector + 300]
 
 
 def test_semantic_phase_fixture_labels_stay_out_of_closed_runtime_surfaces() -> None:

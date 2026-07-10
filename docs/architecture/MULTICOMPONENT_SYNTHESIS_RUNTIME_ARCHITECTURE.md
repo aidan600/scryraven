@@ -228,7 +228,8 @@ Full Scrutineer is required in Phase 1 when any of these is true:
 - a contradiction exists;
 - an unresolved dependency exists;
 - synthesis is materially caveated;
-- high-stakes posture is detected;
+- high-stakes quantitative posture is detected by the ordinary economist safety
+  telemetry;
 - one synthesis node depends on another synthesis node;
 - synthesis D-prime returns challenge, follow-up need, or ambiguous support.
 
