@@ -613,6 +613,7 @@ def source_requirement_ids_for_component_candidate(
     *,
     evidence_ref_id: str,
     source_obligation_candidate_ids: Sequence[str] = (),
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> tuple[str, ...]:
     """Expose existing coverage preflight without changing selection policy."""
 
@@ -620,6 +621,9 @@ def source_requirement_ids_for_component_candidate(
         evidence_ledger_projection,
         evidence_ref_id=evidence_ref_id,
         source_obligation_candidate_ids=source_obligation_candidate_ids,
+        ignore_satisfied_provider_job_historical_gaps=(
+            ignore_satisfied_provider_job_historical_gaps
+        ),
     )
 
 
@@ -681,12 +685,28 @@ def build_sanitized_content_reference_from_passage(
 
 def _requirement_ids_blocked_by_custody_gaps(
     evidence_ledger_projection: Mapping[str, Any],
+    *,
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> set[str]:
+    current_status_by_id = {
+        _clean_token(item.get("requirement_id")): (
+            _clean_token(item.get("status")) or ""
+        ).casefold()
+        for item in evidence_ledger_projection.get("source_requirements") or ()
+        if isinstance(item, Mapping) and _clean_token(item.get("requirement_id"))
+    }
     blocked: set[str] = set()
     for gap in evidence_ledger_projection.get("custody_gaps") or ():
         if not isinstance(gap, Mapping):
             continue
         requirement_id = _clean_token(gap.get("requirement_id"))
+        if (
+            ignore_satisfied_provider_job_historical_gaps
+            and requirement_id
+            and requirement_id.startswith("provider_job_requirement:")
+            and current_status_by_id.get(requirement_id) == "satisfied"
+        ):
+            continue
         if requirement_id:
             blocked.add(requirement_id)
     return blocked
@@ -717,6 +737,7 @@ def _source_requirement_ids_for_candidate(
     *,
     evidence_ref_id: str,
     source_obligation_candidate_ids: Sequence[str] = (),
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> tuple[str, ...]:
     normalized_evidence_ref = _clean_token(evidence_ref_id) or ""
     if not normalized_evidence_ref:
@@ -776,7 +797,10 @@ def _source_requirement_ids_for_candidate(
             continue
         satisfied_linked.append(requirement_id)
     blocked_requirement_ids = _requirement_ids_blocked_by_custody_gaps(
-        evidence_ledger_projection
+        evidence_ledger_projection,
+        ignore_satisfied_provider_job_historical_gaps=(
+            ignore_satisfied_provider_job_historical_gaps
+        ),
     )
     return tuple(
         requirement_id
@@ -882,6 +906,7 @@ def build_component_coverage_proposal(
     run_id: str,
     request_id: str,
     query: str,
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> ComponentCoverageRecord | None:
     component_ref = _accepted_component_ref(
         accepted_contract,
@@ -907,6 +932,9 @@ def build_component_coverage_proposal(
             evidence_ledger_projection,
             evidence_ref_id=observation.evidence_refs[0],
             source_obligation_candidate_ids=source_obligation_candidate_ids,
+            ignore_satisfied_provider_job_historical_gaps=(
+                ignore_satisfied_provider_job_historical_gaps
+            ),
         )
         if not source_requirement_ids:
             return None

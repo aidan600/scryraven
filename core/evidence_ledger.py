@@ -1059,14 +1059,6 @@ class EvidenceLedger:
             if satisfying:
                 requirement.status = SourceRequirementStatus.SATISFIED
                 requirement.reason = "linked_candidate_satisfies_requirement"
-                if requirement.requirement_id.startswith(
-                    "provider_job_requirement:"
-                ):
-                    self.gaps = [
-                        gap
-                        for gap in self.gaps
-                        if gap.requirement_id != requirement.requirement_id
-                    ]
                 continue
             if linked_candidates:
                 requirement.status = SourceRequirementStatus.UNSATISFIED

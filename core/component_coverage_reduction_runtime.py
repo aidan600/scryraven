@@ -521,7 +521,16 @@ def _relevant_custody_gaps(
     projection: Mapping[str, Any],
     binding: EvidenceLedgerSnapshotBinding,
     cited_evidence_refs: Sequence[str],
+    *,
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> list[Mapping[str, Any]]:
+    current_status_by_id = {
+        _clean_token(item.get("requirement_id")): _normalized_status(
+            item.get("status")
+        )
+        for item in projection.get("source_requirements") or ()
+        if isinstance(item, Mapping) and _clean_token(item.get("requirement_id"))
+    }
     relevant_requirements = set(binding.source_requirement_ids)
     relevant_observations = set(binding.ledger_observation_refs)
     normalized_evidence = {
@@ -534,6 +543,13 @@ def _relevant_custody_gaps(
         if not isinstance(gap, Mapping):
             continue
         requirement_id = _clean_token(gap.get("requirement_id"))
+        if (
+            ignore_satisfied_provider_job_historical_gaps
+            and requirement_id
+            and requirement_id.startswith("provider_job_requirement:")
+            and current_status_by_id.get(requirement_id) == "satisfied"
+        ):
+            continue
         candidate_id = _normalize_evidence_ref(gap.get("candidate_id"))
         observation_id = _clean_token(gap.get("observation_id"))
         if requirement_id and requirement_id in relevant_requirements:
@@ -950,6 +966,7 @@ def _validate_evidence_ledger_binding(
     run_id: str,
     cited_evidence_refs: Sequence[str],
     coverage_state: CoverageState,
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> None:
     projection = _safe_mapping(evidence_ledger_projection)
     if not projection:
@@ -994,7 +1011,14 @@ def _validate_evidence_ledger_binding(
             + ", ".join(foreign_observations)
         )
     if coverage_state is CoverageState.SATISFIED:
-        relevant_gaps = _relevant_custody_gaps(projection, binding, cited_evidence_refs)
+        relevant_gaps = _relevant_custody_gaps(
+            projection,
+            binding,
+            cited_evidence_refs,
+            ignore_satisfied_provider_job_historical_gaps=(
+                ignore_satisfied_provider_job_historical_gaps
+            ),
+        )
         if relevant_gaps:
             gap_types = ", ".join(
                 sorted(
@@ -1355,6 +1379,20 @@ def build_component_coverage_reduction_state(
         coverage_state=record.coverage_state
         if isinstance(record.coverage_state, CoverageState)
         else CoverageState(str(record.coverage_state)),
+        ignore_satisfied_provider_job_historical_gaps=(
+            _safe_mapping(contract.get("question_meaning_metadata")).get(
+                "explicit_factual_component_list"
+            )
+            is True
+            and bool(
+                _clean_token(
+                    _safe_mapping(contract.get("question_meaning_metadata")).get(
+                        "requested_synthesis_directive"
+                    ),
+                    limit=360,
+                )
+            )
+        ),
     )
     ledger_qualification_blockers = ledger_qualification_blockers_for_satisfied_coverage(
         coverage=record.to_dict(include_validation=False),

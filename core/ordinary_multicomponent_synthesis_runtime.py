@@ -300,6 +300,7 @@ def _semantic_material(
         run_id=run_kernel.state.run_id,
         request_id=run_kernel.state.request_id,
         query=query,
+        ignore_satisfied_provider_job_historical_gaps=True,
     )
     if coverage is None:
         obligation_ids = list(
@@ -371,6 +372,7 @@ def _execute_selected_lane(
                     or component_ref.get("source_obligation_candidate_refs")
                     or ()
                 ),
+                ignore_satisfied_provider_job_historical_gaps=True,
             )
         )
     ]
