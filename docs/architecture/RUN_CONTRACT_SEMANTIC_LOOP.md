@@ -93,6 +93,8 @@ not the LLM reasoner; it is the authority hub and reducer owner.
 
 Future multi-component doctrine is defined in
 [CROSS_COMPONENT_ANALYST_WORKBENCH.md](CROSS_COMPONENT_ANALYST_WORKBENCH.md).
+The canonical durable and Phase 1 architecture is
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 That path must remain:
 
 ```text
@@ -105,6 +107,57 @@ compact per-component refs
 It must not become component finals glued by FAP or Author, direct retrieval
 dispatch by Analyst/D-prime/ComponentWorkGraph, or graph execution hidden inside
 proposal/validation surfaces.
+
+### Current And Approved Multi-Component Loops
+
+The current default ordinary component loop is direct:
+
+```text
+accepted component structure + selected passages / sanitized content refs
++ EvidenceLedger facts
+-> ordinary semantic producer
+-> RunKernel commit_semantic_producer_bundle(...)
+-> SemanticObservation -> ComponentCoverage
+-> ordinary Sufficiency -> FinalAnswerPacket -> Author
+```
+
+This current loop does not invoke a typed general regular component Analyst
+proposal followed by component D-prime validation.
+
+The approved Phase 1 component-validation loop is:
+
+```text
+component requirement and custody facts
+-> typed regular component Analyst SmartModel proposal
+-> component D-prime SmartModel validation
+-> RunKernel component admission
+-> SemanticObservation -> ComponentCoverage -> ComponentWorkNode
+```
+
+The approved Phase 1 cross-component loop is:
+
+```text
+ComponentWorkGraph V1 with first-class synthesis nodes
+-> dedicated Cross-Component Analyst SmartModel proposal
+-> dedicated synthesis D-prime SmartModel validation
+-> full Scrutineer SmartModel challenge when triggered
+-> RunKernel canonical graph/synthesis admission
+-> ordinary Sufficiency -> FinalAnswerPacket -> Author -> user-facing answer
+```
+
+The committed dynamic recovery loop, after serial end-to-end activation, is:
+
+```text
+dynamic graph / AnswerContract amendment
+-> targeted ordinary research re-entry
+-> selective invalidation and synthesis recomputation
+-> revision-specific validation and scrutiny
+-> RunKernel scheduling / budget leases
+-> runtime parallelism where supported
+```
+
+These are current, approved Phase 1, and committed-later states respectively;
+the complete target is not already installed.
 
 ## 2. First Live Validation Boundary
 
@@ -288,9 +341,10 @@ fetch/read, custody, analysis, sufficiency, FAP, or Author work is licensed.
 | AnalysisGapSearchProposal | Current reviewable proposal record inside `FollowupSearchIntentPacket`. It carries gap lineage, hints, and structural review readiness only; it is a proposal, not a dispatch. |
 | ComponentCoverageRecord | Owns component support/coverage proposals and reduction after admitted evidence-relative observations and custody bindings exist. |
 | ComponentWorkNode | Current one-component typed projection over product-path refs. It does not create graph execution, scheduler authority, budget leases, FAP/Author/source-display output, citation rendering, or product-correctness claims. |
-| ComponentWorkGraph | Future no-execution graph ref surface only until separately licensed. It must not schedule runtime work, dispatch search, create budget leases, or feed Author directly. |
-| Cross-Component Analyst Workbench | Future proposal-only synthesis/dependency/gap layer over compact component refs. It proposes only; synthesis D-prime validates and RunKernel admits or authorizes recovery. |
-| Synthesis D-prime validation | Future validation layer over Cross-Component Analyst synthesis proposal refs, component refs, dependency refs, caveats, and blockers. It validates only and must not become Analyst, RunKernel, FAP, Author, or retrieval dispatch. |
+| ComponentWorkGraph V0 | Existing no-execution graph ref surface. It must not schedule runtime work, dispatch search, create budget leases, or feed Author directly. It remains a compatibility/review input and strangler target; V1 is the preferred successor rather than an in-place redefinition. |
+| Cross-Component Analyst Workbench | Existing proposal-only V0 contract and approved future configured-SmartModel producer for synthesis/dependency/gap posture over compact component and synthesis refs. It proposes only; synthesis D-prime validates and RunKernel admits or authorizes recovery. |
+| Synthesis D-prime validation | Existing bounded V0 validation contract and approved separate configured-SmartModel validation role. It validates nominated synthesis only and must not invent synthesis or become Analyst, RunKernel, FAP, Author, or retrieval dispatch. |
+| Full Scrutineer | Approved separate configured-SmartModel adversarial challenge role over a component, synthesis, edge, subgraph, or whole case. The existing narrow deterministic same-component gate is not this full role. |
 | ContractAmendmentRecord / admission / application | Provides the proposal/admission/application pathway for adding, superseding, satisfying, failing, blocking, or declaring not-applicable requirements. |
 | AnswerContractAuthorityMap | Passive authority map over components, custody, binding, readiness, and FAP state. It does not mutate the contract. |
 | SufficiencyReadiness | RunKernel-owned pre-FAP readiness reducer. It produces component-level and answer-level readiness (`full_answer_ready`, `partial_answer_ready`, `blocked`, `followup_required`, `contested`, `insufficient_evidence`, `not_applicable`) plus safe FAP handoff preview refs and caveats. It does not create FinalAnswerPacket, Author input, citation eligibility, source-obligation satisfaction, current_answer_contract mutation, live calls, or product correctness. |
@@ -640,7 +694,15 @@ This document and the quarantine registry do not prove:
 - product correctness;
 - product-quality Author prose.
 
-## 16. Immediate Roadmap
+## 16. Historical Second-Half Roadmap
+
+The numbered sequence below is retained as completed historical phase context.
+It is not the current next-phase route. The mandatory next checkpoint after
+`MULTICOMPONENT-RUNTIME-ARCHITECTURE-DOCTRINE-REPAIR-01` is
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`, which must reach ordinary
+Sufficiency, FinalAnswerPacket, Author, and user-facing answer output rather
+than stopping at contracts, packets, graph admission, a serial checkpoint, or
+diagnostic finalization.
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half
