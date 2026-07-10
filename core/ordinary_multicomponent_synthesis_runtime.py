@@ -606,22 +606,22 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
 ) -> OrdinaryMulticomponentResult:
     """Select the typed lane before canonical semantic production."""
 
-def direct_or_deferred() -> OrdinaryMulticomponentResult:
-    # The early scout-continuation call is selection-only.  It must not
-    # move the legacy direct semantic producer ahead of its established
-    # later ordinary handoff for nonqualifying requests.
-    if not execute_selected_lane:
+    def direct_or_deferred() -> OrdinaryMulticomponentResult:
+        # The early scout-continuation call is selection-only. It must not
+        # move the legacy direct semantic producer ahead of its established
+        # later ordinary handoff for nonqualifying requests.
+        if not execute_selected_lane:
+            return OrdinaryMulticomponentResult(
+                status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
+            )
+        direct = execute_ordinary_semantic_producer_handoff_from_scope(
+            run_kernel,
+            runtime_scope,
+        )
         return OrdinaryMulticomponentResult(
             status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
+            direct_handoff=direct,
         )
-    direct = execute_ordinary_semantic_producer_handoff_from_scope(
-        run_kernel,
-        runtime_scope,
-    )
-    return OrdinaryMulticomponentResult(
-        status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
-        direct_handoff=direct,
-    )
 
     if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
         return OrdinaryMulticomponentResult(
@@ -659,7 +659,9 @@ def direct_or_deferred() -> OrdinaryMulticomponentResult:
     mode = str(runtime_scope.get("strategy") or runtime_scope.get("mode") or "")
     records = build_deterministic_search_work_runtime_records(
         DeterministicSearchWorkRuntimeInput(
-            contract_id=str(run_contract.get("contract_id") or run_kernel.state.run_id),
+            contract_id=str(
+                run_contract.get("contract_id") or run_kernel.state.run_id
+            ),
             run_contract_projection=run_contract,
             route_facts=route,
             requested_mode=mode,
@@ -698,7 +700,6 @@ def direct_or_deferred() -> OrdinaryMulticomponentResult:
     return OrdinaryMulticomponentResult(
         status=OrdinaryMulticomponentStatus.SELECTED_PENDING
     )
-
 
 def ordinary_multicomponent_path_completed(run_kernel: Any) -> bool:
     return bool(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
