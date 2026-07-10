@@ -1,15 +1,16 @@
 name: Phase 1 early-selection repair
 
 on:
-  push:
+  pull_request:
     branches:
-      - chatgpt/phase1-early-selection-fix
+      - main
 
 permissions:
   contents: write
 
 jobs:
   repair:
+    if: github.head_ref == 'chatgpt/phase1-early-selection-fix'
     runs-on: windows-latest
     timeout-minutes: 20
     env:
@@ -71,14 +72,11 @@ jobs:
                   direct_handoff=direct,
               )
           '''
-          if old not in text:
-              raise SystemExit("target direct_or_deferred block not found exactly once")
           if text.count(old) != 1:
-              raise SystemExit("target direct_or_deferred block is ambiguous")
+              raise SystemExit("target direct_or_deferred block not found exactly once")
           runtime_path.write_text(text.replace(old, new), encoding="utf-8")
 
-          test_path = Path("tests/test_multicomponent_selection_only_timing_01.py")
-          test_path.write_text('''"""Regression guards for selection-only multicomponent timing."""
+          Path("tests/test_multicomponent_selection_only_timing_01.py").write_text('''"""Regression guards for selection-only multicomponent timing."""
 
           from __future__ import annotations
 
@@ -129,7 +127,6 @@ jobs:
                   request_id=kernel.state.request_id,
                   component_count=component_count,
               )
-
               calls: list[tuple[Any, Any]] = []
               sentinel = object()
 
@@ -142,7 +139,6 @@ jobs:
                   "execute_ordinary_semantic_producer_handoff_from_scope",
                   _direct,
               )
-
               early = runtime.execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
                   kernel,
                   {"query": "near miss"},
