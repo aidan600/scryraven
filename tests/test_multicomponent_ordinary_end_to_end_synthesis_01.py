@@ -624,3 +624,331 @@ def test_northstar_thin_proplex_main_prints_ordinary_report(
         harness=harness,
         outcome=cli_outcome["value"],
     )
+
+
+def test_six_component_near_miss_does_not_select_typed_lane() -> None:
+    from core.ordinary_multicomponent_synthesis_runtime import (
+        ordinary_multicomponent_path_selected,
+    )
+    from core.run_kernel import RunKernel
+
+    kernel = RunKernel.start(run_id="run:six-near-miss", request_id="request:six")
+    kernel.state.initial_answer_contract = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": kernel.state.run_id,
+        "request_id": kernel.state.request_id,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "digest-six",
+        "question_meaning_metadata": {
+            "explicit_factual_component_list": True,
+            "requested_synthesis_directive": "Explain the combined filing sequence.",
+        },
+        "accepted_answer_component_refs": [
+            {
+                "component_id": f"component:{index}",
+                "component_revision": "1",
+                "component_digest": f"digest-{index}",
+                "user_facing_label": f"Fact {index}",
+                "user_facing_question": f"What is fact {index}?",
+            }
+            for index in range(1, 7)
+        ],
+    }
+    assert ordinary_multicomponent_path_selected(kernel) is False
+
+
+def test_query_shaped_metadata_alone_does_not_enable_custody_gap_exception() -> None:
+    from core.multicomponent_component_admission import (
+        _typed_lane_custody_gap_exception_authorized,
+    )
+    from core.ordinary_semantic_producer_runtime import (
+        source_requirement_ids_for_component_candidate,
+    )
+
+    near_miss = {
+        "question_meaning_metadata": {
+            "explicit_factual_component_list": True,
+            "requested_synthesis_directive": "Explain the combined filing sequence.",
+        },
+        "accepted_answer_component_refs": [
+            {
+                "component_id": f"component:{index}",
+                "component_revision": "1",
+                "component_digest": f"digest-{index}",
+            }
+            for index in range(1, 7)
+        ],
+    }
+    assert _typed_lane_custody_gap_exception_authorized(near_miss) is False
+
+    # Direct ordinary producer default remains false: historical provider-job gaps
+    # continue to block requirement selection outside the typed lane.
+    ledger = {
+        "source_requirements": [
+            {
+                "requirement_id": "provider_job_requirement:job-1",
+                "status": "satisfied",
+                "linked_candidate_ids": ["evidence:1"],
+                "source_obligation_candidate_ids": [
+                    "provider_job_requirement:job-1"
+                ],
+            }
+        ],
+        "custody_gaps": [
+            {
+                "requirement_id": "provider_job_requirement:job-1",
+                "candidate_id": "evidence:1",
+                "gap_type": "provider_job_historical",
+            }
+        ],
+    }
+    assert (
+        source_requirement_ids_for_component_candidate(
+            ledger,
+            evidence_ref_id="evidence:1",
+            source_obligation_candidate_ids=("provider_job_requirement:job-1",),
+        )
+        == ()
+    )
+    assert source_requirement_ids_for_component_candidate(
+        ledger,
+        evidence_ref_id="evidence:1",
+        source_obligation_candidate_ids=("provider_job_requirement:job-1",),
+        ignore_satisfied_provider_job_historical_gaps=True,
+    ) == ("provider_job_requirement:job-1",)
+
+
+def test_single_component_contract_remains_outside_typed_lane() -> None:
+    from core.ordinary_multicomponent_synthesis_runtime import (
+        ordinary_multicomponent_path_selected,
+    )
+    from core.run_kernel import RunKernel
+
+    kernel = RunKernel.start(run_id="run:single", request_id="request:single")
+    kernel.state.initial_answer_contract = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": kernel.state.run_id,
+        "request_id": kernel.state.request_id,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "digest-single",
+        "question_meaning_metadata": {
+            "explicit_factual_component_list": True,
+            "requested_synthesis_directive": "Summarize the one fact.",
+        },
+        "accepted_answer_component_refs": [
+            {
+                "component_id": "component:1",
+                "component_revision": "1",
+                "component_digest": "digest-1",
+                "user_facing_label": "Fact 1",
+                "user_facing_question": "What is fact 1?",
+            }
+        ],
+    }
+    assert ordinary_multicomponent_path_selected(kernel) is False
+
+
+def test_component_admission_rejects_forged_role_artifacts_and_claim_drift() -> None:
+    from core.multicomponent_component_admission import (
+        MulticomponentComponentAdmissionError,
+        component_analyst_input_packet,
+        execute_multicomponent_component_admission,
+        stage_multicomponent_component_admission,
+    )
+    from core.multicomponent_role_runtime import (
+        ROLE_COMPONENT_ANALYST,
+        ROLE_COMPONENT_DPRIME,
+        safe_packet_digest,
+    )
+    from core.run_kernel import RunKernel
+
+    run_id = "run:admission-forge"
+    request_id = "request:admission-forge"
+    component_id = "component:1"
+    component_ref = {
+        "component_id": component_id,
+        "component_revision": "1",
+        "component_digest": "component-digest-1",
+        "user_facing_label": "Fact 1",
+        "user_facing_question": "What is fact 1?",
+    }
+    accepted = {
+        "owner": "RunKernel.InitialAnswerContract",
+        "canonical_state": True,
+        "run_id": run_id,
+        "request_id": request_id,
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-digest",
+        "parent_question_meaning_record_id": "qmr:1",
+        "parent_question_meaning_record_digest": "qmr-digest",
+        "question_meaning_metadata": {
+            "explicit_factual_component_list": True,
+            "requested_synthesis_directive": "Explain the combined result.",
+        },
+        "accepted_answer_component_refs": [component_ref],
+    }
+    evidence_input = {
+        "evidence_status": "available",
+        "evidence_ref_id": "evidence:1",
+        "bounded_text": "Fact 1 is supported.",
+        "candidate_custody_ref": {"candidate_id": "cand-1"},
+    }
+    analyst_input = component_analyst_input_packet(
+        run_id=run_id,
+        request_id=request_id,
+        accepted_contract=accepted,
+        component_ref=component_ref,
+        evidence_input=evidence_input,
+    )
+
+    def _artifact(role: str, semantic_output: dict, input_packet: dict) -> dict:
+        core = {
+            "schema_version": "multicomponent_semantic_role_artifact_v1",
+            "role": role,
+            "artifact_id": f"artifact:{role}:forged",
+            "run_id": run_id,
+            "request_id": request_id,
+            "input_packet_digest": safe_packet_digest(input_packet),
+            "logical_evaluation_key": component_id,
+            "logical_evaluations": 1,
+            "physical_calls": 1,
+            "configured_model_route": {
+                "provider": "offline",
+                "model": "fixture",
+                "role": "SmartModel",
+            },
+            "authorized_action_ref": {
+                "action_id": f"action:{role}",
+                "stage": f"stage:{role}",
+                "sequence": 1,
+                "observation_type": f"{role}_completed",
+            },
+            "semantic_output": semantic_output,
+            "raw_prompt_retained": False,
+            "raw_model_response_retained": False,
+            "raw_provider_payload_retained": False,
+        }
+        return {**core, "artifact_digest": safe_packet_digest(core)}
+
+    analyst = _artifact(
+        ROLE_COMPONENT_ANALYST,
+        {
+            "claim_text": "Fact 1 is supported.",
+            "support_status": "supported",
+            "caveats": [],
+            "nonclaims": [],
+            "blockers": [],
+        },
+        analyst_input,
+    )
+    from core.multicomponent_component_admission import component_dprime_input_packet
+
+    dprime_input = component_dprime_input_packet(
+        analyst_artifact=analyst,
+        analyst_input_packet=analyst_input,
+    )
+    dprime = _artifact(
+        ROLE_COMPONENT_DPRIME,
+        {
+            "validation_status": "supported",
+            "reasons": ["Matches evidence."],
+            "caveats": [],
+            "nonclaims": [],
+            "blockers": [],
+        },
+        dprime_input,
+    )
+    observation = {
+        "observation_id": "observation:1",
+        "observation_digest": "observation-digest",
+        "claim_or_value": "A different forged claim.",
+        "evidence_refs": ["evidence:1"],
+        "answer_component_id": component_id,
+    }
+    with pytest.raises(
+        MulticomponentComponentAdmissionError,
+        match="Analyst-nominated claim",
+    ):
+        stage_multicomponent_component_admission(
+            action_id="action:admission",
+            run_id=run_id,
+            request_id=request_id,
+            accepted_contract=accepted,
+            evidence_ledger_projection={},
+            semantic_observation_admission_history=[],
+            component_coverage_history=[],
+            component_id=component_id,
+            analyst_artifact=analyst,
+            dprime_artifact=dprime,
+            analyst_input_packet=analyst_input,
+            semantic_observation=observation,
+            sanitized_content_references=[
+                {
+                    "content_ref_id": "content:1",
+                    "evidence_ref_id": "evidence:1",
+                    "content_digest": "content-digest",
+                }
+            ],
+            component_coverage_record={
+                "record_id": "coverage:1",
+                "record_digest": "coverage-digest",
+            },
+        )
+
+    kernel = RunKernel.start(run_id=run_id, request_id=request_id)
+    kernel.state.initial_answer_contract = accepted
+    kernel.state.initial_answer_contract_projection = {"canonical_state": True}
+    with pytest.raises(
+        MulticomponentComponentAdmissionError,
+        match="completed RunKernel role artifacts",
+    ):
+        execute_multicomponent_component_admission(
+            run_kernel=kernel,
+            component_id=component_id,
+            analyst_artifact=analyst,
+            dprime_artifact=dprime,
+            analyst_input_packet=analyst_input,
+            semantic_observation=None,
+            sanitized_content_references=[],
+            component_coverage_record=None,
+        )
+
+
+def test_query_shape_six_explicit_components_do_not_bypass_planning_authority() -> None:
+    from core.search_work_query_shape_runtime import (
+        DeterministicSearchWorkRuntimeInput,
+        build_deterministic_search_work_runtime_records,
+    )
+
+    preview = "\n".join(
+        [
+            "For the fictional Northstar Home-Energy Rebate:",
+            "- What is the base rebate amount?",
+            "- What is the application deadline?",
+            "- Who qualifies for the income-based bonus?",
+            "- Must bonus applicants use the paper application?",
+            "- Can ordinary applicants file online?",
+            "- What is the appeal deadline?",
+            "",
+            "Then explain how bonus eligibility changes the filing route.",
+        ]
+    )
+    records = build_deterministic_search_work_runtime_records(
+        DeterministicSearchWorkRuntimeInput(
+            contract_id="contract:six",
+            run_contract_projection={"contract_id": "contract:six"},
+            route_facts={},
+            requested_mode="Balanced",
+            selected_depth="standard",
+            safe_query_preview=preview,
+        )
+    )
+    assert len(records.query_shape_assessment.component_candidates) == 6
+    assert (
+        records.query_shape_assessment.metadata.get(
+            "explicit_factual_component_list"
+        )
+        is True
+    )

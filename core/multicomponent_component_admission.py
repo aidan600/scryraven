@@ -124,6 +124,25 @@ def component_dprime_input_packet(
     }
 
 
+def _typed_lane_custody_gap_exception_authorized(
+    accepted_contract: Mapping[str, Any],
+) -> bool:
+    """Return True only for the exact Phase 1 typed-lane contract shape."""
+
+    metadata = _safe_mapping(accepted_contract.get("question_meaning_metadata"))
+    component_refs = [
+        item
+        for item in accepted_contract.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    return (
+        metadata.get("explicit_factual_component_list") is True
+        and _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
+        is not None
+        and 2 <= len(component_refs) <= 5
+    )
+
+
 def stage_multicomponent_component_admission(
     *,
     action_id: str,
@@ -186,6 +205,13 @@ def stage_multicomponent_component_admission(
         raise MulticomponentComponentAdmissionError(
             "component D-prime nominated claim/input binding mismatch"
         )
+    if (
+        analyst.get("logical_evaluation_key") != component_id
+        or dprime.get("logical_evaluation_key") != component_id
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component role logical evaluation key mismatch"
+        )
 
     analyst_status = analyst["semantic_output"]["support_status"]
     validation_status = dprime["semantic_output"]["validation_status"]
@@ -208,6 +234,28 @@ def stage_multicomponent_component_admission(
         raise MulticomponentComponentAdmissionError(
             "blocked component admission cannot manufacture admitted semantic state"
         )
+    nominated_claim = analyst["semantic_output"]["claim_text"]
+    if supported and observation_payload.get("claim_or_value") != nominated_claim:
+        raise MulticomponentComponentAdmissionError(
+            "SemanticObservation claim must equal the Analyst-nominated claim"
+        )
+    evidence_input = _safe_mapping(analyst_input_packet.get("component_evidence"))
+    if supported:
+        expected_evidence_ref = evidence_input.get("evidence_ref_id")
+        observation_evidence = [
+            item for item in observation_payload.get("evidence_refs") or () if item
+        ]
+        if (
+            not expected_evidence_ref
+            or observation_evidence != [expected_evidence_ref]
+            or any(
+                item.get("evidence_ref_id") != expected_evidence_ref
+                for item in content_refs
+            )
+        ):
+            raise MulticomponentComponentAdmissionError(
+                "component admission evidence bindings must match Analyst input evidence"
+            )
 
     admission_state: dict[str, Any] = {}
     admission_projection: dict[str, Any] = {}
@@ -292,6 +340,9 @@ def stage_multicomponent_component_admission(
                 ],
                 run_id=run_id,
                 request_id=request_id,
+                ignore_satisfied_provider_job_historical_gaps=(
+                    _typed_lane_custody_gap_exception_authorized(accepted)
+                ),
             )
             coverage_projection = build_component_coverage_reduction_projection(
                 coverage_state=coverage_state
@@ -437,6 +488,21 @@ def execute_multicomponent_component_admission(
         dprime_artifact,
         expected_role=ROLE_COMPONENT_DPRIME,
     )
+    completed_analyst = run_kernel.state.projections.get(
+        f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
+    )
+    completed_dprime = run_kernel.state.projections.get(
+        f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{component_id}"
+    )
+    if (
+        not isinstance(completed_analyst, Mapping)
+        or not isinstance(completed_dprime, Mapping)
+        or role_artifact_ref(completed_analyst) != role_artifact_ref(analyst)
+        or role_artifact_ref(completed_dprime) != role_artifact_ref(dprime)
+    ):
+        raise MulticomponentComponentAdmissionError(
+            "component admission requires exact completed RunKernel role artifacts"
+        )
     action = run_kernel.authorize_multicomponent_component_admission(
         component_id=component_id,
         analyst_artifact_digest=analyst["artifact_digest"],

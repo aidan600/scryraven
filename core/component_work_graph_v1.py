@@ -11,6 +11,8 @@ from core.component_work_node import (
     validate_component_work_node_v1,
 )
 from core.multicomponent_role_runtime import (
+    ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
@@ -42,6 +44,34 @@ GRAPH_STATUS_UNSUPPORTED = "unsupported_graph_posture"
 
 _READY_STATUSES = frozenset({GRAPH_STATUS_READY, GRAPH_STATUS_READY_WITH_CAVEATS})
 _SUPPORT_VALIDATIONS = frozenset({"supported", "supported_with_caveats"})
+_LOGICAL_ACCOUNTING_KEYS = (
+    "component_analyst_evaluations",
+    "component_dprime_evaluations",
+    "cross_component_analyst_evaluations",
+    "synthesis_dprime_evaluations",
+    "scrutineer_evaluations",
+)
+_PHYSICAL_ACCOUNTING_KEYS = (
+    "component_analyst_calls",
+    "component_dprime_calls",
+    "cross_component_analyst_calls",
+    "synthesis_dprime_calls",
+    "scrutineer_calls",
+)
+_ROLE_LOGICAL_ACCOUNTING_KEY = {
+    ROLE_COMPONENT_ANALYST: "component_analyst_evaluations",
+    ROLE_COMPONENT_DPRIME: "component_dprime_evaluations",
+    ROLE_CROSS_COMPONENT_ANALYST: "cross_component_analyst_evaluations",
+    ROLE_SYNTHESIS_DPRIME: "synthesis_dprime_evaluations",
+    ROLE_SCRUTINEER: "scrutineer_evaluations",
+}
+_ROLE_PHYSICAL_ACCOUNTING_KEY = {
+    ROLE_COMPONENT_ANALYST: "component_analyst_calls",
+    ROLE_COMPONENT_DPRIME: "component_dprime_calls",
+    ROLE_CROSS_COMPONENT_ANALYST: "cross_component_analyst_calls",
+    ROLE_SYNTHESIS_DPRIME: "synthesis_dprime_calls",
+    ROLE_SCRUTINEER: "scrutineer_calls",
+}
 
 
 class ComponentWorkGraphV1Error(ValueError):
@@ -539,6 +569,8 @@ def graph_with_synthesis_validation(
             )
         )
     _refresh_node_digest(node)
+    node["dprime_validated_node_revision"] = node["node_revision"]
+    node["dprime_validated_node_digest"] = node["node_digest"]
     return _next_revision(current)
 
 
@@ -562,9 +594,35 @@ def graph_with_scrutineer(
         raise ComponentWorkGraphV1Error("Scrutineer referenced unknown synthesis")
     current["scrutineer_ref"] = role_artifact_ref(artifact)
     current["scrutineer_status"] = output["challenge_status"]
+    output_caveats = list(output.get("caveats") or ())
+    output_nonclaims = list(output.get("nonclaims") or ())
     for node in current["synthesis_nodes"]:
-        node["scrutineer_ref"] = role_artifact_ref(artifact)
-        if node["synthesis_key"] in challenged or output["challenge_status"] == "blocked":
+        challenged_here = (
+            node["synthesis_key"] in challenged
+            or output["challenge_status"] == "blocked"
+        )
+        merged_caveats = list(
+            dict.fromkeys([*node.get("required_caveats", ()), *output_caveats])
+        )
+        merged_nonclaims = list(
+            dict.fromkeys(
+                [*node.get("preserved_nonclaims", ()), *output_nonclaims]
+            )
+        )
+        material = (
+            challenged_here
+            or merged_caveats != list(node.get("required_caveats") or ())
+            or merged_nonclaims != list(node.get("preserved_nonclaims") or ())
+        )
+        if not material:
+            # Clean / metadata-only attachment stays at graph scope so the
+            # D-prime-validated node revision and digest remain exact.
+            continue
+        if node.get("status") == "admitted":
+            raise ComponentWorkGraphV1Error(
+                "Scrutineer cannot silently mutate an already admitted synthesis"
+            )
+        if challenged_here:
             node["status"] = "challenged"
             current["challenge_refs"].append(
                 {
@@ -573,19 +631,16 @@ def graph_with_scrutineer(
                     "reasons": list(output.get("reasons") or ()),
                 }
             )
-        node["required_caveats"] = list(
-            dict.fromkeys(
-                [*node.get("required_caveats", ()), *output.get("caveats", ())]
-            )
-        )
-        node["preserved_nonclaims"] = list(
-            dict.fromkeys(
-                [
-                    *node.get("preserved_nonclaims", ()),
-                    *output.get("nonclaims", ()),
-                ]
-            )
-        )
+        else:
+            # Material caveat/nonclaim drift invalidates prior validation.
+            node["status"] = "proposed"
+        node["required_caveats"] = merged_caveats
+        node["preserved_nonclaims"] = merged_nonclaims
+        node["scrutineer_ref"] = role_artifact_ref(artifact)
+        node["dprime_validation_ref"] = {}
+        node.pop("dprime_validated_node_revision", None)
+        node.pop("dprime_validated_node_digest", None)
+        node["runkernel_admission_ref"] = {}
         _refresh_node_digest(node)
     _invalidate_challenged_dependents(current)
     return _next_revision(current)
@@ -603,6 +658,14 @@ def graph_with_synthesis_admission(
         raise ComponentWorkGraphV1Error(
             "RunKernel can admit only a synthesis-D-prime validated node"
         )
+    if (
+        node.get("dprime_validated_node_revision") != node.get("node_revision")
+        or node.get("dprime_validated_node_digest") != node.get("node_digest")
+        or not _safe_mapping(node.get("dprime_validation_ref"))
+    ):
+        raise ComponentWorkGraphV1Error(
+            "admitted synthesis must keep the exact D-prime-validated node revision"
+        )
     node_is_upstream = any(
         ref.get("node_id") == node.get("node_id")
         for candidate in current["synthesis_nodes"]
@@ -614,10 +677,73 @@ def graph_with_synthesis_admission(
             raise ComponentWorkGraphV1Error(
                 "required Scrutineer posture missing before terminal synthesis admission"
             )
+    validated_revision = node["dprime_validated_node_revision"]
+    validated_digest = node["dprime_validated_node_digest"]
     node["status"] = "admitted"
     node["runkernel_admission_ref"] = _safe_mapping(action_ref)
     _refresh_node_digest(node)
+    # Preserve the exact validated revision/digest proof on the admitted node.
+    node["dprime_validated_node_revision"] = validated_revision
+    node["dprime_validated_node_digest"] = validated_digest
     return _next_revision(current)
+
+
+def derive_multicomponent_role_call_accounting(
+    projections: Mapping[str, Any],
+    *,
+    issued_actions: Mapping[str, Any] | None = None,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Derive logical/physical role-call counts from completed role history."""
+
+    logical = {key: 0 for key in _LOGICAL_ACCOUNTING_KEYS}
+    physical = {key: 0 for key in _PHYSICAL_ACCOUNTING_KEYS}
+    seen_logical_keys: dict[str, set[str]] = {
+        role: set() for role in _ROLE_LOGICAL_ACCOUNTING_KEY
+    }
+    for stage, payload in projections.items():
+        if not isinstance(stage, str) or not stage.startswith("multicomponent_role:"):
+            continue
+        if not isinstance(payload, Mapping):
+            continue
+        artifact = validate_multicomponent_role_artifact(payload)
+        role = str(artifact["role"])
+        logical_key = str(artifact.get("logical_evaluation_key") or "")
+        if not logical_key:
+            raise ComponentWorkGraphV1Error(
+                "role accounting requires exact logical evaluation keys"
+            )
+        if logical_key in seen_logical_keys[role]:
+            raise ComponentWorkGraphV1Error(
+                "role accounting saw duplicate logical evaluation keys"
+            )
+        seen_logical_keys[role].add(logical_key)
+        logical[_ROLE_LOGICAL_ACCOUNTING_KEY[role]] += int(
+            artifact.get("logical_evaluations") or 0
+        )
+        physical[_ROLE_PHYSICAL_ACCOUNTING_KEY[role]] += int(
+            artifact.get("physical_calls") or 0
+        )
+    if issued_actions:
+        action_counts = {key: 0 for key in _PHYSICAL_ACCOUNTING_KEYS}
+        role_by_action_type = {
+            "multicomponent_component_analyst_execute": "component_analyst_calls",
+            "multicomponent_component_dprime_execute": "component_dprime_calls",
+            "multicomponent_cross_analyst_execute": "cross_component_analyst_calls",
+            "multicomponent_synthesis_dprime_execute": "synthesis_dprime_calls",
+            "multicomponent_scrutineer_execute": "scrutineer_calls",
+        }
+        for action in issued_actions.values():
+            action_type = getattr(action, "action_type", None)
+            action_type_value = getattr(action_type, "value", action_type)
+            physical_key = role_by_action_type.get(str(action_type_value or ""))
+            if physical_key is None:
+                continue
+            action_counts[physical_key] += 1
+        if any(action_counts.values()) and action_counts != physical:
+            raise ComponentWorkGraphV1Error(
+                "physical role-call accounting is inconsistent with action history"
+            )
+    return logical, physical
 
 
 def graph_with_accounting(
@@ -627,11 +753,93 @@ def graph_with_accounting(
     physical_call_accounting: Mapping[str, Any],
 ) -> dict[str, Any]:
     current = validate_component_work_graph_v1(graph)
-    current["logical_accounting"] = _safe_mapping(logical_accounting)
-    current["physical_call_accounting"] = _safe_mapping(
-        physical_call_accounting
-    )
+    logical = _safe_mapping(logical_accounting)
+    physical = _safe_mapping(physical_call_accounting)
+    if set(logical) != set(_LOGICAL_ACCOUNTING_KEYS) or set(physical) != set(
+        _PHYSICAL_ACCOUNTING_KEYS
+    ):
+        raise ComponentWorkGraphV1Error(
+            "Graph V1 accounting must declare the exact role-call keys"
+        )
+    for key in _LOGICAL_ACCOUNTING_KEYS:
+        if key not in logical or int(logical[key]) < 0:
+            raise ComponentWorkGraphV1Error("Graph V1 logical accounting is invalid")
+    for key in _PHYSICAL_ACCOUNTING_KEYS:
+        if key not in physical or int(physical[key]) < 0:
+            raise ComponentWorkGraphV1Error("Graph V1 physical accounting is invalid")
+    current["logical_accounting"] = {
+        key: int(logical[key]) for key in _LOGICAL_ACCOUNTING_KEYS
+    }
+    current["physical_call_accounting"] = {
+        key: int(physical[key]) for key in _PHYSICAL_ACCOUNTING_KEYS
+    }
     return _next_revision(current)
+
+
+def expected_graph_after_transition(
+    current_graph: Mapping[str, Any] | None,
+    *,
+    operation: str,
+    action_ref: Mapping[str, Any],
+    synthesis_key: str | None = None,
+    role_artifact: Mapping[str, Any] | None = None,
+    logical_accounting: Mapping[str, Any] | None = None,
+    physical_call_accounting: Mapping[str, Any] | None = None,
+    structure_graph: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Rederive the unique next canonical graph for one Graph V1 operation."""
+
+    if operation == "structure":
+        if not isinstance(structure_graph, Mapping):
+            raise ComponentWorkGraphV1Error(
+                "structure transition requires the exact derived structure graph"
+            )
+        return runkernel_canonical_graph(structure_graph, action_ref=action_ref)
+    current = validate_component_work_graph_v1(current_graph or {})
+    if operation == "synthesis_validation":
+        if not synthesis_key or role_artifact is None:
+            raise ComponentWorkGraphV1Error(
+                "synthesis validation requires the exact synthesis D-prime artifact"
+            )
+        candidate = graph_with_synthesis_validation(
+            current,
+            synthesis_key=synthesis_key,
+            dprime_artifact=role_artifact,
+        )
+    elif operation == "scrutiny":
+        if role_artifact is None:
+            raise ComponentWorkGraphV1Error(
+                "scrutiny transition requires the exact Scrutineer artifact"
+            )
+        candidate = graph_with_scrutineer(
+            current,
+            scrutineer_artifact=role_artifact,
+        )
+    elif operation == "synthesis_admission":
+        if not synthesis_key:
+            raise ComponentWorkGraphV1Error(
+                "synthesis admission requires an exact synthesis key"
+            )
+        candidate = graph_with_synthesis_admission(
+            current,
+            synthesis_key=synthesis_key,
+            action_ref=action_ref,
+        )
+    elif operation == "accounting":
+        if logical_accounting is None or physical_call_accounting is None:
+            raise ComponentWorkGraphV1Error(
+                "accounting transition requires derived role-call counts"
+            )
+        candidate = graph_with_accounting(
+            current,
+            logical_accounting=logical_accounting,
+            physical_call_accounting=physical_call_accounting,
+        )
+    elif operation == "finalize":
+        candidate = finalize_component_work_graph_v1(current)
+    else:
+        raise ComponentWorkGraphV1Error(f"unknown Graph V1 operation: {operation}")
+    return runkernel_canonical_graph(candidate, action_ref=action_ref)
 
 
 def finalize_component_work_graph_v1(graph: Mapping[str, Any]) -> dict[str, Any]:
@@ -916,9 +1124,15 @@ def _validate_synthesis_node(
         node.get("dprime_validation_ref")
     ):
         raise ComponentWorkGraphV1Error("validated synthesis lacks D-prime ref")
-    expected = _digest(
-        {key: item for key, item in node.items() if key != "node_digest"}
-    )
+    if node.get("status") in {"validated", "admitted"}:
+        if (
+            not node.get("dprime_validated_node_revision")
+            or not node.get("dprime_validated_node_digest")
+        ):
+            raise ComponentWorkGraphV1Error(
+                "validated synthesis lacks D-prime revision proof"
+            )
+    expected = _digest(_node_digest_payload(node))
     if node.get("node_digest") != expected:
         raise ComponentWorkGraphV1Error("synthesis node digest mismatch")
     return node
@@ -975,11 +1189,22 @@ def _input_nodes(
     return out
 
 
+def _node_digest_payload(node: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in node.items()
+        if key
+        not in {
+            "node_digest",
+            "dprime_validated_node_revision",
+            "dprime_validated_node_digest",
+        }
+    }
+
+
 def _refresh_node_digest(node: dict[str, Any]) -> None:
     node["node_revision"] = str(int(node.get("node_revision") or 0) + 1)
-    node["node_digest"] = _digest(
-        {key: value for key, value in node.items() if key != "node_digest"}
-    )
+    node["node_digest"] = _digest(_node_digest_payload(node))
 
 
 def _refresh_dependent_refs(graph: dict[str, Any]) -> None:
@@ -994,9 +1219,7 @@ def _refresh_dependent_refs(graph: dict[str, Any]) -> None:
             refreshed.append(_node_ref(upstream) if upstream else ref)
         if refreshed != node["input_node_refs"]:
             node["input_node_refs"] = refreshed
-            node["node_digest"] = _digest(
-                {key: value for key, value in node.items() if key != "node_digest"}
-            )
+            node["node_digest"] = _digest(_node_digest_payload(node))
     for edge in graph["edges"]:
         upstream = nodes.get(edge["from_node_id"])
         if upstream:
@@ -1060,6 +1283,8 @@ __all__ = [
     "admit_synthesis_node_via_runkernel",
     "component_work_graph_v1_from_cross_component_artifact",
     "cross_component_input_packet",
+    "derive_multicomponent_role_call_accounting",
+    "expected_graph_after_transition",
     "finalize_component_work_graph_v1",
     "graph_with_accounting",
     "graph_with_scrutineer",

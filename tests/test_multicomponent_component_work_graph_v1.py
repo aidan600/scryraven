@@ -11,6 +11,7 @@ from core.component_work_graph_v1 import (
     admit_synthesis_node_via_runkernel,
     component_work_graph_v1_from_cross_component_artifact,
     cross_component_input_packet,
+    derive_multicomponent_role_call_accounting,
     finalize_component_work_graph_v1,
     graph_with_accounting,
     graph_with_scrutineer,
@@ -47,7 +48,13 @@ COMPONENT_ADMISSION_STAGE = "multicomponent_component_admission"
 COMPONENT_ADMISSION_OWNER = "RunKernel.MulticomponentComponentAdmission"
 
 
-def _role_artifact(role: str, semantic_output: dict, input_packet: dict) -> dict:
+def _role_artifact(
+    role: str,
+    semantic_output: dict,
+    input_packet: dict,
+    *,
+    logical_evaluation_key: str | None = None,
+) -> dict:
     core = {
         "schema_version": "multicomponent_semantic_role_artifact_v1",
         "role": role,
@@ -55,7 +62,7 @@ def _role_artifact(role: str, semantic_output: dict, input_packet: dict) -> dict
         "run_id": RUN_ID,
         "request_id": REQUEST_ID,
         "input_packet_digest": safe_packet_digest(input_packet),
-        "logical_evaluation_key": role,
+        "logical_evaluation_key": logical_evaluation_key or role,
         "logical_evaluations": 1,
         "physical_calls": 1,
         "configured_model_route": {
@@ -75,6 +82,33 @@ def _role_artifact(role: str, semantic_output: dict, input_packet: dict) -> dict
         "raw_provider_payload_retained": False,
     }
     return {**core, "artifact_digest": safe_packet_digest(core)}
+
+
+def _seed_role_artifact(
+    kernel: RunKernel,
+    artifact: dict,
+    *,
+    logical_evaluation_key: str,
+) -> None:
+    kernel.state.projections[
+        f"multicomponent_role:{artifact['role']}:{logical_evaluation_key}"
+    ] = artifact
+
+
+def _accounted_graph(kernel: RunKernel, graph: dict) -> dict:
+    logical, physical = derive_multicomponent_role_call_accounting(
+        kernel.state.projections,
+        issued_actions=kernel.state.issued_actions,
+    )
+    return reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="accounting",
+        graph_candidate=graph_with_accounting(
+            graph,
+            logical_accounting=logical,
+            physical_call_accounting=physical,
+        ),
+    )
 
 
 def _component_node(
@@ -400,7 +434,9 @@ def _validate_synthesis(kernel: RunKernel, graph: dict, key: str) -> dict:
             "blockers": [],
         },
         input_packet,
+        logical_evaluation_key=key,
     )
+    _seed_role_artifact(kernel, artifact, logical_evaluation_key=key)
     return reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="synthesis_validation",
@@ -440,7 +476,9 @@ def test_graph_v1_enforces_topological_admission_and_full_scrutiny() -> None:
             "nonclaims": [],
         },
         scrutiny_input,
+        logical_evaluation_key="full-case",
     )
+    _seed_role_artifact(kernel, scrutiny, logical_evaluation_key="full-case")
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="scrutiny",
@@ -453,15 +491,7 @@ def test_graph_v1_enforces_topological_admission_and_full_scrutiny() -> None:
         run_kernel=kernel,
         synthesis_key="S",
     )
-    graph = reduce_component_work_graph_v1(
-        run_kernel=kernel,
-        operation="accounting",
-        graph_candidate=graph_with_accounting(
-            graph,
-            logical_accounting={"synthesis_dprime_evaluations": 2},
-            physical_call_accounting={"synthesis_dprime_calls": 2},
-        ),
-    )
+    graph = _accounted_graph(kernel, graph)
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="finalize",
@@ -475,6 +505,10 @@ def test_graph_v1_enforces_topological_admission_and_full_scrutiny() -> None:
         "admitted",
         "admitted",
     ]
+    for node in graph["synthesis_nodes"]:
+        assert node["dprime_validated_node_revision"]
+        assert node["dprime_validated_node_digest"]
+        assert node["runkernel_admission_ref"]
 
 
 def test_material_caveat_requires_scrutiny_before_flat_terminal_admission() -> None:
@@ -851,7 +885,9 @@ def test_ordinary_sufficiency_then_fap_then_author_consumes_only_admitted_graph(
             "nonclaims": [],
         },
         scrutineer_input_packet(graph),
+        logical_evaluation_key="full-case",
     )
+    _seed_role_artifact(kernel, scrutiny, logical_evaluation_key="full-case")
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="scrutiny",
@@ -864,15 +900,7 @@ def test_ordinary_sufficiency_then_fap_then_author_consumes_only_admitted_graph(
         run_kernel=kernel,
         synthesis_key="S",
     )
-    graph = reduce_component_work_graph_v1(
-        run_kernel=kernel,
-        operation="accounting",
-        graph_candidate=graph_with_accounting(
-            graph,
-            logical_accounting={"synthesis_dprime_evaluations": 2},
-            physical_call_accounting={"synthesis_dprime_calls": 2},
-        ),
-    )
+    graph = _accounted_graph(kernel, graph)
     graph = reduce_component_work_graph_v1(
         run_kernel=kernel,
         operation="finalize",
@@ -926,3 +954,182 @@ def test_ordinary_sufficiency_then_fap_then_author_consumes_only_admitted_graph(
     assert payload.admitted_synthesis_entries == packet.admitted_synthesis_entries
     assert "Approved direct component findings" in payload.prompt
     assert "Approved admitted synthesis" in payload.prompt
+
+
+def test_clean_scrutineer_does_not_bump_validated_node_revision() -> None:
+    kernel, graph = _flat_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    before = {
+        node["synthesis_key"]: (node["node_revision"], node["node_digest"])
+        for node in graph["synthesis_nodes"]
+    }
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "passed",
+            "reasons": ["Clean full-case review."],
+            "challenged_synthesis_keys": [],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        scrutineer_input_packet(graph),
+        logical_evaluation_key="full-case",
+    )
+    _seed_role_artifact(kernel, scrutiny, logical_evaluation_key="full-case")
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="scrutiny",
+        graph_candidate=graph_with_scrutineer(graph, scrutineer_artifact=scrutiny),
+    )
+    after = {
+        node["synthesis_key"]: (node["node_revision"], node["node_digest"])
+        for node in graph["synthesis_nodes"]
+    }
+    assert after == before
+    assert graph["scrutineer_status"] == "passed"
+
+
+def test_scrutineer_material_caveats_invalidate_prior_validation() -> None:
+    kernel, graph = _flat_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "passed_with_caveats",
+            "reasons": ["Material caveat remains."],
+            "challenged_synthesis_keys": [],
+            "caveats": ["Material caveat remains."],
+            "nonclaims": [],
+        },
+        scrutineer_input_packet(graph),
+        logical_evaluation_key="full-case",
+    )
+    mutated = graph_with_scrutineer(graph, scrutineer_artifact=scrutiny)
+    node = next(item for item in mutated["synthesis_nodes"] if item["synthesis_key"] == "E")
+    assert node["status"] == "proposed"
+    assert not node.get("dprime_validation_ref")
+    with pytest.raises(ComponentWorkGraphV1Error, match="validated node"):
+        graph_with_synthesis_admission(
+            mutated,
+            synthesis_key="E",
+            action_ref={"action_id": "should-fail"},
+        )
+
+
+def test_scrutineer_cannot_mutate_already_admitted_upstream_synthesis() -> None:
+    kernel, graph = _structured_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    graph = admit_synthesis_node_via_runkernel(run_kernel=kernel, synthesis_key="E")
+    graph = _validate_synthesis(kernel, graph, "S")
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "passed_with_caveats",
+            "reasons": ["Late caveat."],
+            "challenged_synthesis_keys": [],
+            "caveats": ["Late caveat."],
+            "nonclaims": [],
+        },
+        scrutineer_input_packet(graph),
+        logical_evaluation_key="full-case",
+    )
+    with pytest.raises(
+        ComponentWorkGraphV1Error,
+        match="already admitted synthesis",
+    ):
+        graph_with_scrutineer(graph, scrutineer_artifact=scrutiny)
+
+
+def test_graph_validation_rejects_unrelated_synthesis_mutation() -> None:
+    import core.component_work_graph_v1 as graph_v1
+
+    kernel, graph = _structured_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    graph = admit_synthesis_node_via_runkernel(run_kernel=kernel, synthesis_key="E")
+    input_packet = synthesis_dprime_input_packet(graph, synthesis_key="S")
+    artifact = _role_artifact(
+        ROLE_SYNTHESIS_DPRIME,
+        {
+            "validation_status": "supported",
+            "reasons": ["Inputs support the nominated relationship."],
+            "caveats": [],
+            "nonclaims": [],
+            "blockers": [],
+        },
+        input_packet,
+        logical_evaluation_key="S",
+    )
+    _seed_role_artifact(kernel, artifact, logical_evaluation_key="S")
+    candidate = deepcopy(
+        graph_with_synthesis_validation(
+            graph,
+            synthesis_key="S",
+            dprime_artifact=artifact,
+        )
+    )
+    candidate["challenge_refs"] = [
+        {
+            "synthesis_key": "E",
+            "scrutineer_ref": {"artifact_id": "forged"},
+            "reasons": ["unrelated tamper"],
+        }
+    ]
+    candidate["graph_digest"] = graph_v1._digest(
+        graph_v1._without_graph_digest(candidate)
+    )
+    with pytest.raises(
+        RunKernelTransitionError,
+        match="exact rederived transition",
+    ):
+        reduce_component_work_graph_v1(
+            run_kernel=kernel,
+            operation="synthesis_validation",
+            synthesis_key="S",
+            graph_candidate=candidate,
+        )
+
+
+def test_forged_accounting_is_rejected() -> None:
+    kernel, graph = _flat_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    with pytest.raises(
+        (ComponentWorkGraphV1Error, RunKernelTransitionError),
+        match="accounting|role-call|exact",
+    ):
+        reduce_component_work_graph_v1(
+            run_kernel=kernel,
+            operation="accounting",
+            graph_candidate=graph_with_accounting(
+                graph,
+                logical_accounting={
+                    "component_analyst_evaluations": 99,
+                    "component_dprime_evaluations": 99,
+                    "cross_component_analyst_evaluations": 99,
+                    "synthesis_dprime_evaluations": 99,
+                    "scrutineer_evaluations": 99,
+                },
+                physical_call_accounting={
+                    "component_analyst_calls": 99,
+                    "component_dprime_calls": 99,
+                    "cross_component_analyst_calls": 99,
+                    "synthesis_dprime_calls": 99,
+                    "scrutineer_calls": 99,
+                },
+            ),
+        )
+
+
+def test_admitted_synthesis_preserves_dprime_validated_revision_proof() -> None:
+    kernel, graph = _flat_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    validated = next(item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "E")
+    validated_revision = validated["dprime_validated_node_revision"]
+    validated_digest = validated["dprime_validated_node_digest"]
+    assert validated_revision == validated["node_revision"]
+    assert validated_digest == validated["node_digest"]
+    graph = admit_synthesis_node_via_runkernel(run_kernel=kernel, synthesis_key="E")
+    admitted = next(item for item in graph["synthesis_nodes"] if item["synthesis_key"] == "E")
+    assert admitted["status"] == "admitted"
+    assert admitted["dprime_validated_node_revision"] == validated_revision
+    assert admitted["dprime_validated_node_digest"] == validated_digest
+    assert admitted["runkernel_admission_ref"]

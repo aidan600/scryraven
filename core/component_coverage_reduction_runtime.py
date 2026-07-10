@@ -1107,6 +1107,7 @@ def build_component_coverage_reduction_state(
     existing_coverage_record_digests: Sequence[str] = (),
     run_id: str,
     request_id: str,
+    ignore_satisfied_provider_job_historical_gaps: bool = False,
 ) -> dict[str, Any]:
     """Validate one passive coverage record and build canonical reduction state."""
 
@@ -1380,18 +1381,7 @@ def build_component_coverage_reduction_state(
         if isinstance(record.coverage_state, CoverageState)
         else CoverageState(str(record.coverage_state)),
         ignore_satisfied_provider_job_historical_gaps=(
-            _safe_mapping(contract.get("question_meaning_metadata")).get(
-                "explicit_factual_component_list"
-            )
-            is True
-            and bool(
-                _clean_token(
-                    _safe_mapping(contract.get("question_meaning_metadata")).get(
-                        "requested_synthesis_directive"
-                    ),
-                    limit=360,
-                )
-            )
+            ignore_satisfied_provider_job_historical_gaps is True
         ),
     )
     ledger_qualification_blockers = ledger_qualification_blockers_for_satisfied_coverage(

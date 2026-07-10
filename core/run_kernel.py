@@ -15381,11 +15381,21 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "multi-component semantic role cross-run observation"
                 )
+            if artifact.get("request_id") != self.state.request_id:
+                raise RunKernelTransitionError(
+                    "multi-component semantic role request binding mismatch"
+                )
             if artifact.get("input_packet_digest") != action.inputs.get(
                 "input_packet_digest"
             ):
                 raise RunKernelTransitionError(
                     "multi-component semantic role input binding mismatch"
+                )
+            if artifact.get("logical_evaluation_key") != action.inputs.get(
+                "logical_evaluation_key"
+            ):
+                raise RunKernelTransitionError(
+                    "multi-component semantic role logical evaluation key mismatch"
                 )
             action_ref = _safe_mapping(artifact.get("authorized_action_ref"))
             if action_ref.get("action_id") != action.action_id:
@@ -15447,6 +15457,67 @@ class RunKernel:
                 raise RunKernelTransitionError(
                     "multi-component admission role/component binding mismatch"
                 )
+            from core.multicomponent_role_runtime import (
+                ROLE_COMPONENT_ANALYST,
+                ROLE_COMPONENT_DPRIME,
+                role_artifact_ref,
+                validate_multicomponent_role_artifact,
+            )
+
+            component_id = str(component_ref.get("component_id") or "")
+            completed_analyst = _safe_mapping(
+                self.state.projections.get(
+                    f"multicomponent_role:{ROLE_COMPONENT_ANALYST}:{component_id}"
+                )
+            )
+            completed_dprime = _safe_mapping(
+                self.state.projections.get(
+                    f"multicomponent_role:{ROLE_COMPONENT_DPRIME}:{component_id}"
+                )
+            )
+            try:
+                completed_analyst = validate_multicomponent_role_artifact(
+                    completed_analyst,
+                    expected_role=ROLE_COMPONENT_ANALYST,
+                )
+                completed_dprime = validate_multicomponent_role_artifact(
+                    completed_dprime,
+                    expected_role=ROLE_COMPONENT_DPRIME,
+                )
+            except Exception as exc:
+                raise RunKernelTransitionError(
+                    "multi-component admission requires completed RunKernel role artifacts"
+                ) from exc
+            if (
+                completed_analyst.get("logical_evaluation_key") != component_id
+                or completed_dprime.get("logical_evaluation_key") != component_id
+                or role_artifact_ref(completed_analyst)
+                != _safe_mapping(component_ref.get("analyst_finding_ref"))
+                or role_artifact_ref(completed_dprime)
+                != _safe_mapping(component_ref.get("dprime_validation_ref"))
+                or completed_analyst.get("artifact_digest")
+                != action.inputs.get("analyst_artifact_digest")
+                or completed_dprime.get("artifact_digest")
+                != action.inputs.get("dprime_artifact_digest")
+            ):
+                raise RunKernelTransitionError(
+                    "multi-component admission role provenance does not match completed history"
+                )
+            admitted_claim = _safe_mapping(component_ref.get("admitted_claim_ref"))
+            if component_ref.get("admission_status") in {
+                "admitted",
+                "admitted_with_caveats",
+            }:
+                nominated_claim = _safe_mapping(
+                    completed_analyst.get("semantic_output")
+                ).get("claim_text")
+                if (
+                    not nominated_claim
+                    or admitted_claim.get("claim_text") != nominated_claim
+                ):
+                    raise RunKernelTransitionError(
+                        "multi-component admission claim must equal Analyst-nominated claim"
+                    )
             refs = [
                 _safe_mapping(item)
                 for item in aggregate.get("component_admission_refs") or ()
@@ -15536,6 +15607,9 @@ class RunKernel:
         elif action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE:
             from core.component_work_graph_v1 import (
                 COMPONENT_WORK_GRAPH_V1_OWNER,
+                component_work_graph_v1_from_cross_component_artifact,
+                derive_multicomponent_role_call_accounting,
+                expected_graph_after_transition,
                 validate_component_work_graph_v1,
             )
             from core.component_work_node import (
@@ -15547,6 +15621,8 @@ class RunKernel:
             )
             from core.multicomponent_role_runtime import (
                 ROLE_CROSS_COMPONENT_ANALYST,
+                ROLE_SCRUTINEER,
+                ROLE_SYNTHESIS_DPRIME,
                 role_artifact_ref,
             )
 
@@ -15566,6 +15642,11 @@ class RunKernel:
                 raise RunKernelTransitionError("Graph V1 action binding mismatch")
             operation = action.inputs.get("operation")
             current_graph = _safe_mapping(self.state.projections.get(action.stage))
+            synthesis_key = action.inputs.get("synthesis_key")
+            role_artifact = None
+            logical_accounting = None
+            physical_call_accounting = None
+            structure_graph = None
             if operation == "structure":
                 if current_graph or int(graph.get("graph_revision") or 0) != 1:
                     raise RunKernelTransitionError(
@@ -15628,9 +15709,37 @@ class RunKernel:
                         )
                         for item in admission_refs
                     ]
+                    if not expected_component_nodes:
+                        raise RunKernelTransitionError(
+                            "Graph V1 structure must exactly consume current RunKernel component admission"
+                        )
+                    structure_graph = (
+                        component_work_graph_v1_from_cross_component_artifact(
+                            run_id=self.state.run_id,
+                            request_id=self.state.request_id,
+                            accepted_contract_ref=contract_ref,
+                            requested_synthesis_directive=str(
+                                graph.get("requested_synthesis_directive") or ""
+                            ),
+                            component_nodes=expected_component_nodes,
+                            cross_component_artifact=current_cross_artifact,
+                            additional_scrutineer_trigger_reasons=tuple(
+                                reason
+                                for reason in graph.get("scrutineer_trigger_reasons")
+                                or ()
+                                if reason
+                                in {
+                                    "deep_mode",
+                                    "high_stakes_quantitative_posture",
+                                }
+                            ),
+                        )
+                    )
+                except RunKernelTransitionError:
+                    raise
                 except (KeyError, ValueError) as exc:
                     raise RunKernelTransitionError(
-                        "Graph V1 structure cannot project current canonical component admission"
+                        "Graph V1 structure must exactly consume current RunKernel component admission"
                     ) from exc
                 if (
                     component_admission.get("owner")
@@ -15672,83 +15781,55 @@ class RunKernel:
                     raise RunKernelTransitionError(
                         "Graph V1 reducer received a stale or non-sequential transition"
                     )
-                current_components = [
-                    (
-                        _safe_mapping(item).get("component_id"),
-                        _safe_mapping(item).get("component_revision"),
-                        _safe_mapping(item).get("component_digest"),
-                    )
-                    for item in current_graph.get("component_nodes") or ()
-                ]
-                next_components = [
-                    (
-                        _safe_mapping(item).get("component_id"),
-                        _safe_mapping(item).get("component_revision"),
-                        _safe_mapping(item).get("component_digest"),
-                    )
-                    for item in graph.get("component_nodes") or ()
-                ]
-                if current_components != next_components:
-                    raise RunKernelTransitionError(
-                        "Graph V1 transition cannot rewrite canonical component lineage"
-                    )
-                synthesis_key = action.inputs.get("synthesis_key")
-                current_nodes = {
-                    _safe_mapping(item).get("synthesis_key"): _safe_mapping(item)
-                    for item in current_graph.get("synthesis_nodes") or ()
-                }
-                next_nodes = {
-                    _safe_mapping(item).get("synthesis_key"): _safe_mapping(item)
-                    for item in graph.get("synthesis_nodes") or ()
-                }
-                if set(current_nodes) != set(next_nodes):
-                    raise RunKernelTransitionError(
-                        "Graph V1 transition cannot add or remove synthesis nodes"
-                    )
                 if operation == "synthesis_validation":
-                    if (
-                        synthesis_key not in current_nodes
-                        or current_nodes[synthesis_key].get("status") != "proposed"
-                        or next_nodes[synthesis_key].get("status")
-                        not in {"validated", "challenged", "blocked"}
-                        or not _safe_mapping(
-                            next_nodes[synthesis_key].get("dprime_validation_ref")
+                    role_artifact = _safe_mapping(
+                        self.state.projections.get(
+                            f"multicomponent_role:{ROLE_SYNTHESIS_DPRIME}:{synthesis_key}"
                         )
-                    ):
+                    )
+                    if not role_artifact:
                         raise RunKernelTransitionError(
-                            "Graph V1 synthesis validation transition invalid"
-                        )
-                elif operation == "synthesis_admission":
-                    if (
-                        synthesis_key not in current_nodes
-                        or current_nodes[synthesis_key].get("status") != "validated"
-                        or next_nodes[synthesis_key].get("status") != "admitted"
-                        or _safe_mapping(
-                            next_nodes[synthesis_key].get("runkernel_admission_ref")
-                        ).get("action_id")
-                        != action.action_id
-                    ):
-                        raise RunKernelTransitionError(
-                            "Graph V1 synthesis admission transition invalid"
+                            "Graph V1 synthesis validation lacks completed D-prime artifact"
                         )
                 elif operation == "scrutiny":
-                    if not _safe_mapping(graph.get("scrutineer_ref")):
+                    role_artifact = _safe_mapping(
+                        self.state.projections.get(
+                            f"multicomponent_role:{ROLE_SCRUTINEER}:full-case"
+                        )
+                    )
+                    if not role_artifact:
                         raise RunKernelTransitionError(
-                            "Graph V1 scrutiny transition lacks Scrutineer ref"
+                            "Graph V1 scrutiny lacks completed Scrutineer artifact"
                         )
                 elif operation == "accounting":
-                    if not graph.get("logical_accounting") or not graph.get(
-                        "physical_call_accounting"
-                    ):
-                        raise RunKernelTransitionError(
-                            "Graph V1 accounting transition lacks explicit counts"
+                    try:
+                        logical_accounting, physical_call_accounting = (
+                            derive_multicomponent_role_call_accounting(
+                                self.state.projections,
+                                issued_actions=self.state.issued_actions,
+                            )
                         )
-                elif operation == "finalize" and graph.get("graph_status") == (
-                    "synthesis_validation_required"
-                ):
-                    raise RunKernelTransitionError(
-                        "Graph V1 finalization did not decide graph readiness"
-                    )
+                    except ValueError as exc:
+                        raise RunKernelTransitionError(str(exc)) from exc
+            try:
+                expected_graph = expected_graph_after_transition(
+                    current_graph or None,
+                    operation=str(operation or ""),
+                    action_ref=action_ref,
+                    synthesis_key=synthesis_key,
+                    role_artifact=role_artifact,
+                    logical_accounting=logical_accounting,
+                    physical_call_accounting=physical_call_accounting,
+                    structure_graph=structure_graph,
+                )
+            except ValueError as exc:
+                raise RunKernelTransitionError(
+                    f"Graph V1 could not rederive exact {operation} transition"
+                ) from exc
+            if expected_graph != graph:
+                raise RunKernelTransitionError(
+                    "Graph V1 candidate does not equal the exact rederived transition"
+                )
             self.state.projections[action.stage] = deepcopy(graph)
         else:
             self.state.projections[action.stage] = _safe_mapping(observation.payload)

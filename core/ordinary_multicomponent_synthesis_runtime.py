@@ -17,6 +17,7 @@ from core.component_work_graph_v1 import (
     admit_synthesis_node_via_runkernel,
     component_work_graph_v1_from_cross_component_artifact,
     cross_component_input_packet,
+    derive_multicomponent_role_call_accounting,
     finalize_component_work_graph_v1,
     graph_with_accounting,
     graph_with_scrutineer,
@@ -327,10 +328,13 @@ def _execute_selected_lane(
     requested_synthesis_directive: str,
 ) -> None:
     accepted = run_kernel.state.initial_answer_contract
+    if not _selected_multicomponent_contract(accepted):
+        raise OrdinaryMulticomponentRuntimeError(
+            "accepted contract lost typed multi-component qualification"
+        )
     metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
     if (
-        metadata.get("explicit_factual_component_list") is not True
-        or _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
+        _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
         != requested_synthesis_directive
     ):
         raise OrdinaryMulticomponentRuntimeError(
@@ -353,6 +357,8 @@ def _execute_selected_lane(
         component_refs,
         component_text_by_id=_accepted_component_text_by_id(accepted),
     )
+    # Custody-gap exception is authorized only for the selected typed lane.
+    typed_lane_custody_exception = True
     missing_component_ids = [
         str(component_ref["component_id"])
         for component_ref in component_refs
@@ -372,7 +378,9 @@ def _execute_selected_lane(
                     or component_ref.get("source_obligation_candidate_refs")
                     or ()
                 ),
-                ignore_satisfied_provider_job_historical_gaps=True,
+                ignore_satisfied_provider_job_historical_gaps=(
+                    typed_lane_custody_exception
+                ),
             )
         )
     ]
@@ -492,9 +500,7 @@ def _execute_selected_lane(
         graph_candidate=graph_candidate,
     )
 
-    scrutineer_ran = False
     deferred_admission_keys: list[str] = []
-    synthesis_dprime_evaluations = 0
     for synthesis_key in list(graph["synthesis_topological_order"]):
         dprime_input = synthesis_dprime_input_packet(
             graph,
@@ -507,7 +513,6 @@ def _execute_selected_lane(
             logical_evaluation_key=synthesis_key,
             **role_kwargs,
         )
-        synthesis_dprime_evaluations += 1
         graph = reduce_component_work_graph_v1(
             run_kernel=run_kernel,
             operation="synthesis_validation",
@@ -555,7 +560,6 @@ def _execute_selected_lane(
                 scrutineer_artifact=scrutineer_artifact,
             ),
         )
-        scrutineer_ran = True
 
     for synthesis_key in deferred_admission_keys:
         node = next(
@@ -574,20 +578,10 @@ def _execute_selected_lane(
                 synthesis_key=synthesis_key,
             )
 
-    logical = {
-        "component_analyst_evaluations": len(component_refs),
-        "component_dprime_evaluations": len(component_refs),
-        "cross_component_analyst_evaluations": 1,
-        "synthesis_dprime_evaluations": synthesis_dprime_evaluations,
-        "scrutineer_evaluations": 1 if scrutineer_ran else 0,
-    }
-    physical = {
-        "component_analyst_calls": len(component_refs),
-        "component_dprime_calls": len(component_refs),
-        "cross_component_analyst_calls": 1,
-        "synthesis_dprime_calls": synthesis_dprime_evaluations,
-        "scrutineer_calls": 1 if scrutineer_ran else 0,
-    }
+    logical, physical = derive_multicomponent_role_call_accounting(
+        run_kernel.state.projections,
+        issued_actions=run_kernel.state.issued_actions,
+    )
     graph = reduce_component_work_graph_v1(
         run_kernel=run_kernel,
         operation="accounting",
