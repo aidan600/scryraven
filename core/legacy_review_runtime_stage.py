@@ -111,7 +111,7 @@ def multicomponent_legacy_review_bypass_outcome_from_scope(
         scrutineer_remediation_resynthesis_triggered=False,
         scrutineer_pass_flags_directly_to_author=False,
         final_top_evidence=list(scope.get("final_top_evidence") or ()),
-        unique_source_urls=list(scope.get("unique_source_urls") or ()),
+        unique_source_urls=dict(scope.get("unique_source_urls") or {}),
         ordered_sources=scope.get("ordered_sources"),
         evidence_block=scope.get("evidence_block"),
         cached_prefix=scope.get("cached_prefix"),

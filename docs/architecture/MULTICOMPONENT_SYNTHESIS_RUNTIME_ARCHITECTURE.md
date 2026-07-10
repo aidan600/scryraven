@@ -1,24 +1,26 @@
 # Multi-Component Synthesis Runtime Architecture
 
-Status: canonical repo-visible architecture for the approved ordinary
-multi-component runtime direction.
+Status: canonical repo-visible architecture for the installed bounded ordinary
+multi-component runtime and its deferred dynamic-graph direction.
 
-Mode: REPAIR.
+Mode: BUILD.
 
-Phase: `MULTICOMPONENT-RUNTIME-ARCHITECTURE-DOCTRINE-REPAIR-01`.
+Phase: `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
 
-Verdict target: `NO-BUT-JUSTIFIED`.
+Verdict target: `YES`.
 
-This phase has no application-runtime delta. It repairs the doctrine that must
-govern the next BUILD. The mandatory next checkpoint is
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`; no intervening proof or
-contract-only phase is authorized by default.
+The earlier `MULTICOMPONENT-RUNTIME-ARCHITECTURE-DOCTRINE-REPAIR-01` established
+the governing direction. Phase 1 now installs the bounded ordinary product path
+for `ordinary-bounded-multicomponent-factual-synthesis-v1`. The recommended
+next phase is `AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
 
 ## Current, Reusable, And Target States
 
 These three states are distinct and must not be collapsed.
 
 ### Current default ordinary behavior
+
+Nonqualifying and single-component runs retain the established direct lane:
 
 ```text
 accepted component structure
@@ -33,12 +35,23 @@ accepted component structure
 -> ordinary Author
 ```
 
-Current default ordinary semantic production is direct. It does not establish
-a typed general regular-Analyst proposal followed by component D-prime
-validation. Broad or legacy Analyst prose elsewhere in the pipeline is not a
-typed component-specific proposal and validation artifact, and direct ordinary
-semantic-producer output must not be retroactively labeled Analyst/D-prime
-output.
+For the supported qualifying class, lane selection occurs before canonical
+semantic production and bypasses that direct producer:
+
+```text
+accepted explicit factual component structure and synthesis directive
+-> component Analyst
+-> component D-prime
+-> RunKernel component admission
+-> SemanticObservation / ComponentCoverage
+-> ComponentWorkNode V1
+-> ComponentWorkGraph V1 and synthesis roles
+-> ordinary Sufficiency / FinalAnswerPacket / Author
+```
+
+Broad or legacy Analyst prose is not relabeled typed component authority. The
+two lanes are selected before semantic output; their results are never both run
+and compared afterward.
 
 ### Existing reusable bounded capability
 
@@ -54,7 +67,7 @@ default ordinary semantic producer invokes the complete approved component
 validation or cross-component synthesis lane. The V0 contracts and serial
 checkpoint are not ordinary answer consumption.
 
-### Approved Phase 1 target
+### Installed Phase 1 path
 
 ```text
 component requirement and custody facts
@@ -76,7 +89,8 @@ component requirement and custody facts
 -> ordinary user-facing answer
 ```
 
-This complete target is approved but not installed.
+This complete bounded target is installed for the named supported query class.
+It is not a claim of arbitrary-query support or dynamic graph recovery.
 
 ## Durable Role Ownership
 
@@ -176,19 +190,19 @@ synthesis but may not create it.
 
 Do not silently redefine the established V0 contract.
 
-`ComponentWorkGraph V1` is the preferred successor direction. V1 should
-represent ComponentWorkNode refs, first-class synthesis-node refs, structural
-edges, proposed and admitted semantic edges, challenge refs, revision and
-staleness metadata, and depth/budget posture.
+`ComponentWorkGraph V1` is the installed bounded successor for the supported
+ordinary class. It represents ComponentWorkNode refs, first-class
+synthesis-node refs, structural edges, proposed and admitted semantic edges,
+challenge refs, revision and staleness metadata, and depth/budget posture.
 
 V0 may remain a compatibility input or review-only historical contract, but it
-is an explicitly named strangler target for ordinary architecture. The next
-BUILD must reuse or adapt its useful validation and identity machinery while
-subordinating it to V1; this doctrine does not implement V1 or redefine V0.
+is an explicitly named strangler target for ordinary architecture. Phase 1
+reuses its useful safety direction while leaving V0 unchanged and subordinating
+ordinary qualifying consumption to V1.
 
 ## Phase 1 Envelope
 
-The next BUILD's named supported class is
+Phase 1's named supported class is
 `ordinary-bounded-multicomponent-factual-synthesis-v1`.
 
 | Bound | Phase 1 value |
@@ -222,7 +236,7 @@ Fast and Balanced may skip full Scrutineer only when no trigger applies.
 
 ## Ordinary Product Endpoint
 
-The next BUILD must reach this one vertical product path:
+Phase 1 reaches this one vertical product path:
 
 ```text
 default ordinary entrypoint
@@ -265,19 +279,12 @@ parallelism is added.
 
 ## Phase Boundary And Non-Proofs
 
-Licensed target surfaces for this REPAIR are repo Markdown architecture
-doctrine, Codex guidance Markdown, docs/static posture tests, and narrow indexes.
-Runtime Python and ordinary answer behavior are closed this phase.
+Phase 1 proves an offline synthetic ordinary product path through RunOutcome and
+CLI rendering. It does not prove live model quality, product correctness,
+automatic graph recovery, automatic missing-component research, dynamic graph
+mutation, selective recomputation, scheduling, budget leases, runtime
+parallelism, or arbitrary-query support. Its caps are implementation bounds,
+not permanent mode policy.
 
-This doctrine does not prove or implement:
-
-- runtime multi-component behavior;
-- a typed ordinary component Analyst/D-prime producer;
-- Cross-Component Analyst, synthesis D-prime, or full Scrutineer runtime;
-- ComponentWorkGraph V1 or SynthesisWorkNode code;
-- ordinary Sufficiency/FAP/Author consumption changes;
-- live validation, product correctness, citation rendering, or
-  source-obligation satisfaction.
-
-The mandatory next checkpoint remains exactly
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
+The recommended next checkpoint is exactly
+`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.

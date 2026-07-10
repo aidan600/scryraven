@@ -1,0 +1,590 @@
+"""PRODUCT-PATH-REGRESSION: ordinary Northstar synthesis reaches CLI output."""
+
+from __future__ import annotations
+
+import importlib
+import json
+import logging
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+import core.ordinary_multicomponent_synthesis_runtime as multicomponent_runtime
+import core.pipeline_orchestrator as orchestrator
+from core.component_work_graph_v1 import COMPONENT_WORK_GRAPH_V1_STAGE
+from core.cost_accounting import CostAccumulator
+from core.multicomponent_role_runtime import (
+    ROLE_COMPONENT_ANALYST,
+    ROLE_COMPONENT_DPRIME,
+    ROLE_CROSS_COMPONENT_ANALYST,
+    ROLE_SCRUTINEER,
+    ROLE_SYNTHESIS_DPRIME,
+    ROLE_SYSTEM_PROMPTS,
+)
+from core.prompts import DEFAULT_SYSTEM
+from core.protocols import NullStatusWriter
+from core.run_kernel import ActionType
+from tests.helpers.offline_ordinary_pipeline import (
+    HANDOFF_AUTHOR,
+    HANDOFF_PACKET,
+    HANDOFF_SEMANTIC,
+    HANDOFF_SUFFICIENCY,
+    OfflineOrdinaryPipelineHarness,
+    install_handoff_capture,
+    offline_balanced_run_config,
+    scrub_offline_runtime,
+)
+
+NORTHSTAR_QUERY = """For the fictional Northstar Home-Energy Rebate:
+- What is the base rebate amount?
+- What is the application deadline?
+- Who qualifies for the income-based bonus?
+- Must bonus applicants use the paper application?
+- Can ordinary applicants file online?
+
+Then explain how bonus eligibility changes the filing route and what an
+eligible applicant should do."""
+
+NORTHSTAR_REPORT = """Northstar Home-Energy Rebate
+
+The base rebate is $1,200, and applications are due October 31, 2027. The
+income bonus is available at or below $60,000. A qualifying applicant seeking
+that bonus should file the paper application because bonus claimants must use
+paper. Online filing is available only to applicants who are not claiming the
+bonus."""
+
+
+@pytest.fixture(autouse=True)
+def _offline_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    scrub_offline_runtime(monkeypatch)
+
+
+class NorthstarHarness(OfflineOrdinaryPipelineHarness):
+    def __init__(self, tmp_path: Path) -> None:
+        super().__init__(
+            tmp_path=tmp_path,
+            query=NORTHSTAR_QUERY,
+            core_topic="Northstar Home-Energy Rebate",
+            primary_entity="Northstar Home-Energy Rebate",
+            researcher_queries=(
+                "Northstar base rebate amount",
+                "Northstar application deadline",
+                "Northstar income-based bonus qualification",
+                "Northstar bonus applicant paper application",
+                "Northstar ordinary applicant online filing",
+            ),
+            raw_author_response=NORTHSTAR_REPORT,
+            logger_name="test_multicomponent_northstar",
+        )
+
+    def ask_model(self, prompt: str, system_prompt: str, **kwargs: Any) -> str:
+        if system_prompt in ROLE_SYSTEM_PROMPTS.values():
+            self.model_calls.append(
+                {
+                    "system_prompt": system_prompt,
+                    "stream": bool(kwargs.get("stream")),
+                    "provider": kwargs.get("provider"),
+                    "model": kwargs.get("model"),
+                    "use_reasoning": kwargs.get("use_reasoning"),
+                }
+            )
+            payload = json.loads(prompt)
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_ANALYST]:
+                question = str(
+                    payload.get("component_ref", {}).get("user_facing_question")
+                    or ""
+                ).casefold()
+                claim = self._component_claim(question)
+                return json.dumps(
+                    {
+                        "claim_text": claim,
+                        "support_status": "supported",
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_COMPONENT_DPRIME]:
+                return json.dumps(
+                    {
+                        "validation_status": "supported",
+                        "reasons": ["The nominated claim matches the exact evidence."],
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_CROSS_COMPONENT_ANALYST]:
+                component_ids = self._component_ids(payload)
+                return json.dumps(
+                    {
+                        "synthesis_proposals": [
+                            {
+                                "synthesis_key": "E",
+                                "claim_text": (
+                                    "Applicants at or below $60,000 who seek the "
+                                    "income bonus must use the paper application."
+                                ),
+                                "relationship_type": "eligibility_and_filing_requirement",
+                                "component_inputs": [
+                                    component_ids["income"],
+                                    component_ids["paper"],
+                                ],
+                                "synthesis_inputs": [],
+                                "caveats": [],
+                                "nonclaims": [],
+                                "blockers": [],
+                            },
+                            {
+                                "synthesis_key": "S",
+                                "claim_text": (
+                                    "A qualifying applicant seeking the bonus should "
+                                    "file on paper; online filing is available only to "
+                                    "applicants not claiming the bonus."
+                                ),
+                                "relationship_type": "conditional_filing_route",
+                                "component_inputs": [component_ids["online"]],
+                                "synthesis_inputs": ["E"],
+                                "caveats": [],
+                                "nonclaims": [],
+                                "blockers": [],
+                            },
+                        ]
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SYNTHESIS_DPRIME]:
+                return json.dumps(
+                    {
+                        "validation_status": "supported",
+                        "reasons": ["All nominated upstream inputs are admitted."],
+                        "caveats": [],
+                        "nonclaims": [],
+                        "blockers": [],
+                    }
+                )
+            if system_prompt == ROLE_SYSTEM_PROMPTS[ROLE_SCRUTINEER]:
+                return json.dumps(
+                    {
+                        "challenge_status": "passed",
+                        "reasons": ["The full two-level filing case is coherent."],
+                        "challenged_synthesis_keys": [],
+                        "caveats": [],
+                        "nonclaims": [],
+                    }
+                )
+        return super().ask_model(prompt, system_prompt, **kwargs)
+
+    @staticmethod
+    def _component_claim(question: str) -> str:
+        if "base rebate" in question:
+            return "The Northstar base rebate is $1,200."
+        if "deadline" in question:
+            return "The Northstar application deadline is October 31, 2027."
+        if "income" in question:
+            return "The income bonus is available at or below $60,000."
+        if "paper" in question:
+            return "Applicants claiming the income bonus must use the paper application."
+        if "online" in question:
+            return "Applicants not claiming the income bonus may file online."
+        raise AssertionError(f"unexpected Northstar component question: {question}")
+
+    @staticmethod
+    def _component_ids(payload: dict[str, Any]) -> dict[str, str]:
+        found: dict[str, str] = {}
+        for node in payload.get("component_nodes", []):
+            question = str(node.get("component_question") or "").casefold()
+            component_id = str(node["component_id"])
+            if "income" in question:
+                found["income"] = component_id
+            if "paper" in question:
+                found["paper"] = component_id
+            if "online" in question:
+                found["online"] = component_id
+        assert set(found) == {"income", "paper", "online"}
+        return found
+
+    def build_search_passages(self) -> list[dict[str, Any]]:
+        facts = (
+            (
+                101,
+                "Northstar base rebate amount $1,200",
+                "The Northstar Home-Energy Rebate base rebate is $1,200.",
+                "sourced_numeric_values",
+                "Northstar base rebate amount",
+            ),
+            (
+                102,
+                "Northstar application deadline October 31 2027",
+                "Northstar applications are due October 31, 2027.",
+                "legal_or_regulatory_text",
+                '"Northstar Home-Energy Rebate" Northstar application deadline',
+            ),
+            (
+                103,
+                "Northstar income bonus threshold $60,000",
+                "The Northstar income bonus is available at or below $60,000.",
+                "sourced_numeric_values",
+                "Northstar income-based bonus qualification",
+            ),
+            (
+                104,
+                "Northstar bonus claimant paper application rule",
+                "Applicants claiming the Northstar income bonus must use the paper application.",
+                "primary_source_documents",
+                "Northstar bonus applicant paper application",
+            ),
+            (
+                105,
+                "Northstar non-bonus online filing rule",
+                "Applicants not claiming the Northstar income bonus may file online.",
+                "primary_source_documents",
+                "Northstar ordinary applicant online filing",
+            ),
+        )
+        return [
+            {
+                "source_id": source_id,
+                "title": title,
+                "url": f"https://northstar.example/rule-{source_id}",
+                "text": text,
+                "score": 1.0 - (index * 0.01),
+                "credibility": 4,
+                "source_tier": "official",
+                "source_class": source_class,
+                "currentness_signal": "current",
+                "readable_status": "readable",
+                "disposition": "accepted",
+                "eligible_for_stronger_obligation": True,
+                "query_ref": query_ref,
+                "_provider": "offline_fake_search",
+            }
+            for index, (source_id, title, text, source_class, query_ref) in enumerate(
+                facts
+            )
+        ]
+
+
+def _forbid_direct_semantic_producer(monkeypatch: pytest.MonkeyPatch) -> None:
+    def forbidden(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError(
+            "qualifying Northstar run must not execute the direct semantic producer"
+        )
+
+    monkeypatch.setattr(
+        multicomponent_runtime,
+        "execute_ordinary_semantic_producer_handoff_from_scope",
+        forbidden,
+    )
+
+
+def _role_call_count(harness: NorthstarHarness, role: str) -> int:
+    system_prompt = ROLE_SYSTEM_PROMPTS[role]
+    return sum(
+        call.get("system_prompt") == system_prompt for call in harness.model_calls
+    )
+
+
+def _assert_northstar_product_state(
+    *,
+    captured: dict[str, Any],
+    harness: NorthstarHarness,
+    outcome: Any,
+) -> None:
+    kernel = captured["run_kernel"]
+    graph = kernel.state.projections[COMPONENT_WORK_GRAPH_V1_STAGE]
+    assert len(kernel.state.semantic_observation_admission_history) == 5
+    assert len(kernel.state.component_coverage_history) == 5
+    assert len(graph["component_nodes"]) == 5
+    assert len(graph["synthesis_nodes"]) == 2
+    assert graph["maximum_synthesis_depth"] == 2
+    assert graph["scrutineer_required"] is True
+    assert graph["scrutineer_status"] == "passed"
+    assert graph["graph_status"] == "ready"
+    assert [node["status"] for node in graph["synthesis_nodes"]] == [
+        "admitted",
+        "admitted",
+    ]
+    synthesis_input_ids = {
+        ref["node_id"]
+        for node in graph["synthesis_nodes"]
+        for ref in node["input_node_refs"]
+    }
+    assert graph["component_nodes"][0]["node_id"] not in synthesis_input_ids
+    assert graph["component_nodes"][1]["node_id"] not in synthesis_input_ids
+
+    expected_role_counts = {
+        ROLE_COMPONENT_ANALYST: 5,
+        ROLE_COMPONENT_DPRIME: 5,
+        ROLE_CROSS_COMPONENT_ANALYST: 1,
+        ROLE_SYNTHESIS_DPRIME: 2,
+        ROLE_SCRUTINEER: 1,
+    }
+    assert {
+        role: _role_call_count(harness, role) for role in expected_role_counts
+    } == expected_role_counts
+    assert graph["logical_accounting"] == {
+        "component_analyst_evaluations": 5,
+        "component_dprime_evaluations": 5,
+        "cross_component_analyst_evaluations": 1,
+        "synthesis_dprime_evaluations": 2,
+        "scrutineer_evaluations": 1,
+    }
+    assert graph["physical_call_accounting"] == {
+        "component_analyst_calls": 5,
+        "component_dprime_calls": 5,
+        "cross_component_analyst_calls": 1,
+        "synthesis_dprime_calls": 2,
+        "scrutineer_calls": 1,
+    }
+
+    actions = list(kernel.state.issued_actions.values())
+    graph_structure_sequence = next(
+        action.sequence
+        for action in actions
+        if action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
+        and action.inputs.get("operation") == "structure"
+    )
+    for component_node in graph["component_nodes"]:
+        component_id = component_node["component_id"]
+        analyst_sequence = next(
+            action.sequence
+            for action in actions
+            if action.action_type
+            is ActionType.MULTICOMPONENT_COMPONENT_ANALYST_EXECUTE
+            and action.inputs.get("logical_evaluation_key") == component_id
+        )
+        dprime_sequence = next(
+            action.sequence
+            for action in actions
+            if action.action_type
+            is ActionType.MULTICOMPONENT_COMPONENT_DPRIME_EXECUTE
+            and action.inputs.get("logical_evaluation_key") == component_id
+        )
+        admission_sequence = next(
+            action.sequence
+            for action in actions
+            if action.action_type
+            is ActionType.MULTICOMPONENT_COMPONENT_ADMISSION_REDUCE
+            and action.inputs.get("component_id") == component_id
+        )
+        assert (
+            analyst_sequence
+            < dprime_sequence
+            < admission_sequence
+            < graph_structure_sequence
+        )
+    e_admission_sequence = next(
+        action.sequence
+        for action in actions
+        if action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
+        and action.inputs.get("operation") == "synthesis_admission"
+        and action.inputs.get("synthesis_key") == "E"
+    )
+    s_validation_sequence = next(
+        action.sequence
+        for action in actions
+        if action.action_type is ActionType.MULTICOMPONENT_SYNTHESIS_DPRIME_EXECUTE
+        and action.inputs.get("logical_evaluation_key") == "S"
+    )
+    graph_finalize_sequence = next(
+        action.sequence
+        for action in actions
+        if action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
+        and action.inputs.get("operation") == "finalize"
+    )
+    sufficiency_sequence = next(
+        action.sequence
+        for action in actions
+        if action.action_type is ActionType.SUFFICIENCY_JUDGMENT_DECIDE
+    )
+    packet_sequence = next(
+        action.sequence
+        for action in actions
+        if action.action_type is ActionType.FINAL_ANSWER_PACKET_PREPARE
+    )
+    author_sequence = next(
+        action.sequence
+        for action in actions
+        if action.action_type is ActionType.AUTHOR_EXECUTE
+    )
+    assert e_admission_sequence < s_validation_sequence
+    assert graph_finalize_sequence < sufficiency_sequence < packet_sequence < author_sequence
+
+    sufficiency = captured["sufficiency_projection"]
+    packet = captured["packet_handoff"].packet
+    payload = captured["packet_handoff"].author_payload
+    assert sufficiency["multicomponent_graph_consumption"][
+        "graph_digest"
+    ] == graph["graph_digest"]
+    assert len(packet.direct_component_entries) == 5
+    assert len(packet.admitted_synthesis_entries) == 2
+    assert payload is not None
+    assert "Approved admitted synthesis" in payload.prompt
+    assert "A qualifying applicant seeking the bonus should file on paper" in payload.prompt
+    assert captured["author_handoff_called"] is True
+    legacy_role_prompts = {
+        DEFAULT_SYSTEM["analyst"],
+        DEFAULT_SYSTEM["synth_evaluator"],
+        DEFAULT_SYSTEM["scrutineer"],
+    }
+    assert not any(
+        call.get("system_prompt") in legacy_role_prompts
+        for call in harness.model_calls
+    )
+    assert outcome.report == NORTHSTAR_REPORT
+    normalized_report = " ".join(outcome.report.split())
+    assert "$1,200" in normalized_report
+    assert "October 31, 2027" in normalized_report
+    assert "at or below $60,000" in normalized_report
+    assert "file the paper application" in normalized_report
+    assert "not claiming the bonus" in normalized_report
+    assert harness.forbidden_live_calls == []
+
+
+def test_northstar_ordinary_pipeline_reaches_runoutcome_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = NorthstarHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(
+            HANDOFF_SEMANTIC,
+            HANDOFF_SUFFICIENCY,
+            HANDOFF_PACKET,
+            HANDOFF_AUTHOR,
+        ),
+    )
+    try:
+        outcome = orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=harness.query,
+                current_date="2026-07-10",
+                session_id="northstar-session",
+                run_id="northstar-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+    except multicomponent_runtime.OrdinaryMulticomponentRuntimeError as exc:
+        ledger = captured["semantic_run_kernel"].state.evidence_ledger.to_projection().to_dict()
+        provider_jobs = captured["semantic_runtime_scope"].get(
+            "provider_job_execution_handoff",
+            {},
+        )
+        diagnostic = {
+            "error": str(exc),
+            "provider_jobs": [
+                {
+                    key: item.get(key)
+                    for key in (
+                        "component_id",
+                        "provider_job_id",
+                        "provider_job_kind",
+                        "authorized_queries",
+                        "dispatch_refs",
+                    )
+                }
+                for item in provider_jobs.get("provider_job_execution_records", [])
+            ],
+            "source_requirements": [
+                {
+                    key: item.get(key)
+                    for key in (
+                        "requirement_id",
+                        "requirement_kind",
+                        "status",
+                        "origin_ref",
+                        "linked_candidate_ids",
+                    )
+                }
+                for item in ledger.get("source_requirements") or ()
+            ],
+            "requirement_links": [
+                {
+                    key: item.get(key)
+                    for key in ("requirement_id", "candidate_id", "status")
+                }
+                for item in ledger.get("requirement_links") or ()
+            ],
+            "custody_gaps": [
+                {
+                    key: item.get(key)
+                    for key in ("requirement_id", "gap_type", "reason")
+                }
+                for item in ledger.get("custody_gaps") or ()
+            ],
+            "candidate_ids": [
+                item.get("candidate_id")
+                for item in ledger.get("candidate_records") or ()
+            ],
+        }
+        pytest.fail(json.dumps(diagnostic, sort_keys=True))
+
+    _assert_northstar_product_state(
+        captured=captured,
+        harness=harness,
+        outcome=outcome,
+    )
+
+
+def test_northstar_thin_proplex_main_prints_ordinary_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _forbid_direct_semantic_producer(monkeypatch)
+    harness = NorthstarHarness(tmp_path)
+    captured = install_handoff_capture(
+        monkeypatch,
+        capture_stages=(HANDOFF_SUFFICIENCY, HANDOFF_PACKET, HANDOFF_AUTHOR),
+    )
+    monkeypatch.setenv("PYTHON_DOTENV_DISABLED", "1")
+    cli = importlib.import_module("proplex.__main__")
+    monkeypatch.setattr(cli, "_build_logger", lambda _verbose: logging.getLogger("northstar-cli"))
+    monkeypatch.setattr(cli, "missing_required_api_keys", lambda **_kwargs: [])
+    monkeypatch.setattr(
+        cli,
+        "append_official_canonical_recovery_diagnostics_section",
+        lambda report, _trace: report,
+    )
+    cli_outcome: dict[str, Any] = {}
+
+    def actual_offline_pipeline(
+        config: Any,
+        _deps: Any,
+        _status: Any,
+        _accumulator: Any,
+    ) -> Any:
+        outcome = orchestrator.run_pipeline(
+            offline_balanced_run_config(
+                query=config.query,
+                current_date="2026-07-10",
+                session_id="northstar-cli-session",
+                run_id="northstar-cli-run",
+            ),
+            harness.deps(),
+            NullStatusWriter(),
+            CostAccumulator(),
+        )
+        cli_outcome["value"] = outcome
+        return outcome
+
+    monkeypatch.setattr(cli, "run_pipeline", actual_offline_pipeline)
+
+    assert cli.main([NORTHSTAR_QUERY, "--mode", "Balanced"]) == 0
+    stdout = capsys.readouterr().out
+    normalized_stdout = " ".join(stdout.split())
+    assert "$1,200" in normalized_stdout
+    assert "October 31, 2027" in normalized_stdout
+    assert "at or below $60,000" in normalized_stdout
+    assert "should file the paper application" in normalized_stdout
+    assert "not claiming the bonus" in normalized_stdout
+    _assert_northstar_product_state(
+        captured=captured,
+        harness=harness,
+        outcome=cli_outcome["value"],
+    )

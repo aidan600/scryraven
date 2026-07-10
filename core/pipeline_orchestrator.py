@@ -161,7 +161,7 @@ from core.ordinary_live_source_custody_runtime import (
 )
 from core.ordinary_multicomponent_synthesis_runtime import (
     execute_ordinary_semantic_or_multicomponent_handoff_from_scope,
-    ordinary_multicomponent_path_completed,
+    ordinary_multicomponent_path_selected,
 )
 from core.persistence_side_effects import execute_persistence_side_effects
 from core.pipeline import (
@@ -3580,17 +3580,15 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         pre_analyst_retrieval_gate=_pre_analyst_retrieval_gate,
         post_economist_analyst_gate=_post_economist_analyst_gate,
     )
-    if ordinary_multicomponent_path_completed(run_kernel):
+    if ordinary_multicomponent_path_selected(run_kernel):
         analyst_runtime_outcome = (
             analyst_runtime_stage.multicomponent_analyst_bypass_outcome_from_scope(
                 locals()
             )
         )
     else:
-        analyst_runtime_outcome = (
-            analyst_runtime_stage.execute_analyst_runtime_stage_from_scope(
-                locals(), deps=analyst_runtime_deps
-            )
+        analyst_runtime_outcome = analyst_runtime_stage.execute_analyst_runtime_stage_from_scope(
+            locals(), deps=analyst_runtime_deps
         )
     (
         analysis,
@@ -3635,7 +3633,7 @@ def _run_pipeline_inner(  # noqa: C901  (complexity — this mirrors the origina
         select_providers=select_providers,
         choose_supplemental_search_depth=choose_supplemental_search_depth,
     )
-    if ordinary_multicomponent_path_completed(run_kernel):
+    if ordinary_multicomponent_path_selected(run_kernel):
         legacy_review_outcome = (
             legacy_review_runtime_stage.multicomponent_legacy_review_bypass_outcome_from_scope(
                 locals()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 
 from core.component_work_graph_v1 import (
@@ -19,13 +21,23 @@ from core.component_work_graph_v1 import (
     synthesis_dprime_input_packet,
 )
 from core.component_work_node import component_work_node_v1_from_admitted_component
+from core.final_answer_runtime_adapter import (
+    build_final_answer_packet,
+    derive_author_input_payload,
+)
 from core.multicomponent_role_runtime import (
     ROLE_COMPONENT_ANALYST,
     ROLE_COMPONENT_DPRIME,
     ROLE_CROSS_COMPONENT_ANALYST,
     ROLE_SCRUTINEER,
     ROLE_SYNTHESIS_DPRIME,
+    MulticomponentRoleRuntimeError,
+    execute_multicomponent_role_call,
     safe_packet_digest,
+)
+from core.run_authority_sufficiency import RunSufficiencyJudgmentInput
+from core.run_authority_sufficiency_validation import (
+    build_deterministic_sufficiency_judgment,
 )
 from core.run_kernel import RunKernel
 
@@ -63,7 +75,11 @@ def _role_artifact(role: str, semantic_output: dict, input_packet: dict) -> dict
     return {**core, "artifact_digest": safe_packet_digest(core)}
 
 
-def _component_node(index: int) -> dict:
+def _component_node(
+    index: int,
+    *,
+    admission_overrides: dict | None = None,
+) -> dict:
     component_id = f"component:component-{index}"
     accepted = {
         "component_id": component_id,
@@ -84,8 +100,14 @@ def _component_node(index: int) -> dict:
         "artifact_digest": f"dprime-digest-{index}",
     }
     admission = {
+        "schema_version": "multicomponent_component_admission_ref_v1",
+        "owner": "RunKernel.MulticomponentComponentAdmission",
+        "canonical_state": True,
         "run_id": RUN_ID,
         "request_id": REQUEST_ID,
+        "action_id": f"component-admission-action:{index}",
+        "accepted_contract_version": "0.1-passive",
+        "accepted_contract_digest": "accepted-contract-digest",
         "component_id": component_id,
         "component_revision": "1",
         "component_digest": f"component-digest-{index}",
@@ -113,6 +135,7 @@ def _component_node(index: int) -> dict:
         "preserved_nonclaims": [],
         "blocker_refs": [],
     }
+    admission.update(admission_overrides or {})
     return component_work_node_v1_from_admitted_component(
         run_id=RUN_ID,
         request_id=REQUEST_ID,
@@ -274,6 +297,172 @@ def test_graph_v1_enforces_topological_admission_and_full_scrutiny() -> None:
     ]
 
 
+def test_component_node_v1_rejects_noncanonical_admission_projection() -> None:
+    with pytest.raises(
+        ValueError,
+        match="canonical RunKernel component admission",
+    ):
+        _component_node(1, admission_overrides={"canonical_state": False})
+
+
+def test_role_transport_rejects_authority_claims_before_reduction() -> None:
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="claimed repository authority",
+    ):
+        execute_multicomponent_role_call(
+            run_kernel=kernel,
+            role=ROLE_COMPONENT_ANALYST,
+            input_packet={"component_ref": {"component_id": "component:1"}},
+            ask_model=lambda *_args, **_kwargs: {
+                "claim_text": "The evidence supports the component.",
+                "support_status": "supported",
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": [],
+                "artifact_digest": "transport-must-not-assign-this",
+            },
+            clean_json_response=None,
+            provider="offline",
+            model="fixture",
+            base_url="",
+            api_key="",
+            use_reasoning=False,
+            logical_evaluation_key="component:1",
+        )
+
+    assert kernel.state.reduced_action_ids == set()
+    assert kernel.state.observations == []
+
+
+def test_component_dprime_transport_cannot_replace_analyst_claim() -> None:
+    kernel = RunKernel.start(run_id=RUN_ID, request_id=REQUEST_ID)
+
+    with pytest.raises(
+        MulticomponentRoleRuntimeError,
+        match="cannot create or replace",
+    ):
+        execute_multicomponent_role_call(
+            run_kernel=kernel,
+            role=ROLE_COMPONENT_DPRIME,
+            input_packet={"nominated_claim": "The nominated claim."},
+            ask_model=lambda *_args, **_kwargs: {
+                "validation_status": "supported",
+                "claim_text": "A replacement claim.",
+                "reasons": [],
+                "caveats": [],
+                "nonclaims": [],
+                "blockers": [],
+            },
+            clean_json_response=None,
+            provider="offline",
+            model="fixture",
+            base_url="",
+            api_key="",
+            use_reasoning=False,
+            logical_evaluation_key="component:1",
+        )
+
+    assert kernel.state.reduced_action_ids == set()
+
+
+def test_synthesis_validation_rejects_unadmitted_upstream_synthesis() -> None:
+    _kernel, graph = _structured_graph()
+
+    with pytest.raises(ComponentWorkGraphV1Error, match="upstream synthesis admission"):
+        synthesis_dprime_input_packet(graph, synthesis_key="S")
+
+
+def test_partial_graph_reaches_fap_as_direct_only_with_limitations() -> None:
+    kernel, graph = _structured_graph()
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
+    )
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 5},
+            multicomponent_graph_state=graph,
+        )
+    )
+    packet = build_final_answer_packet(
+        run_id=RUN_ID,
+        final_evidence=[],
+        author_evidence=[],
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+    packet, payload = derive_author_input_payload(
+        packet,
+        prompt="Render only approved material.",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    assert graph["graph_status"] == "missing_required_scrutiny"
+    assert judgment.final_answer_allowed is True
+    assert judgment.decision.value == "partial_answer_authorized"
+    assert len(packet.direct_component_entries) == 5
+    assert packet.admitted_synthesis_entries == ()
+    assert packet.multicomponent_limitations
+    assert "Combined synthesis is unavailable" in payload.prompt
+
+
+def test_stale_synthesis_is_omitted_from_sufficiency_and_fap() -> None:
+    _kernel, graph = _structured_graph()
+    stale_graph = deepcopy(graph)
+    stale_node = next(
+        node
+        for node in stale_graph["synthesis_nodes"]
+        if node["synthesis_key"] == "E"
+    )
+    stale_node["status"] = "stale"
+    stale_node["current"] = False
+    stale_node["stale"] = True
+    stale_node["node_digest"] = safe_packet_digest(
+        {
+            key: value
+            for key, value in stale_node.items()
+            if key != "node_digest"
+        }
+    )
+    stale_graph["graph_digest"] = safe_packet_digest(
+        {
+            key: value
+            for key, value in stale_graph.items()
+            if key != "graph_digest"
+        }
+    )
+    stale_graph = finalize_component_work_graph_v1(stale_graph)
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 5},
+            multicomponent_graph_state=stale_graph,
+        )
+    )
+    packet = build_final_answer_packet(
+        run_id=RUN_ID,
+        final_evidence=[],
+        author_evidence=[],
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+
+    assert stale_graph["graph_status"] == "stale_synthesis"
+    assert judgment.final_answer_allowed is True
+    assert judgment.final_packet_inputs["admitted_synthesis_entries"] == []
+    assert packet.admitted_synthesis_entries == ()
+    assert any(
+        "stale" in limitation.casefold()
+        for limitation in packet.multicomponent_limitations
+    )
+
+
 def test_graph_v1_rejects_synthesis_cycle_before_runkernel_admission() -> None:
     nodes = [_component_node(1), _component_node(2)]
     accepted_ref = {
@@ -327,3 +516,98 @@ def test_graph_v1_rejects_synthesis_cycle_before_runkernel_admission() -> None:
             component_nodes=nodes,
             cross_component_artifact=cross,
         )
+
+
+def test_ordinary_sufficiency_then_fap_then_author_consumes_only_admitted_graph() -> None:
+    kernel, graph = _structured_graph()
+    graph = _validate_synthesis(kernel, graph, "E")
+    graph = admit_synthesis_node_via_runkernel(
+        run_kernel=kernel,
+        synthesis_key="E",
+    )
+    graph = _validate_synthesis(kernel, graph, "S")
+    scrutiny = _role_artifact(
+        ROLE_SCRUTINEER,
+        {
+            "challenge_status": "passed",
+            "reasons": ["The full dependency case is coherent."],
+            "challenged_synthesis_keys": [],
+            "caveats": [],
+            "nonclaims": [],
+        },
+        scrutineer_input_packet(graph),
+    )
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="scrutiny",
+        graph_candidate=graph_with_scrutineer(
+            graph,
+            scrutineer_artifact=scrutiny,
+        ),
+    )
+    graph = admit_synthesis_node_via_runkernel(
+        run_kernel=kernel,
+        synthesis_key="S",
+    )
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="accounting",
+        graph_candidate=graph_with_accounting(
+            graph,
+            logical_accounting={"synthesis_dprime_evaluations": 2},
+            physical_call_accounting={"synthesis_dprime_calls": 2},
+        ),
+    )
+    graph = reduce_component_work_graph_v1(
+        run_kernel=kernel,
+        operation="finalize",
+        graph_candidate=finalize_component_work_graph_v1(graph),
+    )
+
+    judgment = build_deterministic_sufficiency_judgment(
+        RunSufficiencyJudgmentInput(
+            contract_projection={},
+            evidence_ledger_projection={},
+            final_evidence_facts={"final_evidence_count": 5},
+            multicomponent_graph_state=graph,
+        )
+    )
+    assert judgment.final_answer_allowed is True
+    assert judgment.multicomponent_graph_consumption[
+        "graph_readiness_status"
+    ] == "ready"
+    assert len(
+        judgment.final_packet_inputs["direct_component_entries"]
+    ) == 5
+    assert len(
+        judgment.final_packet_inputs["admitted_synthesis_entries"]
+    ) == 2
+
+    passages = [
+        {
+            "source_id": index,
+            "title": f"Fact {index}",
+            "url": f"https://example.test/fact-{index}",
+            "text": f"Fact {index} is supported.",
+        }
+        for index in range(1, 6)
+    ]
+    packet = build_final_answer_packet(
+        run_id=RUN_ID,
+        final_evidence=passages,
+        author_evidence=passages,
+        sufficiency_judgment_projection=judgment.to_projection(),
+    )
+    packet, payload = derive_author_input_payload(
+        packet,
+        prompt="Render the answer.",
+        author_system_prompt_key="author",
+        author_effort="low",
+    )
+
+    assert len(packet.direct_component_entries) == 5
+    assert len(packet.admitted_synthesis_entries) == 2
+    assert payload.direct_component_entries == packet.direct_component_entries
+    assert payload.admitted_synthesis_entries == packet.admitted_synthesis_entries
+    assert "Approved direct component findings" in payload.prompt
+    assert "Approved admitted synthesis" in payload.prompt

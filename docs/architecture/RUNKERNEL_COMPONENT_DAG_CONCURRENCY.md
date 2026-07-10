@@ -228,8 +228,8 @@ where it exists:
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 
 The list above records V0 provenance and older roadmap names; it is not the
-current next-phase route. The mandatory next checkpoint is
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
+current next-phase route. The recommended next checkpoint is
+`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
 
 After serial end-to-end ordinary activation, the committed Boundary 3 sequence
 is dynamic graph and AnswerContract amendment, targeted ordinary research
@@ -240,18 +240,14 @@ rejected.
 
 ## Current Status
 
-Current implemented contract work through
-`MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` is still no-execution and
-ref-only. The checkpoint composes existing graph, Workbench, synthesis D-prime,
-and RunKernel admission refs into a reviewable serial artifact; it does not open
-query-to-relation planning, multi-component planning, RunKernel DAG scheduling,
-budget lease implementation, model routing, FAP redesign, Author behavior, live
-dogfood behavior, source display, citation rendering, source-obligation
-satisfaction, or product correctness claims.
-
-Those contracts also do not establish the typed general regular component
-Analyst -> component D-prime lane in the current default ordinary semantic
-producer. The complete approved product target is not installed.
+The V0 work through
+`MULTICOMPONENT-SERIAL-DRY-RUN-PLANNING-CHECKPOINT-01` remains no-execution and
+review-only. Phase 1 adds a separate ComponentWorkGraph V1 ordinary path with
+typed component Analyst/D-prime production, RunKernel component and synthesis
+admission, and ordinary Sufficiency/FAP/Author consumption. It does not install
+dynamic graph mutation, scheduling, budget leases, selective recomputation,
+runtime parallelism, live validation, source-display changes, citation changes,
+or product correctness claims.
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP.
 

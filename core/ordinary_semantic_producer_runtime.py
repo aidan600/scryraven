@@ -608,6 +608,21 @@ def select_bindable_final_passages_for_components(
     return selected
 
 
+def source_requirement_ids_for_component_candidate(
+    evidence_ledger_projection: Mapping[str, Any],
+    *,
+    evidence_ref_id: str,
+    source_obligation_candidate_ids: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Expose existing coverage preflight without changing selection policy."""
+
+    return _source_requirement_ids_for_candidate(
+        evidence_ledger_projection,
+        evidence_ref_id=evidence_ref_id,
+        source_obligation_candidate_ids=source_obligation_candidate_ids,
+    )
+
+
 def _accepted_component_ref(
     accepted_contract: Mapping[str, Any],
     answer_component_id: str,
@@ -1399,4 +1414,5 @@ __all__ = [
     "preflight_ordinary_semantic_producer_bundle",
     "select_bindable_final_passage",
     "select_bindable_final_passages_for_components",
+    "source_requirement_ids_for_component_candidate",
 ]

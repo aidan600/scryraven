@@ -4999,6 +4999,23 @@ class RunKernel:
             raise RunKernelTransitionError(
                 "sufficiency judgment requires a reduced EvidenceLedger projection"
             )
+        graph = _safe_mapping(
+            self.state.projections.get(
+                "multicomponent_component_work_graph_v1"
+            )
+        )
+        if graph:
+            if graph.get("graph_status") == "synthesis_validation_required":
+                raise RunKernelTransitionError(
+                    "ordinary Sufficiency requires finalized Graph V1 state"
+                )
+            supplied_digest = _safe_mapping(inputs).get(
+                "multicomponent_graph_digest"
+            )
+            if supplied_digest != graph.get("graph_digest"):
+                raise RunKernelTransitionError(
+                    "ordinary Sufficiency requires the current Graph V1 digest"
+                )
         return self.authorize(
             stage=SUFFICIENCY_JUDGMENT_STAGE,
             action_type=ActionType.SUFFICIENCY_JUDGMENT_DECIDE,
@@ -5013,6 +5030,25 @@ class RunKernel:
         reason: str = "final_answer_packet_preparation_before_author_execution",
         inputs: Mapping[str, Any] | None = None,
     ) -> AuthorizedAction:
+        graph = _safe_mapping(
+            self.state.projections.get(
+                "multicomponent_component_work_graph_v1"
+            )
+        )
+        if graph:
+            sufficiency = _safe_mapping(self.state.sufficiency_judgment_projection)
+            consumption = _safe_mapping(
+                sufficiency.get("multicomponent_graph_consumption")
+            )
+            if (
+                not sufficiency
+                or consumption.get("graph_digest") != graph.get("graph_digest")
+                or consumption.get("ordinary_sufficiency_decision_created")
+                is not True
+            ):
+                raise RunKernelTransitionError(
+                    "FinalAnswerPacket requires ordinary Sufficiency consumption of current Graph V1"
+                )
         return self.authorize(
             stage=FINAL_ANSWER_PACKET_STAGE,
             action_type=ActionType.FINAL_ANSWER_PACKET_PREPARE,
@@ -13043,6 +13079,30 @@ class RunKernel:
             author_payload_ref = _safe_mapping(
                 observation.payload.get("author_payload_ref")
             )
+            graph = _safe_mapping(
+                self.state.projections.get(
+                    "multicomponent_component_work_graph_v1"
+                )
+            )
+            if graph:
+                sufficiency_inputs = _safe_mapping(
+                    self.state.sufficiency_judgment_projection.get(
+                        "final_packet_inputs"
+                    )
+                )
+                if (
+                    packet_projection.get("direct_component_entries", [])
+                    != sufficiency_inputs.get("direct_component_entries", [])
+                    or packet_projection.get("admitted_synthesis_entries", [])
+                    != sufficiency_inputs.get("admitted_synthesis_entries", [])
+                    or packet_projection.get("multicomponent_graph_readiness")
+                    != sufficiency_inputs.get("multicomponent_graph_readiness")
+                    or packet_projection.get("multicomponent_limitations", [])
+                    != sufficiency_inputs.get("multicomponent_limitations", [])
+                ):
+                    raise RunKernelTransitionError(
+                        "FinalAnswerPacket multi-component content must come from ordinary Sufficiency"
+                    )
             self.state.final_answer_packet = packet_projection
             self.state.final_answer_authority_projection = {
                 "owner": "RunKernel.FinalAnswerPacket",
@@ -13080,6 +13140,15 @@ class RunKernel:
                 "author_authority_payload_ref": author_payload_ref.get(
                     "authority_payload",
                     {},
+                ),
+                "direct_component_entry_count": len(
+                    packet_projection.get("direct_component_entries", []) or []
+                ),
+                "admitted_synthesis_entry_count": len(
+                    packet_projection.get("admitted_synthesis_entries", []) or []
+                ),
+                "multicomponent_graph_readiness": packet_projection.get(
+                    "multicomponent_graph_readiness"
                 ),
             }
             self.state.projections[action.stage] = deepcopy(
@@ -16081,6 +16150,10 @@ def _canonical_sufficiency_judgment_projection(
             {},
         ),
         "component_readiness": judgment_projection.get("component_readiness", {}),
+        "multicomponent_graph_consumption": judgment_projection.get(
+            "multicomponent_graph_consumption",
+            {},
+        ),
         "final_packet_inputs": judgment_projection.get("final_packet_inputs", {}),
         "rationale": judgment_projection.get("rationale"),
         "validation_status": validation_mapping.get("status")

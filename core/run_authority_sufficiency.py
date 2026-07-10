@@ -328,6 +328,7 @@ class RunSufficiencyJudgmentInput:
     budget: Mapping[str, Any] = field(default_factory=dict)
     semantic_state_facts: Mapping[str, Any] = field(default_factory=dict)
     component_readiness_projection: Mapping[str, Any] = field(default_factory=dict)
+    multicomponent_graph_state: Mapping[str, Any] = field(default_factory=dict)
 
     def to_model_payload(self) -> dict[str, Any]:
         contract = _safe_mapping(self.contract_projection)
@@ -401,6 +402,27 @@ class RunSufficiencyJudgmentInput:
             "budget": _safe_mapping(self.budget),
             "semantic_state_ref": self._semantic_state_model_ref(),
             "component_readiness_ref": self._component_readiness_model_ref(),
+            "multicomponent_graph_ref": self._multicomponent_graph_model_ref(),
+        }
+
+    def _multicomponent_graph_model_ref(self) -> dict[str, Any]:
+        graph = _safe_mapping(self.multicomponent_graph_state)
+        return {
+            "schema_version": clean_token(graph.get("schema_version")),
+            "supported_query_class": clean_token(
+                graph.get("supported_query_class")
+            ),
+            "owner": clean_token(graph.get("owner")),
+            "canonical_state": graph.get("canonical_state") is True,
+            "graph_id": clean_token(graph.get("graph_id")),
+            "graph_revision": graph.get("graph_revision"),
+            "graph_digest": clean_token(graph.get("graph_digest")),
+            "graph_status": clean_token(graph.get("graph_status")),
+            "component_count": len(graph.get("component_nodes") or ()),
+            "synthesis_count": len(graph.get("synthesis_nodes") or ()),
+            "maximum_synthesis_depth": graph.get("maximum_synthesis_depth"),
+            "scrutineer_required": graph.get("scrutineer_required") is True,
+            "scrutineer_status": clean_token(graph.get("scrutineer_status")),
         }
 
     def _semantic_state_model_ref(self) -> dict[str, Any]:
@@ -495,6 +517,9 @@ class RunSufficiencyJudgment:
     model_identity: Mapping[str, Any] = field(default_factory=dict)
     semantic_consumption: Mapping[str, Any] = field(default_factory=dict)
     component_readiness: Mapping[str, Any] = field(default_factory=dict)
+    multicomponent_graph_consumption: Mapping[str, Any] = field(
+        default_factory=dict
+    )
 
     def __post_init__(self) -> None:
         decision = (
@@ -585,6 +610,11 @@ class RunSufficiencyJudgment:
             _safe_mapping(self.final_packet_inputs)
             or self._default_final_packet_inputs(),
         )
+        object.__setattr__(
+            self,
+            "multicomponent_graph_consumption",
+            _safe_mapping(self.multicomponent_graph_consumption),
+        )
 
     @classmethod
     def from_mapping(cls, payload: Mapping[str, Any]) -> "RunSufficiencyJudgment":
@@ -647,6 +677,9 @@ class RunSufficiencyJudgment:
                 payload.get("semantic_consumption")
             ),
             component_readiness=_safe_mapping(payload.get("component_readiness")),
+            multicomponent_graph_consumption=_safe_mapping(
+                payload.get("multicomponent_graph_consumption")
+            ),
         )
 
     def _default_final_packet_inputs(self) -> dict[str, Any]:
@@ -781,6 +814,9 @@ class RunSufficiencyJudgment:
                 "model_identity": dict(self.model_identity),
                 "semantic_consumption": dict(self.semantic_consumption),
                 "component_readiness": dict(self.component_readiness),
+                "multicomponent_graph_consumption": dict(
+                    self.multicomponent_graph_consumption
+                ),
                 "semantic_state_facts_summary": self._semantic_state_facts_summary(),
                 "prompt_text_retained": False,
                 "model_response_text_retained": False,

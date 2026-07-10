@@ -266,6 +266,7 @@ def build_sufficiency_judgment_input_from_runtime(
     component_coverage_history: Sequence[Mapping[str, Any]] = (),
     contract_amendment_admission_history: Sequence[Mapping[str, Any]] = (),
     answer_contract_authority_map_projection: Mapping[str, Any] | None = None,
+    multicomponent_graph_state: Mapping[str, Any] | None = None,
 ) -> RunSufficiencyJudgmentInput:
     """Build the AG-92C sufficiency input from runtime facts."""
 
@@ -318,6 +319,7 @@ def build_sufficiency_judgment_input_from_runtime(
             ),
             evidence_ledger_projection=evidence_ledger_projection,
         ),
+        multicomponent_graph_state=_mapping(multicomponent_graph_state),
     )
 
 

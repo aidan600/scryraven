@@ -1714,6 +1714,22 @@ def build_final_answer_packet(
         sufficiency_judgment_projection,
         "behavior_boundary_flags",
     )
+    direct_component_entries = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "direct_component_entries",
+    )
+    admitted_synthesis_entries = _sufficiency_packet_mappings(
+        sufficiency_judgment_projection,
+        "admitted_synthesis_entries",
+    )
+    multicomponent_graph_readiness = _sufficiency_packet_text(
+        sufficiency_judgment_projection,
+        "multicomponent_graph_readiness",
+    )
+    multicomponent_limitations = _sufficiency_packet_items(
+        sufficiency_judgment_projection,
+        "multicomponent_limitations",
+    )
     component_readiness = dict(
         sufficiency_projection.get("component_readiness")
         if isinstance(sufficiency_projection.get("component_readiness"), Mapping)
@@ -1791,6 +1807,10 @@ def build_final_answer_packet(
             semantic_content_coverage_ref_projection
         ),
         semantic_packet_evidence_bindings=semantic_packet_evidence_bindings,
+        direct_component_entries=direct_component_entries,
+        admitted_synthesis_entries=admitted_synthesis_entries,
+        multicomponent_graph_readiness=multicomponent_graph_readiness,
+        multicomponent_limitations=multicomponent_limitations,
     )
 
 

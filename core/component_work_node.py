@@ -1042,6 +1042,25 @@ def component_work_node_v1_from_admitted_component(
 
     component = _safe_mapping(accepted_component_ref)
     admission = _safe_mapping(component_admission_ref)
+    if (
+        admission.get("schema_version")
+        != "multicomponent_component_admission_ref_v1"
+        or admission.get("owner")
+        != "RunKernel.MulticomponentComponentAdmission"
+        or admission.get("canonical_state") is not True
+        or not _clean_text(admission.get("action_id"), limit=200)
+        or not _clean_text(
+            admission.get("accepted_contract_version"),
+            limit=200,
+        )
+        or not _clean_text(
+            admission.get("accepted_contract_digest"),
+            limit=128,
+        )
+    ):
+        raise ComponentWorkNodeError(
+            "ComponentWorkNode V1 requires canonical RunKernel component admission"
+        )
     component_id = _required_text(component.get("component_id"), "component_id")
     component_revision = _required_text(
         component.get("component_revision"), "component_revision"
@@ -1122,6 +1141,10 @@ def component_work_node_v1_from_admitted_component(
         "blocker_refs": _safe_refs(admission.get("blocker_refs")),
         "direct_output_eligible": admitted and admission.get("current") is True,
         "created_from_canonical_component_admission": True,
+        "component_admission_action_ref": {
+            "action_id": admission.get("action_id"),
+            "owner": admission.get("owner"),
+        },
         "graph_scheduler": False,
         "runtime_parallelism": False,
         "citation_eligible": False,

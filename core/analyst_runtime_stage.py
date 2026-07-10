@@ -203,20 +203,31 @@ def multicomponent_analyst_bypass_outcome_from_scope(
     """Keep the legacy Analyst lane closed after Graph V1 has completed."""
 
     reason = "ordinary_multicomponent_graph_v1_completed"
+    pre_analyst_gate = {
+        "analyst_skipped": True,
+        "analyst_skip_reason": reason,
+        "post_retrieval_fast_path_used": True,
+        "pre_analyst_gate_signals": [reason],
+    }
+    post_economist_gate = {
+        "analyst_skipped_after_economist": True,
+        "analyst_after_economist_skip_reason": reason,
+        "economist_output_used_as_analysis": False,
+    }
+    pre_analyst_gate_contract = build_analyst_gate_descriptor(
+        pre_analyst_gate=pre_analyst_gate,
+        post_economist_gate=post_economist_gate,
+    )
     return AnalystRuntimeOutcome(
         analysis="",
         author_notes=str(scope.get("author_notes") or ""),
         analyst_seconds=float(scope.get("analyst_seconds") or 0.0),
-        pre_analyst_gate={"analyst_skipped": True, "analyst_skip_reason": reason},
-        post_economist_gate={
-            "analyst_skipped_after_economist": True,
-            "analyst_after_economist_skip_reason": reason,
-            "economist_output_used_as_analysis": False,
-        },
+        pre_analyst_gate=pre_analyst_gate,
+        post_economist_gate=post_economist_gate,
         pre_gate_failure_card_show=False,
         pre_gate_failure_card_reason=None,
-        pre_analyst_gate_contract={},
-        pre_analyst_gate_handoff={},
+        pre_analyst_gate_contract=pre_analyst_gate_contract,
+        pre_analyst_gate_handoff=pre_analyst_gate_contract.to_trace(),
         analyst_skipped=True,
         analyst_skip_reason=reason,
         post_retrieval_fast_path_used=True,

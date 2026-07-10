@@ -46,6 +46,7 @@ from core.ordinary_semantic_producer_runtime import (
     build_sanitized_content_reference_from_passage,
     execute_ordinary_semantic_producer_handoff_from_scope,
     select_bindable_final_passages_for_components,
+    source_requirement_ids_for_component_candidate,
 )
 from core.search_work_query_shape_runtime import (
     DeterministicSearchWorkRuntimeInput,
@@ -61,6 +62,7 @@ from core.semantic_observation_foundation import (
 
 class OrdinaryMulticomponentStatus(str, Enum):
     NOT_QUALIFIED = "not_qualified"
+    SELECTED_PENDING = "selected_pending"
     COMPLETED = "completed"
     ALREADY_COMPLETED = "already_completed"
 
@@ -160,6 +162,35 @@ def _component_text_by_id(qmr: Any) -> dict[str, str]:
         component.component_id: component.user_facing_question
         for component in qmr.answer_components
     }
+
+
+def _accepted_component_text_by_id(
+    accepted: Mapping[str, Any],
+) -> dict[str, str]:
+    return {
+        str(component["component_id"]): str(component["user_facing_question"])
+        for component in accepted.get("accepted_answer_component_refs") or ()
+        if isinstance(component, Mapping)
+        and component.get("component_id")
+        and component.get("user_facing_question")
+    }
+
+
+def _selected_multicomponent_contract(
+    accepted: Mapping[str, Any],
+) -> bool:
+    metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
+    component_refs = [
+        item
+        for item in accepted.get("accepted_answer_component_refs") or ()
+        if isinstance(item, Mapping)
+    ]
+    return (
+        metadata.get("explicit_factual_component_list") is True
+        and _clean_text(metadata.get("requested_synthesis_directive"), limit=360)
+        is not None
+        and 2 <= len(component_refs) <= 5
+    )
 
 
 def _evidence_input(bindable: Any | None) -> dict[str, Any]:
@@ -271,8 +302,19 @@ def _semantic_material(
         query=query,
     )
     if coverage is None:
+        obligation_ids = list(
+            component_ref.get("source_obligation_candidate_ids")
+            or component_ref.get("source_obligation_candidate_refs")
+            or ()
+        )
         raise OrdinaryMulticomponentRuntimeError(
-            "component D-prime support could not satisfy canonical coverage"
+            "component D-prime support could not satisfy canonical coverage for "
+            + component_id
+            + " (evidence_ref="
+            + str(bindable.evidence_ref_id)
+            + ", obligations="
+            + ",".join(str(item) for item in obligation_ids)
+            + ")"
         )
     return observation.to_dict(), [content_ref.to_dict()], coverage.to_dict()
 
@@ -281,10 +323,8 @@ def _execute_selected_lane(
     *,
     run_kernel: Any,
     runtime_scope: Mapping[str, Any],
-    qmr: Any,
     requested_synthesis_directive: str,
 ) -> None:
-    _accept_question_meaning_record(run_kernel, qmr)
     accepted = run_kernel.state.initial_answer_contract
     metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
     if (
@@ -310,8 +350,35 @@ def _execute_selected_lane(
         final_top_evidence,
         run_kernel.state.evidence_ledger.to_projection().to_dict(),
         component_refs,
-        component_text_by_id=_component_text_by_id(qmr),
+        component_text_by_id=_accepted_component_text_by_id(accepted),
     )
+    missing_component_ids = [
+        str(component_ref["component_id"])
+        for component_ref in component_refs
+        if str(component_ref["component_id"]) not in selected
+        or (
+            bool(
+                component_ref.get("source_obligation_candidate_ids")
+                or component_ref.get("source_obligation_candidate_refs")
+            )
+            and not source_requirement_ids_for_component_candidate(
+                run_kernel.state.evidence_ledger.to_projection().to_dict(),
+                evidence_ref_id=selected[
+                    str(component_ref["component_id"])
+                ].evidence_ref_id,
+                source_obligation_candidate_ids=tuple(
+                    component_ref.get("source_obligation_candidate_ids")
+                    or component_ref.get("source_obligation_candidate_refs")
+                    or ()
+                ),
+            )
+        )
+    ]
+    if missing_component_ids:
+        raise OrdinaryMulticomponentRuntimeError(
+            "selected multi-component lane lacks legitimate current evidence custody "
+            "for: " + ",".join(missing_component_ids)
+        )
     role_kwargs = _role_runtime_kwargs(runtime_scope)
     query = str(runtime_scope.get("query") or "")
     component_admission_refs: list[dict[str, Any]] = []
@@ -503,20 +570,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
 ) -> OrdinaryMulticomponentResult:
     """Select the typed lane before canonical semantic production."""
 
-    if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
-        return OrdinaryMulticomponentResult(
-            status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
-        )
-    if run_kernel.state.initial_answer_contract:
-        metadata = _safe_mapping(
-            run_kernel.state.initial_answer_contract.get(
-                "question_meaning_metadata"
-            )
-        )
-        if metadata.get("explicit_factual_component_list") is True:
-            raise OrdinaryMulticomponentRuntimeError(
-                "selected multi-component lane is incomplete; direct fallback is forbidden"
-            )
+    def direct_or_deferred() -> OrdinaryMulticomponentResult:
         direct = execute_ordinary_semantic_producer_handoff_from_scope(
             run_kernel,
             runtime_scope,
@@ -526,16 +580,32 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
             direct_handoff=direct,
         )
 
+    if run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE):
+        return OrdinaryMulticomponentResult(
+            status=OrdinaryMulticomponentStatus.ALREADY_COMPLETED
+        )
+    if run_kernel.state.initial_answer_contract:
+        accepted = run_kernel.state.initial_answer_contract
+        metadata = _safe_mapping(accepted.get("question_meaning_metadata"))
+        if _selected_multicomponent_contract(accepted):
+            requested_synthesis_directive = _clean_text(
+                metadata.get("requested_synthesis_directive"),
+                limit=360,
+            )
+            assert requested_synthesis_directive is not None
+            _execute_selected_lane(
+                run_kernel=run_kernel,
+                runtime_scope=runtime_scope,
+                requested_synthesis_directive=requested_synthesis_directive,
+            )
+            return OrdinaryMulticomponentResult(
+                status=OrdinaryMulticomponentStatus.COMPLETED
+            )
+        return direct_or_deferred()
+
     search_work_plan = _safe_mapping(run_kernel.state.search_work_plan)
     if not search_work_plan or not _real_query_shape_plan(search_work_plan):
-        direct = execute_ordinary_semantic_producer_handoff_from_scope(
-            run_kernel,
-            runtime_scope,
-        )
-        return OrdinaryMulticomponentResult(
-            status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
-            direct_handoff=direct,
-        )
+        return direct_or_deferred()
     run_contract = _safe_mapping(runtime_scope.get("run_contract_projection"))
     route = _safe_mapping(run_kernel.state.projections.get("route_request"))
     query = str(runtime_scope.get("query") or "")
@@ -563,14 +633,7 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
         and 2 <= component_count <= 5
     )
     if not qualifying:
-        direct = execute_ordinary_semantic_producer_handoff_from_scope(
-            run_kernel,
-            runtime_scope,
-        )
-        return OrdinaryMulticomponentResult(
-            status=OrdinaryMulticomponentStatus.NOT_QUALIFIED,
-            direct_handoff=direct,
-        )
+        return direct_or_deferred()
     qmr = build_question_meaning_record_from_search_work_plan(
         assessment=assessment,
         route_facts=route,
@@ -584,19 +647,18 @@ def execute_ordinary_semantic_or_multicomponent_handoff_from_scope(
         raise OrdinaryMulticomponentRuntimeError(
             "typed multi-component qualification could not build its answer contract"
         )
-    _execute_selected_lane(
-        run_kernel=run_kernel,
-        runtime_scope=runtime_scope,
-        qmr=qmr,
-        requested_synthesis_directive=requested_synthesis_directive,
-    )
+    _accept_question_meaning_record(run_kernel, qmr)
     return OrdinaryMulticomponentResult(
-        status=OrdinaryMulticomponentStatus.COMPLETED
+        status=OrdinaryMulticomponentStatus.SELECTED_PENDING
     )
 
 
 def ordinary_multicomponent_path_completed(run_kernel: Any) -> bool:
     return bool(run_kernel.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
+
+
+def ordinary_multicomponent_path_selected(run_kernel: Any) -> bool:
+    return _selected_multicomponent_contract(run_kernel.state.initial_answer_contract)
 
 
 __all__ = [
@@ -605,4 +667,5 @@ __all__ = [
     "OrdinaryMulticomponentStatus",
     "execute_ordinary_semantic_or_multicomponent_handoff_from_scope",
     "ordinary_multicomponent_path_completed",
+    "ordinary_multicomponent_path_selected",
 ]

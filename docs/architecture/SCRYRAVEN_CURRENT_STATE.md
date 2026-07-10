@@ -1,7 +1,8 @@
 # ScryRaven Current State
 
 Status: current-state redirect stub refreshed for
-`AG-CURRENT-PATH-QUARANTINE-01`, following
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`, following
+`AG-CURRENT-PATH-QUARANTINE-01`,
 `AUTHOR-PROSE-ONLY-FINALIZATION-01`,
 `AG-FINAL-ANSWER-PACKET-HARDENING-01`,
 `AG-SUFFICIENCY-PARTIAL-ANSWER-READINESS-01`,
@@ -34,26 +35,23 @@ For current authority doctrine and Codex routing, read:
 
 Current summary:
 
-- The canonical approved multi-component direction is
-  `MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md`. Current default ordinary
-  semantic production is direct: selected passages / sanitized content refs
-  and EvidenceLedger facts feed the ordinary semantic producer, which calls
-  `RunKernel.commit_semantic_producer_bundle(...)` before
-  `SemanticObservation` and `ComponentCoverage`. A typed general component
-  Analyst proposal followed by component D-prime validation is not installed
-  in that default ordinary handoff. Broad or legacy Analyst prose elsewhere is
-  not equivalent to the missing typed component proposal/validation lane.
-- ComponentWorkGraph V0, Cross-Component Analyst Workbench V0, synthesis
-  D-prime validation, RunKernel graph/synthesis admission, and the serial
-  checkpoint are bounded reusable contracts. They are not consumed by the
-  ordinary answer path and do not establish ordinary multi-component
-  synthesis.
-- The next principal BUILD is
-  `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`. It must activate both
-  typed component Analyst/D-prime validation and first-class cross-component
-  synthesis through ordinary RunAuthority Sufficiency, FinalAnswerPacket,
-  Author, and user-facing answer output. Graph admission, a serial checkpoint,
-  or diagnostic finalization is not a substitute product endpoint.
+- The canonical multi-component owner is
+  `MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md`. Nonqualifying and
+  single-component ordinary runs retain direct semantic production. The named
+  supported multi-component class is selected before semantic production and
+  instead executes component Analyst -> component D-prime -> RunKernel
+  component admission before canonical `SemanticObservation` and
+  `ComponentCoverage` state.
+- ComponentWorkGraph V0 and the serial checkpoint remain bounded historical or
+  review surfaces. ComponentWorkGraph V1, Cross-Component Analyst, synthesis
+  D-prime, required full Scrutineer posture, and RunKernel graph/synthesis
+  admission are installed for the supported class and are consumed through
+  ordinary Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI output.
+- The recommended next BUILD is
+  `AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`. It owns dynamic graph and
+  AnswerContract amendment, targeted ordinary research re-entry, selective
+  invalidation/recomputation, scheduling, and budget leases. Runtime
+  parallelism remains deferred until those authorities exist.
 
 - `AG_CURRENT_PATH_QUARANTINE_01.md` is the current registry for proof class,
   consumer-seam, current/legacy/passive/closed status, old-path treatment, and

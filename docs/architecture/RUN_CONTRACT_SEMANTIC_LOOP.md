@@ -697,12 +697,10 @@ This document and the quarantine registry do not prove:
 ## 16. Historical Second-Half Roadmap
 
 The numbered sequence below is retained as completed historical phase context.
-It is not the current next-phase route. The mandatory next checkpoint after
-`MULTICOMPONENT-RUNTIME-ARCHITECTURE-DOCTRINE-REPAIR-01` is
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`, which must reach ordinary
-Sufficiency, FinalAnswerPacket, Author, and user-facing answer output rather
-than stopping at contracts, packets, graph admission, a serial checkpoint, or
-diagnostic finalization.
+It is not the current next-phase route. The bounded ordinary multi-component
+path now reaches Sufficiency, FinalAnswerPacket, Author, RunOutcome, and CLI
+output. The recommended next checkpoint is
+`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`.
 
 1. `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01` - this docs phase. It records that
    SearchExecutorHandoff is search intent only, defines the second-half

@@ -74,13 +74,13 @@ machinery already owned downstream.
 | Analyst Workbench | [../architecture/ANALYST_WORKBENCH_FULL_SLICE.md](../architecture/ANALYST_WORKBENCH_FULL_SLICE.md) |
 | FAP / Author boundary | [../architecture/FAP_AUTHOR_BOUNDARY.md](../architecture/FAP_AUTHOR_BOUNDARY.md) |
 
-The current mandatory next BUILD is
-`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`. It must consume typed
-component producer roles and admitted graph/synthesis work through ordinary
-Sufficiency, FinalAnswerPacket, Author, and user-facing answer output. Contracts,
-packets, fixtures, graph admission, serial checkpoints, status/diagnostic output,
-and diagnostic finalization are forbidden substitutes. No intervening proof or
-contract-only phase is authorized by default.
+The recommended next multi-component BUILD is
+`AG-MULTICOMPONENT-DYNAMIC-GRAPH-RECOVERY-01`. Phase 1 installs the bounded
+ordinary component/synthesis path through ordinary Sufficiency,
+FinalAnswerPacket, Author, RunOutcome, and CLI output. The next phase owns dynamic graph and
+AnswerContract amendment, targeted ordinary research re-entry, selective
+invalidation/recomputation, scheduling, and budget leases; runtime parallelism
+remains deferred.
 
 Older PR-number timelines, completed-phase next-step labels, and the former
 post-#352 through #355 limited-live-validation sequence are historical context,
