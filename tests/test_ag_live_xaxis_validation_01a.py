@@ -34,7 +34,6 @@ PIPELINE = ROOT / "core" / "pipeline_orchestrator.py"
 DOCS = (
     ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
-    ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
     ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
     ROOT / "docs" / "codex" / "AG_LIVE_PLAN_01_BOUNDED_LIVE_VALIDATION_PLAN.md",
 )

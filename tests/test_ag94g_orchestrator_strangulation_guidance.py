@@ -83,7 +83,7 @@ def test_current_state_is_redirect_stub_and_history_is_preserved() -> None:
     historical = _read(HISTORICAL_CURRENT_STATE)
 
     assert "current-state redirect stub" in current
-    assert "PR #315" in current
+    assert "AG-94G supersession banner" in historical
     assert "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md" in current
     assert "AG94C_AUTHORITY_DOCTRINE_DETRITUS_AUDIT.md" in current
     assert "AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md" in current

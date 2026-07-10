@@ -5,11 +5,16 @@ Suggested repo path: `docs/codex/EXECUTION_PLAN_TEMPLATE.md`
 
 Use this template when a phase is larger than a tiny slice but still bounded by
 the brief. Keep it short enough to execute without repeatedly asking the user for
-small coordination decisions.
+small coordination decisions. It expands the compact
+`Outcome / Constraints / Verification` contract; it does not create additional
+approval gates or automatic PR boundaries.
 
 ```text
 Phase goal:
 - ...
+
+Agent execution profile:
+- ROUTINE | DEEP | INTENSIVE | DELEGATED (advisory; human-selected setting)
 
 Phase type:
 - tiny slice | bundled multi-step | docs/design | review-only | local/live dogfood
@@ -67,12 +72,9 @@ Stop conditions:
 - Failing tests imply design change:
 
 Final bundle requirements:
-- Branch/base/HEAD/status.
-- Changed files and diff stat.
-- Tests/checks run and results.
-- Licensed/closed/target surfaces.
-- Live validation status.
-- PR URL if created.
+- Outcome and scope; material changes; verification evidence.
+- Self-review findings and fixes; risks and nonproofs.
+- Git/PR status and recommended next action.
 - For authority-collapse: old owner, new owner, runtime consumer, consumption
   proof, old-path retirement status, and remaining duplicate-owner risk.
 ```

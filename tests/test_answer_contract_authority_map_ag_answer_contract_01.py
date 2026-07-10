@@ -591,7 +591,6 @@ def test_answer_contract_authority_map_static_boundary_guard() -> None:
 
 def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
     doc_paths = [
-        ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
         ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
         ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
         ROOT / "docs" / "architecture" / "AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md",
@@ -604,20 +603,18 @@ def test_component_search_plan_docs_keep_answer_authority_subordinate() -> None:
     assert "componentsearchplan is the preferred subordinate" in normalized
     assert "they do not decide answerability" in normalized
     assert "componentplan / componentsearchplan naming and subordination cleanup is complete" in normalized
-    assert "completed componentsearchplan naming / subordination cleanup" in normalized
-    assert "complete in pr #318" in normalized
-    assert "pr #319 / ag-offline-search-executor-bridge-01" in normalized
-    assert "completed the offline runkernel-owned searchexecutor bridge" in normalized
+    assert "pr #318" in normalized
+    assert "ag-offline-search-executor-bridge-01" in normalized
+    assert "runkernel-owned searchexecutor bridge is complete" in normalized
     assert "pr #320" in normalized
     assert "ag-component-scoped-source-custody-01" in normalized
-    assert "evidenceledger component-scoped source custody" in normalized
-    assert "ag-component-evidence-citation-binding-01 extends" in normalized
+    assert "evidenceledger component-scoped source custody is added" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
     assert "ag-sufficiency-fap-component-readiness-01" in normalized
     assert "sufficiencyjudgment and finalanswerpacket" in normalized
     assert "pr #322" in normalized
     assert "ag-offline-xaxis-e2e-01" in normalized
-    assert "offline x-axis end-to-end" in normalized
+    assert "offline x-axis end-to-end proof" in normalized
     assert "does not enable partial answers" in normalized
     assert "does not enable live validation" in normalized
     assert "run_contract_semantic_loop.md" in normalized

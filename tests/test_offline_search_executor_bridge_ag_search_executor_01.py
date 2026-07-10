@@ -403,7 +403,6 @@ def test_static_closed_surface_guard_for_offline_search_executor_bridge() -> Non
 
 def test_docs_name_offline_inert_bridge_and_next_custody_phase() -> None:
     doc_paths = [
-        ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
         ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
         ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
         ROOT / "docs" / "architecture" / "AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md",
@@ -411,21 +410,17 @@ def test_docs_name_offline_inert_bridge_and_next_custody_phase() -> None:
     combined = "\n".join(path.read_text(encoding="utf-8") for path in doc_paths)
     normalized = " ".join(combined.casefold().replace("`", "").split())
 
-    assert "pr #319 / ag-offline-search-executor-bridge-01" in normalized
-    assert (
-        "completed the offline runkernel-owned searchexecutor bridge"
-        in normalized
-    )
-    assert "completed offline searchexecutor bridge" in normalized
-    assert "offline searchexecutor bridge is offline and inert" in normalized
-    assert "does not perform live provider/search/fetch/read/retrieval work" in normalized
+    assert "pr #319 ag-offline-search-executor-bridge-01" in normalized
+    assert "runkernel-owned searchexecutor bridge is complete" in normalized
+    assert "offline/inert" in normalized
+    assert "does not perform live provider/search/" in normalized
+    assert "fetch/read/retrieval work" in normalized
     assert "does not admit evidenceledger custody or satisfy source obligations" in normalized
     assert "keeps candidate observations non-evidence" in normalized
     assert "not user-facing runtime search" in normalized
     assert "pr #320" in normalized
     assert "ag-component-scoped-source-custody-01" in normalized
-    assert "adds evidenceledger component-scoped source custody" in normalized
-    assert "ag-component-evidence-citation-binding-01 extends" in normalized
+    assert "evidenceledger component-scoped source custody is added" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
     assert "ag-sufficiency-fap-component-readiness-01" in normalized
     assert "sufficiencyjudgment and finalanswerpacket" in normalized

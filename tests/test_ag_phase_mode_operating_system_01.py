@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 AGENTS_DOC = ROOT / "AGENTS.md"
 PHASE_TEMPLATE_DOC = ROOT / "docs" / "codex" / "PHASE_BRIEF_TEMPLATE.md"
+PHASE_ADDENDA_DOC = ROOT / "docs" / "codex" / "PHASE_BRIEF_ADDENDA.md"
 PROOF_GATE_DOC = ROOT / "docs" / "codex" / "PROOF_CLASS_AND_ACTUAL_APP_DELTA_GATE.md"
 GUIDANCE_MAP_DOC = ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md"
 QUARANTINE_DOC = ROOT / "docs" / "architecture" / "AG_CURRENT_PATH_QUARANTINE_01.md"
@@ -14,12 +15,13 @@ QUARANTINE_DOC = ROOT / "docs" / "architecture" / "AG_CURRENT_PATH_QUARANTINE_01
 TOUCHED_DOCS = (
     AGENTS_DOC,
     PHASE_TEMPLATE_DOC,
+    PHASE_ADDENDA_DOC,
     PROOF_GATE_DOC,
     GUIDANCE_MAP_DOC,
     QUARANTINE_DOC,
 )
 
-CURRENT_NEXT_GATE = "tightly scoped limited live validation"
+CURRENT_NEXT_GATE = "AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01"
 
 
 def _source(path: Path) -> str:
@@ -65,23 +67,19 @@ def test_build_proof_repair_approval_standards_are_visible() -> None:
     assert "repair fixes a named integrity defect" in combined_lower
 
 
-def test_guidance_map_records_current_post_355_gate() -> None:
+def test_guidance_map_routes_to_current_multicomponent_product_gate() -> None:
     guidance = _source(GUIDANCE_MAP_DOC)
     guidance_lower = guidance.casefold()
 
-    for pr_number in ("#352", "#353", "#354", "#355"):
-        assert pr_number in guidance
-
-    assert CURRENT_NEXT_GATE in guidance_lower
-    assert "next gate is tightly scoped limited live validation" in guidance_lower
-    assert "not another proof layer" in guidance_lower
+    assert CURRENT_NEXT_GATE.casefold() in guidance_lower
+    assert "current mandatory next build" in guidance_lower
+    assert "no intervening proof or contract-only phase" in _collapsed(guidance_lower)
 
 
 def test_touched_docs_do_not_present_retired_checkpoint_as_current() -> None:
     for path in TOUCHED_DOCS:
         text = _source(path)
         lower = _collapsed(text).casefold()
-        assert CURRENT_NEXT_GATE in lower, path
         assert (
             "mandatory next product-path checkpoint is `ag-fixture-dogfood-integration-01`"
             not in lower
@@ -92,6 +90,7 @@ def test_touched_docs_do_not_present_retired_checkpoint_as_current() -> None:
         ), path
 
     combined_lower = _all_touched_text().casefold()
+    assert CURRENT_NEXT_GATE.casefold() in combined_lower
     forbidden_current_claims = (
         "fixture dogfood is still the next checkpoint",
         "fixture dogfood is the next checkpoint after #355",
@@ -102,13 +101,8 @@ def test_touched_docs_do_not_present_retired_checkpoint_as_current() -> None:
         assert phrase not in combined_lower
 
 
-def test_post_pr_342_passage_is_labeled_historical() -> None:
+def test_historical_checkpoint_narrative_is_not_current_routing() -> None:
     guidance = _source(GUIDANCE_MAP_DOC).casefold()
-    for match in re.finditer(r"post-pr #342", guidance):
-        lead_in = guidance[max(0, match.start() - 80) : match.start()]
-        assert "historical" in lead_in
-
-    assert not re.search(
-        r"## current productization posture\s+scryraven is post-pr #342",
-        guidance,
-    )
+    assert "older pr-number timelines" in guidance
+    assert "historical context" in guidance
+    assert "## current productization posture" not in guidance

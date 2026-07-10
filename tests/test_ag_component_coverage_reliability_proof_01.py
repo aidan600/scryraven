@@ -77,7 +77,6 @@ CORE_MODULES = (
 DOCS = (
     ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
     ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md",
-    ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
     ROOT / "docs" / "architecture" / "AG_COMPONENT_COVERAGE_RELIABILITY_PROOF_01.md",
     ROOT / "docs" / "architecture" / "AG_DOC_SEMANTIC_COVERAGE_CHECKPOINT_01.md",
 )
@@ -881,28 +880,12 @@ def test_static_import_and_call_guards_keep_closed_surfaces_closed() -> None:
 def test_docs_record_component_coverage_reliability_proof_posture() -> None:
     required = (
         "ComponentCoverage reliability proof is complete",
-        "`AG-SEMANTIC-OBSERVATION-ADMISSION-BRIDGE-01` is complete",
         "must not create another durable proposal packet",
         "SemanticObservation/admission bridge",
         "packet/bridge budget rule",
-        "A packet or bridge is suspect",
         "EvidenceRelativeAnalysisPacket support finding",
         "RunKernel-authorized SemanticObservation admission",
         "ComponentCoverage reduction",
-        "Broker is local/private validation plumbing",
-        "Modes change budget and review depth, not semantic authority",
-        "logical depth, loop budget, query fanout, and RunKernel approval",
-        "Fast has no Scrutineer in MVP",
-        "Balanced uses Scrutineer on red flags",
-        "Deep requires Scrutineer",
-        "max 3 follow-up loops by default",
-        "max 4 only with explicit RunKernel extra recovery authorization",
-        "Specialist MVP is deferred",
-        "source-bound calculation/economist-style reasoning",
-        "AG-96 followup stack",
-        "offline SearchExecutor bridge",
-        "SearchWorkPlan shadow",
-        "legacy/passive/closed",
         REPORT_NAME,
     )
     docs_text = "\n".join(path.read_text(encoding="utf-8") for path in DOCS)

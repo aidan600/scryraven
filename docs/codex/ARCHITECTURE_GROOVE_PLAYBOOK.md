@@ -9,10 +9,14 @@ Repair is the active phase operating system.
 
 ## Purpose
 
-This playbook contains repeated workflow rules for ScryRaven Codex phases. Future
-phase prompts should be short and should reference this playbook, the
+This playbook owns detailed workflow rules for ScryRaven coding-agent phases.
+Future phase prompts should be short and should reference this playbook, the
 [Codex Guidance Map](CODEX_GUIDANCE_MAP.md), and any phase-specific guide rather
 than re-stating the whole operating manual.
+
+The root `AGENTS.md` owns durable safety, human-authority, product-path, Git, and
+publication boundaries. [AGENTIC_CODING_OPERATING_PROFILE.md](AGENTIC_CODING_OPERATING_PROFILE.md)
+owns vendor-neutral execution profiles and the advisory current Codex adapter.
 
 ScryRaven is the public project name for this repository. Historical docs may
 still mention earlier working names such as ProPlex, FauxPlex, and FauxPlexity;
@@ -87,8 +91,15 @@ brittle inline `cd ...; git ...` expressions.
 
 ## Phase-size choice
 
-Do not force every phase into a tiny slice. Pick the smallest phase shape that
-can satisfy the brief without creating avoidable user coordination work.
+A PR may be large when it implements one coherent product outcome through its
+ordinary consumer. Do not split solely because the outcome crosses several
+files, modules, authority seams, or internal implementation milestones.
+
+Split when the work contains independent product decisions, unrelated
+consumers, materially different risk classes, or incompatible rollback
+boundaries. Small PRs remain valid and desirable when they are the natural
+coherent unit. Pick the smallest phase shape that completes the outcome without
+creating avoidable user coordination work or an unusable partial path.
 
 ### Tiny slice phase
 
@@ -103,6 +114,34 @@ tests, doc links, and cleanup. Create a compact execution plan instead of asking
 the user to approve each small implementation detail. Use
 [EXECUTION_PLAN_TEMPLATE.md](EXECUTION_PLAN_TEMPLATE.md) when the bundle has
 multiple checkpoints, runtime consumers, or old authority paths.
+
+## Long-running task contract
+
+For substantial work, express the contract as:
+
+```text
+Outcome:
+Constraints:
+Verification:
+```
+
+The agent should inspect the repository, form a compact internal plan, and
+proceed through related internal milestones without waiting for approval. Use
+checkpoint commits when useful. Run focused validation during implementation,
+complete the ordinary consumer endpoint, review the complete diff, fix in-scope
+findings, rerun affected validation, and return one final bundle.
+
+Internal milestones are coordination aids, not automatic PR boundaries. Stop
+only at the decision and authority boundaries in the root contract or at a
+phase-specific stop condition.
+
+## Adjacent cleanup
+
+Implementation phases should attempt one safe cleanup near the touched surface:
+delete, demote, or consolidate a stale helper, obsolete import, misleading
+comment, duplicate fixture, or superseded instruction. Do not use cleanup to add
+a new abstraction or lifecycle, broaden the refactor, or change unrelated
+behavior. Report the cleanup or the reason none was safe.
 
 ### Docs/design phase
 
@@ -241,11 +280,11 @@ adding new modules or replacement seams. Prefer `REUSE` / `ADAPT` / `UPGRADE`
 over parallel replacement; `REPLACE` requires a reason and an exit plan for the
 old surface.
 
-## Codex Cloud and local validation roles
+## Hosted and local validation roles
 
-### Codex Cloud implementation role
+### Hosted implementation role
 
-Codex Cloud should inspect repo-visible files, plan briefly, execute scoped work,
+A hosted coding agent should inspect repo-visible files, plan briefly, execute scoped work,
 add or update in-scope tests/docs, run focused offline checks, fix in-scope
 failures, self-review, and open a PR when explicitly authorized.
 
@@ -253,25 +292,14 @@ failures, self-review, and open a PR when explicitly authorized.
 
 Local desktop validation is for user-run app review, secrets-backed live calls,
 private artifacts, DB inspection, caches, local packets, and output-quality
-judgment. Codex Cloud must not assume those artifacts are repo files and must not
+judgment. A coding agent must not assume those artifacts are repo files or
 request them unless the phase explicitly scopes safe redacted access.
 
 ## Bounded autonomy and decision points
 
-Codex should reduce user coordination burden. Do not stop for issues that are
-fixable within the phase scope.
-
-Proceed autonomously for relevant file inspection, scoped implementation,
-in-scope test additions or updates, in-scope test failure fixes, stale docs links
-or formatting caused by the phase, formatting, lint, pre-commit fixes,
-final-bundle preparation, and PR creation when explicitly authorized by the
-phase brief.
-
-Stop and ask for a user decision only for product choices, architecture forks not
-resolved by the brief or repo doctrine, unlicensed or closed-this-phase surface
-changes, live validation or live-call budget, secrets/private data, destructive
-git, merge/squash/rebase/force-push, broad scope expansion, or unresolved failing
-tests whose fix changes the meaning of the phase.
+Use the autonomy and escalation boundary in root `AGENTS.md`. The phase brief
+may narrow that authority but does not need to repeat it. Do not stop for issues
+that are safely fixable within the licensed phase scope.
 
 Use this stop packet when escalation is required:
 
@@ -292,30 +320,6 @@ C. ...
 RECOMMENDATION:
 ...
 ```
-
-## Allowed by default in a phase
-
-If the phase prompt approves Build / Proof / Repair Path B work, Codex may:
-
-- inspect repo files;
-- edit within scope;
-- run offline tests;
-- add in-scope tests/harnesses only when the phase labels them and names the
-  runtime consumer, deadline, and exit condition;
-- add compact validation artifacts tied to the phase;
-- make local checkpoint commits;
-- fix in-scope failures;
-- self-review;
-- push the completed branch and create a PR only if the phase brief explicitly
-  allows phase-end publication.
-
-## Not allowed by default
-
-Codex must not merge, squash merge, rebase, force-push, delete branches, reset,
-clean destructively, alter `main`, run live ScryRaven/proplex provider/model/search
-calls, access secrets/env/API keys, inspect DBs/private logs/generated
-outputs/caches/virtualenvs unless explicitly scoped, or change closed-this-phase
-surfaces outside phase scope.
 
 ## Surface vocabulary
 
@@ -451,31 +455,43 @@ git check-ignore -v output/ag##_output_quality_review_packet.md
 git ls-files output
 ```
 
+## Required implementation and review loop
+
+For substantial BUILD phases:
+
+1. Complete the full scoped product outcome.
+2. Run focused checks.
+3. Run required broader regression checks.
+4. Review the entire branch diff against `main`.
+5. Check correctness, authority boundaries, regressions, unnecessary machinery,
+   stale-path retirement, security, and private-data exposure.
+6. Fix all in-scope findings.
+7. Rerun affected checks.
+8. Perform one final skeptical-maintainer review.
+9. Report unresolved risks and nonproofs.
+
+A read-only independent reviewer may be used at DEEP, INTENSIVE, or DELEGATED
+profiles. The main agent remains the sole architectural integrator and default
+writer; delegation begins with read-heavy exploration, testing, triage,
+summarization, or independent review. Parallel edits to overlapping files are
+forbidden. See `AGENTIC_CODING_OPERATING_PROFILE.md`.
+
 ## Final bundle
 
-Return:
+Use this compact default:
 
 ```text
-1. Mode and scope
-2. Architectural goal and whether met
-3. Branch, base commit, HEAD, status
-4. Commit list
-5. Diff stat
-6. Changed files/functions/classes
-7. Tests added/changed
-8. Commands run and results
-9. Behavior changes
-10. Answer-contract / fulfillment / handoff changes, if any
-11. Licensed/closed-this-phase/target/high-custody surface changes, if any
-12. Telemetry/validation artifacts added, with consumer/decision/deletion criteria
-13. Risky-surface scan
-14. Live validation used or not used
-15. Local output-quality review packet created? yes/no/not applicable
-16. Branch pushed? yes/no
-17. PR created? yes/no, URL if available
-18. Known rough edges
-19. Recommended final action
+1. Outcome and scope
+2. Material changes
+3. Verification evidence
+4. Self-review findings and fixes
+5. Risks and nonproofs
+6. Git/PR status
+7. Recommended next action
 ```
+
+Add phase-specific appendices only when they apply, such as authority migration,
+live validation, harness retirement, or detailed publication evidence.
 
 ## Phase-end PR creation
 

@@ -425,7 +425,6 @@ def test_static_closed_surface_guard_for_component_source_custody() -> None:
 
 def test_docs_name_completed_bridge_and_component_custody_next_gate() -> None:
     doc_paths = [
-        ROOT / "docs" / "codex" / "CODEX_GUIDANCE_MAP.md",
         ROOT / "docs" / "codex" / "RUNAUTHORITY_IMPLEMENTATION_GUIDE.md",
         ROOT / "docs" / "architecture" / "SCRYRAVEN_CURRENT_STATE.md",
         ROOT / "docs" / "architecture" / "AG_ANSWER_CONTRACT_AUTHORITY_MAP_01_DECISION.md",
@@ -434,20 +433,18 @@ def test_docs_name_completed_bridge_and_component_custody_next_gate() -> None:
     normalized = " ".join(combined.casefold().replace("`", "").split())
 
     assert "pr #319" in normalized
-    assert "completed the offline runkernel-owned searchexecutor bridge" in normalized
+    assert "runkernel-owned searchexecutor bridge is complete" in normalized
     assert "pr #320" in normalized
     assert "ag-component-scoped-source-custody-01" in normalized
-    assert "evidenceledger component-scoped source custody" in normalized
-    assert "adds evidenceledger component-scoped source custody" in normalized
+    assert "evidenceledger component-scoped source custody is added" in normalized
     assert "candidate links remain non-evidence" in normalized
     assert "until fetched/read/admitted" in normalized or (
         "until fetched, read, and admitted" in normalized
     )
     assert "unsatisfied/pending" in normalized
     assert "rather than satisfied by candidate presence" in normalized
-    assert "ag-component-evidence-citation-binding-01 extends" in normalized
     assert "ag-component-evidence-citation-binding-01" in normalized
-    assert "component evidence/citation binding" in normalized
+    assert "per-component binding status consumes" in normalized
     assert "ag-sufficiency-fap-component-readiness-01" in normalized
     assert "sufficiencyjudgment and finalanswerpacket" in normalized
     assert "pr #322" in normalized
@@ -462,7 +459,6 @@ def test_docs_name_completed_bridge_and_component_custody_next_gate() -> None:
         "planner/scout/search-executor runtime loop exists"
     ) in normalized
     assert "passive/shadow surfaces are not product readiness" in normalized
-    assert "merge-stable phase posture" in normalized
 
     forbidden_stale_phrases = {
         "next gate is ag-component-scoped-source-custody-01",
