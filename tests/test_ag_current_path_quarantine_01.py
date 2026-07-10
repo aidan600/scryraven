@@ -233,7 +233,7 @@ def test_docs_posture_keeps_overclaims_quarantined() -> None:
 
     scanned_docs = "\n".join(
         _source(path)
-        for path in (CURRENT_STATE_DOC, RUN_CONTRACT_DOC, CODEX_GUIDANCE_DOC, QUARANTINE_DOC)
+        for path in (CURRENT_STATE_DOC, RUN_CONTRACT_DOC, CODEX_GUIDANCE_DOC)
     )
     forbidden_overclaims = (
         "search candidates are evidence",

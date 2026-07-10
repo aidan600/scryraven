@@ -1,6 +1,8 @@
 # RunKernel Component DAG And Concurrency
 
-Status: architecture doctrine only for future multi-component work.
+Status: graph, scheduling, and concurrency companion doctrine. The canonical
+multi-component role and synthesis architecture is
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 
 Mode: BUILD.
 
@@ -12,6 +14,13 @@ Current cross-component doctrine:
 Future multi-component and multi-hop work should be represented as a
 RunKernel-owned component dependency graph with compact component refs and
 explicit admission boundaries, not a sequential checklist.
+
+The durable direction is an n-capable, mode-budgeted, acyclic graph that is
+serial-compatible initially and supports bounded synthesis-of-synthesis.
+Serial correctness comes first; dynamic recovery follows; scheduling and
+runtime parallelism are later commitments. None of execution, scheduling,
+budget leases, or runtime parallelism is currently installed by the V0
+contracts.
 
 This document does not implement component DAG scheduling, budget leases, model
 routing, query planning, or multi-component planning.
@@ -46,6 +55,12 @@ user question
 -> RunKernel admits / blocks / challenges / authorizes bounded recovery
 -> later Sufficiency/FAP/Author phases consume only admitted refs
 ```
+
+The next BUILD must go further than that historical intermediate shape:
+ordinary Sufficiency, FinalAnswerPacket, Author, and user-facing answer output
+must consume appropriate admitted direct and synthesized material in the same
+end-to-end product path. Graph admission or a serial checkpoint alone is not
+product completion.
 
 Planner and Analyst surfaces may propose decomposition. RunKernel owns
 scheduling, budget leases, caps, custody, cancellation, and admission. Analyst
@@ -90,6 +105,27 @@ A future graph-level node shape may include:
 These fields should remain authority-preserving. They should not become a
 shadow planner, shadow product path, or prompt-visible substitute for RunKernel
 authorization.
+
+## Component And Synthesis Nodes
+
+The durable graph has first-class concepts equivalent to `ComponentWorkNode`
+and `SynthesisWorkNode`. The exact synthesis-node implementation name remains
+open, but synthesis must be identity-bearing, revision-bound, challengeable,
+and admissible. It must not remain only an external reference attached to a
+component node.
+
+The graph supports direct component results, subset synthesis, multiple
+independent synthesis groups, component-to-synthesis edges,
+synthesis-to-synthesis edges, bounded layered synthesis, and node-, edge-,
+subgraph-, and whole-graph challenges. An empty edge set means no admitted edge
+is present; it does not prove semantic independence. Unknown or unassessed
+dependency posture must remain explicit.
+
+`ComponentWorkGraph V1` is the preferred successor. It should represent
+component refs, first-class synthesis-node refs, structural edges, proposed and
+admitted semantic edges, challenge refs, revision/staleness metadata, and
+depth/budget posture. Do not silently redefine V0: V0 may remain a compatibility
+or review-only input and is a named strangler target for the ordinary path.
 
 ## Budget Doctrine
 
@@ -169,7 +205,7 @@ explicit confirmation and caps. That consumption does not implement
 `ComponentWorkNode`, `ComponentWorkGraph`, RunKernel DAG scheduling, concurrency,
 or budget leases, and it must remain single-relation only.
 
-## Future Roadmap Pointer
+## Historical V0 Sequence And Current Roadmap
 
 These are future doctrine items, with the currently introduced contract noted
 where it exists:
@@ -191,6 +227,17 @@ where it exists:
   synthesis D-prime validation, and RunKernel admission refs.
 - `MULTI-COMPONENT-LIVE-DOGFOOD-01`
 
+The list above records V0 provenance and older roadmap names; it is not the
+current next-phase route. The mandatory next checkpoint is
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
+
+After serial end-to-end ordinary activation, the committed Boundary 3 sequence
+is dynamic graph and AnswerContract amendment, targeted ordinary research
+re-entry, selective invalidation, selective synthesis recomputation,
+revision-specific validation/scrutiny, RunKernel scheduling and budget leases,
+then runtime parallelism where supported. These destinations are deferred, not
+rejected.
+
 ## Current Status
 
 Current implemented contract work through
@@ -201,6 +248,10 @@ query-to-relation planning, multi-component planning, RunKernel DAG scheduling,
 budget lease implementation, model routing, FAP redesign, Author behavior, live
 dogfood behavior, source display, citation rendering, source-obligation
 satisfaction, or product correctness claims.
+
+Those contracts also do not establish the typed general regular component
+Analyst -> component D-prime lane in the current default ordinary semantic
+producer. The complete approved product target is not installed.
 
 ScryRaven is not friend-level MVP and is not a general supported-query MVP.
 

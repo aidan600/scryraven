@@ -17,6 +17,16 @@ That doctrine adapts the same proposal-only Workbench posture for synthesis over
 compact component refs; it does not create a second Analyst authority path or
 open graph execution.
 
+The canonical durable direction is
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
+The current default ordinary semantic producer does not establish a typed
+general component Analyst -> component D-prime lane. The approved Phase 1
+product path must add a configured-SmartModel regular component Analyst before
+component D-prime, then use a separate configured-SmartModel Cross-Component
+Analyst for synthesis proposals. Existing Workbench packets and specialized
+status lanes are reuse candidates; their presence is not proof that either
+ordinary producer role is installed.
+
 ## Canonical Runtime Contract
 
 ### Workbench Role
@@ -55,8 +65,11 @@ The Workbench does not:
 The future Cross-Component Analyst Workbench must inherit this proposal-only
 boundary. It may propose consistency, dependency, missing-component,
 contradiction, caveat, recovery, and synthesis refs over compact
-`ComponentWorkNode` outputs. It must hand those refs to synthesis D-prime and
-RunKernel rather than validating, admitting, searching, packaging, or rendering
+`ComponentWorkNode` and admitted synthesis-node outputs, including proposed
+semantic edges and first-class synthesis nodes. A real ordinary producer must
+be a dedicated configured-SmartModel role, not merely this Workbench contract.
+It must hand proposal refs to synthesis D-prime and RunKernel rather than
+validating, admitting, dispatching recovery, searching, packaging, or rendering
 by itself.
 
 It must not become:

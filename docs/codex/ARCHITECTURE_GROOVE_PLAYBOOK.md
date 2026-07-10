@@ -153,6 +153,21 @@ path and produces the claimed reviewable output.
 Fail condition: the ordinary product path cannot consume the change. Stop with a
 blocker report instead of demonstrating the behavior beside the product.
 
+### Current multi-component mandatory checkpoint
+
+After `MULTICOMPONENT-RUNTIME-ARCHITECTURE-DOCTRINE-REPAIR-01`, the mandatory
+next checkpoint is `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
+Its endpoint is default ordinary entrypoint -> typed component producer roles
+-> component admission -> graph/synthesis producer roles -> RunKernel canonical
+admission -> ordinary Sufficiency -> FinalAnswerPacket -> Author -> user-facing
+answer containing appropriate admitted synthesis.
+
+Contracts, packets, fixtures, graph admission, serial checkpoints, status or
+diagnostic output, and diagnostic finalization are forbidden substitutes for
+that product endpoint. No intervening proof or contract-only phase is
+authorized by default. The canonical architecture is
+`docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md`.
+
 ## Capability inventory / reuse-first gate
 
 Before implementing new code, any phase touching mature authority or product

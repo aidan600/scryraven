@@ -1,6 +1,8 @@
 # Cross-Component Analyst Workbench
 
-Status: architecture doctrine and phase plan only.
+Status: established V0 proposal-only doctrine and historical phase plan. The
+canonical durable architecture and current next-BUILD direction live in
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
 
 Mode: REPAIR.
 
@@ -8,10 +10,15 @@ Phase: `MULTICOMPONENT-CROSS-COMPONENT-ANALYST-DOCTRINE-01`.
 
 Verdict target: NO-BUT-JUSTIFIED.
 
-This is a docs/process REPAIR with no app delta. It is justified because it
-prevents fake graph scheduling, parallel Analyst drift, D-prime-as-Analyst,
-direct retrieval dispatch, FAP synthesis, and Author glue before the next Build
-checkpoint: `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`.
+The original phase was a docs/process REPAIR with no app delta. It was justified
+because it prevents fake graph scheduling, parallel Analyst drift,
+D-prime-as-Analyst, direct retrieval dispatch, FAP synthesis, and Author glue
+before the next Build checkpoint: `COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01`.
+
+That checkpoint and the subsequent V0 contract sequence are now merged. They
+remain bounded reusable contracts, not ordinary product consumption. The
+mandatory next checkpoint is now
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
 
 This document defines the smallest safe next architecture step from the current
 same-component multi-source, `ComponentWorkNode`-shaped lane toward future
@@ -21,6 +28,14 @@ It does not implement Cross-Component Analyst Workbench, ComponentWorkGraph,
 synthesis D-prime, graph admission, scheduling, runtime parallelism, budget
 leases, FAP, Author, source display, citation rendering, live validation, or
 multi-component answering.
+
+For the ordinary product target, the Workbench contract alone is not a
+producer. The product needs a real dedicated configured-SmartModel
+Cross-Component Analyst call. That role may propose first-class synthesis nodes
+and semantic edges over admitted component/synthesis refs. It may not validate
+its own proposal, admit graph state, dispatch recovery, or render answer prose;
+a separate configured-SmartModel synthesis D-prime validates, full Scrutineer
+challenges when triggered, and RunKernel alone admits or authorizes recovery.
 
 ## Capability Inventory / Reuse-First Gate
 
@@ -306,7 +321,12 @@ requests must name:
 This keeps the Workbench from becoming a raw packet merger, prompt dump, hidden
 retrieval path, or unbounded context sink.
 
-## 8. Next Five Phases
+## 8. Historical V0 Phase Sequence
+
+This sequence is retained to explain the provenance and boundaries of the
+merged V0 contracts. It is not current next-step doctrine and must not route a
+new contract-only or proof-only phase ahead of
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`.
 
 ### 1. MULTICOMPONENT-CROSS-COMPONENT-ANALYST-DOCTRINE-01
 

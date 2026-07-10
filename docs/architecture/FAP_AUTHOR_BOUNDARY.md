@@ -10,6 +10,10 @@ This document records FinalAnswerPacket (FAP) and Author boundary doctrine for
 future answer rendering. It is intended to keep future FAP inspection, source
 gateway, and Author work aligned with the current RunKernel-owned answer path.
 
+For the canonical multi-component producer, synthesis, validation, and
+admission architecture, read
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
+
 ## Core Doctrine
 
 FAP is a constrained authority manifest, not a planner.
@@ -17,6 +21,11 @@ FAP is a constrained authority manifest, not a planner.
 FAP packages upstream-authorized claims, required caveats, source bindings,
 not-claimed boundaries, rendering references, and support posture references. It
 does not create authority.
+
+FAP may package admitted direct component material and admitted synthesis after
+ordinary Sufficiency approves readiness. FAP must not generate, repair,
+reinterpret, or validate synthesis, glue unadmitted component finals, or treat
+graph admission alone as answer readiness.
 
 The authority chain is:
 
@@ -63,6 +72,7 @@ Author may:
 - include required caveats;
 - surface source links readably;
 - create a human-facing source gateway.
+- explain synthesis that is already admitted and packaged by FAP.
 
 Author must not:
 
@@ -74,6 +84,8 @@ Author must not:
 - introduce new claims;
 - infer missing context from model knowledge;
 - change source posture.
+- generate, repair, or validate synthesis, including glue between component
+  outputs that upstream roles did not admit.
 
 ## Source Gateway Doctrine
 

@@ -93,6 +93,19 @@ briefs: Build is the default product-moving mode, Proof is an exception that
 requires NO-BUT-JUSTIFIED plus a mandatory next Build checkpoint, and Repair
 must fix a named integrity defect.
 
+Current multi-component exception to the older sequence wording below:
+`MULTICOMPONENT-RUNTIME-ARCHITECTURE-DOCTRINE-REPAIR-01` makes
+`docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md` the
+canonical owner. The mandatory next checkpoint is
+`AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`. It must activate typed
+regular component Analyst -> component D-prime, first-class graph synthesis,
+separate Cross-Component Analyst / synthesis D-prime / full Scrutineer roles,
+RunKernel admission, ordinary Sufficiency, FinalAnswerPacket, Author, and
+user-facing answer output. It may not stop at contracts, packets, fixtures,
+graph admission, a serial checkpoint, status/diagnostic output, or diagnostic
+finalization. No intervening proof or contract-only phase is authorized by
+default.
+
 Historical baseline, not current posture: ScryRaven was post-PR #342 /
 post-AG-COMPONENT-COVERAGE-RELIABILITY-PROOF-01. That completed baseline
 included the earlier offline X-axis proof through blocked FAP / Author handoff,
@@ -437,11 +450,13 @@ content is explicitly pasted into the current prompt or committed here.
   FAP, Author, or readiness, perform the capability inventory / reuse-first gate
   before adding a new surface.
 - **Cross-component Analyst Workbench doctrine:** read
+  `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md` first as
+  the canonical current architecture, then read
   `docs/architecture/CROSS_COMPONENT_ANALYST_WORKBENCH.md` before phases that
   touch multi-component reasoning, ComponentWorkGraph, ComponentWorkNode lift,
   synthesis proposals, synthesis D-prime, graph admission, dependency gaps,
-  missing-component proposals, or cross-component recovery. The next safe
-  sequence is Cross-Component Analyst Workbench doctrine/contract first,
+  missing-component proposals, or cross-component recovery. The historical
+  merged V0 sequence was Cross-Component Analyst Workbench doctrine/contract first,
   ComponentWorkGraph V0 no-execution contract, proposal-only synthesis,
   synthesis D-prime validation, RunKernel graph admission, then the serial
   dry-run checkpoint. Synthesis
@@ -454,7 +469,11 @@ content is explicitly pasted into the current prompt or committed here.
   `core/multicomponent_serial_dry_run_checkpoint.py` and
   `tests/test_multicomponent_serial_dry_run_planning_checkpoint_01.py`. These
   remain ref-only/review-only until a later product-consumed multi-component
-  path opens. Do not build a fake graph, scheduler, parallel Analyst,
+  path opens. The mandatory next BUILD is
+  `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`; it must consume the
+  architecture through ordinary Sufficiency/FAP/Author answer output rather
+  than adding another V0 contract or checkpoint. Do not build a fake graph,
+  scheduler, parallel Analyst,
   D-prime-as-Analyst, FAP synthesis, Author glue, or direct retrieval dispatch
   path.
 - **Analyst Workbench runtime contract:** read

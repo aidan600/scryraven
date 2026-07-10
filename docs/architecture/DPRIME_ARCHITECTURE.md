@@ -10,6 +10,14 @@ aggregation by the ordinary product path, full Scrutineer remediation,
 Economist/Specialist expansion, graph execution/scheduling, FAP/Author
 multi-component rendering, or product correctness.
 
+The canonical durable multi-component role and graph direction is
+[MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md](MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md).
+The current default ordinary semantic producer remains direct and does not
+invoke a typed general regular component Analyst proposal followed by component
+D-prime validation. The generic single-relation Analyst intake and other
+bounded Workbench/status lanes below are reusable specialized capabilities, not
+proof that the missing general ordinary lane is installed.
+
 ## Purpose
 
 D-prime is ScryRaven's bounded evidence-relative model-review lane. It lets the
@@ -48,6 +56,33 @@ synthesis claim S without inventing evidence, dropping caveats, erasing
 blockers, or changing component scope. It must not become the Cross-Component
 Analyst, choose the synthesis claim, authorize retrieval, admit support, reduce
 contract state, package FAP, or write Author prose.
+
+The durable split has three separate configured-SmartModel roles:
+
+```text
+component D-prime
+synthesis D-prime
+full Scrutineer
+```
+
+Component D-prime validates a nominated component proposal. Synthesis D-prime
+validates nominated first-class synthesis against admitted component,
+synthesis, edge, blocker, and caveat refs. Neither D-prime role invents the
+proposal it validates. Full Scrutineer adversarially challenges a component,
+synthesis, edge, subgraph, or whole case. It is not the first-pass Analyst.
+
+Durable mnemonic:
+
+```text
+D-prime verifies the claim.
+Scrutineer attacks the case.
+```
+
+The existing narrow deterministic same-component multi-source Scrutineer gate
+is not the full Scrutineer role. Deterministic schema, identity, cycle, budget,
+safety, hygiene, and output checks must not replace semantic synthesis D-prime
+or full SmartModel scrutiny. Runtime model selection remains configurable; the
+architecture does not hardcode GPT-5.6 or another model.
 
 `DPRIME-SYNTHESIS-VALIDATION-V0-01` introduces
 `core.dprime_synthesis_validation` as a typed validation-only contract over
@@ -318,7 +353,7 @@ Generic single-relation Analyst intake:
   is lineage-only and current product-consumed input to existing D-prime
   authority surfaces
 
-One-component multi-source Analyst posture and narrow Scrutineer gate:
+One-component multi-source Analyst posture and narrow deterministic Scrutineer gate:
   aggregate same-lane generic relations and may permit compatible additional
   source materializations into the existing product path
 
@@ -530,6 +565,10 @@ Still not implemented or closed:
   ref contract;
 - multi-component support aggregation by the ordinary product path;
 - full Scrutineer remediation;
+- the approved general ordinary component Analyst -> component D-prime lane;
+- dedicated ordinary Cross-Component Analyst, synthesis D-prime, and full
+  Scrutineer SmartModel roles;
+- ComponentWorkGraph V1 and first-class synthesis-node runtime;
 - Economist/Specialist expansion;
 - live/model/provider/search/fetch/read/retrieval execution inside this status
   path;

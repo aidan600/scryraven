@@ -8,10 +8,10 @@ consumed by future phase briefs.
 Why ordinary product-path work cannot be done directly: this phase is
 docs-first architecture repair and explicitly closes runtime implementation,
 graph execution, scheduling, retrieval dispatch, FAP, Author, and live calls.
-Integration deadline: COMPONENTWORKGRAPH-V0-NOEXEC-CONTRACT-01 must consume or
-supersede this doctrine before opening graph contracts.
-Exit condition: keep while cross-component work is gated by proposal-only
-Workbench, synthesis D-prime validation, and RunKernel admission doctrine.
+Integration deadline: AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01 must
+consume the approved architecture through the ordinary answer path.
+Exit condition: keep until an equal-or-stronger ordinary product-path guard
+protects typed component validation, synthesis, and final answer consumption.
 Why this is not a shadow product path: the test reads docs only; it does not
 answer queries, execute graph nodes, dispatch search, validate synthesis, admit
 support, package FAP, or render Author prose.
@@ -35,6 +35,12 @@ DAG_DOC = ROOT / "docs" / "architecture" / "RUNKERNEL_COMPONENT_DAG_CONCURRENCY.
 WORKBENCH_DOC = ROOT / "docs" / "architecture" / "ANALYST_WORKBENCH_FULL_SLICE.md"
 DPRIME_DOC = ROOT / "docs" / "architecture" / "DPRIME_ARCHITECTURE.md"
 RUN_CONTRACT_DOC = ROOT / "docs" / "architecture" / "RUN_CONTRACT_SEMANTIC_LOOP.md"
+CANONICAL_DOC = (
+    ROOT
+    / "docs"
+    / "architecture"
+    / "MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md"
+)
 
 
 def _read(path: Path) -> str:
@@ -95,6 +101,9 @@ def test_cross_component_doctrine_names_next_phase_order() -> None:
     ):
         assert phase_name in text
 
+    assert "Historical V0 Phase Sequence" in text
+    assert "AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01" in text
+
 
 def test_current_guidance_crosslinks_new_doctrine() -> None:
     for path in (
@@ -105,3 +114,6 @@ def test_current_guidance_crosslinks_new_doctrine() -> None:
         RUN_CONTRACT_DOC,
     ):
         assert "CROSS_COMPONENT_ANALYST_WORKBENCH.md" in _read(path), path.name
+
+    for path in (GUIDANCE_MAP_DOC, DAG_DOC, WORKBENCH_DOC, DPRIME_DOC, RUN_CONTRACT_DOC):
+        assert CANONICAL_DOC.name in _read(path), path.name

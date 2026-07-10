@@ -25,6 +25,7 @@ For current authority doctrine and Codex routing, read:
 - `docs/architecture/AG_FINAL_ANSWER_PACKET_HARDENING_01.md`
 - `docs/architecture/AUTHOR_PROSE_ONLY_FINALIZATION_01.md`
 - `docs/architecture/FAP_AUTHOR_BOUNDARY.md`
+- `docs/architecture/MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md`
 - `docs/architecture/RUNKERNEL_COMPONENT_DAG_CONCURRENCY.md`
 - `docs/architecture/AG_CURRENT_PATH_QUARANTINE_01.md`
 - `docs/architecture/RUN_CONTRACT_SEMANTIC_LOOP.md`
@@ -32,6 +33,27 @@ For current authority doctrine and Codex routing, read:
 - `docs/architecture/AG94G_ORCHESTRATOR_AUTHORITY_STRANGLER_MAP.md`
 
 Current summary:
+
+- The canonical approved multi-component direction is
+  `MULTICOMPONENT_SYNTHESIS_RUNTIME_ARCHITECTURE.md`. Current default ordinary
+  semantic production is direct: selected passages / sanitized content refs
+  and EvidenceLedger facts feed the ordinary semantic producer, which calls
+  `RunKernel.commit_semantic_producer_bundle(...)` before
+  `SemanticObservation` and `ComponentCoverage`. A typed general component
+  Analyst proposal followed by component D-prime validation is not installed
+  in that default ordinary handoff. Broad or legacy Analyst prose elsewhere is
+  not equivalent to the missing typed component proposal/validation lane.
+- ComponentWorkGraph V0, Cross-Component Analyst Workbench V0, synthesis
+  D-prime validation, RunKernel graph/synthesis admission, and the serial
+  checkpoint are bounded reusable contracts. They are not consumed by the
+  ordinary answer path and do not establish ordinary multi-component
+  synthesis.
+- The next principal BUILD is
+  `AG-MULTICOMPONENT-ORDINARY-END-TO-END-SYNTHESIS-01`. It must activate both
+  typed component Analyst/D-prime validation and first-class cross-component
+  synthesis through ordinary RunAuthority Sufficiency, FinalAnswerPacket,
+  Author, and user-facing answer output. Graph admission, a serial checkpoint,
+  or diagnostic finalization is not a substitute product endpoint.
 
 - `AG_CURRENT_PATH_QUARANTINE_01.md` is the current registry for proof class,
   consumer-seam, current/legacy/passive/closed status, old-path treatment, and
@@ -276,7 +298,8 @@ Current summary:
 - Old AG-92C Sufficiency/FAP and AG-96/FAP/Author surfaces remain
   legacy/passive/closed unless explicitly reopened. AuthorProseFinalization is
   now complete as the current prose-only surface and consumes hardened FAP only.
-- The roadmap order is:
+- Historical second-half roadmap order (completed phase history, not the
+  current next checkpoint) is:
   `AG-SECOND-HALF-SEMANTIC-ARCHITECTURE-01`,
   `AG-LIVE-XAXIS-VALIDATION-01A`,
   `AG-SEARCH-RESULT-CANDIDATE-PACKET-01`,
