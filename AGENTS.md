@@ -89,11 +89,14 @@ Verification:
 ```
 
 Inspect the repository, form a compact internal plan, and proceed through related
-milestones without waiting for approval. Use checkpoint commits when useful,
-run focused checks during implementation, complete the ordinary consumer
-endpoint, review the entire diff against the base, fix in-scope findings, rerun
-affected validation, and return one final bundle. Stop only at the authority and
-decision boundaries above.
+milestones without waiting for approval. During focused implementation, stop on
+divergence, unrelated scope expansion, or architectural uncertainty; do not stop
+merely because tests remain red while failures decrease within one causal cluster
+and the next correction is bounded and directly implied. Create coherent local
+checkpoint commits at milestones and before expensive validation. Complete the
+ordinary consumer endpoint, review the entire diff against the base, rerun
+affected validation, and return one final bundle. Details are owned by the
+operating profile and playbook.
 
 The default final bundle is: outcome and scope; material changes; verification
 evidence; self-review findings and fixes; risks and nonproofs; Git/PR status; and

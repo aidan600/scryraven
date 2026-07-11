@@ -166,3 +166,100 @@ def test_guidance_map_stays_a_compact_resolvable_router() -> None:
     assert targets
     for target in targets:
         assert (GUIDANCE.parent / target).resolve().is_file(), target
+
+
+def test_convergence_replaces_fixed_red_cycle_stopping() -> None:
+    profile = _collapsed(PROFILE).casefold()
+    root = _collapsed(AGENTS).casefold()
+
+    for phrase in (
+        "failure count",
+        "failed node ids",
+        "causal classification",
+        "shrinking, flat, or expanding",
+        "next bounded correction",
+        "red focused test is diagnostic information",
+        "flat or expanding for two consecutive focused cycles",
+        "do not use a fixed maximum red-cycle count",
+    ):
+        assert phrase in profile
+    assert "stop on divergence" in root
+    assert "do not stop merely because tests remain red" in root
+
+
+def test_causal_cluster_and_stronger_validator_rules_are_bounded() -> None:
+    profile = _collapsed(PROFILE).casefold()
+
+    for phrase in (
+        "bounded producer, schema, reducer, consumer, and focused test path",
+        "newly touched file is not automatically an unrelated surface",
+        "preserve a stronger validator",
+        "instead of weakening validation solely",
+        "another product responsibility",
+        "genuine architecture decision",
+    ):
+        assert phrase in profile
+
+
+def test_checkpoints_are_coherent_and_cannot_masquerade_as_completion() -> None:
+    profile = _collapsed(PROFILE).casefold()
+    playbook = _collapsed(PLAYBOOK).casefold()
+
+    for phrase in (
+        "before affected-lane, full-suite, or baseline-parity validation",
+        "require a reviewable local commit",
+        "last coherent checkpoint clean",
+        "exact reported unresolved edit",
+        "checkpoint is not phase completion",
+        "never use one to hide incoherence or bypass exact-diff",
+    ):
+        assert phrase in profile
+    assert "checkpointing does not claim completion" in playbook
+
+
+def test_surface_licensing_and_workflow_scale_are_explicit() -> None:
+    profile = _collapsed(PROFILE).casefold()
+    addenda = _read(ADDENDA)
+
+    for phrase in (
+        "name the producer, authority transition or reducer, downstream consumer",
+        "permits only directly necessary files",
+        "never unrelated product systems",
+        "rigid file allowlists only for genuinely tiny",
+        "do not force intensive ceremony onto tiny work",
+        "standard is the default substantial-phase workflow posture",
+        "intensive adds multiple coherent milestones",
+    ):
+        assert phrase in profile
+    assert "## Large-phase execution posture" in addenda
+    assert "Execution profile: STANDARD | INTENSIVE" in addenda
+
+
+def test_validation_jobs_and_acceptance_owner_are_separate_and_stable() -> None:
+    playbook = _collapsed(PLAYBOOK).casefold()
+
+    for phrase in (
+        "implementation, affected-lane validation, publication, full-suite or baseline-parity validation, and final review as separate jobs",
+        "do not immediately repeat the broad run",
+        "do not rerun the full suite after every isolated correction",
+        "one strategy/review chat owns the active phase acceptance target",
+        "approve merge, request one focused fix, reject or revert, or stop for architectural decision",
+    ):
+        assert phrase in playbook
+
+
+def test_safety_stops_and_checkpoint_nonpermissions_remain_explicit() -> None:
+    profile = _collapsed(PROFILE).casefold()
+    combined = " ".join((_collapsed(AGENTS), profile, _collapsed(PUBLICATION))).casefold()
+
+    for phrase in (
+        "live calls",
+        "secrets",
+        "private data",
+        "destructive git",
+        "unrelated product systems",
+        "publication permission",
+        "product correctness",
+        "do not merge, rebase, force-push, delete branches",
+    ):
+        assert phrase in combined

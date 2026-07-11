@@ -73,5 +73,6 @@ Final report:
 
 Small coherent phases may be brief. Larger coherent vertical slices are allowed
 when they share one ordinary consumer and rollback boundary; use
-`EXECUTION_PLAN_TEMPLATE.md` for internal milestones rather than restating the
-operating manual here.
+`EXECUTION_PLAN_TEMPLATE.md` for internal milestones and the conditional
+large-phase execution posture in `PHASE_BRIEF_ADDENDA.md` rather than restating
+the operating manual here.
