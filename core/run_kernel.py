@@ -569,6 +569,9 @@ MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE = (
     "multicomponent_missing_component_recovery_authorization"
 )
 MULTICOMPONENT_RECOVERY_OUTCOME_STAGE = "multicomponent_recovery_outcome"
+MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE = (
+    "multicomponent_selective_recomputation_closure"
+)
 _MULTICOMPONENT_RECOVERY_OUTCOME_DISPOSITIONS = frozenset(
     {
         "acquired",
@@ -3604,6 +3607,8 @@ class RunKernel:
             "finalize",
             "graph_amendment",
             "resynthesis_structure",
+            "selective_invalidation",
+            "selective_resynthesis_structure",
         }:
             raise RunKernelTransitionError("unknown Graph V1 reduction operation")
         current_graph = _safe_mapping(
@@ -3632,6 +3637,133 @@ class RunKernel:
                 "role_evaluation_key": _clean_text(
                     role_evaluation_key, limit=180
                 ),
+            },
+            expected_observation_type=ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
+        )
+
+    def authorize_multicomponent_selective_recomputation_closure(
+        self,
+    ) -> AuthorizedAction:
+        """Authorize closure derivation against the exact pre-transition graph."""
+
+        from core.component_work_graph_v1 import (
+            COMPONENT_WORK_GRAPH_V1_STAGE,
+            validate_component_work_graph_v1,
+        )
+        from core.multicomponent_component_admission import (
+            MULTICOMPONENT_COMPONENT_ADMISSION_STAGE,
+        )
+
+        graph = validate_component_work_graph_v1(
+            _safe_mapping(self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE))
+        )
+        authorization = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE)
+        )
+        if (
+            authorization.get("graph_id") != graph.get("graph_id")
+            or authorization.get("graph_revision") != graph.get("graph_revision")
+            or authorization.get("graph_digest") != graph.get("graph_digest")
+            or authorization.get("authorization_digest") is None
+        ):
+            raise RunKernelTransitionError(
+                "selective closure requires the authorization-bound graph snapshot"
+            )
+        contract = _safe_mapping(self.state.current_answer_contract)
+        amendment_admission = _safe_mapping(
+            self.state.contract_amendment_admission_projection
+        )
+        amendment_application = _safe_mapping(
+            self.state.contract_amendment_application_projection
+        )
+        component_projection = _safe_mapping(
+            self.state.projections.get(MULTICOMPONENT_COMPONENT_ADMISSION_STAGE)
+        )
+        prior_component_ids = {
+            item.get("component_id")
+            for item in graph.get("component_nodes") or ()
+            if isinstance(item, Mapping)
+        }
+        recovered_refs = [
+            _safe_mapping(item)
+            for item in component_projection.get("component_admission_refs") or ()
+            if isinstance(item, Mapping)
+            and item.get("component_id") not in prior_component_ids
+            and item.get("accepted_contract_digest")
+            == contract.get("accepted_contract_digest")
+        ]
+        if (
+            not contract
+            or not amendment_admission.get("admission_digest")
+            or not amendment_application.get("application_digest")
+            or len(recovered_refs) != 1
+            or recovered_refs[0].get("admission_status")
+            not in {"admitted", "admitted_with_caveats"}
+        ):
+            raise RunKernelTransitionError(
+                "selective closure requires current amendment and recovered admission"
+            )
+        if any(
+            item.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE
+            and item.inputs.get("operation") == "selective_closure"
+            for item in self.state.issued_actions.values()
+        ):
+            raise RunKernelTransitionError(
+                "selective closure is already authorized"
+            )
+        return self.authorize(
+            stage=MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE,
+            action_type=ActionType.MULTICOMPONENT_GRAPH_REDUCE,
+            reason="ordinary_multicomponent_selective_closure",
+            inputs={
+                "operation": "selective_closure",
+                "source_graph_ref": {
+                    "graph_id": graph.get("graph_id"),
+                    "graph_revision": graph.get("graph_revision"),
+                    "graph_digest": graph.get("graph_digest"),
+                },
+                "recovery_authorization_ref": {
+                    "authorization_id": authorization.get("authorization_id"),
+                    "authorization_digest": authorization.get("authorization_digest"),
+                },
+                "current_contract_ref": {
+                    "owner": contract.get("owner"),
+                    "canonical_state": contract.get("canonical_state"),
+                    "run_id": self.state.run_id,
+                    "request_id": self.state.request_id,
+                    "accepted_contract_version": contract.get(
+                        "accepted_contract_version"
+                    ),
+                    "accepted_contract_digest": contract.get(
+                        "accepted_contract_digest"
+                    ),
+                },
+                "contract_amendment_admission_ref": {
+                    "amendment_record_id": amendment_admission.get(
+                        "amendment_record_id"
+                    ),
+                    "amendment_record_digest": amendment_admission.get(
+                        "amendment_record_digest"
+                    ),
+                    "authorized_action_id": amendment_admission.get(
+                        "authorized_action_id"
+                    ),
+                    "admission_digest": amendment_admission.get("admission_digest"),
+                },
+                "contract_amendment_application_ref": {
+                    "amendment_record_id": amendment_application.get(
+                        "amendment_record_id"
+                    ),
+                    "authorized_action_id": amendment_application.get(
+                        "authorized_action_id"
+                    ),
+                    "application_digest": amendment_application.get(
+                        "application_digest"
+                    ),
+                },
+                "recovered_component_admission_ref": recovered_refs[0],
+                "run_id": self.state.run_id,
+                "request_id": self.state.request_id,
             },
             expected_observation_type=ObservationType.MULTICOMPONENT_GRAPH_REDUCED,
         )
@@ -16597,12 +16729,15 @@ class RunKernel:
         elif action.action_type is ActionType.MULTICOMPONENT_GRAPH_REDUCE:
             from core.component_work_graph_v1 import (
                 COMPONENT_WORK_GRAPH_V1_OWNER,
+                COMPONENT_WORK_GRAPH_V1_STAGE,
                 component_work_graph_v1_from_cross_component_artifact,
                 component_work_graph_v1_resynthesis_from_cross_component_artifact,
                 derive_multicomponent_role_call_accounting,
+                derive_selective_recomputation_closure,
                 expected_graph_after_transition,
                 graph_with_recovered_component,
                 validate_component_work_graph_v1,
+                validate_selective_recomputation_closure,
             )
             from core.component_work_node import (
                 component_work_node_v1_from_admitted_component,
@@ -16618,6 +16753,151 @@ class RunKernel:
                 role_artifact_ref,
             )
 
+            operation = action.inputs.get("operation")
+            if operation == "selective_closure":
+                candidate = validate_selective_recomputation_closure(
+                    _safe_mapping(
+                        observation.payload.get("selective_recomputation_closure")
+                    )
+                )
+                source_graph = validate_component_work_graph_v1(
+                    _safe_mapping(
+                        self.state.projections.get(COMPONENT_WORK_GRAPH_V1_STAGE)
+                    )
+                )
+                authorization = _safe_mapping(
+                    self.state.projections.get(
+                        MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE
+                    )
+                )
+                contract = _safe_mapping(self.state.current_answer_contract)
+                amendment_admission = _safe_mapping(
+                    self.state.contract_amendment_admission_projection
+                )
+                amendment_application = _safe_mapping(
+                    self.state.contract_amendment_application_projection
+                )
+                component_projection = _safe_mapping(
+                    self.state.projections.get(
+                        MULTICOMPONENT_COMPONENT_ADMISSION_STAGE
+                    )
+                )
+                expected_refs = {
+                    "source_graph_ref": {
+                        "graph_id": source_graph.get("graph_id"),
+                        "graph_revision": source_graph.get("graph_revision"),
+                        "graph_digest": source_graph.get("graph_digest"),
+                    },
+                    "recovery_authorization_ref": {
+                        "authorization_id": authorization.get("authorization_id"),
+                        "authorization_digest": authorization.get(
+                            "authorization_digest"
+                        ),
+                    },
+                    "current_contract_ref": action.inputs.get(
+                        "current_contract_ref"
+                    ),
+                    "contract_amendment_admission_ref": action.inputs.get(
+                        "contract_amendment_admission_ref"
+                    ),
+                    "contract_amendment_application_ref": action.inputs.get(
+                        "contract_amendment_application_ref"
+                    ),
+                    "recovered_component_admission_ref": action.inputs.get(
+                        "recovered_component_admission_ref"
+                    ),
+                }
+                if (
+                    expected_refs["source_graph_ref"]
+                    != _safe_mapping(action.inputs.get("source_graph_ref"))
+                    or action.inputs.get("run_id") != self.state.run_id
+                    or action.inputs.get("request_id") != self.state.request_id
+                    or expected_refs["current_contract_ref"]
+                    != {
+                        "owner": contract.get("owner"),
+                        "canonical_state": contract.get("canonical_state"),
+                        "run_id": self.state.run_id,
+                        "request_id": self.state.request_id,
+                        "accepted_contract_version": contract.get(
+                            "accepted_contract_version"
+                        ),
+                        "accepted_contract_digest": contract.get(
+                            "accepted_contract_digest"
+                        ),
+                    }
+                    or expected_refs["contract_amendment_admission_ref"]
+                    != {
+                        "amendment_record_id": amendment_admission.get(
+                            "amendment_record_id"
+                        ),
+                        "amendment_record_digest": amendment_admission.get(
+                            "amendment_record_digest"
+                        ),
+                        "authorized_action_id": amendment_admission.get(
+                            "authorized_action_id"
+                        ),
+                        "admission_digest": amendment_admission.get(
+                            "admission_digest"
+                        ),
+                    }
+                    or expected_refs["contract_amendment_application_ref"]
+                    != {
+                        "amendment_record_id": amendment_application.get(
+                            "amendment_record_id"
+                        ),
+                        "authorized_action_id": amendment_application.get(
+                            "authorized_action_id"
+                        ),
+                        "application_digest": amendment_application.get(
+                            "application_digest"
+                        ),
+                    }
+                    or expected_refs["recovered_component_admission_ref"]
+                    not in [
+                        _safe_mapping(item)
+                        for item in component_projection.get(
+                            "component_admission_refs", ()
+                        )
+                        if isinstance(item, Mapping)
+                    ]
+                ):
+                    raise RunKernelTransitionError(
+                        "selective closure action authority became stale"
+                    )
+                expected = derive_selective_recomputation_closure(
+                    source_graph,
+                    recovery_authorization_ref=authorization,
+                    current_contract_ref=_safe_mapping(
+                        expected_refs["current_contract_ref"]
+                    ),
+                    contract_amendment_admission_ref=_safe_mapping(
+                        expected_refs["contract_amendment_admission_ref"]
+                    ),
+                    contract_amendment_application_ref=_safe_mapping(
+                        expected_refs["contract_amendment_application_ref"]
+                    ),
+                    recovered_component_admission_ref=_safe_mapping(
+                        expected_refs["recovered_component_admission_ref"]
+                    ),
+                )
+                if candidate != expected:
+                    raise RunKernelTransitionError(
+                        "selective closure candidate does not equal RunKernel derivation"
+                    )
+                self.state.projections[action.stage] = deepcopy(expected)
+                self.state.projections[f"{action.stage}_history"] = {
+                    "schema_version": (
+                        "multicomponent_selective_recomputation_closure_history_v1"
+                    ),
+                    "owner": expected["owner"],
+                    "canonical_state": True,
+                    "closure_count": 1,
+                    "closures": [deepcopy(expected)],
+                }
+                self.state.observations.append(observation)
+                self.state.next_observation_sequence += 1
+                return self.state
+
             graph = validate_component_work_graph_v1(
                 _safe_mapping(observation.payload.get("component_work_graph_v1"))
             )
@@ -16632,7 +16912,6 @@ class RunKernel:
             action_ref = _safe_mapping(graph.get("runkernel_graph_action_ref"))
             if action_ref.get("action_id") != action.action_id:
                 raise RunKernelTransitionError("Graph V1 action binding mismatch")
-            operation = action.inputs.get("operation")
             current_graph = _safe_mapping(self.state.projections.get(action.stage))
             synthesis_key = action.inputs.get("synthesis_key")
             role_evaluation_key = action.inputs.get("role_evaluation_key")
@@ -17592,6 +17871,7 @@ __all__ = [
     "MAIN_RETRIEVAL_STAGE",
     "MULTICOMPONENT_RECOVERY_AUTHORIZATION_STAGE",
     "MULTICOMPONENT_RECOVERY_OUTCOME_STAGE",
+    "MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE",
     "EVIDENCE_LEDGER_STAGE",
     "SEARCH_JUDGMENT_STAGE",
     "SEARCH_WORK_PLAN_CONSTRUCTION_STAGE",

@@ -24,6 +24,12 @@ from core.multicomponent_role_runtime import (
 COMPONENT_WORK_GRAPH_V1_SCHEMA_VERSION = "component_work_graph_v1"
 COMPONENT_WORK_GRAPH_V1_STAGE = "multicomponent_component_work_graph_v1"
 COMPONENT_WORK_GRAPH_V1_OWNER = "RunKernel.ComponentWorkGraphV1"
+MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE = (
+    "multicomponent_selective_recomputation_closure"
+)
+MULTICOMPONENT_SELECTIVE_CLOSURE_OWNER = (
+    "RunKernel.MulticomponentSelectiveRecomputationClosure"
+)
 
 MAX_COMPONENT_NODES = 5
 MIN_COMPONENT_NODES = 2
@@ -320,6 +326,189 @@ def scrutineer_input_packet(graph: Mapping[str, Any]) -> dict[str, Any]:
         ],
         "challenge_target_catalog": _scrutineer_challenge_target_catalog(validated),
     }
+
+
+def derive_selective_recomputation_closure(
+    graph: Mapping[str, Any],
+    *,
+    recovery_authorization_ref: Mapping[str, Any],
+    current_contract_ref: Mapping[str, Any],
+    contract_amendment_admission_ref: Mapping[str, Any],
+    contract_amendment_application_ref: Mapping[str, Any],
+    recovered_component_admission_ref: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Derive the exact affected synthesis closure from the authorized snapshot."""
+
+    source = validate_component_work_graph_v1(graph)
+    authorization = _safe_mapping(recovery_authorization_ref)
+    if (
+        authorization.get("owner")
+        != "RunKernel.MulticomponentRecoveryAuthorization"
+        or authorization.get("canonical_state") is not True
+        or authorization.get("run_id") != source.get("run_id")
+        or authorization.get("request_id") != source.get("request_id")
+        or authorization.get("graph_id") != source.get("graph_id")
+        or authorization.get("graph_revision") != source.get("graph_revision")
+        or authorization.get("graph_digest") != source.get("graph_digest")
+        or authorization.get("target_kind") != "synthesis"
+    ):
+        raise ComponentWorkGraphV1Error(
+            "selective closure requires the authorization-bound source graph"
+        )
+    resolved_target = _safe_mapping(authorization.get("resolved_target"))
+    synthesis_by_id = {
+        item["node_id"]: item for item in source["synthesis_nodes"]
+    }
+    synthesis_by_key = {
+        item["synthesis_key"]: item for item in source["synthesis_nodes"]
+    }
+    target = synthesis_by_id.get(resolved_target.get("node_id"))
+    if target is None or any(
+        resolved_target.get(key) != _node_ref(target).get(key)
+        for key in (
+            "node_kind",
+            "node_id",
+            "node_revision",
+            "node_digest",
+            "synthesis_key",
+            "status",
+            "current",
+            "stale",
+        )
+    ):
+        raise ComponentWorkGraphV1Error(
+            "selective closure recovery target is not the exact current synthesis"
+        )
+
+    direct_key = str(target["synthesis_key"])
+    downstream_by_id: dict[str, list[str]] = {}
+    for edge in source["edges"]:
+        downstream_by_id.setdefault(str(edge["from_node_id"]), []).append(
+            str(edge["to_node_id"])
+        )
+    affected_ids = {str(target["node_id"])}
+    pending = [str(target["node_id"])]
+    while pending:
+        upstream_id = pending.pop(0)
+        for downstream_id in downstream_by_id.get(upstream_id, ()):
+            if downstream_id in synthesis_by_id and downstream_id not in affected_ids:
+                affected_ids.add(downstream_id)
+                pending.append(downstream_id)
+    affected_order = [
+        key
+        for key in source["synthesis_topological_order"]
+        if synthesis_by_key[key]["node_id"] in affected_ids
+    ]
+    transitive_keys = [key for key in affected_order if key != direct_key]
+    unaffected_keys = [
+        key
+        for key in source["synthesis_topological_order"]
+        if key not in set(affected_order)
+    ]
+    contract_ref = _safe_mapping(current_contract_ref)
+    amendment_admission_ref = _safe_mapping(contract_amendment_admission_ref)
+    amendment_application_ref = _safe_mapping(contract_amendment_application_ref)
+    component_admission_ref = _safe_mapping(recovered_component_admission_ref)
+    if (
+        not contract_ref.get("accepted_contract_version")
+        or not contract_ref.get("accepted_contract_digest")
+        or not amendment_admission_ref.get("admission_digest")
+        or not amendment_application_ref.get("application_digest")
+        or component_admission_ref.get("admission_status")
+        not in {"admitted", "admitted_with_caveats"}
+    ):
+        raise ComponentWorkGraphV1Error(
+            "selective closure requires current contract and recovered admission authority"
+        )
+    core = {
+        "schema_version": "multicomponent_selective_recomputation_closure_v1",
+        "owner": MULTICOMPONENT_SELECTIVE_CLOSURE_OWNER,
+        "canonical_state": True,
+        "run_id": source["run_id"],
+        "request_id": source["request_id"],
+        "source_graph_ref": {
+            "graph_id": source["graph_id"],
+            "graph_revision": source["graph_revision"],
+            "graph_digest": source["graph_digest"],
+        },
+        "recovery_authorization_ref": {
+            "authorization_id": authorization.get("authorization_id"),
+            "authorization_digest": authorization.get("authorization_digest"),
+        },
+        "resolved_target": resolved_target,
+        "current_contract_ref": contract_ref,
+        "contract_amendment_admission_ref": amendment_admission_ref,
+        "contract_amendment_application_ref": amendment_application_ref,
+        "recovered_component_admission_ref": component_admission_ref,
+        "directly_affected_synthesis_keys": [direct_key],
+        "transitively_affected_synthesis_keys": transitive_keys,
+        "affected_synthesis_keys": affected_order,
+        "unaffected_active_synthesis_keys": unaffected_keys,
+        "affected_topological_order": affected_order,
+    }
+    closure_digest = _digest(core)
+    return {
+        **core,
+        "closure_id": f"selective-closure:{closure_digest[:20]}",
+        "closure_digest": closure_digest,
+    }
+
+
+def validate_selective_recomputation_closure(
+    value: Mapping[str, Any],
+) -> dict[str, Any]:
+    closure = _json_safe(value)
+    if not isinstance(closure, dict):
+        raise ComponentWorkGraphV1Error("selective closure must be a mapping")
+    if (
+        closure.get("schema_version")
+        != "multicomponent_selective_recomputation_closure_v1"
+        or closure.get("owner") != MULTICOMPONENT_SELECTIVE_CLOSURE_OWNER
+        or closure.get("canonical_state") is not True
+    ):
+        raise ComponentWorkGraphV1Error("selective closure schema or owner mismatch")
+    declared_id = closure.pop("closure_id", None)
+    declared_digest = closure.pop("closure_digest", None)
+    expected_digest = _digest(closure)
+    closure["closure_id"] = declared_id
+    closure["closure_digest"] = declared_digest
+    if (
+        declared_digest != expected_digest
+        or declared_id != f"selective-closure:{expected_digest[:20]}"
+    ):
+        raise ComponentWorkGraphV1Error("selective closure digest mismatch")
+    affected = list(closure.get("affected_synthesis_keys") or ())
+    if (
+        affected != list(closure.get("affected_topological_order") or ())
+        or set(affected)
+        != set(closure.get("directly_affected_synthesis_keys") or ())
+        | set(closure.get("transitively_affected_synthesis_keys") or ())
+        or set(affected)
+        & set(closure.get("unaffected_active_synthesis_keys") or ())
+    ):
+        raise ComponentWorkGraphV1Error("selective closure set partition is invalid")
+    return closure
+
+
+def reduce_selective_recomputation_closure(
+    *,
+    run_kernel: Any,
+    closure_candidate: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Submit one candidate while RunKernel independently rederives the closure."""
+
+    from core.run_kernel import Observation, RunStageStatus
+
+    action = run_kernel.authorize_multicomponent_selective_recomputation_closure()
+    run_kernel.reduce(
+        Observation.from_action(
+            action,
+            observation_type=action.expected_observation_type,
+            status=RunStageStatus.COMPLETED,
+            payload={"selective_recomputation_closure": dict(closure_candidate)},
+        )
+    )
+    return deepcopy(run_kernel.state.projections[action.stage])
 
 
 def _scrutineer_challenge_target_catalog(
@@ -1893,12 +2082,15 @@ __all__ = [
     "MAX_COMPONENT_NODES",
     "MAX_SYNTHESIS_DEPTH",
     "MAX_SYNTHESIS_NODES",
+    "MULTICOMPONENT_SELECTIVE_CLOSURE_OWNER",
+    "MULTICOMPONENT_SELECTIVE_CLOSURE_STAGE",
     "ComponentWorkGraphV1Error",
     "admit_synthesis_node_via_runkernel",
     "component_work_graph_v1_from_cross_component_artifact",
     "component_work_graph_v1_resynthesis_from_cross_component_artifact",
     "cross_component_input_packet",
     "derive_multicomponent_role_call_accounting",
+    "derive_selective_recomputation_closure",
     "expected_graph_after_transition",
     "finalize_component_work_graph_v1",
     "graph_with_accounting",
@@ -1908,7 +2100,9 @@ __all__ = [
     "graph_with_synthesis_validation",
     "runkernel_canonical_graph",
     "reduce_component_work_graph_v1",
+    "reduce_selective_recomputation_closure",
     "scrutineer_input_packet",
     "synthesis_dprime_input_packet",
     "validate_component_work_graph_v1",
+    "validate_selective_recomputation_closure",
 ]
