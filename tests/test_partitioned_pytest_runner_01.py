@@ -239,3 +239,37 @@ def test_tiny_repo_imports_exact_worktrees_and_cleans_owned_paths(tmp_path: Path
     assert all(not Path(path).exists() for path in cleanup["owned_paths"])
     assert (packet / "aggregate.json").is_file()
     assert "srval" not in _git(repo, "worktree", "list", "--porcelain")
+
+
+def test_synthetic_candidate_only_cli(tmp_path: Path) -> None:
+    repo, _, candidate = _tiny_repo(
+        tmp_path,
+        {"tests/test_x.py": "def test_x(): pass\n"},
+        {"tests/test_x.py": "def test_x(): pass\n"},
+    )
+    packet = tmp_path / "cli-packet"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--repository",
+            str(repo),
+            "--candidate",
+            candidate,
+            "--partitions",
+            "2",
+            "--max-processes",
+            "1",
+            "--packet-root",
+            str(packet),
+            "--work-root",
+            str(tmp_path / "cli-work"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "consequence: passed" in completed.stdout
+    assert json.loads((packet / "aggregate.json").read_text(encoding="utf-8"))["consequence"] == "passed"
